@@ -40,10 +40,7 @@
 
 ## 调研报告
 
-| 语言 | 链接 |
-|---|---|
-| 🇨🇳 中文（主要） | [`docs/feasibility-report.md`](./docs/feasibility-report.md) |
-| 🇬🇧 英文（翻译） | [`docs/feasibility-report.en.md`](./docs/feasibility-report.en.md) |
+调研报告（中文）见 [可行性报告](./docs/feasibility-report.md)。
 
 ## 关键事实
 

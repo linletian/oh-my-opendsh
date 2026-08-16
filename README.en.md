@@ -40,10 +40,7 @@ Every decision in this project is governed by these two principles, which have e
 
 ## Feasibility Report
 
-| Language | Link |
-|---|---|
-| 🇬🇧 English (translation) | [`docs/feasibility-report.en.md`](./docs/feasibility-report.en.md) |
-| 🇨🇳 Chinese (original) | [`docs/feasibility-report.md`](./docs/feasibility-report.md) |
+Feasibility Report (English) is at [feasibility-report.en.md](./docs/feasibility-report.en.md).
 
 ## Key Facts
 
