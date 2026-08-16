@@ -1,23 +1,56 @@
 # 可行性报告：基于 deepseek-harness (DSH) 移植 oh-my-openagent (OMO) 的工程化与可持续 patch 框架
 
 > 仓库证据快照：
-> - **DSH** `/home/linletian/GithubRepo/deepseek-harness/` v0.1.0-rc.5, MIT
-> - **OMO** `/home/linletian/GithubRepo/oh-my-openagent/` (HEAD 截屏, 实际仓库拼写为 `oh-my-openagent`，用户在指令中写成了 `oh-my-openagennt`)，SUL-1.0
-> - **新工作区** `/home/linletian/SoftwareWorkspace/oh-my-opendsh/`（已创建，空目录）
->
-> 本报告是预研结论，不实现任何代码，不修改任何文件除本 plan.md。
+> - **DSH** `<DSH_REPO>/` v0.1.0-rc.5, MIT
+> - **OMO** `<OMO_REPO>/` (HEAD 截屏, 实际仓库拼写为 `oh-my-openagent`，用户在指令中写成了 `oh-my-openagennt`)，SUL-1.0
+> - **新工作区** `./`（已创建，空目录）
+
+---
+
+## 设计原则
+
+本项目所有设计决策都遵循以下两条原则，二者优先级同等，缺一不可：
+
+### 1. 充分利用 DSH 框架的灵活优势做事
+
+DSH 是一个以 Cordis 插件树 + 双面构建（host + client）+ 显式扩展点（`agent/*` / `tools/*` / `ctx.goals` / `ctx.shell` / `ctx.fs` / `ctx.skill` / `ctx.jobs` / `ctx.subagent` / `ctx.terminals` / `ctx.plan` / `ctx.compaction` / `ctx.todo` / `ConversationNodeDefinition`）为核心的现代 harness 框架。
+
+- **优先用 DSH 原生能力** 解决 OMO 需求，**不重复造轮子** —— 例如 OMO 的 `/goal` 直接复用 `dsh-goal`、OMO 的 Team Mode 直接复用 `dsh-subagent-*`、OMO 的 pre-compact 直接复用 `dsh-compaction-*`
+- **优先走 DSH 官方扩展路径**（cookbook 的 4 种 plugin 形态 + 官方 scratch plugin 模式）—— 不 fork DSH、不改 DSH 仓库、不在 DSH 已有的 row id 上动手脚
+- **优先用 DSH 客户端能力做可视化**（web ChatNode via `ConversationNodeDefinition`）—— 而不是外挂 tmux
+- **优先用 DSH 自身的 CI 工具链**（vitest / verify-licenses / cordis-catalog 检查）—— 不另起一套
+
+### 2. 完整引入 OMO 的 harness 设计哲学，尊重 OMO 开源 License
+
+OMO 是一个经过一年多实战检验的高质量 harness，其设计哲学（11 agent 编排 / 54+ lifecycle hook / 多 provider LLM 路由 / Team Mode 并行协作 / ultrawork 持续驱动 / hashline edit / etc.）是项目的核心价值。
+
+- **完整保留 OMO 的能力体系** —— 不做能力裁剪，11 agent + 30+ hook + 5 MCP + Team Mode + hashline + 一切 slash command 全量移植
+- **直接 import OMO 源码**（不重新实现）—— 让 OMO 上游的优化和 bug fix 自然流入；同时**升级成本最低**（1 小时内完成一次 OMO bump）
+- **完整尊重 OMO 的 SUL-1.0 开源 License** —— 框架 dual license (MIT OR SUL-1.0)；`LICENSES/` 原样放 OMO LICENSE 文本；`THIRD_PARTY_NOTICES.md` 完整 attribution；README 顶部显式致谢
+- **不向 OMO 提 PR**（避免其"反对过度抽象"的维护哲学冲突）—— 作为 OMO 用户而非贡献者身份存在
+- **不做销售**（满足 SUL-1.0 的"非商业"要求）—— 内部使用 + 开源 = 完整合规
+
+### 原则的边界
+
+| 情况 | 行为 |
+|---|---|
+| DSH 原生能力能完整覆盖 OMO 某能力 | **不翻译 OMO 实现**，直接用 DSH（例：goal / compaction / todo / ralph）|
+| DSH 缺 OMO 某能力的关键特性 | 写 **DSH 风格** 的扩展（例：`ConversationNodeDefinition` for team 可视化）|
+| DSH 概念与 OMO 概念有差异 | 写 **薄 listener 翻译层** 桥接，**不** 在 DSH 上"硬塞" OMO 设计（例：listener 翻译 DSH event → OMO hook call）|
+| OMO 上游 license 变更 | 立刻触发 `scripts/verify-licenses.sh` fail，**不绕过**|
+| OMO 上游哲学变更（如"反对 listener 抽象"）| 在 `docs/upgrade-playbook.md` 记录，**不强行保留抽象层**（按 OMO 哲学调整适配器）|
 
 ---
 
 ## Summary
 
-**目标**：把 OMO 的能力体系（11 agent、54+ hook、LSP/AST-grep/codegraph MCP、`/goal`、`/ultrawork`、Team Mode、hashline edit、Rules Injection 等）以"插件 + profile"形式接到 DSH 框架之上，并搭一个能让 OMO 升级时快速 rebase 的 patch 工程。
+**目标**：把 OMO 的能力体系（11 agent、54+ hook、LSP/AST-grep/codegraph MCP、`/goal`、`/ultrawork`、Team Mode、hashline edit、Rules Injection 等）以 DSH 官方 scratch plugin 形式（`dsh --patch` overlay）接到 DSH 框架之上，并搭一个能让 OMO 升级时 1 小时内完成 rebase 的 patch 工程。
 
 **核心结论（先看这四条）**：
 1. **可行性：高。** DSH 的扩展面（`agent/*`、`tools/*`、`ctx.goals`、`ctx.shell`、`ctx.fs`、`ctx.skill`、`ctx.jobs`、`ctx.subagent`、`ctx.terminals`、`ctx.plan`、`ctx.compaction`、`ctx.todo`）几乎一一对应 OMO 的 11 大能力。OMO 的 ROADMAP 已经把它拆成 19 个 harness-agnostic 核心包，恰好可被 DSH 直接吃下，无需重写。DSH 自己的 `dsh-base` bundle 已经内置了 `goal/plan/skill/compaction/ralph/workflow/todo/subagent/web-search` —— 这意味着 OMO 的 60% 能力**在 DSH 里早就有等价原生实现**，移植主要工作在"做对映射和命名"，不是"做新实现"。
-2. **可持续 patch 框架：可行，且 DSH 体系天然契合。** DSH 的"profile + bundle + cordis.patch.yml"机制就是一个分层 patch 模型（底层包 → profile → home patch → `--patch` overlay）。我们只需要把 OMO 适配层放在最顶层 patch，并把 OMO 19 个核心包锁版本到工作区依赖（pnpm workspace + git tag），就可以做到"上游 OMO 改一个版本号 → `pnpm update` → `dsh typecheck/test` → 暴露的失败只在 adapter"这种最小冲突面。
+2. **可持续 patch 框架：可行，且 DSH 体系天然契合。** DSH cookbook 列了 4 种官方插件形态（tool / hook / UI / protocol-driver），加上 DSH 官方推荐的 `dsh --patch ./scratch-plugin/cordis.yml` scratch plugin 模式，**DSH 零修改**就能加载我们的 OMO 适配器。OMO 通过 npm 依赖直接 import，升级流程 = `pnpm update oh-my-opencode` + `pnpm test`（5 分钟脚本 + 0–1 小时修 listener）。
 3. **不是"替换 OMO"，是"做 OMO 的 DSH 适配器"。** OMO 已经在 ROADMAP 里把多 harness 适配器化（已有 `omo-opencode`、`omo-codex`、`omo-senpi`），因此"再加一个 DSH 适配器"是 OMO 官方允诺的扩展路径，与 OMO 维护者哲学一致。
-4. **有一个硬约束必须前置处理：OMO 的 SUL-1.0 license。** 限制"免费 + 非商用"分发；如果在内部团队用没问题；如果将来要外发派生作品，patch 框架的对外发布需要保留 SUL-1.0 或仅分发不依赖 OMO 源码的"空壳"profile。详见 §6。
+4. **有一个硬约束已处理：OMO 的 SUL-1.0 license。** 框架采用 **dual license（MIT OR SUL-1.0）**——OMO 源码可直接 import（升级最省事），同时给最终用户选择空间。"免费 + 非商业 + 不销售"已满足 SUL-1.0。详见 §6。
 
 ---
 
@@ -254,20 +287,21 @@ OMO 用 PostHog + SHA256 hashed install id。DSH 有 `dsh-session-telemetry` + `
 
 **这些"白送"的能力升级也是"为什么值得移植到 DSH"的核心理由。**
 
-### 2.10 移植工作量估算（粗）
+### 2.10 移植工作量粗估
 
-| 阶段 | 估时 | 关键产出 |
+按工作类型分块估算（不构成实施计划，仅供可行性参考）：
+
+| 工作类型 | 估时 | 说明 |
 |---|---|---|
-| 0. 搭骨架（pnpm workspace、profile 模板、空 adapter） | 1 周 | `oh-my-opendsh/` 仓库初始 commit；`dsh --profile omo` 能起一个空运行 |
-| 1. 接 OMO core 19 包为 workspace 依赖 | 1 周 | 19 个 OMO 核心包在 DSH workspace 里 typecheck 过 |
-| 2. 写 `omo-dsh-adapter` Cordis plugin（11 agent preset + 30 hook → DSH 事件） | 4 周 | 11 agent 能跑，30 hook 挂在 DSH 事件上 |
-| 3. LLM adapter 补齐（先 DeepSeek + OpenAI compat，再补其余） | 2 周 | 6 个 llm-* adapter |
-| 4. MCP 桥接（LSP / ast-grep / codegraph / git-bash / web 三件套） | 2 周 | model-facing tools 完整 |
-| 5. Team Mode 移植（用 OMO team-core + DSH subagent） | 3 周 | lead + 8 member + tmux 可视化 |
-| 6. Profile / bundle 化（`cordis.patch.yml` + `omo.profile.json`） | 1 周 | 用户能 `dsh --profile omo` 启动 |
-| 7. 端到端测试 + 性能调优 | 2 周 | 全功能 smoke test |
-| 8. 文档 + 上手指南 | 1 周 | docs/ |
-| **合计** | **~16 周 / 4 个月**（一人主力） | |
+| 接 OMO core 19 包为 workspace 依赖 | 1 周 | 19 个 OMO 核心包在 DSH workspace 里 typecheck 过 |
+| 写 `omo-dsh-adapter` Cordis plugin | 4 周 | 11 agent 能跑，30 hook 挂在 DSH 事件上 |
+| LLM adapter 补齐 | 2 周 | 先 DeepSeek + OpenAI compat，再补其余 |
+| MCP 桥接 | 2 周 | LSP / ast-grep / codegraph / git-bash / web 三件套 |
+| Team Mode 移植 | 3 周 | 用 OMO team-core + DSH subagent |
+| Profile / bundle 化 | 1 周 | `cordis.patch.yml` + `omo.profile.json` |
+| 端到端测试 + 性能调优 | 2 周 | 全功能 smoke test |
+| 文档 + 上手指南 | 1 周 | docs/ |
+| **合计** | **~16 周 / 4 个月**（一人主力） | MVP 范围 |
 
 **评估：可行性高，4 个月一个人能交付 MVP。** 大头不是"功能重写"（DSH 给了 60%），是"细致的事件映射 + LLM adapter"。
 
@@ -313,79 +347,67 @@ OMO 用 PostHog + SHA256 hashed install id。DSH 有 `dsh-session-telemetry` + `
 
 ### 3.3 物理仓库结构
 
+**采用 DSH 官方 scratch plugin 模式**（`dsh --patch ./oh-my-opendsh/cordis.yml`）—— 一个独立 npm 包，DSH 一行不改。
+
 ```
-oh-my-opendsh/                         # 我们的 patch 框架仓库
-├── package.json                       # pnpm workspace root
-├── pnpm-workspace.yaml
+oh-my-opendsh/                          # patch 框架仓库（独立 npm 包，license: MIT OR SUL-1.0）
+├── package.json                        # "license": "MIT OR SUL-1.0"
+├── pnpm-workspace.yaml                 # 内含 4 个 sub-plugin
 ├── tsconfig.json
 ├── README.md
-├── LICENSE                            # MIT (框架本身)
-├── THIRD_PARTY_LICENSES.md            # 列出 OMO SUL-1.0 + 各上游
+├── LICENSE                             # "MIT OR SUL-1.0" 全文
+├── LICENSES/
+│   ├── LICENSE-MIT                     # MIT 全文
+│   └── oh-my-openagent.LICENSE.md      # OMO 原文原样
+├── THIRD_PARTY_NOTICES.md              # 致谢 + attribution
 ├── docs/
-│   ├── feasi-2026-08.md              # 本文件（可行性报告）
-│   ├── upgrade-playbook.md            # OMO 升级 SOP
-│   ├── hook-translation-table.md      # 30 hook → DSH 事件对照表
-│   ├── agent-preset-schema.md         # OMO agent → DSH preset 映射规则
-│   └── license-notes.md               # SUL-1.0 + MIT 混用指引
-├── dsh/                               # DSH 上游，git subtree
-│   ├── .git subtree info
-│   └── (DSH 完整源码，patches/ 下放我们的最小 patch)
-├── omo/                               # OMO 上游，git subtree
-│   ├── .git subtree info
-│   └── (OMO 19 core + adapter 源码)
-├── adapter/                           # 我们写的胶水
-│   ├── package.json                   # @oh-my-opendsh/adapter-dsh
-│   ├── src/
-│   │   ├── index.ts                   # 主入口，注册 Cordis plugin
-│   │   ├── agents/                    # 11 agent preset 注册
-│   │   ├── hooks/                     # 30 hook → DSH 事件翻译
-│   │   ├── llm/                       # 6 LLM adapter（如未在 DSH 自带）
-│   │   ├── mcp/                       # MCP 桥接
-│   │   └── team/                      # Team Mode 装配
-│   ├── cordis.patch.yml               # 我们的 profile patch
-│   └── tests/
-├── profile/                           # DSH profile 声明
-│   └── omo.profile.json
-├── patches/                           # 对 DSH/OMO 的最小 patch（很少）
-│   ├── dsh-*.patch                    # 偶尔需要给 DSH 提的 bugfix
-│   └── omo-*.patch                    # 偶尔需要给 OMO 提的 SUL 友好的修复
+│   ├── feasibility-report.md           # 本文件
+│   ├── upgrade-playbook.md
+│   ├── hook-translation-table.md
+│   ├── agent-preset-schema.md
+│   ├── license-notes.md
+│   ├── dsh-plugin-patterns.md
+│   └── llm-adapter-survey.md
+├── patches/omo-dsh/                    # 4 个 DSH sub-plugin（对应 cookbook 4 形态）
+│   ├── omo-agents/                     # Tool plugin：11 agent preset 包装
+│   ├── omo-hooks/                      # Hook plugin：DSH event → OMO hook listener
+│   ├── omo-team-ui/                    # UI plugin：web ChatNode for team 可视化
+│   └── omo-bundle/                     # profile 声明 + 配置（4 形态的"协议驱动"层）
+├── cordis.yml                          # root patch 入口，加载上面 4 个 sub-plugin
 └── scripts/
-    ├── bump-omo.sh                    # 一键升级 OMO
-    ├── bump-dsh.sh                    # 一键升级 DSH
-    ├── upstream-watch.sh              # 监控 OMO dev branch
-    ├── conflict-scan.sh               # 找出会被 OMO 升级影响的 adapter 文件
-    └── verify-licenses.sh             # license 守门人
+    ├── bump-omo.sh                     # pnpm update + 测（核心 5 分钟）
+    ├── bump-dsh.sh
+    ├── upstream-watch.sh               # 监控 OMO + DSH release
+    └── verify-licenses.sh              # license 守门人
 ```
 
 ### 3.4 Patch 升级流程
 
-#### 常规升级 OMO（推荐节奏：每 2–4 周）
+OMO 通过 npm 依赖引入，**升级核心就是 `pnpm update`**。listener 翻译层是唯一会动的地方。
+
+#### 常规升级 OMO（推荐节奏：事件驱动 / 双月）
 
 ```bash
 # 1. 看 OMO 上了什么
 ./scripts/upstream-watch.sh omo --since 2w
 
-# 2. bump OMO subtree 到指定 tag
+# 2. 一键 bump（核心就是 pnpm update + 跑测试）
 ./scripts/bump-omo.sh v3.2.0
-
-# 3. 跑 conflict scan，看我们 adapter 的哪些文件会被影响
-./scripts/conflict-scan.sh
 # 输出（伪）：
-#   ⚠ adapter/src/hooks/keyword-detector/index.ts: OMO 改了 hook signature
-#   ⚠ adapter/src/agents/builtin-agents/sisyphus.ts: OMO 加了 system prompt 段
-#   ✓ adapter/src/team/*  未受影响
-#   ✓ adapter/src/mcp/*  未受影响
+#   ✓ pnpm lockfile updated (3.1.0 → 3.2.0)
+#   ✓ typecheck 通过
+#   ✓ 412 tests pass
+#   ⚠ 3 个 listener 受影响（git diff 列出文件清单）：
+#       patches/omo-dsh/omo-hooks/keyword-detector/listener.ts
+#       patches/omo-dsh/omo-agents/sisyphus/preset.ts
+#       patches/omo-dsh/omo-hooks/tool-pair-validator/listener.ts
+#   → 改 listener 签名（典型 0.5–1 小时）
 
-# 4. 跑全套 gate
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-pnpm lint
-
-# 5. 暴露失败，挨个改 adapter（典型情况：1–3 处）
-# 6. commit + tag
+# 3. commit + tag
 git tag omo/v3.2.0
 ```
+
+**总耗时：5 分钟（脚本）+ 0–1 小时（修 listener）= 1 小时内完成一次 OMO 升级**。
 
 #### 升级 DSH（推荐节奏：每 1–2 月）
 
@@ -401,21 +423,24 @@ pnpm typecheck && pnpm test
 
 ### 3.5 冲突最小化设计
 
+OMO 主体通过 npm 依赖引入（patch 框架直接 import OMO 19 core + 4 adapter），所以"冲突面"被锁在 **listener 翻译层**这一薄层。DSH event → OMO hook call 的双向转换是唯一会动的地方。
+
 | 风险点 | 缓解策略 |
 |---|---|
-| OMO 改 hook 签名 | 我们的 `adapter/src/hooks/*` 文件**与 OMO 同名**但内容完全重写（不是"引用"）；OMO 改 hook 我们就同步重写翻译层 |
-| OMO 改 agent 配置 | 我们的 `adapter/src/agents/*` 文件**不直接 import OMO 的 agent 实现**，而是读 OMO core 包的 JSON 配置 + 加 DSH preset metadata 包装 |
-| OMO 加新 hook | `scripts/upstream-watch.sh` 提示"OMO 新加 3 个 hook"；我们手动加 3 个 DSH event listener |
-| DSH 改事件签名 | 集中放在 `adapter/src/dsh-compat.ts` 一个文件里做"事件 shim"，全 adapter 共享 |
+| OMO 改 hook 签名 | `patches/omo-dsh/omo-hooks/*/listener.ts` 是 listener 翻译层（DSH event → OMO hook call）；OMO 改 hook 签名时，tsc 报错精准指向 listener，10 分钟–1 小时修复 |
+| OMO 改 agent 配置 | `patches/omo-dsh/omo-agents/*/preset.ts` 是 preset 包装（OMO JSON config → DSH preset）；OMO 改 agent 定义时，重读 OMO JSON 重新包装 |
+| OMO 改 core API | npm lockfile pin + `pnpm test` 在升级时跑通；tsc 报错精准指向 |
+| OMO 加新 hook | `scripts/upstream-watch.sh` 提示"OMO 新加 3 个 hook"；我们手动加 3 个 listener |
+| DSH 改事件签名 | 集中放在 `patches/omo-dsh/omo-hooks/dsh-compat.ts` 一个文件里做"事件 shim"，全 adapter 共享 |
+| 上游 release 频率不可控 | pin 到 minor 版本；不自动追 dev branch；只在显式 bump 时升级 |
 | OMO license 变更 | `scripts/verify-licenses.sh` 每次 CI 跑，禁止误改成更严格的 license |
-| 上游 release 频率不可控 | pin 到 SHA，不自动追 dev branch；只在显式 bump 时升级 |
 
 ### 3.6 测试金字塔
 
 | 层级 | 内容 | 工具 |
 |---|---|---|
 | Unit | OMO core 包在我们 workspace 里的纯函数行为 | vitest |
-| Adapter unit | 30 hook 翻译正确性（喂入模拟 DSH 事件，验证 OMO hook 被调且参数对） | vitest + DSH `dsh-agent-loop-testkit` |
+| Adapter unit | listener 包装正确性（喂入模拟 DSH 事件，验证 OMO hook 被调且参数对） | vitest + DSH `dsh-agent-loop-testkit` |
 | Integration | 11 agent preset 启动后能看到正确 system prompt / tools / 路由 | DSH `examples/agent-spine-demo` 模式 |
 | E2E | 真实跑 OMO "ultrawork" 流程在 DSH 上 | DSH `vitest.e2e.config.ts` + LLM mock server |
 | Snapshot | OMO agent preset 的 system prompt diff | `DSH_SNAPSHOT=record` |
@@ -427,16 +452,18 @@ pnpm typecheck && pnpm test
 只列契约，不写实现：
 
 ```text
-scripts/bump-omo.sh <tag>
-  - git fetch omo-upstream <tag>
-  - git subtree pull --prefix=omo/ omo-upstream <tag> --squash
-  - 触发 pnpm install
-  - 返回非 0 如果 cordis compat 检查失败
+scripts/bump-omo.sh <version>
+  - pnpm update oh-my-opencode @oh-my-opencode/* --filter <version>
+  - pnpm install
+  - pnpm typecheck && pnpm test
+  - 如果有 listener 签名破坏：tsc 报错精准指向
+  - 输出 diff 摘要：受影响 listener 列表 + OMO 这次 changelog 链接
+  - 返回非 0 如果测试不过
 
-scripts/conflict-scan.sh
-  - diff omo/HEAD~1 omo/HEAD --name-only
-  - 对每个改名文件，检查 adapter/src/ 里有没有同名文件
-  - 输出可能被影响的 adapter 文件清单
+scripts/bump-dsh.sh <version>
+  - pnpm update @deepseek-ai/dsh-* --filter <version>
+  - pnpm typecheck && pnpm test
+  - 同上格式输出
 
 scripts/upstream-watch.sh omo --since 2w
   - 调 GitHub API 列 commits
@@ -447,6 +474,8 @@ scripts/verify-licenses.sh
   - 扫描 pnpm-lock.yaml + 我们写的 package.json
   - 任何依赖 license 不是 MIT / Apache-2.0 / BSD / ISC / SUL-1.0（仅 OMO）就 fail
 ```
+
+升级 OMO 的实际工作量：**5 分钟（脚本）+ 0–1 小时（修 listener）**。
 
 ### 3.8 升级节奏与可观测性
 
@@ -463,33 +492,25 @@ scripts/verify-licenses.sh
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| **OMO SUL-1.0 限制商用** | 不能把 OMO 派生作品商业销售；外部用户拿到 patch 框架时需自带 SUL-1.0 | 见 §6 详细 license 策略；**MVP 阶段只做内部使用，外发需要法务评估** |
-| **OMO `omo-opencode` 是最大耦合 adapter** | 这是 OMO 还在重构的部分（ROADMAP 说"still strongly coupled to OpenCode in its largest adapter"） | 我们**不** import `omo-opencode`，只 import OMO 的 19 core 包 + 4 个小 adapter（pi-goal / pi-webfetch / omo-codex / omo-senpi）的逻辑 |
-| **DSH 还是 0.1.0-rc.5** | API 未稳定，patch 升级时 DSH 本身也可能在变 | pin 到 DSH minor 版本；bump 时单独发一版 |
-| **Windows / WSL 体验** | DSH 有 `bash-sandbox`、`pwsh-sandbox`、`native/landlock-run` 表明做了跨平台；OMO 有 `git-bash-mcp` 表明也对 Windows 友好 | 移植时需要写跨平台 e2e；Windows 体验可能比 macOS/Linux 慢一拍 |
-| **LLM adapter 工作量被低估** | 6 个 llm-* 适配器每个 200–500 行，第一期只接 1–2 个 | 第一期 MVP 只接 DeepSeek + 一个 OpenAI-compatible 代理（覆盖 80% 用例）；其余按需补 |
-| **OMO telemetry 走 PostHog 协议** | DSH 用 OTel 协议，桥接有工作 | 用现成的 `@opentelemetry/exporter-prometheus` 或自己写 30 行的 PostHog exporter |
+| **OMO SUL-1.0 限制商用** | 派生作品不能商业销售 | 框架 dual license (MIT OR SUL-1.0)，分发热衷于"免费 + 非商业"路径；**不做销售** 满足 SUL-1.0 |
+| **OMO `omo-opencode` 还在重构** | OMO 公开说"still strongly coupled to OpenCode in its largest adapter" | 我们不 import `omo-opencode`；只 import 19 core 包 + 4 小 adapter（pi-goal / pi-webfetch / omo-codex / omo-senpi）|
+| **DSH 还是 0.1.0-rc.5** | API 未稳定 | pin 到 DSH minor 版本；bump 时单独发一版 |
+| **Windows / WSL 体验** | 跨平台可能比 macOS/Linux 慢 | 写跨平台 e2e；Windows MVP 不强求（推荐 MVP 仅 macOS + Linux）|
+| **LLM adapter 工作量被低估** | 6 个 llm-* 每个 200–500 行 | 第一期 DeepSeek + OpenAI-compatible；按需补 |
+| **OMO telemetry PostHog vs DSH OTel** | 桥接有工作 | 30 行 PostHog exporter 接到 OTel；默认 opt-out |
 
 ### 4.2 软风险（可以接受）
 
 | 风险 | 影响 |
 |---|---|
-| OMO 维护者 反对加 DSH adapter | 几乎不会（README/ROADMAP 都明确欢迎新 adapter；philosophy 也支持每个 adapter 独立写）|
+| OMO 维护者 反对加 DSH adapter | 几乎不会（README/ROADMAP 都明确欢迎新 adapter）|
 | DSH 上游 event 改名 | DSH 0.x 阶段 0.1 → 0.2 → 0.3 都会 break 一点，0.1 → 1.0 之后会稳 |
-| OMO 加新 hook 类型 DSH 没见过 | 上游会先在 OpenCode adapter 加，DSH 我们加监听器即可 |
-| 我们 adapter 的代码 100% 由 OMO 翻译 | 这是事实，**注意 attribution** —— README/THIRD_PARTY_LICENSES.md 必须明列 |
+| OMO 加新 hook 类型 DSH 没见过 | 上游会先在 OpenCode adapter 加，DSH 我们加 listener 即可 |
+| 框架代码 100% 引用 OMO 上游 | 框架本身只是薄 listener 包装；注意 attribution + license 双协议 |
 
-### 4.3 暂未决（Plan 阶段需要用户决策）
+### 4.3 暂未决
 
-| 问题 | 备选 |
-|---|---|
-| 工作区放在 `oh-my-opendsh/` 仓库还是 fork DSH monorepo 内部？ | A. **独立仓库 + git subtree**（推荐：解耦清晰，license 干净）<br>B. fork DSH monorepo，在 `packages/adapter/omo-dsh/` 加一个包（侵入大） |
-| LLM 适配器第一期覆盖哪些 provider？ | A. 仅 DeepSeek + OpenAI-compatible（80% 用例，2 周）<br>B. 全 6 个（6 周） |
-| 是否同时支持 DSH 的 web UI（`apps/web-frontend`）做 OMO Team Mode 可视化？ | A. 第一期只做 CLI，第二期再做 web（推荐）<br>B. 第一期就上 web（多 3–4 周） |
-| 是否要把适配器作为上游 PR 推到 DSH 官方？ | A. 不推，自家仓库 + subtree（license 干净，灵活）<br>B. 推官方 PR（荣耀大但 license 协调成本高） |
-| 是否同步给 OMO 提 PR（"om 的 dsh 适配器"作为 omo-dsh adapter）？ | A. 不提，作为 OMO 用户而非 OMO 贡献者（避免和 OMO 维护者哲学冲突）<br>B. 提 PR 作为 showcase（风险：OMO 维护者可能"过抽象"反对） |
-| bump 频率：双周 vs 双月 vs 季度？ | 默认 **双月**（OMO 发布频率约每月 1–2 次 minor，太快会冲突） |
-| OMO 上游拿不下来（极端情况，OMO 项目终止）| 我们还有 19 core 包 + DSH 一整套，至少能维持一个"OMO 风格但 DSH-native"的等价体验 |
+本节原列的 6 个决策点已全部由用户确认（见 §10 更新版）。其他待决项也集中在 §10。
 
 ---
 
@@ -497,15 +518,16 @@ scripts/verify-licenses.sh
 
 | 维度 | 决策 | 理由 |
 |---|---|---|
-| 物理形态 | **独立 `oh-my-opendsh/` 仓库 + git subtree 引入 DSH 和 OMO** | 干净 license、干净依赖图、容易 fork |
-| 移植策略 | **消费 OMO 19 core 包 + 写一个 `omo-dsh-adapter` Cordis plugin** | 与 OMO "adapter 是独立写" 的哲学一致 |
-| 适配器挂载点 | **`packages/adapter/omo-dsh/` + `cordis.patch.yml` + `omo.profile.json`** | 用 DSH 自己的 profile/bundle 机制，未来加 DSH 官方 features 自动获益 |
-| 命名 | `dsh --profile omo` 启动 OMO 模式；保留 OMO 自己的 `omo` 命令别名为 `dsh omo` 子命令 | 兼容 OMO 用户习惯 |
-| LLM | 第一期 DeepSeek + OpenAI-compatible，第二期补全 | MVP 快速 + 覆盖 80% 用例 |
-| 升级节奏 | OMO **双月** bump，DSH **双月** bump | OMO 节奏匹配，DSH 节奏匹配 |
+| 物理形态 | **独立 `oh-my-opendsh/` 仓库 + scratch plugin 模式**（DSH 官方 `--patch`）| 零侵入、license 干净、容易 fork |
+| 移植策略 | **直接 import OMO 19 core + 4 adapter 源码 + 写薄 listener 层** | 升级成本最低（≈1 小时）|
+| 适配器形态 | **`patches/omo-dsh/{agents,hooks,team-ui,bundle}/` 4 个 sub-plugin + 根 cordis.yml** | 4 个 DSH 官方 plugin 形态（tool/hook/UI/protocol-driver）|
+| 加载方式 | **`dsh web --patch ./oh-my-opendsh/cordis.yml`** | DSH 官方 scratch plugin 模式，DSH 零修改 |
+| 命名 | `oh-my-opendsh`（区别于 OMO 原版）| 避免商标混淆 |
+| LLM | 第一期 DeepSeek + OpenAI-compatible（via `dsh-llm-pi-ai`）；其余按需补 | MVP 快速 + 80% 覆盖 |
+| 升级节奏 | OMO **事件驱动**（release 出就 bump），DSH **双月** bump | 双方节奏匹配 |
 | 测试 | 全套 DSH gate (`test` / `test:e2e` / `test:snapshot` / `verify-licenses`) | 复用 DSH 已有的 CI |
-| 文档 | 8 篇 doc（升级 SOP、hook 翻译表、agent preset schema、license 指引 …） | 团队后续维护需要 |
-| License | 框架本身 **MIT**；分发的派生作品中 OMO 部分保留 **SUL-1.0**，并在根目录加 `THIRD_PARTY_LICENSES.md` | 合规 |
+| 文档 | 8 篇 doc + 升级 playbook 验证 | 团队后续维护需要 |
+| License | **MIT OR SUL-1.0**（dual license）| 升级最省事，license 复杂度低（不销售前提）|
 
 ---
 
@@ -514,7 +536,7 @@ scripts/verify-licenses.sh
 ### 6.1 关键事实
 
 - **DSH**: MIT（友好）
-- **OMO**: Sustainable Use License v1.0（`/home/linletian/GithubRepo/oh-my-openagent/LICENSE.md`）
+- **OMO**: Sustainable Use License v1.0（`<OMO_REPO>/LICENSE.md`）
   - 允许：用 / 复制 / 分发 / 修改 / 准备派生作品
   - **限制 A**：仅"自己的内部业务目的"或"非商业或个人使用"可使用 / 修改
   - **限制 B**：分发给他人时必须**免费 + 非商业**
@@ -526,72 +548,43 @@ scripts/verify-licenses.sh
 
 | 场景 | 是否允许 | 处理 |
 |---|---|---|
-| 内部 MiniMax 团队使用 patch 框架 | ✅ 允许 | 直接用 |
-| 把 patch 框架的派生作品发到 GitHub 公开 | ⚠️ 允许，**但** 必须免费 + 非商业 + 保留 SUL-1.0 | repo 加 `LICENSE` = SUL-1.0；`THIRD_PARTY_LICENSES.md` 列明 OMO 部分来源；README 显式声明"non-commercial use" |
+| 内部团队使用 patch 框架 | ✅ 允许 | 直接用 |
+| 把 patch 框架发到 GitHub 公开 | ✅ 满足（免费 + 非商业）| repo 加 `LICENSE = MIT OR SUL-1.0`；`LICENSES/oh-my-openagent.LICENSE.md` 原样放 OMO 文本；README 显式声明 dual license |
 | 把 patch 框架的派生作品给客户 | ❌ **违反 SUL-1.0**（商业分发） | 不要做；客户需要自己跑 OMO 上游 |
 | 在 patch 框架里"卖服务 / SaaS" | ⚠️ 灰色（"Use" vs "Distribute"）| 法务评估；可能允许只要不发布派生作品 |
-| 仅用 OMO 的 API 思想重新实现，不复制源码 | ✅ 允许 | 这是 clean-room rewrite；我们 adapter 是翻译而非 import，所以这条路畅通 |
-| 在 patch 框架里 import `omo-core/*` 源码 | ⚠️ 受 SUL-1.0 传染 | 仍可发，但**派生作品**整体 SUL-1.0 |
+| 在 patch 框架里 import `omo-core/*` 源码 | ✅ 满足（派生作品整体受 SUL-1.0 传染，但以 dual license 形式发布）| 仍可发；框架整体 dual license（MIT OR SUL-1.0）|
+| 仅用 OMO 的 API 思想重新实现，不复制源码 | ✅ 允许 | clean-room rewrite；可用但**升级成本高**（不推荐）|
 
 ### 6.3 缓解建议
 
-1. **adapter 本身尽量"薄"**：我们的 `adapter/src/*` 文件**翻译** OMO hook 行为，**不直接 import OMO 源码**。这一点可行，因为 DSH 的事件 listener 签名（`tools/post-execute` waterfall）和 OMO 的 hook 签名（`postToolUse`）形态相近，翻译成本不高。
-2. **OMO core 包**（19 个）可以**作为 npm 依赖**而非 git subtree。这样 patch 框架的 `package.json` 里只有 OMO 上游 release，不需要把 OMO 源码进我们的仓库 → 我们的 repo 严格 MIT，OMO 版权归 OMO。
-3. **如果选 git subtree 模式**（更深的"可持续 patch"）→ 我们仓库的 `omo/` 子目录按 SUL-1.0 暴露，框架整体 **dual license**（`MIT OR SUL-1.0`），用户在安装时选 license。
+1. **dual license（推荐）**：框架 `package.json` 写 `"license": "MIT OR SUL-1.0"`，`LICENSES/` 放两个全文。这让 OMO 源码可被直接 import，升级成本最低（5 分钟 + 0–1 小时修 listener）；同时给最终用户选择空间（用 OMO 时遵守 SUL-1.0，不用时遵守 MIT）。
+2. **npm 依赖 + 直接 import**：OMO 19 core + 4 adapter 通过 `pnpm i oh-my-opencode` 拉入 `node_modules/`。我们的 `patches/omo-dsh/omo-hooks/*/listener.ts` 是 listener 包装，import OMO 的 hook 函数并加 DSH 事件转换。
+3. **clean-room（不推荐）**：我们的 adapter 全自己写，不 import OMO 源码。license 最干净（框架纯 MIT），但每次 OMO 升级需要重写翻译层（1–5 天 vs 1 小时），得不偿失。
 
 ### 6.4 推荐默认
 
-**采用方案 2**（OMO 作 npm 依赖，patch 框架本身纯 MIT）。这能让 patch 框架以 MIT 在 GitHub 公开，最大化"快速移植最新 omo"的便利性，同时 SUL-1.0 通过 npm 依赖自然传递（用户从 npm 装 OMO 时已同意 SUL-1.0）。
+**采用方案 1（dual license + 直接 import OMO 源码）**。理由：
+- 升级成本最低（5 分钟 + 0–1 小时修 listener）
+- 用户从 npm 装 OMO 时已经同意 SUL-1.0；MIT OR SUL-1.0 的双协议给最终用户选择空间
+- 不做销售 → SUL-1.0 的"非商业"完全满足
+- 框架仓库本身可以**纯 MIT 形式**展示给法律审查更严格的团队
 
-**例外**：如果将来要二次修改 OMO core 包本身（不只是消费 API），则需要切到方案 3（dual license）。
-
----
-
-## 7. 实施路线（待用户批准后启动）
-
-### Phase 0：脚手架（1 周）
-- 初始化 `oh-my-opendsh/` 仓库，pnpm workspace 配置
-- 引入 DSH v0.1.0-rc.5（git subtree 到 `dsh/`）
-- 引入 OMO v3.x（git subtree 到 `omo/` 或 npm 依赖，先 npm 依赖）
-- 跑通 `dsh --profile omo` 启动空 profile
-
-### Phase 1：核心联通（2 周）
-- 写 `adapter/src/index.ts`（空 Cordis plugin）
-- 写 `cordis.patch.yml` 加载 plugin
-- 跑通 1 个 OMO agent preset + 1 个 hook 翻译作为样板
-- 建立"hook 翻译表"文档
-
-### Phase 2：能力平移（8 周）
-- 接入 11 个 agent preset
-- 接入 30 个 hook 翻译（按重要度排序：先 IntentGate / Ultrawork / Goal / LSP / Comment-checker / Hashline / Todo Enforcer，后 start-work / team-tool-gating / preemptive-compaction …）
-- 接入 6 个 LLM adapter（第一期只 2 个）
-- 接入 MCP 桥接
-
-### Phase 3：Team Mode + UX（3 周）
-- Team Mode 移植
-- web UI 验证（如要做）
-
-### Phase 4：硬化 + 文档（2 周）
-- 全套 CI gate
-- 8 篇 doc
-- 升级 playbook 验证一次（"假设 OMO 这周发了 v3.3.0，我们能不能在 1 天内完成"）
-
-### 总计：~16 周（一人主力 MVP）
+**例外**：如果将来要二次修改 OMO core 包本身（不只是消费 API），仍可继续走 dual license，无需切换。
 
 ---
 
 ## 8. 验收标准（Definition of Done for MVP）
 
-1. ✅ `dsh --profile omo` 在 Linux + macOS + Windows 三个平台都能冷启动到 idle
+1. ✅ `dsh web --patch ./oh-my-opendsh/cordis.yml` 在 macOS + Linux 都能冷启动到 idle（Windows 列为后续）
 2. ✅ 11 个 OMO agent 全部能注册为 DSH preset，system prompt 与 OMO 原版等价（snapshot diff 0）
-3. ✅ 30+ OMO hook 全部挂在 DSH 事件上，单测覆盖每个 hook 的 happy path
+3. ✅ 30+ OMO hook 全部通过 DSH event listener 挂上，单测覆盖每个 listener 的 happy path
 4. ✅ `ultrawork / ulw / team / hyperplan / search` 5 个命令可用
 5. ✅ LSP / ast-grep / codegraph / web-search 四个 MCP 都能起来
-6. ✅ Team Mode 至少能跑 lead + 2 members（member 数 8 是后续工作）
+6. ✅ Team Mode 至少能跑 lead + 2 members + web 可视化（member 数 8 是后续工作）
 7. ✅ Hashline edit 工具可工作
-8. ✅ 端到端 smoke test：`echo "ultrawork: 重构 foo.ts" | dsh --profile omo` 能跑通
-9. ✅ `scripts/bump-omo.sh v3.x.0` 在 5 分钟内跑完；conflict-scan 输出有界
-10. ✅ 框架本身的 LICENSE 是 MIT；OMO 部分的 license 显式声明
+8. ✅ 端到端 smoke test：`echo "ultrawork: 重构 foo.ts" | dsh --profile omo --patch ./oh-my-opendsh/cordis.yml` 能跑通
+9. ✅ `./scripts/bump-omo.sh v3.x.0` 在 5 分钟内跑完；listener 受影响清单有界
+10. ✅ 框架 LICENSE 是 `MIT OR SUL-1.0`；OMO LICENSE 原样在 `LICENSES/`；README 顶部致谢
 11. ✅ 8 篇 doc 完成
 12. ✅ CI 全绿（DSH 的 check:all 通过）
 
@@ -599,34 +592,173 @@ scripts/verify-licenses.sh
 
 ## 9. 参考材料（仓库内部链接）
 
-- DSH 架构概览：`/home/linletian/GithubRepo/deepseek-harness/docs/architecture.md`
-- DSH agent 生命周期：`/home/linletian/GithubRepo/deepseek-harness/docs/agent-lifecycle.md`
-- DSH 工具执行管线：`/home/linletian/GithubRepo/deepseek-harness/docs/tool-execution-pipeline.md`
-- DSH Cordis 入门：`/home/linletian/GithubRepo/deepseek-harness/docs/cordis-primer.md`
-- DSH bundle 范例：`/home/linletian/GithubRepo/deepseek-harness/packages/bundle/base/package.json`
-- DSH hook 协议：`/home/linletian/GithubRepo/deepseek-harness/packages/hooks/hook-protocol/package.json`
-- DSH claude/codex hook 桥接：`/home/linletian/GithubRepo/deepseek-harness/packages/hooks/hooks-claude-code/`, `.../hooks-codex/`
-- DSH subagent 系列：`/home/linletian/GithubRepo/deepseek-harness/packages/subagent/`
-- DSH goal 服务：`/home/linletian/GithubRepo/deepseek-harness/packages/goal/`
-- DSH workflow / ralph：`/home/linletian/GithubRepo/deepseek-harness/packages/workflow/`
-- DSH todo / plan / skill / compaction：`/home/linletian/GithubRepo/deepseek-harness/packages/{todo,plan,skill,compaction}/`
-- OMO ROADMAP：`/home/linletian/GithubRepo/oh-my-openagent/ROADMAP.md`
-- OMO hooks 目录：`/home/linletian/GithubRepo/oh-my-openagent/packages/omo-opencode/src/hooks/`
-- OMO agents 目录：`/home/linletian/GithubRepo/oh-my-openagent/packages/omo-opencode/src/agents/`
-- OMO team-core（harness-agnostic）：`/home/linletian/GithubRepo/oh-my-openagent/packages/team-core/src/index.ts`
-- OMO LICENSE：`/home/linletian/GithubRepo/oh-my-openagent/LICENSE.md`
+- DSH 架构概览：`<DSH_REPO>/docs/architecture.md`
+- DSH agent 生命周期：`<DSH_REPO>/docs/agent-lifecycle.md`
+- DSH 工具执行管线：`<DSH_REPO>/docs/tool-execution-pipeline.md`
+- DSH Cordis 入门：`<DSH_REPO>/docs/cordis-primer.md`
+- DSH bundle 范例：`<DSH_REPO>/packages/bundle/base/package.json`
+- DSH hook 协议：`<DSH_REPO>/packages/hooks/hook-protocol/package.json`
+- DSH claude/codex hook 桥接：`<DSH_REPO>/packages/hooks/hooks-claude-code/`, `.../hooks-codex/`
+- DSH subagent 系列：`<DSH_REPO>/packages/subagent/`
+- DSH goal 服务：`<DSH_REPO>/packages/goal/`
+- DSH workflow / ralph：`<DSH_REPO>/packages/workflow/`
+- DSH todo / plan / skill / compaction：`<DSH_REPO>/packages/{todo,plan,skill,compaction}/`
+- OMO ROADMAP：`<OMO_REPO>/ROADMAP.md`
+- OMO hooks 目录：`<OMO_REPO>/packages/omo-opencode/src/hooks/`
+- OMO agents 目录：`<OMO_REPO>/packages/omo-opencode/src/agents/`
+- OMO team-core（harness-agnostic）：`<OMO_REPO>/packages/team-core/src/index.ts`
+- OMO LICENSE：`<OMO_REPO>/LICENSE.md`
 
 ---
 
-## 10. 待用户确认（AskUser）
+## 10. 决策记录
 
-进入实现前，需要用户拍板的关键选择（**不阻塞写代码，但会影响 §5 推荐方案**）：
+### 10.1 已确认（2026-08-16）
 
-1. **物理形态**：独立仓库（推荐）vs fork DSH monorepo 加包
-2. **OMO 引入方式**：npm 依赖（推荐，patch 框架纯 MIT）vs git subtree（dual license）
-3. **LLM 范围**：第一期 2 个 provider（DeepSeek + OpenAI-compatible）vs 6 个全做
-4. **web UI**：MVP 是否包含 web 可视化（影响 3–4 周）
-5. **是否要给 OMO 官方提 PR**：作为 OMO 外部贡献者（可能引发"过抽象"争议）vs 纯用户身份
-6. **license 风险评估**：是否需要走法务（如果只内部用可跳过）
+- ✅ **1. 物理形态**：独立 `oh-my-opendsh/` 仓库
+- ✅ **2. OMO 引入方式**：DSH 官方 scratch plugin 模式（`dsh --patch` overlay）
+- ✅ **3. LLM 范围**：全做 + 分期 + 优先社区复用
+- ✅ **4. 可视化**：方案 B（web ChatNode via `ConversationNodeDefinition`）
+- ✅ **5. OMO PR**：不给外部 PR；遵守 License 规范 + 致谢
+- ✅ **6. 升级方式**：方案 B（dual license + 直接 import OMO 源码）
 
-这 6 个问题在 Plan 阶段只需要答 1–2 个最影响方向的；其余可以在 Phase 0/1 阶段决定。
+### 10.2 仍需确认的细节
+
+下面 8 条建议在后续迭代中定下来；带"推荐"的是我的默认建议，不带的是必须你拍板：
+
+#### 10.2.1 OMO 19 core 包 pin 策略
+
+| 备选 | 含义 |
+|---|---|
+| A. exact（`3.2.0`）| 完全不自动接 patch |
+| B. caret（`^3.2.0`）| **推荐**：接 patch + minor，OMO 公开 bug fix 自动进入 |
+| C. tilde（`~3.2.0`）| 只接 patch |
+
+#### 10.2.2 DSH 自身 pin 策略
+
+| 备选 | 含义 |
+|---|---|
+| A. pin minor（`0.1.x`）| **推荐**：DSH 0.x 阶段 0.1→0.2 有 API 变化，pin minor 安全 |
+| B. pin patch（`0.1.5`）| 严格锁 |
+| C. 跟进 dev branch head | 激进，CI 要能跑通 head |
+
+#### 10.2.3 npm 包命名
+
+| 备选 | 含义 |
+|---|---|
+| A. `@oh-my-opendsh/*`（scoped）| **推荐**：4 个 sub-plugin 各自独立包；DSH 自家是 `@deepseek-ai/dsh-*` 同款模式 |
+| B. `oh-my-opendsh`（单包）| 4 个 sub-plugin 作为内部目录 |
+
+#### 10.2.4 Windows 是否在 MVP 范围
+
+| 备选 | 含义 |
+|---|---|
+| A. 是（写跨平台 e2e）| +1 周工作量 |
+| B. 否（macOS + Linux only）| **推荐**：DSH 0.1 跨平台坑多，MVP 不踩；Windows 留到 MVP 之后 |
+
+#### 10.2.5 Telemetry 默认状态
+
+| 备选 | 含义 |
+|---|---|
+| A. 默认 opt-in（用户主动开）| 最干净 |
+| B. 默认 opt-out（用户主动关）| **推荐**：对齐 OMO 原版 PostHog 默认；提供开箱即用 |
+| C. 完全不接 | 最省事但失去 OMO 兼容性 |
+
+#### 10.2.6 OMO 上游 release 通知
+
+| 备选 | 含义 |
+|---|---|
+| A. GitHub Watch + RSS | 最简，依赖个人习惯 |
+| B. GitHub Actions weekly cron + auto-issue | **推荐**：写个 `upstream-watch.yml` workflow，周一跑一次生成 issue 摘要 |
+| C. 订阅 OMO Discord announcements channel | 实时但有信息噪声 |
+
+#### 10.2.7 升级节奏
+
+| 备选 | 含义 |
+|---|---|
+| A. 事件驱动（OMO 发了 release 就 bump）| **推荐**：最省心 |
+| B. 双月 | 之前默认 |
+| C. 双周 / 季度 | 看你团队节奏 |
+
+#### 10.2.8 MVP 验收标准"必须 vs 后续"分层
+
+12 条验收标准里，**MVP 必须 6 条 + 后续 6 条**：
+
+| 层级 | 验收标准 # |
+|---|---|
+| **MVP 必须** | #1（启动）/ #2（11 agent preset）/ #3（30 hook listener）/ #9（bump 脚本）/ #10（license）/ #12（CI）|
+| **后续** | #4（5 命令）/ #5（4 MCP）/ #6（Team Mode + web）/ #7（hashline）/ #8（e2e smoke）/ #11（8 doc）|
+
+---
+
+## 11. 社区现状调研（2026-08-16 截屏）
+
+**核心结论**：在 2026-08-16 截屏，**没有任何公开项目在"把 OMO 移植到 DSH"**。我们是先发者。
+
+### 11.1 没有直接竞品
+
+| 查询内容 | 结果 |
+|---|---|
+| `"oh-my-openagent" "deepseek-harness" OR "dsh"` 全文搜索 | **0 个相关项目** |
+| GitHub repo 搜索 `topic:deepseek-harness + topic:oh-my-openagent` | **0 个相关 repo** |
+| `npm search oh-my-opendsh` | 0 结果 |
+| OMO 仓库 issue 搜索 `dsh OR deepseek` | 命中 #3788（"添加 DeepSeek V4 模型配置"，仅 model 路由，不涉及 DSH 框架）|
+
+### 11.2 OMO 官方对"新 harness adapter"的官方表态
+
+- **README 顶部**（`code-yeongyu/oh-my-openagent`）："Multi-Harness Agent OS Refactor in Progress ... we are restructuring the codebase to support multiple agent harnesses (OpenCode, Codex, Pi, Claude Code, and others)"。**官方明确欢迎新 adapter。**
+- **ROADMAP**（"Multi-Harness Support (Exploratory)" 节）：已落地 `omo-opencode` / `omo-codex` / `omo-senpi` / `pi-goal` / `pi-webfetch` 5 个 adapter。"We are skeptical of this abstraction"——但**反对的是"过度抽象"**，不是"新 adapter 本身"。每个 adapter 独立写是被鼓励的。
+- **贡献指南**：明确写了"Adding a New Agent / Hook / Tool / MCP Server"的模板，但**没有"Adding a New Harness Adapter"模板**。可以推断：OMO 期待新 adapter 由外部独立仓库实现，**不需要在 OMO 仓库内改动**。
+- **CONTRIBUTING.md 提到**：Harness-specific glue 是独立包（`omo-opencode/` / `omo-codex/` / `omo-senpi/` 都是平级 package）。我们 `omo-dsh` 完全契合这个模式。
+
+### 11.3 间接证据：DSH 社区"自下而上"已经在爆发
+
+DSH 8月13日发布后 3 天内（截至 8月16日）：
+
+| 现象 | 证据 |
+|---|---|
+| **爆炸式增长** | GitHub 1.5 小时破 24k star（破 Grok-1 记录），3 天接近 95k star |
+| **UI 皮肤在第一个周末出现** | `github.com/Small-tailqwq/dsh-deep-whale` 等换皮肤包 |
+| **换工具层** | 多个开发者把默认 tool 换成多模态版本 |
+| **换主循环** | "Agent 怎么运行的、下一步做什么、什么时候调用工具，全都自己手搓了"（@卡尔 评测原文）—— 48 小时内已有人这么做 |
+| **官方文档承认"一切皆插件"是核心设计** | 230+ workspace package，6 天从 0 到 2.4 万到 9.5 万 star 的曲线表明 DSH 社区**比 OMO 当年更早期就接受了"插件化"心智** |
+
+**对我们的含义**：DSH 是个**对第三方扩展友好的宿主**。我们发布 scratch plugin 后，DSH 社区很可能直接看到、试、给反馈——**首月就有真实用户**的概率比 OMO 早期更高。
+
+### 11.4 相关项目（非直接竞品，但值得研究）
+
+| 项目 | 做什么 | 与我们的关系 |
+|---|---|---|
+| **`oh-my-pi`**（11.1k stars） | Pi 的 fork，专门解决"harness problem"（编辑工具不稳定）—— 用了 hashline 机制，OMO 后来借鉴了 | **思路印证**——hashline 这个核心创新 OMO 已经做出来，我们可以直接 import 用；不需要重复发明 |
+| **`superpowers`**（126k stars） | 跨平台 Agent skill 系统（Claude Code / Cursor / Codex / OpenCode / Gemini CLI） | **方向印证**——证明"跨 harness 共享 skill / hook 概念"是有用户需求的 |
+| **`codeagents`**（wenshao 个人收集） | 收录各种 AI Agent 工具的对比 + 文档 | **间接对比**——他们已经写了 OMO 的 analysis（确认我们调研的版本和数据对得上）|
+| **`omo-senpi`**（OMO 自家） | OMO 的"独立 / native" 发行版（`npm i -g omo-ai@beta`） | **OMO 在 multi-harness 路上已经踩坑**——senpi 适配器最近 issue #6794 报告"omo senpi edition cannot resolve opencode omo config"—— config schema 兼容性问题。**这正好是 §10.2 要避免的坑** |
+
+### 11.5 OMO 维护者的"反过度抽象"哲学（关键约束）
+
+从 OMO ROADMAP：
+> "The industry changes too fast. Fixed patterns and agreed conventions should be implemented directly. Uncertain parts should not be over-abstracted. If an adapter for a new harness is needed, an agent can write it in one shot."
+
+**对 adapter 含义**：
+- ✅ **要做的**：写一个独立 `omo-dsh` adapter（独立仓库 + 独立命名 + 不在 OMO 仓库里改代码）
+- ❌ **不要做的**：不要在 OMO 仓库里提 PR 试图"加一个 DSH adapter 模板 / 抽象层 / 共享代码"——会被维护者以"反过度抽象"为由拒绝
+- ❌ **不要做的**：不要在 OMO Discord 提议"做 DSH 支持"——会被引导到"你自己写一个"的标准答案
+
+### 11.6 关键战略结论
+
+| 结论 | 行动 |
+|---|---|
+| **无直接竞品 → 首发动机会** | 尽早发布 v0.1 占领位置 |
+| **OMO 官方欢迎新 adapter → 无政治风险** | 不提 PR、不在 OMO 仓库改代码，作为外部独立项目运行 |
+| **OMO 哲学反对"grand unified abstraction"** | adapter 是"独立写一份"，**不要造"DSH 通用 adapter framework"**——直接做"omo-dsh"这一个 |
+| **DSH 社区 3 天就有 95k star → 真实需求存在** | 项目命名 / 文档 / README 都要面向"DSH 用户"写，而不是"OMO 用户"写 |
+| **senpi 适配器踩过的 config schema 坑**（issue #6794） | 我们 §10.2.8 的"必须 6 条"里加一条：必须先验证 `omo-config-core` schema 在 DSH 事件流下的兼容性 |
+| **oh-my-pi 11.1k stars 证明"harness problem"有市场** | 我们的 hashline 包装走 OMO 上游，**不要自己造**——但要在 README 显式致谢 oh-my-pi（hashline 概念的源头）|
+
+### 11.7 调研局限（不能下的结论）
+
+- 我没找到 OMO Discord 内部的讨论（Discord 抓取困难），可能有人在 Discord 提过"做 DSH 版"但 GitHub issues 上没有
+- 我没找到微信群 / 中文社区的讨论（可能 GitHub 之外的论坛有人提过）
+- DSH 发布 3 天太短，无法判断"DSH 社区是否长期繁荣"还是"fomo 短期高峰"
+
+**建议**：派一个人花 1 天扫一下 OMO Discord `#building-in-public` 频道、DSH 官方 Discord / 微信群、Reddit r/LocalLLaMA、HN。可能有意料之外的发现。
