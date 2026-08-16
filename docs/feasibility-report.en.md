@@ -1,6 +1,6 @@
 # Feasibility Report: Porting oh-my-openagent (OMO) to deepseek-harness (DSH) — Engineering & Sustainable Patch Framework
 
-> [中文版](./feasibility-report.md) | [← README](../README.md) | [README.en.md](../README.en.md)
+> **Primary report (English).** 中文翻译见 [可行性报告](./feasibility-report.md). 项目 README 见 [README.en.md](../README.en.md).
 >
 > Repository evidence snapshot:
 > - **DSH** `<DSH_REPO>/` v0.1.0-rc.5, MIT

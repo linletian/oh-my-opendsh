@@ -1,5 +1,7 @@
 # 可行性报告：基于 deepseek-harness (DSH) 移植 oh-my-openagent (OMO) 的工程化与可持续 patch 框架
 
+> 中文翻译；主报告（英文）见 [Feasibility Report (English)](./feasibility-report.en.md). 项目 README（中文）见 [README.md](../README.md).
+>
 > 仓库证据快照：
 > - **DSH** `<DSH_REPO>/` v0.1.0-rc.5, MIT
 > - **OMO** `<OMO_REPO>/` (HEAD 截屏, 实际仓库拼写为 `oh-my-openagent`，用户在指令中写成了 `oh-my-openagennt`)，SUL-1.0

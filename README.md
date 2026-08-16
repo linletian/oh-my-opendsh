@@ -6,7 +6,7 @@
 [![Framework: DSH MIT](https://img.shields.io/badge/framework-DSH%20MIT-green)](https://github.com/deepseek-ai/deepseek-harness)
 [![Upstream OMO: SUL-1.0](https://img.shields.io/badge/upstream%20OMO-SUL--1.0-orange)](https://github.com/code-yeongyu/oh-my-openagent)
 
-[English version](./README.en.md) | [调研报告 中文](./docs/feasibility-report.md) | [Feasibility Report English](./docs/feasibility-report.en.md)
+> 中文翻译；主入口（英文）见 [README.en.md](./README.en.md)。调研报告（中文）见 [可行性报告](./docs/feasibility-report.md)。
 
 ## 项目目标
 

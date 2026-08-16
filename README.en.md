@@ -6,7 +6,7 @@
 [![Framework: DSH MIT](https://img.shields.io/badge/framework-DSH%20MIT-green)](https://github.com/deepseek-ai/deepseek-harness)
 [![Upstream OMO: SUL-1.0](https://img.shields.io/badge/upstream%20OMO-SUL--1.0-orange)](https://github.com/code-yeongyu/oh-my-openagent)
 
-[中文版](./README.md) | [Feasibility Report English](./docs/feasibility-report.en.md) | [调研报告 中文](./docs/feasibility-report.md)
+> **Primary entry (English).** For the Chinese version, see [README.md](./README.md). For the full research report, see [Feasibility Report (English)](./docs/feasibility-report.en.md).
 
 ## Project Goal
 
