@@ -33,7 +33,7 @@ Every decision in this project is governed by these two principles, which have e
 
 🟡 **Pre-research complete**
 
-- ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md) — this file, English; [`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md) — Chinese translation, 11 sections, 2026-08-16)
+- ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 11 sections, 2026-08-16)
 - ✅ 6 key strategic decisions confirmed (independent repo / scratch plugin / phased LLM coverage / web ChatNode / no OMO PR / dual license + direct OMO import)
 - ⏳ 8 detail decisions pending (OMO/DSH pin strategy, npm package naming, Windows support scope, telemetry, release notifications, upgrade cadence, acceptance criteria layering, etc.)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
