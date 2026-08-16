@@ -363,7 +363,8 @@ oh-my-opendsh/                          # patch 框架仓库（独立 npm 包，
 │   └── oh-my-openagent.LICENSE.md      # OMO 原文原样
 ├── THIRD_PARTY_NOTICES.md              # 致谢 + attribution
 ├── docs/
-│   ├── feasibility-report.md           # 本文件
+│   ├── feasibility-report.md           # 英文主报告
+│   ├── feasibility-report_zh-CN.md     # 本文件（中文）
 │   ├── upgrade-playbook.md
 │   ├── hook-translation-table.md
 │   ├── agent-preset-schema.md
