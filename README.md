@@ -1,91 +1,91 @@
 # oh-my-opendsh
 
-> OMO 风格的 harness 工程能力，跑在 DSH 框架之上
+> OMO-style harness engineering capabilities, running on the DSH framework
 
 [![License: MIT OR SUL-1.0](https://img.shields.io/badge/license-MIT%20OR%20SUL--1.0-blue.svg)](./LICENSES/oh-my-openagent.LICENSE.md)
 [![Framework: DSH MIT](https://img.shields.io/badge/framework-DSH%20MIT-green)](https://github.com/deepseek-ai/deepseek-harness)
 [![Upstream OMO: SUL-1.0](https://img.shields.io/badge/upstream%20OMO-SUL--1.0-orange)](https://github.com/code-yeongyu/oh-my-openagent)
 
-> 中文翻译；主入口（英文）见 [README.en.md](./README.en.md)。调研报告（中文）见 [可行性报告](./docs/feasibility-report.md)。
+> **Primary entry (English).** For the Chinese version, see [README_zh-CN.md](./README_zh-CN.md). For the full research report, see [Feasibility Report](./docs/feasibility-report.md).
 
-## 项目目标
+## Project Goal
 
-把 [oh-my-openagent (OMO)](https://github.com/code-yeongyu/oh-my-openagent) 的 harness 能力体系（11 agent、54+ hook、LSP/AST-grep/codegraph MCP、`/goal`、`/ultrawork`、Team Mode、hashline edit、Rules Injection 等）以 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 官方 scratch plugin 形式（`dsh --patch` overlay）接到 DSH 框架上，并搭一个让 OMO 升级时 **1 小时内完成 rebase** 的可持续 patch 工程。
+Bring the harness capability system of [oh-my-openagent (OMO)](https://github.com/code-yeongyu/oh-my-openagent) (11 agents, 54+ hooks, LSP/AST-grep/codegraph MCP, `/goal`, `/ultrawork`, Team Mode, hashline edit, Rules Injection, etc.) onto the [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) framework as a DSH-official scratch plugin (loaded via `dsh --patch` overlay), and build a sustainable patch framework that lets us rebase against OMO upstream in **under 1 hour** per OMO bump.
 
-## 设计原则
+## Design Principles
 
-本项目所有决策都遵循以下两条原则，二者同等优先、缺一不可。
+Every decision in this project is governed by these two principles, which have equal priority and neither can be dropped.
 
-### 1. 充分利用 DSH 框架的灵活优势做事
-- 优先用 DSH 原生能力解决 OMO 需求，**不重复造轮子**（例：`ctx.goals` / `ctx.compaction` / `ctx.todo` / `ctx.skill` / `ctx.jobs` / `ctx.subagent` 等已覆盖 OMO 60% 能力）
-- 优先走 DSH 官方扩展路径（cookbook 的 4 种 plugin 形态 + scratch plugin `--patch` 模式）
-- 优先用 DSH 客户端能力做可视化（web ChatNode via `ConversationNodeDefinition`），不外挂 tmux
-- 优先用 DSH 自身的 CI 工具链（vitest / verify-licenses / cordis-catalog 检查）
+### 1. Fully leverage DSH's flexible advantages
+- **Prefer DSH-native capabilities** to satisfy OMO requirements — don't reinvent the wheel (e.g. `ctx.goals` / `ctx.compaction` / `ctx.todo` / `ctx.skill` / `ctx.jobs` / `ctx.subagent` already cover ~60% of OMO's surface)
+- **Prefer DSH-official extension paths** (the cookbook's 4 plugin shapes + the official scratch plugin `--patch` mode)
+- **Prefer DSH client capabilities** for visualization (web ChatNode via `ConversationNodeDefinition`) — don't tack on tmux externally
+- **Prefer DSH's own CI toolchain** (vitest / verify-licenses / cordis-catalog checks)
 
-### 2. 完整引入 OMO 的 harness 设计哲学，尊重 OMO 开源 License
-- 完整保留 OMO 能力体系（11 agent + 30+ hook + 5 MCP + Team Mode + hashline + 所有 slash command **全量移植**）
-- 直接 import OMO 19 个核心包源码（升级成本最低，5 分钟脚本 + 0–1 小时修 listener）
-- 完整尊重 OMO 的 SUL-1.0 开源 License（框架 dual license：**MIT OR SUL-1.0**）
-- 不向 OMO 提 PR（避免其"反过度抽象"的维护哲学冲突）
-- 不做销售（满足 SUL-1.0 的"非商业"要求）
+### 2. Fully honor OMO's harness design philosophy and open-source License
+- **Preserve OMO's capability system in full** (11 agents + 30+ hooks + 5 MCPs + Team Mode + hashline + every slash command — ported **completely, no capability cuts**)
+- **Directly import OMO's 19 core packages** (lowest upgrade cost: 5-minute script + 0–1 hour listener fix)
+- **Fully respect OMO's SUL-1.0 open-source License** (framework dual license: **MIT OR SUL-1.0**)
+- **No PRs to OMO** (avoids their "anti-over-abstraction" maintenance philosophy)
+- **No commercial distribution** (satisfies SUL-1.0's "non-commercial" requirement)
 
-## 当前状态
+## Current Status
 
-🟡 **预研完成**
+🟡 **Pre-research complete**
 
-- ✅ 调研报告完成（[`docs/feasibility-report.md`](./docs/feasibility-report.md)，11 节，2026-08-16）
-- ✅ 6 个关键方向决策已确认（独立仓库 / scratch plugin / 全 LLM 分期 / web ChatNode / 不给 OMO PR / dual license + 直接 import OMO）
-- ⏳ 8 个细节决策待定（OMO/DSH pin 策略、npm 命名、Windows 支持范围、telemetry、release 通知、升级节奏、验收分层等）
-- ⏳ 工作量粗估：~16 周（一人主力）
+- ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md) — this file, English; [`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md) — Chinese translation, 11 sections, 2026-08-16)
+- ✅ 6 key strategic decisions confirmed (independent repo / scratch plugin / phased LLM coverage / web ChatNode / no OMO PR / dual license + direct OMO import)
+- ⏳ 8 detail decisions pending (OMO/DSH pin strategy, npm package naming, Windows support scope, telemetry, release notifications, upgrade cadence, acceptance criteria layering, etc.)
+- ⏳ Workload rough estimate: ~16 weeks (one person lead)
 
-## 调研报告
+## Feasibility Report
 
-调研报告（中文）见 [可行性报告](./docs/feasibility-report.md)。
+Feasibility Report is at [feasibility-report.md](./docs/feasibility-report.md).
 
-## 关键事实
+## Key Facts
 
-| 项 | 值 |
+| Item | Value |
 |---|---|
-| **DSH 版本** | v0.1.0-rc.5（MIT） |
-| **OMO 上游** | 19 个 core 包 + 4 个小 adapter（harness-agnostic）（SUL-1.0） |
-| **本项目 license** | **MIT OR SUL-1.0**（dual license） |
-| **OMO LICENSE 原文** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |
-| **目标用户** | DSH 框架使用者 + 想用 OMO 风格 harness 的开发者 |
+| **DSH version** | v0.1.0-rc.5 (MIT) |
+| **OMO upstream** | 19 core packages + 4 small adapters (harness-agnostic) (SUL-1.0) |
+| **This project's license** | **MIT OR SUL-1.0** (dual license) |
+| **OMO LICENSE (original text)** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |
+| **Target users** | DSH framework users + developers who want OMO-style harness capabilities |
 
-## 工作量粗估
+## Workload Rough Estimate
 
-按工作类型分块（不构成实施计划，仅供可行性参考）：
+Workload breakdown by work type (not an implementation plan, just feasibility input):
 
-| 工作类型 | 估时 | 说明 |
+| Work Type | Estimate | Notes |
 |---|---|---|
-| 接 OMO 19 core 为 workspace 依赖 | 1 周 | typecheck 过 |
-| 写 adapter Cordis plugin | 4 周 | 11 agent + 30 hook 挂载 |
-| LLM adapter 补齐 | 2 周 | 先 DeepSeek + OpenAI compat |
-| MCP 桥接 | 2 周 | LSP / ast-grep / codegraph / git-bash / web |
-| Team Mode 移植 | 3 周 | 用 OMO team-core + DSH subagent |
-| Profile / bundle 化 | 1 周 | cordis.yml + omo.profile.json |
-| 端到端测试 + 性能调优 | 2 周 | smoke test |
-| 文档 + 上手指南 | 1 周 | docs/ |
-| **合计** | **~16 周 / 4 个月** | 一人主力 |
+| Wire OMO 19 core as workspace dependencies | 1 week | typecheck pass |
+| Write adapter Cordis plugin | 4 weeks | 11 agents + 30 hooks mounted |
+| LLM adapter completion | 2 weeks | DeepSeek + OpenAI compat first |
+| MCP bridging | 2 weeks | LSP / ast-grep / codegraph / git-bash / web |
+| Team Mode port | 3 weeks | using OMO team-core + DSH subagent |
+| Profile / bundle-ification | 1 week | cordis.yml + omo.profile.json |
+| End-to-end testing + performance tuning | 2 weeks | smoke test |
+| Docs + getting started guide | 1 week | docs/ |
+| **Total** | **~16 weeks / 4 months** | one person lead |
 
-详见调研报告 §2.10 移植工作量粗估 与 §8 验收标准。
+See report §2.10 (Port Workload Rough Estimate) and §8 (Acceptance Criteria) for details.
 
-## 致谢
+## Acknowledgements
 
-- [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) — OMO 上游，11 agent / 54 hook 的设计源头
-- [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) — DSH 框架，"一切皆插件" 的宿主
-- [can1357/oh-my-pi](https://github.com/can1357/oh-my-pi) — hashline 概念源头
-- [obra/superpowers](https://github.com/obra/superpowers) — 跨 harness skill 系统灵感
+- [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) — OMO upstream, design source of the 11 agents / 54 hooks
+- [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) — DSH framework, "everything is a plugin" host
+- [can1357/oh-my-pi](https://github.com/can1357/oh-my-pi) — origin of the hashline concept
+- [obra/superpowers](https://github.com/obra/superpowers) — inspiration for cross-harness skill system
 
 ## License
 
-本项目以 **MIT OR SUL-1.0** dual license 发布。
+This project is released under the **MIT OR SUL-1.0** dual license.
 
-- 框架代码部分以 MIT 协议发布
-- OMO 源码部分（通过 npm 依赖）以 OMO 自身 SUL-1.0 协议发布
-- OMO LICENSE 原文见 [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md)
-- 本项目不进行任何形式的商业分发
+- Framework code is released under MIT
+- OMO source (via npm dependency) is under OMO's own SUL-1.0
+- OMO LICENSE original text: [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md)
+- This project conducts no commercial distribution
 
 ---
 
-**English version**：[`README.en.md`](./README.en.md)
+**中文版**：[`README_zh-CN.md`](./README_zh-CN.md)
