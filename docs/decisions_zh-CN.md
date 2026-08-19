@@ -16,9 +16,9 @@
 
 ## 编号约定
 
-- **D#**（D1–D10）：已确认决策
+- **D#**（D1–D11）：已确认决策
 - **R#**（R1–R6）：风险处置决策（接受现状 / 暂不处理）
-- **O#**（O1–O8）：开放维度（其中 O2 / O4 已转为决策）
+- **O#**（O1–O8）：开放维度（其中 O2 / O4 / O8 已转为决策）
 - 引用格式：`决策文档 D7` / `decisions.md D7`
 
 ## 已确认决策
@@ -43,6 +43,12 @@
 | D9 | Windows / WSL：不纳入当前范围 | §10.4 |
 | D10 | 第三方署名：尊重原作者、完整署名 | §11.6 |
 
+### 2026-08-19（第三批，1 项）
+
+| # | 决策 | 依据 |
+|---|---|---|
+| D11 | MVP 范围：采纳《MVP PRD：协奏骨架》（[中文](./mvp-prd_zh-CN.md) / [English](./mvp-prd.md)），含「协奏模式（Concerto Mode）」命名与 Q-1～Q-4 全部决议 | §10.8；§12.7；§14 |
+
 ### 决策详情（完整措辞以此为准）
 
 **D7 — DSH pin 策略：pin minor（`0.1.x`）**
@@ -56,6 +62,9 @@
 
 **D10 — 第三方署名**
 尊重原作者、完整署名——hashline（概念源自 `oh-my-pi`）等在 `THIRD_PARTY_NOTICES.md` / README 致谢中完整标注（调研报告 §11.6）；具体措辞在实施时定。
+
+**D11 — MVP 范围：采纳《MVP PRD：协奏骨架》**
+采纳 [MVP PRD](./mvp-prd_zh-CN.md) 定义的 MVP 范围，关闭开放维度 O8（调研报告 §10.8）：最小骨架 = 新运行模式「协奏模式（Concerto Mode，标识 `concerto`）」+ 1 主 agent（omo-sisyphus）+ 1 subagent（omo-explore）+ 1 hook listener + 双模型路由（deepseek + pi-ai）；目标是验证假设 V1–V4（scratch plugin 冷启动 / per-subagent LLM 路由 / listener 翻译层 / subagent 限制链）并提前踩坑，不解决真实工程问题。OMO core 包 npm import 不并入 MVP（Q-2 选 B），为紧随其后的第一个 follow-up。完整范围、验收标准（AC-1～AC-9）与踩坑计划（P-1～P-9）以 MVP PRD 为准。
 
 ## 风险处置（2026-08-19）
 
@@ -81,12 +90,13 @@
 | O5 | Telemetry 默认状态 | 开放 | §10.5 |
 | O6 | OMO 上游 release 通知 | 开放 | §10.6 |
 | O7 | 升级节奏 | 开放 | §10.7 |
-| O8 | 能力面：MVP vs. follow-up 拆分 | 开放 | §10.8 |
+| O8 | 能力面：MVP vs. follow-up 拆分 | ✅ 已决 → D11 | §10.8 |
 
 ## 决策历史
 
 - **2026-08-16**：D1–D6 确认。
 - **2026-08-19**：D7–D10、R1–R6 确认；全部决策记录从可行性报告（原 §10.1 / §5.4）迁入本文档，可行性报告自此定位为纯调研依据（其 §10 仅保留开放维度的选项分析）。
+- **2026-08-19**：D11 确认（采纳 [MVP PRD](./mvp-prd_zh-CN.md)，含 Q-1～Q-4 决议）；开放维度 O8 关闭。
 
 ---
 

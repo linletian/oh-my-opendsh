@@ -40,13 +40,18 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 🟡 **预研完成**
 
 - ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，14 节：2026-08-16 主体 + 2026-08-19 追加调研）
-- ✅ 10 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
-- ⏳ 6 个开放维度待决策（OMO pin 策略、npm 命名、telemetry、release 通知、升级节奏、验收分层等；详见决策记录"开放维度"）
+- ✅ 11 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
+- ✅ MVP PRD 已采纳（[`docs/mvp-prd_zh-CN.md`](./docs/mvp-prd_zh-CN.md)：协奏模式 + 1 Agent + 1 Subagent 最小骨架，决策 D11）
+- ⏳ 5 个开放维度待决策（OMO pin 策略、npm 命名、telemetry、release 通知、升级节奏；详见决策记录"开放维度"）
 - ⏳ 工作量粗估：~16 周（一人主力）
 
 ## 项目决策
 
-项目决策记录见[决策记录](./docs/decisions_zh-CN.md)——已确认决策（D1–D10）、风险处置（R1–R6）、开放维度状态跟踪（O1–O8）。可行性报告是决策的调研依据。
+项目决策记录见[决策记录](./docs/decisions_zh-CN.md)——已确认决策（D1–D11）、风险处置（R1–R6）、开放维度状态跟踪（O1–O8）。可行性报告是决策的调研依据。
+
+## MVP PRD
+
+MVP 产品需求文档（已采纳，决策 D11）见 [MVP PRD：协奏骨架](./docs/mvp-prd_zh-CN.md)。
 
 ## 调研报告
 

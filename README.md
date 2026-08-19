@@ -40,13 +40,18 @@ Every decision in this project is governed by these two principles, which have e
 🟡 **Pre-research complete**
 
 - ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 14 sections: 2026-08-16 main body + 2026-08-19 follow-up research)
-- ✅ 10 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
-- ⏳ 6 open dimensions pending decision (OMO pin strategy, npm package naming, telemetry, release notifications, upgrade cadence, acceptance criteria layering, etc.; see "Open dimensions" in the decision record)
+- ✅ 11 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
+- ✅ MVP PRD adopted ([`docs/mvp-prd.md`](./docs/mvp-prd.md): Concerto Mode + 1 Agent + 1 Subagent minimal skeleton, decision D11)
+- ⏳ 5 open dimensions pending decision (OMO pin strategy, npm package naming, telemetry, release notifications, upgrade cadence; see "Open dimensions" in the decision record)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
 
 ## Project Decisions
 
-The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D10), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
+The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D11), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
+
+## MVP PRD
+
+The MVP product requirements document (adopted, decision D11) is at [MVP PRD: Concerto Skeleton](./docs/mvp-prd.md).
 
 ## Feasibility Report
 

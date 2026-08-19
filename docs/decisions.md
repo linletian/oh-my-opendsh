@@ -16,9 +16,9 @@
 
 ## ID conventions
 
-- **D#** (D1–D10): confirmed decisions
+- **D#** (D1–D11): confirmed decisions
 - **R#** (R1–R6): risk dispositions (accept as-is / defer)
-- **O#** (O1–O8): open dimensions (O2 / O4 have since become decisions)
+- **O#** (O1–O8): open dimensions (O2 / O4 / O8 have since become decisions)
 - Cite as: `decisions.md D7`
 
 ## Confirmed decisions
@@ -43,6 +43,12 @@
 | D9 | Windows / WSL: out of current scope | §10.4 |
 | D10 | Third-party attribution: respect original authors, full attribution | §11.6 |
 
+### 2026-08-19 (third batch, 1 item)
+
+| ID | Decision | Basis |
+|---|---|---|
+| D11 | MVP scope: adopt the "MVP PRD: Concerto Skeleton" ([English](./mvp-prd.md) / [中文](./mvp-prd_zh-CN.md)), including the "Concerto Mode / 协奏模式" naming and all Q-1–Q-4 resolutions | §10.8; §12.7; §14 |
+
 ### Decision details (authoritative wording)
 
 **D7 — DSH pin strategy: pin minor (`0.1.x`)**
@@ -56,6 +62,9 @@ Out of current scope — no cross-platform e2e; Windows users are blocked until 
 
 **D10 — Third-party attribution**
 Respect original authors, full attribution — hashline (concept originating in `oh-my-pi`) etc. fully credited in `THIRD_PARTY_NOTICES.md` / README acknowledgements (feasibility report §11.6); exact wording to be settled at implementation time.
+
+**D11 — MVP scope: adopt the "MVP PRD: Concerto Skeleton"**
+Adopts the MVP scope defined in the [MVP PRD](./mvp-prd.md), closing open dimension O8 (feasibility report §10.8): the minimal skeleton = a new run mode "Concerto Mode / 协奏模式 (identifier `concerto`)" + 1 main agent (omo-sisyphus) + 1 subagent (omo-explore) + 1 hook listener + dual model routes (deepseek + pi-ai); the goal is validating assumptions V1–V4 (scratch plugin cold start / per-subagent LLM routing / listener translation pattern / subagent restriction chain) and stepping on landmines early — no real engineering problems solved. OMO core package npm import is NOT merged into the MVP (Q-2 option B) and becomes the immediately following follow-up. Full scope, acceptance criteria (AC-1–AC-9), and the pitfall-hunting plan (P-1–P-9) are authoritative in the MVP PRD.
 
 ## Risk dispositions (2026-08-19)
 
@@ -81,12 +90,13 @@ The following risks were confirmed by the user as "accept as-is / defer"; the ri
 | O5 | Telemetry default state | Open | §10.5 |
 | O6 | OMO upstream release notification | Open | §10.6 |
 | O7 | Upgrade cadence | Open | §10.7 |
-| O8 | Capability scope: MVP vs. follow-up split | Open | §10.8 |
+| O8 | Capability scope: MVP vs. follow-up split | ✅ Decided → D11 | §10.8 |
 
 ## Decision history
 
 - **2026-08-16**: D1–D6 confirmed.
 - **2026-08-19**: D7–D10 and R1–R6 confirmed; all decision records migrated from the feasibility report (former §10.1 / §5.4) into this document. The feasibility report is now purely the research basis (its §10 keeps only the open-dimension options analysis).
+- **2026-08-19**: D11 confirmed ([MVP PRD](./mvp-prd.md) adopted, including Q-1–Q-4 resolutions); open dimension O8 closed.
 
 ---
 
