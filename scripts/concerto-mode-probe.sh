@@ -76,6 +76,17 @@
 #                 tool stays model-visible at the cap, and a depth-0 parent
 #                 passes the same gate (control). Session-free; T20 closes
 #                 the live-model half.
+#   T15 proof    — scripts/prove-route-logging.mjs boots the FULL real stack
+#                 (testkit five + JsonlSessionPersistence + AgentLoop +
+#                 SubagentRuntime + spawn provider) with scripted adapters on
+#                 the two REAL route names, runs one parent turn + one real
+#                 continuable start, then asserts on the real JSONL artifacts:
+#                 child `subagent/descriptor`.agentProvider/agentModel = the
+#                 resolved explore route, both agents' `request/header`.config
+#                 = their executed routes, the two routes differ (P-7 verdict:
+#                 logged — no listener code). --expect unlogged QA-proves the
+#                 verdict logic falls back to 'self-listener-needed' on
+#                 route-less logs. T20 closes the live-model half.
 # Idempotence   — boot 2 reuses boot 1's sandbox DSH_HOME: the sync must be a
 #                 no-op (`concerto preset unchanged`) and the roster identical.
 #
@@ -408,6 +419,25 @@ boot_once() {
   # A live model session closes the loop in T20.
   node "$REPO_ROOT/scripts/prove-explore-maxdepth.mjs" "$DSH_NM" "$materialized" \
     || fail "[$label] explore maxDepth=1 depth-cap proof failed (T13 real-path enforcement)"
+
+  # T15 (P-7, AC-5 observation half): the session JSONL is the route
+  # observation channel — no listener code needed. prove-route-logging.mjs
+  # boots the FULL real stack from the installed rc.6 (the five testkit
+  # services + JsonlSessionPersistence plaintext + AgentLoop +
+  # SubagentRuntime + the spawn provider), registers scripted mock adapters
+  # on OUR two real route names (from src/model-routes.ts), runs one parent
+  # turn and one real continuable explore-style start, then reads the real
+  # artifacts off disk: the child's `subagent/descriptor` must carry the
+  # resolved explore route (data.agentProvider/agentModel), both agents'
+  # `request/header` must carry their executed routes (data.header.config),
+  # the two routes must differ, and each dispatch must reach its adapter.
+  # The --expect unlogged mode proves the verdict logic honestly falls back
+  # to 'self-listener-needed' when route fields are absent. A live model
+  # session closes the loop in T20.
+  node "$REPO_ROOT/scripts/prove-route-logging.mjs" "$DSH_NM" \
+    || fail "[$label] route-logging proof failed (T15 real-path observation)"
+  node "$REPO_ROOT/scripts/prove-route-logging.mjs" "$DSH_NM" --expect unlogged \
+    || fail "[$label] route-logging verdict logic failed its fabricated-log QA (T15)"
 
   # T16 (FR-6, P-3): the Hard Blocks injection listener's registration is
   # observable at boot. Wording pinned to the plugin's marker; it must stay
