@@ -42,6 +42,21 @@
 #                 explore seat's from the llm-pi-ai adapter (sandbox-seeded
 #                 settings profile; registration is keyless — no API keys
 #                 exist in the sandbox, and none are needed for this gate).
+#   T11 binding  — the omo-explore dsh-tool-subagent instance (form A static
+#                 config) in the MATERIALIZED composition: the row exists with
+#                 toolName `explore`, both T11 sentinels are rendered away,
+#                 the persona block scalar carries the real explore persona,
+#                 agentOptions carries the env-resolved explore route, and the
+#                 pre-declared T12/T13 fields (toolFilter deny, maxDepth) are
+#                 present. THEN a real schema gate: the row's config is parsed
+#                 and validated by the INSTALLED dsh's own js-yaml +
+#                 dsh-tool-subagent Config (schemastery) — the exact code cordis
+#                 runs at mount. HONEST TIMING NOTE: dsh validates preset rows
+#                 LAZILY, at session composition (agent-presets mountPreset),
+#                 not at boot — this probe runs the same schema eagerly so a
+#                 broken row fails here instead of at first session creation.
+#                 A live tool-list observable needs a session and closes in
+#                 T19/T20.
 # Idempotence   — boot 2 reuses boot 1's sandbox DSH_HOME: the sync must be a
 #                 no-op (`concerto preset unchanged`) and the roster identical.
 #
@@ -125,6 +140,77 @@ llm-pi-ai:
   providers:
     $EXPLORE_PROVIDER:
       apiKeyEnv: DEEPSEEK_API_KEY
+EOF
+
+# T11 schema gate: resolve the INSTALLED dsh's node_modules from the dsh
+# binary itself (read-only — never modified), so the row is validated by the
+# exact js-yaml dialect (JSON_SCHEMA + !!js) and schemastery Config that
+# cordis runs at session-composition mount time.
+DSH_BIN="$(readlink -f "$(command -v dsh)")" || fail "cannot resolve dsh binary"
+DSH_NM="$(cd "$(dirname "$DSH_BIN")/../node_modules" && pwd)" || fail "cannot resolve dsh node_modules"
+[[ -f "$DSH_NM/@deepseek-ai/dsh-tool-subagent/lib/index.js" && -f "$DSH_NM/js-yaml/dist/js-yaml.mjs" ]] \
+  || fail "installed dsh is missing dsh-tool-subagent or js-yaml under $DSH_NM"
+VALIDATE_EXPLORE_MJS="$SANDBOX/validate-explore-row.mjs"
+cat > "$VALIDATE_EXPLORE_MJS" <<'EOF'
+// T11: validate the materialized explore row against the real rc.6 schema.
+// argv: <dsh node_modules dir> <materialized agent.cordis.yml> <provider> <model>
+import { readFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
+const [nm, compositionPath, expectedProvider, expectedModel] = process.argv.slice(2)
+const yaml = (await import(pathToFileURL(nm + '/js-yaml/dist/js-yaml.mjs').href)).default
+const { Config } = await import(pathToFileURL(nm + '/@deepseek-ai/dsh-tool-subagent/lib/index.js').href)
+const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
+  kind: 'scalar',
+  resolve: (d) => typeof d === 'string',
+  construct: (d) => ({ __jsExpr: d }),
+})
+const rows = yaml.load(readFileSync(compositionPath, 'utf8'), { schema: yaml.JSON_SCHEMA.extend(JsExpr) })
+const found = []
+const walk = (list) => {
+  for (const row of list) {
+    if (row && typeof row === 'object') {
+      if (row.id === 'tool-subagent-explore') found.push(row)
+      if (Array.isArray(row.config)) walk(row.config)
+    }
+  }
+}
+walk(rows)
+if (found.length !== 1) {
+  console.error(`T11-VALIDATE FAIL: expected exactly 1 tool-subagent-explore row, found ${found.length}`)
+  process.exit(1)
+}
+const row = found[0]
+if (row.name !== '@deepseek-ai/dsh-tool-subagent') {
+  console.error(`T11-VALIDATE FAIL: row name is ${row.name}`)
+  process.exit(1)
+}
+let validated
+try {
+  validated = Config(row.config)
+} catch (err) {
+  console.error(`T11-VALIDATE FAIL: dsh-tool-subagent Config rejected the row: ${err.name}: ${err.message}`)
+  process.exit(1)
+}
+const problems = []
+if (validated.provider !== 'spawn') problems.push(`provider=${validated.provider}`)
+if (validated.toolName !== 'explore') problems.push(`toolName=${validated.toolName}`)
+if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${validated.backgroundMode}`)
+if (validated.maxDepth !== 1) problems.push(`maxDepth=${validated.maxDepth}`)
+if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit'] })) {
+  problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)}`)
+}
+if (validated.agentOptions?.provider !== expectedProvider || validated.agentOptions?.model !== expectedModel) {
+  problems.push(`agentOptions=${JSON.stringify(validated.agentOptions)} expected ${expectedProvider}/${expectedModel}`)
+}
+if (typeof validated.persona !== 'string' || !validated.persona.includes('# Explore: Read-Only Retrieval Agent')) {
+  problems.push('persona missing the explore persona heading')
+}
+if (problems.length > 0) {
+  console.error(`T11-VALIDATE FAIL: ${problems.join('; ')}`)
+  process.exit(1)
+}
+console.log(`T11-VALIDATE PASS: tool-subagent-explore row validates against the installed rc.6 Config `
+  + `(toolName=explore provider=spawn route=${expectedProvider}/${expectedModel} maxDepth=1 deny=[write,edit] persona=${validated.persona.length} chars)`)
 EOF
 
 # boot_once <label> <expected-sync-outcome>: real boot, bounded; asserts the
@@ -254,6 +340,33 @@ boot_once() {
   grep -q "      ## Hard Blocks" "$materialized" \
     || fail "[$label] materialized persona missing the injected Hard Blocks section"
 
+  # T11 (FR-4/FR-5 binding, form A): the explore tool-subagent instance is part
+  # of the mounted composition. Content assertions on the materialized file,
+  # then the real schema gate (the installed dsh's own Config) below.
+  grep -q "^    - id: tool-subagent-explore$" "$materialized" \
+    || fail "[$label] explore tool-subagent row missing from the materialized composition"
+  grep -q "^        toolName: explore$" "$materialized" \
+    || fail "[$label] explore row missing toolName: explore"
+  grep -q "^        provider: spawn$" "$materialized" \
+    || fail "[$label] explore row missing provider: spawn"
+  if grep -q "__OMO_EXPLORE_PERSONA__\|__OMO_EXPLORE_AGENT_OPTIONS__" "$materialized"; then
+    fail "[$label] materialized composition still carries a T11 sentinel (rendering skipped?)"
+  fi
+  grep -q "^        persona: |-$" "$materialized" \
+    || fail "[$label] explore persona is not a |- block scalar"
+  grep -q "          # Explore: Read-Only Retrieval Agent" "$materialized" \
+    || fail "[$label] explore persona missing the T10 persona heading"
+  grep -q "^          provider: \"$EXPLORE_PROVIDER\"$" "$materialized" \
+    || fail "[$label] explore agentOptions provider mismatch (want $EXPLORE_PROVIDER)"
+  grep -q "^          model: \"$EXPLORE_MODEL\"$" "$materialized" \
+    || fail "[$label] explore agentOptions model mismatch (want $EXPLORE_MODEL)"
+  grep -q "^          deny: \[write, edit\]$" "$materialized" \
+    || fail "[$label] explore toolFilter deny list missing (T12 pre-declared value)"
+  grep -q "^        maxDepth: 1$" "$materialized" \
+    || fail "[$label] explore maxDepth: 1 missing (T13 pre-declared value)"
+  node "$VALIDATE_EXPLORE_MJS" "$DSH_NM" "$materialized" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" \
+    || fail "[$label] explore row failed validation against the installed rc.6 dsh-tool-subagent Config"
+
   # T16 (FR-6, P-3): the Hard Blocks injection listener's registration is
   # observable at boot. Wording pinned to the plugin's marker; it must stay
   # free of error/fatal/failed vocabulary so cold-start's negative greps
@@ -298,5 +411,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed rc.6 dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); idempotent re-boot confirmed"
 exit 0

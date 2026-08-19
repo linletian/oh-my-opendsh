@@ -42,7 +42,8 @@
 #                                      tokenMeter stays host-plane).
 # KEEP  delegation group             — THE point of the mode: subagent
 #                                      spawn/fork + control + list-agents,
-#                                      verbatim from standard.
+#                                      verbatim from standard, PLUS the T11
+#                                      omo-explore instance (see its row).
 # KEEP  tool-ask-user                — the conductor escalates decisions.
 # KEEP  tool-todo                    — orchestration tracking.
 # KEEP  tool-web                     — research from the conductor seat.
@@ -171,6 +172,58 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
+
+    # T11 (FR-4 persona + FR-5 route binding; form A static plugin config):
+    # ONE more dsh-tool-subagent instance, bound to omo-explore. The conductor
+    # sees a third delegation tool named `explore` (distinct from the generic
+    # `subagent` / `subagent_fork` rows above — toolName collision avoided).
+    #
+    # SINGLE-SOURCE discipline — no prompt text or route literals are pasted
+    # into this file. Two values are SENTINELS (the EXPLORE_PERSONA_SENTINEL /
+    # EXPLORE_AGENT_OPTIONS_SENTINEL constants in src/concerto-preset.ts)
+    # rendered by syncConcertoPreset at apply() time — same mechanism as the
+    # T8 persona sentinel:
+    #   persona      ← buildExploreSystemPrompt() (src/explore-prompt.ts, T10).
+    #                The spawn provider declares the `persona` capability, so
+    #                the text shadows the child's deployment persona
+    #                (tool-subagent/src/index.ts:92,384).
+    #   agentOptions ← resolveModelRoutes().explore (src/model-routes.ts, T14).
+    #                Env-overridable, so the route MUST be resolved at apply()
+    #                time — a static literal would fork the single source of
+    #                truth. Rendered as JSON-quoted YAML scalars
+    #                (injection-safe).
+    # Pre-declared for the next todos (they verify/negative-test; values are
+    # the intended final ones):
+    #   toolFilter   T12 read-only filter: deny the two mutation tools
+    #                (write, edit — dsh-tool-fs is never platform-gated, so
+    #                both names always exist for the child's restrict()).
+    #                `bash` is deliberately NOT denied: it is platform-gated
+    #                (absent on win32 — a deny would throw "unknown global
+    #                tool" there) and OMO's own explore keeps shell access;
+    #                write-capable commands are governed by the persona's
+    #                Read-Only Declarations plus T16 hard-blocks injection.
+    #   maxDepth     T13 depth cap. SOURCE-VERIFIED FIELD NAME: the schema is
+    #                a FLAT `maxDepth` (tool-subagent/src/index.ts:98,
+    #                z.natural()|'provider-managed', default 3) — there is NO
+    #                `policy` wrapper; 1 = the explore child cannot delegate.
+    # NOT SETTABLE in form A: a custom tool `description`. The schema has no
+    # such field; the model-facing description is generated from the spawn
+    # provider's inheritsParentContext=false wording
+    # (tool-subagent/src/index.ts providerWording). Unknown keys are silently
+    # PRESERVED by schemastery (verified on the installed rc.6), so a bogus
+    # `description:` key would be dead config, not an error — recorded as a
+    # P-4/P-5 delta; the probe pins the real generated wording instead.
+    - id: tool-subagent-explore
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: explore
+        backgroundMode: continuable
+        persona: __OMO_EXPLORE_PERSONA__
+        agentOptions: __OMO_EXPLORE_AGENT_OPTIONS__
+        toolFilter:
+          deny: [write, edit]
+        maxDepth: 1
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 

@@ -17,11 +17,22 @@
 // assembled omo-sisyphus system prompt at apply() time (design (a), see
 // system-prompt.ts). preset.yml is still copied verbatim. Rendering is a
 // pure function of the markdown sections, so idempotence is unchanged.
+//
+// T11: the same sentinel discipline binds the omo-explore dsh-tool-subagent
+// instance (form A static config; row documented in the template). Two more
+// sentinels are rendered at apply() time: the explore persona text (from
+// buildExploreSystemPrompt, T10) and the explore agentOptions route (from
+// resolveModelRoutes, T14 — env-overridable, so it MUST be resolved here
+// rather than pasted into YAML). Both renderers keep the T8 exactly-once
+// sentinel guard, and route values are emitted as JSON-quoted YAML scalars
+// so an env override can never break the composition's YAML.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildSisyphusSystemPrompt, renderPersonaIntoComposition } from './system-prompt.ts'
+import { buildExploreSystemPrompt } from './explore-prompt.ts'
+import { resolveModelRoutes, type ModelRoute } from './model-routes.ts'
 
 /** The preset's roster id, which is also its directory name. */
 export const CONCERTO_PRESET_ID = 'concerto'
@@ -62,6 +73,60 @@ export type ConcertoSyncOutcome =
   | 'refreshed' // target existed with different content; rewritten to the template
   | 'unchanged' // target content already matches the template; no write
 
+/** Persona sentinel of the T11 explore tool-subagent row (see the template). */
+export const EXPLORE_PERSONA_SENTINEL = '__OMO_EXPLORE_PERSONA__'
+
+/** agentOptions sentinel of the T11 explore tool-subagent row. */
+export const EXPLORE_AGENT_OPTIONS_SENTINEL = '__OMO_EXPLORE_AGENT_OPTIONS__'
+
+function replaceSentinelOnce(template: string, sentinel: string, replacement: string): string {
+  const occurrences = template.split(sentinel).length - 1
+  if (occurrences !== 1) {
+    throw new Error(
+      `concerto template must carry the sentinel ${sentinel} exactly once; `
+      + `found ${occurrences}`,
+    )
+  }
+  return template.replace(sentinel, replacement)
+}
+
+/**
+ * Renders the explore persona sentinel into a `|-` block scalar under the
+ * explore row's `persona:` key. That key sits at 8-space indent (the row is
+ * nested in the delegation group's config list), so content lines take 10 —
+ * the T8 renderer's rule with the row's indent. Empty prompt lines stay
+ * truly empty; everything else is preserved byte-for-byte.
+ */
+export function renderExplorePersonaIntoComposition(template: string, persona: string): string {
+  const block = persona
+    .split('\n')
+    .map((line) => (line.length > 0 ? `          ${line}` : ''))
+    .join('\n')
+  return replaceSentinelOnce(
+    template,
+    `persona: ${EXPLORE_PERSONA_SENTINEL}`,
+    `persona: |-\n${block}`,
+  )
+}
+
+/**
+ * Renders the agentOptions sentinel into the two-key mapping the schema
+ * expects (`provider` / `model`; `maxTokens` intentionally omitted — the
+ * child-loop default applies). Values are JSON.stringify-quoted: a JSON
+ * string is a valid YAML double-quoted scalar under the loader's
+ * JSON_SCHEMA dialect, so env-supplied route values cannot inject YAML.
+ */
+export function renderExploreAgentOptionsIntoComposition(template: string, route: ModelRoute): string {
+  const mapping = `agentOptions:\n`
+    + `          provider: ${JSON.stringify(route.provider)}\n`
+    + `          model: ${JSON.stringify(route.model)}`
+  return replaceSentinelOnce(
+    template,
+    `agentOptions: ${EXPLORE_AGENT_OPTIONS_SENTINEL}`,
+    mapping,
+  )
+}
+
 /**
  * Writes the template into `targetDir`, idempotently: content-identical
  * targets are left untouched, divergent targets (e.g. a leftover from an
@@ -71,12 +136,18 @@ export type ConcertoSyncOutcome =
  *
  * `personaPrompt` is rendered into the persona sentinel of the template's
  * agent.cordis.yml (T8); the default builds it from the shipped markdown
- * sections, and tests inject their own to stay hermetic.
+ * sections, and tests inject their own to stay hermetic. T11 adds
+ * `explorePersona` / `exploreRoute`, rendered into the explore tool-subagent
+ * row's sentinels; the defaults build from the same single sources
+ * (explore-prompt.ts, model-routes.ts) the rest of the plugin uses, so
+ * index.ts needs no new wiring.
  */
 export function syncConcertoPreset(
   targetDir: string,
   templateDir: string = CONCERTO_TEMPLATE_DIR,
   personaPrompt: string = buildSisyphusSystemPrompt(),
+  explorePersona: string = buildExploreSystemPrompt(),
+  exploreRoute: ModelRoute = resolveModelRoutes().explore,
 ): ConcertoSyncOutcome {
   const expected = new Map<string, string>()
   for (const file of CONCERTO_PRESET_FILES) {
@@ -84,7 +155,13 @@ export function syncConcertoPreset(
     expected.set(
       file,
       file === 'agent.cordis.yml'
-        ? renderPersonaIntoComposition(template, personaPrompt)
+        ? renderExploreAgentOptionsIntoComposition(
+          renderExplorePersonaIntoComposition(
+            renderPersonaIntoComposition(template, personaPrompt),
+            explorePersona,
+          ),
+          exploreRoute,
+        )
         : template,
     )
   }

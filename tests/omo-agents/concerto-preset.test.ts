@@ -9,7 +9,11 @@ import {
   CONCERTO_PRESET_FILES,
   CONCERTO_PRESET_ID,
   CONCERTO_TEMPLATE_DIR,
+  EXPLORE_AGENT_OPTIONS_SENTINEL,
+  EXPLORE_PERSONA_SENTINEL,
   concertoPresetDir,
+  renderExploreAgentOptionsIntoComposition,
+  renderExplorePersonaIntoComposition,
   resolveDshHome,
   syncConcertoPreset,
 } from '../../patches/omo-dsh/omo-agents/src/concerto-preset'
@@ -104,5 +108,90 @@ describe('omo-agents concerto preset sync (T6)', () => {
     expect(syncConcertoPreset(target)).toBe('refreshed')
     const expected = readFileSync(join(EXPECTED_TEMPLATE_DIR, 'preset.yml'), 'utf8')
     expect(readFileSync(join(target, 'preset.yml'), 'utf8')).toBe(expected)
+  })
+})
+
+describe('omo-agents explore delegation binding (T11, form A static config)', () => {
+  const EXPLORE_MARKER = 'T11-EXPLORE-PERSONA-MARKER\nsecond line of the injected explore persona'
+
+  it('the template mounts exactly one explore tool-subagent row carrying both sentinels', () => {
+    const template = readFileSync(join(EXPECTED_TEMPLATE_DIR, 'agent.cordis.yml'), 'utf8')
+    expect(template.split('- id: tool-subagent-explore').length - 1).toBe(1)
+    expect(template.split('toolName: explore').length - 1).toBe(1)
+    // The generic spawn/fork instances keep their own toolNames — no collision.
+    expect(template).toContain('toolName: subagent\n')
+    expect(template).toContain('toolName: subagent_fork')
+    expect(template.split(`persona: ${EXPLORE_PERSONA_SENTINEL}`).length - 1).toBe(1)
+    expect(template.split(`agentOptions: ${EXPLORE_AGENT_OPTIONS_SENTINEL}`).length - 1).toBe(1)
+    // The T8 sentinel path stays intact alongside them.
+    expect(template.split('text: __OMO_SISYPHUS_SYSTEM_PROMPT__').length - 1).toBe(1)
+  })
+
+  it('sync renders the explore persona sentinel into a |- block scalar inside the explore row', () => {
+    const target = join(makeSandbox(), '.agent-presets', 'concerto')
+    expect(syncConcertoPreset(target, EXPECTED_TEMPLATE_DIR, 'SISYPHUS-STUB', EXPLORE_MARKER)).toBe('materialized')
+    const composition = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
+    expect(composition).not.toContain(EXPLORE_PERSONA_SENTINEL)
+    expect(composition).not.toContain(EXPLORE_AGENT_OPTIONS_SENTINEL)
+    expect(composition).not.toContain('__OMO_SISYPHUS_SYSTEM_PROMPT__')
+    // The explore persona lands as a block scalar at the row's config indent
+    // (persona key at 8 spaces inside the delegation group → content at 10).
+    expect(composition).toContain('        persona: |-\n')
+    expect(composition).toContain('          T11-EXPLORE-PERSONA-MARKER\n')
+    expect(composition).toContain('          second line of the injected explore persona\n')
+  })
+
+  it('sync renders agentOptions from the injected explore route (YAML-safe quoted scalars)', () => {
+    const target = join(makeSandbox(), '.agent-presets', 'concerto')
+    syncConcertoPreset(
+      target,
+      EXPECTED_TEMPLATE_DIR,
+      'SISYPHUS-STUB',
+      'EXPLORE-STUB',
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    )
+    const composition = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
+    expect(composition).toContain('        agentOptions:\n')
+    expect(composition).toContain('          provider: "deepseek"\n')
+    expect(composition).toContain('          model: "deepseek-v4-flash"\n')
+  })
+
+  it('renders route values JSON-quoted so YAML-hostile characters cannot break the composition', () => {
+    const rendered = renderExploreAgentOptionsIntoComposition(
+      `agentOptions: ${EXPLORE_AGENT_OPTIONS_SENTINEL}`,
+      { provider: 'deep"seek', model: 'x: y # z' },
+    )
+    expect(rendered).toContain(`provider: ${JSON.stringify('deep"seek')}`)
+    expect(rendered).toContain(`model: ${JSON.stringify('x: y # z')}`)
+    expect(rendered).not.toContain(EXPLORE_AGENT_OPTIONS_SENTINEL)
+  })
+
+  it('the rendered explore row survives sync idempotence (second sync is a no-op)', () => {
+    const target = join(makeSandbox(), '.agent-presets', 'concerto')
+    expect(syncConcertoPreset(target, EXPECTED_TEMPLATE_DIR, 'SISYPHUS-STUB', EXPLORE_MARKER)).toBe('materialized')
+    const first = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
+    expect(first).toContain('          T11-EXPLORE-PERSONA-MARKER\n')
+    expect(syncConcertoPreset(target, EXPECTED_TEMPLATE_DIR, 'SISYPHUS-STUB', EXPLORE_MARKER)).toBe('unchanged')
+    expect(readFileSync(join(target, 'agent.cordis.yml'), 'utf8')).toBe(first)
+  })
+
+  it('each renderer throws when its sentinel does not occur exactly once', () => {
+    expect(() => renderExplorePersonaIntoComposition('no sentinel here', 'x')).toThrow(/exactly once/)
+    expect(() => renderExploreAgentOptionsIntoComposition('no sentinel here', { provider: 'p', model: 'm' })).toThrow(/exactly once/)
+    const doubled = `persona: ${EXPLORE_PERSONA_SENTINEL}\npersona: ${EXPLORE_PERSONA_SENTINEL}`
+    expect(() => renderExplorePersonaIntoComposition(doubled, 'x')).toThrow(/exactly once/)
+  })
+
+  it('default sync (no injected values) renders the real explore persona and the resolved route', () => {
+    const target = join(makeSandbox(), '.agent-presets', 'concerto')
+    expect(syncConcertoPreset(target)).toBe('materialized')
+    const composition = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
+    // Real persona content from system-sections/explore-persona.md (T10 source).
+    expect(composition).toContain('          # Explore: Read-Only Retrieval Agent')
+    // Real route from src/model-routes.ts defaults (T14 source).
+    expect(composition).toContain('          provider: "deepseek"')
+    expect(composition).toContain('          model: "deepseek-v4-flash"')
+    expect(composition).toContain('maxDepth: 1')
+    expect(composition).toContain('deny: [write, edit]')
   })
 })
