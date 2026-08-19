@@ -1,0 +1,81 @@
+# ci.yml — the CI green set (plan T22, PRD §1.1 #12 + §8, AC-7/AC-8).
+#
+# One job, one linear gate chain — the exact same chain scripts/ci-local.sh
+# runs locally:
+#   1. pnpm typecheck
+#   2. pnpm vitest run            (unit)
+#   3. pnpm test:e2e              (mock-LLM e2e — zero LLM cost; the driver
+#                                  self-sandboxes HOME/XDG/DSH_HOME, boots the
+#                                  real dsh binary against a local mock-LLM
+#                                  server, no real keys)
+#   4. node scripts/doctor-lite.mjs --json
+#   5. scripts/verify-licenses.sh
+#
+# dsh install (D7 — pin-minor 0.1.x): the npm package is @deepseek-ai/dsh and
+# the 0.1 line is currently published as prereleases only. A plain `~0.1.0`
+# range matches NOTHING today (npm semver excludes prereleases — verified:
+# `npm view @deepseek-ai/dsh@~0.1.0` → E404). We therefore exact-pin the rc
+# this repo's gates were verified against (0.1.0-rc.6 — all e2e verbatim
+# rejection contracts are grep-verified against it, see tests/e2e/drive.mjs).
+# Bump DSH_VERSION deliberately as the 0.1.x rc line advances; doctor-lite
+# enforces the D7 pin (major 0, minor 1) at gate 4 regardless.
+#
+# Action majors verified against the GitHub releases API on 2026-08-20:
+# checkout v7.0.1 / setup-node v7.0.0 / action-setup v6.0.10.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DSH_VERSION: 0.1.0-rc.6
+  PNPM_VERSION: 11.9.0
+
+jobs:
+  green-set:
+    name: green-set
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: setup node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install repo deps (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: install dsh (D7 pin, exact rc)
+        run: |
+          npm install --global "@deepseek-ai/dsh@${DSH_VERSION}"
+          dsh --version
+
+      - name: gate 1 — typecheck
+        run: pnpm typecheck
+
+      - name: gate 2 — unit tests
+        run: pnpm vitest run
+
+      - name: gate 3 — mock-LLM e2e
+        run: pnpm test:e2e
+
+      - name: gate 4 — doctor-lite
+        run: node scripts/doctor-lite.mjs --json
+
+      - name: gate 5 — license compliance
+        run: scripts/verify-licenses.sh
