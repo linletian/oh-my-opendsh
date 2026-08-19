@@ -48,13 +48,43 @@
 // Workspace instruction files (AGENTS.md) are injected as USER-role
 // <system-reminder> messages (dsh-agent-instructions/README.md:17,47) —
 // invisible to the mock server's system-message scan. Instead the driver
-// appends `MOCKROLE=sisyphus` to the PERSONA block scalar of the MATERIALIZED
+// appends `MOCKROLE=<role>` to the PERSONA block scalar of the MATERIALIZED
 // preset ($DSH_HOME/.agent-presets/concerto/agent.cordis.yml) AFTER boot sync
 // and BEFORE session.create: dsh-agent-presets reads the composition file at
 // mount time (readComposition → readFile(preset.path), lib/index.js:334) and
 // ensureStanding re-stamps the file on every use (:1130-1160), so the edit is
 // honored. The persona IS the system prompt (T8), so the marker rides the
 // real prompt-assembly path. The mock's recorded requests[] prove delivery.
+// T19 generalizes the delivery to BOTH persona scalars of the same file
+// (MOCKROLE_BLOCK_SCALARS): the conductor persona row (`text: |-`, content
+// indent 6 — src/system-prompt.ts renderPersonaIntoComposition) and the T11
+// explore tool-subagent row (`persona: |-`, content indent 10 —
+// src/concerto-preset.ts renderExplorePersonaIntoComposition). The explore
+// marker is what lets the mock select the explore sub-script when the CHILD
+// loop's requests arrive (the child inherits the persona from its tool
+// config, so the marker rides the spawn provider's persona shadowing).
+//
+// ── T19 DEMO SCENARIO (FR-7, AC-4; plan task 19): "concerto-delegation-demo"
+// The scripted dummy demo (PRD §2.2 — an ORCHESTRATED task, no real
+// engineering problem): user asks "这个仓库的 README 讲了什么" and the FULL
+// delegation chain is scripted through the two mock roles:
+//   sisyphus step 1 → tool_call `explore` {description, prompt,
+//     run_in_background:false} (the T11 binding's real parameter schema,
+//     dsh-tool-subagent/lib/index.js:142-158) — foreground so the result
+//     returns inside the same parent turn;
+//   explore step 1  → tool_call `read` {file_path: <sandbox README>} (the
+//     dsh-tool-fs read tool the explore child inherits from the parent roster
+//     minus the T12 deny [write,edit]);
+//   explore step 2  → text EXPLORE_FINDINGS (child turn settles);
+//   sisyphus step 2 → text SISYPHUS_SUMMARY (parent turn/end).
+// The driver seeds a fixture README into the sandbox project and asserts the
+// four-event chain IN ORDER (report §14.4.4 — BUSINESS outcomes, not "the
+// LLM called tool X"): (1) the explore tool_call in the parent JSONL, (2) the
+// child session ran on the explore route AND the README bytes reached the
+// explore model (the read tool result is verbatim in the next mock request),
+// (3) the findings returned to sisyphus (parent tool/result AND they are
+// verbatim in the parent's next mock request), (4) the summary text. The T16
+// hard-blocks injection is reported as a BONUS observation (T20 owns AC-6).
 //
 // ── LLM WIRING (sandbox $DSH_HOME/settings.yaml only; nothing touches the
 // host). Both adapters are pointed at the mock with a dummy key:
@@ -94,13 +124,16 @@
 // HOST_VOLATILE_SETTINGS_KEYS idea at path granularity).
 //
 // Usage:
-//   node tests/e2e/drive.mjs               run the HELLO scenario, print verdict JSON
+//   node tests/e2e/drive.mjs               run ALL scenarios (hello + demo), print verdict JSON
 //   node tests/e2e/drive.mjs --self-test   run the analysis logic against
 //                                          fabricated logs only (no spawn)
 // Env:
 //   DSH_E2E_DIGEST_TARGET  digest this dir instead of ~/.dsh (negative demo)
 //   DSH_E2E_KEEP_SANDBOX=1 keep the sandbox for postmortem inspection
 //   DSH_E2E_*_TIMEOUT_MS   boot / scenario / install budgets
+//   DSH_E2E_DEMO_SKIP_EXPLORE=1  T19 failure QA: drop the explore role from
+//                                the demo script — the delegation chain MUST
+//                                break and the verdict MUST name link 2
 // Exit: 0 on PASS, 1 on FAIL (and 1 if --self-test finds the analysis lying).
 
 import { createHash } from 'node:crypto'
@@ -141,6 +174,52 @@ const HELLO_PROMPT = 'e2e hello: reply with the exact sentinel and nothing else'
 const HELLO_REPLY = 'MOCK-HELLO-FROM-SISYPHUS-7f3d9a'
 const MOCK_KEY = 'mock-e2e'
 const HELLO_SCRIPT = { sisyphus: [{ type: 'text', text: HELLO_REPLY }] }
+
+// ── DEMO scenario constants (T19, FR-7/AC-4 — see the header's T19 section) ──
+// The user's question (PRD §2.2's orchestrated dummy task, verbatim).
+const DEMO_PROMPT = '这个仓库的 README 讲了什么'
+// The fixture README the driver seeds into the sandbox project. The sentinel
+// fragment is what link 2 asserts INSIDE the explore model's request bytes.
+const DEMO_README_CONTENT = 'This is the omo-dsh concerto MVP fixture project\n'
+const DEMO_README_SENTINEL = 'concerto MVP fixture project'
+// What the explore child reports back (link 3 asserts it lands in the
+// parent's tool/result AND in the parent's next request to the mock).
+const EXPLORE_FINDINGS = `MOCK-EXPLORE-FINDINGS-9c2e4b: README.md says — ${DEMO_README_SENTINEL}`
+// The conductor's final summary (link 4).
+const SISYPHUS_SUMMARY = 'MOCK-SISYPHUS-SUMMARY-5a1d8c: the README says this is the omo-dsh concerto MVP fixture project'
+
+/**
+ * The two-role demo script (MockStep sequences; one step consumed per request
+ * per role — the T17 cursor semantics). Built AFTER the sandbox exists so the
+ * read step carries the fixture's absolute path.
+ * DSH_E2E_DEMO_SKIP_EXPLORE=1 deletes the explore role: the child's request
+ * then reaches the mock as an UNKNOWN role (HTTP 400), the chain breaks, and
+ * the analysis MUST FAIL naming link 2 (the failure-QA half of T19).
+ */
+function demoScript(sandbox) {
+  const readmePath = join(sandbox.project, 'README.md')
+  const script = {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'explore',
+        arguments: {
+          description: 'Read project README',
+          prompt: `Read the file README.md in the current project directory (absolute path: ${readmePath}) and report what it says.`,
+          // foreground: the conductor's next step needs the findings.
+          run_in_background: false,
+        },
+      },
+      { type: 'text', text: SISYPHUS_SUMMARY },
+    ],
+    explore: [
+      { type: 'tool_call', name: 'read', arguments: { file_path: readmePath } },
+      { type: 'text', text: EXPLORE_FINDINGS },
+    ],
+  }
+  if (process.env.DSH_E2E_DEMO_SKIP_EXPLORE === '1') delete script.explore
+  return script
+}
 
 // §14.5: path-based volatile allowlist (see header). Symlinks are skipped by
 // the walk (Dirent.isFile() is false for them).
@@ -389,7 +468,26 @@ async function awaitTurnEnd(sandbox, sessionId) {
 
 // ── MOCKROLE delivery (see header): extend the materialized persona scalar ──
 
+/**
+ * Where each role's marker goes inside the SAME materialized composition file
+ * ($DSH_HOME/.agent-presets/concerto/agent.cordis.yml). `needle` is the block
+ * scalar header of that role's persona; `indent` is the content indent the
+ * renderer used (system-prompt.ts: 6 spaces under the persona row's `text:`;
+ * concerto-preset.ts: 10 spaces under the explore row's nested `persona:`).
+ * Both needles are unique in the materialized file (verified against the
+ * template: only the persona row carries `text:`, only the T11 explore row
+ * carries `persona:`).
+ */
+const MOCKROLE_BLOCK_SCALARS = {
+  sisyphus: { needle: 'text: |-', indent: '      ' },
+  explore: { needle: 'persona: |-', indent: '          ' },
+}
+
 function appendMockRoleMarker(sandbox, role) {
+  const spec = MOCKROLE_BLOCK_SCALARS[role]
+  if (spec === undefined) {
+    throw new Error(`no MOCKROLE block-scalar mapping for role '${role}'`)
+  }
   const compositionPath = join(
     sandbox.dshHome,
     '.agent-presets',
@@ -400,13 +498,12 @@ function appendMockRoleMarker(sandbox, role) {
     throw new Error(`materialized concerto preset missing at ${compositionPath} (sync did not run?)`)
   }
   const text = readFileSync(compositionPath, 'utf8')
-  const needle = 'text: |-'
-  if (!text.includes(needle)) {
-    throw new Error('materialized concerto preset has no `text: |-` persona block scalar')
+  if (!text.includes(spec.needle)) {
+    throw new Error(`materialized concerto preset has no \`${spec.needle}\` block scalar for role '${role}'`)
   }
-  const markerLine = `      MOCKROLE=${role}\n`
+  const markerLine = `${spec.indent}MOCKROLE=${role}\n`
   if (text.includes(`MOCKROLE=${role}`)) return // idempotent
-  writeFileSync(compositionPath, text.replace(needle, `${needle}\n${markerLine}`))
+  writeFileSync(compositionPath, text.replace(spec.needle, `${spec.needle}\n${markerLine}`))
 }
 
 // ── Analysis (pure — the --self-test QA targets exactly this) ────────────────
@@ -475,6 +572,145 @@ export function analyzeHello({ log, requests, providersJson, bootLog }, routes) 
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks }
 }
 
+/**
+ * The DEMO scenario assertions (T19, FR-7/AC-4). The four chain links are
+ * asserted as BUSINESS outcomes (report §14.4.4): bytes and events that only
+ * exist when the delegation actually happened, in order — never merely "the
+ * LLM emitted a tool_call".
+ * `log` = the PARENT (sisyphus) session log; `childLog` = the explore child's
+ * own session.jsonl (header.origin 'subagent', header.parentSession = parent
+ * id — dsh-subagent childSessionMeta); `requests` = the mock's recorded
+ * request channel (roles + raw bodies, in arrival order).
+ */
+export function analyzeDemo({ log, childLog, requests, providersJson, bootLog }, routes) {
+  const events = log?.events ?? []
+  const childEvents = childLog?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const exploreRequests = requests.filter((request) => request.role === 'explore')
+
+  // Link 1 evidence: the parent's explore tool/call with contract args.
+  const exploreCall = events.find((event) => event.type === 'tool/call' && event.data?.name === 'explore')
+  let exploreCallArgs = {}
+  try {
+    exploreCallArgs = JSON.parse(exploreCall?.data?.arguments ?? '{}')
+  } catch {
+    // unparseable model output fails link 1 below
+  }
+
+  // Link 2 evidence: the child ran on the explore route and read the README.
+  const childRoute = requestHeaderRoute(childEvents)
+  const childReadCall = childEvents.find(
+    (event) => event.type === 'tool/call' && event.data?.name === 'read',
+  )
+  const lastExploreBody = exploreRequests.length > 0
+    ? JSON.stringify(exploreRequests[exploreRequests.length - 1].body)
+    : ''
+
+  // Link 3 evidence: the findings came back to the parent (log + wire).
+  const exploreResult = events.find(
+    (event) => event.type === 'tool/result' && eventText(event).includes(EXPLORE_FINDINGS),
+  )
+  const secondSisyphusBody = sisyphusRequests.length >= 2
+    ? JSON.stringify(sisyphusRequests[1].body)
+    : ''
+
+  // Link 4 evidence: the summary, and an orderly turn end.
+  const summaryMessage = events.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(SISYPHUS_SUMMARY),
+  )
+  const turnCompleted = events.some(
+    (event) =>
+      event.type === 'turn/end'
+      && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+  )
+
+  const checks = {
+    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    exploreProviderActive: new RegExp(
+      `"provider":"${routes.explore.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    parentSessionLogFound: log !== undefined,
+    userQuestionRecorded: events.some(
+      (event) => event.type === 'user/message' && eventText(event).includes(DEMO_PROMPT),
+    ),
+    // LINK 1: sisyphus decided and called the delegation tool with a
+    // well-formed contract (description + prompt naming the README), on the
+    // sisyphus route.
+    link1SisyphusCalledExploreTool:
+      exploreCall !== undefined
+      && typeof exploreCallArgs.description === 'string'
+      && typeof exploreCallArgs.prompt === 'string'
+      && exploreCallArgs.prompt.includes('README.md')
+      && sisyphusRequests.length >= 1
+      && sisyphusRequests[0].body?.model === routes.sisyphus.model,
+    // LINK 2: the explore child RAN — its own session exists under the
+    // parent, on the explore route; it issued a `read` for the README; and
+    // the README's bytes provably reached the explore model (the read tool
+    // result is verbatim in the child's next request to the mock).
+    link2ExploreRanAndReadReadme:
+      childLog !== undefined
+      && childLog.header?.origin === 'subagent'
+      && String(childLog.header?.parentSession) === String(log?.header?.id)
+      && childRoute !== undefined
+      && childRoute.provider === routes.explore.provider
+      && childRoute.model === routes.explore.model
+      && childReadCall !== undefined
+      && String(childReadCall.data?.arguments ?? '').includes('README.md')
+      && exploreRequests.length >= 2
+      && lastExploreBody.includes(DEMO_README_SENTINEL),
+    // LINK 3: the child's findings returned to sisyphus — settled tool/result
+    // in the parent log AND the findings verbatim in the parent's next
+    // request (the result genuinely entered the conductor's model context).
+    link3ExploreResultReturnedToSisyphus:
+      exploreResult !== undefined
+      && secondSisyphusBody.includes(EXPLORE_FINDINGS),
+    // LINK 4: sisyphus closed the loop with the summary, turn completed.
+    link4SisyphusSummarizedFindings: summaryMessage !== undefined && turnCompleted,
+    // ORDER (AC-4): the links are ordered in BOTH observation channels — the
+    // parent JSONL seqs (call < result < summary) and the mock arrival order
+    // (sisyphus#1 < explore#… < sisyphus-last).
+    chainObservedInOrder:
+      exploreCall !== undefined
+      && exploreResult !== undefined
+      && summaryMessage !== undefined
+      && exploreCall.seq < exploreResult.seq
+      && exploreResult.seq < summaryMessage.seq
+      && sisyphusRequests.length >= 2
+      && exploreRequests.length >= 1
+      && requests.indexOf(sisyphusRequests[0]) < requests.indexOf(exploreRequests[0])
+      && requests.indexOf(exploreRequests[exploreRequests.length - 1])
+        < requests.indexOf(sisyphusRequests[sisyphusRequests.length - 1]),
+    // Exact request accounting: 2 conductor + 2 child calls, nothing else
+    // (a stray title/side request carrying a marker would consume a scripted
+    // step and corrupt the chain — better to fail loud).
+    mockSawExpectedRequestCounts:
+      sisyphusRequests.length === 2 && exploreRequests.length === 2,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  // Non-gating observations (T20 owns the AC-5/AC-6 assertion halves).
+  // NOTE: a FOREGROUND (run_in_background:false) spawn produces a ONE-SHOT
+  // child whose descriptor carries no agentProvider/agentModel (only
+  // continuable descriptors persist the declared route — dsh-subagent
+  // descriptor.d.ts OneShotSubagentDescriptorData vs Continuable). The
+  // executed child route is gated in link 2 via request/header instead.
+  const descriptor = childEvents.find((event) => event.type === 'subagent/descriptor')
+  const bonus = {
+    // T16's injection, observed in the child log (user/message sourced from
+    // the omo-agents plugin — agent.inject() landing at a step boundary).
+    hardBlocksInjectionObserved: childEvents.some(
+      (event) =>
+        event.type === 'user/message'
+        && eventText(event).includes('"plugin":"omo-agents"'),
+    ),
+    childDescriptor: descriptor?.data ?? null,
+    mockRequestRoles: requests.map((request) => request.role),
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
 // ── --self-test: the analysis must earn its PASS (report §14.4.5) ────────────
 
 function fabricatedGoodLog(routes) {
@@ -508,6 +744,110 @@ function fabricatedProvidersJson(routes) {
       },
     },
   })
+}
+
+// ── fabricated DEMO logs (the demo analysis must earn its PASS the same way)
+
+const FABRICATED_PARENT_ID = 'session-fabricated-parent'
+const FABRICATED_CHILD_ID = 'session-fabricated-child'
+
+function fabricatedDemoRequests(routes) {
+  return [
+    { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 10 },
+    { role: 'explore', body: { model: routes.explore.model, messages: [{ role: 'system', content: 'MOCKROLE=explore' }] }, receivedAt: 20 },
+    {
+      role: 'explore',
+      body: {
+        model: routes.explore.model,
+        messages: [
+          { role: 'system', content: 'MOCKROLE=explore' },
+          { role: 'user', content: `read result: This is the omo-dsh ${DEMO_README_SENTINEL}` },
+        ],
+      },
+      receivedAt: 30,
+    },
+    {
+      role: 'sisyphus',
+      body: {
+        model: routes.sisyphus.model,
+        messages: [
+          { role: 'system', content: 'MOCKROLE=sisyphus' },
+          { role: 'user', content: `tool result: ${EXPLORE_FINDINGS}` },
+        ],
+      },
+      receivedAt: 40,
+    },
+  ]
+}
+
+function fabricatedGoodDemoParentLog() {
+  return {
+    path: '/fabricated/parent/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: DEMO_PROMPT }] } },
+      {
+        seq: 2,
+        type: 'tool/call',
+        data: {
+          turn: 1,
+          step: 1,
+          callId: 'mock-llm-tool-1',
+          name: 'explore',
+          arguments: JSON.stringify({ description: 'Read project README', prompt: 'Read README.md and report', run_in_background: false }),
+        },
+      },
+      {
+        seq: 3,
+        type: 'tool/result',
+        data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'text', text: EXPLORE_FINDINGS }] } },
+      },
+      { seq: 4, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: SISYPHUS_SUMMARY }] } } },
+      { seq: 5, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedGoodDemoChildLog(routes) {
+  return {
+    path: '/fabricated/child/session.jsonl',
+    header: {
+      type: 'session',
+      id: FABRICATED_CHILD_ID,
+      origin: 'subagent',
+      parentSession: FABRICATED_PARENT_ID,
+      delegationDepth: 1,
+    },
+    events: [
+      {
+        seq: 0,
+        type: 'subagent/descriptor',
+        data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'Read project README', agentProvider: routes.explore.provider, agentModel: routes.explore.model },
+      },
+      {
+        seq: 1,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.explore.provider, model: routes.explore.model } }, reason: 'initial' },
+      },
+      {
+        seq: 2,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: 'mock-llm-tool-1', name: 'read', arguments: JSON.stringify({ file_path: '/fabricated/project/README.md' }) },
+      },
+      { seq: 3, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: EXPLORE_FINDINGS }] } } },
+      { seq: 4, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedGoodDemoInput(routes) {
+  return {
+    log: fabricatedGoodDemoParentLog(),
+    childLog: fabricatedGoodDemoChildLog(routes),
+    requests: fabricatedDemoRequests(routes),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: '[omo-agents] loaded',
+  }
 }
 
 function runAnalysisSelfTest(routes) {
@@ -555,7 +895,185 @@ function runAnalysisSelfTest(routes) {
       problems.push(`fabricated defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
     }
   }
+
+  // ── demo analysis: fabricated good log must PASS; each fabricated chain
+  // break must FAIL naming its own link (T19's failure QA, hermetic half).
+  const goodDemo = analyzeDemo(fabricatedGoodDemoInput(routes), routes)
+  if (goodDemo.result !== 'PASS') {
+    problems.push(`fabricated GOOD demo must PASS, got FAIL on: ${goodDemo.failed.join(', ')}`)
+  }
+  const demoDefectCases = [
+    // THE T19 failure case: the explore step removed — the child never ran,
+    // so the assertion must name link 2 (and only chain-derived checks may
+    // join it).
+    ['explore step removed (no child, no explore requests)', (input) => {
+      input.childLog = undefined
+      input.requests = input.requests.filter((request) => request.role !== 'explore')
+      // without the findings the parent cannot produce them: the tool result
+      // and the second sisyphus request lose the findings bytes too.
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          ? { ...event, data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'text', text: 'Error: mock role unknown' }] } } }
+          : event)
+      input.requests = input.requests.map((request) =>
+        request.role === 'sisyphus' && request.receivedAt === 40
+          ? { ...request, body: { model: request.body.model, messages: [{ role: 'user', content: 'tool result: error' }] } }
+          : request)
+    }, 'link2ExploreRanAndReadReadme'],
+    ['no explore tool_call in the parent log', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'tool/call')
+    }, 'link1SisyphusCalledExploreTool'],
+    ['findings never returned to the parent', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'tool/result')
+      input.requests = input.requests.map((request) =>
+        request.role === 'sisyphus' && request.receivedAt === 40
+          ? { ...request, body: { model: request.body.model, messages: [] } }
+          : request)
+    }, 'link3ExploreResultReturnedToSisyphus'],
+    ['no final summary', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'assistant/message' && eventText(event).includes(SISYPHUS_SUMMARY)),
+      )
+    }, 'link4SisyphusSummarizedFindings'],
+    ['out-of-order parent events', (input) => {
+      const call = input.log.events.find((event) => event.type === 'tool/call')
+      call.seq = 99 // the call landing AFTER the result/summary breaks the order
+    }, 'chainObservedInOrder'],
+    ['child on the wrong route', (input) => {
+      input.childLog = fabricatedGoodDemoChildLog(routes)
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'request/header'
+          ? { ...event, data: { header: { config: { provider: 'wrong', model: 'wrong' } }, reason: 'initial' } }
+          : event)
+    }, 'link2ExploreRanAndReadReadme'],
+  ]
+  for (const [label, mutate, expectedCheck] of demoDefectCases) {
+    const input = fabricatedGoodDemoInput(routes)
+    mutate(input)
+    const verdict = analyzeDemo(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated demo defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
   return problems
+}
+
+// ── scenario definitions ─────────────────────────────────────────────────────
+// Each scenario runs fully isolated: its own sandbox, its own mock server
+// (per-role cursors stay scenario-scoped), its own dsh boot. `roles` lists
+// the MOCKROLE markers to deliver into the materialized preset; `seed` runs
+// before the mock starts (fixtures the script points at); `script(sandbox)`
+// builds the mock script (absolute fixture paths need the sandbox).
+
+const SCENARIOS = [
+  {
+    name: 'hello',
+    prompt: HELLO_PROMPT,
+    roles: ['sisyphus'],
+    script: () => HELLO_SCRIPT,
+    analyze: analyzeHello,
+  },
+  {
+    name: 'concerto-delegation-demo',
+    prompt: DEMO_PROMPT,
+    roles: ['sisyphus', 'explore'],
+    seed: (sandbox) => {
+      writeFileSync(join(sandbox.project, 'README.md'), DEMO_README_CONTENT)
+    },
+    script: demoScript,
+    analyze: analyzeDemo,
+  },
+]
+
+/**
+ * Run one scenario end-to-end. Returns the scenario verdict object; the
+ * sandbox root is handed back for the caller's cleanup/digest accounting.
+ */
+async function runScenario(def, routes) {
+  const sandbox = createSandbox()
+  console.error(`drive: [${def.name}] sandbox ${sandbox.root}`)
+  const server = await startMockLlmServer({ script: def.script(sandbox) })
+  let child
+  let scenario = { name: def.name, result: 'FAIL', failed: ['driver did not complete'] }
+  try {
+    const patchPath = seedSandbox(sandbox, routes, server.baseUrl)
+    def.seed?.(sandbox) // fixtures land after seedSandbox mkdirs the project dir
+    console.error(`drive: [${def.name}] stage 0 — dsh plugin add into the sandbox profile`)
+    installPlugin(sandbox)
+
+    console.error(`drive: [${def.name}] booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0`)
+    const boot = await bootDsh(sandbox, patchPath)
+    child = boot.child
+    console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port}`)
+
+    // The plugin sync materializes the concerto preset at boot; then the
+    // MOCKROLE markers ride both personas into the system prompts (header).
+    for (const role of def.roles) appendMockRoleMarker(sandbox, role)
+
+    // Wiring proof for BOTH adapters.
+    const providers = await rpc(boot.port, 'llm.providers', {})
+    const providersJson = JSON.stringify(providers)
+
+    const created = await rpc(boot.port, 'session.create', {
+      cwd: sandbox.project,
+      agentPreset: CONCERTO_PRESET_ID,
+    })
+    console.error(`drive: [${def.name}] session created ${created.sessionId} (preset ${created.agentPreset ?? '?'})`)
+    await rpc(boot.port, 'session.prompt', {
+      sessionId: created.sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: def.prompt }],
+    })
+    console.error(`drive: [${def.name}] prompt accepted; awaiting turn/end on the session JSONL`)
+    const log = await awaitTurnEnd(sandbox, created.sessionId)
+    const logPath = log?.path
+
+    await stopDsh(child)
+    child = undefined
+    // SIGTERM flushes the write-behind batcher; re-read the final bytes of
+    // EVERY session log (the demo's child log settles with the parent).
+    const allLogs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const finalLog = allLogs.find(
+      (candidate) => String(candidate.header.id) === String(created.sessionId),
+    )
+    const childLog = allLogs.find(
+      (candidate) =>
+        candidate.header.origin === 'subagent'
+        && String(candidate.header.parentSession) === String(created.sessionId),
+    )
+
+    const analysis = def.analyze(
+      {
+        log: finalLog ?? log,
+        childLog,
+        requests: server.requests,
+        providersJson,
+        bootLog: boot.log(),
+      },
+      routes,
+    )
+    // Timing notes: mock arrival offsets relative to the first request.
+    const t0 = server.requests[0]?.receivedAt ?? 0
+    const timeline = server.requests.map((request) => ({
+      role: request.role,
+      model: request.body?.model,
+      atMs: request.receivedAt - t0,
+    }))
+    scenario = {
+      name: def.name,
+      sessionId: created.sessionId,
+      logPath,
+      childLogPath: childLog?.path,
+      timeline,
+      ...analysis,
+    }
+  } catch (error) {
+    scenario = { name: def.name, result: 'FAIL', failed: [`driver error: ${error.message}`] }
+  } finally {
+    if (child !== undefined) await stopDsh(child)
+    await server.close()
+  }
+  return { scenario, sandboxRoot: sandbox.root }
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
@@ -574,86 +1092,35 @@ async function main() {
   console.error(`drive: digest target ${digestTarget} (before: ${beforeDigest.slice(0, 16)}…)`)
   console.error(`drive: routes sisyphus=${routes.sisyphus.provider}/${routes.sisyphus.model} explore=${routes.explore.provider}/${routes.explore.model}`)
 
-  const server = await startMockLlmServer({ script: HELLO_SCRIPT })
-  const sandbox = createSandbox()
-  let child
-  let scenario = { name: 'hello', result: 'FAIL', failed: ['driver did not complete'] }
-  let logPath
-  try {
-    const patchPath = seedSandbox(sandbox, routes, server.baseUrl)
-    console.error(`drive: sandbox ${sandbox.root}`)
-    console.error('drive: stage 0 — dsh plugin add into the sandbox profile')
-    installPlugin(sandbox)
-
-    console.error('drive: booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0')
-    const boot = await bootDsh(sandbox, patchPath)
-    child = boot.child
-    console.error(`drive: web ready on 127.0.0.1:${boot.port}`)
-
-    // The plugin sync materializes the concerto preset at boot; then the
-    // MOCKROLE marker rides the persona into the system prompt (see header).
-    appendMockRoleMarker(sandbox, 'sisyphus')
-
-    // Wiring proof for BOTH adapters (explore is registered but uncalled in HELLO).
-    const providers = await rpc(boot.port, 'llm.providers', {})
-    const providersJson = JSON.stringify(providers)
-
-    const created = await rpc(boot.port, 'session.create', {
-      cwd: sandbox.project,
-      agentPreset: CONCERTO_PRESET_ID,
-    })
-    console.error(`drive: session created ${created.sessionId} (preset ${created.agentPreset ?? '?'})`)
-    await rpc(boot.port, 'session.prompt', {
-      sessionId: created.sessionId,
-      mode: 'queue',
-      content: [{ type: 'text', text: HELLO_PROMPT }],
-    })
-    console.error('drive: prompt accepted; awaiting turn/end on the session JSONL')
-    const log = await awaitTurnEnd(sandbox, created.sessionId)
-    logPath = log?.path
-
-    await stopDsh(child)
-    child = undefined
-    // SIGTERM flushes the write-behind batcher; re-read the final bytes.
-    const finalLog = findSessionLogs(join(sandbox.dshHome, 'sessions')).find(
-      (candidate) => String(candidate.header.id) === String(created.sessionId),
-    )
-
-    const analysis = analyzeHello(
-      {
-        log: finalLog ?? log,
-        requests: server.requests,
-        providersJson,
-        bootLog: boot.log(),
-      },
-      routes,
-    )
-    scenario = { name: 'hello', sessionId: created.sessionId, logPath, ...analysis }
-  } catch (error) {
-    scenario = { name: 'hello', result: 'FAIL', failed: [`driver error: ${error.message}`] }
-  } finally {
-    if (child !== undefined) await stopDsh(child)
-    await server.close()
+  const scenarios = []
+  const sandboxRoots = []
+  for (const def of SCENARIOS) {
+    const { scenario, sandboxRoot } = await runScenario(def, routes)
+    scenarios.push(scenario)
+    sandboxRoots.push(sandboxRoot)
   }
 
   const afterDigest = digestConfigDir(digestTarget)
   const realDshUntouched = beforeDigest === afterDigest
-  const scenarioPass = scenario.result === 'PASS'
-  const result = scenarioPass && realDshUntouched ? 'PASS' : 'FAIL'
+  const scenariosPass = scenarios.every((scenario) => scenario.result === 'PASS')
+  const result = scenariosPass && realDshUntouched ? 'PASS' : 'FAIL'
 
-  if (existsSync(sandbox.root) && process.env.DSH_E2E_KEEP_SANDBOX !== '1' && result === 'PASS') {
-    rmSync(sandbox.root, { recursive: true, force: true })
+  if (process.env.DSH_E2E_KEEP_SANDBOX !== '1' && result === 'PASS') {
+    for (const root of sandboxRoots) {
+      if (existsSync(root)) rmSync(root, { recursive: true, force: true })
+    }
   } else {
-    console.error(`drive: sandbox kept at ${sandbox.root}`)
+    for (const root of sandboxRoots) {
+      if (existsSync(root)) console.error(`drive: sandbox kept at ${root}`)
+    }
   }
 
   console.log(
     JSON.stringify({
       result,
-      scenarios: [scenario],
+      scenarios,
       realDshUntouched,
       digestTarget,
-      mockRequests: server.requests.length,
     }),
   )
   process.exit(result === 'PASS' ? 0 : 1)
@@ -669,7 +1136,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: fabricated good log PASSes; fabricated defects (missing turn/end, wrong route, mock-never-called, no session log) each FAIL on their own check')
+    console.log('SELF-TEST OK: hello + demo fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route) FAILs on its own named check')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
