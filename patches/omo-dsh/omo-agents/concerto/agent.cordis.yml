@@ -192,14 +192,18 @@
     #                time — a static literal would fork the single source of
     #                truth. Rendered as JSON-quoted YAML scalars
     #                (injection-safe).
-    # Pre-declared for the next todos (they verify/negative-test; values are
-    # the intended final ones):
-    #   toolFilter   T12 read-only filter: deny the two mutation tools
-    #                (write, edit — dsh-tool-fs is never platform-gated, so
-    #                both names always exist for the child's restrict()).
-    #                `bash` is deliberately NOT denied: it is platform-gated
-    #                (absent on win32 — a deny would throw "unknown global
-    #                tool" there) and OMO's own explore keeps shell access;
+    # Declared with the intended final values; verification status noted:
+    #   toolFilter   T12 read-only filter, VERIFIED (P-4; evidence
+    #                .omo/evidence/task-12-mvp-implementation.log): deny the
+    #                two mutation tools (write, edit — dsh-tool-fs is never
+    #                platform-gated, so both names always exist for the
+    #                child's restrict()). OMO parity: OMO's own explore denies
+    #                write/edit/apply_patch/task/call_omo_agent — apply_patch
+    #                does not exist in dsh and task/call_omo_agent map to the
+    #                maxDepth cap below. `bash` is deliberately NOT denied
+    #                (T12 verdict a): it is platform-gated (absent on win32 —
+    #                a deny would throw "unknown global tool" at the child's
+    #                restrict() there) and OMO's explore keeps shell access;
     #                write-capable commands are governed by the persona's
     #                Read-Only Declarations plus T16 hard-blocks injection.
     #   maxDepth     T13 depth cap. SOURCE-VERIFIED FIELD NAME: the schema is

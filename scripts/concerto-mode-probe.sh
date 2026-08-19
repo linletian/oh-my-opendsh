@@ -57,6 +57,14 @@
 #                 broken row fails here instead of at first session creation.
 #                 A live tool-list observable needs a session and closes in
 #                 T19/T20.
+#   T12 proof    — scripts/prove-explore-toolfilter.mjs executes the INSTALLED
+#                 dsh's real child-composition path (dsh-subagent
+#                 applyChildComposition → tools.restrict → ToolRuntime view)
+#                 against the materialized row and asserts the child scope's
+#                 model-facing tool list excludes write/edit (execution
+#                 surfaces UNKNOWN_TOOL), read/grep/glob + the platform shell
+#                 survive, and the parent scope is untouched. Session-free;
+#                 the live-model half closes in T20.
 # Idempotence   — boot 2 reuses boot 1's sandbox DSH_HOME: the sync must be a
 #                 no-op (`concerto preset unchanged`) and the roster identical.
 #
@@ -367,6 +375,16 @@ boot_once() {
   node "$VALIDATE_EXPLORE_MJS" "$DSH_NM" "$materialized" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" \
     || fail "[$label] explore row failed validation against the installed rc.6 dsh-tool-subagent Config"
 
+  # T12 (P-4, AC-6 negative-a): the deny list is not just valid config — it is
+  # ENFORCED. scripts/prove-explore-toolfilter.mjs runs the installed dsh's
+  # REAL child-composition path (dsh-subagent applyChildComposition →
+  # tools.restrict → ToolRuntime view) against THIS materialized row and
+  # asserts write/edit never reach the child scope's model-facing tool list
+  # (schemas/get/execute all deny), while read/grep/glob and the platform
+  # shell survive. A live model session closes the loop in T20.
+  node "$REPO_ROOT/scripts/prove-explore-toolfilter.mjs" "$DSH_NM" "$materialized" \
+    || fail "[$label] explore toolFilter denial proof failed (T12 real-path enforcement)"
+
   # T16 (FR-6, P-3): the Hard Blocks injection listener's registration is
   # observable at boot. Wording pinned to the plugin's marker; it must stay
   # free of error/fatal/failed vocabulary so cold-start's negative greps
@@ -411,5 +429,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed rc.6 dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed rc.6 dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12 toolFilter deny=[write,edit] PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); idempotent re-boot confirmed"
 exit 0
