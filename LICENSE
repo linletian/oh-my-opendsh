@@ -1,0 +1,27 @@
+# License
+
+## Dual License: `MIT OR SUL-1.0`
+
+This project is released under the terms of the **MIT License OR SUL-1.0**,
+at the user's option (SPDX expression: `MIT OR SUL-1.0`).
+
+## Framework Code — MIT
+
+All framework code authored for this project is licensed under the
+[MIT License](LICENSES/LICENSE-MIT), Copyright (c) oh-my-opendsh
+contributors. This includes, but is not limited to, the host framework
+integration, tooling, and original implementation code.
+
+## OMO-Derived Source and Content — SUL-1.0
+
+Source code and content derived from, or substantially inspired by,
+[oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) — including
+agent/hook design, Hard Blocks / Anti-Patterns prompt content, and related
+derived material — is licensed under OMO's
+[SUL-1.0](LICENSES/oh-my-openagent.LICENSE.md).
+
+## Scope
+
+No commercial distribution is authorized under this license statement. Use of
+the OMO-derived material is subject to the full terms of SUL-1.0 as published
+by its author.
