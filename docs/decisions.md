@@ -16,7 +16,7 @@
 
 ## ID conventions
 
-- **D#** (D1–D11): confirmed decisions
+- **D#** (D1–D12): confirmed decisions
 - **R#** (R1–R6): risk dispositions (accept as-is / defer)
 - **O#** (O1–O8): open dimensions (O2 / O4 / O8 have since become decisions)
 - Cite as: `decisions.md D7`
@@ -49,6 +49,12 @@
 |---|---|---|
 | D11 | MVP scope: adopt the "MVP PRD: Concerto Skeleton" ([English](./mvp-prd.md) / [中文](./mvp-prd_zh-CN.md)), including the "Concerto Mode / 协奏模式" naming and all Q-1–Q-4 resolutions | §10.8; §12.7; §14 |
 
+### 2026-08-19 (fourth batch, 1 item)
+
+| ID | Decision | Basis |
+|---|---|---|
+| D12 | License whitelist extension: accept MPL-2.0 (weak copyleft) into the verify-licenses whitelist | Feasibility report §4.7; empirical finding from MVP implementation T3 (vite@8.2.1 → lightningcss@1.33.0 is an MPL-2.0 hard dependency) |
+
 ### Decision details (authoritative wording)
 
 **D7 — DSH pin strategy: pin minor (`0.1.x`)**
@@ -65,6 +71,9 @@ Respect original authors, full attribution — hashline (concept originating in 
 
 **D11 — MVP scope: adopt the "MVP PRD: Concerto Skeleton"**
 Adopts the MVP scope defined in the [MVP PRD](./mvp-prd.md), closing open dimension O8 (feasibility report §10.8): the minimal skeleton = a new run mode "Concerto Mode / 协奏模式 (identifier `concerto`)" + 1 main agent (omo-sisyphus) + 1 subagent (omo-explore) + 1 hook listener + dual model routes (deepseek + pi-ai); the goal is validating assumptions V1–V4 (scratch plugin cold start / per-subagent LLM routing / listener translation pattern / subagent restriction chain) and stepping on landmines early — no real engineering problems solved. OMO core package npm import is NOT merged into the MVP (Q-2 option B) and becomes the immediately following follow-up. Full scope, acceptance criteria (AC-1–AC-9), and the pitfall-hunting plan (P-1–P-9) are authoritative in the MVP PRD.
+
+**D12 — License whitelist extension: accept MPL-2.0**
+The `scripts/verify-licenses` whitelist gains MPL-2.0 on top of the MIT / Apache-2.0 / BSD / ISC / SUL-1.0 (OMO-only) baseline sketched in feasibility report §4.7. Basis: MVP implementation T3 empirically found vite@8.2.1 (a vitest 4 hard dependency) transitively depends on lightningcss@1.33.0, which is MPL-2.0; MPL-2.0 is a file-level weak copyleft and is widely allowed in the industry; lightningcss is only a build tool in the dev chain (transitive via devDependencies) and this project does not distribute it. Should the MPL-2.0 policy tighten in the future, remove the corresponding single line from the script and pin the vite version instead.
 
 ## Risk dispositions (2026-08-19)
 
@@ -97,6 +106,7 @@ The following risks were confirmed by the user as "accept as-is / defer"; the ri
 - **2026-08-16**: D1–D6 confirmed.
 - **2026-08-19**: D7–D10 and R1–R6 confirmed; all decision records migrated from the feasibility report (former §10.1 / §5.4) into this document. The feasibility report is now purely the research basis (its §10 keeps only the open-dimension options analysis).
 - **2026-08-19**: D11 confirmed ([MVP PRD](./mvp-prd.md) adopted, including Q-1–Q-4 resolutions); open dimension O8 closed.
+- **2026-08-19**: D12 confirmed (license whitelist accepts MPL-2.0; triggered by the empirical finding in MVP implementation T3).
 
 ---
 

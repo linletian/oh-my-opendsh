@@ -16,7 +16,7 @@
 
 ## 编号约定
 
-- **D#**（D1–D11）：已确认决策
+- **D#**（D1–D12）：已确认决策
 - **R#**（R1–R6）：风险处置决策（接受现状 / 暂不处理）
 - **O#**（O1–O8）：开放维度（其中 O2 / O4 / O8 已转为决策）
 - 引用格式：`决策文档 D7` / `decisions.md D7`
@@ -49,6 +49,12 @@
 |---|---|---|
 | D11 | MVP 范围：采纳《MVP PRD：协奏骨架》（[中文](./mvp-prd_zh-CN.md) / [English](./mvp-prd.md)），含「协奏模式（Concerto Mode）」命名与 Q-1～Q-4 全部决议 | §10.8；§12.7；§14 |
 
+### 2026-08-19（第四批，1 项）
+
+| # | 决策 | 依据 |
+|---|---|---|
+| D12 | License 白名单扩展：接受 MPL-2.0（弱 copyleft）进入 verify-licenses 白名单 | 调研报告 §4.7；MVP 实施 T3 实证（vite@8.2.1 → lightningcss@1.33.0 为 MPL-2.0 硬依赖） |
+
 ### 决策详情（完整措辞以此为准）
 
 **D7 — DSH pin 策略：pin minor（`0.1.x`）**
@@ -65,6 +71,9 @@
 
 **D11 — MVP 范围：采纳《MVP PRD：协奏骨架》**
 采纳 [MVP PRD](./mvp-prd_zh-CN.md) 定义的 MVP 范围，关闭开放维度 O8（调研报告 §10.8）：最小骨架 = 新运行模式「协奏模式（Concerto Mode，标识 `concerto`）」+ 1 主 agent（omo-sisyphus）+ 1 subagent（omo-explore）+ 1 hook listener + 双模型路由（deepseek + pi-ai）；目标是验证假设 V1–V4（scratch plugin 冷启动 / per-subagent LLM 路由 / listener 翻译层 / subagent 限制链）并提前踩坑，不解决真实工程问题。OMO core 包 npm import 不并入 MVP（Q-2 选 B），为紧随其后的第一个 follow-up。完整范围、验收标准（AC-1～AC-9）与踩坑计划（P-1～P-9）以 MVP PRD 为准。
+
+**D12 — License 白名单扩展：接受 MPL-2.0**
+`scripts/verify-licenses` 白名单在调研报告 §4.7 草拟的 MIT / Apache-2.0 / BSD / ISC / SUL-1.0（仅 OMO）基础上增加 MPL-2.0。依据：MVP 实施 T3 实证 vite@8.2.1（vitest 4 硬依赖）传递依赖 lightningcss@1.33.0 为 MPL-2.0；MPL-2.0 是文件级弱 copyleft，业界普遍允许；lightningcss 仅为开发链构建工具（devDependencies 传递），本项目不分发。若未来 MPL-2.0 政策收紧，撤除脚本中对应单行并改 pin vite 版本。
 
 ## 风险处置（2026-08-19）
 
@@ -97,6 +106,7 @@
 - **2026-08-16**：D1–D6 确认。
 - **2026-08-19**：D7–D10、R1–R6 确认；全部决策记录从可行性报告（原 §10.1 / §5.4）迁入本文档，可行性报告自此定位为纯调研依据（其 §10 仅保留开放维度的选项分析）。
 - **2026-08-19**：D11 确认（采纳 [MVP PRD](./mvp-prd_zh-CN.md)，含 Q-1～Q-4 决议）；开放维度 O8 关闭。
+- **2026-08-19**：D12 确认（License 白名单接受 MPL-2.0；MVP 实施 T3 实证触发）。
 
 ---
 
