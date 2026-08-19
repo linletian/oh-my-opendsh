@@ -86,6 +86,36 @@
 // verbatim in the parent's next mock request), (4) the summary text. The T16
 // hard-blocks injection is reported as a BONUS observation (T20 owns AC-6).
 //
+// ── T20 ASSERTION-LAYER CLOSURE (AC-5/AC-6/AC-7; plan task 20) ──
+// AC-5 lives in analyzeDemo as three named checks read off the LATEST
+// request/header of BOTH session logs (T15 contract; a foreground one-shot
+// child's descriptor omits the route — T19 note): the parent's route IS the
+// sisyphus route, the child's IS the explore route, and the two DIFFER.
+// AC-6 closes the T12/T13 e2e negatives as two DEDICATED scenarios (the demo
+// scenario's semantics stay clean):
+//   explore-write-denied (AC-6a): the mock scripts the explore child
+//     hallucinating a `write` tool_call — write is NOT advertised (the T12
+//     toolFilter deny is asserted on the child's request/header tools array)
+//     — and the REAL tool runtime's errored tool result is asserted verbatim:
+//     'Error: unknown tool "write"' (dsh-tools ToolNotFoundError :2428 +
+//     toolErrorResult :3472-3482 of the installed rc.6), plus the business
+//     outcome that the target file never appears on disk.
+//   explore-nested-delegation-denied (AC-6b): the mock scripts the explore
+//     child (depth 1) calling `explore` again; the per-start depth gate
+//     rejects BEFORE any grandchild exists — asserted verbatim:
+//     'Error: subagent depth 2 exceeds maxDepth 1' (dsh-subagent
+//     SubagentDepthError :470 + the same toolErrorResult wrap), the
+//     delegation tool's visibility at the cap is asserted as OBSERVED
+//     (T13 contract: "the tool stays visible at the cap"), and no session
+//     with parentSession = the child id may exist.
+// AC-7: every scenario verdict carries `assertions` (the check names, in
+// order) alongside `checks`/`failed`, and the overall verdict stays
+// CI-parseable {result:"PASS"|"FAIL", scenarios:[...]} on stdout.
+// Mutation QA (plan T20 failure half) is hermetic in runAnalysisSelfTest:
+// swapped routes input / collapsed equal routes (the model-route input
+// mutation), a fabricated log without the unknown-tool error, and one
+// without the depth error each FAIL on their own named check.
+//
 // ── LLM WIRING (sandbox $DSH_HOME/settings.yaml only; nothing touches the
 // host). Both adapters are pointed at the mock with a dummy key:
 //   llm-deepseek: {apiKeyEnv: DEEPSEEK_API_KEY, baseURL: <mock>/v1}
@@ -124,7 +154,8 @@
 // HOST_VOLATILE_SETTINGS_KEYS idea at path granularity).
 //
 // Usage:
-//   node tests/e2e/drive.mjs               run ALL scenarios (hello + demo), print verdict JSON
+//   node tests/e2e/drive.mjs               run ALL scenarios (hello + demo +
+//                                          the two AC-6 negatives), print verdict JSON
 //   node tests/e2e/drive.mjs --self-test   run the analysis logic against
 //                                          fabricated logs only (no spawn)
 // Env:
@@ -219,6 +250,87 @@ function demoScript(sandbox) {
   }
   if (process.env.DSH_E2E_DEMO_SKIP_EXPLORE === '1') delete script.explore
   return script
+}
+
+// ── T20 AC-6 NEGATIVE scenario constants (see the header's T20 section) ─────
+// The verbatim rejection contracts (installed rc.6, grep-verified):
+//   unknown tool:  dsh-tools ToolNotFoundError `unknown tool "${name}"`
+//                  (lib/index.js:2428) → toolErrorResult `Error: ${message}`
+//                  (:3472-3482) → 'Error: unknown tool "write"'.
+//   depth cap:     dsh-subagent SubagentDepthError `subagent depth
+//                  ${attempted} exceeds maxDepth ${max}` (lib/index.js:470)
+//                  → same wrap → 'Error: subagent depth 2 exceeds maxDepth 1'.
+const UNKNOWN_TOOL_WRITE_RESULT = 'Error: unknown tool "write"'
+const DEPTH_CAP_RESULT = 'Error: subagent depth 2 exceeds maxDepth 1'
+
+// AC-6a: the explore child hallucinates a `write` call (the mock may script a
+// tool the child was never offered — that IS the hallucination-resistance
+// test). Sentinels let the parent-closure check read business outcomes.
+const WRITE_DENY_PROMPT = 'e2e write-deny: ask explore to create a file and report what happened'
+const WRITE_TARGET_NAME = 'MOCK-WRITE-DENIED-TARGET.txt'
+const EXPLORE_WRITE_NOTE = 'MOCK-EXPLORE-WRITE-DENIED-3f7b1e: the write call was rejected (unknown tool)'
+const SISYPHUS_WRITE_SUMMARY = 'MOCK-SISYPHUS-WRITE-SUMMARY-8d2c6a: explore could not write — the read-only restriction held'
+
+// AC-6b: the explore child (delegationDepth 1) attempts a nested delegation.
+const NESTED_DENY_PROMPT = 'e2e depth-cap: ask explore to delegate a sub-task and report what happened'
+const EXPLORE_NESTED_NOTE = 'MOCK-EXPLORE-NESTED-DENIED-6b4f2d: the nested delegation was rejected (depth cap)'
+const SISYPHUS_NESTED_SUMMARY = 'MOCK-SISYPHUS-NESTED-SUMMARY-1e9a5b: explore could not delegate — the depth cap held'
+
+/** AC-6a script: sisyphus delegates; the child calls `write`, then reports. */
+function writeDeniedScript(sandbox) {
+  const targetPath = join(sandbox.project, WRITE_TARGET_NAME)
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'explore',
+        arguments: {
+          description: 'Attempt a project write',
+          prompt: `Use the write tool to create the file ${targetPath} with any content, then report exactly what happened.`,
+          run_in_background: false,
+        },
+      },
+      { type: 'text', text: SISYPHUS_WRITE_SUMMARY },
+    ],
+    explore: [
+      {
+        type: 'tool_call',
+        name: 'write',
+        arguments: { file_path: targetPath, content: 'this file must never exist\n' },
+      },
+      { type: 'text', text: EXPLORE_WRITE_NOTE },
+    ],
+  }
+}
+
+/** AC-6b script: sisyphus delegates; the child calls `explore` (nested). */
+function nestedDelegationScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'explore',
+        arguments: {
+          description: 'Attempt a nested delegation',
+          prompt: 'Use the explore tool to delegate a further sub-task, then report exactly what happened.',
+          run_in_background: false,
+        },
+      },
+      { type: 'text', text: SISYPHUS_NESTED_SUMMARY },
+    ],
+    explore: [
+      {
+        type: 'tool_call',
+        name: 'explore',
+        arguments: {
+          description: 'nested probe',
+          prompt: 'this delegation must be rejected by the depth cap',
+          run_in_background: false,
+        },
+      },
+      { type: 'text', text: EXPLORE_NESTED_NOTE },
+    ],
+  }
 }
 
 // §14.5: path-based volatile allowlist (see header). Symlinks are skipped by
@@ -530,6 +642,50 @@ function eventText(event) {
 }
 
 /**
+ * Tool names advertised to the model in a session's LATEST request/header
+ * (dsh-agent-loop appends header.tools only when non-empty —
+ * lib/index.js:706,733). Returns undefined when the log carries no
+ * request/header at all (a missing channel must FAIL, not vacuously pass).
+ */
+export function advertisedToolNames(events) {
+  let names
+  for (const event of events) {
+    if (event.type !== 'request/header') continue
+    const tools = event.data?.header?.tools
+    names = Array.isArray(tools)
+      ? tools
+          .map((tool) => tool?.function?.name ?? tool?.name)
+          .filter((name) => typeof name === 'string')
+      : []
+  }
+  return names
+}
+
+/**
+ * Flatten a session's tool/result events into {callId, isError, text} parts
+ * (the nested shape: data.message.content[] entries of type 'tool-result'
+ * whose own content[] carries the text parts — see the T19 verbatim sample).
+ */
+export function toolResultParts(events) {
+  const parts = []
+  for (const event of events) {
+    if (event.type !== 'tool/result') continue
+    const content = event.data?.message?.content
+    if (!Array.isArray(content)) continue
+    for (const part of content) {
+      if (part?.type !== 'tool-result') continue
+      const inner = Array.isArray(part.content) ? part.content : []
+      const text = inner
+        .filter((piece) => piece?.type === 'text' && typeof piece.text === 'string')
+        .map((piece) => piece.text)
+        .join('\n')
+      parts.push({ callId: part.toolCallId, isError: part.isError === true, text })
+    }
+  }
+  return parts
+}
+
+/**
  * The HELLO scenario assertions. `log` = {path, header, events} | undefined;
  * `requests` = the mock server's recorded request channel; `providersJson` =
  * the raw /api/llm.providers response text; `bootLog` = captured dsh stdout.
@@ -587,6 +743,9 @@ export function analyzeDemo({ log, childLog, requests, providersJson, bootLog },
   const childEvents = childLog?.events ?? []
   const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
   const exploreRequests = requests.filter((request) => request.role === 'explore')
+
+  // AC-5 evidence: the LATEST request/header of BOTH logs (T15 contract).
+  const parentRoute = requestHeaderRoute(events)
 
   // Link 1 evidence: the parent's explore tool/call with contract args.
   const exploreCall = events.find((event) => event.type === 'tool/call' && event.data?.name === 'explore')
@@ -688,6 +847,23 @@ export function analyzeDemo({ log, childLog, requests, providersJson, bootLog },
     // step and corrupt the chain — better to fail loud).
     mockSawExpectedRequestCounts:
       sisyphusRequests.length === 2 && exploreRequests.length === 2,
+    // ── AC-5 (T20): the route pair is observable AND distinct. Read off the
+    // LATEST request/header of BOTH session logs — the foreground one-shot
+    // child's subagent/descriptor omits the route (T19 note), so the
+    // executed route is the request/header, never the descriptor.
+    routePairParentRequestHeaderIsSisyphus:
+      parentRoute !== undefined
+      && parentRoute.provider === routes.sisyphus.provider
+      && parentRoute.model === routes.sisyphus.model,
+    routePairChildRequestHeaderIsExplore:
+      childRoute !== undefined
+      && childRoute.provider === routes.explore.provider
+      && childRoute.model === routes.explore.model,
+    routePairDistinct:
+      parentRoute !== undefined
+      && childRoute !== undefined
+      && (parentRoute.provider !== childRoute.provider
+        || parentRoute.model !== childRoute.model),
   }
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
   // Non-gating observations (T20 owns the AC-5/AC-6 assertion halves).
@@ -705,8 +881,168 @@ export function analyzeDemo({ log, childLog, requests, providersJson, bootLog },
         event.type === 'user/message'
         && eventText(event).includes('"plugin":"omo-agents"'),
     ),
+    // AC-5's raw pair (the assertion inputs, surfaced for the evidence log).
+    routePair: { parent: parentRoute ?? null, child: childRoute ?? null },
     childDescriptor: descriptor?.data ?? null,
     mockRequestRoles: requests.map((request) => request.role),
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
+/**
+ * Shared preamble for the two AC-6 negative analyzers: the common givens
+ * (plugin, providers, both session logs with proven lineage) plus the parent
+ * closure (the child's note returned as the explore tool/result, the
+ * conductor's summary, an orderly turn/end) and the request accounting.
+ * Returns {events, childEvents, sisyphusRequests, exploreRequests, givens}.
+ */
+function negativeScenarioGivens({ log, childLog, requests, providersJson, bootLog }, routes, childNote, parentSummary) {
+  const events = log?.events ?? []
+  const childEvents = childLog?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const exploreRequests = requests.filter((request) => request.role === 'explore')
+  const childResult = events.find(
+    (event) => event.type === 'tool/result' && eventText(event).includes(childNote),
+  )
+  const summaryMessage = events.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(parentSummary),
+  )
+  const turnCompleted = events.some(
+    (event) =>
+      event.type === 'turn/end'
+      && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+  )
+  const givens = {
+    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    exploreProviderActive: new RegExp(
+      `"provider":"${routes.explore.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    parentSessionLogFound: log !== undefined,
+    childSessionLogFound:
+      childLog !== undefined
+      && childLog.header?.origin === 'subagent'
+      && String(childLog.header?.parentSession) === String(log?.header?.id),
+    childOutcomeReturnedAndParentClosed:
+      childResult !== undefined && summaryMessage !== undefined && turnCompleted,
+    mockSawExpectedRequestCounts:
+      sisyphusRequests.length === 2 && exploreRequests.length === 2,
+  }
+  return { events, childEvents, sisyphusRequests, exploreRequests, givens }
+}
+
+/**
+ * AC-6a e2e negative (T12's toolFilter, closed at e2e). The mock scripts the
+ * explore child HALLUCINATING a `write` tool_call — write is not advertised
+ * to the child (the deny is asserted on the child's request/header tools
+ * array) — and the REAL tool runtime's rejection is asserted verbatim:
+ * 'Error: unknown tool "write"' as an isError tool result. The business
+ * outcome (report §14.4.4) is that the target file never appears on disk.
+ * `writeTargetPath` is the sandbox path the script aimed the write at.
+ */
+export function analyzeExploreWriteDenied(
+  { log, childLog, requests, providersJson, bootLog, writeTargetPath },
+  routes,
+) {
+  const { events, childEvents, givens } = negativeScenarioGivens(
+    { log, childLog, requests, providersJson, bootLog },
+    routes,
+    EXPLORE_WRITE_NOTE,
+    SISYPHUS_WRITE_SUMMARY,
+  )
+  const toolNames = advertisedToolNames(childEvents)
+  const results = toolResultParts(childEvents)
+  const writeCall = childEvents.find(
+    (event) => event.type === 'tool/call' && event.data?.name === 'write',
+  )
+  const checks = {
+    ...givens,
+    // The deny is wire-visible BEFORE the attempt: the child's advertised
+    // schema contains zero write/edit entries (T12's contract half).
+    childAdvertisedToolsExcludeWriteEdit:
+      toolNames !== undefined
+      && toolNames.length > 0
+      && !toolNames.includes('write')
+      && !toolNames.includes('edit'),
+    // THE negative: the hallucinated write is dispatched and the runtime
+    // rejects it with the verbatim unknown-tool contract (T12's other half).
+    writeAttemptRejectedWithUnknownTool:
+      writeCall !== undefined
+      && results.some(
+        (part) => part.isError && part.text === UNKNOWN_TOOL_WRITE_RESULT,
+      ),
+    // Business outcome: no bytes on disk (the sandbox path the mock aimed at).
+    writeTargetAbsentOnDisk:
+      typeof writeTargetPath === 'string' && !existsSync(writeTargetPath),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    childAdvertisedToolNames: toolNames ?? null,
+    childToolResults: results,
+    writeTargetPath: writeTargetPath ?? null,
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
+/**
+ * AC-6b e2e negative (T13's depth cap, closed at e2e). The mock scripts the
+ * explore child (delegationDepth 1) calling `explore` again. T13's contract:
+ * the delegation tool STAYS VISIBLE at the cap (asserted as observed), and
+ * the per-start depth gate rejects BEFORE any grandchild exists with the
+ * verbatim 'Error: subagent depth 2 exceeds maxDepth 1'. `allLogs` is every
+ * session log in the sandbox — no header.parentSession may equal the child
+ * id.
+ */
+export function analyzeExploreNestedDelegationDenied(
+  { log, childLog, allLogs, requests, providersJson, bootLog },
+  routes,
+) {
+  const { events, childEvents, givens } = negativeScenarioGivens(
+    { log, childLog, requests, providersJson, bootLog },
+    routes,
+    EXPLORE_NESTED_NOTE,
+    SISYPHUS_NESTED_SUMMARY,
+  )
+  const toolNames = advertisedToolNames(childEvents)
+  const results = toolResultParts(childEvents)
+  const nestedCall = childEvents.find(
+    (event) => event.type === 'tool/call' && event.data?.name === 'explore',
+  )
+  const checks = {
+    ...givens,
+    // Documented observed behavior (T13 README contract): `explore` remains
+    // model-visible at depth 1 — rejection is per attempted start, not by
+    // hiding the tool.
+    delegationToolVisibleAtDepthCap:
+      toolNames !== undefined && toolNames.includes('explore'),
+    // THE negative: the nested attempt's errored tool result, verbatim.
+    nestedDelegationRejectedWithDepthError:
+      nestedCall !== undefined
+      && results.some((part) => part.isError && part.text === DEPTH_CAP_RESULT),
+    // The gate fires BEFORE any child exists: no grandchild session log.
+    noGrandchildSessionCreated:
+      childLog !== undefined
+      && Array.isArray(allLogs)
+      && !allLogs.some(
+        (candidate) =>
+          String(candidate.header?.parentSession) === String(childLog.header?.id),
+      ),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    childAdvertisedToolNames: toolNames ?? null,
+    childToolResults: results,
+    grandchildLogs: Array.isArray(allLogs)
+      ? allLogs
+          .filter(
+            (candidate) =>
+              childLog !== undefined
+              && String(candidate.header?.parentSession) === String(childLog.header?.id),
+          )
+          .map((candidate) => candidate.path)
+      : null,
   }
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
 }
@@ -780,7 +1116,7 @@ function fabricatedDemoRequests(routes) {
   ]
 }
 
-function fabricatedGoodDemoParentLog() {
+function fabricatedGoodDemoParentLog(routes) {
   return {
     path: '/fabricated/parent/session.jsonl',
     header: { type: 'session', id: FABRICATED_PARENT_ID },
@@ -788,6 +1124,11 @@ function fabricatedGoodDemoParentLog() {
       { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: DEMO_PROMPT }] } },
       {
         seq: 2,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'initial' },
+      },
+      {
+        seq: 3,
         type: 'tool/call',
         data: {
           turn: 1,
@@ -798,12 +1139,12 @@ function fabricatedGoodDemoParentLog() {
         },
       },
       {
-        seq: 3,
+        seq: 4,
         type: 'tool/result',
-        data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'text', text: EXPLORE_FINDINGS }] } },
+        data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: EXPLORE_FINDINGS }], isError: false }] } },
       },
-      { seq: 4, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: SISYPHUS_SUMMARY }] } } },
-      { seq: 5, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      { seq: 5, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: SISYPHUS_SUMMARY }] } } },
+      { seq: 6, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
     ],
   }
 }
@@ -842,8 +1183,123 @@ function fabricatedGoodDemoChildLog(routes) {
 
 function fabricatedGoodDemoInput(routes) {
   return {
-    log: fabricatedGoodDemoParentLog(),
+    log: fabricatedGoodDemoParentLog(routes),
     childLog: fabricatedGoodDemoChildLog(routes),
+    requests: fabricatedDemoRequests(routes),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: '[omo-agents] loaded',
+  }
+}
+
+// ── fabricated AC-6 NEGATIVE logs (both negative analyses must earn PASS) ──
+
+function fabricatedNegativeParentLog(routes, prompt, childNote, parentSummary) {
+  return {
+    path: '/fabricated/negative-parent/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: prompt }] } },
+      {
+        seq: 2,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'initial' },
+      },
+      {
+        seq: 3,
+        type: 'tool/call',
+        data: {
+          turn: 1,
+          step: 1,
+          callId: 'mock-llm-tool-1',
+          name: 'explore',
+          arguments: JSON.stringify({ description: 'd', prompt: 'p', run_in_background: false }),
+        },
+      },
+      {
+        seq: 4,
+        type: 'tool/result',
+        data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: childNote }], isError: false }] } },
+      },
+      { seq: 5, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: parentSummary }] } } },
+      { seq: 6, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedNegativeChildLog(routes, attemptName, attemptArgs, rejectionText, childNote) {
+  return {
+    path: '/fabricated/negative-child/session.jsonl',
+    header: {
+      type: 'session',
+      id: FABRICATED_CHILD_ID,
+      origin: 'subagent',
+      parentSession: FABRICATED_PARENT_ID,
+      delegationDepth: 1,
+    },
+    events: [
+      {
+        seq: 1,
+        type: 'request/header',
+        data: {
+          header: {
+            config: { provider: routes.explore.provider, model: routes.explore.model },
+            tools: [
+              { type: 'function', function: { name: 'read' } },
+              { type: 'function', function: { name: 'grep' } },
+              { type: 'function', function: { name: 'explore' } },
+            ],
+          },
+          reason: 'initial',
+        },
+      },
+      {
+        seq: 2,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: 'mock-llm-tool-1', name: attemptName, arguments: JSON.stringify(attemptArgs) },
+      },
+      {
+        seq: 3,
+        type: 'tool/result',
+        data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: rejectionText }], isError: true }] } },
+      },
+      { seq: 4, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: childNote }] } } },
+      { seq: 5, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+const FABRICATED_WRITE_TARGET = '/fabricated/project/MOCK-WRITE-DENIED-TARGET.txt'
+
+function fabricatedGoodWriteInput(routes) {
+  return {
+    log: fabricatedNegativeParentLog(routes, WRITE_DENY_PROMPT, EXPLORE_WRITE_NOTE, SISYPHUS_WRITE_SUMMARY),
+    childLog: fabricatedNegativeChildLog(
+      routes,
+      'write',
+      { file_path: FABRICATED_WRITE_TARGET, content: 'x' },
+      UNKNOWN_TOOL_WRITE_RESULT,
+      EXPLORE_WRITE_NOTE,
+    ),
+    requests: fabricatedDemoRequests(routes),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: '[omo-agents] loaded',
+    writeTargetPath: FABRICATED_WRITE_TARGET,
+  }
+}
+
+function fabricatedGoodNestedInput(routes) {
+  const childLog = fabricatedNegativeChildLog(
+    routes,
+    'explore',
+    { description: 'nested probe', prompt: 'nested', run_in_background: false },
+    DEPTH_CAP_RESULT,
+    EXPLORE_NESTED_NOTE,
+  )
+  const log = fabricatedNegativeParentLog(routes, NESTED_DENY_PROMPT, EXPLORE_NESTED_NOTE, SISYPHUS_NESTED_SUMMARY)
+  return {
+    log,
+    childLog,
+    allLogs: [log, childLog],
     requests: fabricatedDemoRequests(routes),
     providersJson: fabricatedProvidersJson(routes),
     bootLog: '[omo-agents] loaded',
@@ -955,6 +1411,119 @@ function runAnalysisSelfTest(routes) {
       problems.push(`fabricated demo defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
     }
   }
+
+  // ── AC-5 mutation QA (plan T20 failure (a)): mutate the MODEL-ROUTE INPUT
+  // — resolveModelRoutes()' output is exactly what the settings.yaml
+  // model-route rows feed — and the route-pair checks must fail.
+  // (a1) swapped routes: both membership checks must fail.
+  const swappedRoutes = { sisyphus: routes.explore, explore: routes.sisyphus }
+  const swappedVerdict = analyzeDemo(fabricatedGoodDemoInput(routes), swappedRoutes)
+  if (
+    swappedVerdict.result !== 'FAIL'
+    || !swappedVerdict.failed.includes('routePairParentRequestHeaderIsSisyphus')
+    || !swappedVerdict.failed.includes('routePairChildRequestHeaderIsExplore')
+  ) {
+    problems.push(`AC-5 mutation "routes swapped" must FAIL with both route-pair membership checks, got ${swappedVerdict.result} (${swappedVerdict.failed.join(', ')})`)
+  }
+  // (a2) collapsed routes (both agents resolve to the SAME route) with both
+  // logs observing that same route: ONLY routePairDistinct may fail — the
+  // isolation proves the distinctness check is the one that lies.
+  const collapsedRoutes = { sisyphus: routes.sisyphus, explore: routes.sisyphus }
+  const collapsedInput = fabricatedGoodDemoInput(routes)
+  collapsedInput.childLog.events = collapsedInput.childLog.events.map((event) =>
+    event.type === 'request/header'
+      ? { ...event, data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'initial' } }
+      : event)
+  const collapsedVerdict = analyzeDemo(collapsedInput, collapsedRoutes)
+  if (
+    collapsedVerdict.result !== 'FAIL'
+    || !collapsedVerdict.failed.includes('routePairDistinct')
+    || collapsedVerdict.failed.includes('routePairParentRequestHeaderIsSisyphus')
+    || collapsedVerdict.failed.includes('routePairChildRequestHeaderIsExplore')
+  ) {
+    problems.push(`AC-5 mutation "routes collapsed to equal" must FAIL with ONLY routePairDistinct among the pair checks, got ${collapsedVerdict.result} (${collapsedVerdict.failed.join(', ')})`)
+  }
+
+  // ── AC-6a self-test (plan T20 failure (b)): the fabricated good input must
+  // PASS; a fabricated log WITHOUT the unknown-tool error must FAIL on
+  // writeAttemptRejectedWithUnknownTool; likewise for the other two checks.
+  const goodWrite = analyzeExploreWriteDenied(fabricatedGoodWriteInput(routes), routes)
+  if (goodWrite.result !== 'PASS') {
+    problems.push(`fabricated GOOD write-denied must PASS, got FAIL on: ${goodWrite.failed.join(', ')}`)
+  }
+  const writeDefectCases = [
+    ['write attempt not rejected (success instead of unknown-tool error)', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'tool/result'
+          ? { ...event, data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: 'file written' }], isError: false }] } } }
+          : event)
+    }, 'writeAttemptRejectedWithUnknownTool'],
+    ['write advertised in the child tool schema', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'request/header'
+          ? { ...event, data: { header: { ...event.data.header, tools: [...event.data.header.tools, { type: 'function', function: { name: 'write' } }] } } }
+          : event)
+    }, 'childAdvertisedToolsExcludeWriteEdit'],
+    ['write target landed on disk', (input) => {
+      input.writeTargetPath = fileURLToPath(import.meta.url) // this very file exists
+    }, 'writeTargetAbsentOnDisk'],
+    ['child note never returned to the parent', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'tool/result')
+    }, 'childOutcomeReturnedAndParentClosed'],
+  ]
+  for (const [label, mutate, expectedCheck] of writeDefectCases) {
+    const input = fabricatedGoodWriteInput(routes)
+    mutate(input)
+    const verdict = analyzeExploreWriteDenied(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated write-denied defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  // ── AC-6b self-test (plan T20 failure (c)): good input PASSes; a
+  // fabricated log WITHOUT the depth error FAILs on
+  // nestedDelegationRejectedWithDepthError; a grandchild session FAILs on
+  // noGrandchildSessionCreated; a hidden delegation tool FAILs on
+  // delegationToolVisibleAtDepthCap.
+  const goodNested = analyzeExploreNestedDelegationDenied(fabricatedGoodNestedInput(routes), routes)
+  if (goodNested.result !== 'PASS') {
+    problems.push(`fabricated GOOD nested-delegation-denied must PASS, got FAIL on: ${goodNested.failed.join(', ')}`)
+  }
+  const nestedDefectCases = [
+    ['nested delegation not rejected (no depth error)', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'tool/result'
+          ? { ...event, data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: 'nested run completed' }], isError: false }] } } }
+          : event)
+    }, 'nestedDelegationRejectedWithDepthError'],
+    ['grandchild session exists', (input) => {
+      input.allLogs = [
+        ...input.allLogs,
+        {
+          path: '/fabricated/grandchild/session.jsonl',
+          header: { type: 'session', id: 'session-fabricated-grandchild', origin: 'subagent', parentSession: FABRICATED_CHILD_ID, delegationDepth: 2 },
+          events: [],
+        },
+      ]
+    }, 'noGrandchildSessionCreated'],
+    ['delegation tool hidden at the cap', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'request/header'
+          ? { ...event, data: { header: { ...event.data.header, tools: event.data.header.tools.filter((tool) => tool.function.name !== 'explore') } } }
+          : event)
+    }, 'delegationToolVisibleAtDepthCap'],
+    ['child note never returned to the parent', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'tool/result')
+    }, 'childOutcomeReturnedAndParentClosed'],
+  ]
+  for (const [label, mutate, expectedCheck] of nestedDefectCases) {
+    const input = fabricatedGoodNestedInput(routes)
+    mutate(input)
+    const verdict = analyzeExploreNestedDelegationDenied(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated nested-delegation defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
   return problems
 }
 
@@ -982,6 +1551,27 @@ const SCENARIOS = [
     },
     script: demoScript,
     analyze: analyzeDemo,
+  },
+  {
+    // AC-6a (T20): the explore child hallucinates a write; the T12 deny
+    // rejects it verbatim and no bytes land on disk.
+    name: 'explore-write-denied',
+    prompt: WRITE_DENY_PROMPT,
+    roles: ['sisyphus', 'explore'],
+    script: writeDeniedScript,
+    analysisInput: (sandbox) => ({
+      writeTargetPath: join(sandbox.project, WRITE_TARGET_NAME),
+    }),
+    analyze: analyzeExploreWriteDenied,
+  },
+  {
+    // AC-6b (T20): the explore child (depth 1) attempts a nested delegation;
+    // the T13 cap rejects it verbatim before any grandchild exists.
+    name: 'explore-nested-delegation-denied',
+    prompt: NESTED_DENY_PROMPT,
+    roles: ['sisyphus', 'explore'],
+    script: nestedDelegationScript,
+    analyze: analyzeExploreNestedDelegationDenied,
   },
 ]
 
@@ -1046,9 +1636,11 @@ async function runScenario(def, routes) {
       {
         log: finalLog ?? log,
         childLog,
+        allLogs,
         requests: server.requests,
         providersJson,
         bootLog: boot.log(),
+        ...(def.analysisInput?.(sandbox) ?? {}),
       },
       routes,
     )
@@ -1065,6 +1657,9 @@ async function runScenario(def, routes) {
       logPath,
       childLogPath: childLog?.path,
       timeline,
+      // AC-7: every assertion BY NAME, in check order — CI can list what ran
+      // without parsing the checks object.
+      assertions: Object.keys(analysis.checks ?? {}),
       ...analysis,
     }
   } catch (error) {
@@ -1136,7 +1731,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route) FAILs on its own named check')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return) FAILs on its own named check')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
