@@ -1,0 +1,23 @@
+{
+  // T9 P-6 — Host face of the DSH dual-target convention
+  // (`build:lib:host` + `build:lib:client`), adapted to our no-build reality.
+  //
+  // DSH:  `tsc -b tsconfig.host.json && tsdown --env.DSH_BUILD_FACE host`
+  // Ours: `tsc --noEmit -p tsconfig.host.json`
+  //        (Node 24 type-stripping loads src/*.ts as source — T4 P-8.6 — and
+  //        this workspace has no bundler, so the emit/tsdown halves are moot;
+  //        the typecheck half is the whole guard).
+  //
+  // The host face is THE gate for a pure-host plugin: `lib` deliberately
+  // EXCLUDES DOM, so any browser-only global (window/document/localStorage/…)
+  // referenced in src/ fails this build. At the dsh host runtime those
+  // globals are undefined, so this face pins the real invariant. The
+  // repo-root tsconfig facade keeps TypeScript's default DOM lib on, which
+  // is exactly why this face must be stricter than `pnpm typecheck`.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

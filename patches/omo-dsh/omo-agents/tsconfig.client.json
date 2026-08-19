@@ -1,0 +1,22 @@
+{
+  // T9 P-6 — Client face of the DSH dual-target convention, mirroring DSH's
+  // tsconfig.base.client.json: lib ES2022+DOM+DOM.Iterable, types: [] (no
+  // ambient node types), so anything under src/client/ must be browser-pure.
+  //
+  // For a pure-host plugin this face is VACUOUS by design: src/client/ does
+  // not exist, the package ships no browser entry (package.json has no
+  // `dsh.client` field and no `./client` export — cf. DSH host-only packages
+  // like packages/host/webserver, which likewise have no client face and are
+  // referenced only from the host aggregate). The root `build:lib:client`
+  // script treats absence of src/client/ as pass-with-note.
+  //
+  // Future-proofing at zero cost: the moment a browser entry appears under
+  // src/client/, this config activates and pins browser purity for it —
+  // exactly what breaks in DSH when client code leaks node globals.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/client"]
+}
