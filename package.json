@@ -8,7 +8,8 @@
     "build": "pnpm run build:lib:host && pnpm run build:lib:client",
     "build:lib:host": "tsc --noEmit -p patches/omo-dsh/omo-agents/tsconfig.host.json",
     "build:lib:client": "if [ -d patches/omo-dsh/omo-agents/src/client ]; then tsc --noEmit -p patches/omo-dsh/omo-agents/tsconfig.client.json; else echo '[build:lib:client] vacuous: pure-host package, no src/client'; fi",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "node tests/e2e/drive.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
