@@ -8,6 +8,12 @@
 
 > **Primary entry (English).** For the Chinese version, see [README_zh-CN.md](./README_zh-CN.md). For the full research report, see [Feasibility Report](./docs/feasibility-report.md).
 
+## Why This Project
+
+We don't believe any single LLM is capable enough to cover every scenario. Real engineering work demands a diverse mix of capabilities — deep reasoning, fast retrieval, disciplined implementation, critical review — and every model has strengths and blind spots.
+
+OMO's Agent Team mode is the answer to that belief: instead of betting on one "do-everything" model, let a team of specialized agents collaborate, with the right model doing the right job. This project brings that battle-tested multi-agent collaboration system onto the DSH framework, precisely to make "don't bet on a single model" the default way of working — not a matter of luck.
+
 ## Project Goal
 
 Bring the harness capability system of [oh-my-openagent (OMO)](https://github.com/code-yeongyu/oh-my-openagent) (11 agents, 54+ hooks, LSP/AST-grep/codegraph MCP, `/goal`, `/ultrawork`, Team Mode, hashline edit, Rules Injection, etc.) onto the [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) framework as a DSH-official scratch plugin (loaded via `dsh --patch` overlay), and build a sustainable patch framework that lets us rebase against OMO upstream in **under 1 hour** per OMO bump.
@@ -33,10 +39,14 @@ Every decision in this project is governed by these two principles, which have e
 
 🟡 **Pre-research complete**
 
-- ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 11 sections, 2026-08-16)
-- ✅ 6 key strategic decisions confirmed (independent repo / scratch plugin / phased LLM coverage / web ChatNode / no OMO PR / dual license + direct OMO import)
-- ⏳ 8 detail decisions pending (OMO/DSH pin strategy, npm package naming, Windows support scope, telemetry, release notifications, upgrade cadence, acceptance criteria layering, etc.)
+- ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 14 sections: 2026-08-16 main body + 2026-08-19 follow-up research)
+- ✅ 10 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
+- ⏳ 6 open dimensions pending decision (OMO pin strategy, npm package naming, telemetry, release notifications, upgrade cadence, acceptance criteria layering, etc.; see "Open dimensions" in the decision record)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
+
+## Project Decisions
+
+The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D10), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
 
 ## Feasibility Report
 

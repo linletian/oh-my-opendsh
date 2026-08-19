@@ -8,6 +8,12 @@
 
 > 中文翻译；主入口（英文）见 [README.md](./README.md)。调研报告（中文）见 [可行性报告](./docs/feasibility-report_zh-CN.md)。
 
+## 项目初衷
+
+我们不相信任何一个大模型的能力足以覆盖所有场景。真实工程问题对能力的需求是多样的——深度推理、快速检索、严谨实现、批判性审查——而每个模型都有所长、有所短。
+
+OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全能"模型，不如让一群各司其职的 agent 协作，合适的模型做合适的事。本项目把这套经过一年多实战检验的多 agent 协作体系带到 DSH 框架上，正是为了让这种"不押注单一模型"的工作方式成为默认，而不是运气。
+
 ## 项目目标
 
 把 [oh-my-openagent (OMO)](https://github.com/code-yeongyu/oh-my-openagent) 的 harness 能力体系（11 agent、54+ hook、LSP/AST-grep/codegraph MCP、`/goal`、`/ultrawork`、Team Mode、hashline edit、Rules Injection 等）以 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 官方 scratch plugin 形式（`dsh --patch` overlay）接到 DSH 框架上，并搭一个让 OMO 升级时 **1 小时内完成 rebase** 的可持续 patch 工程。
@@ -33,10 +39,14 @@
 
 🟡 **预研完成**
 
-- ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，11 节，2026-08-16）
-- ✅ 6 个关键方向决策已确认（独立仓库 / scratch plugin / 全 LLM 分期 / web ChatNode / 不给 OMO PR / dual license + 直接 import OMO）
-- ⏳ 8 个细节决策待定（OMO/DSH pin 策略、npm 命名、Windows 支持范围、telemetry、release 通知、升级节奏、验收分层等）
+- ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，14 节：2026-08-16 主体 + 2026-08-19 追加调研）
+- ✅ 10 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
+- ⏳ 6 个开放维度待决策（OMO pin 策略、npm 命名、telemetry、release 通知、升级节奏、验收分层等；详见决策记录"开放维度"）
 - ⏳ 工作量粗估：~16 周（一人主力）
+
+## 项目决策
+
+项目决策记录见[决策记录](./docs/decisions_zh-CN.md)——已确认决策（D1–D10）、风险处置（R1–R6）、开放维度状态跟踪（O1–O8）。可行性报告是决策的调研依据。
 
 ## 调研报告
 
