@@ -1,0 +1,11 @@
+{
+  "name": "@oh-my-opendsh/omo-agents",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OMO agent-team capabilities as a DSH cordis plugin (MVP skeleton: no-op).",
+  "license": "MIT OR SUL-1.0",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
