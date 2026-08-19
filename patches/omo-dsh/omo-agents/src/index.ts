@@ -1,5 +1,6 @@
 // @oh-my-opendsh/omo-agents — MVP cordis plugin (AC-1) + T6 Concerto Mode
-// registration (FR-2, AC-2) + T8 omo-sisyphus system prompt (FR-3, AC-3).
+// registration (FR-2, AC-2) + T8 omo-sisyphus system prompt (FR-3, AC-3)
+// + T16 Hard Blocks injection listener (FR-6, P-3).
 //
 // T6: apply-time authoring registers the 协奏 / Concerto Mode preset as a real
 // 5th run mode at the same roster level as the official 4 (P-1 verdict:
@@ -16,6 +17,13 @@
 // main-agent brain is the four system-sections markdown files, rebuilt fresh
 // on every boot. The `omo-sisyphus system prompt assembled` line is the
 // in-process marker the probe asserts.
+//
+// T16: one `agent/pre-step` waterfall listener injects the Hard Blocks +
+// Anti-Patterns sections into every sub-agent's context via agent.inject()
+// (see hard-blocks-injection.ts for the verified API citations). The
+// `hard-blocks injection listener registered on agent/pre-step` line is the
+// boot-level registration observable; unit tests assert the inject call and
+// the single registration; live sub-agent prompt proof lands in T20 (e2e).
 
 // The `.ts` extension is load-bearing: Node 24 type-stripping (P-8.6) does no
 // specifier resolution, and there is no bundler to rewrite it.
@@ -26,6 +34,11 @@ import {
   type ConcertoSyncOutcome,
 } from './concerto-preset.ts'
 import { SISYPHUS_SECTION_ORDER, buildSisyphusSystemPrompt } from './system-prompt.ts'
+import {
+  HARD_BLOCKS_INJECTION_EVENT,
+  registerHardBlocksInjection,
+  type PreStepRegistrationContext,
+} from './hard-blocks-injection.ts'
 
 export const name = 'omo-agents'
 
@@ -42,7 +55,7 @@ interface AgentPresetsLike {
   list(): Promise<RosterEntry[]>
 }
 
-interface InjectingContext {
+interface InjectingContext extends PreStepRegistrationContext {
   inject(deps: string[], cb: (ctx: { agentPresets: AgentPresetsLike }) => unknown): void
 }
 
@@ -52,6 +65,17 @@ function describeError(err: unknown): string {
 
 export function apply(ctx: InjectingContext): void {
   console.log('[omo-agents] loaded')
+
+  // T16 first: the listener is independent of preset sync, so a sync throw
+  // must never take the registration down with it.
+  try {
+    registerHardBlocksInjection(ctx)
+    console.log(
+      `[omo-agents] hard-blocks injection listener registered on ${HARD_BLOCKS_INJECTION_EVENT}`,
+    )
+  } catch (err) {
+    console.log(`[omo-agents] hard-blocks injection FAILED: ${describeError(err)}`)
+  }
 
   let outcome: ConcertoSyncOutcome
   const targetDir = concertoPresetDir()

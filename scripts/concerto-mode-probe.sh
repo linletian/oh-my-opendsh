@@ -18,6 +18,11 @@
 #                 three AC-3 section markers (Orchestrator Role / Delegation
 #                 Discipline / Hard Blocks) — proof the booted concerto mode's
 #                 main-agent brain is the assembled omo-sisyphus prompt.
+#   T16 marker  — the `hard-blocks injection listener registered on
+#                 agent/pre-step` boot line: the FR-6 listener's registration
+#                 is observable at boot (unit-level inject assertions live in
+#                 tests/omo-agents/hard-blocks-injection.test.ts; live
+#                 sub-agent prompt proof is T20's e2e snapshot).
 #   external    — POST /api/agentPreset.list (the Web UI picker's own RPC
 #                 surface) lists concerto at trust "user" alongside
 #                 standard/code/minimal/cordis at trust "system", with the
@@ -179,6 +184,16 @@ boot_once() {
     || fail "[$label] materialized persona missing the Delegation Discipline section"
   grep -q "      ## Hard Blocks" "$materialized" \
     || fail "[$label] materialized persona missing the injected Hard Blocks section"
+
+  # T16 (FR-6, P-3): the Hard Blocks injection listener's registration is
+  # observable at boot. Wording pinned to the plugin's marker; it must stay
+  # free of error/fatal/failed vocabulary so cold-start's negative greps
+  # remain clean on the happy path.
+  grep -q "\[omo-agents\] hard-blocks injection listener registered on agent/pre-step" "$boot_log" \
+    || fail "[$label] hard-blocks injection registration marker missing from boot log"
+  if grep -q "\[omo-agents\] hard-blocks injection FAILED" "$boot_log"; then
+    fail "[$label] hard-blocks injection registration threw — see FAILED line above"
+  fi
 }
 
 # Boot 1: fresh sandbox — the preset is materialized.
@@ -187,5 +202,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); idempotent re-boot confirmed"
 exit 0
