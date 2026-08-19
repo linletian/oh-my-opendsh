@@ -27,6 +27,14 @@
 #                 surface) lists concerto at trust "user" alongside
 #                 standard/code/minimal/cordis at trust "system", with the
 #                 name from OUR preset.yml (协奏 / Concerto).
+#   T14 routes   — the `[omo-agents] model routes: sisyphus=… explore=…` boot
+#                 marker (resolved by the plugin from src/model-routes.ts, the
+#                 single config source of truth), and POST /api/llm.providers
+#                 showing BOTH route providers `active:true` — the sisyphus
+#                 seat's from the llm-deepseek adapter (entry config), the
+#                 explore seat's from the llm-pi-ai adapter (sandbox-seeded
+#                 settings profile; registration is keyless — no API keys
+#                 exist in the sandbox, and none are needed for this gate).
 # Idempotence   — boot 2 reuses boot 1's sandbox DSH_HOME: the sync must be a
 #                 no-op (`concerto preset unchanged`) and the roster identical.
 #
@@ -72,6 +80,46 @@ timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-agents" >"$ADD_LOG" 2>&1 \
   || fail "dsh plugin add failed (see $ADD_LOG)"
 
+# T14 (FR-5, P-2; AC-5 config half): resolve the two route pairs from the
+# plugin's own config module — the single source of truth (Node 24
+# type-stripping runs the .ts directly, P-8.6) — then pre-seed the sandbox
+# settings.yaml with the llm-pi-ai profile that registers the explore seat's
+# provider route. Adapter REGISTRATION is the gate (no API keys exist in the
+# sandbox): credentials resolve per request, so a route registers keylessly
+# and a missing key would only fail a REQUEST with MISSING_CREDENTIAL.
+ROUTES_ENV="$(node --input-type=module -e "
+  import('./patches/omo-dsh/omo-agents/src/model-routes.ts').then((m) => {
+    const r = m.resolveModelRoutes()
+    console.log('SISYPHUS_PROVIDER=' + r.sisyphus.provider)
+    console.log('SISYPHUS_MODEL=' + r.sisyphus.model)
+    console.log('EXPLORE_PROVIDER=' + r.explore.provider)
+    console.log('EXPLORE_MODEL=' + r.explore.model)
+  })
+")" || fail "model-routes module resolution failed: $ROUTES_ENV"
+SISYPHUS_PROVIDER="$(printf '%s\n' "$ROUTES_ENV" | grep '^SISYPHUS_PROVIDER=' | cut -d= -f2-)"
+SISYPHUS_MODEL="$(printf '%s\n' "$ROUTES_ENV" | grep '^SISYPHUS_MODEL=' | cut -d= -f2-)"
+EXPLORE_PROVIDER="$(printf '%s\n' "$ROUTES_ENV" | grep '^EXPLORE_PROVIDER=' | cut -d= -f2-)"
+EXPLORE_MODEL="$(printf '%s\n' "$ROUTES_ENV" | grep '^EXPLORE_MODEL=' | cut -d= -f2-)"
+[[ -n "$SISYPHUS_PROVIDER" && -n "$SISYPHUS_MODEL" && -n "$EXPLORE_PROVIDER" && -n "$EXPLORE_MODEL" ]] \
+  || fail "could not parse model-routes output: $ROUTES_ENV"
+[[ "$SISYPHUS_PROVIDER/$SISYPHUS_MODEL" != "$EXPLORE_PROVIDER/$EXPLORE_MODEL" ]] \
+  || fail "AC-5 precheck: both agents resolve to the SAME route ($SISYPHUS_PROVIDER/$SISYPHUS_MODEL)"
+echo "concerto-probe: T14 routes: sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL"
+
+# The explore seat rides the llm-pi-ai adapter, which the shipped composition
+# mounts DORMANT (zero routes); a settings profile registers the route at
+# boot. If an override points the explore seat at a route another adapter
+# already owns, llm-pi-ai logs the DUPLICATE_ADAPTER refusal and keeps
+# serving — the runtime assertions below then judge the result honestly.
+mkdir -p "$DSH_HOME"
+cat > "$DSH_HOME/settings.yaml" <<EOF
+# T14 probe seed: register the explore seat's pi-ai provider route.
+llm-pi-ai:
+  providers:
+    $EXPLORE_PROVIDER:
+      apiKeyEnv: DEEPSEEK_API_KEY
+EOF
+
 # boot_once <label> <expected-sync-outcome>: real boot, bounded; asserts the
 # plugin-side markers and the external roster, then SIGTERMs (exit 0).
 boot_once() {
@@ -103,6 +151,17 @@ boot_once() {
   fi
   echo "concerto-probe: [$label] web ready on 127.0.0.1:$port"
 
+  # T14: runtime adapter registration surface — POST /api/llm.providers joins
+  # ctx.llm.listProviders() (registered routes) with the configurable-provider
+  # directory each mounted adapter declares. One call suffices: the roster
+  # poll below already proves the API is up, and settings-driven routes
+  # register during plugin load, before the readiness line.
+  local llm_resp="$SANDBOX/llm.providers-$label.json"
+  curl -sS -m 5 -X POST "http://127.0.0.1:$port/api/llm.providers" \
+    -H 'content-type: application/json' \
+    -d "{\"type\":\"client-request\",\"rpcId\":\"concerto-probe-llm-$label\",\"method\":\"llm.providers\",\"payload\":{}}" \
+    >"$llm_resp" 2>/dev/null || true
+
   # Poll the roster RPC until the preset lands (or the budget runs out).
   # Envelope shape: {type:'client-request', rpcId, method, payload} — the exact
   # surface packages/client/ui-agent-preset uses.
@@ -128,6 +187,9 @@ boot_once() {
   cat "$boot_log"
   echo "----- [$label] POST /api/agentPreset.list response (verbatim) -----"
   cat "$api_resp"
+  echo
+  echo "----- [$label] POST /api/llm.providers response (verbatim) -----"
+  cat "$llm_resp"
   echo
   echo "----------------------------------------------------------"
 
@@ -194,6 +256,23 @@ boot_once() {
   if grep -q "\[omo-agents\] hard-blocks injection FAILED" "$boot_log"; then
     fail "[$label] hard-blocks injection registration threw — see FAILED line above"
   fi
+
+  # T14 (FR-5, P-2; AC-5 config half): the plugin resolved and validated the
+  # two distinct route pairs at apply() time (marker wording pinned), and
+  # BOTH adapters our dual routing depends on (Q-3) hold REGISTERED routes at
+  # runtime — the sisyphus seat's provider from the llm-deepseek adapter's
+  # entry config, the explore seat's provider from the llm-pi-ai adapter via
+  # the settings profile seeded above. Registration is the gate; no live
+  # model call is made (no API keys in the sandbox).
+  grep -q "\[omo-agents\] model routes: sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL" "$boot_log" \
+    || fail "[$label] model-routes marker missing or mismatched (plugin resolved different routes than the probe?)"
+  if grep -q "\[omo-agents\] model routes FAILED" "$boot_log"; then
+    fail "[$label] model-routes resolution threw at boot — see FAILED line above"
+  fi
+  grep -q "\"provider\":\"$SISYPHUS_PROVIDER\"[^}]*\"active\":true" "$llm_resp" \
+    || fail "[$label] sisyphus provider '$SISYPHUS_PROVIDER' not ACTIVE in /api/llm.providers (llm-deepseek adapter registration broken?)"
+  grep -q "\"provider\":\"$EXPLORE_PROVIDER\"[^}]*\"active\":true" "$llm_resp" \
+    || fail "[$label] explore provider '$EXPLORE_PROVIDER' not ACTIVE in /api/llm.providers (llm-pi-ai settings-profile registration broken?)"
 }
 
 # Boot 1: fresh sandbox — the preset is materialized.
@@ -202,5 +281,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; idempotent re-boot confirmed"
 exit 0

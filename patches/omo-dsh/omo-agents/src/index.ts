@@ -1,5 +1,6 @@
 // @oh-my-opendsh/omo-agents — MVP cordis plugin (AC-1) + T6 Concerto Mode
 // registration (FR-2, AC-2) + T8 omo-sisyphus system prompt (FR-3, AC-3)
+// + T14 dual model route resolution (FR-5, P-2; AC-5 config half)
 // + T16 Hard Blocks injection listener (FR-6, P-3).
 //
 // T6: apply-time authoring registers the 协奏 / Concerto Mode preset as a real
@@ -34,6 +35,7 @@ import {
   type ConcertoSyncOutcome,
 } from './concerto-preset.ts'
 import { SISYPHUS_SECTION_ORDER, buildSisyphusSystemPrompt } from './system-prompt.ts'
+import { resolveModelRoutes } from './model-routes.ts'
 import {
   HARD_BLOCKS_INJECTION_EVENT,
   registerHardBlocksInjection,
@@ -75,6 +77,19 @@ export function apply(ctx: InjectingContext): void {
     )
   } catch (err) {
     console.log(`[omo-agents] hard-blocks injection FAILED: ${describeError(err)}`)
+  }
+
+  // T14: resolve + validate the dual routes at apply() time so a
+  // misconfiguration is loud at boot (the probe asserts this marker), and so
+  // T11/T15/T20 read the same validated pairs from model-routes.ts.
+  try {
+    const routes = resolveModelRoutes()
+    console.log(
+      `[omo-agents] model routes: sisyphus=${routes.sisyphus.provider}/${routes.sisyphus.model} `
+      + `explore=${routes.explore.provider}/${routes.explore.model}`,
+    )
+  } catch (err) {
+    console.log(`[omo-agents] model routes FAILED: ${describeError(err)}`)
   }
 
   let outcome: ConcertoSyncOutcome

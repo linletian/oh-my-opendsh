@@ -63,6 +63,13 @@ dsh --profile "$PROFILE" --dump-config --patch ./cordis.yml >"$DUMP_OUT" 2>"$DUM
   || fail "--dump-config failed: $(cat "$DUMP_ERR")"
 grep -q "name: '@oh-my-opendsh/omo-agents'" "$DUMP_OUT" \
   || fail "composed tree does not contain the omo-agents row (patch silently skipped?)"
+# T14: both built-in LLM adapters our dual routing depends on (Q-3) must be
+# part of the composed tree — the composition-level half of the adapter gate
+# (the runtime-registration half lives in scripts/concerto-mode-probe.sh).
+grep -q "name: '@deepseek-ai/dsh-llm-deepseek'" "$DUMP_OUT" \
+  || fail "composed tree missing the dsh-llm-deepseek adapter row (sisyphus route)"
+grep -q "name: '@deepseek-ai/dsh-llm-pi-ai'" "$DUMP_OUT" \
+  || fail "composed tree missing the dsh-llm-pi-ai adapter row (explore route)"
 if grep -qE "not found|mismatch|failed" "$DUMP_ERR"; then
   fail "patch warnings on stderr: $(cat "$DUMP_ERR")"
 fi
