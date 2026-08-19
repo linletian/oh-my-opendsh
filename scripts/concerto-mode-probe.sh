@@ -23,6 +23,13 @@
 #                 is observable at boot (unit-level inject assertions live in
 #                 tests/omo-agents/hard-blocks-injection.test.ts; live
 #                 sub-agent prompt proof is T20's e2e snapshot).
+#   T10 marker  — the `omo-explore persona assembled` boot line: the FR-4
+#                 read-only subagent persona (system-sections/
+#                 explore-persona.md) assembles cleanly under the dsh boot
+#                 environment. The persona is a SUBAGENT artifact, not a run
+#                 mode — no roster entry is expected; T11 binds the text as a
+#                 dsh-tool-subagent instance's `persona` config (contract in
+#                 src/explore-prompt.ts).
 #   external    — POST /api/agentPreset.list (the Web UI picker's own RPC
 #                 surface) lists concerto at trust "user" alongside
 #                 standard/code/minimal/cordis at trust "system", with the
@@ -257,6 +264,16 @@ boot_once() {
     fail "[$label] hard-blocks injection registration threw — see FAILED line above"
   fi
 
+  # T10 (FR-4): the omo-explore subagent persona assembles at apply() time
+  # under the real boot environment (P-9 resolution proof for the new
+  # markdown file). Marker wording pinned; same error-vocabulary discipline
+  # as T16. No roster assertion: explore is a subagent persona, not a preset.
+  grep -q "\[omo-agents\] omo-explore persona assembled: 1 section, " "$boot_log" \
+    || fail "[$label] omo-explore persona assembly marker missing from boot log"
+  if grep -q "\[omo-agents\] omo-explore persona FAILED" "$boot_log"; then
+    fail "[$label] omo-explore persona assembly threw at boot — see FAILED line above"
+  fi
+
   # T14 (FR-5, P-2; AC-5 config half): the plugin resolved and validated the
   # two distinct route pairs at apply() time (marker wording pinned), and
   # BOTH adapters our dual routing depends on (Q-3) hold REGISTERED routes at
@@ -281,5 +298,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; idempotent re-boot confirmed"
 exit 0

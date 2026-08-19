@@ -1,7 +1,8 @@
 // @oh-my-opendsh/omo-agents — MVP cordis plugin (AC-1) + T6 Concerto Mode
 // registration (FR-2, AC-2) + T8 omo-sisyphus system prompt (FR-3, AC-3)
 // + T14 dual model route resolution (FR-5, P-2; AC-5 config half)
-// + T16 Hard Blocks injection listener (FR-6, P-3).
+// + T16 Hard Blocks injection listener (FR-6, P-3)
+// + T10 omo-explore read-only subagent persona (FR-4).
 //
 // T6: apply-time authoring registers the 协奏 / Concerto Mode preset as a real
 // 5th run mode at the same roster level as the official 4 (P-1 verdict:
@@ -25,6 +26,15 @@
 // `hard-blocks injection listener registered on agent/pre-step` line is the
 // boot-level registration observable; unit tests assert the inject call and
 // the single registration; live sub-agent prompt proof lands in T20 (e2e).
+//
+// T10: the omo-explore read-only retrieval subagent persona is assembled at
+// apply() time from system-sections/explore-persona.md (see explore-prompt.ts
+// for the architecture decision + the T11 binding contract). The persona is
+// NOT a run mode and authors no preset roster entry — T11 binds the built
+// text as a dsh-tool-subagent instance's `persona` config. The
+// `omo-explore persona assembled` line is the boot-level observable the
+// probe asserts (a broken persona file is loud at boot, never at T11's
+// first delegation).
 
 // The `.ts` extension is load-bearing: Node 24 type-stripping (P-8.6) does no
 // specifier resolution, and there is no bundler to rewrite it.
@@ -35,6 +45,7 @@ import {
   type ConcertoSyncOutcome,
 } from './concerto-preset.ts'
 import { SISYPHUS_SECTION_ORDER, buildSisyphusSystemPrompt } from './system-prompt.ts'
+import { EXPLORE_SECTION_ORDER, buildExploreSystemPrompt } from './explore-prompt.ts'
 import { resolveModelRoutes } from './model-routes.ts'
 import {
   HARD_BLOCKS_INJECTION_EVENT,
@@ -90,6 +101,19 @@ export function apply(ctx: InjectingContext): void {
     )
   } catch (err) {
     console.log(`[omo-agents] model routes FAILED: ${describeError(err)}`)
+  }
+
+  // T10: assemble the omo-explore subagent persona at apply() time — same
+  // loud-but-non-fatal discipline: the probe asserts the marker, and a broken
+  // persona file surfaces here rather than at T11's first delegation.
+  try {
+    const explorePrompt = buildExploreSystemPrompt()
+    console.log(
+      `[omo-agents] omo-explore persona assembled: `
+      + `${EXPLORE_SECTION_ORDER.length} section, ${explorePrompt.length} chars`,
+    )
+  } catch (err) {
+    console.log(`[omo-agents] omo-explore persona FAILED: ${describeError(err)}`)
   }
 
   let outcome: ConcertoSyncOutcome
