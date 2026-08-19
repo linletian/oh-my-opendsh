@@ -65,6 +65,17 @@
 #                 surfaces UNKNOWN_TOOL), read/grep/glob + the platform shell
 #                 survive, and the parent scope is untouched. Session-free;
 #                 the live-model half closes in T20.
+#   T13 proof    — scripts/prove-explore-maxdepth.mjs mounts the row's own
+#                 dsh-tool-subagent instance on the REAL stack (cordis +
+#                 ToolRuntime + SubagentRuntime + the spawn provider) and
+#                 drives the real delegation start path: a depth-1 parent's
+#                 attempted nested delegation is rejected on BOTH the
+#                 foreground (ctx.subagents.start) and continuable
+#                 (startContinuable) starts with the exact errored tool
+#                 result "Error: subagent depth 2 exceeds maxDepth 1", the
+#                 tool stays model-visible at the cap, and a depth-0 parent
+#                 passes the same gate (control). Session-free; T20 closes
+#                 the live-model half.
 # Idempotence   — boot 2 reuses boot 1's sandbox DSH_HOME: the sync must be a
 #                 no-op (`concerto preset unchanged`) and the roster identical.
 #
@@ -385,6 +396,19 @@ boot_once() {
   node "$REPO_ROOT/scripts/prove-explore-toolfilter.mjs" "$DSH_NM" "$materialized" \
     || fail "[$label] explore toolFilter denial proof failed (T12 real-path enforcement)"
 
+  # T13 (P-5, AC-6 negative-b): the depth cap is not just valid config — it is
+  # ENFORCED. scripts/prove-explore-maxdepth.mjs mounts the row's own
+  # dsh-tool-subagent instance on the REAL delegation stack (cordis +
+  # ToolRuntime + SubagentRuntime + the spawn provider) and drives the real
+  # start path: a depth-1 parent's nested-delegation attempt is rejected on
+  # BOTH the foreground (ctx.subagents.start → spawn → startInProcessRun) and
+  # continuable (ctx.subagents.startContinuable) starts with the exact errored
+  # tool result "Error: subagent depth 2 exceeds maxDepth 1"; the tool stays
+  # model-visible at the cap; a depth-0 parent passes the same gate (control).
+  # A live model session closes the loop in T20.
+  node "$REPO_ROOT/scripts/prove-explore-maxdepth.mjs" "$DSH_NM" "$materialized" \
+    || fail "[$label] explore maxDepth=1 depth-cap proof failed (T13 real-path enforcement)"
+
   # T16 (FR-6, P-3): the Hard Blocks injection listener's registration is
   # observable at boot. Wording pinned to the plugin's marker; it must stay
   # free of error/fatal/failed vocabulary so cold-start's negative greps
@@ -429,5 +453,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed rc.6 dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12 toolFilter deny=[write,edit] PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed rc.6 dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12 toolFilter deny=[write,edit] PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=1 depth cap PROVEN enforced via the real delegation start path (depth-1 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 2 exceeds maxDepth 1", tool stays visible at the cap, depth-0 control passes); idempotent re-boot confirmed"
 exit 0

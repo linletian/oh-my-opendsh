@@ -206,10 +206,20 @@
     #                restrict() there) and OMO's explore keeps shell access;
     #                write-capable commands are governed by the persona's
     #                Read-Only Declarations plus T16 hard-blocks injection.
-    #   maxDepth     T13 depth cap. SOURCE-VERIFIED FIELD NAME: the schema is
+    #   maxDepth     T13 depth cap, VERIFIED (P-5; evidence
+    #                .omo/evidence/task-13-mvp-implementation.log). Field shape:
     #                a FLAT `maxDepth` (tool-subagent/src/index.ts:98,
     #                z.natural()|'provider-managed', default 3) — there is NO
     #                `policy` wrapper; 1 = the explore child cannot delegate.
+    #                Enforcement proven through the real start path
+    #                (scripts/prove-explore-maxdepth.mjs): a depth-1 parent's
+    #                nested-delegation attempt is rejected on BOTH the
+    #                foreground and continuable starts with the errored tool
+    #                result "Error: subagent depth 2 exceeds maxDepth 1"
+    #                (resolveChildDepth → SubagentDepthError, child-agent.ts:48
+    #                -56, before any child exists), the tool stays model-
+    #                visible at the cap, a depth-0 parent passes (control),
+    #                absent → default 3, and 'provider-managed' sends no cap.
     # NOT SETTABLE in form A: a custom tool `description`. The schema has no
     # such field; the model-facing description is generated from the spawn
     # provider's inheritsParentContext=false wording
