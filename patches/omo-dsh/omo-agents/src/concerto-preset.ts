@@ -11,10 +11,17 @@
 // force-patches `roots` back to the shipped system root after all user
 // overlays (profile-boot; evidence: .omo/evidence/task-6-mvp-implementation.log
 // and docs/mvp-pitfalls.md P-1.3).
+//
+// T8: the sync is no longer a pure byte-copy for agent.cordis.yml — the
+// template keeps a persona sentinel and this module renders it into the
+// assembled omo-sisyphus system prompt at apply() time (design (a), see
+// system-prompt.ts). preset.yml is still copied verbatim. Rendering is a
+// pure function of the markdown sections, so idempotence is unchanged.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildSisyphusSystemPrompt, renderPersonaIntoComposition } from './system-prompt.ts'
 
 /** The preset's roster id, which is also its directory name. */
 export const CONCERTO_PRESET_ID = 'concerto'
@@ -61,27 +68,41 @@ export type ConcertoSyncOutcome =
  * older plugin build) are rewritten to the template. A `concerto` directory
  * occupied by foreign content is still refreshed — the id is ours: this
  * plugin is the only author of the concerto mode.
+ *
+ * `personaPrompt` is rendered into the persona sentinel of the template's
+ * agent.cordis.yml (T8); the default builds it from the shipped markdown
+ * sections, and tests inject their own to stay hermetic.
  */
 export function syncConcertoPreset(
   targetDir: string,
   templateDir: string = CONCERTO_TEMPLATE_DIR,
+  personaPrompt: string = buildSisyphusSystemPrompt(),
 ): ConcertoSyncOutcome {
+  const expected = new Map<string, string>()
+  for (const file of CONCERTO_PRESET_FILES) {
+    const template = readFileSync(join(templateDir, file), 'utf8')
+    expected.set(
+      file,
+      file === 'agent.cordis.yml'
+        ? renderPersonaIntoComposition(template, personaPrompt)
+        : template,
+    )
+  }
   const existed = existsSync(targetDir)
   let identical = existed
   for (const file of CONCERTO_PRESET_FILES) {
-    const expected = readFileSync(join(templateDir, file), 'utf8')
     let actual: string | undefined
     try {
       actual = readFileSync(join(targetDir, file), 'utf8')
     } catch {
       actual = undefined
     }
-    if (actual !== expected) identical = false
+    if (actual !== expected.get(file)) identical = false
   }
   if (identical) return 'unchanged'
   mkdirSync(targetDir, { recursive: true })
   for (const file of CONCERTO_PRESET_FILES) {
-    writeFileSync(join(targetDir, file), readFileSync(join(templateDir, file), 'utf8'), {
+    writeFileSync(join(targetDir, file), expected.get(file)!, {
       encoding: 'utf8',
       mode: 0o600,
     })

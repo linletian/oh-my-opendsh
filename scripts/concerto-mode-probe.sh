@@ -12,6 +12,12 @@
 # Assertions per boot:
 #   plugin side — `[omo-agents] loaded`, `concerto preset <outcome>`, the
 #                 roster line listing `concerto:user`, and no FAILED line.
+#   T8 persona  — the `omo-sisyphus system prompt assembled` boot marker, and
+#                 the MATERIALIZED $DSH_HOME preset's agent.cordis.yml: the
+#                 sentinel is gone and the persona block scalar carries the
+#                 three AC-3 section markers (Orchestrator Role / Delegation
+#                 Discipline / Hard Blocks) — proof the booted concerto mode's
+#                 main-agent brain is the assembled omo-sisyphus prompt.
 #   external    — POST /api/agentPreset.list (the Web UI picker's own RPC
 #                 surface) lists concerto at trust "user" alongside
 #                 standard/code/minimal/cordis at trust "system", with the
@@ -152,6 +158,27 @@ boot_once() {
   # Sandbox hygiene: the authored preset must live ONLY inside the sandbox.
   [[ -f "$DSH_HOME/.agent-presets/concerto/preset.yml" ]] \
     || fail "[$label] preset missing from the sandbox user root (sync wrote elsewhere?)"
+
+  # T8 (FR-3, AC-3): the persona the concerto mode boots with is the assembled
+  # omo-sisyphus system prompt. Plugin-side marker + the materialized
+  # composition carries the rendered block scalar (sentinel gone, three
+  # section markers present inside it).
+  grep -q "\[omo-agents\] omo-sisyphus system prompt assembled: 4 sections, " "$boot_log" \
+    || fail "[$label] omo-sisyphus prompt assembly marker missing from boot log"
+  local materialized="$DSH_HOME/.agent-presets/concerto/agent.cordis.yml"
+  [[ -f "$materialized" ]] \
+    || fail "[$label] materialized agent.cordis.yml missing from the sandbox user root"
+  if grep -q "__OMO_SISYPHUS_SYSTEM_PROMPT__" "$materialized"; then
+    fail "[$label] materialized composition still carries the persona sentinel (rendering skipped?)"
+  fi
+  grep -q "text: |-" "$materialized" \
+    || fail "[$label] materialized persona is not a |- block scalar"
+  grep -q "      # Orchestrator Role" "$materialized" \
+    || fail "[$label] materialized persona missing the Orchestrator Role section"
+  grep -q "      # Delegation Discipline" "$materialized" \
+    || fail "[$label] materialized persona missing the Delegation Discipline section"
+  grep -q "      ## Hard Blocks" "$materialized" \
+    || fail "[$label] materialized persona missing the injected Hard Blocks section"
 }
 
 # Boot 1: fresh sandbox — the preset is materialized.
@@ -160,5 +187,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); idempotent re-boot confirmed"
 exit 0

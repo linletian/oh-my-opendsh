@@ -77,10 +77,18 @@ describe('omo-agents concerto preset sync (T6)', () => {
   it('syncConcertoPreset materializes the preset into an empty target root', () => {
     const target = join(makeSandbox(), '.agent-presets', 'concerto')
     expect(syncConcertoPreset(target)).toBe('materialized')
-    for (const file of CONCERTO_PRESET_FILES) {
-      const expected = readFileSync(join(EXPECTED_TEMPLATE_DIR, file), 'utf8')
-      expect(readFileSync(join(target, file), 'utf8')).toBe(expected)
-    }
+    // preset.yml is copied verbatim; agent.cordis.yml is RENDERED at sync
+    // time (T8 design a): the persona sentinel becomes the assembled
+    // omo-sisyphus system prompt, so the materialized file differs from the
+    // template exactly in the persona value.
+    expect(readFileSync(join(target, 'preset.yml'), 'utf8')).toBe(
+      readFileSync(join(EXPECTED_TEMPLATE_DIR, 'preset.yml'), 'utf8'),
+    )
+    const composition = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
+    expect(composition).not.toContain('__OMO_SISYPHUS_SYSTEM_PROMPT__')
+    expect(composition).toContain('# Orchestrator Role')
+    expect(composition).toContain('# Delegation Discipline')
+    expect(composition).toContain('## Hard Blocks')
   })
 
   it('syncConcertoPreset is a no-op when the target content is already identical', () => {

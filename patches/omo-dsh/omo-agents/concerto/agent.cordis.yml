@@ -8,14 +8,22 @@
 #
 # Derivation ledger against the shipped `standard` preset
 # (dsh 0.1.0-rc.6 config/agent-presets/standard/agent.cordis.yml). T6 scope:
-# a real, WORKING conductor mode — the omo-sisyphus orchestrator prompt wiring
-# (system-sections markdown) is T8, and per-agent model routes are a later
-# milestone, so this file deliberately keeps standard's host-compatible core
-# and drops what the 1+1 concerto skeleton does not use.
+# a real, WORKING conductor mode. T8 landed the omo-sisyphus orchestrator
+# prompt wiring (persona sentinel rendered from system-sections markdown at
+# apply() time); per-agent model routes are a later milestone, so this file
+# deliberately keeps standard's host-compatible core and drops what the 1+1
+# concerto skeleton does not use.
 #
-# KEEP  persona                      — rewritten to the conductor stance
-#                                      (编排优先: delegate by default); this is
-#                                      the only row whose semantics change.
+# KEEP  persona                      — T8: the value is a SENTINEL (the
+#                                      PERSONA_TEXT_SENTINEL constant in
+#                                      src/system-prompt.ts), not real text;
+#                                      syncConcertoPreset renders it into the
+#                                      assembled omo-sisyphus system prompt
+#                                      (the four system-sections/*.md files
+#                                      in fixed order) at apply() time —
+#                                      design (a), see src/system-prompt.ts.
+#                                      This is the only row whose semantics
+#                                      change.
 # KEEP  agent-instructions           — workspace instruction files still apply
 #                                      to a conductor's sessions.
 # KEEP  tool-bash / tool-pwsh        — platform-gated shell, verbatim from
@@ -55,13 +63,18 @@
 
 # ── identity ────────────────────────────────────────────────────────────────
 
-# The conductor persona: the one semantic change vs standard. `{{model}}` and
-# `{{cwd}}` resolve from the agent's own route and workspace.
+# The conductor persona: the one semantic change vs standard. The value below
+# is a SENTINEL — never mounted as-is: syncConcertoPreset substitutes the
+# assembled omo-sisyphus system prompt (a |- block scalar) when it authors
+# the preset into $DSH_HOME/.agent-presets/concerto/ (design (a), T8; see
+# src/system-prompt.ts). `{{model}}` / `{{cwd}}` are intentionally absent:
+# the assembled markdown is variable-free (the builder rejects `{{`
+# sequences, which dsh renderPrompt would fail on), and dsh-persona's
+# includeRuntimeContext default already appends the runtime snapshot.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
-      You are the conductor of a concerto of coding agents, powered by the {{model}} model. Your working directory is {{cwd}}. Orchestration first: for each task, judge who is best suited to do it and delegate to a subagent by default — the right model for the right job is the default, not luck.
+    text: __OMO_SISYPHUS_SYSTEM_PROMPT__
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
