@@ -98,8 +98,9 @@ wait "$DSH_PID"
 boot_exit=$?
 [[ "$boot_exit" == "0" ]] || fail "dsh exited $boot_exit after SIGTERM (expected 0)"
 
-# Positive signal: our plugin actually loaded.
-grep -q "\[omo-agents\] loaded (no-op)" "$BOOT_LOG" \
+# Positive signal: our plugin actually loaded (T6 dropped the "(no-op)"
+# suffix — the plugin now performs concerto preset registration).
+grep -q "\[omo-agents\] loaded" "$BOOT_LOG" \
   || fail "plugin load marker missing from boot log (plugin never mounted?)"
 
 # Negative signal: no plugin load errors anywhere in the log.

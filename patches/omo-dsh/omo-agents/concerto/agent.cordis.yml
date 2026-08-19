@@ -1,0 +1,176 @@
+# The `concerto` agent preset: orchestration-first (协奏 / Concerto Mode).
+#
+# This is an AGENT-PLANE composition, mounted once per process by
+# dsh-agent-presets when a session picks the concerto mode; the host
+# composition owns the registries, the sandbox/approval stack, persistence,
+# and the model route (same mounting rules as the shipped presets — a service
+# row here must sit inside a group carrying an `isolate` realm).
+#
+# Derivation ledger against the shipped `standard` preset
+# (dsh 0.1.0-rc.6 config/agent-presets/standard/agent.cordis.yml). T6 scope:
+# a real, WORKING conductor mode — the omo-sisyphus orchestrator prompt wiring
+# (system-sections markdown) is T8, and per-agent model routes are a later
+# milestone, so this file deliberately keeps standard's host-compatible core
+# and drops what the 1+1 concerto skeleton does not use.
+#
+# KEEP  persona                      — rewritten to the conductor stance
+#                                      (编排优先: delegate by default); this is
+#                                      the only row whose semantics change.
+# KEEP  agent-instructions           — workspace instruction files still apply
+#                                      to a conductor's sessions.
+# KEEP  tool-bash / tool-pwsh        — platform-gated shell, verbatim from
+#                                      standard; the conductor can still run
+#                                      and inspect commands itself.
+# KEEP  tool-fs / tool-fs-search     — read/write/search the workspace; a
+#                                      conductor reviews delegated output.
+# KEEP  tool-jobs                    — background-job controls; pairs with the
+#                                      continuable background subagents below.
+# KEEP  skill-filesystem, tool-skill — skills stay available in concerto.
+# KEEP  tool-goal                    — goal tracking fits orchestration work.
+# KEEP  compaction group             — long orchestration sessions fold
+#                                      (compaction-basic, command-compact,
+#                                      tool-result-pruner; realm reasons as in
+#                                      standard: pruner shares the realm,
+#                                      tokenMeter stays host-plane).
+# KEEP  delegation group             — THE point of the mode: subagent
+#                                      spawn/fork + control + list-agents,
+#                                      verbatim from standard.
+# KEEP  tool-ask-user                — the conductor escalates decisions.
+# KEEP  tool-todo                    — orchestration tracking.
+# KEEP  tool-web                     — research from the conductor seat.
+# DROP  plan-mode group              — the single-agent plan ceremony is the
+#                                      "do it yourself" stance; 编排优先
+#                                      decomposes by delegation instead.
+#                                      Deliberate MVP cut; T8 may revisit.
+# DROP  tool-subagent-codex /
+#       tool-subagent-claude-code    — product providers standard ships
+#                                      DISABLED; dropping (not disabling)
+#                                      keeps the MVP roster honest. Per-agent
+#                                      model routes (PRD §4.4 piece 4) land
+#                                      with the real agent presets later.
+# DROP  workflow-worker-thread /
+#       tool-workflow                — workflow engine rows; not needed for
+#                                      the 1+1 (conductor + subagent) skeleton.
+# DROP  tool-ralph                   — self-loop construct, out of MVP scope.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# The conductor persona: the one semantic change vs standard. `{{model}}` and
+# `{{cwd}}` resolve from the agent's own route and workspace.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are the conductor of a concerto of coding agents, powered by the {{model}} model. Your working directory is {{cwd}}. Orchestration first: for each task, judge who is best suited to do it and delegate to a subagent by default — the right model for the right job is the default, not luck.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ─────────────────────────────────────────────────────────
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation ──────────────────────────────────────────────────────────────
+
+# The `subagents` registry and its backends stay host-plane (process singleton,
+# see the standard preset's header); this group contributes the delegation
+# tools the conductor calls, behind the entry-local workflowEngine realm.
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+
+    - id: tool-subagent-fork
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
