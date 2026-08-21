@@ -671,8 +671,8 @@ async function runSmoke(routes, apiKey, keySource) {
   }
   console.error(`smoke-real: sandbox ${sandbox.root}`)
 
-  writeFileSync(join(sandbox.project, 'README.md'), README_CONTENT)
   const patchPath = seedSandbox(sandbox, routes)
+  writeFileSync(join(sandbox.project, 'README.md'), README_CONTENT)
 
   let child
   let analysis
