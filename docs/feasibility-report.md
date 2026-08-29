@@ -816,7 +816,7 @@ Can the DSH framework, on its own, route different LLM providers/models to diffe
 
 ### 12.2 Answer (one sentence)
 
-**Yes — DSH routes LLM by exact `{provider, model}` pair, and every sub-agent can carry its own `agentOptions: { provider?, model?, maxTokens? }` to override the parent's inherited LLM. No new DSH infrastructure is needed.** The OMO-style "per-agent model chain" maps to DSH as "per-`tool-subagent` instance config" or per-`agent()` call argument.
+**Yes — DSH routes LLM by exact `{provider, model}` pair, and every sub-agent can carry its own `agentOptions: { provider?, model?, maxTokens? }` to override the parent's inherited LLM. No new DSH infrastructure is needed (for in-process providers; out-of-process product providers cannot honor `agentOptions`/`toolFilter`/numeric `maxDepth` — see the 2026-08-29 follow-up note).** The OMO-style "per-agent model chain" maps to DSH as "per-`tool-subagent` instance config" or per-`agent()` call argument.
 
 ### 12.3 Evidence Chain
 
@@ -1609,3 +1609,18 @@ The following were not investigated in this research. The omission is a scoping 
 - The Sisyphus e2e (`.github/workflows/sisyphus-agent.yml`) is summarized from the workflow YAML and the maintainer's documented intent; I did not examine the actual Anthropic API prompt payload or the success criteria.
 - The `tty-driver.py` (PTY helper) was read in full; the surrounding `launcher.test.ts` and `setup-detect.test.ts` are OMO-native-specific and not directly applicable to a DSH-side scratch plugin.
 - 31 e2e harness files is a *count of files in `packages/omo-senpi/scripts/qa/` matching the e2e / mock-provider pattern*. The actual number of distinct *scenarios* is smaller (some files are helpers or analyses). I did not enumerate the 1-to-1 mapping.
+
+---
+
+## 15. 2026-08-29 follow-up note — dsh 0.1.2-alpha.1 review sediment
+
+**Date**: 2026-08-29
+**Status**: Follow-up note (not a plan). Two facts sedimented by the independent dsh 0.1.2-alpha.1 review — they sharpen this report's extension-path claims without reversing any existing conclusion. The full survey behind this note is [dsh 0.1.2 review (English)](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md).
+
+### 15.1 `SubagentProvider` is a public extension point
+
+The DSH subagent service exposes a public `SubagentProvider` contract (`packages/subagent/subagent/src/types.ts:300`), and the out-of-process backend ships exactly the helpers a product provider needs, all reusable by an arbitrary scratch plugin: `NO_START_CAPABILITIES` (`packages/subagent/subagent/src/out-of-process.ts:57-63`, with the capability-advertisement comment at :51-56), `settleRunResult` (:192), and `subprocessRunHandle` (:245). This is the DSH-official path behind this report's multi-harness adapter vision (`omo-codex` and its siblings, see :54, :128, :742) — materially cheaper than building a self-owned bridge outside the subagent subsystem.
+
+### 15.2 Out-of-process providers have zero start capabilities
+
+`NO_START_CAPABILITIES` means exactly what it says: a child in another process cannot honor parent-enforced start features (`agentOptions`/`outputSchema`/`maxDepth`/`toolFilter`/`persona`), so the service rejects any request needing one of them before `start` runs — never accepted-then-ignored (`packages/subagent/subagent/src/out-of-process.ts:51-63`). Consequence for our own design: the per-agent `{provider, model}` routing, `toolFilter`, and numeric `maxDepth` discipline this report relies on holds **only for in-process providers** (`spawn`/`fork`). For codex-class children, the model is pinned in the provider-instance config field `model` (since 0.1.2, `packages/subagent/subagent-codex/src/index.ts:40`), and `maxDepth` can only be written as `'provider-managed'` (see the shipped standard preset, `packages/preset/agent-presets/presets/standard/agent.cordis.yml:216`).

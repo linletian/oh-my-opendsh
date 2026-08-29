@@ -819,7 +819,7 @@ DSH 框架原生是否支持"给不同 sub-agent 路由不同 LLM 提供商/模�
 
 ### 12.2 结论（一句话）
 
-**能。DSH 按精确的 `{provider, model}` 路由 LLM，每个 sub-agent 都能携带自己的 `agentOptions: { provider?, model?, maxTokens? }` 来覆盖父 agent 继承来的 LLM。无需新增任何 DSH 基础设施。** OMO 风格的"每个 agent 一条 model 链"在 DSH 里对应"每个 `tool-subagent` 实例的 config"或每次 `agent()` 调用的参数。
+**能。DSH 按精确的 `{provider, model}` 路由 LLM，每个 sub-agent 都能携带自己的 `agentOptions: { provider?, model?, maxTokens? }` 来覆盖父 agent 继承来的 LLM。无需新增任何 DSH 基础设施（对 in-process provider 成立；进程外产品型 provider 无法兑现 `agentOptions`/`toolFilter`/数值 `maxDepth` —— 见 2026-08-29 follow-up note）。** OMO 风格的"每个 agent 一条 model 链"在 DSH 里对应"每个 `tool-subagent` 实例的 config"或每次 `agent()` 调用的参数。
 
 ### 12.3 证据链
 
@@ -1610,3 +1610,18 @@ sisyphus-agent.yml 有注释 *"Only issue_comment works for fork PRs (secrets av
 - Sisyphus e2e（`.github/workflows/sisyphus-agent.yml`）从 workflow YAML 和维护者文档化意图总结；没审实际的 Anthropic API prompt payload 或 success criteria
 - `tty-driver.py`（PTY helper）完整读了；周围的 `launcher.test.ts` 和 `setup-detect.test.ts` 是 OMO-native 特定，DSH 端 scratch plugin 不直接适用
 - 31 个 e2e harness 文件是 `packages/omo-senpi/scripts/qa/` 里 match `e2e` / `mock-provider` pattern 的文件数。**实际不同 scenario 数**更少（有些是 helper 或 analysis）。没枚举 1-to-1 mapping
+
+---
+
+## 15. 2026-08-29 follow-up note —— dsh 0.1.2-alpha.1 review sediment
+
+**日期**：2026-08-29
+**状态**：follow-up note（非实施计划）。独立复核 dsh 0.1.2-alpha.1 沉淀出的两个事实——它们锐化本报告既有的扩展路径论断，但不推翻任何既有结论。本 note 背后的完整调研见 [dsh 0.1.2 评审报告（英文）](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)。
+
+### 15.1 `SubagentProvider` 是公开扩展点
+
+DSH 的 subagent 服务对外暴露公开的 `SubagentProvider` 契约（`packages/subagent/subagent/src/types.ts:300`），而进程外后端恰好把产品型 provider 所需的助手全部开箱：`NO_START_CAPABILITIES`（`packages/subagent/subagent/src/out-of-process.ts:57-63`，能力声明注释在 :51-56）、`settleRunResult`（:192）、`subprocessRunHandle`（:245）。任意 scratch plugin 都能复用它们——这正是本报告多 harness 适配设想（`omo-codex` 及其同类，见 :54、:128、:742）对应的 DSH 官方路径，比在 subagent 子系统之外自建桥接要显著便宜。
+
+### 15.2 进程外 provider 的启动能力为零
+
+`NO_START_CAPABILITIES` 名副其实：另一个进程里的 child 无法兑现父侧强制的 start 特性（`agentOptions`/`outputSchema`/`maxDepth`/`toolFilter`/`persona`），因此服务会在 `start` 之前拒绝任何需要其中一项的请求——绝不"接受后忽略"（`packages/subagent/subagent/src/out-of-process.ts:51-63`）。对我们设计的推论：本报告依赖的每 agent `{provider, model}` 路由、`toolFilter`、数值 `maxDepth` 纪律**只对 in-process provider**（`spawn`/`fork`）成立。codex 类 child 的模型只能固定在 provider 实例 config 的 `model` 字段（0.1.2 起，`packages/subagent/subagent-codex/src/index.ts:40`），`maxDepth` 只能写 `'provider-managed'`（见随包 standard preset，`packages/preset/agent-presets/presets/standard/agent.cordis.yml:216`）。
