@@ -235,6 +235,7 @@ At MVP closeout, the V1–V4 verdicts directly determine follow-up ordering:
 - **All of V1–V4 validated** → proceed to the full port per report §2.10 (OMO core import → remaining agents → batch hook translation → Team Mode → …)
 - **Any V falsified** → register a new risk (R7+) in the decision record, re-estimate the affected workload blocks, then decide direction
 - All MVP artifacts are retained and grow: repo skeleton → full patch framework; mock e2e → the full L2 layer; doctor-lite → the full doctor; `mvp-pitfalls.md` → a continuously accumulating pitfall knowledge base
+- [ ] **DSH pin bump 0.1.0-rc.6 → 0.1.2-alpha.1** (deliberate bump under D7) — surfaces: `.github/workflows/ci.yml:37` (+ comment :14-21), `scripts/doctor-lite.mjs:189`, `scripts/doctor-lite-core.ts:26`, `tests/omo-agents/doctor-lite.test.ts` fixtures+expectations; re-derive `patches/omo-dsh/omo-agents/concerto/agent.cordis.yml` against the moved shipped preset (`packages/preset/agent-presets/presets/standard/agent.cordis.yml`); re-run `scripts/ci-local.sh` + out-of-session probes; re-verify P-1.2/P-1.3 fallbacks under the refactored preset subsystem. The rc.6 citations in patch comments (`patches/omo-dsh/omo-agents/src/explore-prompt.ts:8`, `.../hard-blocks-injection.ts:7`) stay as historical rc.6-era verification records; the 0.1.2 re-verification is recorded in mvp-pitfalls P-11. Registered from the dsh 0.1.2 review ([English](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)) §4.
 
 ---
 

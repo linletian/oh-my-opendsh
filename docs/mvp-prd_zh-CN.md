@@ -235,6 +235,7 @@ MVP 结项时，V1–V4 的结论直接决定 follow-up 排序：
 - **V1–V4 全部验证通过** → 按调研 §2.10 进入全量移植（OMO core import → 剩余 agent → hook 批量翻译 → Team Mode → …）
 - **任一 V 证伪** → 回到决策文档登记新风险（R7+），重估受影响的工作量块，再定方向
 - MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2e → 完整 L2 层；doctor-lite → 完整 doctor；`mvp-pitfalls.md` → 持续累加的踩坑知识库
+- [ ] **DSH pin bump 0.1.0-rc.6 → 0.1.2-alpha.1**（D7 机制下的刻意升级）——surface 清单：`.github/workflows/ci.yml:37`（+ 注释 :14-21）、`scripts/doctor-lite.mjs:189`、`scripts/doctor-lite-core.ts:26`、`tests/omo-agents/doctor-lite.test.ts` fixtures+expectations；对照搬迁后的官方 preset（`packages/preset/agent-presets/presets/standard/agent.cordis.yml`）重新派生 `patches/omo-dsh/omo-agents/concerto/agent.cordis.yml`；重跑 `scripts/ci-local.sh` + 会话外探针；在重构后的 preset 子系统下复验 P-1.2/P-1.3 fallback。patch 注释中的 rc.6 引用（`patches/omo-dsh/omo-agents/src/explore-prompt.ts:8`、`.../hard-blocks-injection.ts:7`）保留为 rc.6 时代的历史验证记录；0.1.2 的复验记录于 mvp-pitfalls P-11。登记自 dsh 0.1.2 复核报告（[English](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)）§4。
 
 ---
 
