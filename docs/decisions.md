@@ -107,6 +107,7 @@ The following risks were confirmed by the user as "accept as-is / defer"; the ri
 - **2026-08-19**: D7–D10 and R1–R6 confirmed; all decision records migrated from the feasibility report (former §10.1 / §5.4) into this document. The feasibility report is now purely the research basis (its §10 keeps only the open-dimension options analysis).
 - **2026-08-19**: D11 confirmed ([MVP PRD](./mvp-prd.md) adopted, including Q-1–Q-4 resolutions); open dimension O8 closed.
 - **2026-08-19**: D12 confirmed (license whitelist accepts MPL-2.0; triggered by the empirical finding in MVP implementation T3).
+- **2026-08-29**: DSH 0.1.2-alpha.1 review registered ([English](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)); no new decision — the rc.6 → 0.1.2-alpha.1 pin bump proceeds under D7's deliberate-bump mechanism and is tracked in PRD §12; the SubagentProvider extension-path facts are registered as research sediment in the feasibility report's 2026-08-29 follow-up note.
 
 ---
 
