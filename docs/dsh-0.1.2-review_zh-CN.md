@@ -5,7 +5,7 @@
 > **性质**：纯调研记录，不含任何行动承诺；不更新决策、PRD、可行性报告，不 bump 版本。
 >
 > - 调研日期：2026-08-29
-> - 调研对象：deepseek-harness 仓库（本地路径 `/home/linletian/GithubRepo/deepseek-harness/`，全程只读），tag `dsh-v0.1.2-alpha.1`，HEAD commit `6c705be1ce`
+> - 调研对象：deepseek-harness 仓库（本地路径 `/home/linletian/GithubRepo/deepseek-harness/`，全程只读），tag `dsh-v0.1.2-alpha.1`，HEAD commit `6c705be1ce`；注：tag `dsh-v0.1.2-alpha.1` 现指向 merge commit `cd5ef81481`，与调研时 HEAD `6c705be1ce` 树完全相同（`git diff` 为空），内容结论不受影响
 > - 对照基线：本项目 CI pin 的 dsh `0.1.0-rc.6`（决策 D7）；MVP 已结项（FR-1~FR-8 实现、V1~V4 验证通过，见 [mvp-pitfalls](./mvp-pitfalls_zh-CN.md)）
 > - 调研方法：静态源码阅读 + git 历史核实（两个 explore 子代理并行调研，关键结论由主代理抽查原文复核）
 
@@ -35,7 +35,7 @@ model 调用 subagent_codex({description, prompt})
 | `SubagentProvider` 公开契约（`name` / `capabilities` / `inheritsParentContext` / `start()` / `prepareContinuable?`） | `packages/subagent/subagent/src/types.ts:300` 起 |
 | `SubagentCapabilities` 五旗标（`agentOptions` / `outputSchema` / `depthLimit` / `toolFilter` / `persona`） | `packages/subagent/subagent/src/types.ts:86-92` |
 | `SubagentResult` 终结语义 | `packages/subagent/subagent/src/types.ts:227` 起 |
-| 进程外后端共享助手：`NO_START_CAPABILITIES` / `settleRunResult` / `subprocessRunHandle` | `packages/subagent/subagent/src/out-of-process.ts:57`、`:192`、`:245` |
+| 进程外后端共享助手：`NO_START_CAPABILITIES` / `settleRunResult` / `subprocessRunHandle` | `packages/subagent/subagent/src/out-of-process.ts:51-63`（注释原文位于 :51-56，const 本体 :57-63）、`:192`、`:245` |
 | Codex provider 入口（Config schema + 注册） | `packages/subagent/subagent-codex/src/index.ts:36` 起 |
 | 进程启动（包内 bin 解析 + argv） | `packages/subagent/subagent-codex/src/run.ts:43-52`、`:134` |
 | Codex app-server 最小 JSON-RPC wire | `packages/subagent/subagent-codex/src/wire.ts` |
@@ -94,7 +94,7 @@ standard preset 自带的工具行（默认 `disabled: true`，官方注释指�
 - rc.6：preset 位于 `apps/cli/config/agent-presets/{standard,code,minimal,cordis}/`（含 `preset.yml` + `agent.cordis.yml`）
 - 0.1.2：preset 搬迁并 bundle 进 `packages/preset/agent-presets/presets/{standard,ptc,minimal,cordis}/`（`f94495e527 refactor(preset): bundle the shipped presets inside dsh-agent-presets`）
 - **id `code` → `ptc`**（`3ca9c7d489 rename code-mode to ptc`），PTC 模式描述中 "Code Mode SDK" 同步改为 "PTC 模式 SDK"
-- **4 个模式的显示名与排序完全未变**（rc.6 与 HEAD 的 `preset.yml` 原文逐字一致）：`standard`=标准模式（order 1）、`code`/`ptc`=PTC 模式（order 2）、`minimal`=极简模式（order 3）、`cordis`=**创造模式**（order 4，描述为"用于创建自定义 Agent preset"）
+- **4 个模式的显示名与排序完全未变**：`standard`=标准模式（order 1）、`code`/`ptc`=PTC 模式（order 2）、`minimal`=极简模式（order 3）、`cordis`=**创造模式**（order 4，描述为"用于创建自定义 Agent preset"）；其中 standard/minimal/cordis 三个 `preset.yml` 与 rc.6 逐字一致，ptc 的 description 措辞已由 "Code Mode SDK" 改为 "PTC 模式 SDK"（显示名与 order 不变）
 
 对本项目的影响：PRD §4.2 的"标准 / PTC / 极简 / 创造"四模式表**在显示名层面依然准确**（"创造"即 `cordis` preset，并未消失）；但 `patches/omo-dsh/omo-agents/concerto/agent.cordis.yml:9-10` 的 derivation ledger 引用的对照路径（`dsh 0.1.0-rc.6 config/agent-presets/standard/agent.cordis.yml`）在新版中已失效——未来 bump 时需按新位置重新 diff 派生。
 
@@ -118,7 +118,7 @@ standard preset 自带的工具行（默认 `disabled: true`，官方注释指�
 
 - LLM：`dsh-llm-deepseek`（路由名 `deepseek-official`）与 `dsh-llm-pi-ai` 双 adapter 格局不变；图像请求管线统一、DeepSeek reasoning content 修复
 - boot/插件：profile bundle 体系稳定化，`dsh plugin --profile add/remove` 管理树外 bundle
-- 构建：Host/Client 双面正式化（`docs/development.md:46-76`），client 构建产物与 profile 绑定校验
+- 构建：Host/Client 双面正式化（`docs/development.md:46-76`）
 
 ---
 
@@ -128,12 +128,12 @@ MVP 的 V1~V4 及其依赖机制在 0.1.2 中**全部仍然存在**，方向无�
 
 | 规划依赖 | 0.1.2 现状 | 证据 |
 |---|---|---|
-| V1：scratch plugin 经 `dsh --patch ./cordis.yml` 加载 | 保留；层级为 bundle patches → profile patch → home patch → `--patch`（后者赢） | `apps/cli/src/args.ts:25,52,132`；`packages/boot/app-boot/src/index.ts:300-352`；`apps/cli/reference/README.md:9-11` |
+| V1：scratch plugin 经 `dsh --patch ./cordis.yml` 加载 | 保留；层级为 bundle patches → profile patch → home patch → `--patch`（后者赢） | `apps/cli/src/args.ts:25,52,132`；`apps/cli/src/profile-boot.ts:146-166`（`composeEntries([bundlePatches, profile.patches, homePatches, overlays])`，顺序结论不变）；`apps/cli/reference/README.md:9` |
 | 协奏模式第 5 preset 可注册 | preset 名册开放（`ctx.agentPresets`；roots 配置 + 用户根 `<dshHome>/.agent-presets` + `copy()`） | `packages/preset/agent-presets/src/index.ts:149,159-167,535` |
 | V2：`agentOptions.{provider,model}` 覆盖 | 保留（仅 in-process provider 支持） | `tool-subagent/src/index.ts:77-78,113-123` |
 | V3：`agent/pre-step` waterfall + `agent.inject()` | 保留 | `packages/core/agent/src/runtime-types.ts:238`（`@mode waterfall`）、`:142-149` |
 | V4：`toolFilter` + `maxDepth` | 保留（扁平 `maxDepth`，无 `policy` wrapper，与 P-5/P-10 记录一致） | `tool-subagent/src/index.ts:88-103,130` |
-| session JSONL 记录子代理已解析路由 | 保留（`request/header` / `request/context` / `subagent/descriptor`；子会话头含 `origin: 'subagent'`、`parentSession`、`delegationDepth`、`agentPreset`） | `packages/core/session/src/types.ts:85-98,184-203`；`packages/subagent/subagent/src/descriptor.ts:51-86` |
+| session JSONL 记录子代理已解析路由 | 保留（`request/header` / `request/context` / `subagent/descriptor`；子会话头含 `origin: 'subagent'`、`parentSession`、`delegationDepth`、`agentPreset`） | `packages/core/session/src/types.ts:75-98`（`parentSession`:75、`origin`:85、`delegationDepth`:91、`agentPreset`:98）、`'request/header'`:291、`'request/context'`:301；`packages/subagent/subagent/src/descriptor.ts:38`（数据形状 :51-86，快照构建 `snapshotSubagentDescriptor` :267-299） |
 | deepseek + pi-ai 双内置 adapter | 保留 | `packages/llm/llm-deepseek/src/index.ts:83-89`；`packages/llm/llm-pi-ai/src/index.ts:234,287` |
 
 新增约束（§1.4-2）：上述 V2/V4 纪律不适用于进程外 provider——这在 MVP 范围（仅用 spawn）内无影响，但属于多 harness follow-up 的既定前提。
@@ -145,7 +145,7 @@ MVP 的 V1~V4 及其依赖机制在 0.1.2 中**全部仍然存在**，方向无�
 按价值/成本排序，留待决策：
 
 1. **文档事实同步**（低成本）：把 §2 的 delta 与 §1.4 的扩展点结论以注记/新决策形式沉淀到 decisions / PRD / feasibility-report。
-2. **DSH pin bump 验证**（中成本）：CI pin `0.1.0-rc.6` → `0.1.2-alpha.1`，按新 preset 位置重派生 concerto preset 对照，全量重跑 `ci-local.sh` 与四个会话外探针，复验 P-1.2/P-1.3 fallback 在重构后的 preset 子系统下是否仍需；即 PRD 中留作 follow-up 的 #9 bump 事项。
+2. **DSH pin bump 验证**（中成本）：CI pin `0.1.0-rc.6` → `0.1.2-alpha.1`，按新 preset 位置重派生 concerto preset 对照，全量重跑 `ci-local.sh` 与四个会话外探针，复验 P-1.2/P-1.3 fallback 在重构后的 preset 子系统下是否仍需。该 bump 是 D7（pin-minor）机制下的刻意升级事项；PRD §1.1 的 #9 "Bump scripts" 指 OMO 导入后的 bump 脚本、与 DSH pin 无关；本 bump 已登记于 PRD §12 follow-up（见 dsh-012-review-sync 计划 T3 落地后的条目）。
 3. **codex subagent 集成 spike**（中高成本，需 codex 凭据）：在协奏 preset 中启用 `tool-subagent-codex`（`permissionMode: 'never'` 贴合无人值守编排），验证"指挥者跨 harness 委派"，产出未来外部 CLI agent 适配器模板。
 
 ---
