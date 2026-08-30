@@ -63,7 +63,7 @@ MVP 产品需求文档（已采纳，决策 D11）见 [MVP PRD：协奏骨架](.
 
 | 项 | 值 |
 |---|---|
-| **DSH 版本** | 0.1.0-rc.6（MIT；CI-pinned——0.1.2-alpha.1 已本地经源码构建验证，CI 翻转待 npm 发布） |
+| **DSH 版本** | 0.1.0-rc.6（MIT；CI-pinned——0.1.2-alpha.1 已本地经源码构建验证，CI 翻转待 npm 发布）；有效本地运行时 = rc.6 总成 + rc.7-scheme 依赖（见 [P-11.5](./docs/mvp-pitfalls.md)） |
 | **OMO 上游** | 19 个 core 包 + 4 个小 adapter（harness-agnostic）（SUL-1.0） |
 | **本项目 license** | **MIT OR SUL-1.0**（dual license） |
 | **OMO LICENSE 原文** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |

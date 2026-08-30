@@ -63,7 +63,7 @@ Feasibility Report is at [feasibility-report.md](./docs/feasibility-report.md).
 
 | Item | Value |
 |---|---|
-| **DSH version** | 0.1.0-rc.6 (MIT; CI-pinned — 0.1.2-alpha.1 verified locally via source build, CI flip pending npm publish) |
+| **DSH version** | 0.1.0-rc.6 (MIT; CI-pinned — 0.1.2-alpha.1 verified locally via source build, CI flip pending npm publish); effective local runtime = rc.6 umbrella + rc.7-scheme deps (see [P-11.5](./docs/mvp-pitfalls.md)) |
 | **OMO upstream** | 19 core packages + 4 small adapters (harness-agnostic) (SUL-1.0) |
 | **This project's license** | **MIT OR SUL-1.0** (dual license) |
 | **OMO LICENSE (original text)** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |
