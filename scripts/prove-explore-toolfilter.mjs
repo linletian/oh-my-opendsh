@@ -84,7 +84,7 @@ const { applyChildComposition } = await imp('@deepseek-ai/dsh-subagent/lib/index
 // 0.1.2 renamed the dsh-llm branded tool-call-id constructor CallId ->
 // ToolCallId (packages/llm/llm/lib/index.js:31,:1825); rc.6/rc.7 export CallId.
 const llmForId = await imp('@deepseek-ai/dsh-llm/lib/index.js')
-const CallId = llmForId.ToolCallId ?? llmForId.CallId
+const CallIdCtor = llmForId.ToolCallId ?? llmForId.CallId
 
 // ── 1. Parse + validate the real materialized row ───────────────────────────
 const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
@@ -174,7 +174,7 @@ const childToolNames = () => ctx.tools.schemas(childKey).map((t) => t.name).sort
 async function execAsChild(name) {
   const result = await ctx.tools.execute({
     signal: new AbortController().signal,
-    callId: CallId(`t12-probe-${name}`),
+    callId: CallIdCtor(`t12-probe-${name}`),
     name,
     arguments: {},
     agent: childKey,
@@ -252,6 +252,6 @@ if (problems.length > 0) {
   console.error(`T12-PROOF FAIL: ${problems.join('; ')}`)
   process.exit(1)
 }
-console.log(`T12-PROOF PASS: deny=[write,edit] enforced by the real child-composition path — `
+console.log(`T12-PROOF PASS: deny=[write,edit] enforced by the installed dsh's real child-composition path — `
   + `the child's model-facing tool list excludes write/edit, execution surfaces UNKNOWN_TOOL, `
   + `read/grep/glob/${SHELL} retained (OMO-faithful read-only surface), parent scope unaffected`)

@@ -112,7 +112,7 @@ const SpawnProvider = await imp('@deepseek-ai/dsh-subagent-spawn-in-process/lib/
 // 0.1.2 renamed the dsh-llm branded tool-call-id constructor CallId ->
 // ToolCallId (packages/llm/llm/lib/index.js:31,:1825); rc.6/rc.7 export CallId.
 const llmForId = await imp('@deepseek-ai/dsh-llm/lib/index.js')
-const CallId = llmForId.ToolCallId ?? llmForId.CallId
+const CallIdCtor = llmForId.ToolCallId ?? llmForId.CallId
 
 // ── 1. Parse + validate the real materialized row ───────────────────────────
 const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
@@ -231,7 +231,7 @@ async function execExplore(parentKey, background) {
   if (!background) args.run_in_background = false
   const result = await ctx.tools.execute({
     signal: new AbortController().signal,
-    callId: CallId(`t13-probe-${background ? 'cont' : 'fg'}-d${parentKey.options.subagentDepth ?? 0}`),
+    callId: CallIdCtor(`t13-probe-${background ? 'cont' : 'fg'}-d${parentKey.options.subagentDepth ?? 0}`),
     name: 'explore',
     arguments: args,
     agent: parentKey,
@@ -289,7 +289,7 @@ if (problems.length > 0) {
   process.exit(1)
 }
 const PASS_LINES = {
-  capped: 'T13-PROOF PASS: maxDepth=1 enforced by the real delegation start path — the depth-1 explore child is rejected on BOTH the foreground (ctx.subagents.start → spawn → startInProcessRun) and continuable (ctx.subagents.startContinuable) starts with the exact errored tool result "Error: subagent depth 2 exceeds maxDepth 1" (isError=true), the explore tool stays model-visible at the cap, and a depth-0 parent PASSES the same gate (control)',
+  capped: 'T13-PROOF PASS: maxDepth=1 enforced by the installed dsh\'s real delegation start path — the depth-1 explore child is rejected on BOTH the foreground (ctx.subagents.start → spawn → startInProcessRun) and continuable (ctx.subagents.startContinuable) starts with the exact errored tool result "Error: subagent depth 2 exceeds maxDepth 1" (isError=true), the explore tool stays model-visible at the cap, and a depth-0 parent PASSES the same gate (control)',
   passed: 'T13-PROOF PASSED-GATE PASS: with maxDepth=2 the depth-1 child PASSES the depth gate (agent-factory boundary reached) — the capped-mode rejection is sensitive to the cap value, not vacuous',
   default3: 'T13-PROOF DEFAULT-3 PASS: maxDepth absent → schemastery default 3 (P-5): a depth-3 parent is rejected with "Error: subagent depth 4 exceeds maxDepth 3" and a depth-2 parent passes — the default semantics match the documented contract',
   'provider-managed': 'T13-PROOF PROVIDER-MANAGED PASS: maxDepth: \'provider-managed\' sends no cap (execute folds undefined) — the depth-1 parent passes dsh\'s gate; the recursion budget belongs to the provider (out-of-process backends)',

@@ -191,6 +191,9 @@ DSH_NM="$(cd "$(dirname "$DSH_BIN")/../node_modules" && pwd)" || fail "cannot re
 # union overlay of symlinks so the same nm-path imports resolve under either
 # install shape. On npm rc.6 no hoist store exists and the overlay is a pure
 # mirror of DSH_NM (symlink realpaths converge on the very same files).
+# Precedence: DSH_NM wins on conflict (first-come, not overwritten): today the
+# install under test is the ONLY source; if a future npm 0.1.2 package lands,
+# revisit the loop order or the precedence breaks silently.
 DSH_NM_UNION="$SANDBOX/dsh-nm"
 mkdir -p "$DSH_NM_UNION/@deepseek-ai"
 for entry in "$DSH_NM"/*; do
@@ -303,13 +306,18 @@ if (remote) {
     redirect: 'manual',
     signal: AbortSignal.timeout(10_000),
   })
+  const handshakeText = await handshake.text()
   if (handshake.status !== 303) {
-    console.error(`web-rpc: token→cookie handshake: expected 303, got HTTP ${handshake.status}`)
+    console.error(`web-rpc: token→cookie handshake: expected 303, got HTTP ${handshake.status}: ${handshakeText.slice(0, 200)}`)
     process.exit(1)
   }
-  const setCookies = typeof handshake.headers.getSetCookie === 'function'
-    ? handshake.headers.getSetCookie()
-    : [handshake.headers.get('set-cookie') ?? '']
+  let setCookies
+  if (typeof handshake.headers.getSetCookie === 'function') {
+    setCookies = handshake.headers.getSetCookie()
+  } else {
+    console.warn('web-rpc: Node without getSetCookie (multi-cookie fallback unreliable)')
+    setCookies = [handshake.headers.get('set-cookie') ?? '']
+  }
   cookie = setCookies
     .map((value) => value.split(';', 1)[0])
     .find((value) => value.startsWith('dsh-auth-'))
@@ -367,7 +375,14 @@ if (kind === 'roster') {
     }))
     for (const provider of registered) {
       if (declared.has(provider.id)) continue
-      providers.push({ provider: provider.id, displayName: provider.name, settingsNs: '', settingsPath: [], active: true })
+      providers.push({
+        provider: provider.id,
+        displayName: provider.name,
+        settingsNs: '',
+        settingsPath: [],
+        active: true,
+        ...(provider.declared === undefined ? {} : { declared: provider.declared }),
+      })
     }
     value = { providers }
   } else {

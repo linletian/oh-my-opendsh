@@ -475,6 +475,7 @@ export function digestConfigDir(root) {
 // to the pre-T9 driver (same URL, same envelope, no auth headers).
 
 let rpcCounter = 0
+let warnedGetSetCookieFallback = false
 
 const RPC_TIMEOUT_MS = Number(process.env.DSH_E2E_RPC_TIMEOUT_MS ?? 30_000)
 
@@ -519,12 +520,20 @@ async function mintBrowserSessionCookie(port, token) {
     redirect: 'manual',
     signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
   })
+  const text = await response.text()
   if (response.status !== 303) {
-    throw new Error(`browser-session handshake: expected 303, got HTTP ${response.status}`)
+    throw new Error(`browser-session handshake: expected 303, got HTTP ${response.status}: ${text.slice(0, 200)}`)
   }
-  const setCookies = typeof response.headers.getSetCookie === 'function'
-    ? response.headers.getSetCookie()
-    : [response.headers.get('set-cookie') ?? '']
+  let setCookies
+  if (typeof response.headers.getSetCookie === 'function') {
+    setCookies = response.headers.getSetCookie()
+  } else {
+    if (!warnedGetSetCookieFallback) {
+      warnedGetSetCookieFallback = true
+      console.warn('drive: Node without getSetCookie (multi-cookie fallback unreliable)')
+    }
+    setCookies = [response.headers.get('set-cookie') ?? '']
+  }
   const pair = setCookies
     .map((value) => value.split(';', 1)[0])
     .find((value) => value.startsWith('dsh-auth-'))
@@ -569,6 +578,7 @@ async function listProvidersJoined(boot) {
       settingsNs: '',
       settingsPath: [],
       active: true,
+      ...(provider.declared === undefined ? {} : { declared: provider.declared }),
     })
   }
   return { providers }
