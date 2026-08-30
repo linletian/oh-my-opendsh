@@ -7,12 +7,22 @@
 # row here must sit inside a group carrying an `isolate` realm).
 #
 # Derivation ledger against the shipped `standard` preset
-# (dsh 0.1.0-rc.6 config/agent-presets/standard/agent.cordis.yml). T6 scope:
-# a real, WORKING conductor mode. T8 landed the omo-sisyphus orchestrator
-# prompt wiring (persona sentinel rendered from system-sections markdown at
-# apply() time); per-agent model routes are a later milestone, so this file
-# deliberately keeps standard's host-compatible core and drops what the 1+1
-# concerto skeleton does not use.
+# (dsh 0.1.2-alpha.1 packages/preset/agent-presets/presets/standard/agent.cordis.yml).
+# The MVP-era derivation ran against dsh 0.1.0-rc.6 at its old location
+# config/agent-presets/standard/ (0.1.2 moved the shipped presets into
+# packages/preset/agent-presets). T6 scope: a real, WORKING conductor mode.
+# T8 landed the omo-sisyphus orchestrator prompt wiring (persona sentinel
+# rendered from system-sections markdown at apply() time); per-agent model
+# routes are a later milestone, so this file deliberately keeps standard's
+# host-compatible core and drops what the 1+1 concerto skeleton does not use.
+#
+# Note on comment-only diff hunks: concerto carries its own commentary (the
+# T8/T11/T12/T13 sentinel documentation and per-row notes) instead of
+# standard's header, section, and row-level rationale comments, which are not
+# replicated verbatim; section-header text/width may also differ (e.g.
+# `delegation` vs `delegation and workflows`). Any diff hunk consisting
+# solely of comment/section-header lines is covered by this note; every
+# row-level hunk maps to a KEEP/DROP/DEV entry below.
 #
 # KEEP  persona                      — T8: the value is a SENTINEL (the
 #                                      PERSONA_TEXT_SENTINEL constant in
@@ -34,6 +44,10 @@
 # KEEP  tool-jobs                    — background-job controls; pairs with the
 #                                      continuable background subagents below.
 # KEEP  skill-filesystem, tool-skill — skills stay available in concerto.
+# KEEP  command-goal                 — 0.1.2 addition to standard; pairs with
+#                                      tool-goal (the /goal command plus the
+#                                      model-facing goal tool — keeping one
+#                                      without the other is asymmetric).
 # KEEP  tool-goal                    — goal tracking fits orchestration work.
 # KEEP  compaction group             — long orchestration sessions fold
 #                                      (compaction-basic, command-compact,
@@ -44,19 +58,45 @@
 #                                      spawn/fork + control + list-agents,
 #                                      verbatim from standard, PLUS the T11
 #                                      omo-explore instance (see its row).
+# DEV   modelSelectionSettings        — kept ONLY on the generic
+#                                      `tool-subagent` (provider: spawn) row,
+#                                      as in 0.1.2 standard. NOT on
+#                                      `tool-subagent-fork` (standard
+#                                      deliberately omits it so provider/model
+#                                      stay equal to the parent and the
+#                                      inherited history keeps its KV Cache
+#                                      prefix — standard's fork comment) and
+#                                      NOT on `tool-subagent-explore` (FR-5
+#                                      pins the route via agentOptions;
+#                                      explore never samples host model
+#                                      selection).
 # KEEP  tool-ask-user                — the conductor escalates decisions.
 # KEEP  tool-todo                    — orchestration tracking.
 # KEEP  tool-web                     — research from the conductor seat.
+# DEV   tool-web fetch: true         — rc.6-era concerto inherited `fetch:
+#                                      false` verbatim from standard (not a
+#                                      deliberate deviation); 0.1.2 standard
+#                                      sets `fetch: true` — derivation
+#                                      discipline: follow upstream unless a
+#                                      deviation is recorded. `searchTimeoutMs:
+#                                      60000` kept.
 # DROP  plan-mode group              — the single-agent plan ceremony is the
 #                                      "do it yourself" stance; 编排优先
 #                                      decomposes by delegation instead.
 #                                      Deliberate MVP cut; T8 may revisit.
 # DROP  tool-subagent-codex /
-#       tool-subagent-claude-code    — product providers standard ships
-#                                      DISABLED; dropping (not disabling)
-#                                      keeps the MVP roster honest. Per-agent
-#                                      model routes (PRD §4.4 piece 4) land
-#                                      with the real agent presets later.
+#       tool-subagent-claude-code    — product-provider rows. 0.1.2 standard
+#                                      ships them disabled with
+#                                      `backgroundMode: one-shot` +
+#                                      `maxDepth: provider-managed` and the
+#                                      comment "Install the matching Bundle in
+#                                      this Profile and restart the Host, then
+#                                      copy this preset and remove `disabled`".
+#                                      Dropping (not disabling) keeps the MVP
+#                                      roster honest; DROP unchanged under
+#                                      0.1.2. Per-agent model routes
+#                                      (PRD §4.4 piece 4) land with the real
+#                                      agent presets later.
 # DROP  workflow-worker-thread /
 #       tool-workflow                — workflow engine rows; not needed for
 #                                      the 1+1 (conductor + subagent) skeleton.
@@ -117,6 +157,12 @@
 
 # ── goals ───────────────────────────────────────────────────────────────────
 
+# The goal service and session driver stay on the host plane, where the Gateway
+# can resolve them. The human command and model-facing tool register into this
+# preset's scoped layers.
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'
+
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
 
@@ -164,6 +210,7 @@
       config:
         provider: spawn
         toolName: subagent
+        modelSelectionSettings: true
         backgroundMode: continuable
 
     - id: tool-subagent-fork
@@ -249,8 +296,10 @@
   config:
     allowParallelInProgress: true
 
+# The `web` service and its search provider stay in the host composition; only
+# the model-facing tool is per-session.
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
   config:
-    fetch: false
+    fetch: true
     searchTimeoutMs: 60000
