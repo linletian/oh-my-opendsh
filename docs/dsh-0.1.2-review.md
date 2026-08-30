@@ -150,4 +150,6 @@ Ordered by value/cost, left for decision:
 
 ---
 
+**2026-08-29 addendum (found during the pin-bump verification, not the original survey):** executing the bump against a source build of this tag surfaced three changes the survey did not cover: (1) the web-RPC transport was replaced — the readiness line now carries `?token=<launch-token>`; `GET /?token=` → 303 + an authority-bound `dsh-auth-*` cookie is required on every `/api` call (a query token on `/api` itself → 401); the flat endpoints `agentPreset.list` / `llm.providers` are removed (404 even authenticated) in favor of the Typert ClientRemote projection (`agentPresets/list`, `llm/listProviders` + `llm/listConfigurableProviders` joined client-side, `session/create` and `session/prompt` with `{args:{request}}` payloads); (2) the dsh-llm export `CallId` was renamed `ToolCallId` (`packages/llm/llm/lib/index.js:31,:1825`); (3) the `subagent/descriptor` schema version went 2 → 3 (`SUBAGENT_DESCRIPTOR_VERSION`; route fields unchanged). The e2e verbatim rejection contracts themselves are unchanged (`Error: unknown tool "write"`, `Error: subagent depth N exceeds maxDepth M`).
+
 **中文版本**: [`dsh-0.1.2-review_zh-CN.md`](./dsh-0.1.2-review_zh-CN.md)

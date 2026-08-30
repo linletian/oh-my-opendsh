@@ -150,4 +150,6 @@ MVP 的 V1~V4 及其依赖机制在 0.1.2 中**全部仍然存在**，方向无�
 
 ---
 
+**2026-08-29 补遗（pin bump 验证过程中发现，非原调研内容）：**针对该 tag 源码构建的版本执行 bump，暴露了三处原调研未覆盖的变化：(1) web-RPC 传输层被替换——readiness 行现携带 `?token=<launch-token>`；`GET /?token=` → 303 + 每个 `/api` 调用都要求携带 authority 绑定的 `dsh-auth-*` cookie（在 `/api` 本身上使用查询 token → 401）；扁平端点 `agentPreset.list` / `llm.providers` 被移除（即使认证通过也 404），取而代之的是 Typert ClientRemote 投影（`agentPresets/list`、`llm/listProviders` + `llm/listConfigurableProviders` 客户端侧 join，`session/create` 与 `session/prompt` 使用 `{args:{request}}` payload）；(2) dsh-llm 导出 `CallId` 更名为 `ToolCallId`（`packages/llm/llm/lib/index.js:31,:1825`）；(3) `subagent/descriptor` schema 版本 2 → 3（`SUBAGENT_DESCRIPTOR_VERSION`；路由字段不变）。e2e 的逐字拒绝契约本身未变（`Error: unknown tool "write"`、`Error: subagent depth N exceeds maxDepth M`）。
+
 **English version**: [`dsh-0.1.2-review.md`](./dsh-0.1.2-review.md)
