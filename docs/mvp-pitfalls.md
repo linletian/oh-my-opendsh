@@ -124,3 +124,18 @@ layer; doctor-lite → full doctor; this file → the cumulative pitfall knowled
 > necessary from this closeout. If the rc.6→rc.7+ upgrade or the upstream `description`-field
 > feature request (P-10.1(b)) is pursued, those are candidates worth registering; registration is
 > the user's call.
+
+## 5. P-11 (2026-08-29, dsh 0.1.2-alpha.1 bump verification — executed via source build, npm lags)
+
+> Appended 2026-08-29, after the MVP closeout, from the dsh-012-review-sync plan's pin-bump
+> execution (T6-T9). `dsh-v0.1.2-alpha.1` exists only as a git tag (the npm registry tops at
+> `0.1.1-rc.2`), so the bump was verified against a **source build of the tag** (`pnpm install` +
+> `pnpm run build` + `npm link`) on BOTH the 0.1.2-alpha.1 build and the rc.6 pin; the CI flip is
+> blocked pending npm publish (PRD §12). Evidence: `.omo/evidence/task-{7,8,9}-dsh-012-review-sync.log`.
+
+- **P-11.1 shipped preset relocation + `code`→`ptc`** — rc.6 `apps/cli/config/agent-presets/` → 0.1.2 `packages/preset/agent-presets/presets/`; locale keys `ui-agent-preset/src/client/locales.ts:171-176` renamed in step, still `trust==='system'`-only → P-1.2 fallback design stands.
+- **P-11.2 the 5 re-derivation deltas adopted** (KEEP command-goal; `modelSelectionSettings: true` on the generic spawn row only — silently-preserved dead config on rc.6, effective on 0.1.2; refreshed product-provider DROP wording; `tool-web fetch: false→true` tracking upstream; derivation-ledger path updated, rc.6 note kept); 18/18 diff hunks ledger-explained (a9049b5).
+- **P-11.3 e2e verbatim rejection contracts: NO string drift on 0.1.2** (`unknown tool "write"`, `subagent depth N exceeds maxDepth M`; the depth-error class moved rc.6 child-agent.ts:48-56 → 0.1.2 :34); the real drift was the web-RPC transport (token→cookie auth; flat endpoints → Typert Remote) + `CallId`→`ToolCallId` + descriptor v2→v3 — harness adapted transport-adaptively (ad3acf5, ed2f1a2), green on BOTH runtimes.
+- **P-11.4 npm publish gap** — tag-only release; CI flip blocked; verification ran against a source build of the tag (doctor-lite accepted it via D7 pin-minor).
+- **P-11.5 rc.8-dependency landmine** — a fresh `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` today resolves rc.8 DEPENDENCIES (`^` ranges; rc.8 published 2026-08-19) which break the T13 stack (`ctx.agents.get`); the validated tree = rc.6 umbrella + rc.7-scheme deps, restorable only via the explicit ~197-pin `--no-save` recipe recorded in `.omo/evidence/task-9-dsh-012-review-sync.log` (P3.5b-e/P5.11). Follow-up: lock/shrinkwrap the harness's dsh dependency tree.
+- **P-11.6 not adapted** — `scripts/smoke-real.mjs` still rides the rc.6 flat RPC (unrunnable without real keys); adapt together with the CI flip.

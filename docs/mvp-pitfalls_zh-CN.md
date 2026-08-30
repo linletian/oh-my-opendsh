@@ -106,3 +106,18 @@ MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2
 > 给用户的一则说明（按任务约束**不登记**）：本次结项未发现必须新增决策（D13+）的事项。
 > 若推进 rc.6→rc.7+ 升级或上游 `description` 字段特性请求（P-10.1(b)），这两项值得登记为候选；
 > 是否登记由用户决定。
+
+## 5. P-11（2026-08-29，dsh 0.1.2-alpha.1 bump 验证——经源码构建执行，npm 滞后）
+
+> 2026-08-29 于 MVP 结项后追加，源自 dsh-012-review-sync 计划的 pin-bump 执行（T6-T9）。
+> `dsh-v0.1.2-alpha.1` 目前只以 git tag 存在（npm registry 最高到 `0.1.1-rc.2`），因此本次 bump
+> 验证针对**该 tag 的源码构建**（`pnpm install` + `pnpm run build` + `npm link`）在 0.1.2-alpha.1
+> 构建与 rc.6 pin 两个运行时上执行；CI 翻转待 npm 发布解除阻塞（PRD §12）。
+> 证据：`.omo/evidence/task-{7,8,9}-dsh-012-review-sync.log`。
+
+- **P-11.1 官方 preset 搬迁 + `code`→`ptc`**——rc.6 `apps/cli/config/agent-presets/` → 0.1.2 `packages/preset/agent-presets/presets/`；本地化键 `ui-agent-preset/src/client/locales.ts:171-176` 同步更名，仍仅 `trust==='system'` 生效 → P-1.2 fallback 设计依然成立。
+- **P-11.2 采纳的 5 项重派生 delta**（KEEP command-goal；`modelSelectionSettings: true` 仅加在通用 spawn 行——rc.6 上属静默保留的死配置、0.1.2 上生效；刷新 product-provider DROP 措辞；`tool-web fetch: false→true` 跟随上游；派生账本路径更新、保留 rc.6 注记）；18/18 个 diff 块全部有账本解释（a9049b5）。
+- **P-11.3 e2e 逐字拒绝契约：0.1.2 上无字符串漂移**（`unknown tool "write"`、`subagent depth N exceeds maxDepth M`；深度错误类自 rc.6 child-agent.ts:48-56 上移至 0.1.2 :34）；真正的漂移是 web-RPC 传输层（token→cookie 认证；扁平端点 → Typert Remote）+ `CallId`→`ToolCallId` + descriptor v2→v3——harness 已传输自适应（ad3acf5, ed2f1a2），两种运行时全绿。
+- **P-11.4 npm 发布缺口**——仅 tag 发布；CI 翻转受阻；验证针对该 tag 的源码构建执行（doctor-lite 经 D7 pin-minor 接受）。
+- **P-11.5 rc.8 依赖地雷**——今天全新执行 `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` 会解析到 rc.8 的 DEPENDENCIES（`^` 范围；rc.8 于 2026-08-19 发布），破坏 T13 栈（`ctx.agents.get`）；已验证的依赖树 = rc.6 伞包 + rc.7-scheme 依赖，只能通过 `.omo/evidence/task-9-dsh-012-review-sync.log`（P3.5b-e/P5.11）记录的约 197 个显式 pin 的 `--no-save` 配方恢复。后续：锁定/shrinkwrap harness 的 dsh 依赖树。
+- **P-11.6 未适配项**——`scripts/smoke-real.mjs` 仍走 rc.6 扁平 RPC（无真实凭据无法运行）；随 CI 翻转一并适配。
