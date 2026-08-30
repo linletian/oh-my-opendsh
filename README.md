@@ -59,6 +59,10 @@ The MVP product requirements document (adopted, decision D11) is at [MVP PRD: Co
 
 Feasibility Report is at [feasibility-report.md](./docs/feasibility-report.md).
 
+## Manual Testing
+
+Manual testing guide / 手工测试验证指南: [English](./docs/manual-testing.md) / [中文](./docs/manual-testing_zh-CN.md).
+
 ## Key Facts
 
 | Item | Value |

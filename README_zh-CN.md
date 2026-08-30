@@ -59,6 +59,10 @@ MVP 产品需求文档（已采纳，决策 D11）见 [MVP PRD：协奏骨架](.
 
 调研报告（中文）见 [可行性报告](./docs/feasibility-report_zh-CN.md)。
 
+## 手工测试
+
+手工测试验证指南 / Manual testing guide: [中文](./docs/manual-testing_zh-CN.md) / [English](./docs/manual-testing.md).
+
 ## 关键事实
 
 | 项 | 值 |
