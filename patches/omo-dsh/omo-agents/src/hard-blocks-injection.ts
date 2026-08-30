@@ -5,8 +5,9 @@
 // translation); 85% of future hook ports reuse this exact shape.
 //
 // Verified dsh surface (read-only inspection of installed 0.1.0-rc.6 + the
-// rc.7 source checkout; citations live in
-// .omo/evidence/task-16-mvp-implementation.log):
+// rc.7 source checkout; citations live in the gitignored local-run log
+// .omo/evidence/task-16-mvp-implementation.log — durable record:
+// docs/mvp-pitfalls.md P-3):
 //   * event `agent/pre-step` — scope-filtered WATERFALL; payload
 //     { agent, messages, turn, step, signal }, next: () => Promise<
 //     PreStepDecision>; "Calling next() preserves the current messages".

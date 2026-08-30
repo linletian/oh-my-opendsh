@@ -1,6 +1,6 @@
 // T6 — concerto preset sync module (TDD: written BEFORE the module existed;
 // first run must fail on the unresolved import).
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -108,6 +108,28 @@ describe('omo-agents concerto preset sync (T6)', () => {
     expect(syncConcertoPreset(target)).toBe('refreshed')
     const expected = readFileSync(join(EXPECTED_TEMPLATE_DIR, 'preset.yml'), 'utf8')
     expect(readFileSync(join(target, 'preset.yml'), 'utf8')).toBe(expected)
+  })
+
+  it('syncConcertoPreset removes stale extra files and reports the sync as refreshed', () => {
+    const target = join(makeSandbox(), '.agent-presets', 'concerto')
+    expect(syncConcertoPreset(target)).toBe('materialized')
+    // A leftover from an older plugin build: the plugin is the only author
+    // of this directory, so anything outside the two known files is stale.
+    writeFileSync(join(target, 'stale-legacy.yml'), 'name: legacy\n', 'utf8')
+    expect(syncConcertoPreset(target)).toBe('refreshed')
+    expect(existsSync(join(target, 'stale-legacy.yml'))).toBe(false)
+    expect(existsSync(join(target, 'preset.yml'))).toBe(true)
+    expect(existsSync(join(target, 'agent.cordis.yml'))).toBe(true)
+  })
+
+  it('syncConcertoPreset re-applies mode 0o600 on an unchanged sync', () => {
+    const target = join(makeSandbox(), '.agent-presets', 'concerto')
+    expect(syncConcertoPreset(target)).toBe('materialized')
+    for (const file of CONCERTO_PRESET_FILES) chmodSync(join(target, file), 0o644)
+    expect(syncConcertoPreset(target)).toBe('unchanged')
+    for (const file of CONCERTO_PRESET_FILES) {
+      expect(statSync(join(target, file)).mode & 0o777).toBe(0o600)
+    }
   })
 })
 

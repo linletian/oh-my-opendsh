@@ -3,7 +3,9 @@
 // {provider, model} pair the omo-sisyphus conductor and the omo-explore
 // subagent each run on; later todos consume it: T11 binds
 // `agentOptions: routes.explore` into the omo-explore dsh-tool-subagent
-// instance config, T15/T20 assert the resolved routes in session logs.
+// instance config, T15/T20 assert the resolved routes in session logs (those
+// verification records live in gitignored local-run logs under .omo/evidence/;
+// the durable record is docs/mvp-pitfalls.md P-7).
 //
 // DESIGN CHOICE (plan T14 step 2, evaluated honestly):
 //  (a) Route literals in the concerto composition / root cordis.yml —

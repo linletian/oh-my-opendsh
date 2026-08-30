@@ -133,15 +133,19 @@ export function apply(ctx: InjectingContext): void {
   }
   console.log(`[omo-agents] concerto preset ${outcome} at ${targetDir}`)
 
-  ctx.inject(['agentPresets'], async (injected) => {
-    try {
-      const roster = await injected.agentPresets.list()
-      console.log(
-        '[omo-agents] concerto roster: '
-        + roster.map((preset) => `${preset.id}:${preset.trust ?? '?'}`).join(','),
-      )
-    } catch (err) {
-      console.log(`[omo-agents] concerto roster FAILED: ${describeError(err)}`)
-    }
-  })
+  try {
+    ctx.inject(['agentPresets'], async (injected) => {
+      try {
+        const roster = await injected.agentPresets.list()
+        console.log(
+          '[omo-agents] concerto roster: '
+          + roster.map((preset) => `${preset.id}:${preset.trust ?? '?'}`).join(','),
+        )
+      } catch (err) {
+        console.log(`[omo-agents] concerto roster FAILED: ${describeError(err)}`)
+      }
+    })
+  } catch (err) {
+    console.log(`[omo-agents] agentPresets inject FAILED: ${describeError(err)}`)
+  }
 }

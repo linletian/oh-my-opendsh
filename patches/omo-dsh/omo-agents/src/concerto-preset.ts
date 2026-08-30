@@ -26,7 +26,7 @@
 // rather than pasted into YAML). Both renderers keep the T8 exactly-once
 // sentinel guard, and route values are emitted as JSON-quoted YAML scalars
 // so an env override can never break the composition's YAML.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -70,7 +70,7 @@ export function concertoPresetDir(
 
 export type ConcertoSyncOutcome =
   | 'materialized' // target did not exist; the preset was written
-  | 'refreshed' // target existed with different content; rewritten to the template
+  | 'refreshed' // target content diverged (rewritten) or stale extra entries were removed
   | 'unchanged' // target content already matches the template; no write
 
 /** Persona sentinel of the T11 explore tool-subagent row (see the template). */
@@ -132,7 +132,12 @@ export function renderExploreAgentOptionsIntoComposition(template: string, route
  * targets are left untouched, divergent targets (e.g. a leftover from an
  * older plugin build) are rewritten to the template. A `concerto` directory
  * occupied by foreign content is still refreshed — the id is ours: this
- * plugin is the only author of the concerto mode.
+ * plugin is the only author of the concerto mode, so entries in `targetDir`
+ * outside CONCERTO_PRESET_FILES are stale leftovers from an older plugin
+ * build and are removed on sight. The mode is re-applied to both files on
+ * every sync even when the content is identical (a foreign editor or an
+ * older sync may have loosened it), and the removal of a stale entry counts
+ * as a change: the outcome is `refreshed`, not `unchanged`.
  *
  * `personaPrompt` is rendered into the persona sentinel of the template's
  * agent.cordis.yml (T8); the default builds it from the shipped markdown
@@ -176,7 +181,22 @@ export function syncConcertoPreset(
     }
     if (actual !== expected.get(file)) identical = false
   }
-  if (identical) return 'unchanged'
+  let staleRemoved = false
+  if (existed) {
+    const stale = readdirSync(targetDir).filter(
+      (entry) => !(CONCERTO_PRESET_FILES as readonly string[]).includes(entry),
+    )
+    for (const entry of stale) {
+      rmSync(join(targetDir, entry), { recursive: true, force: true })
+      staleRemoved = true
+    }
+  }
+  if (identical) {
+    for (const file of CONCERTO_PRESET_FILES) {
+      chmodSync(join(targetDir, file), 0o600)
+    }
+    return staleRemoved ? 'refreshed' : 'unchanged'
+  }
   mkdirSync(targetDir, { recursive: true })
   for (const file of CONCERTO_PRESET_FILES) {
     writeFileSync(join(targetDir, file), expected.get(file)!, {
