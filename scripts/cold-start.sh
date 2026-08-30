@@ -111,7 +111,12 @@ grep -q "\[omo-agents\] loaded" "$BOOT_LOG" \
   || fail "plugin load marker missing from boot log (plugin never mounted?)"
 
 # Negative signal: no plugin load errors anywhere in the log.
-if grep -inE "failed to (import|load|apply)|plugin tree failed to load|plugin\(s\) failed to load|fatal load failure|did not activate|unknown option|patch: entry .* not found|name mismatch|\berror\b|\bfatal\b|\bfailed\b" "$BOOT_LOG"; then
+# NB: the generic words error/fatal/failed are scoped to plugin context
+# (plugin.*word | word.*plugin). The bare \berror\b|\bfatal\b|\bfailed\b
+# alternatives were dropped because harmless INFO lines (e.g. "0 errors",
+# "request failed → retried") tripped them as false positives; the specific
+# load-failure markers above remain the authoritative signal.
+if grep -inE "failed to (import|load|apply)|plugin tree failed to load|plugin\(s\) failed to load|fatal load failure|did not activate|unknown option|patch: entry .* not found|name mismatch|plugin.*(error|failed|fatal)|(error|failed|fatal).*plugin" "$BOOT_LOG"; then
   fail "plugin load error patterns found in boot log (see matches above)"
 fi
 
