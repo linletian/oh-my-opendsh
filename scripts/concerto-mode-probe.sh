@@ -30,13 +30,19 @@
 #                 mode — no roster entry is expected; T11 binds the text as a
 #                 dsh-tool-subagent instance's `persona` config (contract in
 #                 src/explore-prompt.ts).
-#   external    — POST /api/agentPreset.list (the Web UI picker's own RPC
-#                 surface) lists concerto at trust "user" alongside
-#                 standard/code/minimal/cordis at trust "system", with the
-#                 name from OUR preset.yml (协奏 / Concerto).
+#   external    — the Web UI picker's own roster RPC (transport-adaptive, T9:
+#                 rc.6 POST /api/agentPreset.list, no auth; 0.1.2 POST
+#                 /api/agentPresets/list through the Typert Remote gateway,
+#                 after the launch-token → dsh-auth-* cookie handshake) lists
+#                 concerto at trust "user" alongside the official four at
+#                 trust "system" (rc.6 standard/code/minimal/cordis; 0.1.2
+#                 standard/ptc/minimal/cordis), with the name from OUR
+#                 preset.yml (协奏 / Concerto).
 #   T14 routes   — the `[omo-agents] model routes: sisyphus=… explore=…` boot
 #                 marker (resolved by the plugin from src/model-routes.ts, the
-#                 single config source of truth), and POST /api/llm.providers
+#                 single config source of truth), and the provider directory
+#                 (rc.6 POST /api/llm.providers; 0.1.2 llm/listProviders joined
+#                 with llm/listConfigurableProviders by the Web UI's own rule)
 #                 showing BOTH route providers `active:true` — the sisyphus
 #                 seat's from the llm-deepseek adapter (entry config), the
 #                 explore seat's from the llm-pi-ai adapter (sandbox-seeded
@@ -120,7 +126,7 @@ fail() {
   exit 1
 }
 
-command -v curl >/dev/null || fail "curl not found (probe needs it for POST /api/agentPreset.list)"
+command -v node >/dev/null || fail "node not found (probe needs it for the adaptive web-RPC helper)"
 
 echo "concerto-probe: sandbox: $SANDBOX"
 echo "concerto-probe: dsh binary: $(command -v dsh)"
@@ -178,11 +184,37 @@ EOF
 # cordis runs at session-composition mount time.
 DSH_BIN="$(readlink -f "$(command -v dsh)")" || fail "cannot resolve dsh binary"
 DSH_NM="$(cd "$(dirname "$DSH_BIN")/../node_modules" && pwd)" || fail "cannot resolve dsh node_modules"
-[[ -f "$DSH_NM/@deepseek-ai/dsh-tool-subagent/lib/index.js" && -f "$DSH_NM/js-yaml/dist/js-yaml.mjs" ]] \
-  || fail "installed dsh is missing dsh-tool-subagent or js-yaml under $DSH_NM"
+# T9: npm rc.6 ships every runtime package flat under the dsh package's own
+# node_modules; the 0.1.2 pnpm source install links only apps/cli's DIRECT
+# deps there (transitive workspace packages the proofs import by path — e.g.
+# dsh-scope, dsh-agent-loop — live in the workspace hoist store). Build a
+# union overlay of symlinks so the same nm-path imports resolve under either
+# install shape. On npm rc.6 no hoist store exists and the overlay is a pure
+# mirror of DSH_NM (symlink realpaths converge on the very same files).
+DSH_NM_UNION="$SANDBOX/dsh-nm"
+mkdir -p "$DSH_NM_UNION/@deepseek-ai"
+for entry in "$DSH_NM"/*; do
+  name="$(basename "$entry")"
+  [[ "$name" == "@deepseek-ai" || "$name" == ".bin" ]] && continue
+  [[ -e "$DSH_NM_UNION/$name" ]] || ln -s "$entry" "$DSH_NM_UNION/$name"
+done
+for entry in "$DSH_NM/@deepseek-ai"/*; do
+  name="$(basename "$entry")"
+  [[ -e "$DSH_NM_UNION/@deepseek-ai/$name" ]] || ln -s "$entry" "$DSH_NM_UNION/@deepseek-ai/$name"
+done
+WORKSPACE_ROOT="$(cd "$DSH_NM/../../.." && pwd)"
+HOIST_NM="$WORKSPACE_ROOT/node_modules/.pnpm/node_modules"
+if [[ -d "$HOIST_NM/@deepseek-ai" ]]; then
+  for entry in "$HOIST_NM/@deepseek-ai"/*; do
+    name="$(basename "$entry")"
+    [[ -e "$DSH_NM_UNION/@deepseek-ai/$name" ]] || ln -s "$entry" "$DSH_NM_UNION/@deepseek-ai/$name"
+  done
+fi
+[[ -f "$DSH_NM_UNION/@deepseek-ai/dsh-tool-subagent/lib/index.js" && -f "$DSH_NM_UNION/js-yaml/dist/js-yaml.mjs" ]] \
+  || fail "installed dsh is missing dsh-tool-subagent or js-yaml under $DSH_NM_UNION"
 VALIDATE_EXPLORE_MJS="$SANDBOX/validate-explore-row.mjs"
 cat > "$VALIDATE_EXPLORE_MJS" <<'EOF'
-// T11: validate the materialized explore row against the real rc.6 schema.
+// T11: validate the materialized explore row against the installed dsh's schema.
 // argv: <dsh node_modules dir> <materialized agent.cordis.yml> <provider> <model>
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -239,8 +271,113 @@ if (problems.length > 0) {
   console.error(`T11-VALIDATE FAIL: ${problems.join('; ')}`)
   process.exit(1)
 }
-console.log(`T11-VALIDATE PASS: tool-subagent-explore row validates against the installed rc.6 Config `
+console.log(`T11-VALIDATE PASS: tool-subagent-explore row validates against the installed dsh-tool-subagent Config `
   + `(toolName=explore provider=spawn route=${expectedProvider}/${expectedModel} maxDepth=1 deny=[write,edit] persona=${validated.persona.length} chars)`)
+EOF
+
+# Adaptive web-RPC helper (T9). The readiness line decides the transport:
+# rc.6 serves flat /api/<method> endpoints with no auth beyond the loopback
+# Host-header fence; 0.1.2 mints a dsh-auth-* cookie via GET /?token=<launch>
+# (303 + Set-Cookie; query tokens on /api itself get 401) and replaces the
+# flat endpoints with Typert Remote endpoints /api/<namespace>/<method>
+# (payload {args:{…}}, docs/api-gateway.md:121). 'providers' re-asserts the
+# rc.6 llm.providers contract on 0.1.2 by joining the client's own two Remote
+# calls with the Web UI Models page's own rule (joinProviderDirectory,
+# ui-settings-models/src/client/store.ts:49-73): a directory entry is active
+# ⟺ its provider id is a registered route — the exact join rc.6 performed
+# server-side — so the grep assertions below stay transport-agnostic.
+WEB_RPC_MJS="$SANDBOX/web-rpc.mjs"
+cat > "$WEB_RPC_MJS" <<'EOF'
+// argv: <roster|providers> <port> [launch-token]
+const [kind, portArg, token] = process.argv.slice(2)
+const port = Number(portArg)
+if (!Number.isInteger(port) || port <= 0) {
+  console.error(`web-rpc: bad port ${JSON.stringify(portArg)}`)
+  process.exit(1)
+}
+const base = `http://127.0.0.1:${port}`
+const remote = typeof token === 'string' && token.length > 0
+let cookie
+if (remote) {
+  const handshake = await fetch(`${base}/?token=${encodeURIComponent(token)}`, {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (handshake.status !== 303) {
+    console.error(`web-rpc: token→cookie handshake: expected 303, got HTTP ${handshake.status}`)
+    process.exit(1)
+  }
+  const setCookies = typeof handshake.headers.getSetCookie === 'function'
+    ? handshake.headers.getSetCookie()
+    : [handshake.headers.get('set-cookie') ?? '']
+  cookie = setCookies
+    .map((value) => value.split(';', 1)[0])
+    .find((value) => value.startsWith('dsh-auth-'))
+  if (cookie === undefined) {
+    console.error('web-rpc: handshake minted no dsh-auth-* cookie')
+    process.exit(1)
+  }
+}
+let counter = 0
+async function rpc(endpoint, payload) {
+  const rpcId = `concerto-probe-${kind}-${++counter}`
+  const response = await fetch(`${base}/api/${endpoint}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(cookie === undefined ? {} : { cookie }) },
+    body: JSON.stringify({ type: 'client-request', rpcId, method: endpoint, payload }),
+    signal: AbortSignal.timeout(10_000),
+  })
+  const text = await response.text()
+  if (response.status !== 200) {
+    console.error(`web-rpc: ${endpoint}: HTTP ${response.status}: ${text.slice(0, 200)}`)
+    process.exit(1)
+  }
+  let body
+  try {
+    body = JSON.parse(text)
+  } catch {
+    console.error(`web-rpc: ${endpoint}: non-JSON body: ${text.slice(0, 200)}`)
+    process.exit(1)
+  }
+  if (body?.result?.ok !== true) {
+    console.error(`web-rpc: ${endpoint} failed: ${text.slice(0, 200)}`)
+    process.exit(1)
+  }
+  return body.result.value
+}
+if (kind === 'roster') {
+  const value = remote ? await rpc('agentPresets/list', { args: {} }) : await rpc('agentPreset.list', {})
+  console.log(JSON.stringify({ type: 'server-response', rpcId: 'concerto-probe-roster', result: { ok: true, value } }))
+} else if (kind === 'providers') {
+  let value
+  if (remote) {
+    const [registered, directory] = await Promise.all([
+      rpc('llm/listProviders', { args: {} }),
+      rpc('llm/listConfigurableProviders', { args: {} }),
+    ])
+    const active = new Set(registered.map((provider) => provider.id))
+    const declared = new Set(directory.map((entry) => entry.provider))
+    const providers = directory.map((entry) => ({
+      provider: entry.provider,
+      displayName: entry.displayName,
+      settingsNs: entry.settingsNs,
+      settingsPath: [...entry.settingsPath],
+      active: active.has(entry.provider),
+      ...(entry.declared === undefined ? {} : { declared: entry.declared }),
+    }))
+    for (const provider of registered) {
+      if (declared.has(provider.id)) continue
+      providers.push({ provider: provider.id, displayName: provider.name, settingsNs: '', settingsPath: [], active: true })
+    }
+    value = { providers }
+  } else {
+    value = await rpc('llm.providers', {})
+  }
+  console.log(JSON.stringify({ type: 'server-response', rpcId: 'concerto-probe-providers', result: { ok: true, value } }))
+} else {
+  console.error(`web-rpc: unknown kind ${JSON.stringify(kind)}`)
+  process.exit(1)
+}
 EOF
 
 # boot_once <label> <expected-sync-outcome>: real boot, bounded; asserts the
@@ -255,8 +392,10 @@ boot_once() {
   local dsh_pid=$!
 
   local port=""
+  local ready_url=""
   for ((i = 0; i < READY_TIMEOUT_S; i++)); do
-    port="$(grep -oE 'http://127\.0\.0\.1:[0-9]+' "$boot_log" 2>/dev/null | head -1 | grep -oE '[0-9]+$' || true)"
+    ready_url="$(grep -oE 'http://127\.0\.0\.1:[0-9]+(/\?token=[A-Za-z0-9_-]+)?' "$boot_log" 2>/dev/null | head -1 || true)"
+    port="$(printf '%s\n' "$ready_url" | grep -oE '^http://127\.0\.0\.1:[0-9]+' | grep -oE '[0-9]+$' || true)"
     if [[ -n "$port" ]]; then
       break
     fi
@@ -272,31 +411,45 @@ boot_once() {
     cat "$boot_log" >&2 || true
     fail "[$label] no readiness line within ${READY_TIMEOUT_S}s (or dsh exited early)"
   fi
-  echo "concerto-probe: [$label] web ready on 127.0.0.1:$port"
 
-  # T14: runtime adapter registration surface — POST /api/llm.providers joins
-  # ctx.llm.listProviders() (registered routes) with the configurable-provider
-  # directory each mounted adapter declares. One call suffices: the roster
-  # poll below already proves the API is up, and settings-driven routes
-  # register during plugin load, before the readiness line.
+  # Transport detection (T9): a launch token in the readiness line means the
+  # 0.1.2 web-RPC transport (dsh-auth-* cookie + Typert Remote endpoints); its
+  # absence means the rc.6 flat transport. The official roster ids follow the
+  # transport: 0.1.2 renamed the system preset code → ptc.
+  local token=""
+  case "$ready_url" in
+    *\?token=*) token="${ready_url#*\?token=}" ;;
+  esac
+  local official_ids="standard code minimal cordis"
+  if [[ -n "$token" ]]; then
+    official_ids="standard ptc minimal cordis"
+  fi
+  echo "concerto-probe: [$label] web ready on 127.0.0.1:$port (transport: $([[ -n "$token" ]] && echo '0.1.2-remote (token+cookie)' || echo 'rc.6-flat'))"
+
+  # T14: runtime adapter registration surface. rc.6: POST /api/llm.providers
+  # joins ctx.llm.listProviders() (registered routes) with the configurable-
+  # provider directory server-side. 0.1.2: the helper performs the client's
+  # own two Remote calls and applies the same join (see WEB_RPC_MJS above).
+  # Settings-driven routes register during plugin load, before the readiness
+  # line, so one call suffices.
   local llm_resp="$SANDBOX/llm.providers-$label.json"
-  curl -sS -m 5 -X POST "http://127.0.0.1:$port/api/llm.providers" \
-    -H 'content-type: application/json' \
-    -d "{\"type\":\"client-request\",\"rpcId\":\"concerto-probe-llm-$label\",\"method\":\"llm.providers\",\"payload\":{}}" \
-    >"$llm_resp" 2>/dev/null || true
+  local rpc_err="$SANDBOX/web-rpc-$label.err"
+  if ! node "$WEB_RPC_MJS" providers "$port" "$token" >"$llm_resp" 2>"$rpc_err"; then
+    cat "$rpc_err" >&2
+    fail "[$label] provider-directory RPC failed (see error above)"
+  fi
 
   # Poll the roster RPC until the preset lands (or the budget runs out).
-  # Envelope shape: {type:'client-request', rpcId, method, payload} — the exact
-  # surface packages/client/ui-agent-preset uses.
+  # Envelope shape: {type:'client-request', rpcId, method, payload:{args}} —
+  # the exact surface packages/client/ui-agent-preset uses (0.1.2: through
+  # the Typert Remote projection; rc.6: the flat agentPreset.list).
   local found=0
   for ((i = 0; i < 30; i++)); do
-    curl -sS -m 5 -X POST "http://127.0.0.1:$port/api/agentPreset.list" \
-      -H 'content-type: application/json' \
-      -d "{\"type\":\"client-request\",\"rpcId\":\"concerto-probe-$label\",\"method\":\"agentPreset.list\",\"payload\":{}}" \
-      >"$api_resp" 2>/dev/null || true
-    if grep -q '"id":"concerto"' "$api_resp" 2>/dev/null; then
-      found=1
-      break
+    if node "$WEB_RPC_MJS" roster "$port" "$token" >"$api_resp" 2>"$rpc_err"; then
+      if grep -q '"id":"concerto"' "$api_resp" 2>/dev/null; then
+        found=1
+        break
+      fi
     fi
     sleep 1
   done
@@ -308,12 +461,17 @@ boot_once() {
 
   echo "----- [$label] boot log (full) -----"
   cat "$boot_log"
-  echo "----- [$label] POST /api/agentPreset.list response (verbatim) -----"
+  echo "----- [$label] roster RPC response (verbatim; rc.6 /api/agentPreset.list | 0.1.2 /api/agentPresets/list) -----"
   cat "$api_resp"
   echo
-  echo "----- [$label] POST /api/llm.providers response (verbatim) -----"
+  echo "----- [$label] provider directory response (verbatim; rc.6 /api/llm.providers | 0.1.2 joined llm Remote) -----"
   cat "$llm_resp"
   echo
+  if [[ -s "$rpc_err" ]]; then
+    echo "----- [$label] web-rpc last error (verbatim) -----"
+    cat "$rpc_err"
+    echo
+  fi
   echo "----------------------------------------------------------"
 
   # Plugin-side assertions.
@@ -332,12 +490,13 @@ boot_once() {
   # External assertions: the RPC roster lists all 5 presets — the official 4 at
   # system trust plus concerto at user trust, i.e. the SAME roster level — and
   # the concerto entry carries OUR preset.yml display name (协奏 / Concerto).
-  for id in standard code minimal cordis; do
+  # $official_ids is transport-adaptive (0.1.2 renamed code → ptc, see above).
+  for id in $official_ids; do
     grep -q "\"id\":\"$id\"" "$api_resp" \
-      || fail "[$label] official preset '$id' missing from /api/agentPreset.list"
+      || fail "[$label] official preset '$id' missing from the roster RPC response"
   done
   [[ "$found" == "1" ]] \
-    || fail "[$label] concerto NOT in /api/agentPreset.list after 30s — registration broken"
+    || fail "[$label] concerto NOT in the roster RPC after 30s — registration broken"
   grep -q '"trust":"user"[^}]*"id":"concerto"\|"id":"concerto"[^}]*"trust":"user"' "$api_resp" \
     || fail "[$label] concerto entry does not carry trust:\"user\""
   grep -q '协奏' "$api_resp" \
@@ -394,8 +553,8 @@ boot_once() {
     || fail "[$label] explore toolFilter deny list missing (T12 pre-declared value)"
   grep -q "^        maxDepth: 1$" "$materialized" \
     || fail "[$label] explore maxDepth: 1 missing (T13 pre-declared value)"
-  node "$VALIDATE_EXPLORE_MJS" "$DSH_NM" "$materialized" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" \
-    || fail "[$label] explore row failed validation against the installed rc.6 dsh-tool-subagent Config"
+  node "$VALIDATE_EXPLORE_MJS" "$DSH_NM_UNION" "$materialized" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" \
+    || fail "[$label] explore row failed validation against the installed dsh-tool-subagent Config"
 
   # T12 (P-4, AC-6 negative-a): the deny list is not just valid config — it is
   # ENFORCED. scripts/prove-explore-toolfilter.mjs runs the installed dsh's
@@ -404,7 +563,7 @@ boot_once() {
   # asserts write/edit never reach the child scope's model-facing tool list
   # (schemas/get/execute all deny), while read/grep/glob and the platform
   # shell survive. A live model session closes the loop in T20.
-  node "$REPO_ROOT/scripts/prove-explore-toolfilter.mjs" "$DSH_NM" "$materialized" \
+  node "$REPO_ROOT/scripts/prove-explore-toolfilter.mjs" "$DSH_NM_UNION" "$materialized" \
     || fail "[$label] explore toolFilter denial proof failed (T12 real-path enforcement)"
 
   # T13 (P-5, AC-6 negative-b): the depth cap is not just valid config — it is
@@ -417,7 +576,7 @@ boot_once() {
   # tool result "Error: subagent depth 2 exceeds maxDepth 1"; the tool stays
   # model-visible at the cap; a depth-0 parent passes the same gate (control).
   # A live model session closes the loop in T20.
-  node "$REPO_ROOT/scripts/prove-explore-maxdepth.mjs" "$DSH_NM" "$materialized" \
+  node "$REPO_ROOT/scripts/prove-explore-maxdepth.mjs" "$DSH_NM_UNION" "$materialized" \
     || fail "[$label] explore maxDepth=1 depth-cap proof failed (T13 real-path enforcement)"
 
   # T15 (P-7, AC-5 observation half): the session JSONL is the route
@@ -434,9 +593,9 @@ boot_once() {
   # The --expect unlogged mode proves the verdict logic honestly falls back
   # to 'self-listener-needed' when route fields are absent. A live model
   # session closes the loop in T20.
-  node "$REPO_ROOT/scripts/prove-route-logging.mjs" "$DSH_NM" \
+  node "$REPO_ROOT/scripts/prove-route-logging.mjs" "$DSH_NM_UNION" \
     || fail "[$label] route-logging proof failed (T15 real-path observation)"
-  node "$REPO_ROOT/scripts/prove-route-logging.mjs" "$DSH_NM" --expect unlogged \
+  node "$REPO_ROOT/scripts/prove-route-logging.mjs" "$DSH_NM_UNION" --expect unlogged \
     || fail "[$label] route-logging verdict logic failed its fabricated-log QA (T15)"
 
   # T16 (FR-6, P-3): the Hard Blocks injection listener's registration is
@@ -472,9 +631,9 @@ boot_once() {
     fail "[$label] model-routes resolution threw at boot — see FAILED line above"
   fi
   grep -q "\"provider\":\"$SISYPHUS_PROVIDER\"[^}]*\"active\":true" "$llm_resp" \
-    || fail "[$label] sisyphus provider '$SISYPHUS_PROVIDER' not ACTIVE in /api/llm.providers (llm-deepseek adapter registration broken?)"
+    || fail "[$label] sisyphus provider '$SISYPHUS_PROVIDER' not ACTIVE in the provider directory (llm-deepseek adapter registration broken?)"
   grep -q "\"provider\":\"$EXPLORE_PROVIDER\"[^}]*\"active\":true" "$llm_resp" \
-    || fail "[$label] explore provider '$EXPLORE_PROVIDER' not ACTIVE in /api/llm.providers (llm-pi-ai settings-profile registration broken?)"
+    || fail "[$label] explore provider '$EXPLORE_PROVIDER' not ACTIVE in the provider directory (llm-pi-ai settings-profile registration broken?)"
 }
 
 # Boot 1: fresh sandbox — the preset is materialized.
@@ -483,5 +642,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over POST /api/agentPreset.list; persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in /api/llm.providers; T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed rc.6 dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12 toolFilter deny=[write,edit] PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=1 depth cap PROVEN enforced via the real delegation start path (depth-1 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 2 exceeds maxDepth 1", tool stays visible at the cap, depth-0 control passes); idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12 toolFilter deny=[write,edit] PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=1 depth cap PROVEN enforced via the real delegation start path (depth-1 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 2 exceeds maxDepth 1", tool stays visible at the cap, depth-0 control passes); idempotent re-boot confirmed"
 exit 0

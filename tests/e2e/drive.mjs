@@ -38,11 +38,34 @@
 //       queue → agent.followup). Envelope {type:"client-request", rpcId,
 //       method, payload} (rpc.d.ts:227-231); response {type:"server-response",
 //       rpcId, result:{ok:true,value}|{ok:false,error}} (rpc.d.ts:197-201).
-//       No auth token: the /api trust fence is a loopback Host-header check
-//       only, "not an auth layer" (dsh-client-connection/lib/index.js:106-215).
 //       Completion is observed on the SESSION JSONL on disk (turn/end with
 //       reason.kind "completed") — the same artifact the assertions read, so
 //       observation and assertion share one channel.
+//
+// ── TRANSPORT-ADAPTIVE RPC (T9; rc.6 stays the committed pin) ──
+// The driver speaks BOTH web-RPC transports, chosen by the readiness line:
+//   rc.6  — `dsh web: http://127.0.0.1:<port>` (no query). FLAT endpoints
+//           (/api/session.create, /api/session.prompt, /api/llm.providers)
+//           with the envelope above and NO auth token: the /api trust fence
+//           is a loopback Host-header check only, "not an auth layer"
+//           (dsh-client-connection/lib/index.js:106-215).
+//   0.1.2 — `dsh web: http://127.0.0.1:<port>/?token=<launch-token>`
+//           (browser-auth.ts TOKEN_QUERY). Every /api call needs the
+//           authority-bound dsh-auth-* cookie minted by
+//           GET /?token=<launch-token> → 303 + Set-Cookie
+//           (browser-auth.ts:240-282; a query token on /api itself → 401).
+//           The flat endpoints are GONE (404 even authenticated); the client
+//           now rides the Typert Remote projection over the SAME envelope:
+//           POST /api/<namespace>/<method> with payload {args:{…}}
+//           (docs/api-gateway.md:121; api/gateway/src/index.ts:945-960).
+//           Mapping (assertion strength unchanged):
+//             llm.providers  → llm/listProviders + llm/listConfigurableProviders,
+//               joined by the Web UI's own rule (joinProviderDirectory,
+//               ui-settings-models/src/client/store.ts:49-73): active ⟺ the
+//               provider id is a registered route — the exact join rc.6's
+//               llm.providers performed server-side.
+//             session.create → session/create, args {request:{cwd,agentPreset}}
+//             session.prompt → session/prompt, args {request:{requestId,…}}
 //
 // ── MOCKROLE DELIVERY (T17's role marker must reach a SYSTEM message)
 // Workspace instruction files (AGENTS.md) are injected as USER-role
@@ -167,7 +190,7 @@
 //                                break and the verdict MUST name link 2
 // Exit: 0 on PASS, 1 on FAIL (and 1 if --self-test finds the analysis lying).
 
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
 import {
   existsSync,
@@ -446,15 +469,25 @@ export function digestConfigDir(root) {
 }
 
 // ── Web RPC surface (crux decision (b), see header) ─────────────────────────
+// Transport-adaptive (T9): `boot.transport` is 'rc6-flat' (readiness line
+// without ?token=) or 'web-remote' (0.1.2: token→cookie handshake completed
+// at boot; Typert Remote endpoints). The rc6-flat wire below is byte-identical
+// to the pre-T9 driver (same URL, same envelope, no auth headers).
 
 let rpcCounter = 0
 
-async function rpc(port, method, payload) {
+const RPC_TIMEOUT_MS = Number(process.env.DSH_E2E_RPC_TIMEOUT_MS ?? 30_000)
+
+async function rpc(boot, method, payload) {
   const rpcId = `e2e-${method}-${++rpcCounter}`
-  const response = await fetch(`http://127.0.0.1:${port}/api/${method}`, {
+  const response = await fetch(`http://127.0.0.1:${boot.port}/api/${method}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(boot.cookie === undefined ? {} : { cookie: boot.cookie }),
+    },
     body: JSON.stringify({ type: 'client-request', rpcId, method, payload }),
+    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
   })
   const text = await response.text()
   let body
@@ -473,6 +506,86 @@ async function rpc(port, method, payload) {
   return result.value
 }
 
+/**
+ * 0.1.2 browser-session handshake (browser-auth.ts:240-282): the launch token
+ * from the readiness line is accepted ONLY on the index request — a valid
+ * root query token mints the authority-bound dsh-auth-* cookie (303 +
+ * Set-Cookie); /api then verifies that cookie (:289-302, called from
+ * rpc-host.ts:96-99). Returns the `name=value` pair to send as the cookie
+ * header on every subsequent /api call.
+ */
+async function mintBrowserSessionCookie(port, token) {
+  const response = await fetch(`http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`, {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+  })
+  if (response.status !== 303) {
+    throw new Error(`browser-session handshake: expected 303, got HTTP ${response.status}`)
+  }
+  const setCookies = typeof response.headers.getSetCookie === 'function'
+    ? response.headers.getSetCookie()
+    : [response.headers.get('set-cookie') ?? '']
+  const pair = setCookies
+    .map((value) => value.split(';', 1)[0])
+    .find((value) => value.startsWith('dsh-auth-'))
+  if (pair === undefined) {
+    throw new Error('browser-session handshake: no dsh-auth-* cookie minted')
+  }
+  return pair
+}
+
+/**
+ * The llm.providers contract on either transport. rc.6: one flat call whose
+ * value already joins registered routes with the configurable directory
+ * server-side. 0.1.2: the client's own two Remote calls, joined by the same
+ * rule the Web UI's Models page uses (joinProviderDirectory,
+ * ui-settings-models/src/client/store.ts:49-73) — a directory entry is
+ * active ⟺ its provider id is a registered route, and registered routes with
+ * no directory entry append as active rows. The joined value keeps the rc.6
+ * shape {providers:[{provider,displayName,settingsNs,settingsPath,active,
+ * declared?}]}, so every downstream assertion stays transport-agnostic.
+ */
+async function listProvidersJoined(boot) {
+  if (boot.transport === 'rc6-flat') return rpc(boot, 'llm.providers', {})
+  const [registered, directory] = await Promise.all([
+    rpc(boot, 'llm/listProviders', { args: {} }),
+    rpc(boot, 'llm/listConfigurableProviders', { args: {} }),
+  ])
+  const active = new Set(registered.map((provider) => provider.id))
+  const declared = new Set(directory.map((entry) => entry.provider))
+  const providers = directory.map((entry) => ({
+    provider: entry.provider,
+    displayName: entry.displayName,
+    settingsNs: entry.settingsNs,
+    settingsPath: [...entry.settingsPath],
+    active: active.has(entry.provider),
+    ...(entry.declared === undefined ? {} : { declared: entry.declared }),
+  }))
+  for (const provider of registered) {
+    if (declared.has(provider.id)) continue
+    providers.push({
+      provider: provider.id,
+      displayName: provider.name,
+      settingsNs: '',
+      settingsPath: [],
+      active: true,
+    })
+  }
+  return { providers }
+}
+
+/** session.create → (0.1.2) session/create {args:{request}}. Same value. */
+async function sessionCreate(boot, request) {
+  if (boot.transport === 'rc6-flat') return rpc(boot, 'session.create', request)
+  return rpc(boot, 'session/create', { args: { request } })
+}
+
+/** session.prompt → (0.1.2) session/prompt {args:{request}} (+requestId). */
+async function sessionPrompt(boot, request) {
+  if (boot.transport === 'rc6-flat') return rpc(boot, 'session.prompt', request)
+  return rpc(boot, 'session/prompt', { args: { request: { requestId: randomUUID(), ...request } } })
+}
+
 // ── dsh process management (cold-start.sh discipline) ───────────────────────
 
 function installPlugin(sandbox) {
@@ -488,7 +601,11 @@ function installPlugin(sandbox) {
   }
 }
 
-/** Boot dsh; resolve with {child, port, log()} once the readiness line lands. */
+/**
+ * Boot dsh; resolve with {child, port, transport, cookie?, log()} once the
+ * readiness line lands — and, on the 0.1.2 transport (the line carries
+ * ?token=<launch-token>), once the token→cookie handshake has completed.
+ */
 function bootDsh(sandbox, patchPath) {
   return new Promise((resolveBoot, rejectBoot) => {
     const child = spawn(
@@ -497,14 +614,27 @@ function bootDsh(sandbox, patchPath) {
       { cwd: REPO_ROOT, env: scenarioEnv(sandbox) },
     )
     let log = ''
+    let readinessHandled = false
     const bootLogPath = join(sandbox.root, 'boot.log')
     const onData = (chunk) => {
       log += chunk.toString('utf8')
       writeFileSync(bootLogPath, log)
-      const match = /dsh web: http:\/\/127\.0\.0\.1:(\d+)/.exec(log)
-      if (match !== null) {
-        resolveBoot({ child, port: Number(match[1]), log: () => log })
+      if (readinessHandled) return
+      const match = /dsh web: http:\/\/127\.0\.0\.1:(\d+)(?:\/\?token=([A-Za-z0-9_-]+))?/.exec(log)
+      if (match === null) return
+      readinessHandled = true
+      const port = Number(match[1])
+      const token = match[2]
+      if (token === undefined) {
+        // rc.6 transport: flat endpoints, no auth beyond the loopback fence.
+        resolveBoot({ child, port, transport: 'rc6-flat', log: () => log })
+        return
       }
+      // 0.1.2 transport: mint the browser-session cookie before any /api call.
+      mintBrowserSessionCookie(port, token).then(
+        (cookie) => resolveBoot({ child, port, transport: 'web-remote', cookie, log: () => log }),
+        rejectBoot,
+      )
     }
     child.stdout.on('data', onData)
     child.stderr.on('data', onData)
@@ -1594,22 +1724,22 @@ async function runScenario(def, routes) {
     console.error(`drive: [${def.name}] booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0`)
     const boot = await bootDsh(sandbox, patchPath)
     child = boot.child
-    console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port}`)
+    console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port} (transport ${boot.transport})`)
 
     // The plugin sync materializes the concerto preset at boot; then the
     // MOCKROLE markers ride both personas into the system prompts (header).
     for (const role of def.roles) appendMockRoleMarker(sandbox, role)
 
-    // Wiring proof for BOTH adapters.
-    const providers = await rpc(boot.port, 'llm.providers', {})
+    // Wiring proof for BOTH adapters (transport-adaptive; same contract).
+    const providers = await listProvidersJoined(boot)
     const providersJson = JSON.stringify(providers)
 
-    const created = await rpc(boot.port, 'session.create', {
+    const created = await sessionCreate(boot, {
       cwd: sandbox.project,
       agentPreset: CONCERTO_PRESET_ID,
     })
     console.error(`drive: [${def.name}] session created ${created.sessionId} (preset ${created.agentPreset ?? '?'})`)
-    await rpc(boot.port, 'session.prompt', {
+    await sessionPrompt(boot, {
       sessionId: created.sessionId,
       mode: 'queue',
       content: [{ type: 'text', text: def.prompt }],
