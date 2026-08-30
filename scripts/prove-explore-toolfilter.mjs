@@ -81,7 +81,10 @@ const SystemPrompt = (await imp('@deepseek-ai/dsh-system-prompt/lib/index.js')).
 const ToolRuntime = (await imp('@deepseek-ai/dsh-tools/lib/index.js')).default
 const { createScope } = await imp('@deepseek-ai/dsh-scope/lib/index.js')
 const { applyChildComposition } = await imp('@deepseek-ai/dsh-subagent/lib/index.js')
-const { CallId } = await imp('@deepseek-ai/dsh-llm/lib/index.js')
+// 0.1.2 renamed the dsh-llm branded tool-call-id constructor CallId ->
+// ToolCallId (packages/llm/llm/lib/index.js:31,:1825); rc.6/rc.7 export CallId.
+const llmForId = await imp('@deepseek-ai/dsh-llm/lib/index.js')
+const CallId = llmForId.ToolCallId ?? llmForId.CallId
 
 // ── 1. Parse + validate the real materialized row ───────────────────────────
 const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {

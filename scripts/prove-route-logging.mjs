@@ -175,6 +175,9 @@ const AgentRegistry = (await imp('@deepseek-ai/dsh-agent/lib/index.js')).default
 const JsonlSessionPersistence = (await imp('@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js')).default
 const AgentLoop = (await imp('@deepseek-ai/dsh-agent-loop/lib/index.js')).default
 const SubagentRuntime = (await imp('@deepseek-ai/dsh-subagent/lib/index.js')).default
+// The descriptor schema version is detected from the runtime's OWN exported
+// constant — 2 on rc.6/rc.7, 3 on 0.1.2 (the v3 descriptor schema bump).
+const { SUBAGENT_DESCRIPTOR_VERSION } = await imp('@deepseek-ai/dsh-subagent/lib/index.js')
 const SpawnProvider = await imp('@deepseek-ai/dsh-subagent-spawn-in-process/lib/index.js')
 
 // The route values come from the plugin's own config module — the single
@@ -322,7 +325,13 @@ if (problems.length === 0) {
   } else {
     console.log(`T15-PROOF child descriptor JSONL line (verbatim): ${descriptorLine}`)
     const d = descriptor.data
-    if (d.version !== 2) problems.push(`descriptor version = ${d.version} (want 2)`)
+    // The emitted version must equal the runtime's OWN declared schema version
+    // (SUBAGENT_DESCRIPTOR_VERSION: 2 on rc.6/rc.7, 3 on 0.1.2 — the 0.1.2 v3
+    // bump). Stronger than a literal: it pins writer/constant agreement and is
+    // never an open-ended range.
+    if (d.version !== SUBAGENT_DESCRIPTOR_VERSION) {
+      problems.push(`descriptor version = ${d.version} (want ${SUBAGENT_DESCRIPTOR_VERSION}, this runtime's SUBAGENT_DESCRIPTOR_VERSION)`)
+    }
     if (d.mode !== 'continuable') problems.push(`descriptor mode = ${JSON.stringify(d.mode)} (want "continuable")`)
     if (d.provider !== 'spawn') problems.push(`descriptor provider = ${JSON.stringify(d.provider)} (want "spawn")`)
     if (d.agentProvider !== routes.explore.provider) problems.push(`descriptor agentProvider = ${JSON.stringify(d.agentProvider)} (want "${routes.explore.provider}")`)
@@ -380,4 +389,4 @@ if (problems.length > 0) {
   process.exit(1)
 }
 console.log(`P-7 verdict: ${verdict.verdict}`)
-console.log('T15-PROOF PASS: the installed rc.6 session JSONL records BOTH agents\' RESOLVED routes — the continuable child\'s declared route in `subagent/descriptor` (data.agentProvider/data.agentModel, resolved request-wins over parent at continuation.ts:413-414 ≡ lib/index.js:779-780) AND each agent\'s executed route in `request/header` (data.header.config.provider/model, agent-loop/src/agent.ts:466 ≡ dsh-agent-loop/lib/index.js:710-716); parent and child observed on two DIFFERENT routes (AC-5), and the dispatch reached the adapter boundary on those exact routes — no listener code needed')
+console.log('T15-PROOF PASS: the installed dsh session JSONL records BOTH agents\' RESOLVED routes — the continuable child\'s declared route in `subagent/descriptor` (data.agentProvider/data.agentModel, resolved request-wins over parent at continuation.ts:413-414 ≡ lib/index.js:779-780) AND each agent\'s executed route in `request/header` (data.header.config.provider/model, agent-loop/src/agent.ts:466 ≡ dsh-agent-loop/lib/index.js:710-716); parent and child observed on two DIFFERENT routes (AC-5), and the dispatch reached the adapter boundary on those exact routes — no listener code needed')

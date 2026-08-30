@@ -109,7 +109,10 @@ const ToolRuntime = (await imp('@deepseek-ai/dsh-tools/lib/index.js')).default
 const { createScope } = await imp('@deepseek-ai/dsh-scope/lib/index.js')
 const SubagentRuntime = (await imp('@deepseek-ai/dsh-subagent/lib/index.js')).default
 const SpawnProvider = await imp('@deepseek-ai/dsh-subagent-spawn-in-process/lib/index.js')
-const { CallId } = await imp('@deepseek-ai/dsh-llm/lib/index.js')
+// 0.1.2 renamed the dsh-llm branded tool-call-id constructor CallId ->
+// ToolCallId (packages/llm/llm/lib/index.js:31,:1825); rc.6/rc.7 export CallId.
+const llmForId = await imp('@deepseek-ai/dsh-llm/lib/index.js')
+const CallId = llmForId.ToolCallId ?? llmForId.CallId
 
 // ── 1. Parse + validate the real materialized row ───────────────────────────
 const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
@@ -148,6 +151,20 @@ console.log(`T13-PROOF row: toolName=${validated.toolName} provider=${validated.
 
 // ── 2. Build the REAL delegation stack and mount the row's own tool ─────────
 const ctx = new Context()
+// 0.1.2's tool execute preflights the configured child route through a live
+// llm service before any start (tool-subagent preflightChildLlmRoute →
+// llm.resolveCallConfig); rc.7 reaches the depth gate without it. Mount the
+// REAL LlmRuntime with a scripted adapter on the row's own explore route so
+// the preflight resolves genuinely — the adapter never streams (the gate
+// still throws before any child exists).
+const LlmRuntime = llmForId.default
+const { LlmAdapter } = llmForId
+class PreflightAdapter extends LlmAdapter {
+  resolveModel(provider, model) { return Promise.resolve({ provider, id: model, name: model }) }
+  async *stream() { throw new Error('T13-PROBE preflight adapter must never stream') }
+}
+await ctx.plugin(LlmRuntime)
+ctx.llm.registerAdapter([validated.agentOptions.provider], new PreflightAdapter())
 await ctx.plugin(SystemPrompt, {})
 await ctx.plugin(ToolRuntime)
 // Continuable-path service presence stubs: the continuation manager requires
@@ -158,7 +175,14 @@ await ctx.plugin(ToolRuntime)
 // are up). cordis 4 registers services via Service subclasses (ctx.provide is
 // the reflect-level API; a Service class plugin is the dsh pattern).
 const { Service } = await imp('@deepseek-ai/cordis/lib/index.js')
-class StubAgents extends Service { static provide = 'agents' }
+class StubAgents extends Service {
+  static provide = 'agents'
+  // 0.1.2 (like rc.8) runs assertChildIdAvailable — ctx.agents.get(childId) —
+  // BEFORE the depth gate in startContinuable (subagent/lib/index.js:993-994);
+  // rc.7's gate fires first, so this is never called there. Answering "not
+  // live" lets the REAL depth gate be what rejects on 0.1.2.
+  get() { return undefined }
+}
 class StubSessionPersistence extends Service { static provide = 'sessionPersistence' }
 await ctx.plugin(StubAgents)
 await ctx.plugin(StubSessionPersistence)
@@ -186,7 +210,11 @@ async function parentAt(depth) {
     ))
     Object.assign(key, {
       options: { provider: 't13-stub', model: 't13-stub', ...(depth > 0 ? { subagentDepth: depth } : {}) },
-      session: { header: {} },
+      // 0.1.2's tool execute reads parent.session.requestHeader()?.config at
+      // entry (parentAgentOptionsForDelegation); rc.7 never reaches that call
+      // with this stub (proven by the green rc.6 run without it), so answering
+      // "no header yet" is inert there and takes the creation-options fallback.
+      session: { header: {}, requestHeader: () => undefined },
       ctx: {
         get: () => undefined,
         agents: { create: () => Promise.reject(new Error(SENTINEL)) },
