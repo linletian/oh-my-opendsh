@@ -41,6 +41,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 // ---------------------------------------------------------------------------
 // Allowlist
@@ -63,8 +64,13 @@ const UNIVERSAL_WHITELIST = new Set([
   'MPL-2.0',
 ]);
 
-/** SUL-1.0 is allowed only for packages whose name matches this pattern. */
-const SUL_ALLOWED_NAME = /omo|oh-my-openagent/i;
+/**
+ * SUL-1.0 is allowed only for packages whose name matches this pattern:
+ * a whole-word "omo" (start/end or a non-letter boundary — rejects loose
+ * substrings like "comodo", "promo", "omocha") or the "oh-my-openagent" name.
+ * R2-4: the previous /omo|oh-my-openagent/i matched any "omo" substring.
+ */
+export const SUL_ALLOWED_NAME = /(^|[^a-z])omo([^a-z]|$)|oh-my-openagent/i;
 
 /** Dirs the in-repo walk never descends into (incl. `.codegraph` symlink). */
 const EXCLUDED_DIRS = new Set(['node_modules', '.git', '.omo', '.codegraph', 'dist']);
@@ -149,7 +155,7 @@ function licenseStrings(pkg) {
   return [];
 }
 
-function tokenAllowed(token, pkgName) {
+export function tokenAllowed(token, pkgName) {
   const t = token.trim().replace(/^\(+|\)+$/g, '').trim();
   if (!t) return false;
   if (UNIVERSAL_WHITELIST.has(t)) return true;
@@ -157,11 +163,20 @@ function tokenAllowed(token, pkgName) {
   return false;
 }
 
-function exprAllowed(expr, pkgName) {
-  if (/\sOR\s/i.test(expr)) {
-    return expr.split(/\sOR\s/i).some((branch) => exprAllowed(branch, pkgName));
-  }
-  return expr.split(/\sAND\s/i).every((token) => tokenAllowed(token, pkgName));
+/**
+ * SPDX expression precedence (spec v2.3 Annex D): AND binds tighter than OR.
+ * R2-1: evaluate top-level AND-groups FIRST (every group must hold), then
+ * allow any OR branch within each group (some). The previous order split OR
+ * first, so `(MIT OR Apache-2.0) AND GPL-2.0` passed on the `(MIT` branch
+ * without ever checking GPL-2.0. Parens are stripped per-token in
+ * tokenAllowed (existing behavior). Hand-rolled and sufficient for the
+ * license shapes package.json actually carries (single ids, "X OR Y",
+ * parenthesized AND/OR groups); it is not a full SPDX parser.
+ */
+export function exprAllowed(expr, pkgName) {
+  return expr
+    .split(/\sAND\s/i)
+    .every((group) => group.split(/\sOR\s/i).some((branch) => tokenAllowed(branch, pkgName)));
 }
 
 /** Legacy `licenses` arrays mean "either of these" — OR semantics. */
@@ -273,7 +288,7 @@ function main() {
       violations: [
         'cannot verify: node_modules not installed — run `pnpm install` first',
       ],
-      skipped: universe.size,
+      skippedKeys: [...universe.keys()],
     });
   }
 
@@ -289,16 +304,33 @@ function main() {
     }
   }
 
-  const skipped = [...universe.keys()].filter((k) => !found.has(k)).length;
-  return report(opts, { checked: found.size, violations, skipped });
+  const skippedKeys = [...universe.keys()].filter((k) => !found.has(k));
+  return report(opts, { checked: found.size, violations, skippedKeys });
 }
 
-function report(opts, { checked, violations, skipped }) {
+/**
+ * Pure payload for the --json report (R2-3): exposes the skipped lockfile-only
+ * packages by count AND sorted names — the text report keeps its previous
+ * count-only shape.
+ */
+export function reportPayload({ checked, violations, skippedKeys }) {
+  return {
+    pass: violations.length === 0,
+    violations,
+    checked,
+    skipped: skippedKeys.length,
+    skippedNames: [...skippedKeys].sort((a, b) => a.localeCompare(b)),
+  };
+}
+
+function report(opts, { checked, violations, skippedKeys }) {
   if (opts.json) {
-    console.log(JSON.stringify({ pass: violations.length === 0, violations, checked }));
+    console.log(JSON.stringify(reportPayload({ checked, violations, skippedKeys })));
   } else {
     for (const v of violations) console.log(`VIOLATION: ${v}`);
-    const skipNote = skipped > 0 ? ` · skipped(lockfile-only, not installed)=${skipped}` : '';
+    const skipNote = skippedKeys.length > 0
+      ? ` · skipped(lockfile-only, not installed)=${skippedKeys.length}`
+      : '';
     if (violations.length > 0) {
       console.log(`FAIL: ${violations.length} violation(s) · checked=${checked}${skipNote}`);
     } else {
@@ -308,4 +340,9 @@ function report(opts, { checked, violations, skipped }) {
   return violations.length === 0 ? 0 : 1;
 }
 
-process.exitCode = main();
+// Main guard: importing this module (e.g. from vitest) is side-effect free.
+const isMain = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+if (isMain) {
+  process.exitCode = main()
+}
