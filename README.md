@@ -37,11 +37,13 @@ Every decision in this project is governed by these two principles, which have e
 
 ## Current Status
 
-🟡 **Pre-research complete**
+🟢 **MVP closed; dsh 0.1.2 review registered**
 
 - ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 14 sections: 2026-08-16 main body + 2026-08-19 follow-up research)
 - ✅ 11 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
 - ✅ MVP PRD adopted ([`docs/mvp-prd.md`](./docs/mvp-prd.md): Concerto Mode + 1 Agent + 1 Subagent minimal skeleton, decision D11)
+- ✅ MVP closed — FR-1~FR-8 implemented, V1~V4 verified (see [mvp-pitfalls](./docs/mvp-pitfalls.md))
+- ✅ dsh 0.1.2-alpha.1 review registered + bump verification executed via source build ([English](./docs/dsh-0.1.2-review.md) / [中文](./docs/dsh-0.1.2-review_zh-CN.md)); CI pin flip pending npm publish (PRD §12)
 - ⏳ 5 open dimensions pending decision (OMO pin strategy, npm package naming, telemetry, release notifications, upgrade cadence; see "Open dimensions" in the decision record)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
 
@@ -61,7 +63,7 @@ Feasibility Report is at [feasibility-report.md](./docs/feasibility-report.md).
 
 | Item | Value |
 |---|---|
-| **DSH version** | v0.1.0-rc.5 (MIT) |
+| **DSH version** | 0.1.0-rc.6 (MIT; CI-pinned — 0.1.2-alpha.1 verified locally via source build, CI flip pending npm publish) |
 | **OMO upstream** | 19 core packages + 4 small adapters (harness-agnostic) (SUL-1.0) |
 | **This project's license** | **MIT OR SUL-1.0** (dual license) |
 | **OMO LICENSE (original text)** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |

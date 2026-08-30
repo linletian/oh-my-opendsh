@@ -37,11 +37,13 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 
 ## 当前状态
 
-🟡 **预研完成**
+🟢 **MVP 已结项；dsh 0.1.2 复核已登记**
 
 - ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，14 节：2026-08-16 主体 + 2026-08-19 追加调研）
 - ✅ 11 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
 - ✅ MVP PRD 已采纳（[`docs/mvp-prd_zh-CN.md`](./docs/mvp-prd_zh-CN.md)：协奏模式 + 1 Agent + 1 Subagent 最小骨架，决策 D11）
+- ✅ MVP 已结项——FR-1~FR-8 已实现、V1~V4 已验证（见 [mvp-pitfalls](./docs/mvp-pitfalls_zh-CN.md)）
+- ✅ dsh 0.1.2-alpha.1 复核已登记 + bump 验证已针对源码构建执行（[English](./docs/dsh-0.1.2-review.md) / [中文](./docs/dsh-0.1.2-review_zh-CN.md)）；CI pin 翻转待 npm 发布（PRD §12）
 - ⏳ 5 个开放维度待决策（OMO pin 策略、npm 命名、telemetry、release 通知、升级节奏；详见决策记录"开放维度"）
 - ⏳ 工作量粗估：~16 周（一人主力）
 
@@ -61,7 +63,7 @@ MVP 产品需求文档（已采纳，决策 D11）见 [MVP PRD：协奏骨架](.
 
 | 项 | 值 |
 |---|---|
-| **DSH 版本** | v0.1.0-rc.5（MIT） |
+| **DSH 版本** | 0.1.0-rc.6（MIT；CI-pinned——0.1.2-alpha.1 已本地经源码构建验证，CI 翻转待 npm 发布） |
 | **OMO 上游** | 19 个 core 包 + 4 个小 adapter（harness-agnostic）（SUL-1.0） |
 | **本项目 license** | **MIT OR SUL-1.0**（dual license） |
 | **OMO LICENSE 原文** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |
