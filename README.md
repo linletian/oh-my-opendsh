@@ -35,6 +35,23 @@ Every decision in this project is governed by these two principles, which have e
 - **No PRs to OMO** (avoids their "anti-over-abstraction" maintenance philosophy)
 - **No commercial distribution** (satisfies SUL-1.0's "non-commercial" requirement)
 
+## Installation
+
+Concerto Mode (协奏模式) installs as a persistent agent preset (core) plus an optional dynamic plugin.
+
+- **One line** (recommended):
+
+  ```bash
+  curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
+  ```
+
+  (fallback direct link: `https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`)
+
+- **Let DSH install itself** — send any DSH session the copy-paste prompt from
+  [docs/install-concerto.md](./docs/install-concerto.md) and it sets itself up.
+
+Full guide (options, adaptation, uninstall): [English](./docs/install-concerto.md) / [中文](./docs/install-concerto_zh-CN.md).
+
 ## Current Status
 
 🟢 **MVP v0.1 (closed); dsh 0.1.2 review registered**

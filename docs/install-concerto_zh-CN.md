@@ -26,14 +26,16 @@
 **方式 A（最快）——一行命令**（脚本锁定 v0.1 标签；默认启用 pi-ai 路由）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh | sh
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 ```
+
+（备用直链：`https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`）
 
 可选环境变量（管道前加前缀即可）：`NO_PIAI=1`（跳过 pi-ai 段）、
 `EXPLORE_PROVIDER`/`EXPLORE_MODEL`（覆盖 explore 第二路由）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh | NO_PIAI=1 EXPLORE_MODEL=my-model sh
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_MODEL=my-model sh
 ```
 
 然后重启 harness、确认 `DEEPSEEK_API_KEY` 凭证已配置，新会话选「协奏模式」即可。

@@ -26,14 +26,16 @@ The base experience needs only the preset: the conductor persona and the explore
 **Option A (fastest) — one line** (script pinned to the v0.1 tag; pi-ai route enabled by default):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh | sh
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 ```
+
+(fallback direct link: `https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`)
 
 Optional env vars (prefix the pipe): `NO_PIAI=1` (skip the pi-ai settings section),
 `EXPLORE_PROVIDER`/`EXPLORE_MODEL` (override the explore second route):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh | NO_PIAI=1 EXPLORE_MODEL=my-model sh
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_MODEL=my-model sh
 ```
 
 Then restart the harness, make sure the `DEEPSEEK_API_KEY` credential is configured, and pick

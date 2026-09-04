@@ -35,6 +35,23 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 - 不向 OMO 提 PR（避免其"反过度抽象"的维护哲学冲突）
 - 不做销售（满足 SUL-1.0 的"非商业"要求）
 
+## 安装方式
+
+协奏模式以持久化 agent preset（核心）+ 可选动态插件的形式安装。
+
+- **一行命令**（推荐）：
+
+  ```bash
+  curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
+  ```
+
+  （备用直链：`https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`）
+
+- **让 DSH 自己装**——把 [docs/install-concerto_zh-CN.md](./docs/install-concerto_zh-CN.md) 里的
+  复制即用 prompt 发给任意 DSH 会话即可。
+
+完整指南（选项、适配、卸载）：[中文](./docs/install-concerto_zh-CN.md) / [English](./docs/install-concerto.md)。
+
 ## 当前状态
 
 🟢 **MVP v0.1（已结项）；dsh 0.1.2 复核已登记**
