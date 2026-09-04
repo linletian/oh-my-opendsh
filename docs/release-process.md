@@ -55,6 +55,12 @@ for the rollback/emergency flow (§8).
 | **L1 zero-LLM e2e** | mock-LLM e2e — boots the REAL dsh binary against a mock server, asserts on session JSONL | zero | CI + locally |
 | **L2 real-model** | `concerto_verify` 22 checks (AC-1…AC-9: dual routing, AC-6a/6b negative assertions, …) | real keys | **local only** — `scripts/release-check.sh` gate 8 (evidence freshness ≤ `VERIFY_FRESH_DAYS`, default 7 d) |
 
+Evidence files are **per-device by design and never synced**: they attest that a
+real-model verification ran on THIS machine, and the freshness window means every
+releasing device must run `concerto_verify` itself before it may release (a new
+device: clone → zero-cost chain → one local `concerto_verify` → release). What
+must cross devices — matrix rows, docs, scripts — travels via git, not via `.omo/`.
+
 TDD shape: a new capability or adaptation starts as an AC check — run it red
 against the current dsh, implement, run green. Every positive assertion must be
 paired with **negative probes** (assert the bad thing is *absent*, not just that
