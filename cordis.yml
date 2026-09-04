@@ -1,0 +1,14 @@
+# oh-my-opendsh patch overlay, applied after the profile's bundle layers via
+# `dsh --profile <name> --patch ./cordis.yml` (see scripts/cold-start.sh).
+#
+# Schema reality (P-8): a --patch file is a top-level YAML array of PATCH
+# entries, not an entry list. A plain `- id:/name:` row only overrides an
+# existing row and is skipped with `patch: entry "<id>" not found` against the
+# always-empty profile root — mounting a new plugin requires the `insert:` form
+# below. `name` resolves as a Node module specifier from the PROFILE directory
+# ($DSH_HOME/profiles/<name>/), so the bare package name requires the package
+# to be installed into that profile (`dsh plugin --profile <name> add <dir>`).
+
+- insert:
+    - id: omo-agents
+      name: '@oh-my-opendsh/omo-agents'

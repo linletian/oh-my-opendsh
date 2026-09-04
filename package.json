@@ -1,0 +1,20 @@
+{
+  "name": "oh-my-opendsh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT OR SUL-1.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:libs": "pnpm run typecheck:host && pnpm run typecheck:client",
+    "typecheck:host": "tsc --noEmit -p patches/omo-dsh/omo-agents/tsconfig.host.json",
+    "typecheck:client": "if [ -d patches/omo-dsh/omo-agents/src/client ]; then tsc --noEmit -p patches/omo-dsh/omo-agents/tsconfig.client.json; else echo '[typecheck:client] vacuous: pure-host package, no src/client'; fi",
+    "test": "vitest run",
+    "test:e2e": "node tests/e2e/drive.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

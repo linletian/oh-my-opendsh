@@ -1,0 +1,308 @@
+# The `concerto` agent preset: orchestration-first (协奏 / Concerto Mode).
+#
+# This is an AGENT-PLANE composition, mounted once per process by
+# dsh-agent-presets when a session picks the concerto mode; the host
+# composition owns the registries, the sandbox/approval stack, persistence,
+# and the model route (same mounting rules as the shipped presets — a service
+# row here must sit inside a group carrying an `isolate` realm).
+#
+# Derivation ledger against the shipped `standard` preset
+# (dsh 0.1.2-alpha.1 packages/preset/agent-presets/presets/standard/agent.cordis.yml).
+# The MVP-era derivation ran against dsh 0.1.0-rc.6 at its old location
+# config/agent-presets/standard/ (0.1.2 moved the shipped presets into
+# packages/preset/agent-presets). T6 scope: a real, WORKING conductor mode.
+# T8 landed the omo-sisyphus orchestrator prompt wiring (persona sentinel
+# rendered from system-sections markdown at apply() time); per-agent model
+# routes are a later milestone, so this file deliberately keeps standard's
+# host-compatible core and drops what the 1+1 concerto skeleton does not use.
+#
+# Note on comment-only diff hunks: concerto carries its own commentary (the
+# T8/T11/T12/T13 sentinel documentation and per-row notes) instead of
+# standard's header, section, and row-level rationale comments, which are not
+# replicated verbatim; section-header text/width may also differ (e.g.
+# `delegation` vs `delegation and workflows`). Any diff hunk consisting
+# solely of comment/section-header lines is covered by this note; every
+# row-level hunk maps to a KEEP/DROP/DEV entry below.
+#
+# KEEP  persona                      — T8: the value is a SENTINEL (the
+#                                      PERSONA_TEXT_SENTINEL constant in
+#                                      src/system-prompt.ts), not real text;
+#                                      syncConcertoPreset renders it into the
+#                                      assembled omo-sisyphus system prompt
+#                                      (the four system-sections/*.md files
+#                                      in fixed order) at apply() time —
+#                                      design (a), see src/system-prompt.ts.
+#                                      This is the only row whose semantics
+#                                      change.
+# KEEP  agent-instructions           — workspace instruction files still apply
+#                                      to a conductor's sessions.
+# KEEP  tool-bash / tool-pwsh        — platform-gated shell, verbatim from
+#                                      standard; the conductor can still run
+#                                      and inspect commands itself.
+# KEEP  tool-fs / tool-fs-search     — read/write/search the workspace; a
+#                                      conductor reviews delegated output.
+# KEEP  tool-jobs                    — background-job controls; pairs with the
+#                                      continuable background subagents below.
+# KEEP  skill-filesystem, tool-skill — skills stay available in concerto.
+# KEEP  command-goal                 — 0.1.2 addition to standard; pairs with
+#                                      tool-goal (the /goal command plus the
+#                                      model-facing goal tool — keeping one
+#                                      without the other is asymmetric).
+# KEEP  tool-goal                    — goal tracking fits orchestration work.
+# KEEP  compaction group             — long orchestration sessions fold
+#                                      (compaction-basic, command-compact,
+#                                      tool-result-pruner; realm reasons as in
+#                                      standard: pruner shares the realm,
+#                                      tokenMeter stays host-plane).
+# KEEP  delegation group             — THE point of the mode: subagent
+#                                      spawn/fork + control + list-agents,
+#                                      verbatim from standard, PLUS the T11
+#                                      omo-explore instance (see its row).
+# DEV   modelSelectionSettings        — kept ONLY on the generic
+#                                      `tool-subagent` (provider: spawn) row,
+#                                      as in 0.1.2 standard. NOT on
+#                                      `tool-subagent-fork` (standard
+#                                      deliberately omits it so provider/model
+#                                      stay equal to the parent and the
+#                                      inherited history keeps its KV Cache
+#                                      prefix — standard's fork comment) and
+#                                      NOT on `tool-subagent-explore` (FR-5
+#                                      pins the route via agentOptions;
+#                                      explore never samples host model
+#                                      selection).
+# KEEP  tool-ask-user                — the conductor escalates decisions.
+# KEEP  tool-todo                    — orchestration tracking.
+# KEEP  tool-web                     — research from the conductor seat.
+# DEV   tool-web fetch: true         — rc.6-era concerto inherited `fetch:
+#                                      false` verbatim from standard (not a
+#                                      deliberate deviation); 0.1.2 standard
+#                                      sets `fetch: true` — derivation
+#                                      discipline: follow upstream unless a
+#                                      deviation is recorded. `searchTimeoutMs:
+#                                      60000` kept.
+# DROP  plan-mode group              — the single-agent plan ceremony is the
+#                                      "do it yourself" stance; 编排优先
+#                                      decomposes by delegation instead.
+#                                      Deliberate MVP cut; T8 may revisit.
+# DROP  tool-subagent-codex /
+#       tool-subagent-claude-code    — product-provider rows. 0.1.2 standard
+#                                      ships them disabled with
+#                                      `backgroundMode: one-shot` +
+#                                      `maxDepth: provider-managed` and the
+#                                      comment "Install the matching Bundle in
+#                                      this Profile and restart the Host, then
+#                                      copy this preset and remove `disabled`".
+#                                      Dropping (not disabling) keeps the MVP
+#                                      roster honest; DROP unchanged under
+#                                      0.1.2. Per-agent model routes
+#                                      (PRD §4.4 piece 4) land with the real
+#                                      agent presets later.
+# DROP  workflow-worker-thread /
+#       tool-workflow                — workflow engine rows; not needed for
+#                                      the 1+1 (conductor + subagent) skeleton.
+# DROP  tool-ralph                   — self-loop construct, out of MVP scope.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# The conductor persona: the one semantic change vs standard. The value below
+# is a SENTINEL — never mounted as-is: syncConcertoPreset substitutes the
+# assembled omo-sisyphus system prompt (a |- block scalar) when it authors
+# the preset into $DSH_HOME/.agent-presets/concerto/ (design (a), T8; see
+# src/system-prompt.ts). `{{model}}` / `{{cwd}}` are intentionally absent:
+# the assembled markdown is variable-free (the builder rejects `{{`
+# sequences, which dsh renderPrompt would fail on), and dsh-persona's
+# includeRuntimeContext default already appends the runtime snapshot.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: __OMO_SISYPHUS_SYSTEM_PROMPT__
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ─────────────────────────────────────────────────────────
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+# The goal service and session driver stay on the host plane, where the Gateway
+# can resolve them. The human command and model-facing tool register into this
+# preset's scoped layers.
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation ──────────────────────────────────────────────────────────────
+
+# The `subagents` registry and its backends stay host-plane (process singleton,
+# see the standard preset's header); this group contributes the delegation
+# tools the conductor calls, behind the entry-local workflowEngine realm.
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    # HARDENING (PR #1 review F1 fix, 2026-09-05 — P-19 sync with the
+    # current-DSH path): the generic `tool-subagent` / `tool-subagent-fork`
+    # rows are DROPPED. Their children are unrestricted full agents (no
+    # toolFilter, default depth budget 3), so a conductor that picked them
+    # instead of `explore` bypassed every guardrail. With them gone, `explore`
+    # below is the conductor's ONLY delegation path — same verdict as
+    # patches/omo-dsh/omo-agents-current/ (2026-09-04).
+
+    # T11 (FR-4 persona + FR-5 route binding; form A static plugin config):
+    # ONE more dsh-tool-subagent instance, bound to omo-explore. The conductor
+    # sees a single delegation tool named `explore` (with the generic rows
+    # gone, no toolName collision is possible).
+    #
+    # SINGLE-SOURCE discipline — no prompt text or route literals are pasted
+    # into this file. Two values are SENTINELS (the EXPLORE_PERSONA_SENTINEL /
+    # EXPLORE_AGENT_OPTIONS_SENTINEL constants in src/concerto-preset.ts)
+    # rendered by syncConcertoPreset at apply() time — same mechanism as the
+    # T8 persona sentinel:
+    #   persona      ← buildExploreSystemPrompt() (src/explore-prompt.ts, T10).
+    #                The spawn provider declares the `persona` capability, so
+    #                the text shadows the child's deployment persona
+    #                (tool-subagent/src/index.ts:92,384).
+    #   agentOptions ← resolveModelRoutes().explore (src/model-routes.ts, T14).
+    #                Env-overridable, so the route MUST be resolved at apply()
+    #                time — a static literal would fork the single source of
+    #                truth. Rendered as JSON-quoted YAML scalars
+    #                (injection-safe).
+    # Declared with the intended final values; verification status noted:
+    #   toolFilter   T12 read-only filter, VERIFIED (P-4; evidence
+    #                .omo/evidence/task-12-mvp-implementation.log): deny the
+    #                mutation tools (write, edit — dsh-tool-fs is never
+    #                platform-gated, so both names always exist for the
+    #                child's restrict()) PLUS `explore` itself (PR #1 review
+    #                F1 fix, 2026-09-05): the explore child physically lacks
+    #                its own delegation tool, so nested delegation is
+    #                impossible by construction (AC-6b parity with the
+    #                current-DSH path) — stronger than the depth cap alone,
+    #                which stays as defense-in-depth. OMO parity: OMO's own
+    #                explore denies write/edit/apply_patch/task/call_omo_agent
+    #                — apply_patch does not exist in dsh and task/call_omo_agent
+    #                map to the maxDepth cap below. `bash` is deliberately NOT
+    #                denied (T12 verdict a): it is platform-gated (absent on
+    #                win32 — a deny would throw "unknown global tool" at the
+    #                child's restrict() there) and OMO's explore keeps shell
+    #                access; write-capable commands are governed by the
+    #                persona's Read-Only Declarations plus T16 hard-blocks
+    #                injection.
+    #   maxDepth     T13 depth cap, VERIFIED (P-5; evidence
+    #                .omo/evidence/task-13-mvp-implementation.log). Field shape:
+    #                a FLAT `maxDepth` (tool-subagent/src/index.ts:98,
+    #                z.natural()|'provider-managed', default 3) — there is NO
+    #                `policy` wrapper; 1 = the explore child cannot delegate.
+    #                Enforcement proven through the real start path
+    #                (scripts/prove-explore-maxdepth.mjs): a depth-1 parent's
+    #                nested-delegation attempt is rejected on BOTH the
+    #                foreground and continuable starts with the errored tool
+    #                result "Error: subagent depth 2 exceeds maxDepth 1"
+    #                (resolveChildDepth → SubagentDepthError, child-agent.ts:48
+    #                -56, before any child exists), a depth-0 parent passes
+    #                (control), absent → default 3, and 'provider-managed'
+    #                sends no cap. SINCE the F1 fix (2026-09-05) the cap is
+    #                defense-in-depth: `explore` is already absent from the
+    #                child's tool list, so the depth gate no longer fires in
+    #                the e2e nested-delegation scenario (which now asserts
+    #                the unknown-tool rejection instead).
+    # NOT SETTABLE in form A: a custom tool `description`. The schema has no
+    # such field; the model-facing description is generated from the spawn
+    # provider's inheritsParentContext=false wording
+    # (tool-subagent/src/index.ts providerWording). Unknown keys are silently
+    # PRESERVED by schemastery (verified on the installed rc.6), so a bogus
+    # `description:` key would be dead config, not an error — recorded as a
+    # P-4/P-5 delta; the probe pins the real generated wording instead.
+    - id: tool-subagent-explore
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: explore
+        backgroundMode: continuable
+        persona: __OMO_EXPLORE_PERSONA__
+        agentOptions: __OMO_EXPLORE_AGENT_OPTIONS__
+        toolFilter:
+          deny: [write, edit, explore]
+        maxDepth: 1
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# The `web` service and its search provider stay in the host composition; only
+# the model-facing tool is per-session.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000

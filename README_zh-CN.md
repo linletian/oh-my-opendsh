@@ -35,28 +35,70 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 - 不向 OMO 提 PR（避免其"反过度抽象"的维护哲学冲突）
 - 不做销售（满足 SUL-1.0 的"非商业"要求）
 
+## 安装方式
+
+协奏模式以持久化 agent preset（核心）+ 可选动态插件的形式安装。
+
+- **一行命令**（推荐）：
+
+  ```bash
+  curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
+  ```
+
+  （备用直链：`https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`）
+
+- **让 DSH 自己装**——把 [docs/install-concerto_zh-CN.md](./docs/install-concerto_zh-CN.md) 里的
+  复制即用 prompt 发给任意 DSH 会话即可。
+
+完整指南（选项、适配、卸载——含"选项到底改了啥"的白话说明）：[中文](./docs/install-concerto_zh-CN.md) / [English](./docs/install-concerto.md)。
+
 ## 当前状态
 
-🟡 **预研完成**
+🟢 **MVP v0.1（已结项）；dsh 0.1.2 复核已登记**
 
 - ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，14 节：2026-08-16 主体 + 2026-08-19 追加调研）
-- ✅ 10 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
-- ⏳ 6 个开放维度待决策（OMO pin 策略、npm 命名、telemetry、release 通知、升级节奏、验收分层等；详见决策记录"开放维度"）
+- ✅ 11 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
+- ✅ MVP PRD 已采纳（[`docs/mvp-prd_zh-CN.md`](./docs/mvp-prd_zh-CN.md)：协奏模式 + 1 Agent + 1 Subagent 最小骨架，决策 D11）
+- ✅ MVP 已结项——FR-1~FR-8 已实现、V1~V4 已验证（见 [mvp-pitfalls](./docs/mvp-pitfalls_zh-CN.md)）
+- ✅ dsh 0.1.2-alpha.1 复核已登记 + bump 验证已针对源码构建执行（[English](./docs/dsh-0.1.2-review.md) / [中文](./docs/dsh-0.1.2-review_zh-CN.md)）；CI pin 翻转待 npm 发布（PRD §12）
+- ✅ **当前 DSH 运行时重跑**（2026-09-04）：协奏模式 MVP 已在当前 DSH 环境重新实现并验证
+  （`concerto_verify` 22/22 PASS；双 provider 路由 deepseek-official + pi-ai；持久化
+  `concerto` 用户 preset + P-19 加固；踩坑 P-13~P-19）——报告见
+  [`docs/concerto-current-dsh_zh-CN.md`](./docs/concerto-current-dsh_zh-CN.md)，源码归档
+  [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)；
+  快速安装见 [`docs/install-concerto_zh-CN.md`](./docs/install-concerto_zh-CN.md)
+- ✅ 版本管理与发布流程已落地（决策 D13：三方兼容矩阵 + `scripts/release.sh` 六步发行 + 每周上游探测哨兵；「release 通知」「升级节奏」两个开放维度就此关闭）——见 [`docs/release-process_zh-CN.md`](./docs/release-process_zh-CN.md)
+- ⏳ 3 个开放维度待决策（OMO core 包 pin 策略、npm 命名、telemetry；详见决策记录"开放维度"）
 - ⏳ 工作量粗估：~16 周（一人主力）
 
 ## 项目决策
 
-项目决策记录见[决策记录](./docs/decisions_zh-CN.md)——已确认决策（D1–D10）、风险处置（R1–R6）、开放维度状态跟踪（O1–O8）。可行性报告是决策的调研依据。
+项目决策记录见[决策记录](./docs/decisions_zh-CN.md)——已确认决策（D1–D13）、风险处置（R1–R6）、开放维度状态跟踪（O1–O8）。可行性报告是决策的调研依据。
+
+## MVP PRD
+
+MVP 产品需求文档（已采纳，决策 D11）见 [MVP PRD：协奏骨架](./docs/mvp-prd_zh-CN.md)。
 
 ## 调研报告
 
 调研报告（中文）见 [可行性报告](./docs/feasibility-report_zh-CN.md)。
 
+## 手工测试
+
+手工测试验证指南 / Manual testing guide: [中文](./docs/manual-testing_zh-CN.md) / [English](./docs/manual-testing.md).
+
+## 版本管理与发布
+
+版本管理与发布流程（决策 D13，原则：优先自动化、本地优先省成本）见 [中文](./docs/release-process_zh-CN.md) / [English](./docs/release-process.md)；三方兼容矩阵见 [中文](./docs/compat-matrix_zh-CN.md) / [English](./docs/compat-matrix.md)（单一事实来源 `.omo/compat.yaml`，机器渲染）。
+
+- 发布一行命令：`scripts/release.sh patch|minor|major`（8 门本地门禁 → bump → tag → push → 沙箱安装验证 → GitHub Release）
+- 上游新版本：每周 `compat-probe` 工作流自动探测并开 issue；本地 `scripts/compat-probe.sh <版本>` 验证，`scripts/bump-dsh.sh <版本>` 翻 D7 pin
+
 ## 关键事实
 
 | 项 | 值 |
 |---|---|
-| **DSH 版本** | v0.1.0-rc.5（MIT） |
+| **DSH 版本** | 0.1.0-rc.6（MIT；CI-pinned——0.1.2-alpha.1 已本地经源码构建验证，CI 翻转待 npm 发布）；有效本地运行时 = rc.6 总成 + rc.7-scheme 依赖（见 [P-11.5](./docs/mvp-pitfalls.md)） |
 | **OMO 上游** | 19 个 core 包 + 4 个小 adapter（harness-agnostic）（SUL-1.0） |
 | **本项目 license** | **MIT OR SUL-1.0**（dual license） |
 | **OMO LICENSE 原文** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |

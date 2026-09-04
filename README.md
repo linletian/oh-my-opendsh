@@ -35,28 +35,70 @@ Every decision in this project is governed by these two principles, which have e
 - **No PRs to OMO** (avoids their "anti-over-abstraction" maintenance philosophy)
 - **No commercial distribution** (satisfies SUL-1.0's "non-commercial" requirement)
 
+## Installation
+
+Concerto Mode (协奏模式) installs as a persistent agent preset (core) plus an optional dynamic plugin.
+
+- **One line** (recommended):
+
+  ```bash
+  curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
+  ```
+
+  (fallback direct link: `https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`)
+
+- **Let DSH install itself** — send any DSH session the copy-paste prompt from
+  [docs/install-concerto.md](./docs/install-concerto.md) and it sets itself up.
+
+Full guide (options, adaptation, uninstall — incl. a plain-language "what the options actually change" section): [English](./docs/install-concerto.md) / [中文](./docs/install-concerto_zh-CN.md).
+
 ## Current Status
 
-🟡 **Pre-research complete**
+🟢 **MVP v0.1 (closed); dsh 0.1.2 review registered**
 
 - ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 14 sections: 2026-08-16 main body + 2026-08-19 follow-up research)
-- ✅ 10 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
-- ⏳ 6 open dimensions pending decision (OMO pin strategy, npm package naming, telemetry, release notifications, upgrade cadence, acceptance criteria layering, etc.; see "Open dimensions" in the decision record)
+- ✅ 11 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
+- ✅ MVP PRD adopted ([`docs/mvp-prd.md`](./docs/mvp-prd.md): Concerto Mode + 1 Agent + 1 Subagent minimal skeleton, decision D11)
+- ✅ MVP closed — FR-1~FR-8 implemented, V1~V4 verified (see [mvp-pitfalls](./docs/mvp-pitfalls.md))
+- ✅ dsh 0.1.2-alpha.1 review registered + bump verification executed via source build ([English](./docs/dsh-0.1.2-review.md) / [中文](./docs/dsh-0.1.2-review_zh-CN.md)); CI pin flip pending npm publish (PRD §12)
+- ✅ **Current-DSH runtime re-run** (2026-09-04): the Concerto MVP was re-implemented and verified
+  on the current DSH environment (`concerto_verify` 22/22 PASS; dual-provider routing
+  deepseek-official + pi-ai; persistent `concerto` user preset with P-19 hardening; pitfalls
+  P-13~P-19) — see the report [`docs/concerto-current-dsh_zh-CN.md`](./docs/concerto-current-dsh_zh-CN.md)
+  (Chinese), source archive [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/),
+  and the quick install guide [`docs/install-concerto.md`](./docs/install-concerto.md)
+- ✅ Version management & release process landed (decision D13: three-party compat matrix + `scripts/release.sh` six-step release + weekly upstream sentinel; the "release notifications" and "upgrade cadence" open dimensions are closed) — see [`docs/release-process.md`](./docs/release-process.md)
+- ⏳ 3 open dimensions pending decision (OMO core-package pin strategy, npm package naming, telemetry; see "Open dimensions" in the decision record)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
 
 ## Project Decisions
 
-The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D10), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
+The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D13), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
+
+## MVP PRD
+
+The MVP product requirements document (adopted, decision D11) is at [MVP PRD: Concerto Skeleton](./docs/mvp-prd.md).
 
 ## Feasibility Report
 
 Feasibility Report is at [feasibility-report.md](./docs/feasibility-report.md).
 
+## Manual Testing
+
+Manual testing guide / 手工测试验证指南: [English](./docs/manual-testing.md) / [中文](./docs/manual-testing_zh-CN.md).
+
+## Versioning & Releases
+
+The version management & release process (decision D13; principles: automation first, local-first cost) lives in [English](./docs/release-process.md) / [中文](./docs/release-process_zh-CN.md); the three-party compatibility matrix is at [English](./docs/compat-matrix.md) / [中文](./docs/compat-matrix_zh-CN.md) (single source of truth `.omo/compat.yaml`, machine-rendered).
+
+- Release in one line: `scripts/release.sh patch|minor|major` (8 local gates → bump → tag → push → sandboxed install verify → GitHub Release)
+- New upstream versions: the weekly `compat-probe` workflow detects and opens an issue; verify locally with `scripts/compat-probe.sh <version>`, flip the D7 pin with `scripts/bump-dsh.sh <version>`
+
 ## Key Facts
 
 | Item | Value |
 |---|---|
-| **DSH version** | v0.1.0-rc.5 (MIT) |
+| **DSH version** | 0.1.0-rc.6 (MIT; CI-pinned — 0.1.2-alpha.1 verified locally via source build, CI flip pending npm publish); effective local runtime = rc.6 umbrella + rc.7-scheme deps (see [P-11.5](./docs/mvp-pitfalls.md)) |
 | **OMO upstream** | 19 core packages + 4 small adapters (harness-agnostic) (SUL-1.0) |
 | **This project's license** | **MIT OR SUL-1.0** (dual license) |
 | **OMO LICENSE (original text)** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |

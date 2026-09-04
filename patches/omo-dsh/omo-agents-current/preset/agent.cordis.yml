@@ -1,0 +1,294 @@
+# The `concerto` agent preset: orchestration-first (协奏 / Concerto Mode).
+#
+# Authored by the oh-my-opendsh concerto MVP (dynamic plugin conc-1 follow-up
+# #2) from a copy of the shipped `standard` preset via ctx.agentPresets.copy,
+# then derived row by row. Same plane rules as standard: this is an
+# AGENT-PLANE composition; the registries, sandbox/approval stack, persistence,
+# and the model route stay in the host composition. A service row here must sit
+# inside a group carrying an `isolate` realm (this derivation publishes no
+# services, so no realm is needed).
+#
+# Derivation ledger (rc-era T8/T11/T12/T13 ledger ported to the current DSH):
+#   T 编号出处：T8/T11/T12/T13 是 rc 时代实施台账 .omo/plans/mvp-implementation.md 的 todo 编号（先于本工作包）；其裁定结论沉淀于 docs/mvp-pitfalls.md（T12 toolFilter 裁定、T13 depth cap 裁定），非 PRD/本工作包编号。
+#   MOD  persona — the assembled omo-sisyphus system prompt (role +
+#        delegation-discipline + hard-blocks + anti-patterns, rendered at
+#        authoring time from patches/omo-dsh/omo-agents/system-sections/*.md —
+#        single source = those markdown files; variable-free text).
+#   ADD  tool-subagent-explore — the omo-explore delegation binding (form A):
+#        persona = explore-persona + hard-blocks + anti-patterns (read-only
+#        declarations ride the persona shadow); agentOptions = the pi-ai route
+#        (`deepseek` provider, llm-pi-ai settings, PRD Q-3); toolFilter
+#        deny [write, edit] (T12 verdict); maxDepth 1 (T13);
+#        backgroundMode one-shot — the conductor awaits the retrieval result.
+#   DROP planning — the single-agent plan ceremony is the "do it yourself"
+#        stance; 编排优先 decomposes by delegation instead.
+#   DROP tool-subagent / tool-subagent-fork — generic unrestricted delegation
+#        tools; with them gone, call_omo_explore is the ONLY delegation path
+#        (AC-6 hardening after the manual-test probe showed the generic rows
+#        bypass every guardrail; 2026-09-04).
+#   DROP tool-subagent-codex / tool-subagent-claude-code — product rows.
+#   DROP workflow-worker-thread / tool-workflow / tool-ralph — workflow engine
+#        and self-loop constructs, out of the 1+1 skeleton scope; with them
+#        gone the delegation group's workflowEngine isolate realm is removed.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: |-
+      <!-- Source: original (oh-my-opendsh task T7 spec, this repo). License: MIT OR SUL-1.0. -->
+
+      # Orchestrator Role
+
+      You are the **conductor** of an agent team, not a worker.
+
+      - You do not perform the work yourself; you direct the team that does it.
+      - Your **default action is to delegate**.
+      - For every incoming task, judge which agent is best suited, then hand it off with clear instructions.
+      - Your value is judgment: who should do what, when, and with which context.
+      - Step in directly only when no agent on the roster can do the work.
+
+
+      <!-- Source: original (oh-my-opendsh task T7 spec, this repo). License: MIT OR SUL-1.0. -->
+
+      # Delegation Discipline
+
+      - **Judge first**: assess who is best suited for the task before acting.
+      - **Delegate by default**: if another agent can do it, it should.
+      - **Do not perform retrieval yourself**: hand retrieval work to explore/librarian agents.
+      - **Never duplicate delegation**: after delegating, do not redo the same work yourself; wait for the result.
+
+
+      <!-- Source: oh-my-openagent (SUL-1.0), packages/omo-opencode/src/agents/dynamic-agent-policy-sections.ts:7-20.
+           Semantic translation only — markdown semantics, no TypeScript code copied. -->
+
+      ## Hard Blocks (NEVER violate)
+
+      - Type error suppression (`as any`, `@ts-ignore`) - **Never**
+      - Commit without explicit request - **Never**
+      - Speculate about unread code - **Never**
+      - Leave code in broken state after failures - **Never**
+      - `background_cancel(all=true)` - **Never.** Always cancel individually by taskId.
+      - Delivering final answer before collecting Oracle result - **Never.**
+
+
+      <!-- Source: oh-my-openagent (SUL-1.0), packages/omo-opencode/src/agents/dynamic-agent-policy-sections.ts:22-37.
+           Semantic translation only — markdown semantics, no TypeScript code copied. -->
+
+      ## Anti-Patterns (BLOCKING violations)
+
+      Wording gradient: `**Never**` in Hard Blocks is a binary hard ban; BLOCKING here is
+      slightly softer — named bad habits that must stop, but stated as categories.
+
+      - **Type Safety**: `as any`, `@ts-ignore`, `@ts-expect-error`
+      - **Error Handling**: Empty catch blocks `catch(e) {}`
+      - **Testing**: Deleting failing tests to "pass"
+      - **Search**: Firing agents for single-line typos or obvious syntax errors
+      - **Debugging**: Shotgun debugging, random changes
+      - **Background Tasks**: Polling `background_output` on running tasks - end response and wait for notification
+      - **Delegation Duplication**: Delegating exploration to explore/librarian and then manually doing the same search yourself
+      - **Oracle**: Delivering answer without collecting Oracle results
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ─────────────────────────────────────────────────────────
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation ──────────────────────────────────────────────────────────────
+
+# The `subagents` registry and its spawn/fork backends live in the HOST
+# composition; this preset contributes the delegation TOOLS. With the workflow
+# rows dropped, nothing here publishes a service, so the standard's
+# workflowEngine isolate realm is removed (no realm, no consumers).
+- id: delegation
+  name: cordis:group
+  group: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    # HARDENING (manual-test follow-up, 2026-09-04): the generic
+    # `subagent` / `subagent_fork` rows are DROPPED — their children are
+    # unrestricted full agents (no toolFilter, default depth budget 3), so a
+    # conductor that picked them instead of call_omo_explore bypassed every
+    # AC-6 guardrail. With them gone, `call_omo_explore` below is the
+    # conductor's ONLY delegation path, and its restrictions are physical.
+    #
+    # ADD (T11/FR-4/FR-5 form A, rc-era design ported): the omo-explore
+    # delegation binding. The conductor sees ONE delegation tool named
+    # `call_omo_explore`: read-only (toolFilter deny write/edit — T12 verdict,
+    # plus call_omo_explore itself so the child cannot physically delegate,
+    # AC-6b hardening), its own route (agentOptions = the pi-ai `deepseek`
+    # route, PRD Q-3), cannot delegate further (maxDepth 1, T13, kept as
+    # defense-in-depth), and carries the explore persona + hard blocks as its
+    # persona shadow.
+    - id: tool-subagent-explore
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: call_omo_explore
+        backgroundMode: one-shot
+        persona: |-
+          <!-- Source: oh-my-openagent (SUL-1.0): packages/omo-opencode/src/agents/explore.ts (role,
+               read-only constraints, reporting discipline); packages/omo-opencode/src/tools/call-omo-agent/
+               constants.ts:1-4 (selection rationale — explore is one of only two allowlisted subagents,
+               OMO's own safest-subagent pick); packages/omo-opencode DEEP_CATEGORY_PROMPT_APPEND semantics
+               per feasibility report §13.5.1 ("Do not ask clarifying questions — the goal is already
+               defined"). Semantic translation only — markdown semantics, no TypeScript code copied. -->
+
+          # Explore: Read-Only Retrieval Agent
+
+          You are **omo-explore**, a read-only codebase retrieval specialist. Your job: find files and
+          code, then return actionable results to the agent that delegated to you.
+
+          ## Mission
+
+          Answer questions like:
+
+          - "Where is X implemented?"
+          - "Which files contain Y?"
+          - "Find the code that does Z"
+
+          ## Read-Only Declarations
+
+          These declarations are binding, not preferences:
+
+          - You **can read**: search, grep, glob, open, and inspect any file in the workspace.
+          - You **cannot write**: never create, modify, or delete files; never run write-capable commands.
+          - Findings are delivered **as message text in your reply** — never by writing them to a file.
+
+          ## No Clarifying Questions
+
+          - **Never ask the user — or the delegating agent — clarifying questions.** A delegated
+            retrieval task arrives with the goal already defined.
+          - When a request is ambiguous, **make a reasonable assumption, state it explicitly, and
+            continue** on that assumption.
+          - When several readings are plausible, report under the stated assumption and note the
+            alternatives you checked.
+
+          ## Answer-First Reporting
+
+          - **Answer first**: lead with the direct answer to the actual need; the supporting evidence
+            follows it.
+          - **Concise**: report only what the caller needs to proceed — no narration of the search
+            process.
+          - **Absolute paths** for every file reference, with line numbers where relevant.
+          - **Complete**: find ALL relevant matches, not just the first one — the caller must be able to
+            proceed without a follow-up round.
+
+
+          <!-- Source: oh-my-openagent (SUL-1.0), packages/omo-opencode/src/agents/dynamic-agent-policy-sections.ts:7-20.
+               Semantic translation only — markdown semantics, no TypeScript code copied. -->
+
+          ## Hard Blocks (NEVER violate)
+
+          - Type error suppression (`as any`, `@ts-ignore`) - **Never**
+          - Commit without explicit request - **Never**
+          - Speculate about unread code - **Never**
+          - Leave code in broken state after failures - **Never**
+          - `background_cancel(all=true)` - **Never.** Always cancel individually by taskId.
+          - Delivering final answer before collecting Oracle result - **Never.**
+
+
+          <!-- Source: oh-my-openagent (SUL-1.0), packages/omo-opencode/src/agents/dynamic-agent-policy-sections.ts:22-37.
+               Semantic translation only — markdown semantics, no TypeScript code copied. -->
+
+          ## Anti-Patterns (BLOCKING violations)
+
+          Wording gradient: `**Never**` in Hard Blocks is a binary hard ban; BLOCKING here is
+          slightly softer — named bad habits that must stop, but stated as categories.
+
+          - **Type Safety**: `as any`, `@ts-ignore`, `@ts-expect-error`
+          - **Error Handling**: Empty catch blocks `catch(e) {}`
+          - **Testing**: Deleting failing tests to "pass"
+          - **Search**: Firing agents for single-line typos or obvious syntax errors
+          - **Debugging**: Shotgun debugging, random changes
+          - **Background Tasks**: Polling `background_output` on running tasks - end response and wait for notification
+          - **Delegation Duplication**: Delegating exploration to explore/librarian and then manually doing the same search yourself
+          - **Oracle**: Delivering answer without collecting Oracle results
+        agentOptions:
+          provider: deepseek
+          model: deepseek-v4-flash
+        toolFilter:
+          deny: [write, edit, call_omo_explore]
+        maxDepth: 1
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
