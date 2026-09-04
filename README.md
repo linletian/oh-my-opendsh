@@ -50,7 +50,7 @@ Concerto Mode (协奏模式) installs as a persistent agent preset (core) plus a
 - **Let DSH install itself** — send any DSH session the copy-paste prompt from
   [docs/install-concerto.md](./docs/install-concerto.md) and it sets itself up.
 
-Full guide (options, adaptation, uninstall): [English](./docs/install-concerto.md) / [中文](./docs/install-concerto_zh-CN.md).
+Full guide (options, adaptation, uninstall — incl. a plain-language "what the options actually change" section): [English](./docs/install-concerto.md) / [中文](./docs/install-concerto_zh-CN.md).
 
 ## Current Status
 

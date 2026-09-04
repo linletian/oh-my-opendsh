@@ -62,8 +62,43 @@ sh oh-my-opendsh/scripts/install-concerto.sh
 NO_PIAI=1 EXPLORE_MODEL=my-model sh oh-my-opendsh/scripts/install-concerto.sh   # 自定义第二路由
 ```
 
-<details><summary>手动 3 步（等价参考）</summary>
+### 这些选项到底改了啥？（白话版）
 
+先记住三句话：
+
+1. 协奏模式有两个人：**指挥**（用你会话的默认模型）+ 检索小弟 **explore**（自己单独一路模型）。
+2. 默认安装已经给 explore 配好了一路模型：pi-ai 的 deepseek 路由 + `deepseek-v4-flash`（快、便宜）。
+3. 所有选项改的都只是 explore 这一路"**换谁来干活**"。指挥、只读限制、禁嵌套委派，一概不动。
+
+| 选项 | 白话解释 |
+|---|---|
+| 什么都不加（默认） | explore 走 pi-ai 路由 + v4-flash。快、省；日志里能看到指挥和 explore 走两条不同的 provider（好看，也符合原始设计）。 |
+| `EXPLORE_MODEL=xxx` | 换 explore 用的**模型**。这是真正影响答案的旋钮：换强模型（如 v4-pro）→ 检索结论更深、更慢、更贵；换小模型 → 更快、更省、可能更浅。 |
+| `EXPLORE_PROVIDER=xxx` | 换 explore 走的**路由身份**。一般只在没有 pi-ai 时用；同模型换路由，回答内容基本不变，只是配置面少一段、日志里记的路由对不一样。 |
+| `NO_PIAI=1` | 告诉安装器"**别动我的 settings.yaml**"。⚠️ 单独用会坏：explore 那行还指着 pi-ai 路由，路由没激活 → 每次委派直接报错。跳过 pi-ai 必须同时给 `EXPLORE_PROVIDER`（最好连 `EXPLORE_MODEL` 一起给）。 |
+
+怎么确认换没换成？装完委派一次，解压子会话日志看 `request/context` 那一行：
+
+```bash
+unzstd -c ~/.dsh/sessions/<工作区目录>/<子会话id>/session.jsonl.zstd | grep request/context
+# {"provider":"deepseek","model":"deepseek-v4-flash"}                ← 默认（pi-ai）
+# {"provider":"deepseek-official","model":"deepseek-v4-flash"}       ← 同 provider 降级
+```
+
+三个常见组合（带白话注释）：
+
+```bash
+# 默认：pi-ai 路由 + v4-flash，最省事
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
+
+# 没有 pi-ai：换到官方 deepseek 路由 + 同一个模型，回答和默认几乎没差
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official EXPLORE_MODEL=deepseek-v4-flash sh
+
+# 想更省/更快：给 explore 换个小模型
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<更小更快的模型名> sh
+```
+
+<details><summary>手动 3 步（等价参考）</summary>
 1. **复制 preset**（从 clone，或从任意已有该 preset 的机器拷这两个文件）：
 
    ```bash

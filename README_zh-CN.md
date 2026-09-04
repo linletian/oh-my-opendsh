@@ -50,7 +50,7 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 - **让 DSH 自己装**——把 [docs/install-concerto_zh-CN.md](./docs/install-concerto_zh-CN.md) 里的
   复制即用 prompt 发给任意 DSH 会话即可。
 
-完整指南（选项、适配、卸载）：[中文](./docs/install-concerto_zh-CN.md) / [English](./docs/install-concerto.md)。
+完整指南（选项、适配、卸载——含"选项到底改了啥"的白话说明）：[中文](./docs/install-concerto_zh-CN.md) / [English](./docs/install-concerto.md)。
 
 ## 当前状态
 

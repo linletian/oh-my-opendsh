@@ -64,6 +64,45 @@ sh oh-my-opendsh/scripts/install-concerto.sh
 NO_PIAI=1 EXPLORE_MODEL=my-model sh oh-my-opendsh/scripts/install-concerto.sh   # custom second route
 ```
 
+### What these options actually change (plain words)
+
+Three facts first:
+
+1. Concerto Mode has two players: the **conductor** (your session's default model) and the
+   retrieval helper **explore** (its own separate model route).
+2. The default install already gives explore its route: the pi-ai `deepseek` provider +
+   `deepseek-v4-flash` (fast, cheap).
+3. Every option only changes "who does the work" on the explore side. The conductor, the
+   read-only restrictions, and the no-nested-delegation cap are untouched.
+
+| Option | Plain explanation |
+|---|---|
+| nothing (default) | explore rides the pi-ai route + v4-flash. Fast and cheap; the logs show conductor and explore on two different providers (matches the original design). |
+| `EXPLORE_MODEL=xxx` | Swaps the **model** explore uses. This is the knob that really changes answers: a stronger model (e.g. v4-pro) → deeper, slower, pricier retrieval; a smaller one → faster, cheaper, possibly shallower. |
+| `EXPLORE_PROVIDER=xxx` | Swaps explore's **route identity**. Mostly needed only without pi-ai; for the same model, answers barely change — only the config surface and the logged route pair differ. |
+| `NO_PIAI=1` | Tells the installer "**don't touch my settings.yaml**". ⚠️ Broken on its own: the preset still points explore at the pi-ai route, which is not activated → every delegation errors out. Pair it with `EXPLORE_PROVIDER` (and ideally `EXPLORE_MODEL`). |
+
+How to confirm what actually took effect? Delegate once, then read the child session log:
+
+```bash
+unzstd -c ~/.dsh/sessions/<workspace-dir>/<child-session-id>/session.jsonl.zstd | grep request/context
+# {"provider":"deepseek","model":"deepseek-v4-flash"}                ← default (pi-ai)
+# {"provider":"deepseek-official","model":"deepseek-v4-flash"}       ← same-provider fallback
+```
+
+Three common combinations (plain-words annotations):
+
+```bash
+# Default: pi-ai route + v4-flash, least to think about
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
+
+# No pi-ai: official deepseek route + the same model — answers barely differ from the default
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official EXPLORE_MODEL=deepseek-v4-flash sh
+
+# Cheaper/faster: give explore a smaller model
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<smaller-faster-model> sh
+```
+
 <details><summary>Manual 3-step (equivalent reference)</summary>
 
 1. **Copy the preset** (from a clone, or copy the two files from any machine that has them):
