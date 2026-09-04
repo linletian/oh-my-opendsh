@@ -34,6 +34,13 @@ Single source of truth: [`.omo/compat.yaml`](../.omo/compat.yaml) → rendered t
 by `scripts/render-compat-matrix.mjs`. The docs-consistency gate re-renders and
 diffs both files on every CI run — hand edits get caught immediately.
 
+**Layout rule (`docs/` vs `.omo/`):** human-readable process documentation
+lives in `docs/` (hand-written, bilingual twins, reviewable — this document,
+the install guide, the pitfalls ledger, verification reports). `.omo/` holds
+machine artifacts ONLY: the matrix data source, per-row verification evidence,
+probe logs, transient release notes — machine-written, machine-checked, never
+hand-edited docs (see [`.omo/README.md`](../.omo/README.md)).
+
 Row statuses: ✅ tested · 🔬 untested · ❌ broken · 🪦 dropped.
 **A release may only be made on a ✅ row.** The latest ✅ row of each dsh line
 is the LKG (last known good) rollback anchor. The `broken` / `dropped` states
