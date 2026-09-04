@@ -16,7 +16,7 @@
 - `package.json` 承载完整 semver `X.Y.Z`。
 - 每次发布打**两个 tag**：不可变的注释 tag `vX.Y.Z`，加上**移动别名** `vX.Y`（force 移到本线最新 patch）。安装器锁定别名（`TAG="${CONCERTO_TAG:-v0.1}"`），所以 `curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh` 永远装到最新稳定 patch；要精确锁版本就用 raw `vX.Y.Z` 直链。
 - 语义：**major** = 矩阵不兼容变更 / 弃用旧 dsh 区间；**minor** = 新能力或新 ✅ 验证的上下游组合；**patch** = 修复 / 文档 / 仅安装器。
-- GitHub Pages 服务分支根（稳定线），所以 `/install` 永远镜像最新发布提交。
+- GitHub Pages 服务稳定线的分支根（`main`），所以 `/install` 永远镜像最新发布提交。
 
 ## 3. 兼容矩阵
 
@@ -55,7 +55,7 @@ scripts/release.sh <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--no-gh] [
 
 步骤（全部本地；第一步失败即在打 tag 前中止）：
 
-1. **preflight**——工作区干净、在发布分支上、`scripts/release-check.sh`（8 门，含新鲜 L2 证据）。
+1. **preflight**——工作区干净、在发布分支（`main`）上、`scripts/release-check.sh`（8 门，含新鲜 L2 证据）。
 2. **bump**——`scripts/release-bump.mjs`：package.json、安装器 TAG pin、README 状态 token、compat.yaml（our 块 + 新 ✅ 行，含当前 `dsh --version`、omo 版本、证据路径）、CHANGELOG 顶部条目、矩阵重渲染。
 3. **复检**——编辑后跑 docs 一致性 + concerto 静态检查。
 4. **commit**——`release: vX.Y.Z`。

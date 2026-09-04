@@ -28,7 +28,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-RELEASE_BRANCH="${RELEASE_BRANCH:-feature/dsh-omo-mvp}"
+RELEASE_BRANCH="${RELEASE_BRANCH:-main}"
 REMOTE="${RELEASE_REMOTE:-origin}"
 GH_REPO="${RELEASE_GH_REPO:-$(git config --get remote."$REMOTE".url | sed 's|.*github.com[:/]||; s|\.git$||')}"
 

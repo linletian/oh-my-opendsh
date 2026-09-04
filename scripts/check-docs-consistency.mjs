@@ -95,7 +95,8 @@ async function run() {
     results.push(check('d06', 'CHANGELOG top entry', true, 'CHANGELOG.md not present yet (created by the first release.sh run)'))
   } else {
     const top = changelog.split('\n').find((l) => /^## v/.test(l))
-    results.push(check('d06', 'CHANGELOG top entry', top === `## v${our}`,
+    const topVersion = top && top.match(/^## v(\d+\.\d+\.\d+)/)?.[1]
+    results.push(check('d06', 'CHANGELOG top entry', topVersion === our,
       `top heading "${top}" vs package.json ${our}`))
   }
 

@@ -86,7 +86,7 @@ async function main() {
   } catch { /* gh issue list failing → fall through to create attempt */ }
 
   let created = 0
-  const branch = process.env.GITHUB_REF_NAME || 'feature/dsh-omo-mvp'
+  const branch = process.env.GITHUB_REF_NAME || 'main'
   for (const c of candidates) {
     if (openTitles.includes(c.version)) {
       console.log(`compat-probe: open issue already exists for ${c.pkg} ${c.version} — skipping`)

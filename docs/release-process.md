@@ -24,7 +24,7 @@
 - Semantics: **major** = breaking matrix change / dropping an old dsh range;
   **minor** = new capability or a newly ✅-verified upstream combo;
   **patch** = fixes / docs / installer-only.
-- GitHub Pages serves the branch root (the stable line), so `/install` always
+- GitHub Pages serves the stable line's branch root (`main`), so `/install` always
   mirrors the newest release commit.
 
 ## 3. The compatibility matrix
@@ -80,7 +80,7 @@ scripts/release.sh <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--no-gh] [
 
 Steps (all local; first failure aborts before anything is tagged):
 
-1. **preflight** — clean tree, on the release branch, `scripts/release-check.sh` (8 gates incl. fresh L2 evidence).
+1. **preflight** — clean tree, on the release branch (`main`), `scripts/release-check.sh` (8 gates incl. fresh L2 evidence).
 2. **bump** — `scripts/release-bump.mjs`: package.json, installer TAG pin, README status tokens, compat.yaml (our block + new ✅ row with the current `dsh --version`, omo version, evidence path), CHANGELOG top entry, matrix re-render.
 3. **re-gate** — docs-consistency + concerto-static after the edit.
 4. **commit** — `release: vX.Y.Z`.
