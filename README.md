@@ -48,7 +48,8 @@ Every decision in this project is governed by these two principles, which have e
   on the current DSH environment (`concerto_verify` 22/22 PASS; dual-provider routing
   deepseek-official + pi-ai; persistent `concerto` user preset with P-19 hardening; pitfalls
   P-13~P-19) — see the report [`docs/concerto-current-dsh_zh-CN.md`](./docs/concerto-current-dsh_zh-CN.md)
-  (Chinese), source archive [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)
+  (Chinese), source archive [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/),
+  and the quick install guide [`docs/install-concerto.md`](./docs/install-concerto.md)
 - ⏳ 5 open dimensions pending decision (OMO pin strategy, npm package naming, telemetry, release notifications, upgrade cadence; see "Open dimensions" in the decision record)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
 

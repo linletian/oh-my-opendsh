@@ -4,6 +4,7 @@
 > 运行时形态是**动态插件 `conc-1`**（进程级、会话专属，重启即失）+ **持久化用户 preset
 > `~/.dsh/.agent-presets/concerto/`**（本目录 `preset/` 的镜像）。完整实现与验证报告见
 > `docs/concerto-current-dsh_zh-CN.md`；踩坑 P-13~P-19 见 `docs/mvp-pitfalls*`。
+> **其他用户的快速安装指南：`docs/install-concerto.md` / `docs/install-concerto_zh-CN.md`。**
 
 ## 目录内容
 

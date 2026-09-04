@@ -48,7 +48,8 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
   （`concerto_verify` 22/22 PASS；双 provider 路由 deepseek-official + pi-ai；持久化
   `concerto` 用户 preset + P-19 加固；踩坑 P-13~P-19）——报告见
   [`docs/concerto-current-dsh_zh-CN.md`](./docs/concerto-current-dsh_zh-CN.md)，源码归档
-  [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)
+  [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)；
+  快速安装见 [`docs/install-concerto_zh-CN.md`](./docs/install-concerto_zh-CN.md)
 - ⏳ 5 个开放维度待决策（OMO pin 策略、npm 命名、telemetry、release 通知、升级节奏；详见决策记录"开放维度"）
 - ⏳ 工作量粗估：~16 周（一人主力）
 
