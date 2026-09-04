@@ -20,10 +20,18 @@
 schema: 1
 
 our:
-  latest: "0.1.0"
+  latest: "0.1.1"
   tag_alias: "v0.1"
 
 tested:
+  - our: "0.1.1"
+    dsh: "0.1.0-rc.6"
+    omo: "4.19.4"
+    date: "2026-09-04"
+    evidence: ".omo/evidence/concerto-current-dsh-verify.md"
+    note_en: "released v0.1 (release.sh)"
+    note_zh: "发布 v0.1（release.sh 自动登记）"
+
   - our: "0.1.0"
     dsh: "0.1.0-rc.6"
     omo: "4.19.4 (architecture reference)"

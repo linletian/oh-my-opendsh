@@ -17,8 +17,10 @@ Status legend: ✅ tested · 🔬 untested · ❌ broken · 🪦 dropped.
 
 | our | dsh | omo | date | evidence (local file) |
 |---|---|---|---|---|
+| 0.1.1 | 0.1.0-rc.6 | 4.19.4 | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 | 0.1.0 | 0.1.0-rc.6 | 4.19.4 (architecture reference) | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 
+> 0.1.1 — released v0.1 (release.sh)
 > 0.1.0 — current-DSH runtime re-verification: concerto_verify 22/22 PASS
 
 ## Untested (registered, awaiting probe)

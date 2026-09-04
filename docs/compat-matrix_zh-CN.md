@@ -17,8 +17,10 @@
 
 | 我们 | dsh | omo | 日期 | 证据（本地文件） |
 |---|---|---|---|---|
+| 0.1.1 | 0.1.0-rc.6 | 4.19.4 | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 | 0.1.0 | 0.1.0-rc.6 | 4.19.4 (architecture reference) | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 
+> 0.1.1 — 发布 v0.1（release.sh 自动登记）
 > 0.1.0 — 当前 DSH 运行时重验证：concerto_verify 22/22 PASS
 
 ## 未测试（已登记，待探测）
