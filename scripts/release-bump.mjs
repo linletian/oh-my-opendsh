@@ -131,6 +131,17 @@ function main() {
   mutations.push({ file: README_EN, label: 'README.md status token', before: oldAlias, write: () => writeFileSync(README_EN, enNew) })
   mutations.push({ file: README_ZH, label: 'README_zh-CN.md status token', before: oldAlias, write: () => writeFileSync(README_ZH, zhNew) })
 
+  // The Pages `install` wrapper pins the alias raw URL — keep it in lockstep
+  // (PR #1 review F2: the two-hop chain must follow the alias on every bump).
+  const wrapperFile = join(REPO_ROOT, 'install')
+  const wrapperText = readFileSync(wrapperFile, 'utf8')
+  const wrapperUrl = `https://raw.githubusercontent.com/linletian/oh-my-opendsh/${oldAlias}/scripts/install-concerto.sh`
+  if (!wrapperText.includes(wrapperUrl)) throw new Error(`install wrapper URL not found: ${wrapperUrl}`)
+  mutations.push({
+    file: wrapperFile, label: `install wrapper URL → ${newAlias}`, before: wrapperUrl,
+    write: () => writeFileSync(wrapperFile, wrapperText.replace(wrapperUrl, `https://raw.githubusercontent.com/linletian/oh-my-opendsh/${newAlias}/scripts/install-concerto.sh`)),
+  })
+
   // compat.yaml: bump our block + insert the new tested row right after `tested:`.
   const dsh = dshVersion()
   const omo = omoVersion()
@@ -173,8 +184,27 @@ function main() {
 
   for (const m of mutations) m.write()
   exec('node scripts/render-compat-matrix.mjs')
+
+  // F5 (PR #1 review): build the GitHub Release notes HERE — single place,
+  // right after the matrix render — instead of sed-slicing sections in
+  // release.sh. Notes = the CHANGELOG section for this release + the tested
+  // matrix snapshot from the freshly rendered doc.
+  const matrixMd = readFileSync(join(REPO_ROOT, 'docs', 'compat-matrix.md'), 'utf8')
+  const testedBlock = (matrixMd.split('## Tested combinations')[1] ?? '').split('## Untested')[0]
+  const notes = [
+    section.trimEnd(),
+    '',
+    '---',
+    '',
+    'Compatibility snapshot:',
+    '',
+    '## Tested combinations' + testedBlock.replace(/\n+$/, ''),
+    '',
+  ].join('\n')
+  writeFileSync(join(REPO_ROOT, '.omo', `release-notes-${newSemver}.md`), notes)
+
   console.log(`release-bump: bumped ${oldSemver} → ${newSemver} (alias ${oldAlias} → ${newAlias})`)
-  console.log(`  files: package.json, install-concerto.sh, README x2, .omo/compat.yaml, CHANGELOG.md, docs/compat-matrix*.md`)
+  console.log(`  files: package.json, install-concerto.sh, install wrapper, README x2, .omo/compat.yaml, CHANGELOG.md, docs/compat-matrix*.md, .omo/release-notes-${newSemver}.md`)
   console.log(`  new tested row: dsh=${dsh}, omo=${omo}, date=${date}`)
 }
 

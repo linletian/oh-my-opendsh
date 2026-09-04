@@ -6,9 +6,9 @@
   "license": "MIT OR SUL-1.0",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "pnpm run build:lib:host && pnpm run build:lib:client",
-    "build:lib:host": "tsc --noEmit -p patches/omo-dsh/omo-agents/tsconfig.host.json",
-    "build:lib:client": "if [ -d patches/omo-dsh/omo-agents/src/client ]; then tsc --noEmit -p patches/omo-dsh/omo-agents/tsconfig.client.json; else echo '[build:lib:client] vacuous: pure-host package, no src/client'; fi",
+    "typecheck:libs": "pnpm run typecheck:host && pnpm run typecheck:client",
+    "typecheck:host": "tsc --noEmit -p patches/omo-dsh/omo-agents/tsconfig.host.json",
+    "typecheck:client": "if [ -d patches/omo-dsh/omo-agents/src/client ]; then tsc --noEmit -p patches/omo-dsh/omo-agents/tsconfig.client.json; else echo '[typecheck:client] vacuous: pure-host package, no src/client'; fi",
     "test": "vitest run",
     "test:e2e": "node tests/e2e/drive.mjs"
   },

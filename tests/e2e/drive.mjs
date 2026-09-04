@@ -124,20 +124,23 @@
 //     toolErrorResult :3472-3482 of the installed rc.6), plus the business
 //     outcome that the target file never appears on disk.
 //   explore-nested-delegation-denied (AC-6b): the mock scripts the explore
-//     child (depth 1) calling `explore` again; the per-start depth gate
-//     rejects BEFORE any grandchild exists — asserted verbatim:
-//     'Error: subagent depth 2 exceeds maxDepth 1' (dsh-subagent
-//     SubagentDepthError :470 + the same toolErrorResult wrap), the
-//     delegation tool's visibility at the cap is asserted as OBSERVED
-//     (T13 contract: "the tool stays visible at the cap"), and no session
-//     with parentSession = the child id may exist.
+//     child (depth 1) calling `explore` again; since the F1 hardening
+//     (2026-09-05) the deny list includes the delegation tool itself, so the
+//     child is NEVER offered `explore` and the call is rejected as an unknown
+//     tool — asserted verbatim: 'Error: unknown tool "explore"' (dsh-tools
+//     ToolNotFoundError + toolErrorResult wrap), the tool's ABSENCE from the
+//     child's advertised list is asserted (the stronger AC-6b property:
+//     physically cannot delegate, not merely depth-capped), and no session
+//     with parentSession = the child id may exist. The T13 depth cap
+//     (maxDepth 1) stays as defense-in-depth; its enforcement semantics are
+//     source-proven by scripts/prove-explore-maxdepth.mjs.
 // AC-7: every scenario verdict carries `assertions` (the check names, in
 // order) alongside `checks`/`failed`, and the overall verdict stays
 // CI-parseable {result:"PASS"|"FAIL", scenarios:[...]} on stdout.
 // Mutation QA (plan T20 failure half) is hermetic in runAnalysisSelfTest:
 // swapped routes input / collapsed equal routes (the model-route input
 // mutation), a fabricated log without the unknown-tool error, and one
-// without the depth error each FAIL on their own named check.
+// with the delegation tool still present each FAIL on their own named check.
 //
 // ── LLM WIRING (sandbox $DSH_HOME/settings.yaml only; nothing touches the
 // host). Both adapters are pointed at the mock with a dummy key:
@@ -284,7 +287,10 @@ function demoScript(sandbox) {
 //                  ${attempted} exceeds maxDepth ${max}` (lib/index.js:470)
 //                  → same wrap → 'Error: subagent depth 2 exceeds maxDepth 1'.
 const UNKNOWN_TOOL_WRITE_RESULT = 'Error: unknown tool "write"'
-const DEPTH_CAP_RESULT = 'Error: subagent depth 2 exceeds maxDepth 1'
+// F1 hardening (2026-09-05): with `explore` in the child's deny list, the
+// nested attempt is rejected as an unknown tool — the depth gate (which
+// stays as defense-in-depth) no longer fires in this scenario.
+const UNKNOWN_TOOL_EXPLORE_RESULT = 'Error: unknown tool "explore"'
 
 // AC-6a: the explore child hallucinates a `write` call (the mock may script a
 // tool the child was never offered — that IS the hallucination-resistance
@@ -294,10 +300,11 @@ const WRITE_TARGET_NAME = 'MOCK-WRITE-DENIED-TARGET.txt'
 const EXPLORE_WRITE_NOTE = 'MOCK-EXPLORE-WRITE-DENIED-3f7b1e: the write call was rejected (unknown tool)'
 const SISYPHUS_WRITE_SUMMARY = 'MOCK-SISYPHUS-WRITE-SUMMARY-8d2c6a: explore could not write — the read-only restriction held'
 
-// AC-6b: the explore child (delegationDepth 1) attempts a nested delegation.
-const NESTED_DENY_PROMPT = 'e2e depth-cap: ask explore to delegate a sub-task and report what happened'
-const EXPLORE_NESTED_NOTE = 'MOCK-EXPLORE-NESTED-DENIED-6b4f2d: the nested delegation was rejected (depth cap)'
-const SISYPHUS_NESTED_SUMMARY = 'MOCK-SISYPHUS-NESTED-SUMMARY-1e9a5b: explore could not delegate — the depth cap held'
+// AC-6b: the explore child (delegationDepth 1) attempts a nested delegation;
+// the tool is physically absent from the child's list (F1 deny hardening).
+const NESTED_DENY_PROMPT = 'e2e nested-deny: ask explore to delegate a sub-task and report what happened'
+const EXPLORE_NESTED_NOTE = 'MOCK-EXPLORE-NESTED-DENIED-6b4f2d: the nested delegation was rejected (unknown tool — delegation tool absent)'
+const SISYPHUS_NESTED_SUMMARY = 'MOCK-SISYPHUS-NESTED-SUMMARY-1e9a5b: explore could not delegate — the delegation tool is absent from the child'
 
 /** AC-6a script: sisyphus delegates; the child calls `write`, then reports. */
 function writeDeniedScript(sandbox) {
@@ -326,7 +333,9 @@ function writeDeniedScript(sandbox) {
   }
 }
 
-/** AC-6b script: sisyphus delegates; the child calls `explore` (nested). */
+/** AC-6b script: sisyphus delegates; the child calls `explore` (nested) — but
+ * the F1 deny hardening keeps `explore` out of the child's tool list, so the
+ * call is rejected as an unknown tool. */
 function nestedDelegationScript() {
   return {
     sisyphus: [
@@ -347,7 +356,7 @@ function nestedDelegationScript() {
         name: 'explore',
         arguments: {
           description: 'nested probe',
-          prompt: 'this delegation must be rejected by the depth cap',
+          prompt: 'this delegation must be rejected — the delegation tool is absent from this child',
           run_in_background: false,
         },
       },
@@ -1152,16 +1161,17 @@ export function analyzeExploreNestedDelegationDenied(
   )
   const checks = {
     ...givens,
-    // Documented observed behavior (T13 README contract): `explore` remains
-    // model-visible at depth 1 — rejection is per attempted start, not by
-    // hiding the tool.
-    delegationToolVisibleAtDepthCap:
-      toolNames !== undefined && toolNames.includes('explore'),
+    // F1 hardening (2026-09-05): `explore` is PHYSICALLY ABSENT from the
+    // child's advertised tools — the deny list includes the delegation tool
+    // itself (stronger than the T13 depth cap, which stays as
+    // defense-in-depth).
+    delegationToolAbsentFromChild:
+      toolNames !== undefined && !toolNames.includes('explore'),
     // THE negative: the nested attempt's errored tool result, verbatim.
-    nestedDelegationRejectedWithDepthError:
+    nestedDelegationRejectedWithUnknownTool:
       nestedCall !== undefined
-      && results.some((part) => part.isError && part.text === DEPTH_CAP_RESULT),
-    // The gate fires BEFORE any child exists: no grandchild session log.
+      && results.some((part) => part.isError && part.text === UNKNOWN_TOOL_EXPLORE_RESULT),
+    // No child exists for a tool the child never had: no grandchild session log.
     noGrandchildSessionCreated:
       childLog !== undefined
       && Array.isArray(allLogs)
@@ -1366,7 +1376,7 @@ function fabricatedNegativeParentLog(routes, prompt, childNote, parentSummary) {
   }
 }
 
-function fabricatedNegativeChildLog(routes, attemptName, attemptArgs, rejectionText, childNote) {
+function fabricatedNegativeChildLog(routes, attemptName, attemptArgs, rejectionText, childNote, toolsList) {
   return {
     path: '/fabricated/negative-child/session.jsonl',
     header: {
@@ -1383,7 +1393,7 @@ function fabricatedNegativeChildLog(routes, attemptName, attemptArgs, rejectionT
         data: {
           header: {
             config: { provider: routes.explore.provider, model: routes.explore.model },
-            tools: [
+            tools: toolsList ?? [
               { type: 'function', function: { name: 'read' } },
               { type: 'function', function: { name: 'grep' } },
               { type: 'function', function: { name: 'explore' } },
@@ -1432,8 +1442,13 @@ function fabricatedGoodNestedInput(routes) {
     routes,
     'explore',
     { description: 'nested probe', prompt: 'nested', run_in_background: false },
-    DEPTH_CAP_RESULT,
+    UNKNOWN_TOOL_EXPLORE_RESULT,
     EXPLORE_NESTED_NOTE,
+    // F1 hardening: the good input mirrors the REAL child — `explore` absent.
+    [
+      { type: 'function', function: { name: 'read' } },
+      { type: 'function', function: { name: 'grep' } },
+    ],
   )
   const log = fabricatedNegativeParentLog(routes, NESTED_DENY_PROMPT, EXPLORE_NESTED_NOTE, SISYPHUS_NESTED_SUMMARY)
   return {
@@ -1621,21 +1636,21 @@ function runAnalysisSelfTest(routes) {
   }
 
   // ── AC-6b self-test (plan T20 failure (c)): good input PASSes; a
-  // fabricated log WITHOUT the depth error FAILs on
-  // nestedDelegationRejectedWithDepthError; a grandchild session FAILs on
-  // noGrandchildSessionCreated; a hidden delegation tool FAILs on
-  // delegationToolVisibleAtDepthCap.
+  // fabricated log WITHOUT the unknown-tool rejection FAILs on
+  // nestedDelegationRejectedWithUnknownTool; a grandchild session FAILs on
+  // noGrandchildSessionCreated; a delegation tool STILL PRESENT in the child
+  // FAILs on delegationToolAbsentFromChild.
   const goodNested = analyzeExploreNestedDelegationDenied(fabricatedGoodNestedInput(routes), routes)
   if (goodNested.result !== 'PASS') {
     problems.push(`fabricated GOOD nested-delegation-denied must PASS, got FAIL on: ${goodNested.failed.join(', ')}`)
   }
   const nestedDefectCases = [
-    ['nested delegation not rejected (no depth error)', (input) => {
+    ['nested delegation not rejected (no unknown-tool error)', (input) => {
       input.childLog.events = input.childLog.events.map((event) =>
         event.type === 'tool/result'
           ? { ...event, data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: 'nested run completed' }], isError: false }] } } }
           : event)
-    }, 'nestedDelegationRejectedWithDepthError'],
+    }, 'nestedDelegationRejectedWithUnknownTool'],
     ['grandchild session exists', (input) => {
       input.allLogs = [
         ...input.allLogs,
@@ -1646,12 +1661,12 @@ function runAnalysisSelfTest(routes) {
         },
       ]
     }, 'noGrandchildSessionCreated'],
-    ['delegation tool hidden at the cap', (input) => {
+    ['delegation tool still present in the child', (input) => {
       input.childLog.events = input.childLog.events.map((event) =>
         event.type === 'request/header'
-          ? { ...event, data: { header: { ...event.data.header, tools: event.data.header.tools.filter((tool) => tool.function.name !== 'explore') } } }
+          ? { ...event, data: { header: { ...event.data.header, tools: [...event.data.header.tools, { type: 'function', function: { name: 'explore' } }] } } }
           : event)
-    }, 'delegationToolVisibleAtDepthCap'],
+    }, 'delegationToolAbsentFromChild'],
     ['child note never returned to the parent', (input) => {
       input.log.events = input.log.events.filter((event) => event.type !== 'tool/result')
     }, 'childOutcomeReturnedAndParentClosed'],

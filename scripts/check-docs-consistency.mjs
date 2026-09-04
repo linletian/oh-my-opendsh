@@ -99,6 +99,14 @@ async function run() {
       `top heading "${top}" vs package.json ${our}`))
   }
 
+  // d07 — the Pages `install` wrapper must point at the alias raw URL
+  // (PR #1 review F2: the two-hop install chain follows the alias exactly).
+  let wrapper = ''
+  try { wrapper = readFileSync(join(REPO_ROOT, 'install'), 'utf8') } catch { /* wrapper missing → fail below */ }
+  const wantWrapperUrl = `https://raw.githubusercontent.com/linletian/oh-my-opendsh/${wantAlias}/scripts/install-concerto.sh`
+  results.push(check('d07', 'install wrapper URL', wrapper.includes(wantWrapperUrl),
+    wrapper === '' ? 'install wrapper file missing' : `want ${wantWrapperUrl}`))
+
   const json = process.argv.includes('--json')
   if (json) {
     console.log(JSON.stringify(results, null, 2))

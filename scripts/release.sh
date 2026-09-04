@@ -163,14 +163,21 @@ if [[ "$NO_GH" == "1" ]]; then
 elif command -v gh >/dev/null 2>&1; then
   echo "release.sh: step 8/8 — GitHub Release"
   NOTES="$TMP/notes.md"
-  {
-    sed -n '/^## v'"$NEW"' /,/^## /p' CHANGELOG.md | sed '$d'
-    echo ""
-    echo "---"
-    echo ""
-    echo "Compatibility snapshot:"
-    sed -n '/^## Tested combinations/,/^## Untested/p' docs/compat-matrix.md | sed '$d'
-  } > "$NOTES"
+  # F5 (PR #1 review): the notes are generated in release-bump.mjs right after
+  # the matrix render (single place, no sed section-slicing here). The sed
+  # path below is a best-effort fallback only.
+  if [ -f ".omo/release-notes-${NEW}.md" ]; then
+    cp ".omo/release-notes-${NEW}.md" "$NOTES"
+  else
+    {
+      sed -n '/^## v'"$NEW"' /,/^## /p' CHANGELOG.md | sed '$d'
+      echo ""
+      echo "---"
+      echo ""
+      echo "Compatibility snapshot:"
+      sed -n '/^## Tested combinations/,/^## Untested/p' docs/compat-matrix.md | sed '$d'
+    } > "$NOTES"
+  fi
   gh release create "v$NEW" --repo "$GH_REPO" --title "v$NEW" --notes-file "$NOTES" || {
     echo "release.sh: WARN — gh release create failed; create it manually with the notes in $NOTES" >&2
   }

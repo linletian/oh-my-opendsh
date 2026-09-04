@@ -428,8 +428,15 @@ async function checkSubagentConfig(check1) {
     if (validated.toolName !== 'explore') problems.push(`toolName=${JSON.stringify(validated.toolName)} (want explore)`)
     if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${JSON.stringify(validated.backgroundMode)} (want continuable)`)
     if (validated.maxDepth !== 1) problems.push(`maxDepth=${JSON.stringify(validated.maxDepth)} (want 1, T13)`)
-    if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit'] })) {
-      problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)} (want deny:[write,edit], T12)`)
+    // T12 + F1 fix (2026-09-05): deny = the two mutation tools PLUS the
+    // delegation tool itself (physical no-delegation, AC-6b parity).
+    if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit', 'explore'] })) {
+      problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)} (want deny:[write,edit,explore], T12 + F1)`)
+    }
+    // F1 fix: no generic delegation rows may remain in the rendered template
+    // (findRowsById is group-recursive — the rows were nested in `delegation`).
+    if (findRowsById(rows, 'tool-subagent').length > 0 || findRowsById(rows, 'tool-subagent-fork').length > 0) {
+      problems.push('generic subagent/subagent_fork rows present (F1: must be dropped — only `explore` may delegate)')
     }
     const expectedRoute = resolveModelRoutes().explore
     if (validated.agentOptions?.provider !== expectedRoute.provider || validated.agentOptions?.model !== expectedRoute.model) {
@@ -450,7 +457,7 @@ async function checkSubagentConfig(check1) {
       'subagent-config',
       'pass',
       'tool-subagent-explore validates against the installed dsh-tool-subagent Config '
-        + `(provider=spawn toolName=explore backgroundMode=continuable maxDepth=1 deny=[write,edit] route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars)`,
+        + `(provider=spawn toolName=explore backgroundMode=continuable maxDepth=1 deny=[write,edit,explore] route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars)`,
     )
   } catch (error) {
     return check(

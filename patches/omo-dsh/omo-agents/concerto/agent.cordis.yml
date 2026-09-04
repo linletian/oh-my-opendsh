@@ -205,25 +205,18 @@
     - id: tool-subagent-list-agents
       name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 
-    - id: tool-subagent
-      name: '@deepseek-ai/dsh-tool-subagent'
-      config:
-        provider: spawn
-        toolName: subagent
-        modelSelectionSettings: true
-        backgroundMode: continuable
-
-    - id: tool-subagent-fork
-      name: '@deepseek-ai/dsh-tool-subagent'
-      config:
-        provider: fork
-        toolName: subagent_fork
-        backgroundMode: continuable
+    # HARDENING (PR #1 review F1 fix, 2026-09-05 — P-19 sync with the
+    # current-DSH path): the generic `tool-subagent` / `tool-subagent-fork`
+    # rows are DROPPED. Their children are unrestricted full agents (no
+    # toolFilter, default depth budget 3), so a conductor that picked them
+    # instead of `explore` bypassed every guardrail. With them gone, `explore`
+    # below is the conductor's ONLY delegation path — same verdict as
+    # patches/omo-dsh/omo-agents-current/ (2026-09-04).
 
     # T11 (FR-4 persona + FR-5 route binding; form A static plugin config):
     # ONE more dsh-tool-subagent instance, bound to omo-explore. The conductor
-    # sees a third delegation tool named `explore` (distinct from the generic
-    # `subagent` / `subagent_fork` rows above — toolName collision avoided).
+    # sees a single delegation tool named `explore` (with the generic rows
+    # gone, no toolName collision is possible).
     #
     # SINGLE-SOURCE discipline — no prompt text or route literals are pasted
     # into this file. Two values are SENTINELS (the EXPLORE_PERSONA_SENTINEL /
@@ -242,17 +235,23 @@
     # Declared with the intended final values; verification status noted:
     #   toolFilter   T12 read-only filter, VERIFIED (P-4; evidence
     #                .omo/evidence/task-12-mvp-implementation.log): deny the
-    #                two mutation tools (write, edit — dsh-tool-fs is never
+    #                mutation tools (write, edit — dsh-tool-fs is never
     #                platform-gated, so both names always exist for the
-    #                child's restrict()). OMO parity: OMO's own explore denies
-    #                write/edit/apply_patch/task/call_omo_agent — apply_patch
-    #                does not exist in dsh and task/call_omo_agent map to the
-    #                maxDepth cap below. `bash` is deliberately NOT denied
-    #                (T12 verdict a): it is platform-gated (absent on win32 —
-    #                a deny would throw "unknown global tool" at the child's
-    #                restrict() there) and OMO's explore keeps shell access;
-    #                write-capable commands are governed by the persona's
-    #                Read-Only Declarations plus T16 hard-blocks injection.
+    #                child's restrict()) PLUS `explore` itself (PR #1 review
+    #                F1 fix, 2026-09-05): the explore child physically lacks
+    #                its own delegation tool, so nested delegation is
+    #                impossible by construction (AC-6b parity with the
+    #                current-DSH path) — stronger than the depth cap alone,
+    #                which stays as defense-in-depth. OMO parity: OMO's own
+    #                explore denies write/edit/apply_patch/task/call_omo_agent
+    #                — apply_patch does not exist in dsh and task/call_omo_agent
+    #                map to the maxDepth cap below. `bash` is deliberately NOT
+    #                denied (T12 verdict a): it is platform-gated (absent on
+    #                win32 — a deny would throw "unknown global tool" at the
+    #                child's restrict() there) and OMO's explore keeps shell
+    #                access; write-capable commands are governed by the
+    #                persona's Read-Only Declarations plus T16 hard-blocks
+    #                injection.
     #   maxDepth     T13 depth cap, VERIFIED (P-5; evidence
     #                .omo/evidence/task-13-mvp-implementation.log). Field shape:
     #                a FLAT `maxDepth` (tool-subagent/src/index.ts:98,
@@ -264,9 +263,13 @@
     #                foreground and continuable starts with the errored tool
     #                result "Error: subagent depth 2 exceeds maxDepth 1"
     #                (resolveChildDepth → SubagentDepthError, child-agent.ts:48
-    #                -56, before any child exists), the tool stays model-
-    #                visible at the cap, a depth-0 parent passes (control),
-    #                absent → default 3, and 'provider-managed' sends no cap.
+    #                -56, before any child exists), a depth-0 parent passes
+    #                (control), absent → default 3, and 'provider-managed'
+    #                sends no cap. SINCE the F1 fix (2026-09-05) the cap is
+    #                defense-in-depth: `explore` is already absent from the
+    #                child's tool list, so the depth gate no longer fires in
+    #                the e2e nested-delegation scenario (which now asserts
+    #                the unknown-tool rejection instead).
     # NOT SETTABLE in form A: a custom tool `description`. The schema has no
     # such field; the model-facing description is generated from the spawn
     # provider's inheritsParentContext=false wording
@@ -283,7 +286,7 @@
         persona: __OMO_EXPLORE_PERSONA__
         agentOptions: __OMO_EXPLORE_AGENT_OPTIONS__
         toolFilter:
-          deny: [write, edit]
+          deny: [write, edit, explore]
         maxDepth: 1
 
 # ── remaining model-facing rows ─────────────────────────────────────────────

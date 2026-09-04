@@ -36,7 +36,9 @@ diffs both files on every CI run — hand edits get caught immediately.
 
 Row statuses: ✅ tested · 🔬 untested · ❌ broken · 🪦 dropped.
 **A release may only be made on a ✅ row.** The latest ✅ row of each dsh line
-is the LKG (last known good) rollback anchor.
+is the LKG (last known good) rollback anchor. The `broken` / `dropped` states
+are currently unused — this PR ships no such rows; they exist in the schema
+for the rollback/emergency flow (§8).
 
 ## 4. Test layers & TDD
 

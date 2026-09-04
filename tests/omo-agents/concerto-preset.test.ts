@@ -140,9 +140,11 @@ describe('omo-agents explore delegation binding (T11, form A static config)', ()
     const template = readFileSync(join(EXPECTED_TEMPLATE_DIR, 'agent.cordis.yml'), 'utf8')
     expect(template.split('- id: tool-subagent-explore').length - 1).toBe(1)
     expect(template.split('toolName: explore').length - 1).toBe(1)
-    // The generic spawn/fork instances keep their own toolNames — no collision.
-    expect(template).toContain('toolName: subagent\n')
-    expect(template).toContain('toolName: subagent_fork')
+    // HARDENING (PR #1 review F1 fix, 2026-09-05): the generic spawn/fork
+    // rows are DROPPED — `explore` is the ONLY delegation path (negative
+    // probe; presence here would bypass every guardrail, P-19).
+    expect(template).not.toContain('toolName: subagent\n')
+    expect(template).not.toContain('toolName: subagent_fork')
     expect(template.split(`persona: ${EXPLORE_PERSONA_SENTINEL}`).length - 1).toBe(1)
     expect(template.split(`agentOptions: ${EXPLORE_AGENT_OPTIONS_SENTINEL}`).length - 1).toBe(1)
     // The T8 sentinel path stays intact alongside them.
@@ -214,6 +216,7 @@ describe('omo-agents explore delegation binding (T11, form A static config)', ()
     expect(composition).toContain('          provider: "deepseek"')
     expect(composition).toContain('          model: "deepseek-v4-flash"')
     expect(composition).toContain('maxDepth: 1')
-    expect(composition).toContain('deny: [write, edit]')
+    // F1 fix (2026-09-05): deny also includes the delegation tool itself.
+    expect(composition).toContain('deny: [write, edit, explore]')
   })
 })

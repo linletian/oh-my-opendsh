@@ -22,6 +22,10 @@
 //   c07 installer TAG pin equals .omo/compat.yaml tag_alias
 //   c08 preset.yml identity (name + description non-empty)
 //   c09 persona shadow      (hard-blocks + anti-patterns in both personas)
+//   c10 legacy path hardened (PR #1 review F1: the rc-era template under
+//       patches/omo-dsh/omo-agents/ — still the build/e2e/cold-start load
+//       target — carries the same AC-6 design: no generic delegation rows,
+//       deny [write, edit, explore], maxDepth 1)
 //
 // Usage: node scripts/verify-concerto-static.mjs [--json]
 // Exit: 1 iff any check FAILs (a check that could not run is also a FAIL,
@@ -183,6 +187,34 @@ async function run() {
   results.push(check('c08', 'preset identity', Boolean(presetDoc && presetDoc.name && presetDoc.description
     && String(presetDoc.name).length > 0 && String(presetDoc.description).length > 0),
     presetDoc ? `name="${presetDoc.name}"` : 'preset.yml unavailable (see c01)'))
+
+  // c10 — LEGACY path hardening (PR #1 review F1 fix, 2026-09-05): the rc-era
+  // template under patches/omo-dsh/omo-agents/ (still the load target of
+  // build / e2e / cold-start / manual-testing) must carry the same AC-6
+  // design as the current-DSH path — no generic delegation rows, and the
+  // explore child's deny list includes its own delegation tool name.
+  try {
+    const legacyRows = await loadYamlDialect(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'concerto', 'agent.cordis.yml'))
+    const legacyFlat = flatten(legacyRows)
+    const legacyToolNames = legacyFlat.map((r) => r && r.config && r.config.toolName).filter(Boolean)
+    const legacyExplore = legacyFlat.filter((r) => r && r.config && r.config.toolName === 'explore')
+    const legacyProblems = []
+    const legacyBanned = legacyToolNames.filter((t) => t === 'subagent' || t === 'subagent_fork')
+    if (legacyBanned.length > 0) legacyProblems.push(`generic delegation tools present: ${legacyBanned.join(', ')}`)
+    if (legacyExplore.length !== 1) {
+      legacyProblems.push(`expected exactly 1 explore row, found ${legacyExplore.length}`)
+    } else {
+      const deny = Array.isArray(legacyExplore[0].config.toolFilter && legacyExplore[0].config.toolFilter.deny) ? legacyExplore[0].config.toolFilter.deny : []
+      for (const t of ['write', 'edit', 'explore']) {
+        if (!deny.includes(t)) legacyProblems.push(`legacy deny missing "${t}"`)
+      }
+      if (legacyExplore[0].config.maxDepth !== 1) legacyProblems.push(`legacy maxDepth=${legacyExplore[0].config.maxDepth} (want 1)`)
+    }
+    results.push(check('c10', 'legacy path hardened (F1)', legacyProblems.length === 0,
+      legacyProblems.join('; ') || 'no generic rows; deny [write, edit, explore]; maxDepth 1'))
+  } catch (e) {
+    results.push(check('c10', 'legacy path hardened (F1)', false, String(e.message ?? e)))
+  }
 
   // Report.
   const json = process.argv.includes('--json')

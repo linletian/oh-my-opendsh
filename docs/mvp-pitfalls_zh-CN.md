@@ -87,7 +87,7 @@ MVP 全部验证运行在 **DSH 0.1.0-rc.6**（已安装运行时，
 §1 与 [task-13 日志](../.omo/evidence/task-13-mvp-implementation.log) §1 记录了执行路径上 rc.6 ≡ rc.7）。
 PRD 文本仍写 **rc.5**（成文于安装升级之前）。此漂移由决策 **D7**（pin minor `0.1.x`：任何
 `0.1.x` 版本均满足 pin）批准，并按计划记录于此。CI 精确钉 **rc.6**。若 rc.7+ 发布，采用前先
-重跑闸门链（`pnpm build && pnpm typecheck && pnpm vitest run && pnpm test:e2e &&
+重跑闸门链（`pnpm typecheck:libs && pnpm typecheck && pnpm vitest run && pnpm test:e2e &&
 scripts/cold-start.sh && scripts/concerto-mode-probe.sh`）。
 
 ## 4. 后续指引（PRD §12）
@@ -157,3 +157,21 @@ MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2
   markdown 源微调（改标题/翻译）会静默失效。合规上成立（插件不内嵌 OMO 文本，attribution
   留在 `system-sections/*.md` 源文件），工程上属脆弱依赖；若未来升级 sections 文本，建议改为
   段落名/结构化元数据探测。
+
+## PR #1 评审处置（2026-09-05）
+
+> 评审基线：`feature/dsh-omo-mvp` vs `main`（95 文件 / 16,058 行 / 52 commits）。每条先对照代码库逐项核对再动手：1 条阻断（F1——属实，已修）、8 条建议属实已修（F2–F6/F10/F11）、1 条部分属实（F9——决策其实已登记为 D12，补引用）、2 条驳回（F7——已有缓解；F8——事实性错误）。
+
+| 条目 | 评审主张 | 核对结论 | 处置 |
+|---|---|---|---|
+| **F1（阻断）** | 两条 preset 路径安全语义漂移：旧路径（`omo-agents/`，仍被 build/e2e/cold-start/manual 引用）保留通用 subagent 行、deny 仅 `[write, edit]` | **属实**——旧模板 208-221 行确有通用行；drive.mjs `PLUGIN_DIR` 指向旧路径；静态检查器只查新路径 | 按方案 (a) 收敛加固：旧模板 DROP 通用行、deny → `[write, edit, explore]`（物理禁委派）；e2e AC-6b 场景改断言"工具缺席 + 未知工具拒绝"（自测缺陷用例同步反转）；concerto-preset 单测改负向断言；静态检查器新增 c10 覆盖旧路径 |
+| F2 | `install` 端点两层 curl 无完整性校验、可与仓库脱钩 | **属实** | 包装器 URL 纳入 bump（release-bump 随别名更新）+ 一致性检查 d07；签名/哈希校验登记为接受的残余风险 |
+| F3 | installer Python 改写 YAML 不处理引用/转义 | **属实** | `EXPLORE_PROVIDER`/`EXPLORE_MODEL` 加 `^[a-zA-Z0-9._-]+$` 校验（失败即拒）+ Python 侧 `json.dumps` 双保险 |
+| F4 | 追加 settings 块缺前导换行，可毁掉不以 `\n` 结尾的文件 | **属实** | 追加前做末字符换行守卫 |
+| F5 | release.sh 用 sed 切 CHANGELOG/矩阵段落（格式敏感） | **属实** | notes 改由 release-bump.mjs 在渲染后一次性生成（`.omo/release-notes-<v>.md`），sed 降级为兜底 |
+| F6 | L2 证据只查一个文件，全矩阵漏检可通过 | **属实** | 新 `scripts/check-l2-evidence.mjs`：矩阵每个 tested 行的 evidence 必须存在 + 新鲜 + 带 `**PASS — N passed, 0 failed` 标记 |
+| F7 | `READ_ONLY_FILTER` 在上下文外定义，deny 项可能落空 | **部分属实**——restrict 对未知名是抛错（响亮失败而非静默丢弃），且真机证据（verify AC-6b + demo 负探针 + e2e）显示子工具列表物理缺席 | 接受为已缓解并登记本表；如需可加 harness 内 child-tools 断言 |
+| F8 | "30s check" 文案不准（称 call_omo_explore 不在指挥工具列表） | **驳回**——call_omo_explore 恰是指挥唯一的委派工具（FR-4 设计使然）；原文案含义正确 | 措辞澄清（指挥只见它；explore 子 agent 见不到） |
+| F9 | MPL-2.0 白名单决策藏在代码注释 | **部分属实**——决策其实已登记为 D12（docs/decisions） | 代码注释补 D12 引用 |
+| F10 | schema 四态只用两态 | **属实** | release-process §3 补注：broken/dropped 当前为空、为 §8 应急预留 |
+| F11 | `build:*` 名为 build 实为 noEmit typecheck | **属实** | 改名 `typecheck:host` / `typecheck:client` / `typecheck:libs`；指令链同步更新 |

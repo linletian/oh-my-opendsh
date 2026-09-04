@@ -102,7 +102,7 @@ log](../.omo/evidence/task-13-mvp-implementation.log) §1 record rc.6 ≡ rc.7 o
 paths). The PRD text still says **rc.5** (written before the install bumped). This drift is
 sanctioned by decision **D7** (pin-minor `0.1.x`: any `0.1.x` release satisfies the pin) and is
 recorded here per the plan. CI pins exactly **rc.6**. If rc.7+ ships, re-run the gate chain
-(`pnpm build && pnpm typecheck && pnpm vitest run && pnpm test:e2e && scripts/cold-start.sh &&
+(`pnpm typecheck:libs && pnpm typecheck && pnpm vitest run && pnpm test:e2e && scripts/cold-start.sh &&
 scripts/concerto-mode-probe.sh`) before adopting it.
 
 ## 4. Follow-up guidance (PRD §12)
@@ -178,3 +178,25 @@ layer; doctor-lite → full doctor; this file → the cumulative pitfall knowled
   would silently disable the checks. License-wise this is fine (the plugin embeds no OMO text;
   attribution stays in the `system-sections/*.md` sources); engineering-wise it is a fragile
   coupling — if the sections ever change, prefer structured/section-name-based detection.
+
+## PR #1 review disposition (2026-09-05)
+
+> Review baseline: `feature/dsh-omo-mvp` vs `main` (95 files / 16,058 lines / 52 commits). Every
+> point was fact-checked against the tree before acting: 1 blocking (F1 — confirmed, fixed),
+> 8 accurate suggestions fixed (F2–F6, F10, F11), 1 partially accurate (F9 — the decision was
+> already registered as D12; added the pointer), 2 rejected (F7 — already mitigated; F8 — the
+> claim is factually wrong).
+
+| Item | Review claim | Verdict | Disposition |
+|---|---|---|---|
+| **F1 (blocking)** | Two preset paths with divergent security semantics: the legacy path (`omo-agents/`, still the load target of build/e2e/cold-start/manual) kept the generic `subagent` rows and denied only `[write, edit]` | **Confirmed** — legacy template rows 208–221 had the generic rows; drive.mjs `PLUGIN_DIR` points at the legacy path; the static checker covered only the new path | Hardened per option (a): legacy template DROPs the generic rows, deny → `[write, edit, explore]` (physical no-delegation); the e2e AC-6b scenario now asserts tool ABSENCE + unknown-tool rejection (self-test defect cases inverted accordingly); concerto-preset tests flipped to negative probes; static checker gains c10 covering the legacy path |
+| F2 | `install` endpoint two-hop chain has no integrity check / can drift from the repo | **Confirmed** (two curl hops, nothing ties them) | Wrapper URL now joins the bump (release-bump updates it with the alias) + consistency check d07; cryptographic signing recorded as accepted residual risk |
+| F3 | Installer Python YAML rewrite does not handle quoting/escaping | **Confirmed** | `EXPLORE_PROVIDER`/`EXPLORE_MODEL` validated against `^[a-zA-Z0-9._-]+$` (fail loud) + `json.dumps` in Python as defense-in-depth |
+| F4 | Appending the settings block without a leading newline can corrupt a file that does not end with `\n` | **Confirmed** | Newline guard before the append |
+| F5 | release.sh seds CHANGELOG/matrix sections (format-sensitive) | **Confirmed** | Notes generated in release-bump.mjs right after the render (`.omo/release-notes-<v>.md`); sed demoted to fallback |
+| F6 | L2 freshness checks only ONE evidence file — a full-matrix release could pass with a missing combo | **Confirmed** | New `scripts/check-l2-evidence.mjs`: every tested row's `evidence` must exist, be fresh, and carry the `**PASS — N passed, 0 failed` marker |
+| F7 | `READ_ONLY_FILTER` defined outside the context — deny entries could drop | **Partially true** — restrict() throws on unknown names (fail loud, not silent), and live evidence (verify AC-6b + demo negative probes + e2e) shows the child physically lacks the tools | Accepted as mitigated; registered here; a harness-level child-tools assertion can be added if desired |
+| F8 | The "30s check" wording is wrong ("call_omo_explore does not appear in the conductor's own tool list") | **Rejected** — call_omo_explore IS the conductor's only delegation tool by design (FR-4); the original wording meant the right thing | Wording clarified (conductor sees only it; explore children see none) |
+| F9 | The MPL-2.0 whitelist decision is buried in a code comment | **Partially true** — the decision was already registered as D12 (docs/decisions.md) | Comment now points at D12 |
+| F10 | The schema's four states are only half used | **Confirmed** | release-process §3 notes `broken`/`dropped` are currently empty, reserved for §8 emergencies |
+| F11 | `build:*` scripts are noEmit typechecks under a build name | **Confirmed** | Renamed to `typecheck:host` / `typecheck:client` / `typecheck:libs`; instruction chains updated |

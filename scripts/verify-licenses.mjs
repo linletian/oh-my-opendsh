@@ -30,9 +30,11 @@
  *   (plus its platform binding lightningcss-linux-x64-gnu@1.33.0). Without
  *   this entry the gate FAILS on the current tree, contradicting T3's
  *   acceptance criterion "当前仓库 PASS". MPL-2.0 is weak file-level
- *   copyleft consumed here purely as a build-time dependency. If the plan
- *   owner rejects MPL-2.0: delete the entry below and pin/replace vite, or
- *   record an explicit exclusion, BEFORE wiring this gate into CI (T22).
+ *   copyleft consumed here purely as a build-time dependency. DECIDED:
+ *   decision D12 (docs/decisions.md / docs/decisions_zh-CN.md, 2026-08-19)
+ *   accepts MPL-2.0 into the whitelist — the authoritative record lives
+ *   there; this comment is only the implementation note. If the policy is
+ *   ever reversed: delete the entry below and pin/replace vite.
  *
  * Usage:
  *   scripts/verify-licenses.sh [--json] [--root <dir>]

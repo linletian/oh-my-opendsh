@@ -23,6 +23,16 @@ D="${DSH_HOME:-${HOME}/.dsh}"
 DEST="${D}/.agent-presets/concerto"
 SET="${D}/settings.yaml"
 
+# F3 (PR #1 review): route overrides are written into agentOptions verbatim —
+# reject anything that is not a YAML-safe identifier loudly, instead of
+# emitting a broken composition.
+for v in "${EXPLORE_PROVIDER:-}" "${EXPLORE_MODEL:-}"; do
+  if [ -n "$v" ] && ! printf '%s' "$v" | grep -qE '^[a-zA-Z0-9._-]+$'; then
+    echo "error: EXPLORE_PROVIDER / EXPLORE_MODEL must match ^[a-zA-Z0-9._-]+\$ (got '$v')" >&2
+    exit 1
+  fi
+done
+
 need() { command -v "$1" >/dev/null 2>&1 || { echo "error: missing $1" >&2; exit 1; }; }
 need curl
 
@@ -34,7 +44,7 @@ curl -fsSL "${BASE}/patches/omo-dsh/omo-agents-current/preset/preset.yml" -o "${
 if [ -n "${EXPLORE_PROVIDER:-}${EXPLORE_MODEL:-}" ]; then
   need python3
   EXPLORE_PROVIDER="${EXPLORE_PROVIDER:-}" EXPLORE_MODEL="${EXPLORE_MODEL:-}" python3 - "${DEST}/agent.cordis.yml" <<'PY'
-import os, sys
+import os, sys, json
 path = sys.argv[1]
 lines = open(path).read().split('\n')
 p = os.environ.get('EXPLORE_PROVIDER') or ''
@@ -46,9 +56,12 @@ for i, l in enumerate(lines):
         continue
     if in_agent_options:
         if l.strip().startswith('provider:') and p:
-            lines[i] = l.split(':')[0] + ': ' + p
+            # F3: json.dumps emits a YAML-valid double-quoted scalar even for
+            # hostile characters (defense-in-depth on top of the shell-side
+            # identifier validation above).
+            lines[i] = l.split(':')[0] + ': ' + json.dumps(p)
         if l.strip().startswith('model:') and m:
-            lines[i] = l.split(':')[0] + ': ' + m
+            lines[i] = l.split(':')[0] + ': ' + json.dumps(m)
         if l.strip() and not l.startswith(' '):
             in_agent_options = False
 open(path, 'w').write('\n'.join(lines))
@@ -63,6 +76,12 @@ else
     echo "==> llm-pi-ai section already present in ${SET} — left untouched"
   else
     echo "==> adding llm-pi-ai section to ${SET}"
+    # F4 (PR #1 review): the file may not end with a newline — a missing
+    # leading one would glue the block onto the previous entry.
+    last="$(tail -c 1 "${SET}" 2>/dev/null || true)"
+    if [ -n "$last" ] && [ "$last" != "$(printf '\n')" ]; then
+      printf '\n' >> "${SET}"
+    fi
     printf 'llm-pi-ai:\n  providers:\n    deepseek:\n      apiKeyEnv: DEEPSEEK_API_KEY\n' >> "${SET}"
   fi
 fi
@@ -76,5 +95,5 @@ fi
 
 echo
 echo "done. Restart the harness, open a NEW session, and pick 协奏模式 (Concerto Mode)."
-echo "30s check: ask 'what is your role?' -> conductor; 'which delegation tools?' -> only call_omo_explore."
+echo "30s check: ask 'which delegation tools do you see?' -> the CONDUCTOR sees only call_omo_explore; explore children see none."
 echo "uninstall: rm -rf ${DEST}   (optionally remove the llm-pi-ai section from ${SET})"
