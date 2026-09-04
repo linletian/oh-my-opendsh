@@ -16,9 +16,9 @@
 
 ## ID conventions
 
-- **D#** (D1–D12): confirmed decisions
+- **D#** (D1–D13): confirmed decisions
 - **R#** (R1–R6): risk dispositions (accept as-is / defer)
-- **O#** (O1–O8): open dimensions (O2 / O4 / O8 have since become decisions)
+- **O#** (O1–O8): open dimensions (O2 / O4 / O6 / O7 / O8 have since become decisions)
 - Cite as: `decisions.md D7`
 
 ## Confirmed decisions
@@ -54,6 +54,12 @@
 | ID | Decision | Basis |
 |---|---|---|
 | D12 | License whitelist extension: accept MPL-2.0 (weak copyleft) into the verify-licenses whitelist | Feasibility report §4.7; empirical finding from MVP implementation T3 (vite@8.2.1 → lightningcss@1.33.0 is an MPL-2.0 hard dependency) |
+
+### 2026-09-05 (fifth batch, 1 item)
+
+| ID | Decision | Basis |
+|---|---|---|
+| D13 | Version management & release process: adopt the [Release Process](./release-process.md) / [发布流程](./release-process_zh-CN.md) — three-party compatibility matrix (`.omo/compat.yaml` single source of truth, machine-rendered to the compat-matrix docs), tag convention (immutable `vX.Y.Z` + moving alias `vX.Y`), local-first test layering (L0 static / L1 zero-LLM e2e / L2 real-model local-only), the `scripts/release.sh` six-step release with the docs-consistency checker, the D7-named `scripts/bump-dsh.sh` pin flip, and the weekly `compat-probe` sentinel. Principles: automation first, local-first cost | This discussion (closes O6 / O7) |
 
 ### Decision details (authoritative wording)
 
@@ -92,13 +98,13 @@ The following risks were confirmed by the user as "accept as-is / defer"; the ri
 
 | ID | Dimension | Status | Options analysis (feasibility report) |
 |---|---|---|---|
-| O1 | OMO 19 core packages pin strategy | Open | §10.1 |
+| O1 | OMO 19 core packages pin strategy | Open (upstream reference-version tracking now lands via D13 — npm registry) | §10.1 |
 | O2 | DSH self pin strategy | ✅ Decided → D7 | §10.2 |
 | O3 | npm package naming | Open | §10.3 |
 | O4 | Windows in scope? | ✅ Decided → D9 | §10.4 |
 | O5 | Telemetry default state | Open | §10.5 |
-| O6 | OMO upstream release notification | Open | §10.6 |
-| O7 | Upgrade cadence | Open | §10.7 |
+| O6 | OMO upstream release notification | ✅ Decided → D13 | §10.6 |
+| O7 | Upgrade cadence | ✅ Decided → D13 | §10.7 |
 | O8 | Capability scope: MVP vs. follow-up split | ✅ Decided → D11 | §10.8 |
 
 ## Decision history
@@ -108,6 +114,7 @@ The following risks were confirmed by the user as "accept as-is / defer"; the ri
 - **2026-08-19**: D11 confirmed ([MVP PRD](./mvp-prd.md) adopted, including Q-1–Q-4 resolutions); open dimension O8 closed.
 - **2026-08-19**: D12 confirmed (license whitelist accepts MPL-2.0; triggered by the empirical finding in MVP implementation T3).
 - **2026-08-29**: DSH 0.1.2-alpha.1 review registered ([English](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)); no new decision — the rc.6 → 0.1.2-alpha.1 pin bump proceeds under D7's deliberate-bump mechanism and is tracked in PRD §12; the SubagentProvider extension-path facts are registered as research sediment in the feasibility report's 2026-08-29 follow-up note.
+- **2026-09-05**: D13 confirmed (version management & release process — three-party matrix, tag convention, local-first test layering, release automation, weekly sentinel); open dimensions O6/O7 closed.
 
 ---
 

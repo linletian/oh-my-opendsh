@@ -1,7 +1,9 @@
-# ci.yml — the CI green set (plan T22, PRD §1.1 #12 + §8, AC-7/AC-8).
+# ci.yml — the CI green set (plan T22, PRD §1.1 #12 + §8, AC-7/AC-8;
+# extended 2026-09 by the release process, decision D13).
 #
 # One job, one linear gate chain — the exact same chain scripts/ci-local.sh
-# runs locally:
+# runs locally (zero-cost gates only; the real-model L2 acceptance
+# `concerto_verify` stays a LOCAL release gate by design — no secrets here):
 #   1. pnpm typecheck
 #   2. pnpm vitest run            (unit)
 #   3. pnpm test:e2e              (mock-LLM e2e — zero LLM cost; the driver
@@ -10,6 +12,10 @@
 #                                  server, no real keys)
 #   4. node scripts/doctor-lite.mjs --json
 #   5. scripts/verify-licenses.sh
+#   6. node scripts/verify-concerto-static.mjs (AC-6/P-19 hardening of the
+#                                  shipped preset + plugin artifacts)
+#   7. node scripts/check-docs-consistency.mjs (version tokens / matrix
+#                                  render / installer pin / CHANGELOG top)
 #
 # dsh install (D7 — pin-minor 0.1.x): the npm package is @deepseek-ai/dsh and
 # the 0.1 line is currently published as prereleases only. A plain `~0.1.0`
@@ -79,3 +85,9 @@ jobs:
 
       - name: gate 5 — license compliance
         run: scripts/verify-licenses.sh
+
+      - name: gate 6 — concerto static
+        run: node scripts/verify-concerto-static.mjs
+
+      - name: gate 7 — docs consistency
+        run: node scripts/check-docs-consistency.mjs

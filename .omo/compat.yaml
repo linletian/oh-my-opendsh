@@ -1,0 +1,40 @@
+# oh-my-opendsh — three-party compatibility matrix (single source of truth).
+#
+# Rendered into docs/compat-matrix.md / docs/compat-matrix_zh-CN.md by
+# scripts/render-compat-matrix.mjs (run it after editing; scripts/release.sh
+# and the docs-consistency gate re-run it automatically).
+#
+# Parties:
+#   our = this repo (semver X.Y.Z; tag convention per the release process:
+#         immutable vX.Y.Z plus a moving minor alias vX.Y that
+#         scripts/install-concerto.sh pins — installs always get the newest
+#         stable patch of the line)
+#   dsh = @deepseek-ai/dsh (RUNTIME compatibility — the harness our preset and
+#         plugin run on; probed via npm registry and git tags `dsh-v*`)
+#   omo = oh-my-openagent (architecture REFERENCE — semantic source of the
+#         conductor/explore design; tracked for awareness, not runtime compat)
+#
+# Row status: tested | untested | broken | dropped — see docs/release-process.
+# Release gate: the row a release is made on must be `tested`.
+
+schema: 1
+
+our:
+  latest: "0.1.0"
+  tag_alias: "v0.1"
+
+tested:
+  - our: "0.1.0"
+    dsh: "0.1.0-rc.6"
+    omo: "4.19.4 (architecture reference)"
+    date: "2026-09-04"
+    evidence: ".omo/evidence/concerto-current-dsh-verify.md"
+    note_en: "current-DSH runtime re-verification: concerto_verify 22/22 PASS"
+    note_zh: "当前 DSH 运行时重验证：concerto_verify 22/22 PASS"
+
+untested:
+  - dsh: "0.1.2-rc.1"
+    omo: "4.19.4"
+    since: "2026-09-05"
+    note_en: "static review done (docs/dsh-0.1.2-review); runtime probe pending via scripts/compat-probe.sh; gates the D7 CI pin flip (PRD §12)"
+    note_zh: "静态复核已完成（docs/dsh-0.1.2-review_zh-CN）；运行时探测待 scripts/compat-probe.sh；D7 的 CI pin 翻转以此行为门（PRD §12）"

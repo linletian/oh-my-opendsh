@@ -67,12 +67,13 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
   [`docs/concerto-current-dsh_zh-CN.md`](./docs/concerto-current-dsh_zh-CN.md)，源码归档
   [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)；
   快速安装见 [`docs/install-concerto_zh-CN.md`](./docs/install-concerto_zh-CN.md)
-- ⏳ 5 个开放维度待决策（OMO pin 策略、npm 命名、telemetry、release 通知、升级节奏；详见决策记录"开放维度"）
+- ✅ 版本管理与发布流程已落地（决策 D13：三方兼容矩阵 + `scripts/release.sh` 六步发行 + 每周上游探测哨兵；「release 通知」「升级节奏」两个开放维度就此关闭）——见 [`docs/release-process_zh-CN.md`](./docs/release-process_zh-CN.md)
+- ⏳ 3 个开放维度待决策（OMO core 包 pin 策略、npm 命名、telemetry；详见决策记录"开放维度"）
 - ⏳ 工作量粗估：~16 周（一人主力）
 
 ## 项目决策
 
-项目决策记录见[决策记录](./docs/decisions_zh-CN.md)——已确认决策（D1–D11）、风险处置（R1–R6）、开放维度状态跟踪（O1–O8）。可行性报告是决策的调研依据。
+项目决策记录见[决策记录](./docs/decisions_zh-CN.md)——已确认决策（D1–D13）、风险处置（R1–R6）、开放维度状态跟踪（O1–O8）。可行性报告是决策的调研依据。
 
 ## MVP PRD
 
@@ -85,6 +86,13 @@ MVP 产品需求文档（已采纳，决策 D11）见 [MVP PRD：协奏骨架](.
 ## 手工测试
 
 手工测试验证指南 / Manual testing guide: [中文](./docs/manual-testing_zh-CN.md) / [English](./docs/manual-testing.md).
+
+## 版本管理与发布
+
+版本管理与发布流程（决策 D13，原则：优先自动化、本地优先省成本）见 [中文](./docs/release-process_zh-CN.md) / [English](./docs/release-process.md)；三方兼容矩阵见 [中文](./docs/compat-matrix_zh-CN.md) / [English](./docs/compat-matrix.md)（单一事实来源 `.omo/compat.yaml`，机器渲染）。
+
+- 发布一行命令：`scripts/release.sh patch|minor|major`（8 门本地门禁 → bump → tag → push → 沙箱安装验证 → GitHub Release）
+- 上游新版本：每周 `compat-probe` 工作流自动探测并开 issue；本地 `scripts/compat-probe.sh <版本>` 验证，`scripts/bump-dsh.sh <版本>` 翻 D7 pin
 
 ## 关键事实
 

@@ -3,5 +3,13 @@ dist/
 .omo/evidence/
 .omo/
 
+# Exception: the compat matrix single source of truth IS versioned
+# (docs/compat-matrix*.md are machine-rendered from it — release process D13).
+# Git cannot re-include a file inside an ignored directory, so the directory
+# itself is un-ignored first and its contents re-ignored except the matrix.
+!.omo/
+.omo/*
+!.omo/compat.yaml
+
 # Manual-test probe artifacts (concerto AC-6 negative probes; see docs/concerto-current-dsh_zh-CN.md §10)
 probe*.txt

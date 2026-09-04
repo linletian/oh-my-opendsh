@@ -67,12 +67,13 @@ Full guide (options, adaptation, uninstall — incl. a plain-language "what the 
   P-13~P-19) — see the report [`docs/concerto-current-dsh_zh-CN.md`](./docs/concerto-current-dsh_zh-CN.md)
   (Chinese), source archive [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/),
   and the quick install guide [`docs/install-concerto.md`](./docs/install-concerto.md)
-- ⏳ 5 open dimensions pending decision (OMO pin strategy, npm package naming, telemetry, release notifications, upgrade cadence; see "Open dimensions" in the decision record)
+- ✅ Version management & release process landed (decision D13: three-party compat matrix + `scripts/release.sh` six-step release + weekly upstream sentinel; the "release notifications" and "upgrade cadence" open dimensions are closed) — see [`docs/release-process.md`](./docs/release-process.md)
+- ⏳ 3 open dimensions pending decision (OMO core-package pin strategy, npm package naming, telemetry; see "Open dimensions" in the decision record)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
 
 ## Project Decisions
 
-The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D11), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
+The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D13), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
 
 ## MVP PRD
 
@@ -85,6 +86,13 @@ Feasibility Report is at [feasibility-report.md](./docs/feasibility-report.md).
 ## Manual Testing
 
 Manual testing guide / 手工测试验证指南: [English](./docs/manual-testing.md) / [中文](./docs/manual-testing_zh-CN.md).
+
+## Versioning & Releases
+
+The version management & release process (decision D13; principles: automation first, local-first cost) lives in [English](./docs/release-process.md) / [中文](./docs/release-process_zh-CN.md); the three-party compatibility matrix is at [English](./docs/compat-matrix.md) / [中文](./docs/compat-matrix_zh-CN.md) (single source of truth `.omo/compat.yaml`, machine-rendered).
+
+- Release in one line: `scripts/release.sh patch|minor|major` (8 local gates → bump → tag → push → sandboxed install verify → GitHub Release)
+- New upstream versions: the weekly `compat-probe` workflow detects and opens an issue; verify locally with `scripts/compat-probe.sh <version>`, flip the D7 pin with `scripts/bump-dsh.sh <version>`
 
 ## Key Facts
 

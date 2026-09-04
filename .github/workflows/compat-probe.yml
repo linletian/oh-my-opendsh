@@ -1,0 +1,44 @@
+# compat-probe.yml — the weekly zero-cost upstream sentinel (release process,
+# decision D13). No secrets, no LLM: it asks the npm registry for the latest
+# @deepseek-ai/dsh and oh-my-openagent versions, compares them with every
+# dsh/omo value already recorded in .omo/compat.yaml (tested OR untested), and
+# opens ONE `compat-probe` issue per NEW version with the local probe
+# instructions (dedup by open issue title). The real verification runs
+# locally: scripts/compat-probe.sh + concerto_verify — cloud stays free.
+
+name: compat-probe
+
+on:
+  schedule:
+    - cron: '17 2 * * 1' # weekly, Monday 02:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: compat-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The sentinel loads .omo/compat.yaml with the installed dsh's js-yaml
+      # (the shared read-only dialect loader from scripts/doctor-lite.mjs).
+      - name: install dsh (parser provider)
+        run: npm install --global "@deepseek-ai/dsh@0.1.0-rc.6"
+
+      - name: detect new upstream versions → open issue
+        run: node scripts/check-compat-probes.mjs
