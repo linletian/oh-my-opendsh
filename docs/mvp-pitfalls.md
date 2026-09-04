@@ -139,3 +139,42 @@ layer; doctor-lite → full doctor; this file → the cumulative pitfall knowled
 - **P-11.4 npm publish gap** — tag-only release; CI flip blocked; verification ran against a source build of the tag (doctor-lite accepted it via D7 pin-minor).
 - **P-11.5 rc.8-dependency landmine** — a fresh `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` today resolves rc.8 DEPENDENCIES (`^` ranges; rc.8 published 2026-08-19) which break the T13 stack (`ctx.agents.get`); the validated tree = rc.6 umbrella + rc.7-scheme deps, restorable only via the explicit ~197-pin `--no-save` recipe recorded in `.omo/evidence/task-9-dsh-012-review-sync.log` (P3.5b-e/P5.11). Follow-up: lock/shrinkwrap the harness's dsh dependency tree.
 - **P-11.6 not adapted** — `scripts/smoke-real.mjs` still rides the rc.6 flat RPC (unrunnable without real keys); adapt together with the CI flip.
+
+## 6. P-13~P-19 (2026-09-04, current-DSH runtime port)
+
+> Hit while re-implementing the same PRD (FR-1~FR-8, V1–V4) on the **current DSH environment**
+> (dynamic Cordis plugin system) and verifying it. Full implementation, verification (final
+> `concerto_verify` 22/22 PASS) and the Q-3 route drift: `docs/concerto-current-dsh_zh-CN.md`.
+> Runtime form = dynamic plugin `conc-1` (source archived at
+> `patches/omo-dsh/omo-agents-current/concerto-plugin.host.js`) + persistent user preset
+> `~/.dsh/.agent-presets/concerto/` (mirrored at `patches/omo-dsh/omo-agents-current/preset/`).
+
+| # | Symptom | Root cause | Fallback / fix | Status |
+|---|---|---|---|---|
+| P-13 | Child first turn dies: `session event "subagent/descriptor" carries non-JSON-serializable data` | The decorator subagent provider dropped the service-resolved `request.descriptor`; `attachDescriptorAppend` then appended `undefined` as the session event | Forward `descriptor` verbatim; child session log confirms | Fixed+verified |
+| P-14 | All 5 system-sections fail to load (`FsError: not found`) | `sandboxPolicy.workspaceRoot` points at a DIFFERENT worktree than the session cwd | Resolve paths against the conductor's durable `session.header.cwd` | Fixed+verified |
+| P-15 | Conductor route resolved as the explore route (v4-flash) | This session's `Agent.options.model` diverges from the frozen request config (v4-pro); `options` is not the route truth source | Track the conductor route from the real `agent/request` frozen config + `captures` audit | Fixed+verified |
+| P-16 | First child assembly snapshot lost (verify SKIP) | `exploreChildren` registration (after `await start`) races the child's first assembly | Register deterministically at `agent/created` (publication time) by lineage+route | Fixed+verified |
+| P-17 | Plugin-side evidence writes fail / land in the wrong place | The sandbox backend's `sandboxPolicy.workspaceRoot` differs from the real workspace, so plugin fs writes are rejected by the sandbox checker | Session log (tool results) is the durable authority; the conductor session materializes files | Recorded (environment fact) |
+| P-18 | `settings.update` fails: `must be a plain object` | Dynamic-plugin Host code evaluates in a `node:vm` realm; vm object literals fail the host-realm `Object.getPrototypeOf===Object.prototype` check (the sandbox patches only `instanceof`) | Edit `settings.yaml` on disk + `dsh-settings-file` chokidar hot-reload (the supported path) | Worked around+verified (pi-ai activated) |
+| P-19 | Manual-test steps 6/7 "succeed": write and nested delegation unrestricted | Restrictions bind to the DELEGATION TOOL, not the session/persona — children spawned via the generic `subagent` tool are unrestricted full agents | Preset hardening: DROP the generic subagent/subagent_fork rows (only delegation path = call_omo_explore); toolFilter upgraded to `deny:[write,edit,call_omo_explore]` so the child physically cannot write or delegate | Fixed+verified (22/22) |
+
+### Current-DSH V1–V4 verdicts
+
+| # | Verdict | Basis |
+|---|---|---|
+| V1 | Verified (register-branch) | Dynamic plugin define/run/update with zero DSH changes; provider/tool/prompt-section extension surfaces are all public |
+| V2 | Verified (register-branch) | Source: `resolveChildAgentOptions` spreads `requested` LAST; runtime: explore rides pi-ai `deepseek`/v4-flash, conductor rides `deepseek-official`/v4-pro, four observation channels agree |
+| V3 | Verified | Persona capability (order-0 shadow) + `system-prompt/assemble` waterfall snapshot: `{persona:true, hardBlocks:true}` |
+| V4 | Verified | Child assembly snapshot: `write`/`edit`/`call_omo_explore` all absent + verbatim depth-2 rejection (`subagent depth 2 exceeds maxDepth 1`) |
+
+> Probe-scoping lesson (from P-19): **negative probes must land on the object under test** — "is
+> write available" targets the explore CHILD, not the conductor (the conductor is a full agent;
+> its write tool is by design). Put the probe inside the delegated task text and confirm the
+> delegation went through `call_omo_explore` (child descriptor mode=one-shot).
+
+- **P-20 (candidate, not hit)**: the plugin/verifier detects injected content via literal markers
+  such as `indexOf('## Hard Blocks')` — tweaking the markdown sources (heading rename/translation)
+  would silently disable the checks. License-wise this is fine (the plugin embeds no OMO text;
+  attribution stays in the `system-sections/*.md` sources); engineering-wise it is a fragile
+  coupling — if the sections ever change, prefer structured/section-name-based detection.

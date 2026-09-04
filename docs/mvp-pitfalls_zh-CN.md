@@ -121,3 +121,39 @@ MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2
 - **P-11.4 npm 发布缺口**——仅 tag 发布；CI 翻转受阻；验证针对该 tag 的源码构建执行（doctor-lite 经 D7 pin-minor 接受）。
 - **P-11.5 rc.8 依赖地雷**——今天全新执行 `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` 会解析到 rc.8 的 DEPENDENCIES（`^` 范围；rc.8 于 2026-08-19 发布），破坏 T13 栈（`ctx.agents.get`）；已验证的依赖树 = rc.6 伞包 + rc.7-scheme 依赖，只能通过 `.omo/evidence/task-9-dsh-012-review-sync.log`（P3.5b-e/P5.11）记录的约 197 个显式 pin 的 `--no-save` 配方恢复。后续：锁定/shrinkwrap harness 的 dsh 依赖树。
 - **P-11.6 未适配项**——`scripts/smoke-real.mjs` 仍走 rc.6 扁平 RPC（无真实凭据无法运行）；随 CI 翻转一并适配。
+
+## 6. P-13~P-19（2026-09-04，当前 DSH 运行时移植）
+
+> 把同一 PRD（FR-1~FR-8、V1–V4）在**当前 DSH 环境**（动态 Cordis 插件体系）重新实现并验证时
+> 撞击的坑。完整实现、验证（最终 `concerto_verify` 22/22 PASS）与 Q-3 路由漂移见
+> `docs/concerto-current-dsh_zh-CN.md`；运行时形态为动态插件 `conc-1`（源码归档
+> `patches/omo-dsh/omo-agents-current/concerto-plugin.host.js`）+ 持久化用户 preset
+> `~/.dsh/.agent-presets/concerto/`（镜像 `patches/omo-dsh/omo-agents-current/preset/`）。
+
+| # | 现象 | 根因 | fallback / 修复 | 状态 |
+|---|---|---|---|---|
+| P-13 | 子 agent 首轮死掉：`session event "subagent/descriptor" carries non-JSON-serializable data` | 装饰器 subagent provider 丢弃了 service 解析好的 `request.descriptor`，`attachDescriptorAppend` 把 `undefined` 追加为会话事件 | 原样转发 `descriptor`；子会话日志逐字佐证 | 已修复+验证 |
+| P-14 | 5 个 system-sections 全部加载失败（`FsError: not found`） | `sandboxPolicy.workspaceRoot` 指向另一个 worktree，不是本会话 cwd | 以指挥 agent 持久 `session.header.cwd` 为权威路径 | 已修复+验证 |
+| P-15 | 指挥路由被解析成 explore 的路由（v4-flash） | 本会话 `Agent.options.model` 与冻结请求配置（v4-pro）不一致，`options` 不可作路由真相源 | 指挥路由改由真实 `agent/request` 冻结配置跟踪 + `captures` 审计 | 已修复+验证 |
+| P-16 | 子 agent 首次组装快照丢失（verify SKIP） | `exploreChildren` 登记（await start 之后）与子 agent 首轮组装竞态 | `agent/created`（发布于首轮之前）按 lineage+路由确定性登记 | 已修复+验证 |
+| P-17 | 插件侧证据写盘失败/写错位置 | 沙箱后端 `sandboxPolicy.workspaceRoot` 与真实工作区不一致，插件 fs 写入被沙箱校验拒绝 | 证据以会话日志为持久权威，指挥会话（danger-full-access）物化 | 已记录（环境事实） |
+| P-18 | `settings.update` 报 `must be a plain object` | 动态插件 Host 在 `node:vm` realm 求值，vm 对象过不了 host realm 的 `Object.getPrototypeOf===Object.prototype` 检查（sandbox 只补丁了 `instanceof`） | 磁盘写 settings.yaml + `dsh-settings-file` chokidar 热加载（官方路径） | 已绕过+验证（pi-ai 激活成功） |
+| P-19 | 人工验证 6/7 步"成功"：写与嵌套委派未受限 | 限制绑定在**委派工具**而非会话/persona——经通用 `subagent` 工具派生的子 agent 是无限制完整 agent | preset 加固：DROP 通用 subagent/subagent_fork 行（唯一委派路径=call_omo_explore）；toolFilter 升级 `deny:[write,edit,call_omo_explore]` 物理移除子 agent 写与委派能力 | 已修复+验证（22/22） |
+
+### 当前 DSH 版 V1–V4 结论
+
+| # | 判定 | 依据 |
+|---|---|---|
+| V1 | 验证通过（register-branch） | 动态插件在运行中的 DSH 零修改 define/run/update；provider/tool/prompt 分节扩展面全公开 |
+| V2 | 验证通过（register-branch） | 源码级：`resolveChildAgentOptions` 中 `requested` 最后展开；运行时：explore 走 pi-ai `deepseek`/v4-flash、指挥走 `deepseek-official`/v4-pro，四通道观测一致 |
+| V3 | 验证通过 | persona 能力（order-0 影子）+ `system-prompt/assemble` 瀑布快照：`{persona:true, hardBlocks:true}` |
+| V4 | 验证通过 | 子 agent 组装快照 `write/edit/call_omo_explore` 全缺席 + depth-2 拒绝原文（`subagent depth 2 exceeds maxDepth 1`） |
+
+> 一条口径经验（P-19 衍生）：**负向探针必须落在被测对象上**——"write 是否可用"要测 explore
+> 子 agent 而非指挥（指挥是完整 agent，write 存在是设计使然）；探针指令要打进委派任务文本，
+> 并确认委派走的是 `call_omo_explore`（子会话 descriptor mode=one-shot 佐证）。
+
+- **P-20（候选，未触发）**：插件/验证器用 `indexOf('## Hard Blocks')` 等字面标记探测注入内容——
+  markdown 源微调（改标题/翻译）会静默失效。合规上成立（插件不内嵌 OMO 文本，attribution
+  留在 `system-sections/*.md` 源文件），工程上属脆弱依赖；若未来升级 sections 文本，建议改为
+  段落名/结构化元数据探测。

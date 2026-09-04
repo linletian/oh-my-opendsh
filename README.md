@@ -37,13 +37,18 @@ Every decision in this project is governed by these two principles, which have e
 
 ## Current Status
 
-🟢 **MVP closed; dsh 0.1.2 review registered**
+🟢 **MVP v0.1 (closed); dsh 0.1.2 review registered**
 
 - ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 14 sections: 2026-08-16 main body + 2026-08-19 follow-up research)
 - ✅ 11 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
 - ✅ MVP PRD adopted ([`docs/mvp-prd.md`](./docs/mvp-prd.md): Concerto Mode + 1 Agent + 1 Subagent minimal skeleton, decision D11)
 - ✅ MVP closed — FR-1~FR-8 implemented, V1~V4 verified (see [mvp-pitfalls](./docs/mvp-pitfalls.md))
 - ✅ dsh 0.1.2-alpha.1 review registered + bump verification executed via source build ([English](./docs/dsh-0.1.2-review.md) / [中文](./docs/dsh-0.1.2-review_zh-CN.md)); CI pin flip pending npm publish (PRD §12)
+- ✅ **Current-DSH runtime re-run** (2026-09-04): the Concerto MVP was re-implemented and verified
+  on the current DSH environment (`concerto_verify` 22/22 PASS; dual-provider routing
+  deepseek-official + pi-ai; persistent `concerto` user preset with P-19 hardening; pitfalls
+  P-13~P-19) — see the report [`docs/concerto-current-dsh_zh-CN.md`](./docs/concerto-current-dsh_zh-CN.md)
+  (Chinese), source archive [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)
 - ⏳ 5 open dimensions pending decision (OMO pin strategy, npm package naming, telemetry, release notifications, upgrade cadence; see "Open dimensions" in the decision record)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
 

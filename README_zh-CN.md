@@ -37,13 +37,18 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 
 ## 当前状态
 
-🟢 **MVP 已结项；dsh 0.1.2 复核已登记**
+🟢 **MVP v0.1（已结项）；dsh 0.1.2 复核已登记**
 
 - ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，14 节：2026-08-16 主体 + 2026-08-19 追加调研）
 - ✅ 11 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
 - ✅ MVP PRD 已采纳（[`docs/mvp-prd_zh-CN.md`](./docs/mvp-prd_zh-CN.md)：协奏模式 + 1 Agent + 1 Subagent 最小骨架，决策 D11）
 - ✅ MVP 已结项——FR-1~FR-8 已实现、V1~V4 已验证（见 [mvp-pitfalls](./docs/mvp-pitfalls_zh-CN.md)）
 - ✅ dsh 0.1.2-alpha.1 复核已登记 + bump 验证已针对源码构建执行（[English](./docs/dsh-0.1.2-review.md) / [中文](./docs/dsh-0.1.2-review_zh-CN.md)）；CI pin 翻转待 npm 发布（PRD §12）
+- ✅ **当前 DSH 运行时重跑**（2026-09-04）：协奏模式 MVP 已在当前 DSH 环境重新实现并验证
+  （`concerto_verify` 22/22 PASS；双 provider 路由 deepseek-official + pi-ai；持久化
+  `concerto` 用户 preset + P-19 加固；踩坑 P-13~P-19）——报告见
+  [`docs/concerto-current-dsh_zh-CN.md`](./docs/concerto-current-dsh_zh-CN.md)，源码归档
+  [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)
 - ⏳ 5 个开放维度待决策（OMO pin 策略、npm 命名、telemetry、release 通知、升级节奏；详见决策记录"开放维度"）
 - ⏳ 工作量粗估：~16 周（一人主力）
 

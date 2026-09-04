@@ -1,0 +1,2 @@
+name: 协奏模式 (Concerto Mode)
+description: 编排优先：主 agent 是指挥，接到任务先判断“谁最适合做”，默认委派给携带独立模型路由的 subagent——合适的模型做合适的事，不是运气，是默认。
