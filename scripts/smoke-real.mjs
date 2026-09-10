@@ -274,11 +274,52 @@ function installPlugin(sandbox, childEnv) {
   }
 }
 
+/**
+ * Whether this runtime's web app advertises `--no-open` (dsh 0.1.2 introduced
+ * the browser handoff and its suppressing flag together; before that the app's
+ * commander rejects an unknown option, so hardcoding the flag would turn a
+ * pre-0.1.2 run into `error: unknown option` — P-8.2's class).
+ * docs/dsh-0.1.5-rc.1-review.md §7.6. Cached: one probe per process.
+ */
+let noOpenSupport
+function supportsNoOpen() {
+  if (noOpenSupport === undefined) {
+    // The probe must NOT inherit this process's environment. `dsh --profile web
+    // --help` does not merely print help: it BOOTS the profile, creating
+    // $DSH_HOME (.anonymous-user-id, profiles/) as a side effect. Run with the
+    // ambient env and a script that promises "your real ~/.dsh is never
+    // touched" silently creates or boots it — invisible on a developer machine
+    // where the directory already exists, and loudly visible in CI on a fresh
+    // HOME (the credential digest flips to `realDshUntouched: false`).
+    // A throwaway home keeps the probe as isolated as the scenarios themselves.
+    const probeHome = mkdtempSync(join(tmpdir(), 'omo-noopen-probe-'))
+    try {
+      const probe = spawnSync('dsh', ['--profile', PROFILE, '--help'], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          HOME: probeHome,
+          XDG_CONFIG_HOME: join(probeHome, '.config'),
+          DSH_HOME: join(probeHome, '.dsh'),
+          DSH_AGENTS_HOME: join(probeHome, '.agents'),
+        },
+      })
+      noOpenSupport = `${probe.stdout ?? ''}${probe.stderr ?? ''}`.includes('--no-open')
+    } finally {
+      rmSync(probeHome, { recursive: true, force: true })
+    }
+  }
+  return noOpenSupport
+}
+
 function bootDsh(sandbox, childEnv, patchPath) {
   return new Promise((resolveBoot, rejectBoot) => {
     const child = spawn(
       'dsh',
-      ['--profile', PROFILE, '--patch', './cordis.yml', '--patch', patchPath, '--port', '0'],
+      [
+        '--profile', PROFILE, '--patch', './cordis.yml', '--patch', patchPath, '--port', '0',
+        ...supportsNoOpen() ? ['--no-open'] : [],
+      ],
       { cwd: REPO_ROOT, env: childEnv },
     )
     let log = ''

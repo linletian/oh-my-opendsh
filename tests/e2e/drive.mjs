@@ -79,7 +79,7 @@
 // honored. The persona IS the system prompt (T8), so the marker rides the
 // real prompt-assembly path. The mock's recorded requests[] prove delivery.
 // T19 generalizes the delivery to BOTH persona scalars of the same file
-// (MOCKROLE_BLOCK_SCALARS): the conductor persona row (`text: |-`, content
+// (MOCKROLE_BLOCK_SCALARS): the conductor persona row (`prefix: |-`, content
 // indent 6 — src/system-prompt.ts renderPersonaIntoComposition) and the T11
 // explore tool-subagent row (`persona: |-`, content indent 10 —
 // src/concerto-preset.ts renderExplorePersonaIntoComposition). The explore
@@ -162,7 +162,9 @@
 //   never silently reroute around the settings override.
 //
 // ── SESSION JSONL (T15 layout): $DSH_HOME/sessions/<projectKey(cwd)>/
-// <encodedSessionId>/session.jsonl (dsh-session-persistence-jsonl logPath,
+// <encodedSessionId>/session[.vN].jsonl — rc.6 wrote the bare name, session
+// format v3 adds the generation (isSessionLogName matches both) —
+// (dsh-session-persistence-jsonl logPath,
 // lib/index.js:95-157; root wired by dsh-base/cordis.patch.yml:98-101
 // `!!js dshHomePath('sessions')`). PRODUCTION DEFAULT IS ZSTD
 // (DEFAULT_COMPRESSION, :733) — per T15's risk note the driver disables it via
@@ -621,6 +623,48 @@ function installPlugin(sandbox) {
 }
 
 /**
+ * Whether this runtime's web app advertises `--no-open`.
+ *
+ * dsh 0.1.2 introduced the default browser handoff together with the flag that
+ * suppresses it. Before that the app's commander rejects an unknown option, so
+ * a hardcoded `--no-open` turns every pre-0.1.2 run — including a deliberate
+ * old-version probe — into `error: unknown option`, which reads as a harness
+ * bug rather than a version fact (P-8.2's class: root flags and app flags are
+ * different parsers). Feature-probe the app's own help rather than assume
+ * (docs/dsh-0.1.5-rc.1-review.md §7.6). Cached: one probe per process.
+ */
+let noOpenSupport
+function supportsNoOpen() {
+  if (noOpenSupport === undefined) {
+    // The probe must NOT inherit this process's environment. `dsh --profile web
+    // --help` does not merely print help: it BOOTS the profile, creating
+    // $DSH_HOME (.anonymous-user-id, profiles/) as a side effect. Run with the
+    // ambient env and a script that promises "your real ~/.dsh is never
+    // touched" silently creates or boots it — invisible on a developer machine
+    // where the directory already exists, and loudly visible in CI on a fresh
+    // HOME (the credential digest flips to `realDshUntouched: false`).
+    // A throwaway home keeps the probe as isolated as the scenarios themselves.
+    const probeHome = mkdtempSync(join(tmpdir(), 'omo-noopen-probe-'))
+    try {
+      const probe = spawnSync('dsh', ['--profile', PROFILE, '--help'], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          HOME: probeHome,
+          XDG_CONFIG_HOME: join(probeHome, '.config'),
+          DSH_HOME: join(probeHome, '.dsh'),
+          DSH_AGENTS_HOME: join(probeHome, '.agents'),
+        },
+      })
+      noOpenSupport = `${probe.stdout ?? ''}${probe.stderr ?? ''}`.includes('--no-open')
+    } finally {
+      rmSync(probeHome, { recursive: true, force: true })
+    }
+  }
+  return noOpenSupport
+}
+
+/**
  * Boot dsh; resolve with {child, port, transport, cookie?, log()} once the
  * readiness line lands — and, on the 0.1.2 transport (the line carries
  * ?token=<launch-token>), once the token→cookie handshake has completed.
@@ -629,7 +673,10 @@ function bootDsh(sandbox, patchPath) {
   return new Promise((resolveBoot, rejectBoot) => {
     const child = spawn(
       'dsh',
-      ['--profile', PROFILE, '--patch', './cordis.yml', '--patch', patchPath, '--port', '0'],
+      [
+        '--profile', PROFILE, '--patch', './cordis.yml', '--patch', patchPath, '--port', '0',
+        ...supportsNoOpen() ? ['--no-open'] : [],
+      ],
       { cwd: REPO_ROOT, env: scenarioEnv(sandbox) },
     )
     let log = ''
@@ -678,13 +725,30 @@ function stopDsh(child) {
 
 // ── Session JSONL observation (T15 layout) ──────────────────────────────────
 
+/**
+ * Whether `filename` is a Session log artifact, whichever format generation
+ * wrote it.
+ *
+ * rc.6 hardcoded the bare `session.jsonl`; from session format v3 the
+ * canonical name carries the generation — `session.v3.jsonl` — because "every
+ * later generation carries a lowercase numeric `vN` component"
+ * (dsh-session-persistence-jsonl/src/format.ts:50-54). Matching a fixed name
+ * silently loses the whole observation channel on a newer runtime (the log is
+ * there, the driver just never sees it), so match the GENERATION PATTERN
+ * rather than either literal: a hardcoded `session.v3.jsonl` would re-break at
+ * v4 exactly the way `session.jsonl` broke at v3.
+ */
+function isSessionLogName(filename) {
+  return /^session(?:\.v\d+)?\.jsonl$/.test(filename)
+}
+
 function findSessionLogs(dir, out = []) {
   if (!existsSync(dir)) return out
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) {
       findSessionLogs(path, out)
-    } else if (entry.name === 'session.jsonl') {
+    } else if (isSessionLogName(entry.name)) {
       const lines = readFileSync(path, 'utf8').split('\n').filter((line) => line.length > 0)
       if (lines.length === 0) continue
       let header
@@ -733,14 +797,14 @@ async function awaitTurnEnd(sandbox, sessionId) {
  * Where each role's marker goes inside the SAME materialized composition file
  * ($DSH_HOME/.agent-presets/concerto/agent.cordis.yml). `needle` is the block
  * scalar header of that role's persona; `indent` is the content indent the
- * renderer used (system-prompt.ts: 6 spaces under the persona row's `text:`;
+ * renderer used (system-prompt.ts: 6 spaces under the persona row's `prefix:`;
  * concerto-preset.ts: 10 spaces under the explore row's nested `persona:`).
  * Both needles are unique in the materialized file (verified against the
- * template: only the persona row carries `text:`, only the T11 explore row
+ * template: only the persona row carries `prefix:`, only the T11 explore row
  * carries `persona:`).
  */
 const MOCKROLE_BLOCK_SCALARS = {
-  sisyphus: { needle: 'text: |-', indent: '      ' },
+  sisyphus: { needle: 'prefix: |-', indent: '      ' },
   explore: { needle: 'persona: |-', indent: '          ' },
 }
 
@@ -1313,7 +1377,7 @@ function fabricatedGoodDemoChildLog(routes) {
       {
         seq: 0,
         type: 'subagent/descriptor',
-        data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'Read project README', agentProvider: routes.explore.provider, agentModel: routes.explore.model },
+        data: { version: 3, mode: 'continuable', provider: 'spawn', label: 'Read project README', agentProvider: routes.explore.provider, agentModel: routes.explore.model },
       },
       {
         seq: 1,

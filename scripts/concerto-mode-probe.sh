@@ -107,6 +107,14 @@ PROFILE="web"
 READY_TIMEOUT_S="${CONCERTO_READY_TIMEOUT_S:-90}"
 INSTALL_TIMEOUT_S="${CONCERTO_INSTALL_TIMEOUT_S:-300}"
 
+# `--no-open`: dsh 0.1.2 introduced the default browser handoff, and the flag
+# that suppresses it; before that the web app's commander rejects an unknown
+# option outright (P-8.2's class — root flags and app flags are different
+# parsers). Hardcoding it would break every pre-0.1.2 run, so feature-probe the
+# app's own help instead of assuming (docs/dsh-0.1.5-rc.1-review.md §7.6).
+# Probed lazily on first boot below, once the profile exists.
+NO_OPEN=""
+
 SANDBOX="$(mktemp -d /tmp/omo-dsh-concerto-probe.XXXXXX)"
 cleanup() {
   rm -rf "$SANDBOX"
@@ -261,7 +269,9 @@ if (validated.provider !== 'spawn') problems.push(`provider=${validated.provider
 if (validated.toolName !== 'explore') problems.push(`toolName=${validated.toolName}`)
 if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${validated.backgroundMode}`)
 if (validated.maxDepth !== 1) problems.push(`maxDepth=${validated.maxDepth}`)
-if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit'] })) {
+// F1 fix (2026-09-05): the deny list also names the delegation tool itself, so the
+// child physically cannot delegate (AC-6b parity with the current-DSH path).
+if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit', 'explore'] })) {
   problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)}`)
 }
 if (validated.agentOptions?.provider !== expectedProvider || validated.agentOptions?.model !== expectedModel) {
@@ -275,7 +285,7 @@ if (problems.length > 0) {
   process.exit(1)
 }
 console.log(`T11-VALIDATE PASS: tool-subagent-explore row validates against the installed dsh-tool-subagent Config `
-  + `(toolName=explore provider=spawn route=${expectedProvider}/${expectedModel} maxDepth=1 deny=[write,edit] persona=${validated.persona.length} chars)`)
+  + `(toolName=explore provider=spawn route=${expectedProvider}/${expectedModel} maxDepth=1 deny=[write,edit,explore] persona=${validated.persona.length} chars)`)
 EOF
 
 # Adaptive web-RPC helper (T9). The readiness line decides the transport:
@@ -402,8 +412,21 @@ boot_once() {
   local boot_log="$SANDBOX/boot-$label.log"
   local api_resp="$SANDBOX/agentPreset.list-$label.json"
 
-  echo "concerto-probe: [$label] booting dsh --profile $PROFILE --patch ./cordis.yml --port 0"
-  dsh --profile "$PROFILE" --patch ./cordis.yml --port 0 >"$boot_log" 2>&1 &
+  # One-time feature probe (the profile now exists, so `--help` resolves).
+  if [[ -z "${NO_OPEN_PROBED:-}" ]]; then
+    NO_OPEN_PROBED=1
+    if dsh --profile "$PROFILE" --help 2>&1 | grep -q -- '--no-open'; then
+      NO_OPEN="--no-open"
+      echo "concerto-probe: web app advertises --no-open (browser handoff suppressed)"
+    else
+      echo "concerto-probe: web app has no --no-open (pre-0.1.2 runtime; no handoff to suppress)"
+    fi
+  fi
+
+  echo "concerto-probe: [$label] booting dsh --profile $PROFILE --patch ./cordis.yml --port 0 $NO_OPEN"
+  # NO_OPEN is either empty or exactly one flag; unquoted on purpose so the
+  # empty case adds no argument at all. shellcheck disable=SC2086
+  dsh --profile "$PROFILE" --patch ./cordis.yml --port 0 $NO_OPEN >"$boot_log" 2>&1 &
   local dsh_pid=$!
 
   local port=""
@@ -535,8 +558,8 @@ boot_once() {
   if grep -q "__OMO_SISYPHUS_SYSTEM_PROMPT__" "$materialized"; then
     fail "[$label] materialized composition still carries the persona sentinel (rendering skipped?)"
   fi
-  grep -q "text: |-" "$materialized" \
-    || fail "[$label] materialized persona is not a |- block scalar"
+  grep -q "prefix: |-" "$materialized" \
+    || fail "[$label] materialized persona is not a `prefix: |-` block scalar"
   grep -q "      # Orchestrator Role" "$materialized" \
     || fail "[$label] materialized persona missing the Orchestrator Role section"
   grep -q "      # Delegation Discipline" "$materialized" \
@@ -564,8 +587,8 @@ boot_once() {
     || fail "[$label] explore agentOptions provider mismatch (want $EXPLORE_PROVIDER)"
   grep -q "^          model: \"$EXPLORE_MODEL\"$" "$materialized" \
     || fail "[$label] explore agentOptions model mismatch (want $EXPLORE_MODEL)"
-  grep -q "^          deny: \[write, edit\]$" "$materialized" \
-    || fail "[$label] explore toolFilter deny list missing (T12 pre-declared value)"
+  grep -q "^          deny: \[write, edit, explore\]$" "$materialized" \
+    || fail "[$label] explore toolFilter deny list missing (T12 + F1: want [write, edit, explore])"
   grep -q "^        maxDepth: 1$" "$materialized" \
     || fail "[$label] explore maxDepth: 1 missing (T13 pre-declared value)"
   node "$VALIDATE_EXPLORE_MJS" "$DSH_NM_UNION" "$materialized" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" \
@@ -657,5 +680,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12 toolFilter deny=[write,edit] PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=1 depth cap PROVEN enforced via the real delegation start path (depth-1 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 2 exceeds maxDepth 1", tool stays visible at the cap, depth-0 control passes); idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=[write,edit,explore] PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit/the delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=1 depth cap PROVEN enforced via the real delegation start path (depth-1 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 2 exceeds maxDepth 1", tool stays visible at the cap, depth-0 control passes); idempotent re-boot confirmed"
 exit 0

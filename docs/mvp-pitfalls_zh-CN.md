@@ -230,7 +230,8 @@ MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2
 | **症状** | 每次本地启动（`cold-start.sh`、`concerto-mode-probe.sh` ×3、e2e driver）都会拉起桌面浏览器。 |
 | **证据** | `openBrowser: z.boolean().default(true)`（`web-app/src/index.ts:61`）；实测日志 `dsh web: opening the default browser; pass --no-open to disable`。 |
 | **根因** | 该区间新增的默认值；这个握手既不阻塞也不改变 readiness 行，因此**没有任何门禁会因此变红**——这正是它可能悄悄发布出去的原因。 |
-| **回退/修复** | 四个启动点补 `--no-open`。相关的 readiness 行变化（URL 现在带 `?token=`）无需修复：三个解析点本就都能容忍。 |
+| **回退/修复** | 在四个启动点**特性探测**该 flag（`dsh --profile web --help | grep -- --no-open`），只在 app 自己声明时才传——硬编码会让每个 0.1.2 之前的运行失败，那里的 commander 会拒绝未知选项（P-8.2 那一类）。相关的 readiness 行变化（URL 现在带 `?token=`）无需修复：三个解析点本就都能容忍。 |
+| **修它时踩到的坑（只在 CI 显形）** | `dsh --profile web --help` **并不只是打印帮助**——它会**启动 profile**并创建 `$DSH_HOME`（`.anonymous-user-id`、`profiles/`）。因此一个继承环境变量的探针会静默地创建或启动**真实**的 dsh home，而它所在的脚本全部契约就是"真实的 `~/.dsh` 永不被触碰"。在开发机上（目录已存在）不可见；**在 CI 的全新 `HOME` 上则非常响**：凭据摘要翻成 `realDshUntouched: false`，e2e 门禁在四个场景全过的情况下判了失败。两个 `*.mjs` driver 现在给探针一个一次性 home（`mkdtempSync`）——这也正说明 shell 脚本先把沙箱 export 出来是对的。已通过在全新外层 `HOME` 下运行 driver 验证：什么都没被创建。 |
 
 ### P-20.6 —— 元问题：门禁给一个无法开会话的构建判了全绿
 

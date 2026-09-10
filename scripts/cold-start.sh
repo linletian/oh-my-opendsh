@@ -76,8 +76,25 @@ fi
 
 # Stage B: real boot, bounded. Readiness = the `dsh web: <url>` line on
 # stdout; SIGTERM shuts dsh down with exit 0.
-echo "cold-start: booting dsh --profile $PROFILE --patch ./cordis.yml --port 0"
-dsh --profile "$PROFILE" --patch ./cordis.yml --port 0 >"$BOOT_LOG" 2>&1 &
+#
+# `--no-open` is FEATURE-PROBED, not assumed. From dsh 0.1.2 the web app hands
+# off to the default browser unless suppressed, but the flag did not exist
+# before then and the app's commander errors on an unknown option (P-8.2's
+# class: root flags and app flags live in different parsers). A hardcoded
+# `--no-open` would therefore make every pre-0.1.2 run — including
+# scripts/compat-probe.sh's deliberate old-version probes — die with
+# `error: unknown option`, which reads as a harness bug rather than a version
+# fact. Ask the app itself instead (docs/dsh-0.1.5-rc.1-review.md §7.6).
+NO_OPEN=""
+if dsh --profile "$PROFILE" --help 2>&1 | grep -q -- '--no-open'; then
+  NO_OPEN="--no-open"
+  echo "cold-start: web app advertises --no-open (browser handoff suppressed)"
+else
+  echo "cold-start: web app has no --no-open (pre-0.1.2 runtime; no handoff to suppress)"
+fi
+echo "cold-start: booting dsh --profile $PROFILE --patch ./cordis.yml --port 0 $NO_OPEN"
+# shellcheck disable=SC2086 # NO_OPEN is either empty or exactly one flag
+dsh --profile "$PROFILE" --patch ./cordis.yml --port 0 $NO_OPEN >"$BOOT_LOG" 2>&1 &
 DSH_PID=$!
 
 ready=0
