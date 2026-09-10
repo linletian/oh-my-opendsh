@@ -16,15 +16,23 @@
 #                                  shipped preset + plugin artifacts)
 #   7. node scripts/check-docs-consistency.mjs (version tokens / matrix
 #                                  render / installer pin / CHANGELOG top)
+#   8. scripts/run-proofs.sh      (T12 toolFilter / T13 maxDepth / T15 dual-route
+#                                  logging against the INSTALLED dsh — session-free)
 #
 # dsh install (D7 — pin-minor 0.1.x): the npm package is @deepseek-ai/dsh and
 # the 0.1 line is currently published as prereleases only. A plain `~0.1.0`
 # range matches NOTHING today (npm semver excludes prereleases — verified:
 # `npm view @deepseek-ai/dsh@~0.1.0` → E404). We therefore exact-pin the rc
-# this repo's gates were verified against (0.1.0-rc.6 — all e2e verbatim
+# this repo's gates were verified against (0.1.5-rc.1 — all e2e verbatim
 # rejection contracts are grep-verified against it, see tests/e2e/drive.mjs).
 # Bump DSH_VERSION deliberately as the 0.1.x rc line advances; doctor-lite
 # enforces the D7 pin (major 0, minor 1) at gate 4 regardless.
+#
+# 0.1.5-rc.1 bump (2026-09-10, docs/dsh-0.1.5-rc.1-review.md): the harness is
+# now runtime-adaptive where the two lines differ — the session-log reader
+# matches the format-generation filename, the `--no-open` browser-handoff flag
+# is feature-probed before use (absent before 0.1.2, where the app's commander
+# rejects it), and the e2e transport was already adaptive from the 0.1.2 work.
 #
 # Action majors verified against the GitHub releases API on 2026-08-20:
 # checkout v7.0.1 / setup-node v7.0.0 / action-setup v6.0.10.
@@ -40,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DSH_VERSION: 0.1.0-rc.6
+  DSH_VERSION: 0.1.5-rc.1
   PNPM_VERSION: 11.9.0
 
 jobs:
@@ -91,3 +99,10 @@ jobs:
 
       - name: gate 7 — docs consistency
         run: node scripts/check-docs-consistency.mjs
+
+      # Gate 8 (2026-09-10): the session-free PROOFS. They were manual-only and
+      # rotted silently — concerto-mode-probe.sh's deny assertion survived five
+      # days past the F1 change that invalidated it, and prove-route-logging.mjs
+      # had three separate 0.1.5-rc.1 breaks. Zero LLM cost, no network, no boot.
+      - name: gate 8 — session-free proofs
+        run: scripts/run-proofs.sh

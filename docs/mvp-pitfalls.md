@@ -93,15 +93,21 @@ carries a "验证通过" verdict with its evidence chain above.
 
 ## 3. rc drift declaration (mandatory)
 
-All MVP verification ran against **DSH 0.1.0-rc.6** (the installed runtime,
+The **MVP closeout** verification ran against **DSH 0.1.0-rc.6** (the installed runtime,
 `/home/linletian/.npm-global/lib/node_modules/@deepseek-ai/dsh/`, inspected and executed read-only),
 with **rc.7 source-checkout reading** for citation completeness (`/home/linletian/GithubRepo/deepseek-harness`,
 read-only; every cited path was checked to match the installed rc.6 line-for-line on the surfaces we
 depend on, e.g. [task-12 log](../.omo/evidence/task-12-mvp-implementation.log) §1 and [task-13
 log](../.omo/evidence/task-13-mvp-implementation.log) §1 record rc.6 ≡ rc.7 on the enforcement
-paths). The PRD text still says **rc.5** (written before the install bumped). This drift is
-sanctioned by decision **D7** (pin-minor `0.1.x`: any `0.1.x` release satisfies the pin) and is
-recorded here per the plan. CI pins exactly **rc.6**. If rc.7+ ships, re-run the gate chain
+paths). This drift is sanctioned by decision **D7** (pin-minor `0.1.x`: any `0.1.x` release
+satisfies the pin) and is recorded here per the plan. PRD §12 now names **0.1.5-rc.1** as the
+target pin, and the PRD's stale `rc.5` text has been corrected (2026-09-10 entry below).
+
+The line has moved three times since closeout: **0.1.2-alpha.1** (§5 P-11), the **2026-09-04
+current-DSH runtime port** (§6 P-13–P-19, which re-implemented Concerto on a then-current
+runtime), and **0.1.5-rc.1** (§7 P-20 below, the pin this project now targets). §7 is authoritative
+for the 0.1.5-rc.1 surface; where it and an older section disagree about a dsh symbol, §7 wins. If a
+further `0.1.x` ships, re-run the gate chain
 (`pnpm typecheck:libs && pnpm typecheck && pnpm vitest run && pnpm test:e2e && scripts/cold-start.sh &&
 scripts/concerto-mode-probe.sh`) before adopting it.
 
@@ -200,3 +206,173 @@ layer; doctor-lite → full doctor; this file → the cumulative pitfall knowled
 | F9 | The MPL-2.0 whitelist decision is buried in a code comment | **Partially true** — the decision was already registered as D12 (docs/decisions.md) | Comment now points at D12 |
 | F10 | The schema's four states are only half used | **Confirmed** | release-process §3 notes `broken`/`dropped` are currently empty, reserved for §8 emergencies |
 | F11 | `build:*` scripts are noEmit typechecks under a build name | **Confirmed** | Renamed to `typecheck:host` / `typecheck:client` / `typecheck:libs`; instruction chains updated |
+
+## 7. P-20 (2026-09-10, dsh 0.1.5-rc.1 pin upgrade)
+
+Research basis: [`dsh-0.1.5-rc.1-review.md`](./dsh-0.1.5-rc.1-review.md) (full evidence trail,
+line-level citations, reproduction commands). Every entry below was reproduced by running **this
+repo's own gates** against the real `@deepseek-ai/dsh@0.1.5-rc.1` npm artifact, installed into a
+throwaway prefix — the developer's live install was never touched (`realDshUntouched: true` on
+every e2e run).
+
+### P-20.1 — the persona row's config key was renamed, and every gate scored green anyway (P0)
+
+| Field | Record |
+|---|---|
+| **Symptom** | Every session naming `concerto` is refused: `agent-presets: preset "concerto" failed to mount: failed to apply loader entry persona (@deepseek-ai/dsh-persona): invalid config: - $.prefix missing required value (at prefix)`. The roster still lists the preset with its real display name and **no `broken` flag**. |
+| **Evidence** | Live `dsh web` boot + `POST /api/session/create` against the installer-materialized preset (review §2.2, verbatim); `pnpm test:e2e` 0/4 scenarios with the same message; an eager per-row schema run reporting `FAIL persona: ValidationError: $.prefix missing required value` while every other row it covered passed (13 rows with the prototype's named-`Config` rule; the shipped gate covers 16 because it also accepts `default.Config` — review §6). |
+| **Root cause** | At `dsh-v0.1.3-alpha.2`, `@deepseek-ai/dsh-persona` replaced `text: z.string().required()` with `prefix: z.string().required()` + `suffix: z.string().default('')`, splitting `deployment:persona` into `deployment:persona-prefix`/`-suffix`. schemastery **preserves** an undeclared key rather than rejecting it, so the stale `text:` passes validation and is then simply never read — nothing warns, the persona text is unused, and the failure lands on the *missing required* `prefix` at mount time. Discovery's health check only proves each row's module *resolves*, never that its config validates, so `broken` stays unset and the picker shows a healthy card. |
+| **Fallback / fix** | One key rename across seven sites (renderer sentinel, both compositions, two unit-test files, the e2e MOCKROLE needle, the mode probe's grep). Verified: with only that rename, sessions mount and the whole delegation chain runs (review §2.3). |
+| **Why the gates missed it** | `doctor-lite`'s eager schema check validates **exactly one row** (`tool-subagent-explore`) — the row that broke had none. That is the real defect; the rename is its symptom. |
+
+### P-20.2 — the session log generation filename changed (P1, observation channel)
+
+| Field | Record |
+|---|---|
+| **Symptom** | `sessionLogFound: false` on all four e2e scenarios, cascading into ~27 failed assertions — while the harness itself ran correctly (the mock recorded the full `sisyphus → explore → explore → sisyphus` chain). |
+| **Evidence** | Real on-disk artifact: `$DSH_HOME/sessions/<encoded>/<id>/session.v3.jsonl`; the driver's `findSessionLogs` matches `entry.name === 'session.jsonl'` only. |
+| **Root cause** | Session format v3; the canonical filename now carries the format generation — *"Version zero retains the original suffix-only name; every later generation carries a lowercase numeric `vN` component"* (`session-persistence-jsonl/src/format.ts:50-54`). rc.6 wrote a bare `session.jsonl`. |
+| **Fallback / fix** | Make the reader generation-aware rather than pinning `session.v3.jsonl` (a hardcoded v3 name re-breaks at v4). |
+
+### P-20.3 — `subagent/descriptor` version 2 → 3 (P1, fixture)
+
+| Field | Record |
+|---|---|
+| **Symptom** | The driver's fabricated-fixture QA path silently degrades: a version-mismatched descriptor folds to `undefined`, i.e. it reads as "this log has no descriptor" rather than as an error. |
+| **Evidence** | `SUBAGENT_DESCRIPTOR_VERSION` is `2` at `dsh-v0.1.0-rc.8` and `3` from `dsh-v0.1.2-rc.1` on (`packages/subagent/subagent/src/descriptor.ts:48`); the guard is `if (version !== SUBAGENT_DESCRIPTOR_VERSION) return undefined` (`:210`). A real 0.1.5-rc.1 child log now stamps `{"version": 3, …}`. |
+| **Root cause** | Already recorded for 0.1.2 in the earlier review's addendum; the fixture constant was never moved because no gate reads it. |
+| **Fallback / fix** | Move the fixture to `version: 3`. Route fields still appear only on continuable descriptors, and the executed route is read from `request/header` — that part of the design is unchanged. |
+
+### P-20.4 — `dsh-tool-subagent` gained a required service in `inject` (P1, fixture)
+
+| Field | Record |
+|---|---|
+| **Symptom** | `scripts/prove-explore-maxdepth.mjs` fails with "explore tool not visible to the depth-1 parent" — the tool never registers at all. |
+| **Evidence** | `export const inject = ['tools','subagents','systemPrompt','sessionProjections']` (`tool-subagent/src/index.ts:45`) and an unconditional `ctx.sessionProjections.register(...)` at `:326`; the fixture stubs `agents` + `sessionPersistence` but not this one, so the fiber parks in `waiting` — no tool, no error. |
+| **Root cause** | Same class as P-10.2 (lazy/hidden activation): a missing service produces silence, not a diagnostic. The shipped base composition provides the row, so production is unaffected — this is a hand-built-fixture problem only. |
+| **Fallback / fix** | Add a `sessionProjections` stub beside the existing ones. `prove-explore-toolfilter.mjs` is unaffected because it drives `applyChildComposition` instead of mounting the plugin row. |
+
+### P-20.5 — `dsh web` opens a browser by default and no MVP script suppressed it (P2, environment)
+
+| Field | Record |
+|---|---|
+| **Symptom** | Every local boot (`cold-start.sh`, `concerto-mode-probe.sh` ×3, the e2e driver) launches a desktop browser. |
+| **Evidence** | `openBrowser: z.boolean().default(true)` (`web-app/src/index.ts:61`); live log line `dsh web: opening the default browser; pass --no-open to disable`. |
+| **Root cause** | New default in the range; the handoff neither blocks nor changes the readiness line, so **no gate can fail on it** — which is exactly why it would have shipped unnoticed. |
+| **Fallback / fix** | Feature-probe the flag at the four boot sites (`dsh --profile web --help | grep -- --no-open`) and pass it only when advertised — hardcoding it breaks every pre-0.1.2 run, where the app commander rejects an unknown option (P-8.2 class). The related readiness-line change (URL now carries `?token=`) needed no fix: all three parsers already tolerate it. |
+| **Trap found while fixing it (CI-only)** | `dsh --profile web --help` does **not** merely print help — it BOOTS the profile and creates `$DSH_HOME` (`.anonymous-user-id`, `profiles/`). A probe that inherits the ambient environment therefore silently creates or boots the **real** dsh home, inside a script whose whole contract is that the real `~/.dsh` is never touched. Invisible on a developer machine where the directory already exists; **loud in CI on a fresh `HOME`**, where the credential digest flipped to `realDshUntouched: false` and failed the e2e gate while all four scenarios passed. The two `*.mjs` drivers now give the probe a throwaway home (`mkdtempSync`) — the isolation the shell scripts already had right by exporting the sandbox first. Verified by running the driver under a fresh outer `HOME`: nothing is created. |
+
+### P-20.6 — meta: the gate suite certified a build that could not start a session
+
+| Field | Record |
+|---|---|
+| **Symptom** | Unmodified repo on 0.1.5-rc.1: **104/104** unit, **4/4** doctor-lite, **10/10** concerto-static, **7/7** docs-consistency — and **0/4** e2e. |
+| **Evidence** | Review §6 table; the same suite is fully green on rc.6, where the product works, so the suite is not "too strict" — it is under-covering. |
+| **Root cause** | Every gate validates *the artifact we ship* (YAML parses, markers present, one row's schema) but only one validates *the artifact against the runtime that will mount it*, and only for a single row. A rename in an unguarded row is invisible. |
+| **Fallback / fix** | Generalize `doctor-lite` check 4 from one row to every config-bearing row of the rendered composition, run against the installed plugin's own `Config` — the same read-only import mechanism the check already uses. Cost is unchanged (seconds, zero network). Rows whose packages export no `Config` must report as *unchecked*, never as pass. |
+
+### P-20 — verified-intact list (no action)
+
+Recorded so a future reader does not re-derive it: `--patch` semantics and the patch engine
+(byte-identical); `dsh plugin add`; the `agentPresets` service surface (`list`/`resolve`/`copy`/
+`standingKeyFor`, `AgentPreset.path`, the `broken` field); the user root `$DSH_HOME/.agent-presets`;
+`preset.yml` and `trust` (unchanged module); the mount-time isolate-realm invariant; `agent/pre-step`
++ `agent.inject()` + `session.header.origin === 'subagent'`; the entire `tool-subagent` config schema
+and its `toolFilter`/`maxDepth` enforcement; the T11 explore-persona shadow (proven live: the child's
+system prompt carries the explore persona and **not** the deployment one); the T12/F1 read-only
+enforcement (the child's advertised tools exclude `write`/`edit`/the delegation tool); and the FR-6
+hard-blocks injection (a `user/message` whose `source.plugin` is `omo-agents` lands in the child log).
+
+### P-20.7 — the out-of-chain probes had rotted; nothing ran them (found 2026-09-10)
+
+| Field | Record |
+|---|---|
+| **Symptom** | Two verification scripts were already broken before this upgrade touched anything, and one had been broken for five days. `scripts/concerto-mode-probe.sh` failed with `explore toolFilter deny list missing`; `scripts/prove-route-logging.mjs` died at `ctx.agentLoop` being undefined. |
+| **Evidence** | The probe asserted `deny: [write, edit]` in two places (`:272` the eager schema check, `:588` the materialized-file grep) while the F1 hardening of **2026-09-05** had changed the template to `deny: [write, edit, explore]`. `prove-route-logging.mjs` had three independent 0.1.5-rc.1 breaks: it did not mount `sessionProjections` (which `dsh-agent-loop` newly injects — and the loop *reads* it, so a no-op stub would have been a wrong fixture), it called the now-`async` `agentLoop.create()` without `await`, and it matched the bare `session.jsonl` filename. |
+| **Root cause** | `scripts/ci-local.sh` runs seven gates and **none of them is the probe or any of the three `prove-*.mjs` scripts** — yet the PRD's own rc-drift declaration names `scripts/concerto-mode-probe.sh` as part of the mandatory bump chain. A check that no chain runs is a check that rots: both breakages were introduced by *other* commits (the F1 hardening, the 0.1.5-rc.1 upgrade) and neither commit had a way to notice. |
+| **Why the earlier verification missed it** | The 0.1.5-rc.1 upgrade verification ran exactly the gates in `ci-local.sh` plus the e2e — i.e. it ran *the set that cannot detect this class*. The probe and the proofs were assumed to be covered because they exist. They were run for the first time only when the question "is there anything else in this repo that needs revising?" prompted an exhaustive sweep. |
+| **Fix** | (1) Repaired both scripts (deny-list expectations; `sessionProjections` mounted as the REAL registry rather than a stub; `await` on `create`; generation-aware log filename). (2) **Structural:** added `scripts/run-proofs.sh` — one command, resolves the installed dsh's node_modules through `doctor-lite`'s existing helper, renders the template with the plugin's own `syncConcertoPreset`, and runs all three proofs — and wired it as **gate 8** in both `scripts/ci-local.sh` and `.github/workflows/ci.yml`. Zero LLM cost, no network, no boot, well under a minute. |
+| **Transferable lesson** | The probe rotted because it was named in prose (the PRD) but not in code (the chain). Documentation that a check *should* run is not a mechanism that it *does*. This is P-20.6's lesson one level up: that was one unguarded ROW inside a checked file; this is an unguarded FILE inside a checked repo. |
+
+## 8. P-21 (2026-09-10, manual-test finding on the delivered preset)
+
+**The 0.1.5-rc.1 delivery was manually tested by the user in the real web UI, and two of the four
+scenarios were bypassed.** This is exactly what G2 ("step on landmines early") exists to surface,
+and it is the first finding in this project produced by a human driving the delivered artifact
+rather than by a scripted harness. Sessions analyzed: parent
+`session-61174f37` (`agent-preset/selected: concerto`; 23 tools including `call_omo_explore`, no
+generic `subagent`/`subagent_fork`; route `deepseek-official/deepseek-v4-pro`; persona
+`# Orchestrator Role`) with children `9dde0c40` (S3) and `7f04ee2c` (S4), plus grandchild
+`session-21d9b567` (S4).
+
+### P-21.1 — `toolFilter` denies the write TOOLS, but `bash` is an equivalent write path (AC-6a)
+
+| Field | Record |
+|---|---|
+| **Symptom** | S3's child was asked to rename the project in `README.md`. It edited the file successfully. `README.md` line 1 became `# foo`. |
+| **Evidence** | Child `9dde0c40`'s tool list is exactly 20 names with **no `write`, no `edit`, no `call_omo_explore`** — the filter held. The edit still happened, through `bash`: `cp README.md /tmp/README.md.bak && python3 - <<'EOF' … s.replace("# oh-my-opendsh\n", "# foo\n") …`. The child's own final answer reports "**File edited:** `/home/linletian/SoftwareWorkspace/oh-my-opendsh/README.md`" and describes the change. |
+| **Root cause** | T12 verdict (a) deliberately keeps shell access for explore: `bash` is platform-gated, so a static deny would throw `unknown global tool` on win32, and OMO's own explore keeps shell access. The consequence was never measured until a human ran it: **a tool-layer deny of `write`/`edit` is not a capability-layer read-only guarantee** when a general-purpose shell is present. |
+| **Why no gate caught it** | The e2e's `explore-write-denied` scenario scripts the mock child to CALL `write`, which correctly returns `unknown tool` — the assertion set (`childAdvertisedToolsExcludeWriteEdit`, `writeAttemptRejectedWithUnknownTool`, `writeTargetAbsentOnDisk`) is true and stays true while the bash path is wide open. The scenario tests the filter, not the guarantee. |
+| **Fix** | Expressible in pure config: make the deny list platform-conditional — `deny: !!js "process.platform === 'win32' ? ['write','edit','call_omo_explore'] : ['write','edit','call_omo_explore','bash']"` (verified: the loader dialect evaluates it and the installed `dsh-tool-subagent` Config accepts the result). Explore retains `read`/`grep`/`glob`/`read_image`, which cover its retrieval mission. **Decision pending** — it contradicts T12 verdict (a) and weakens OMO parity, so it is the user's call, not a silent change. |
+
+### P-21.2 — a child with `bash` can create an unrestricted agent process (AC-6b)
+
+| Field | Record |
+|---|---|
+| **Symptom** | S4's child was told to delegate again. It had no delegation tool — and delegated anyway, by launching a separate `dsh` process. The depth cap, the single-delegation-path hardening, and the registry itself were all bypassed. |
+| **Evidence** | Child `7f04ee2c`'s tool list also lacks `call_omo_explore`; its log shows `list_agents` → `(no subagents)`, then ~22 `bash` calls of which one is `timeout 600 dsh --profile headless "You are a research subagent. Do NOT spawn or delegate…"`, polled with `job_output`. That produced grandchild `session-21d9b567` — `origin: main`, **`delegationDepth: 0`, no `parentSession`**, 25 tools including `write`, `edit`, `subagent`, `subagent_fork`, `workflow`, `ralph`. The child's final answer states the caveat honestly: *"My toolset contains no task/delegate/explore subagent tool … Instead I spawned a genuinely independent DSH agent process."* |
+| **Root cause** | `maxDepth: 1` is enforced by the subagent REGISTRY (`resolveChildDepth`), and `toolFilter` removes the delegation TOOL. Neither constrains what a `bash`-enabled child can execute. A separately launched `dsh` is not a child of anything the registry tracks, so no depth, filter, or persona applies to it. |
+| **Why no gate caught it** | Same shape as P-21.1: the scenario asserts the delegation tool is ABSENT from the child and that calling it yields `unknown tool`. Both hold. The process-spawn path is outside what the assertion model describes. |
+| **Fix** | Shares P-21.1's remedy — denying `bash`/`pwsh` for the explore child closes both, since the child then has no general-purpose exec surface. No configuration-only remedy exists for a child that legitimately needs a shell. |
+
+### P-21.3 — the transferable lesson
+
+Both scenarios failed the same way: **the hardening was specified at the tool layer and verified at
+the tool layer, while the guarantee was claimed at the capability layer.** Every assertion was true
+and the capability was absent. The e2e model — scripted mock child, exact tool-name assertions —
+structurally cannot see a bypass that goes through a tool the child legitimately holds, which is
+why a human-driven session found in minutes what four automated scenarios had certified as safe.
+Recorded as a test-design constraint for the full port: **a restriction needs an adversarial
+scenario that tries to reach the forbidden outcome by ANY available means, not one that confirms
+the intended tool is missing.**
+
+### P-21 disposition (2026-09-10) — ACCEPTED, recorded as a threat-model boundary
+
+**Decision (user, 2026-09-10): keep the current design; do not deny `bash`.** The reasoning, so a
+future reader does not re-litigate it:
+
+1. **This is T12 verdict (a), not an oversight.** Shell access for explore was kept deliberately,
+   with two stated reasons (platform-gating, and OMO keeping shell access for its own explore).
+2. **It is OMO parity.** OMO's explore denies `write`/`edit`/`apply_patch`/`task`/`call_omo_agent`
+   and keeps its shell. Changing this would *diverge* from upstream, against the project's
+   "honour OMO's design philosophy / no capability cuts" principle.
+3. **The threat model excludes it.** R5 registers "the parent agent is a trusted internal LLM, no
+   untrusted input sources", and PRD §8 states outright: *"Explicitly not doing: … adversarial
+   /red-team testing."* The manual test was adversarial by construction — it **instructed** the
+   child to do the forbidden thing — so it exercised a case the scope deliberately excludes.
+4. **AC-6 as written is met.** Its parenthetical *is* the mechanism definition: "explore's write
+   attempts are denied (**toolFilter effective**); explore's attempt to delegate further is denied
+   (**depth cap effective**)". Both hold.
+
+**The precise claim this record now stands behind:** `toolFilter`/`maxDepth` are **guardrails
+against drift and accident inside a trusted agent team**, not a **capability boundary against a
+determined or instructed agent** that holds a general-purpose shell. The persona's Read-Only
+Declarations are the layer that speaks to intent; the filter is the layer that makes an accidental
+write fail loudly. Neither is a sandbox.
+
+**Watch item for the full port (do not inherit silently).** The one crack in the "trusted LLM"
+premise is that untrusted *content* can still enter the child: it holds `web_search` and
+`web_fetch`, and the full port adds MCP servers and broader file reads. Content-mediated injection
+into a `bash`-enabled child is a real path, and it does not require an adversarial *prompt*. When
+the surface widens, revisit this disposition — options at that point are a narrowed exec tool,
+sandbox-level isolation of children, or a write-capable-command guard on the child scope.
+Reverting `tool-web`'s `fetch` to `false` was considered and rejected: `web_search` alone already
+carries the same untrusted-content channel, so it would cost upstream parity without closing the
+path.
+
+**Test-design lesson kept (P-21.3 still stands).** The automated scenarios certified safety by
+confirming the intended tool was missing. That is a real coverage limit regardless of this
+disposition: a restriction needs a scenario that tries to reach the forbidden *outcome* by any
+available means. Not urgent under the MVP's threat model; required before the full port claims any
+restriction is enforced.
+

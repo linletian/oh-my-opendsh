@@ -24,6 +24,20 @@ our:
   tag_alias: "v0.1"
 
 tested:
+  # `our: "unreleased"` is the develop line's PRE-REGISTRATION, not a released
+  # version: released 0.1.1 does not satisfy this row (it carries the persona
+  # text->prefix break). No version is chosen until a release, and
+  # release-bump.mjs UPGRADES this row in place at that point - rewriting `our:`
+  # and the identity fields while PRESERVING the note below - rather than adding
+  # a second row. See docs/release-process.md §2a.
+  - our: "unreleased"
+    dsh: "0.1.5-rc.1"
+    omo: "4.19.4 (architecture reference)"
+    date: "2026-09-10"
+    evidence: ".omo/evidence/concerto-verify-dsh-0.1.5-rc.1.md"
+    note_en: "L2 real-model manual verification (17/17 from raw session logs) + L1 green (104 unit / doctor-lite 4-4 with 16 rows schema-checked / static 10-10 / docs 7-7 / e2e 4-4) — the 2026-09-10 upgrade. Verified on the released installer path (static preset in $DSH_HOME/.agent-presets, no plugin). Note: toolFilter/maxDepth are tool-layer guardrails, not a capability boundary — S3/S4 were bypassed through the explore child's own bash and ACCEPTED under the R5 threat model (mvp-pitfalls §8 P-21)"
+    note_zh: "L2 真机手工验证（自原始会话日志逐条复核 17/17）+ L1 全绿（104 单测 / doctor-lite 4-4 且 16 行经 schema 校验 / static 10-10 / docs 7-7 / e2e 4-4）——2026-09-10 升级。在已发布的安装器路径上验证（静态 preset 落在 $DSH_HOME/.agent-presets，无插件）。注：toolFilter/maxDepth 是工具层护栏而非能力边界——S3/S4 经 explore 子 agent 自带的 bash 绕过，按 R5 威胁模型接受（mvp-pitfalls §8 P-21）"
+
   - our: "0.1.1"
     dsh: "0.1.0-rc.6"
     omo: "4.19.4"
@@ -44,5 +58,5 @@ untested:
   - dsh: "0.1.2-rc.1"
     omo: "4.19.4"
     since: "2026-09-05"
-    note_en: "static review done (docs/dsh-0.1.2-review); runtime probe pending via scripts/compat-probe.sh; gates the D7 CI pin flip (PRD §12)"
-    note_zh: "静态复核已完成（docs/dsh-0.1.2-review_zh-CN）；运行时探测待 scripts/compat-probe.sh；D7 的 CI pin 翻转以此行为门（PRD §12）"
+    note_en: "static review done (docs/dsh-0.1.2-review); runtime probe pending via scripts/compat-probe.sh; gates the D7 CI pin flip (PRD §12) — SUPERSEDED by 0.1.5-rc.1, retained as the historical record"
+    note_zh: "静态复核已完成（docs/dsh-0.1.2-review_zh-CN）；运行时探测待 scripts/compat-probe.sh；D7 的 CI pin 翻转以此行为门（PRD §12）——已被 0.1.5-rc.1 取代，保留为历史记录"

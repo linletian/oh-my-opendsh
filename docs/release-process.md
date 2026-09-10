@@ -27,6 +27,38 @@
 - GitHub Pages serves the stable line's branch root (`main`), so `/install` always
   mirrors the newest release commit.
 
+## 2a. Branch model — `develop` integrates, `main` releases
+
+Three long-lived refs, one direction of travel:
+
+```
+feature/*, fix/*  --PR-->  develop  --release-->  main  (+ tags vX.Y.Z / vX.Y)
+                          (integration)          (released line, Pages root)
+```
+
+- **`develop` is the integration branch.** Every `feature/*` / `fix/*` branch PRs
+  into it and only into it. CI runs on every branch (`on: push` / `on: pull_request`
+  are unfiltered), so `develop` is gated exactly like `main` — there is no
+  "CI only on the release branch" asymmetry to remember.
+- **`main` carries only released commits.** GitHub Pages serves `main`'s branch
+  root, so `/install` mirrors the newest release by construction. Nothing lands on
+  `main` except a release.
+- **The version number is chosen at release time, not before.** Work on `develop`
+  keeps `package.json` at the last released version; `release.sh <patch|minor|major>`
+  computes the next one at step 2. Nothing earlier in the flow needs it, and the
+  four token holders (`package.json`, `compat.our.latest`, the installer `TAG`, the
+  CHANGELOG heading) move together in the one release commit.
+- **A develop-line verification row is deliberately unversioned.** The matrix row
+  for work in flight carries `our: "unreleased"` — a released version number must
+  never claim work that version does not contain (`0.1.1` as released does *not*
+  satisfy a row verified against a later dsh). At release, `release-bump.mjs`
+  **upgrades that row in place** rather than inserting a second one, so the matrix
+  keeps exactly one row per `(our, dsh)` and no stale placeholder survives a release.
+- **Release movement.** Merge `develop` into `main`, then run `release.sh` *on
+  `main`* — its preflight requires a clean tree on `RELEASE_BRANCH` (default
+  `main`, overridable with `RELEASE_BRANCH=<branch>`). Then merge the release
+  commit back into `develop` so the two lines do not drift.
+
 ## 3. The compatibility matrix
 
 Single source of truth: [`.omo/compat.yaml`](../.omo/compat.yaml) → rendered to
@@ -93,8 +125,8 @@ scripts/release.sh <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--no-gh] [
 
 Steps (all local; first failure aborts before anything is tagged):
 
-1. **preflight** — clean tree, on the release branch (`main`), `scripts/release-check.sh` (8 gates incl. fresh L2 evidence).
-2. **bump** — `scripts/release-bump.mjs`: package.json, installer TAG pin, README status tokens, compat.yaml (our block + new ✅ row with the current `dsh --version`, omo version, evidence path), CHANGELOG top entry, matrix re-render.
+1. **preflight** — clean tree, on the release branch (`main`; see §2a), `scripts/release-check.sh` (8 gates incl. fresh L2 evidence).
+2. **bump** — `scripts/release-bump.mjs`: package.json, installer TAG pin, README status tokens, compat.yaml (our block + the ✅ row for this release — the develop line's `unreleased` row upgraded in place when one exists, otherwise a new row — carrying the current `dsh --version`, omo version and evidence path), CHANGELOG top entry, matrix re-render.
 3. **re-gate** — docs-consistency + concerto-static after the edit.
 4. **commit** — `release: vX.Y.Z`.
 5. **tags** — `vX.Y.Z` annotated (immutable) + `vX.Y` alias force-moved.

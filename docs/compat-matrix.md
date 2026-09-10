@@ -17,9 +17,11 @@ Status legend: ✅ tested · 🔬 untested · ❌ broken · 🪦 dropped.
 
 | our | dsh | omo | date | evidence (local file) |
 |---|---|---|---|---|
+| unreleased | 0.1.5-rc.1 | 4.19.4 (architecture reference) | 2026-09-10 | `.omo/evidence/concerto-verify-dsh-0.1.5-rc.1.md` |
 | 0.1.1 | 0.1.0-rc.6 | 4.19.4 | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 | 0.1.0 | 0.1.0-rc.6 | 4.19.4 (architecture reference) | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 
+> unreleased — L2 real-model manual verification (17/17 from raw session logs) + L1 green (104 unit / doctor-lite 4-4 with 16 rows schema-checked / static 10-10 / docs 7-7 / e2e 4-4) — the 2026-09-10 upgrade. Verified on the released installer path (static preset in $DSH_HOME/.agent-presets, no plugin). Note: toolFilter/maxDepth are tool-layer guardrails, not a capability boundary — S3/S4 were bypassed through the explore child's own bash and ACCEPTED under the R5 threat model (mvp-pitfalls §8 P-21)
 > 0.1.1 — released v0.1 (release.sh)
 > 0.1.0 — current-DSH runtime re-verification: concerto_verify 22/22 PASS
 
@@ -27,7 +29,7 @@ Status legend: ✅ tested · 🔬 untested · ❌ broken · 🪦 dropped.
 
 | dsh | omo | since | note |
 |---|---|---|---|
-| 0.1.2-rc.1 | 4.19.4 | 2026-09-05 | static review done (docs/dsh-0.1.2-review); runtime probe pending via scripts/compat-probe.sh; gates the D7 CI pin flip (PRD §12) |
+| 0.1.2-rc.1 | 4.19.4 | 2026-09-05 | static review done (docs/dsh-0.1.2-review); runtime probe pending via scripts/compat-probe.sh; gates the D7 CI pin flip (PRD §12) — SUPERSEDED by 0.1.5-rc.1, retained as the historical record |
 
 ## How to update
 

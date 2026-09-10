@@ -174,6 +174,16 @@ const ToolRuntime = (await imp('@deepseek-ai/dsh-tools/lib/index.js')).default
 const AgentRegistry = (await imp('@deepseek-ai/dsh-agent/lib/index.js')).default
 const JsonlSessionPersistence = (await imp('@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js')).default
 const AgentLoop = (await imp('@deepseek-ai/dsh-agent-loop/lib/index.js')).default
+// dsh 0.1.5-rc.1 added `sessionProjections` to agent-loop's `inject` (rc.6 did
+// not have it — packages/core/agent-loop/src/index.ts:297 vs the installed
+// static inject), and the loop READS it during a turn
+// (`sessionProjections.stateOf(session, 'turnBoundary')?.lastTurn ?? 0`), so a
+// no-op stub would be a wrong fixture rather than a minimal one. Mount the REAL
+// registry: the same row the base composition carries, and the same service the
+// shipped presets resolve. Without it the plugin parks in `waiting` and
+// `ctx.agentLoop` is undefined.
+// docs/dsh-0.1.5-rc.1-review.md §5 (same root cause as the tool-subagent case).
+const SessionProjections = (await imp('@deepseek-ai/dsh-session-projection/lib/index.js')).default
 const SubagentRuntime = (await imp('@deepseek-ai/dsh-subagent/lib/index.js')).default
 // The descriptor schema version is detected from the runtime's OWN exported
 // constant — 2 on rc.6/rc.7, 3 on 0.1.2 (the v3 descriptor schema bump).
@@ -228,6 +238,7 @@ await ctx.plugin(SessionStore)
 await ctx.plugin(SystemPrompt, {})
 await ctx.plugin(ToolRuntime, {})
 await ctx.plugin(AgentRegistry)
+await ctx.plugin(SessionProjections)
 const root = mkdtempSync(join(tmpdir(), 't15-route-logging-'))
 // Plaintext, unpacked artifacts: one JSON event per line, byte-identical to
 // the pre-packing layout — the exact lines T20 will grep.
@@ -242,7 +253,11 @@ const problems = []
 
 // Parent runs ONE real turn on the sisyphus route → its request/header lands
 // in the parent log (the MAIN-agent route record AC-5 needs).
-const parent = ctx.agentLoop.create(SessionId('t15-parent'), {
+// `agentLoop.create` is ASYNC on 0.1.5-rc.1 (it returns Promise<Agent>;
+// rc.6's was synchronous — packages/core/agent-loop/src/index.ts:589 vs the
+// installed `async create(...)`). Without the await, `parent` is a Promise and
+// `.followup` is undefined.
+const parent = await ctx.agentLoop.create(SessionId('t15-parent'), {
   provider: routes.sisyphus.provider,
   model: routes.sisyphus.model,
 })
@@ -294,7 +309,12 @@ function readSessionLogs(dir, out = []) {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) {
       readSessionLogs(path, out)
-    } else if (entry.name === 'session.jsonl') {
+    // Session format v3 (0.1.5-rc.1) names the artifact after its generation —
+    // `session.v3.jsonl` — where rc.6 wrote a bare `session.jsonl`
+    // (session-persistence-jsonl/src/format.ts:50-54). Match the GENERATION
+    // PATTERN, not either literal: a hardcoded v3 name re-breaks at v4 exactly
+    // as `session.jsonl` broke at v3.
+    } else if (/^session(?:\.v\d+)?\.jsonl$/.test(entry.name)) {
       const text = readFileSync(path, 'utf8')
       const lines = text.split('\n').filter((line) => line.length > 0)
       out.push({ path, lines, header: JSON.parse(lines[0]), events: lines.slice(1).map((line) => JSON.parse(line)) })

@@ -16,8 +16,10 @@
 // (~10 lines) and sync no longer being a pure byte-copy.
 //
 // dsh mechanics this module is shaped by (read-only inspection of the
-// installed rc.6): a preset's persona row registers the `deployment:persona`
-// section via @deepseek-ai/dsh-persona, and dsh-system-prompt's renderPrompt
+// installed rc.6, key re-verified on 0.1.5-rc.1): a preset's persona row
+// registers the `deployment:persona-prefix` section via @deepseek-ai/dsh-persona
+// (renamed from `deployment:persona` at dsh-v0.1.3-alpha.2;
+// docs/dsh-0.1.5-rc.1-review.md §2), and dsh-system-prompt's renderPrompt
 // interpolates strict `{{variable}}` references, THROWING on unknown ones —
 // so the assembled prompt is rejected at build time if any section smuggles
 // a `{{` sequence in (none of the four markdown files contains one today).
@@ -32,7 +34,9 @@ export const SISYPHUS_SECTION_ORDER = [
 ] as const satisfies readonly (keyof SystemSections)[]
 
 /**
- * Placeholder the concerto template carries as its persona `text` value.
+ * Placeholder the concerto template carries as its persona `prefix` value
+ * (the key `@deepseek-ai/dsh-persona` reads; renamed from `text` at
+ * dsh-v0.1.3-alpha.2 — see docs/dsh-0.1.5-rc.1-review.md §2).
  * Never a `{{...}}` shape: if an unrendered template were ever mounted, dsh
  * would treat it as plain prose rather than a fatal unknown-variable throw.
  */
@@ -64,17 +68,17 @@ export function renderPersonaIntoComposition(
   template: string,
   prompt: string = buildSisyphusSystemPrompt(),
 ): string {
-  const sentinelValue = `text: ${PERSONA_TEXT_SENTINEL}`
+  const sentinelValue = `prefix: ${PERSONA_TEXT_SENTINEL}`
   const occurrences = template.split(sentinelValue).length - 1
   if (occurrences !== 1) {
     throw new Error(
       `concerto template must carry the persona sentinel exactly once in a `
-      + `\`text: ${PERSONA_TEXT_SENTINEL}\` value position; found ${occurrences}`,
+      + `\`prefix: ${PERSONA_TEXT_SENTINEL}\` value position; found ${occurrences}`,
     )
   }
   const block = prompt
     .split('\n')
     .map((line) => (line.length > 0 ? `      ${line}` : ''))
     .join('\n')
-  return template.replace(sentinelValue, `text: |-\n${block}`)
+  return template.replace(sentinelValue, `prefix: |-\n${block}`)
 }

@@ -162,7 +162,42 @@ function main() {
   if (!compatNew.includes(`tag_alias: "${oldAlias}"`)) throw new Error(`compat.yaml tag_alias line not found (want tag_alias: "${oldAlias}")`)
   compatNew = compatNew.replace(`tag_alias: "${oldAlias}"`, `tag_alias: "${newAlias}"`)
   if (!/^tested:\s*$/m.test(compatNew)) throw new Error('compat.yaml `tested:` block not found')
-  compatNew = compatNew.replace(/^tested:\s*$/m, `tested:\n${row}`)
+
+  // The develop line keeps ONE pre-registered row for the work in flight, with
+  // `our:` deliberately unversioned (a released version number must never claim
+  // work that version does not contain — the row a released 0.1.1 would need to
+  // satisfy is NOT this one). A release does not add a second row beside it: it
+  // UPGRADES that row in place, so the matrix keeps one row per (our, dsh) and
+  // the develop placeholder becomes the released record. Without this, every
+  // release would leave a stale `unreleased` duplicate behind — see
+  // docs/release-process.md §6.
+  const UNRELEASED_ROW = /^  - our: "unreleased"\n(?:    .*\n)*?(?=  - our:|\n*[a-z]+:|\s*$)/m
+  const placeholder = compatNew.match(UNRELEASED_ROW)
+  if (placeholder !== null) {
+    // Keep any operator notes on the row, but replace the identity fields the
+    // release owns. The `unreleased` row is the only one the identity rewrite
+    // may touch: a versioned row is a released record and is never rewritten.
+    const before = placeholder[0]
+    const upgraded = before
+      .replace(/^  - our: "unreleased"$/m, `  - our: "${newSemver}"`)
+      .replace(/^(    dsh: )"[^"]*"$/m, `$1"${dsh}"`)
+      .replace(/^(    omo: )"[^"]*"$/m, `$1"${omo}"`)
+      .replace(/^(    date: )"[^"]*"$/m, `$1"${date}"`)
+      .replace(/^(    evidence: )"[^"]*"$/m, `$1"${evidence}"`)
+      // The note is PRESERVED and prefixed, not replaced: it carries the row's
+      // verification narrative (what was verified, against which runtime, and
+      // any accepted-boundary caveat), which the release marker should join
+      // rather than overwrite. The develop row is kept free of anything that
+      // would be untrue after a release, so a verbatim prefix is safe.
+      .replace(/^(    note_en: )"((?:[^"\\]|\\.)*)"/m,
+        (_m, pre, orig) => `${pre}"released ${newSemver} (${newAlias} line; release.sh upgraded the develop row in place) — ${orig}"`)
+      .replace(/^(    note_zh: )"((?:[^"\\]|\\.)*)"/m,
+        (_m, pre, orig) => `${pre}"发布 ${newSemver}（${newAlias} 线；release.sh 由 develop 行原地升级）——${orig}"`)
+    if (upgraded === before) throw new Error('compat.yaml `unreleased` row matched but no identity field was rewritten')
+    compatNew = compatNew.replace(before, upgraded)
+  } else {
+    compatNew = compatNew.replace(/^tested:\s*$/m, `tested:\n${row}`)
+  }
   mutations.push({ file: COMPAT, label: 'compat.yaml our block + tested row', before: 'compat.yaml', write: () => writeFileSync(COMPAT, compatNew) })
 
   // CHANGELOG.md: create if missing, then prepend the new release section.

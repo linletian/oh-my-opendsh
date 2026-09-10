@@ -12,11 +12,14 @@
 # Usage: scripts/ci-local.sh
 # Exit:  0 = all gates green; N = the failing gate's own exit code.
 #
-# Gate chain (7 gates, byte-equivalent to the workflow's gate steps):
+# Gate chain (8 gates, byte-equivalent to the workflow's gate steps):
 #   1. pnpm typecheck              2. pnpm vitest run (unit)
 #   3. pnpm test:e2e (mock-LLM)    4. doctor-lite    5. license compliance
 #   6. concerto static (AC-6/P-19 hardening of the shipped preset+plugin)
 #   7. docs consistency (version tokens / matrix render / installer pin)
+#   8. session-free proofs (T12 toolFilter / T13 maxDepth / T15 dual-route
+#      logging) — added 2026-09-10 because these were manual-only and rotted;
+#      see docs/mvp-pitfalls.md §7 P-20.7
 
 set -uo pipefail
 
@@ -31,17 +34,17 @@ run_gate() {
   STAGE=$((STAGE + 1))
   echo ""
   echo "=============================================================="
-  echo "ci-local: gate ${STAGE}/7 — ${name}"
+  echo "ci-local: gate ${STAGE}/8 — ${name}"
   echo "ci-local: \$ $*"
   echo "=============================================================="
   "$@"
   local rc=$?
   if [[ "$rc" != "0" ]]; then
     echo ""
-    echo "ci-local: FAIL at gate ${STAGE}/7 (${name}) — exit ${rc}" >&2
+    echo "ci-local: FAIL at gate ${STAGE}/8 (${name}) — exit ${rc}" >&2
     exit "$rc"
   fi
-  echo "ci-local: gate ${STAGE}/7 (${name}) — PASS"
+  echo "ci-local: gate ${STAGE}/8 (${name}) — PASS"
 }
 
 run_gate "typecheck"          pnpm typecheck
@@ -51,7 +54,8 @@ run_gate "doctor-lite"        node scripts/doctor-lite.mjs --json
 run_gate "license compliance" scripts/verify-licenses.sh
 run_gate "concerto static"    node scripts/verify-concerto-static.mjs
 run_gate "docs consistency"   node scripts/check-docs-consistency.mjs
+run_gate "session-free proofs" scripts/run-proofs.sh
 
 echo ""
-echo "ci-local: PASS — all 7 gates green (same chain as .github/workflows/ci.yml)"
+echo "ci-local: PASS — all 8 gates green (same chain as .github/workflows/ci.yml)"
 exit 0

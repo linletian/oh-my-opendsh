@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // scripts/prove-explore-toolfilter.mjs — T12 (P-4, AC-6 negative-a): session-free
-// proof that the concerto explore row's `toolFilter: deny: [write, edit]` is
+// proof that the concerto explore row's `toolFilter: deny: [write, edit, explore]` is
 // ENFORCED through dsh's real child-composition path — not merely present as
 // config text. A live model session closes the loop in T20; this script proves
 // everything up to the model boundary by executing the installed dsh's own
@@ -252,6 +252,6 @@ if (problems.length > 0) {
   console.error(`T12-PROOF FAIL: ${problems.join('; ')}`)
   process.exit(1)
 }
-console.log(`T12-PROOF PASS: deny=[write,edit] enforced by the installed dsh's real child-composition path — `
+console.log(`T12-PROOF PASS: deny=[write,edit,explore] enforced by the installed dsh's real child-composition path — `
   + `the child's model-facing tool list excludes write/edit, execution surfaces UNKNOWN_TOOL, `
   + `read/grep/glob/${SHELL} retained (OMO-faithful read-only surface), parent scope unaffected`)

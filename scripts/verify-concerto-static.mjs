@@ -116,11 +116,14 @@ async function run() {
     results.push(check('c03', 'single delegation path', c03Problems.length === 0, c03Problems.join('; ') || `delegation group = ${wantGroup.join(', ')}`))
 
     // c09 — persona shadow: hard blocks + anti-patterns in both personas.
+    // The conductor's key is `prefix` (renamed from `text` at
+    // dsh-v0.1.3-alpha.2 — docs/dsh-0.1.5-rc.1-review.md §2); reading the old
+    // key here would have made this check silently vacuous rather than failing.
     const conductor = agentRows.find((r) => r && r.id === 'persona')
     const exploreRow = flatRows.find((r) => r && r.config && r.config.toolName === 'call_omo_explore')
     const c09Problems = []
     for (const [label, text] of [
-      ['conductor', conductor && conductor.config && conductor.config.text],
+      ['conductor', conductor && conductor.config && conductor.config.prefix],
       ['explore', exploreRow && exploreRow.config && exploreRow.config.persona],
     ]) {
       if (typeof text !== 'string' || text.length === 0) {

@@ -184,8 +184,21 @@ class StubAgents extends Service {
   get() { return undefined }
 }
 class StubSessionPersistence extends Service { static provide = 'sessionPersistence' }
+// dsh 0.1.5-rc.1 (contract change, docs/dsh-0.1.5-rc.1-review.md §5): the row's
+// plugin now declares `sessionProjections` in `inject` and calls
+// `ctx.sessionProjections.register(...)` UNCONDITIONALLY at apply time
+// (tool-subagent/src/index.ts:45,326) — not gated behind modelSelectionSettings.
+// Without this service the fiber parks in `waiting` and registers NO tool, so the
+// mount below would look like "the cap hides the tool" instead of what it is.
+// The registration is write-only for this proof (nothing reads the projection
+// back), so a no-op recorder models it exactly.
+class StubSessionProjections extends Service {
+  static provide = 'sessionProjections'
+  register() { return () => {} }
+}
 await ctx.plugin(StubAgents)
 await ctx.plugin(StubSessionPersistence)
+await ctx.plugin(StubSessionProjections)
 await ctx.plugin(SubagentRuntime)
 await ctx.plugin(SpawnProvider, { providerName: 'spawn' })
 // The row's OWN plugin mounted with the row's OWN raw config — the same

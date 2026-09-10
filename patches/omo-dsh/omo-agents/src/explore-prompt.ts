@@ -10,7 +10,9 @@
 // entry is authored (contrast with T6's concerto mode). A dsh-tool-subagent
 // instance takes its per-child persona as INLINE TEXT:
 //   * config field `persona?: string` — "Per-child persona that shadows
-//     `deployment:persona`. Requires the provider's `persona` capability;
+//     `deployment:persona-prefix` (renamed from `deployment:persona` at
+//     dsh-v0.1.3-alpha.2; docs/dsh-0.1.5-rc.1-review.md §2). Requires the
+//     provider's `persona` capability;
 //     omission preserves the deployment persona."
 //     (tool-subagent/src/index.ts:54-57; zod schema `persona: z.string()` at
 //     index.ts:92)
@@ -22,8 +24,10 @@
 //     (subagent-spawn-in-process/src/index.ts:42: `{ outputSchema, depthLimit,
 //     toolFilter, persona: true }`);
 //   * applyChildComposition installs it as the child-scoped
-//     `deployment:persona` system-prompt section at order 0, shadowing the
-//     deployment persona (subagent/src/child-agent.ts:171-173).
+//     `deployment:persona-prefix` system-prompt section at order 0, shadowing
+//     the deployment persona (subagent/src/child-agent.ts:209-214 on
+//     0.1.5-rc.1; :171-173 on rc.6 — both sides of the shadow moved together,
+//     so the binding is unaffected; verified live, review §2.3).
 // So the honest minimal shape is the T7/T8 chain reused: ONE markdown file in
 // system-sections/ (loaded through the T7 loadSectionFile — same P-9-stable
 // import.meta.url resolution) + THIS builder producing the string T11 binds
@@ -35,7 +39,7 @@
 // dsh-tool-subagent instance (distinct `toolName`, e.g. `explore`) whose
 // config carries `persona: <buildExploreSystemPrompt() output>`; the text
 // flows config → start request (index.ts:384) → child-scoped
-// `deployment:persona` section (child-agent.ts:171-173) → rendered by
+// `deployment:persona-prefix` section (child-agent.ts:209-214) → rendered by
 // dsh-system-prompt's renderPrompt (core/system-prompt/src/index.ts:212-217),
 // which interpolates strict `{{variable}}` references and THROWS on unknown
 // ones — hence the `{{` rejection below, same hazard as the T8 sisyphus

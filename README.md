@@ -60,7 +60,7 @@ Full guide (options, adaptation, uninstall — incl. a plain-language "what the 
 - ✅ 11 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
 - ✅ MVP PRD adopted ([`docs/mvp-prd.md`](./docs/mvp-prd.md): Concerto Mode + 1 Agent + 1 Subagent minimal skeleton, decision D11)
 - ✅ MVP closed — FR-1~FR-8 implemented, V1~V4 verified (see [mvp-pitfalls](./docs/mvp-pitfalls.md))
-- ✅ dsh 0.1.2-alpha.1 review registered + bump verification executed via source build ([English](./docs/dsh-0.1.2-review.md) / [中文](./docs/dsh-0.1.2-review_zh-CN.md)); CI pin flip pending npm publish (PRD §12)
+- ✅ **dsh 0.1.5-rc.1 pin landed** — the 0.1.2-alpha.1 review ([English](./docs/dsh-0.1.2-review.md) / [中文](./docs/dsh-0.1.2-review_zh-CN.md)) was superseded before it was ever pinned (that tag was never published); the upgrade to 0.1.5-rc.1 is verified L1+L2 — see the [review](./docs/dsh-0.1.5-rc.1-review.md) / [upgrade record](./docs/dsh-0.1.5-rc.1-upgrade.md) and PRD §12
 - ✅ **Current-DSH runtime re-run** (2026-09-04): the Concerto MVP was re-implemented and verified
   on the current DSH environment (`concerto_verify` 22/22 PASS; dual-provider routing
   deepseek-official + pi-ai; persistent `concerto` user preset with P-19 hardening; pitfalls
@@ -98,7 +98,7 @@ The version management & release process (decision D13; principles: automation f
 
 | Item | Value |
 |---|---|
-| **DSH version** | 0.1.0-rc.6 (MIT; CI-pinned — 0.1.2-alpha.1 verified locally via source build, CI flip pending npm publish); effective local runtime = rc.6 umbrella + rc.7-scheme deps (see [P-11.5](./docs/mvp-pitfalls.md)) |
+| **DSH version** | **0.1.5-rc.1** (MIT; CI-pinned) — verified end-to-end in the 2026-09-10 upgrade ([review](./docs/dsh-0.1.5-rc.1-review.md), [pitfalls P-20](./docs/mvp-pitfalls.md)). Previous pins: 0.1.0-rc.6 (MVP closeout), with 0.1.2-alpha.1 reviewed but never pinned |
 | **OMO upstream** | 19 core packages + 4 small adapters (harness-agnostic) (SUL-1.0) |
 | **This project's license** | **MIT OR SUL-1.0** (dual license) |
 | **OMO LICENSE (original text)** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |

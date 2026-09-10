@@ -186,7 +186,7 @@ async function checkDshVersion() {
         'dsh-version',
         'fail',
         `dsh --version returned an unrecognized version string: ${JSON.stringify(found)}`,
-        [`expected a semver like 0.1.0-rc.6 (pinned 0.1.x, decision D7), found ${JSON.stringify(found)}`],
+        [`expected a semver like 0.1.5-rc.1 (pinned 0.1.x, decision D7), found ${JSON.stringify(found)}`],
       )
     }
     if (!isPinnedDshVersion(version)) {
@@ -342,7 +342,113 @@ async function checkLlmAdapters(cordisPath, check1) {
   }
 }
 
-// ── check 4: tool-subagent-explore row vs the real installed Config ─────────
+// ── check 4: every config-bearing row vs the real installed Config ──────────
+
+/**
+ * Flattens a composition's rows, recursing into `cordis:group` config lists
+ * (the same traversal the mount performs).
+ */
+function flattenRows(rows, out = []) {
+  for (const row of rows ?? []) {
+    if (typeof row !== 'object' || row === null) continue
+    out.push(row)
+    if (Array.isArray(row.config)) flattenRows(row.config, out)
+  }
+  return out
+}
+
+/**
+ * Resolves a row's plugin to the entry file this install would load, or null
+ * when the package is not installed under `nm`.
+ *
+ * Handles the subpath form the compositions use
+ * (`@deepseek-ai/dsh-tool-subagent-control/list-agents`): the package is the
+ * first two segments for a scoped name, everything after is the subpath, and
+ * the package's own `exports` map names the file. A row naming an absent
+ * package is discovery's `broken` verdict to report, not this check's.
+ */
+function resolvePluginEntry(nm, specifier) {
+  const segments = specifier.split('/')
+  const packageName = specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]
+  const subpath = specifier.slice(packageName.length)
+  const packageDir = join(nm, packageName)
+  let manifest
+  try {
+    manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
+  } catch {
+    return null
+  }
+  const key = subpath === '' ? '.' : `.${subpath}`
+  const entry = manifest.exports?.[key] ?? (subpath === '' ? manifest.exports : undefined)
+  const relative = typeof entry === 'string'
+    ? entry
+    : entry?.default ?? entry?.import ?? (subpath === '' ? manifest.main : undefined)
+  return typeof relative === 'string' ? relative : null
+}
+
+/**
+ * Every row's config against the Config schema of the plugin THIS INSTALL
+ * would mount for it — the schema cordis applies lazily at session
+ * composition, run eagerly here.
+ *
+ * This is the check whose absence shipped the 0.1.5-rc.1 persona break: the
+ * eager gate existed but covered exactly one row (`tool-subagent-explore`),
+ * and the row that broke (`persona`) had none
+ * (docs/dsh-0.1.5-rc.1-review.md §6). A key rename in any unguarded row is
+ * therefore invisible to every other gate in the chain — the YAML parses, the
+ * markers are present, and discovery's health check only proves a row's module
+ * RESOLVES, never that its config validates. Rows whose package exports no
+ * `Config` are reported as unchecked, never as pass, so the report cannot
+ * claim coverage it does not have.
+ *
+ * `nm` is the installed dsh's node_modules, so the schema is the runtime's own.
+ * @returns { checked: string[], unchecked: string[], skipped: string[], failures: string[] }
+ */
+async function validateCompositionRows(nm, rows, imp) {
+  const checked = []
+  const unchecked = []
+  const skipped = []
+  const failures = []
+  for (const row of flattenRows(rows)) {
+    const id = typeof row.id === 'string' ? row.id : '(anonymous)'
+    const name = row.name
+    if (typeof name !== 'string' || name.length === 0) continue
+    if (name.startsWith('cordis:')) continue // loader builtin (group/meta), no package schema
+    if (row.disabled === true) {
+      skipped.push(id)
+      continue
+    }
+    const relative = resolvePluginEntry(nm, name)
+    if (relative === null) {
+      skipped.push(`${id} (${name} not installed)`)
+      continue
+    }
+    let mod
+    try {
+      mod = await imp(nm, join(name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0], relative))
+    } catch (error) {
+      // A package that exists but cannot import is a mount failure the real
+      // session would hit; report it rather than swallowing it.
+      failures.push(`${id} (${name}): import failed — ${String(error.message ?? error).slice(0, 160)}`)
+      continue
+    }
+    const Schema = mod.Config ?? mod.default?.Config
+    if (typeof Schema !== 'function') {
+      unchecked.push(`${id} (${name})`)
+      continue
+    }
+    try {
+      // A row with no `config` still gets the schema's defaults applied, which
+      // is exactly what the loader does — an omitted required field fails here.
+      const validated = new Schema(row.config ?? {})
+      void validated
+      checked.push(id)
+    } catch (error) {
+      failures.push(`${id} (${name}): ${error.name ?? 'Error'}: ${String(error.message ?? error).slice(0, 240)}`)
+    }
+  }
+  return { checked, unchecked, skipped, failures }
+}
 
 async function checkSubagentConfig(check1) {
   if (check1.status === 'fail' && check1.meta?.dshMissing === true) {
@@ -359,7 +465,7 @@ async function checkSubagentConfig(check1) {
       'subagent-config',
       'skip',
       'cannot resolve the installed dsh node_modules — validator imports impossible',
-      ['the validator reads js-yaml + dsh-tool-subagent Config from the dsh install; check 1 reports the dsh state'],
+      ['the validator reads js-yaml + plugin Config schemas from the dsh install; check 1 reports the dsh state'],
     )
   }
   let yaml
@@ -394,6 +500,21 @@ async function checkSubagentConfig(check1) {
     const rows = yaml.load(readFileSync(join(temp, 'agent.cordis.yml'), 'utf8'), {
       schema: yaml.JSON_SCHEMA.extend(makeJsExprType(yaml)),
     })
+    // The general pass FIRST: every row's config against its own installed
+    // schema. The T11 contract checks below are stricter assertions on ONE of
+    // those rows; this pass is what makes a rename in any OTHER row loud.
+    const sweep = await validateCompositionRows(nm, rows, imp)
+    if (sweep.failures.length > 0) {
+      return check(
+        'subagent-config',
+        'fail',
+        `${String(sweep.failures.length)} row(s) rejected by their installed Config schema`,
+        [
+          ...sweep.failures,
+          'this is the exact schema cordis applies lazily at session composition — a broken row fails here instead of at first session',
+        ],
+      )
+    }
     const found = findRowsById(rows, 'tool-subagent-explore')
     if (found.length !== 1) {
       return check(
@@ -456,8 +577,16 @@ async function checkSubagentConfig(check1) {
     return check(
       'subagent-config',
       'pass',
-      'tool-subagent-explore validates against the installed dsh-tool-subagent Config '
-        + `(provider=spawn toolName=explore backgroundMode=continuable maxDepth=1 deny=[write,edit,explore] route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars)`,
+      `${String(sweep.checked.length)} row(s) validate against their installed Config schemas, plus the T11 contract — `
+        + 'tool-subagent-explore: '
+        + `provider=spawn toolName=explore backgroundMode=continuable maxDepth=1 deny=[write,edit,explore] route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars`
+        + (sweep.unchecked.length === 0
+          ? ''
+          : `; unchecked (package exports no Config schema): ${sweep.unchecked.join(', ')}`)
+        + (sweep.skipped.length === 0 ? '' : `; skipped: ${sweep.skipped.join(', ')}`),
+      sweep.unchecked.length === 0
+        ? []
+        : [`these rows carry no schema and were NOT verified: ${sweep.unchecked.join(', ')}`],
     )
   } catch (error) {
     return check(

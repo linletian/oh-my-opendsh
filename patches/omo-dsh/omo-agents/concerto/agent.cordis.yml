@@ -115,7 +115,14 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: __OMO_SISYPHUS_SYSTEM_PROMPT__
+    prefix: __OMO_SISYPHUS_SYSTEM_PROMPT__
+    # Upstream parity (0.1.5-rc.1 standard). A preset persona row shadows the
+    # deployment SUFFIX as well as the prefix
+    # (dsh-persona/src/index.ts:53-58 registers both sections), so omitting
+    # this drops the cwd line the deployment would otherwise supply. Safe here:
+    # the `{{` ban in system-prompt.ts guards the ASSEMBLED markdown, not this
+    # separate config value.
+    suffix: Your working directory is {{cwd}}.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -306,3 +313,7 @@
   config:
     fetch: true
     searchTimeoutMs: 60000
+
+# Upstream parity (added to every shipped preset at dsh-v0.1.5-alpha.2).
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'
