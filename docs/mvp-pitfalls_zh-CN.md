@@ -253,6 +253,17 @@ schema 及其 `toolFilter`/`maxDepth` 强制；T11 explore persona 影子（真�
 `write`/`edit`/委派工具）；以及 FR-6 hard-blocks 注入（一条 `source.plugin` 为 `omo-agents` 的
 `user/message` 落进子日志）。
 
+### P-20.7 —— 链外的探针早已腐烂;没有任何东西在跑它们(2026-09-10 发现)
+
+| 字段 | 记录 |
+|---|---|
+| **症状** | 两个验证脚本在本次升级碰任何东西之前**就已经坏了**,其中一个已坏了五天。`scripts/concerto-mode-probe.sh` 报 `explore toolFilter deny list missing`;`scripts/prove-route-logging.mjs` 死在 `ctx.agentLoop` 为 undefined。 |
+| **证据** | 探针在两处断言 `deny: [write, edit]`(`:272` 的 eager schema 检查、`:588` 的落盘文件 grep),而 **2026-09-05** 的 F1 硬化早已把模板改成 `deny: [write, edit, explore]`。`prove-route-logging.mjs` 有**三个**彼此独立的 0.1.5-rc.1 断点:没有挂 `sessionProjections`(`dsh-agent-loop` 新增注入,而且循环会**读**它,所以空桩会是个错误 fixture)、对已变成 `async` 的 `agentLoop.create()` 没有 `await`、以及按裸 `session.jsonl` 匹配文件名。 |
+| **根因** | `scripts/ci-local.sh` 跑七道闸门,**其中没有任何一道是探针或三个 `prove-*.mjs`**——而 PRD 自己的 rc 漂移声明却把 `scripts/concerto-mode-probe.sh` 列为强制 bump 链的一环。**没有链条跑的检查,就是会腐烂的检查**:两处损坏都是**别的**提交引入的(F1 硬化、0.1.5-rc.1 升级),而那两个提交都没有办法察觉。 |
+| **先前的验证为何漏掉** | 0.1.5-rc.1 的升级验证跑的恰好是 `ci-local.sh` 里的闸门加 e2e——也就是跑的**正是那套无法发现此类问题的集合**。探针与证明脚本被默认为"已覆盖",只因为它们存在。它们第一次被真正执行,是在"本仓库还有别的需要修订吗?"这个问题促成一次穷尽式清扫时。 |
+| **修复** | (1) 修好两个脚本(deny 列表期望;`sessionProjections` 挂**真**注册表而非桩;`create` 加 `await`;日志文件名感知代际)。(2) **结构性**:新增 `scripts/run-proofs.sh`——单命令,经 `doctor-lite` 已有的 helper 解析实装 dsh 的 node_modules,用插件自己的 `syncConcertoPreset` 渲染模板,跑完三个证明——并把它接成 `scripts/ci-local.sh` 与 `.github/workflows/ci.yml` 的**第 8 道闸门**。零 LLM 成本、无网络、不启动,耗时远低于一分钟。 |
+| **可迁移的教训** | 探针腐烂,是因为它被写进了**散文**(PRD),却没被写进**代码**(链条)。"某检查应当运行"的文档,不是"它确实在运行"的机制。这是 P-20.6 的教训上升一层:那是一个受检文件里**未被保护的一行**;这是受检仓库里**未被保护的一个文件**。 |
+
 ## 8. P-21（2026-09-10，交付后的手工测试发现）
 
 **0.1.5-rc.1 交付件由用户在真实 Web UI 手工测试,四个场景中两个被绕过。** 这正是 G2("提前踩坑")存在的意义,也是本项目第一条由**人**驱动交付件、而非由脚本化 harness 产出的发现。分析的会话:父 `session-61174f37`(`agent-preset/selected: concerto`;23 个工具含 `call_omo_explore`、无通用 `subagent`/`subagent_fork`;路由 `deepseek-official/deepseek-v4-pro`;persona 为 `# Orchestrator Role`),子 `9dde0c40`(S3)与 `7f04ee2c`(S4),以及孙 `session-21d9b567`(S4)。
@@ -296,13 +307,3 @@ schema 及其 `toolFilter`/`maxDepth` 强制；T11 explore persona 影子（真�
 
 **测试设计的教训保留(P-21.3 仍成立)。** 自动化场景是通过"确认预期工具缺席"来认证安全的。无论本条处置如何,这都是真实的覆盖上限:一项限制需要的是"用任何可用手段去够到被禁**结果**"的场景。在 MVP 威胁模型下不紧急;但在全量移植宣称任何限制"已强制"之前,它是必需的。
 
-### P-20.7 —— 链外的探针早已腐烂;没有任何东西在跑它们(2026-09-10 发现)
-
-| 字段 | 记录 |
-|---|---|
-| **症状** | 两个验证脚本在本次升级碰任何东西之前**就已经坏了**,其中一个已坏了五天。`scripts/concerto-mode-probe.sh` 报 `explore toolFilter deny list missing`;`scripts/prove-route-logging.mjs` 死在 `ctx.agentLoop` 为 undefined。 |
-| **证据** | 探针在两处断言 `deny: [write, edit]`(`:272` 的 eager schema 检查、`:588` 的落盘文件 grep),而 **2026-09-05** 的 F1 硬化早已把模板改成 `deny: [write, edit, explore]`。`prove-route-logging.mjs` 有**三个**彼此独立的 0.1.5-rc.1 断点:没有挂 `sessionProjections`(`dsh-agent-loop` 新增注入,而且循环会**读**它,所以空桩会是个错误 fixture)、对已变成 `async` 的 `agentLoop.create()` 没有 `await`、以及按裸 `session.jsonl` 匹配文件名。 |
-| **根因** | `scripts/ci-local.sh` 跑七道闸门,**其中没有任何一道是探针或三个 `prove-*.mjs`**——而 PRD 自己的 rc 漂移声明却把 `scripts/concerto-mode-probe.sh` 列为强制 bump 链的一环。**没有链条跑的检查,就是会腐烂的检查**:两处损坏都是**别的**提交引入的(F1 硬化、0.1.5-rc.1 升级),而那两个提交都没有办法察觉。 |
-| **先前的验证为何漏掉** | 0.1.5-rc.1 的升级验证跑的恰好是 `ci-local.sh` 里的闸门加 e2e——也就是跑的**正是那套无法发现此类问题的集合**。探针与证明脚本被默认为"已覆盖",只因为它们存在。它们第一次被真正执行,是在"本仓库还有别的需要修订吗?"这个问题促成一次穷尽式清扫时。 |
-| **修复** | (1) 修好两个脚本(deny 列表期望;`sessionProjections` 挂**真**注册表而非桩;`create` 加 `await`;日志文件名感知代际)。(2) **结构性**:新增 `scripts/run-proofs.sh`——单命令,经 `doctor-lite` 已有的 helper 解析实装 dsh 的 node_modules,用插件自己的 `syncConcertoPreset` 渲染模板,跑完三个证明——并把它接成 `scripts/ci-local.sh` 与 `.github/workflows/ci.yml` 的**第 8 道闸门**。零 LLM 成本、无网络、不启动,耗时远低于一分钟。 |
-| **可迁移的教训** | 探针腐烂,是因为它被写进了**散文**(PRD),却没被写进**代码**(链条)。"某检查应当运行"的文档,不是"它确实在运行"的机制。这是 P-20.6 的教训上升一层:那是一个受检文件里**未被保护的一行**;这是受检仓库里**未被保护的一个文件**。 |

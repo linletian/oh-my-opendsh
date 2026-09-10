@@ -10,6 +10,8 @@
 > Date: 2026-09-10 · Runtime: `@deepseek-ai/dsh@0.1.5-rc.1` (installed build, the same
 > version CI now pins) · Research basis: [`dsh-0.1.5-rc.1-review.md`](./dsh-0.1.5-rc.1-review.md)
 > · Pitfall records: [`mvp-pitfalls.md`](./mvp-pitfalls.md) §7 (P-20)
+>
+> **Chinese twin: outstanding** — same deliberate deferral as the review doc; see its header.
 
 ## What was broken, and what the gate scores are now
 
@@ -66,7 +68,10 @@ Full record: `docs/mvp-pitfalls.md` §7 P-20.7.
 
 ## Status of this row
 
-**L1 (zero-LLM) is GREEN on 0.1.5-rc.1.** The matrix row stays `untested` until the L2
-real-model record exists, because `scripts/check-l2-evidence.mjs` requires the canonical
-`**PASS — N passed, 0 failed` marker that only a real-model run writes. The delivered
-Concerto preset in `$DSH_HOME/.agent-presets/concerto/` is what produces that record.
+**L1 and L2 are GREEN on 0.1.5-rc.1**, and the matrix row ships as `tested` with the L2 record in
+its note. Its `our:` field is deliberately **unversioned**: no version is chosen until a release,
+and a released version number must never claim work that version does not contain — released
+`0.1.1` does not satisfy this row, because it carries the persona break. `release-bump.mjs`
+**upgrades that row in place** at release time (replacing `our:` and the identity fields) rather
+than inserting a second one, so the matrix keeps exactly one row per `(our, dsh)`; see
+`docs/release-process.md` §2a.

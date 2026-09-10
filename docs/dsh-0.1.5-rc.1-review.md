@@ -9,6 +9,8 @@
 > - Method: (1) enumerate every DSH surface the MVP touches; (2) `git diff 15148dbd9a..dsh-v0.1.5-rc.1` per package; (3) **run the MVP's own gates against 0.1.5-rc.1** — `doctor-lite`, `verify-concerto-static`, `check-docs-consistency`, `vitest run`, `tests/e2e/drive.mjs`, `prove-explore-*.mjs`; (4) drive a real `dsh web` boot + `session/create` RPC against the installer-materialized preset
 
 ---
+>
+> **Chinese twin: outstanding.** `docs/` docs are normally EN+zh pairs (cf. `dsh-0.1.2-review.md`). This one and its companion `dsh-0.1.5-rc.1-upgrade.md` are deliberately EN-only for now so the record lands with the change it describes; the translation is a follow-up, tracked in PRD §12.
 
 ## 1. Verdict
 
@@ -51,7 +53,7 @@ The **preset half is broken**: the `persona` row's config key was renamed (`text
 
 **Version boundary (git-verified):** absent at `dsh-v0.1.3-alpha.1`, present at `dsh-v0.1.3-alpha.2`; unchanged through `dsh-v0.1.5-rc.1`. The 0.1.2-rc.1 row already registered in `.omo/compat.yaml` as `untested` is unaffected by this change.
 
-Unknown keys are still silently preserved by schemastery, so the old `text:` value is **dropped without a warning** and validation fails on the missing required `prefix`.
+schemastery still **preserves** an undeclared key in the validated object, but `dsh-persona` reads only `prefix` — so the old `text:` survives validation **and has no effect**: nothing warns, the persona text is simply never used, and the mount fails on the missing required `prefix`.
 
 ### 2.2 Proof — the real product path
 
@@ -98,13 +100,13 @@ The remaining failures in that run are all `sessionLogFound: false` — finding 
 
 | File | Site |
 |---|---|
-| `patches/omo-dsh/omo-agents/src/system-prompt.ts` | `:67` `sentinelValue`, `:72` error text, `:79` replacement (`text: |-` → `prefix: |-`) |
+| `patches/omo-dsh/omo-agents/src/system-prompt.ts` | `:71` `sentinelValue`, `:76` error text, `:83` replacement (`text: |-` → `prefix: |-`) |
 | `patches/omo-dsh/omo-agents/concerto/agent.cordis.yml` | `:118` `text: __OMO_SISYPHUS_SYSTEM_PROMPT__` |
 | `patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml` | `:39` `text: \|-` |
 | `tests/omo-agents/system-prompt.test.ts` | `:38`, `:39`, `:116`, `:125`, `:130`, `:141`, `:147`, `:152` |
 | `tests/omo-agents/concerto-preset.test.ts` | `:151` |
-| `tests/e2e/drive.mjs` | `:82` (comment), `:743` `MOCKROLE_BLOCK_SCALARS.sisyphus.needle` |
-| `scripts/concerto-mode-probe.sh` | `:538` `grep -q "text: \|-"` |
+| `tests/e2e/drive.mjs` | `:82` (comment), `:807` `MOCKROLE_BLOCK_SCALARS.sisyphus.needle` |
+| `scripts/concerto-mode-probe.sh` | `:561` `grep -q "prefix: \|-"` |
 
 `scripts/verify-concerto-static.mjs` needs no assertion change (c09 checks persona *content*), but c01/c10 would not catch the regression either way.
 
@@ -186,7 +188,7 @@ PASS  tool-subagent-explore (@deepseek-ai/dsh-tool-subagent)
 PASS  tool-web / tool-todo / tool-fs-search / skill-filesystem / agent-instructions / …
 ```
 
-(Compositions also carry rows whose packages export no `Config` at all — `compaction-basic`, `tool-subagent-control`, `command-compact`, `tool-ask-user` — which the gate should report as unchecked, not as pass.)
+(Compositions also carry rows whose packages export no `Config` at all. The shipped gate reports the exact set it skipped — on this composition `command-goal`, `command-compact`, `tool-subagent-control`, `tool-subagent-control/list-agents` and `tool-ask-user` — as *unchecked*, never as pass. **Count caveat:** the prototype below reads only the named `Config` export and so counts 13 rows, while the shipped check also accepts a class plugin's `default.Config` and counts 16. Both denominators are correct for their own rule; compare like with like.)
 
 ---
 
