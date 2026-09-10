@@ -105,15 +105,44 @@ echo "release.sh: step 2/8 — bump files ($NEW, alias $NEW_ALIAS)"
 node scripts/release-bump.mjs "$NEW" "$NEW_ALIAS"
 
 # 3. re-gate after the edit
+#
+# NOTE: this validates the WORKING TREE, which is not yet what gets committed.
+# Step 4 therefore ends with a guard that the commit captured everything this
+# gate just approved — see there.
 echo "release.sh: step 3/8 — post-bump consistency"
 node scripts/check-docs-consistency.mjs
 node scripts/verify-concerto-static.mjs
 
 # 4. commit
+#
+# Stage EVERYTHING rather than an enumerated list. The list used to omit the
+# Pages `install` wrapper, which release-bump rewrites on every alias move:
+# step 3 then verified the WORKING TREE (wrapper already correct) while step 4
+# committed a subset that still pointed at the OLD alias — so the re-gate
+# approved something other than what shipped, and only a fresh clone could see
+# it (d07 compares the wrapper against compat's tag_alias). v0.2.0 shipped that
+# way: the published one-liner kept routing at `v0.1` and therefore installed
+# the pre-upgrade preset.
+#
+# Enumerating was never needed: step 1 requires a clean tree, so after the bump
+# the only modifications are the bump's own (transient artifacts such as
+# `.omo/release-notes-*.md` are gitignored).
 echo "release.sh: step 4/8 — commit"
-git add package.json scripts/install-concerto.sh README.md README_zh-CN.md \
-  .omo/compat.yaml docs/compat-matrix.md docs/compat-matrix_zh-CN.md CHANGELOG.md
+git add -A
 git commit -m "release: v$NEW"
+
+# The guard that makes the class impossible: after committing, the tree must be
+# clean. A dirty tree here means the bump wrote something the commit missed, so
+# abort BEFORE the tags and the push — nothing has left this machine yet.
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "release.sh: FAIL — working tree still dirty after the release commit:" >&2
+  git status --short >&2
+  echo "release.sh: a bumped file was not committed; step 3 approved the working" >&2
+  echo "release.sh: tree while step 4 shipped something else. Nothing was tagged" >&2
+  echo "release.sh: or pushed. Inspect, then either amend the release commit or" >&2
+  echo "release.sh: reset it with 'git reset --soft HEAD~1' and re-run." >&2
+  exit 1
+fi
 
 # 5. tags
 echo "release.sh: step 5/8 — tags (v$NEW immutable + $NEW_ALIAS alias)"

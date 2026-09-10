@@ -3,7 +3,10 @@
 #   https://linletian.github.io/oh-my-opendsh/install
 #
 # Thin wrapper, single source of truth: scripts/install-concerto.sh
-# (pinned tag v0.1). One extra hop keeps the two copies from drifting.
+# (fetched at THIS repo's current alias tag — the line below is rewritten by
+# scripts/release-bump.mjs on every alias move, and scripts/check-docs-consistency
+# d07 fails if it ever disagrees with .omo/compat.yaml's tag_alias). One extra
+# hop keeps the two copies from drifting.
 #
 # Usage: curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
-curl -fsSL https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh | sh
+curl -fsSL https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/scripts/install-concerto.sh | sh
