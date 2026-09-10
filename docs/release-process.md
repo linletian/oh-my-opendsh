@@ -53,6 +53,50 @@ implemented** — it changes what a matrix row attests to, so it is a decision r
 a patch. Until then, treat a red `install dsh` step as an upstream condition: re-run
 before investigating this repo.
 
+### Support window, and what version probing actually measures
+
+**Measured 2026-09-10** with `scripts/compat-probe.sh <version>` (~2 min per version, zero LLM
+cost). Recorded so the numbers do not have to be re-derived, **not** as a commitment to support
+them — see the scope decision below.
+
+**Probing is tuple-granular, not per-version.** `@deepseek-ai/dsh@V` declares its siblings as
+`^V`, and the semver prerelease rule means such a range matches prereleases of **V's own
+`major.minor.patch` tuple only**. So installing a version never tests that exact build:
+
+| pin | sibling spec | resolved `dsh-persona` |
+|---|---|---|
+| `0.1.0-rc.6` | `^0.1.0-rc.6` | `0.1.0-rc.8` ← stays in the **0.1.0** tuple |
+| `0.1.3-alpha.2` | `^0.1.3-alpha.2` | `0.1.3-alpha.2` |
+| `0.1.5-alpha.1` | `^0.1.5-alpha.1` | `0.1.5-rc.2` ← stays in the **0.1.5** tuple |
+| `0.1.5-rc.1` | `^0.1.5-rc.1` | `0.1.5-rc.2` |
+
+Two consequences worth keeping straight:
+
+- The effective pin is **"the newest prerelease of the pinned tuple"**, so a probe result is a
+  statement about a tuple, not about one published version. That also bounds the earlier worry:
+  the resolution does **not** float across `0.1.x`, only within one `x.y.z`.
+- The one genuinely unstable moment is an **upstream partial publish**: while a new tuple member
+  is being rolled out, its siblings can be unsatisfiable and CI fails in the `install dsh` step
+  **before any gate in this repo runs**. That is transient — re-run rather than investigate.
+
+**Measured window for our current concerto layer:**
+
+| dsh tuple | result | cause when it fails |
+|---|---|---|
+| `0.1.5-*` (alpha.1 → rc.2) | ✅ PASS (16 rows + e2e 4/4) | — |
+| `0.1.3-*` | ❌ FAIL | the `present` row: `@deepseek-ai/dsh-tool-present` does not exist yet |
+| `0.1.0-*` (rc.6 → rc.8) | ❌ FAIL | `persona` there requires `text:` (the pre-rename schema); `present` also absent |
+
+So the layer works on the **0.1.5 line** and not on earlier ones, because it is derived from the
+0.1.5-line shipped preset (upstream's `present` row and the `prefix:` rename both postdate 0.1.3).
+
+**Scope decision (2026-09-10).** Do **not** build a multi-version CI matrix or a formal
+support-range apparatus now. dsh is moving fast, this is still an MVP, and the project's direction
+is not settled — a support window measured today would be stale before it was useful. Keep the
+cheap mechanism (`compat-probe.sh`, ~2 min/version) and re-measure when a concrete need appears
+(a user on another version, or a pin bump). What must stay live is the *practice*: probe the
+target line before pinning to it, and record the result.
+
 ## 2a. Branch model — `develop` integrates, `main` releases
 
 Three long-lived refs, one direction of travel:
