@@ -109,7 +109,7 @@ docs 一致性门每次 CI 都会重渲染并比对两个文件——手改立�
 
 | 层 | 内容 | 成本 | 在哪里跑 |
 |---|---|---|---|
-| **L0 静态** | typecheck · 单测 · doctor-lite · license · **concerto 静态检查**（c01–c09：交付的 preset + 插件保持 AC-6/P-19 加固）· **docs 一致性**（d01–d06） | 零 | 每次 push 的 CI + 本地 `scripts/ci-local.sh`（7 门） |
+| **L0 静态** | typecheck · 单测 · doctor-lite · license · **concerto 静态检查**（c01–c10：交付的 preset + 插件保持 AC-6/P-19 加固）· **docs 一致性**（d01–d08） | 零 | 每次 push 的 CI + 本地 `scripts/ci-local.sh`（8 门） |
 | **L1 零模型 e2e** | mock-LLM e2e——用 mock 服务器启动**真实 dsh 二进制**，断言会话 JSONL | 零 | CI + 本地 |
 | **L2 真模型** | `concerto_verify` 22 项（AC-1…AC-9：双路由、AC-6a/6b 反向断言等） | 真 key | **仅本地**——`scripts/release-check.sh` 第 8 门（证据新鲜度 ≤ `VERIFY_FRESH_DAYS`，默认 7 天） |
 
@@ -126,6 +126,41 @@ TDD 形态：新能力或新适配先写 AC 检查——对着当前 dsh 跑红 
 | **C — 静默变化** | 行为漂移但不报错 | 最危险的一类（P-19）。靠反向断言抓；按 B 处理且优先级更高 |
 
 节奏：每周 `compat-probe` 工作流（免费、无 secrets）探测上游新版本，每个新版本开一个 issue；验证在本地跑——`scripts/compat-probe.sh`（临时 dsh 前缀 + 沙箱 DSH_HOME + doctor-lite + 对**新** dsh 的 mock e2e），然后一步手动真模型 `concerto_verify`。最后的 pin 翻转用 D7 命名的 `scripts/bump-dsh.sh <version>`——矩阵行不是 ✅ 或本地 `dsh --version` 不匹配就拒绝执行，然后跑完整零成本链。处理选项按优先级：**跟进**（新 ✅ 行）→ **桥接**（patch 层加垫片，行内注明）→ **滞后**（`/install` 停在 LKG；README 状态注明最高支持的 dsh）。
+
+### 后续项（已记录，**未实施**）：上游发新版本时 CI 会怎样
+
+2026-09-10 排查"一次绿灯为什么变红"时发现。用户同日裁定延后：dsh 迭代快、本项目仍是 MVP，
+下面这套设施现在不值得搭。记录在此，以免重新推导。
+
+`^0.1.5-rc.1` 展开为 `>=0.1.5-rc.1 <0.2.0-0`（用 npm 自带的 `semver` 实测）：
+
+| 上游新版本 | 会被这个 pin 拉进来吗 |
+|---|---|
+| `0.1.5-rc.3`、`0.1.5`、**`0.1.6`**、`0.1.7` | ✅ 会 |
+| `0.1.6-rc.1`、`0.2.0-rc.1`、`0.2.0`、`1.0.0` | ❌ 不会 |
+
+因此，在一次绿灯之后过两天重跑同一套 CI，会落进四种情形之一：
+
+| 上游发布 | CI 重跑 | 人会看到什么 |
+|---|---|---|
+| `0.1.5-rc.3` | 会测它 | **没改代码却红了** |
+| `0.1.6-rc.1` | 仍测 `0.1.5-rc.2` | 绿——对新线一无所知 |
+| **`0.1.6`（稳定版）** | **静默切换到它** | 没改代码却红，或虚假的绿 |
+| `0.2.0` | 仍测 `0.1.5-*` | **绿，而本层可能已经不工作了** |
+
+两个危险方向都**不是**"CI 变红"：**新元组的稳定版满足该范围**（于是 CI 悄悄开始测一个 pin
+字符串并未指名的东西）；而 `0.2.0` 在范围**之外**（于是真正的破坏性升级让 CI 保持绿色）。
+
+**监控盲区。** `scripts/check-compat-probes.mjs` 读的是 `npm view "@deepseek-ai/dsh" version`
+——**只看 `latest` 这一个 dist-tag**。当前：`latest`=0.1.5-rc.1、`next`=0.1.5-rc.2、
+`alpha`=0.1.5-alpha.2。**dist-tag 不影响版本解析**——caret 范围按**版本号**匹配，不按 tag——
+所以一个发到 `next` 下的稳定版 `0.1.6` 会立刻被 CI 拉走，而哨兵仍然报告"没有新东西"。
+
+**候选缓解措施，按成本排序（均未实施）：**
+
+1. 让哨兵读取**全部已发布版本**而非只读 `latest`，从而看见 `next`/`alpha` 的发版。
+2. 给 CI 加一道 **pin 漂移断言**：安装后断言解析到的 `dsh-*` 兄弟包仍处于所 pin 的元组内，
+   把"静默切换"变成响亮失败。
 
 ## 6. 发布流程——`scripts/release.sh`
 
@@ -177,7 +212,7 @@ scripts/release.sh <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--no-gh] [
 
 | 资产 | 何时跑 | 成本 |
 |---|---|---|
-| `scripts/ci-local.sh`（7 门） | 本地 + 每次 push 的 CI `ci.yml` | 零 |
+| `scripts/ci-local.sh`（8 门） | 本地 + 每次 push 的 CI `ci.yml` | 零 |
 | `scripts/release-check.sh`（8 门） | 本地，发布 preflight | 零成本门禁 + 你已有的 L2 证据 |
 | `scripts/release.sh` + `scripts/release-bump.mjs` | 本地，发布时 | 零 |
 | `scripts/compat-probe.sh` | 本地，处理 🔬 行时 | 零（自动部分）+ 一次真模型 verify |

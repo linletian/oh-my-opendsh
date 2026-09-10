@@ -153,7 +153,7 @@ for the rollback/emergency flow (§8).
 
 | Layer | What | Cost | Where |
 |---|---|---|---|
-| **L0 static** | typecheck · unit · doctor-lite · license · **concerto static** (c01–c09: the shipped preset + plugin keep the AC-6/P-19 hardening) · **docs consistency** (d01–d06) | zero | CI on every push + locally via `scripts/ci-local.sh` (7 gates) |
+| **L0 static** | typecheck · unit · doctor-lite · license · **concerto static** (c01–c10: the shipped preset + plugin keep the AC-6/P-19 hardening) · **docs consistency** (d01–d08) | zero | CI on every push + locally via `scripts/ci-local.sh` (8 gates) |
 | **L1 zero-LLM e2e** | mock-LLM e2e — boots the REAL dsh binary against a mock server, asserts on session JSONL | zero | CI + locally |
 | **L2 real-model** | `concerto_verify` 22 checks (AC-1…AC-9: dual routing, AC-6a/6b negative assertions, …) | real keys | **local only** — `scripts/release-check.sh` gate 8 (evidence freshness ≤ `VERIFY_FRESH_DAYS`, default 7 d) |
 
@@ -186,6 +186,45 @@ and the local `dsh --version` already reports the new version, then runs the
 full zero-cost chain. Options in order of preference: **follow** (new ✅ row) →
 **bridge** (shim in the patch layer, row notes it) → **lag** (`/install` stays
 on LKG; README status states the max supported dsh).
+
+### Follow-up (recorded, NOT implemented): what a new upstream release does to CI
+
+Found 2026-09-10 while explaining why a green run went red. Deferred by the user the same day:
+dsh is moving fast and this is still an MVP, so the apparatus below is not worth building yet.
+Recorded so the reasoning does not have to be re-derived.
+
+`^0.1.5-rc.1` expands to `>=0.1.5-rc.1 <0.2.0-0` (checked with npm's bundled `semver`):
+
+| new upstream version | pulled by the pin? |
+|---|---|
+| `0.1.5-rc.3`, `0.1.5`, **`0.1.6`**, `0.1.7` | ✅ yes |
+| `0.1.6-rc.1`, `0.2.0-rc.1`, `0.2.0`, `1.0.0` | ❌ no |
+
+So re-running the same CI two days after a green run lands in one of four places:
+
+| upstream ships | CI re-run | what a human sees |
+|---|---|---|
+| `0.1.5-rc.3` | tests it | **red with no code change** |
+| `0.1.6-rc.1` | still tests `0.1.5-rc.2` | green — blind to the new line |
+| **`0.1.6` (stable)** | **silently switches to it** | red-with-no-code-change, or a false green |
+| `0.2.0` | still tests `0.1.5-*` | **green while the layer may be broken** |
+
+Neither dangerous direction is "CI goes red": a **stable release of a new tuple satisfies the
+range** (so CI silently starts testing something the pin string does not name), and `0.2.0` is
+**outside** the range (so a real breaking bump leaves CI green).
+
+**Monitoring gap.** `scripts/check-compat-probes.mjs` reads `npm view "@deepseek-ai/dsh" version` —
+the **`latest` dist-tag only**. Current state: `latest`=0.1.5-rc.1, `next`=0.1.5-rc.2,
+`alpha`=0.1.5-alpha.2. A dist-tag does not affect resolution — the caret range matches by VERSION,
+not by tag — so a stable `0.1.6` published under `next` is pulled by CI at once while the sentinel
+still reports "nothing new".
+
+**Candidate mitigations, in cost order (none implemented):**
+
+1. Have the sentinel read every published version rather than only `latest`, so `next`/`alpha`
+   releases are visible.
+2. Add a CI pin-drift assertion: after installing, assert the resolved `dsh-*` siblings still match
+   the pinned tuple, turning a silent switchover into a loud failure.
 
 ## 6. Release procedure — `scripts/release.sh`
 
@@ -250,7 +289,7 @@ editorial.
 
 | Artifact | Runs | Cost |
 |---|---|---|
-| `scripts/ci-local.sh` (7 gates) | local + CI `ci.yml` on every push | zero |
+| `scripts/ci-local.sh` (8 gates) | local + CI `ci.yml` on every push | zero |
 | `scripts/release-check.sh` (8 gates) | local, release preflight | zero gates + your existing L2 evidence |
 | `scripts/release.sh` + `scripts/release-bump.mjs` | local, on release | zero |
 | `scripts/compat-probe.sh` | local, on 🔬 rows | zero (auto part) + one real-model verify |
