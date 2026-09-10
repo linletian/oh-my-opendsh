@@ -5,12 +5,13 @@
 // explore is a SUBAGENT persona, not a run mode. dsh-tool-subagent takes a
 // per-child persona as INLINE TEXT: config field `persona: string`
 // (tool-subagent/src/index.ts:57,92 — "Per-child persona that shadows
-// deployment:persona"), forwarded verbatim into the start request
+// deployment:persona-prefix", renamed at dsh-v0.1.3-alpha.2), forwarded
+// verbatim into the start request
 // (index.ts:384); the spawn-in-process provider declares the `persona`
 // capability (subagent-spawn-in-process/src/index.ts:42), and
 // applyChildComposition registers it as the child-scoped
-// `deployment:persona` system-prompt section at order 0
-// (subagent/src/child-agent.ts:171-173). So the honest minimal shape is the
+// `deployment:persona-prefix` system-prompt section at order 0
+// (subagent/src/child-agent.ts:209-214). So the honest minimal shape is the
 // T7/T8 chain reused: ONE markdown file in system-sections/ (loaded through
 // the T7 loadSectionFile, P-9-stable import.meta.url resolution) + ONE
 // builder producing the string T11 binds as the instance's `persona`.

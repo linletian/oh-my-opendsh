@@ -36,7 +36,7 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: |-
+    prefix: |-
       <!-- Source: original (oh-my-opendsh task T7 spec, this repo). License: MIT OR SUL-1.0. -->
 
       # Orchestrator Role
@@ -49,7 +49,6 @@
       - Your value is judgment: who should do what, when, and with which context.
       - Step in directly only when no agent on the roster can do the work.
 
-
       <!-- Source: original (oh-my-opendsh task T7 spec, this repo). License: MIT OR SUL-1.0. -->
 
       # Delegation Discipline
@@ -58,7 +57,6 @@
       - **Delegate by default**: if another agent can do it, it should.
       - **Do not perform retrieval yourself**: hand retrieval work to explore/librarian agents.
       - **Never duplicate delegation**: after delegating, do not redo the same work yourself; wait for the result.
-
 
       <!-- Source: oh-my-openagent (SUL-1.0), packages/omo-opencode/src/agents/dynamic-agent-policy-sections.ts:7-20.
            Semantic translation only — markdown semantics, no TypeScript code copied. -->
@@ -71,7 +69,6 @@
       - Leave code in broken state after failures - **Never**
       - `background_cancel(all=true)` - **Never.** Always cancel individually by taskId.
       - Delivering final answer before collecting Oracle result - **Never.**
-
 
       <!-- Source: oh-my-openagent (SUL-1.0), packages/omo-opencode/src/agents/dynamic-agent-policy-sections.ts:22-37.
            Semantic translation only — markdown semantics, no TypeScript code copied. -->
@@ -89,7 +86,12 @@
       - **Background Tasks**: Polling `background_output` on running tasks - end response and wait for notification
       - **Delegation Duplication**: Delegating exploration to explore/librarian and then manually doing the same search yourself
       - **Oracle**: Delivering answer without collecting Oracle results
-
+    # Upstream parity (0.1.5-rc.1 standard). A preset persona row shadows the
+    # deployment SUFFIX as well as the prefix (dsh-persona registers both
+    # sections), so omitting this drops the cwd line the deployment would
+    # otherwise supply. Safe here: the `{{` ban in src/system-prompt.ts guards
+    # the ASSEMBLED markdown, not this separate config value.
+    suffix: Your working directory is {{cwd}}.
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
@@ -287,8 +289,21 @@
   config:
     allowParallelInProgress: true
 
+# Upstream parity (0.1.5-rc.1 standard): `fetch: true`. The rc-era value came
+# from rc.6's standard preset, which set `false`; following upstream unless a
+# deviation is recorded is the derivation rule, and the legacy template
+# (patches/omo-dsh/omo-agents/concerto/) already carries `true` — this
+# restores agreement between our own two artifacts.
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
   config:
-    fetch: false
+    fetch: true
     searchTimeoutMs: 60000
+
+# Upstream parity (added to every shipped preset at dsh-v0.1.5-alpha.2): the
+# model-facing declaration of finished workspace files. Nothing in the MVP
+# depends on it, but a conductor that hands a deliverable back to the user is
+# exactly the agent this row exists for, and the derivation rule is to follow
+# upstream unless a deviation is recorded.
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'

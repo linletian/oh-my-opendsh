@@ -148,7 +148,7 @@ describe('omo-agents explore delegation binding (T11, form A static config)', ()
     expect(template.split(`persona: ${EXPLORE_PERSONA_SENTINEL}`).length - 1).toBe(1)
     expect(template.split(`agentOptions: ${EXPLORE_AGENT_OPTIONS_SENTINEL}`).length - 1).toBe(1)
     // The T8 sentinel path stays intact alongside them.
-    expect(template.split('text: __OMO_SISYPHUS_SYSTEM_PROMPT__').length - 1).toBe(1)
+    expect(template.split('prefix: __OMO_SISYPHUS_SYSTEM_PROMPT__').length - 1).toBe(1)
   })
 
   it('sync renders the explore persona sentinel into a |- block scalar inside the explore row', () => {

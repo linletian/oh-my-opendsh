@@ -35,8 +35,8 @@ const SECTION_MARKERS = {
 /** Extracts the persona block-scalar content lines from a rendered composition. */
 function personaBlockLines(rendered: string): string[] {
   const lines = rendered.split('\n')
-  const start = lines.findIndex((line) => line.trim() === 'text: |-')
-  if (start < 0) throw new Error('no `text: |-` block scalar in the rendered composition')
+  const start = lines.findIndex((line) => line.trim() === 'prefix: |-')
+  if (start < 0) throw new Error('no `prefix: |-` block scalar in the rendered composition')
   const body: string[] = []
   for (const line of lines.slice(start + 1)) {
     if (line.startsWith('      ')) body.push(line.slice(6))
@@ -113,7 +113,7 @@ describe('omo-sisyphus system prompt builder (T8)', () => {
 describe('renderPersonaIntoComposition (T8, design a: sync-time rendering)', () => {
   it('the shipped concerto template keeps the sentinel as its persona text, exactly once', () => {
     const template = readFileSync(join(CONCERTO_TEMPLATE_DIR, 'agent.cordis.yml'), 'utf8')
-    const occurrences = template.split(`text: ${PERSONA_TEXT_SENTINEL}`).length - 1
+    const occurrences = template.split(`prefix: ${PERSONA_TEXT_SENTINEL}`).length - 1
     expect(occurrences).toBe(1)
     expect(template).not.toContain('# Orchestrator Role')
   })
@@ -122,12 +122,12 @@ describe('renderPersonaIntoComposition (T8, design a: sync-time rendering)', () 
     const template = readFileSync(join(CONCERTO_TEMPLATE_DIR, 'agent.cordis.yml'), 'utf8')
     const rendered = renderPersonaIntoComposition(template)
     expect(rendered).not.toContain(PERSONA_TEXT_SENTINEL)
-    expect(rendered).toContain('text: |-')
+    expect(rendered).toContain('prefix: |-')
     for (const marker of Object.values(SECTION_MARKERS)) {
       expect(rendered).toContain(`      ${marker}`)
     }
     // Everything outside the persona value is byte-identical to the template.
-    const templateBefore = template.slice(0, template.indexOf(`text: ${PERSONA_TEXT_SENTINEL}`))
+    const templateBefore = template.slice(0, template.indexOf(`prefix: ${PERSONA_TEXT_SENTINEL}`))
     expect(rendered.startsWith(templateBefore)).toBe(true)
   })
 
@@ -138,18 +138,18 @@ describe('renderPersonaIntoComposition (T8, design a: sync-time rendering)', () 
   })
 
   it('throws when the sentinel is missing (template regressed to hardcoded text)', () => {
-    expect(() => renderPersonaIntoComposition('- id: persona\n  config:\n    text: hardcoded\n')).toThrow(
+    expect(() => renderPersonaIntoComposition('- id: persona\n  config:\n    prefix: hardcoded\n')).toThrow(
       /exactly once/,
     )
   })
 
   it('throws when the sentinel appears more than once (ambiguous persona slot)', () => {
-    const doubled = `text: ${PERSONA_TEXT_SENTINEL}\n  text: ${PERSONA_TEXT_SENTINEL}\n`
+    const doubled = `prefix: ${PERSONA_TEXT_SENTINEL}\n  prefix: ${PERSONA_TEXT_SENTINEL}\n`
     expect(() => renderPersonaIntoComposition(doubled)).toThrow(/exactly once/)
   })
 
   it('accepts an explicit prompt (sync module injects; tests stay hermetic)', () => {
-    const rendered = renderPersonaIntoComposition(`text: ${PERSONA_TEXT_SENTINEL}\n`, 'line one\n\nline two')
+    const rendered = renderPersonaIntoComposition(`prefix: ${PERSONA_TEXT_SENTINEL}\n`, 'line one\n\nline two')
     expect(personaBlockLines(rendered)).toEqual(['line one', '', 'line two'])
   })
 })
