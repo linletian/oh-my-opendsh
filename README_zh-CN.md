@@ -54,7 +54,7 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 
 ## 当前状态
 
-🟢 **MVP v0.2（已结项）；dsh 0.1.2 复核已登记**
+🟢 **MVP v0.2 线；dsh 0.1.5-rc.1 已 pin 并通过 L1+L2 验证**
 
 - ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，14 节：2026-08-16 主体 + 2026-08-19 追加调研）
 - ✅ 11 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）

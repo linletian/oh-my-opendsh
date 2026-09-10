@@ -27,6 +27,32 @@
 - GitHub Pages serves the stable line's branch root (`main`), so `/install` always
   mirrors the newest release commit.
 
+### What the D7 pin does — and does not — freeze
+
+CI installs `@deepseek-ai/dsh@<exact rc>`, but **dsh's own dependencies use caret
+ranges on prereleases** (`^0.1.5-rc.1`), and semver resolves those *upward* to the newest
+matching prerelease. The exact pin therefore fixes the top-level package only; the
+resolved transitive set floats inside `<major>.<minor>.<patch>-rc.*`.
+
+Two consequences, both observed on 2026-09-10:
+
+1. **CI can go red for a reason entirely outside this repo.** While upstream was
+   mid-way through a staged publish, `npm install --global @deepseek-ai/dsh@0.1.5-rc.1`
+   failed with `ETARGET … No matching version found for @deepseek-ai/dsh-*@^0.1.5-rc.2`
+   — the caret ranges had already moved to `rc.2` while some `rc.2` packages were not
+   published yet. The job died in its **`install dsh` step, before any gate in this repo
+   ran**, so a red run there is not evidence about our code. The window moves: minutes
+   later a different missing package was reported.
+2. **The runtime a release was verified against is not bit-frozen.** A compat-matrix row
+   names the top-level pin, not the resolved dependency set, so "verified on dsh
+   0.1.5-rc.1" means "the resolver's view of rc.1 on that date".
+
+**Recording the resolved set** (`npm ls -g --all` at install time, attached to the
+release evidence) is the obvious hardening and is **recorded here as a follow-up, not
+implemented** — it changes what a matrix row attests to, so it is a decision rather than
+a patch. Until then, treat a red `install dsh` step as an upstream condition: re-run
+before investigating this repo.
+
 ## 2a. Branch model — `develop` integrates, `main` releases
 
 Three long-lived refs, one direction of travel:
@@ -133,6 +159,29 @@ Steps (all local; first failure aborts before anything is tagged):
 6. **push** — branch + alias + full tag.
 7. **verify** — sandboxed install from the NEW tag's raw URL (hard gate); Pages `/install` poll (best effort, `--wait-pages`).
 8. **gh release** — notes = CHANGELOG top section + matrix snapshot (falls back to printed instructions without gh auth).
+
+### The commit step stages everything, and asserts it did
+
+Step 4 runs `git add -A` rather than an enumerated file list, and ends by asserting the
+tree is clean before anything is tagged or pushed.
+
+Enumerating was the v0.2.0 defect. `release-bump.mjs` rewrites the Pages `install`
+wrapper on every alias move, but the add list omitted it — so **step 3 re-gated the
+working tree (wrapper already correct) while step 4 committed a subset that still named
+the old alias**. The gate approved one tree and the release shipped another, and only a
+fresh clone can see the difference (`check-docs-consistency` compares the wrapper against
+compat's `tag_alias`). The published one-liner kept fetching the previous line's
+installer — i.e. the pre-upgrade preset.
+
+It was latent for every release before that because the alias had never moved
+(`v0.1` → `v0.1`); the first minor bump exposed it. The same audit found the alias quoted
+in six further places that `release-bump` does not rewrite (both READMEs' fallback direct
+link, both install guides, the installer's own usage header). Both classes are now
+gated: `git add -A` plus the clean-tree guard for the commit, and `d08` for every live
+raw-URL pointer.
+
+Enumerating was never needed — step 1 requires a clean tree, so after the bump the only
+modifications are the bump's own.
 
 ## 7. Doc update rules (who updates what)
 
