@@ -232,6 +232,7 @@ All four resolutions are registered in the [decision record](./decisions.md) (D1
 
 At MVP closeout, the V1–V4 verdicts directly determine follow-up ordering:
 
+- [ ] **Chinese twins for the 0.1.5-rc.1 records.** [`dsh-0.1.5-rc.1-review.md`](./dsh-0.1.5-rc.1-review.md) and [`dsh-0.1.5-rc.1-upgrade.md`](./dsh-0.1.5-rc.1-upgrade.md) ship EN-only so the record lands with the change it describes; `docs/` docs are otherwise EN+zh pairs (cf. `dsh-0.1.2-review.md` / `_zh-CN.md`). Both headers point here.
 - **All of V1–V4 validated** → proceed to the full port per report §2.10 (OMO core import → remaining agents → batch hook translation → Team Mode → …)
 - **Any V falsified** → register a new risk (R7+) in the decision record, re-estimate the affected workload blocks, then decide direction
 - All MVP artifacts are retained and grow: repo skeleton → full patch framework; mock e2e → the full L2 layer; doctor-lite → the full doctor; `mvp-pitfalls.md` → a continuously accumulating pitfall knowledge base

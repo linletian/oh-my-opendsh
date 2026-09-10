@@ -192,7 +192,7 @@ MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2
 |---|---|
 | **症状** | 任何命名 `concerto` 的会话都被拒绝：`agent-presets: preset "concerto" failed to mount: failed to apply loader entry persona (@deepseek-ai/dsh-persona): invalid config: - $.prefix missing required value (at prefix)`。而 roster 里该 preset 仍以真实显示名列出，且**没有 `broken` 标记**。 |
 | **证据** | 真实 `dsh web` 启动 + 对安装器落地的 preset 发 `POST /api/session/create`（复核 §2.2，原文）；`pnpm test:e2e` 四个场景 0/4，同一条错误；逐行 eager schema 运行报告 `FAIL persona: ValidationError: $.prefix missing required value`，而其余 13 行全部通过（复核 §6）。 |
-| **根因** | 在 `dsh-v0.1.3-alpha.2`，`@deepseek-ai/dsh-persona` 用 `prefix: z.string().required()` + `suffix: z.string().default('')` 取代了 `text: z.string().required()`，把 `deployment:persona` 拆成 `deployment:persona-prefix`/`-suffix`。schemastery 对未声明键是**保留**而非拒绝，于是过期的 `text:` 被静默丢弃，失败落在*缺失的必填* `prefix` 上、发生在挂载期。discovery 的体检只证明每行的模块**可解析**，从不校验其 config，所以 `broken` 永远不亮，选择器里显示的是一张健康卡片。 |
+| **根因** | 在 `dsh-v0.1.3-alpha.2`，`@deepseek-ai/dsh-persona` 用 `prefix: z.string().required()` + `suffix: z.string().default('')` 取代了 `text: z.string().required()`，把 `deployment:persona` 拆成 `deployment:persona-prefix`/`-suffix`。schemastery 对未声明键是**保留**而非拒绝，因此过期的 `text:` 能通过校验、只是永远不会被读取——没有任何警告，失败落在*缺失的必填* `prefix` 上、发生在挂载期。discovery 的体检只证明每行的模块**可解析**，从不校验其 config，所以 `broken` 永远不亮，选择器里显示的是一张健康卡片。 |
 | **回退/修复** | 一处键改名，横跨七个落点（渲染器哨兵、两份 composition、两个单测文件、e2e 的 MOCKROLE needle、模式探针的 grep）。已验证：仅做这一处改名，会话即可挂载，整条委派链跑通（复核 §2.3）。 |
 | **门禁为何漏掉** | `doctor-lite` 的 eager schema 检查**只校验一行**（`tool-subagent-explore`）——挂掉的那行恰恰没有任何 schema 门。这才是真正的缺陷；改名只是它的症状。 |
 

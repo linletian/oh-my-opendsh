@@ -232,6 +232,7 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 
 MVP 结项时，V1–V4 的结论直接决定 follow-up 排序：
 
+- [ ] **0.1.5-rc.1 两份记录的中文版。** [`dsh-0.1.5-rc.1-review.md`](./dsh-0.1.5-rc.1-review.md) 与 [`dsh-0.1.5-rc.1-upgrade.md`](./dsh-0.1.5-rc.1-upgrade.md) 目前仅有英文，以便记录随它所描述的变更一同落地；`docs/` 下的文档通常是 EN+zh 成对的（参见 `dsh-0.1.2-review.md` / `_zh-CN.md`）。两份文档的头部均指向本条。
 - **V1–V4 全部验证通过** → 按调研 §2.10 进入全量移植（OMO core import → 剩余 agent → hook 批量翻译 → Team Mode → …）
 - **任一 V 证伪** → 回到决策文档登记新风险（R7+），重估受影响的工作量块，再定方向
 - MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2e → 完整 L2 层；doctor-lite → 完整 doctor；`mvp-pitfalls.md` → 持续累加的踩坑知识库
