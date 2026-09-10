@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.1 (2026-09-10)
+
+- docs: record the D7 pin's real scope, the v0.2.0 release defect, and refresh the status prose
+- fix(docs): every live alias pointer must name the current alias (d08)
+- fix(release): the release commit missed the Pages install wrapper
+
 ## v0.2.0 (2026-09-10)
 
 - Merge pull request #2 from linletian/feature/dsh-omo-mvp

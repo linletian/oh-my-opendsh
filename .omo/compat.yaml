@@ -20,10 +20,18 @@
 schema: 1
 
 our:
-  latest: "0.2.0"
+  latest: "0.2.1"
   tag_alias: "v0.2"
 
 tested:
+  - our: "0.2.1"
+    dsh: "0.1.5-rc.1"
+    omo: "4.19.4"
+    date: "2026-09-10"
+    evidence: ".omo/evidence/concerto-verify-dsh-0.1.5-rc.1.md"
+    note_en: "released v0.2 (release.sh)"
+    note_zh: "发布 v0.2（release.sh 自动登记）"
+
   # `our: "unreleased"` is the develop line's PRE-REGISTRATION, not a released
   # version: released 0.1.1 does not satisfy this row (it carries the persona
   # text->prefix break). No version is chosen until a release, and
