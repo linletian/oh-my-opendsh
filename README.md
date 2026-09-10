@@ -54,7 +54,7 @@ Full guide (options, adaptation, uninstall — incl. a plain-language "what the 
 
 ## Current Status
 
-🟢 **MVP v0.1 (closed); dsh 0.1.2 review registered**
+🟢 **MVP v0.2 (closed); dsh 0.1.2 review registered**
 
 - ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 14 sections: 2026-08-16 main body + 2026-08-19 follow-up research)
 - ✅ 11 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))

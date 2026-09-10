@@ -17,7 +17,7 @@
 #                            override the explore route inside agentOptions
 set -eu
 
-TAG="${CONCERTO_TAG:-v0.1}"
+TAG="${CONCERTO_TAG:-v0.2}"
 BASE="https://raw.githubusercontent.com/linletian/oh-my-opendsh/${TAG}"
 D="${DSH_HOME:-${HOME}/.dsh}"
 DEST="${D}/.agent-presets/concerto"
