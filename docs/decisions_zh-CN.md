@@ -115,6 +115,7 @@
 - **2026-08-19**：D12 确认（License 白名单接受 MPL-2.0；MVP 实施 T3 实证触发）。
 - **2026-08-29**：已登记 DSH 0.1.2-alpha.1 复核报告（[English](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)）；无新增决策——rc.6 → 0.1.2-alpha.1 的 pin 升级按 D7 的刻意升级机制执行，并已在 PRD §12 登记跟踪；SubagentProvider 扩展路径事实以调研沉淀形式登记于可行性报告的 2026-08-29 follow-up note 中。
 - **2026-09-05**：D13 确认（版本管理与发布流程——三方矩阵、tag 约定、本地优先测试分层、发行自动化、每周哨兵）；开放维度 O6/O7 关闭。
+- **2026-09-10**：已登记 DSH 0.1.5-rc.1 复核报告（[`dsh-0.1.5-rc.1-review.md`](./dsh-0.1.5-rc.1-review.md)）；**无新增决策**——rc.6 → 0.1.5-rc.1 的 pin 升级按 D7 的刻意升级机制执行，并已在 PRD §12 登记跟踪（该节已按复核结论重写）。本次唯一的 P0（`@deepseek-ai/dsh-persona` 的 `text:` → `prefix:` 改名，落点 `dsh-v0.1.3-alpha.2`）是一个**破坏性**配置变更，而本仓库自己的门禁却对它给出全绿——这使 L3 门禁的覆盖面作为实施项被重新打开，而非作为决策项。两点值得在此登记的副作用：(1) **Q-3 的双 provider 配对现已成为"按部署可选"而非固定**——不写入 `llm-pi-ai.providers` 段的部署，通过文档化的 `OMO_EXPLORE_PROVIDER` 覆盖把 explore 席位钉到 `deepseek-official`，而仓库默认值仍为 pi-ai；AC-5 的要求（两对**互不相同**）在两种情况下都成立，因为"不同"是按 provider+model 合并判定的。(2) **P-1.3 的前提已退场**——`composeProfile` 不再强制改写 `agent-presets` 行的 `roots`（0.1.5-rc.1 中已移除），于是"用配置声明 preset root"重新成为可用机制；须留意的注意点是 shipped root 现在**排在**配置 roots **之前**，依赖它之前要先确认按 id 首个根胜出的规则。
 
 ---
 

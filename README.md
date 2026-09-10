@@ -98,7 +98,7 @@ The version management & release process (decision D13; principles: automation f
 
 | Item | Value |
 |---|---|
-| **DSH version** | 0.1.0-rc.6 (MIT; CI-pinned — 0.1.2-alpha.1 verified locally via source build, CI flip pending npm publish); effective local runtime = rc.6 umbrella + rc.7-scheme deps (see [P-11.5](./docs/mvp-pitfalls.md)) |
+| **DSH version** | **0.1.5-rc.1** (MIT; CI-pinned) — verified end-to-end in the 2026-09-10 upgrade ([review](./docs/dsh-0.1.5-rc.1-review.md), [pitfalls P-20](./docs/mvp-pitfalls.md)). Previous pins: 0.1.0-rc.6 (MVP closeout), with 0.1.2-alpha.1 reviewed but never pinned |
 | **OMO upstream** | 19 core packages + 4 small adapters (harness-agnostic) (SUL-1.0) |
 | **This project's license** | **MIT OR SUL-1.0** (dual license) |
 | **OMO LICENSE (original text)** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |

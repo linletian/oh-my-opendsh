@@ -49,7 +49,7 @@
 | # | 目标 | 说明 |
 |---|---|---|
 | G1 | **验证核心可行性假设** | 见 §3 的 V1–V4。任一假设证伪，16 周估算与架构方向需重审 |
-| G2 | **提前踩坑** | 主动撞击 DSH 0.1.0-rc.5 的不稳定面，把坑记录在 `docs/mvp-pitfalls.md`（这是**正式交付物**，不是副产品） |
+| G2 | **提前踩坑** | 主动撞击 DSH 的不稳定面，把坑记录在 `docs/mvp-pitfalls.md`（这是**正式交付物**，不是副产品）。首发于 0.1.0-rc.5，继 0.1.2-alpha.1 之后又在 0.1.5-rc.1 上重跑——坑表记录的是整条**演进线**，不是某一个 rc |
 | G3 | **确立可持续的工程骨架** | 仓库结构、license hygiene、测试金字塔底座（mock-LLM e2e + doctor-lite）一次搭对，后续 16 周在此之上生长 |
 
 ### 2.2 明确的非目标
@@ -94,7 +94,7 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 | 创造 | 单 agent 高发散直答 | 默认 agent（采样调高） | 单一路由 | 不默认 |
 | **协奏（本 MVP）** | **编排优先** | **omo-sisyphus（指挥）** | **每 agent 独立 `{provider, model}`** | **默认委派给 omo-explore** |
 
-注：官方 4 模式的精确内部语义以 DSH v0.1.0-rc.5 实现为准；本表只承诺"协奏与它们的差异点"，不承诺对 4 模式内部行为的描述精确。实施时核实并修订本表（属踩坑项 P-1 的关联工作）。
+注：官方 4 模式的精确内部语义以 DSH 固定线为准（最初按 v0.1.0-rc.5 阅读；0.1.5-rc.1 复核，官方集合为 标准 / PTC / 极简 / 创造——`ptc` 已取代 rc 时代的 `code`）。本表只承诺"协奏与它们的差异点"，不承诺对 4 模式内部行为的描述精确。实施时核实并修订本表（属踩坑项 P-1 的关联工作）。
 
 ### 4.3 命名
 
@@ -106,7 +106,7 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 
 **激活方式（需求，非实现细节）**：用户能以"与官方 4 模式同等的入口"选择协奏模式（命令行标志 / 交互选择器，以 DSH 实际开放的模式注册机制为准）。
 
-> ⚠️ **这是 MVP 第一个要撞的坑（P-1）**：DSH 0.1.0-rc.5 是否允许 scratch plugin 注册新运行模式，调研未覆盖。若官方模式注册表是内置封闭的，fallback 为：`omo` profile + `dsh --patch ./cordis.yml` 启动脚本，并在 `docs/mvp-pitfalls.md` 记录"模式注册不开放"的完整证据。该 fallback 不影响 V1–V4 的验证。
+> ⚠️ **这是 MVP 第一个要撞的坑（P-1）**：DSH 是否允许 scratch plugin 注册新运行模式，调研未覆盖（0.1.0-rc.5 首次阅读时悬置；已在固定线上裁定为 register-branch，见 `docs/mvp-pitfalls.md` P-1）。若官方模式注册表是内置封闭的，fallback 为：`omo` profile + `dsh --patch ./cordis.yml` 启动脚本，并在 `docs/mvp-pitfalls.md` 记录"模式注册不开放"的完整证据。该 fallback 不影响 V1–V4 的验证。
 
 **协奏模式 = 以下五件的装配**：
 
@@ -191,7 +191,7 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 
 | # | 候选坑 | 假设 | 若假设不成立 |
 |---|---|---|---|
-| P-1 | **运行模式注册开放性**：DSH 0.1.0-rc.5 是否允许 scratch plugin 注册第 5 个运行模式 | 模式表可经官方扩展点扩充 | 降级为 profile + `--patch` 启动脚本；记坑；协奏语义不受影响 |
+| P-1 | **运行模式注册开放性**：DSH 是否允许 scratch plugin 注册第 5 个运行模式（0.1.0-rc.5 提出；0.1.5-rc.1 复核） | 模式表可经官方扩展点扩充 | 降级为 profile + `--patch` 启动脚本；记坑；协奏语义不受影响 |
 | P-2 | **`agentOptions` 路由生效**：`dsh-tool-subagent` 实例 config 的 `agentOptions.{provider,model}` 在 runtime 真的覆盖父继承（§12.7 自述未 runtime 验证） | 生效且 log 可观测 | V2 证伪；上报为 DSH 侧 gap，评估自写 wrapper |
 | P-3 | **`agent/pre-step` waterfall 语义**：listener 注册顺序、authoritative 拒绝/注入是否如文档 | 如 `docs/architecture.md` 所述 | V3 部分证伪；改用其他挂载点并重估 hook 移植成本 |
 | P-4 | **toolFilter 字段语义**：字段名/语义与预期一致 | 一致 | 改用它提供的等价机制；记坑 |
@@ -235,7 +235,19 @@ MVP 结项时，V1–V4 的结论直接决定 follow-up 排序：
 - **V1–V4 全部验证通过** → 按调研 §2.10 进入全量移植（OMO core import → 剩余 agent → hook 批量翻译 → Team Mode → …）
 - **任一 V 证伪** → 回到决策文档登记新风险（R7+），重估受影响的工作量块，再定方向
 - MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2e → 完整 L2 层；doctor-lite → 完整 doctor；`mvp-pitfalls.md` → 持续累加的踩坑知识库
-- [ ] **DSH pin bump 0.1.0-rc.6 → 0.1.2-alpha.1**（D7 机制下的刻意升级）——surface 清单：`.github/workflows/ci.yml:37`（+ 注释 :14-21）、`scripts/doctor-lite.mjs:189`、`scripts/doctor-lite-core.ts:26`、`tests/omo-agents/doctor-lite.test.ts` fixtures+expectations；对照搬迁后的官方 preset（`packages/preset/agent-presets/presets/standard/agent.cordis.yml`）重新派生 `patches/omo-dsh/omo-agents/concerto/agent.cordis.yml`；重跑 `scripts/ci-local.sh` + 会话外探针；在重构后的 preset 子系统下复验 P-1.2/P-1.3 fallback。patch 注释中的 rc.6 引用（`patches/omo-dsh/omo-agents/src/explore-prompt.ts:8`、`.../hard-blocks-injection.ts:7`）保留为 rc.6 时代的历史验证记录；0.1.2 的复验记录于 mvp-pitfalls P-11。登记自 dsh 0.1.2 复核报告（[English](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)）§4。 **状态 2026-08-29：被 npm 发布阻塞**——`@deepseek-ai/dsh@0.1.2-alpha.1` 目前只以 git tag 存在（registry 最高到 `0.1.1-rc.2`）；协奏 preset 已重派生（42e1f84），全部门禁 + 探针链已针对该 tag 的源码构建版本及 rc.6 pin 在本地复验 GREEN（证据 `.omo/evidence/task-{7,8,9}-dsh-012-review-sync.log`）；harness 现已对两种运行时传输自适应（105aa84, 3d949f1）。解除阻塞：`npm view @deepseek-ai/dsh versions` 出现 `0.1.2-alpha.1` → 修改 `.github/workflows/ci.yml` 中的 `DSH_VERSION`（+ 注释 :14-21）并刷新 doctor-lite 文案/fixtures。
+- [x] **DSH pin bump 0.1.0-rc.6 → 0.1.5-rc.1 —— 2026-09-10 完成**（D7 机制下的刻意升级；取代下方过期的 rc.6 → 0.1.2-alpha.1 条目）。L1 全绿（104 单测 / doctor-lite 4-4 且 16 行经 schema 校验 / static 10-10 / docs 7-7 / e2e 4-4），**L2 亦绿**（真机手工会话，自原始日志逐条复核 17/17）——矩阵行 `our 0.1.1 × dsh 0.1.5-rc.1` 为 `tested`，证据 `.omo/evidence/concerto-verify-dsh-0.1.5-rc.1.md`。两件事是带下去而非关闭的：`toolFilter`/`maxDepth` 是工具层护栏而非能力边界（mvp-pitfalls §8 P-21，按 R5 接受）；e2e 的限制类场景认证的是工具缺席而非被禁结果不可达——登记自 dsh 0.1.5-rc.1 复核报告（[`dsh-0.1.5-rc.1-review.md`](./dsh-0.1.5-rc.1-review.md)），该报告是本条目的调研依据。复核结论：**1 个硬断点（P0）、3 个观察通道断点（P1）、1 个门禁盲区（P1）**，其余全部完好。
+
+  - **P0 —— persona 配置键改名。** `@deepseek-ai/dsh-persona` 在 `dsh-v0.1.3-alpha.2` 用 `prefix:`（required）取代了 `text:`，并新增 `suffix`。由于 schemastery 会保留未声明键，过期的 `text:` 被**静默丢弃**，composition 挂载失败；任何命名 `concerto` 的会话都被以 `agent-preset/invalid` 拒绝。改动点：`patches/omo-dsh/omo-agents/src/system-prompt.ts`（渲染器哨兵）、两份协奏 composition（`concerto/agent.cordis.yml`、`omo-agents-current/preset/agent.cordis.yml`）、`tests/omo-agents/system-prompt.test.ts`、`tests/omo-agents/concerto-preset.test.ts`、`tests/e2e/drive.mjs`（MOCKROLE needle）、`scripts/concerto-mode-probe.sh`。
+  - **P1 —— 会话日志代际改名。** `session.jsonl` → `session.v3.jsonl`（session format v3）。e2e driver 的 `findSessionLogs` 按固定文件名匹配，于是整条落盘观察通道失效——而 harness 本身是好的。
+  - **P1 —— `subagent/descriptor` version 2 → 3**（`SUBAGENT_DESCRIPTOR_VERSION`；0.1.2 复核附录已记录过，但 driver 的构造 fixture 仍写 `version: 2`）。
+  - **P1 —— `dsh-tool-subagent` 新增 `sessionProjections` 注入**并无条件注册，因此未提供该服务的 fixture 会停在 `waiting` 且不注册任何工具（`scripts/prove-explore-maxdepth.mjs`）。
+  - **P1 —— 门禁对 P0 完全失明。** 未改一行的仓库在 0.1.5-rc.1 上得 104/104 单测、4/4 doctor-lite、10/10 concerto-static、7/7 docs-consistency——而 e2e 是 0/4。`doctor-lite` 的 schema 检查只校验**一行**，而挂掉的那行恰恰没有任何 schema 门。应泛化为"渲染后 composition 中每个带 config 的行"。
+  - **P2 —— 派生纪律对齐。** 新增 `present` 行（`@deepseek-ai/dsh-tool-present`，`dsh-v0.1.5-alpha.2` 起随官方 preset 发布——rc.6 上不存在，故加它绑定在本次 bump 上）；`omo-agents-current` 的 `tool-web` `fetch: false` 与上游及旧模板的 `true` 不一致；可选的 `persona.suffix` 对齐；我们自己的注释里 5 处过期的 `deployment:persona` 符号。
+  - **P2 —— CI/脚本卫生。** 四个 `dsh web` 启动点补 `--no-open`（`dsh web` 现已默认打开浏览器，而本仓库没有任何脚本抑制它）；`DSH_VERSION` 面：`.github/workflows/ci.yml`（+ 注释）、`.github/workflows/compat-probe.yml`、`scripts/doctor-lite.mjs`、`scripts/doctor-lite-core.ts`、`tests/omo-agents/doctor-lite.test.ts` fixtures、以及两个 README 的 "Key Facts" 行。
+  - **0.1.5-rc.1 上已复验完好**（无需改动）：`--patch` 语义与 patch 引擎（逐字节相同）；`dsh plugin add`；`agentPresets` 服务面（`list`/`resolve`/`copy`/`standingKeyFor`、`AgentPreset.path`）；用户根 `$DSH_HOME/.agent-presets`；`preset.yml` 与 `trust`；挂载期的 isolate realm 不变量；`agent/pre-step` + `agent.inject()`；`tool-subagent` 全套配置 schema（`provider`/`toolName`/`backgroundMode`/`persona`/`agentOptions`/`toolFilter`/`maxDepth`）；T11 explore persona 影子；T12/F1 的 toolFilter 强制；以及 FR-6 hard-blocks 注入——全部经真实运行确认。
+  - **本地交付的环境偏离。** Q-3 的 explore 席位走 `llm-pi-ai` 的 catalog 路由 `deepseek`，需要在 `$DSH_HOME/settings.yaml` 写入 `llm-pi-ai.providers` 段。若部署方拒绝该 settings 改动，则改用文档化的环境变量覆盖（`OMO_EXPLORE_PROVIDER=deepseek-official`）把 explore 席位钉到 `deepseek-official`。仓库默认值保持 Q-3（pi-ai）不变——这是按部署的偏离，不是决策变更。
+
+- [x] ~~**DSH pin bump 0.1.0-rc.6 → 0.1.2-alpha.1**~~ —— **已被上方 0.1.5-rc.1 条目取代，保留为历史记录。** 登记自 dsh 0.1.2 复核报告（[English](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)）§4。**状态 2026-08-29：被 npm 发布阻塞**——`@deepseek-ai/dsh@0.1.2-alpha.1` 当时只以 git tag 存在（registry 最高到 `0.1.1-rc.2`）；协奏 preset 已重派生（42e1f84），全部门禁 + 探针链已针对该 tag 的源码构建版本及 rc.6 pin 在本地复验 GREEN（证据 `.omo/evidence/task-{7,8,9}-dsh-012-review-sync.log`）；harness 现已对两种运行时传输自适应（105aa84, 3d949f1）。该阻塞最终未以那种形式解除：npm 相继发布了 `0.1.2-rc.1`、`0.1.3-alpha.*` / `0.1.5-alpha.*` 阶梯，以及 `0.1.5-rc.1`——也就是本项目现在锁定的版本，于是中间那次 `0.1.2-alpha.1` 翻转已无意义。P-1.2/P-1.3 所依赖的 `roots` 强制改写前提在 0.1.5-rc.1 中已消失（见 0.1.5-rc.1 复核 §7.4），因此这些 fallback 不再约束本次 bump。patch 注释中的 rc.6 引用（`patches/omo-dsh/omo-agents/src/explore-prompt.ts:8`、`.../hard-blocks-injection.ts:7`）保留为 rc.6 时代的历史验证记录。
 
 ---
 
