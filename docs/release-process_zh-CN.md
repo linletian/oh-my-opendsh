@@ -18,6 +18,21 @@
 - 语义：**major** = 矩阵不兼容变更 / 弃用旧 dsh 区间；**minor** = 新能力或新 ✅ 验证的上下游组合；**patch** = 修复 / 文档 / 仅安装器。
 - GitHub Pages 服务稳定线的分支根（`main`），所以 `/install` 永远镜像最新发布提交。
 
+## 2a. 分支模型——`develop` 集成,`main` 发布
+
+三个长期引用,单向流动:
+
+```
+feature/*, fix/*  --PR-->  develop  --release-->  main  (+ tags vX.Y.Z / vX.Y)
+                          (集成分支)             (已发布线，Pages 根)
+```
+
+- **`develop` 是集成分支。** 每个 `feature/*` / `fix/*` 分支只向它提 PR。CI 对每个分支都跑(`on: push` / `on: pull_request` 无过滤),因此 `develop` 与 `main` 受同等门禁约束——不存在"只有发布分支才跑 CI"这种需要记的不对称。
+- **`main` 只承载已发布的提交。** GitHub Pages 服务 `main` 的分支根,所以 `/install` 天然镜像最新发布。除发布外,任何东西都不进 `main`。
+- **版本号在发布时决定,而非之前。** develop 上的工作让 `package.json` 保持上一个已发布版本;`release.sh <patch|minor|major>` 在第 2 步算出下一个。流程中更早的环节都不需要它,而四个 token 持有者(`package.json`、`compat.our.latest`、安装器 `TAG`、CHANGELOG 标题)在同一个发布提交里一起移动。
+- **develop 线的验证行刻意不带版本号。** 在飞工作的矩阵行写作 `our: "unreleased"`——已发布的版本号绝不能宣称该版本并不包含的工作(已发布的 `0.1.1` **不**满足一行针对更晚 dsh 验证的记录)。发布时 `release-bump.mjs` 会**原地升级该行**,而不是再插一行,因此矩阵对每个 `(our, dsh)` 恰好保留一行,且不会有陈旧占位行穿过发布存活下来。
+- **发布动线。** 把 `develop` 合入 `main`,然后**在 `main` 上**跑 `release.sh`——其 preflight 要求工作区干净且处于 `RELEASE_BRANCH`(默认 `main`,可用 `RELEASE_BRANCH=<branch>` 覆盖)。随后把发布提交回合 `develop`,避免两条线漂移。
+
 ## 3. 兼容矩阵
 
 单一事实来源：[`.omo/compat.yaml`](../.omo/compat.yaml) → 由 `scripts/render-compat-matrix.mjs` 渲染为
@@ -59,8 +74,8 @@ scripts/release.sh <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--no-gh] [
 
 步骤（全部本地；第一步失败即在打 tag 前中止）：
 
-1. **preflight**——工作区干净、在发布分支（`main`）上、`scripts/release-check.sh`（8 门，含新鲜 L2 证据）。
-2. **bump**——`scripts/release-bump.mjs`：package.json、安装器 TAG pin、README 状态 token、compat.yaml（our 块 + 新 ✅ 行，含当前 `dsh --version`、omo 版本、证据路径）、CHANGELOG 顶部条目、矩阵重渲染。
+1. **preflight**——工作区干净、在发布分支（`main`；见 §2a）上、`scripts/release-check.sh`（8 门，含新鲜 L2 证据）。
+2. **bump**——`scripts/release-bump.mjs`：package.json、安装器 TAG pin、README 状态 token、compat.yaml（our 块 + 本次发布的 ✅ 行——存在 develop 线的 `unreleased` 行时**原地升级**它，否则插入新行——带上当前 `dsh --version`、omo 版本与证据路径）、CHANGELOG 顶部条目、矩阵重渲染。
 3. **复检**——编辑后跑 docs 一致性 + concerto 静态检查。
 4. **commit**——`release: vX.Y.Z`。
 5. **tag**——`vX.Y.Z` 注释 tag（不可变）+ `vX.Y` 别名 force 移动。
