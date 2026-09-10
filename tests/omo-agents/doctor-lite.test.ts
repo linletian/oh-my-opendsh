@@ -12,6 +12,7 @@ import {
 describe('parseDshVersion', () => {
   it('parses a plain semver line', () => {
     expect(parseDshVersion('0.1.0-rc.6\n')).toEqual({ major: 0, minor: 1, patch: 0 })
+    expect(parseDshVersion('0.1.5-rc.1\n')).toEqual({ major: 0, minor: 1, patch: 5 })
   })
 
   it('tolerates a leading v and surrounding whitespace', () => {
@@ -33,6 +34,7 @@ describe('parseDshVersion', () => {
 describe('isPinnedDshVersion (decision D7: 0.1.x)', () => {
   it('accepts every 0.1.x, prerelease or not', () => {
     expect(isPinnedDshVersion(parseDshVersion('0.1.0-rc.6'))).toBe(true)
+    expect(isPinnedDshVersion(parseDshVersion('0.1.5-rc.1'))).toBe(true)
     expect(isPinnedDshVersion(parseDshVersion('0.1.42'))).toBe(true)
   })
 

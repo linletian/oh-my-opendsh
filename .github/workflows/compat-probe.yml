@@ -38,7 +38,7 @@ jobs:
       # The sentinel loads .omo/compat.yaml with the installed dsh's js-yaml
       # (the shared read-only dialect loader from scripts/doctor-lite.mjs).
       - name: install dsh (parser provider)
-        run: npm install --global "@deepseek-ai/dsh@0.1.0-rc.6"
+        run: npm install --global "@deepseek-ai/dsh@0.1.5-rc.1"
 
       - name: detect new upstream versions → open issue
         run: node scripts/check-compat-probes.mjs

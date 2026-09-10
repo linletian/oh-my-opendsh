@@ -23,7 +23,7 @@ export const LLM_ADAPTER_ROWS = [
 
 /**
  * Parses a `dsh --version` line. Accepts optional leading whitespace and a
- * leading `v`; the prerelease suffix (`0.1.0-rc.6`) is ignored for the pin
+ * leading `v`; the prerelease suffix (`0.1.5-rc.1`) is ignored for the pin
  * (D7 pins the minor). Returns { major, minor, patch } or null when the
  * string is not a recognizable version.
  */
