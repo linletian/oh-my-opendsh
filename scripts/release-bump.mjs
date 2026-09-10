@@ -184,8 +184,15 @@ function main() {
       .replace(/^(    omo: )"[^"]*"$/m, `$1"${omo}"`)
       .replace(/^(    date: )"[^"]*"$/m, `$1"${date}"`)
       .replace(/^(    evidence: )"[^"]*"$/m, `$1"${evidence}"`)
-      .replace(/^(    note_en: )"(?:[^"\\]|\\.)*"/m, `$1"released ${newSemver} (${newAlias} line; release.sh upgraded the develop row in place)"`)
-      .replace(/^(    note_zh: )"(?:[^"\\]|\\.)*"/m, `$1"发布 ${newSemver}（${newAlias} 线；release.sh 由 develop 行原地升级）"`)
+      // The note is PRESERVED and prefixed, not replaced: it carries the row's
+      // verification narrative (what was verified, against which runtime, and
+      // any accepted-boundary caveat), which the release marker should join
+      // rather than overwrite. The develop row is kept free of anything that
+      // would be untrue after a release, so a verbatim prefix is safe.
+      .replace(/^(    note_en: )"((?:[^"\\]|\\.)*)"/m,
+        (_m, pre, orig) => `${pre}"released ${newSemver} (${newAlias} line; release.sh upgraded the develop row in place) — ${orig}"`)
+      .replace(/^(    note_zh: )"((?:[^"\\]|\\.)*)"/m,
+        (_m, pre, orig) => `${pre}"发布 ${newSemver}（${newAlias} 线；release.sh 由 develop 行原地升级）——${orig}"`)
     if (upgraded === before) throw new Error('compat.yaml `unreleased` row matched but no identity field was rewritten')
     compatNew = compatNew.replace(before, upgraded)
   } else {

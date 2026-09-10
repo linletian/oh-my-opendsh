@@ -21,7 +21,7 @@ Status legend: ✅ tested · 🔬 untested · ❌ broken · 🪦 dropped.
 | 0.1.1 | 0.1.0-rc.6 | 4.19.4 | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 | 0.1.0 | 0.1.0-rc.6 | 4.19.4 (architecture reference) | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 
-> unreleased — The develop line, NOT a released version — released 0.1.1 does not satisfy this row (it carries the persona text->prefix break). package.json stays at the last release until release.sh bumps it, so this row is deliberately unversioned; release-bump.mjs will insert the versioned row for whatever release carries this work. L2 real-model manual verification (17/17 from raw session logs) + L1 green (104 unit / doctor-lite 4-4 with 16 rows schema-checked / static 10-10 / docs 7-7 / e2e 4-4) — the 2026-09-10 upgrade. Verified on the released installer path (static preset in $DSH_HOME/.agent-presets, no plugin). Note: toolFilter/maxDepth are tool-layer guardrails, not a capability boundary — S3/S4 were bypassed through the explore child's own bash and ACCEPTED under the R5 threat model (mvp-pitfalls §8 P-21)
+> unreleased — L2 real-model manual verification (17/17 from raw session logs) + L1 green (104 unit / doctor-lite 4-4 with 16 rows schema-checked / static 10-10 / docs 7-7 / e2e 4-4) — the 2026-09-10 upgrade. Verified on the released installer path (static preset in $DSH_HOME/.agent-presets, no plugin). Note: toolFilter/maxDepth are tool-layer guardrails, not a capability boundary — S3/S4 were bypassed through the explore child's own bash and ACCEPTED under the R5 threat model (mvp-pitfalls §8 P-21)
 > 0.1.1 — released v0.1 (release.sh)
 > 0.1.0 — current-DSH runtime re-verification: concerto_verify 22/22 PASS
 
