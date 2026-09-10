@@ -45,7 +45,7 @@ Concerto Mode (协奏模式) installs as a persistent agent preset (core) plus a
   curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
   ```
 
-  (fallback direct link: `https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`)
+  (fallback direct link: `https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/scripts/install-concerto.sh`)
 
 - **Let DSH install itself** — send any DSH session the copy-paste prompt from
   [docs/install-concerto.md](./docs/install-concerto.md) and it sets itself up.

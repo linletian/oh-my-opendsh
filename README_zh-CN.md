@@ -45,7 +45,7 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
   curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
   ```
 
-  （备用直链：`https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`）
+  （备用直链：`https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/scripts/install-concerto.sh`）
 
 - **让 DSH 自己装**——把 [docs/install-concerto_zh-CN.md](./docs/install-concerto_zh-CN.md) 里的
   复制即用 prompt 发给任意 DSH 会话即可。

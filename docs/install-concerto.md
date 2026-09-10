@@ -23,13 +23,13 @@ The base experience needs only the preset: the conductor persona and the explore
 
 ## Quick install
 
-**Option A (fastest) — one line** (script pinned to the v0.1 tag; pi-ai route enabled by default):
+**Option A (fastest) — one line** (script pinned to the v0.2 tag; pi-ai route enabled by default):
 
 ```bash
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 ```
 
-(fallback direct link: `https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`)
+(fallback direct link: `https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/scripts/install-concerto.sh`)
 
 Optional env vars (prefix the pipe): `NO_PIAI=1` (skip the pi-ai settings section),
 `EXPLORE_PROVIDER`/`EXPLORE_MODEL` (override the explore second route):
@@ -45,9 +45,9 @@ details at the bottom.)
 **Option B (most native) — send this prompt to any DSH session and let DSH install itself**:
 
 ```
-Install the oh-my-opendsh Concerto Mode on this machine (pinned to tag v0.1):
+Install the oh-my-opendsh Concerto Mode on this machine (pinned to tag v0.2):
 1) Using the shell, create ${DSH_HOME:-~/.dsh}/.agent-presets/concerto/ and download
-   https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml
+   https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml
    and .../preset.yml there with `curl -fsSL`. If any download fails, stop and report the error — do not invent content.
 2) If ${DSH_HOME:-~/.dsh}/settings.yaml has no llm-pi-ai section yet, append
    providers.deepseek.apiKeyEnv=DEEPSEEK_API_KEY; do not touch the rest of the file.

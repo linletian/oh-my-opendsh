@@ -13,6 +13,11 @@
 //   d05 no stray probe*.txt at the repo root (they belong in
 //       .omo/evidence/manual-probes/ or nowhere — .gitignore lesson)
 //   d06 CHANGELOG.md (when present): top version heading equals our.latest
+//   d07 the Pages `install` wrapper points at the current alias raw URL
+//       (PR #1 review F2)
+//   d08 EVERY live raw-URL pointer names the current alias — not just the
+//       wrapper. Scoped to the raw-URL shape so historical `v0.1` prose in the
+//       CHANGELOG and review records is never rewritten to match today.
 //
 // Usage: node scripts/check-docs-consistency.mjs [--json]
 // Exit: 1 iff any check FAILs.
@@ -107,6 +112,40 @@ async function run() {
   const wantWrapperUrl = `https://raw.githubusercontent.com/linletian/oh-my-opendsh/${wantAlias}/scripts/install-concerto.sh`
   results.push(check('d07', 'install wrapper URL', wrapper.includes(wantWrapperUrl),
     wrapper === '' ? 'install wrapper file missing' : `want ${wantWrapperUrl}`))
+
+  // d08 — EVERY live pointer must name the CURRENT alias, not just the wrapper.
+  //
+  // d07 checks one file. The alias is quoted in seven more places (both READMEs'
+  // fallback direct link, both install guides, the installer's own usage
+  // header), and `release-bump.mjs` rewrites only the wrapper and the installer
+  // TAG — so every minor bump silently leaves the rest pointing at the previous
+  // line. v0.2.0 exposed it: the published one-liner AND the documented fallback
+  // both still fetched `v0.1`, i.e. the pre-upgrade preset that cannot mount on
+  // the pinned dsh.
+  //
+  // Scoped to the raw-URL form on purpose: that shape only ever appears as a
+  // live pointer, while plain `v0.1` prose is how the CHANGELOG and the review
+  // records write HISTORY, which must never be rewritten to match today.
+  const aliasScan = spawnSync(
+    'git',
+    ['grep', '-n', '-E', 'raw\\.githubusercontent\\.com/linletian/oh-my-opendsh/v[0-9]+\\.[0-9]+/', '--', '.'],
+    { cwd: REPO_ROOT, encoding: 'utf8' },
+  )
+  const pointerLines = (aliasScan.stdout ?? '').split('\n').filter((line) => line.trim() !== '')
+  const stalePointers = pointerLines.filter((line) => !line.includes(`/oh-my-opendsh/${wantAlias}/`))
+  results.push(check(
+    'd08',
+    'live raw-URL pointers use the current alias',
+    stalePointers.length === 0,
+    stalePointers.length === 0
+      ? `${String(pointerLines.length)} pointer(s) all name ${wantAlias}`
+      : stalePointers
+        .map((line) => {
+          const [file, lineNo] = line.split(':')
+          return `${file}:${lineNo} does not name ${wantAlias}`
+        })
+        .join('; '),
+  ))
 
   const json = process.argv.includes('--json')
   if (json) {

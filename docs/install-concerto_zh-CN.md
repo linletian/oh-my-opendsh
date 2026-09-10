@@ -23,13 +23,13 @@
 
 ## 快速安装
 
-**方式 A（最快）——一行命令**（脚本锁定 v0.1 标签；默认启用 pi-ai 路由）：
+**方式 A（最快）——一行命令**（脚本锁定 v0.2 标签；默认启用 pi-ai 路由）：
 
 ```bash
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 ```
 
-（备用直链：`https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh`）
+（备用直链：`https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/scripts/install-concerto.sh`）
 
 可选环境变量（管道前加前缀即可）：`NO_PIAI=1`（跳过 pi-ai 段）、
 `EXPLORE_PROVIDER`/`EXPLORE_MODEL`（覆盖 explore 第二路由）：
@@ -44,9 +44,9 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE
 **方式 B（最原生）——把下面这段话发给任意 DSH 会话，让它自己装**：
 
 ```
-请在本机 DSH 用户目录安装 oh-my-opendsh 协奏模式（锁定 tag v0.1）：
+请在本机 DSH 用户目录安装 oh-my-opendsh 协奏模式（锁定 tag v0.2）：
 1) 用 shell 创建 ${DSH_HOME:-~/.dsh}/.agent-presets/concerto/，并用 curl -fsSL 下载
-   https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml
+   https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml
    与 …/preset.yml 到该目录；任一下载失败就报错停下，不要臆造内容。
 2) 若 ${DSH_HOME:-~/.dsh}/settings.yaml 尚无 llm-pi-ai 段，追加
    providers.deepseek.apiKeyEnv=DEEPSEEK_API_KEY；不要改动文件其他部分。

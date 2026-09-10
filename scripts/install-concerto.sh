@@ -1,15 +1,16 @@
 #!/bin/sh
 # install-concerto.sh — one-shot installer for the oh-my-opendsh Concerto Mode
-# (协奏模式) persistent preset. Idempotent; sources pinned to the v0.1 tag by
+# (协奏模式) persistent preset. Idempotent; sources pinned to the v0.2 tag by
 # default. The same install can be done with a single curl one-liner — see
 # docs/install-concerto.md.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.1/scripts/install-concerto.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/scripts/install-concerto.sh | sh
 #   (or run from a checkout: sh scripts/install-concerto.sh)
 #
 # Options (env):
-#   CONCERTO_TAG=v0.1        tag/branch to fetch the preset from
+#   CONCERTO_TAG=<tag>       tag/branch to fetch the preset from; defaults to
+#                            the alias line below (see docs/release-process §2)
 #   DSH_HOME=/path           DSH home (defaults to $HOME/.dsh)
 #   NO_PIAI=1                skip the llm-pi-ai settings section (point
 #                            agentOptions at your own second route instead)
