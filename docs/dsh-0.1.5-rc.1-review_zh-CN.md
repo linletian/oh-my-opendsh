@@ -9,6 +9,7 @@
 > - 对照基线：dsh `0.1.0-rc.6` —— 本项目 CI pin 的版本（决策 D7），也是 MVP 验证时所用的运行时（`.omo/compat.yaml` 的 `tested` 行）
 > - **配套件**：[`dsh-0.1.5-rc.1-upgrade_zh-CN.md`](./dsh-0.1.5-rc.1-upgrade_zh-CN.md) —— 实施 + 验证记录（改了什么、门禁前后对照表）
 > - 方法：(1) 枚举 MVP 触碰的每一个 DSH 表面；(2) 按包 `git diff 15148dbd9a..dsh-v0.1.5-rc.1`；(3) **让 MVP 自己的门禁在 0.1.5-rc.1 上跑** —— `doctor-lite`、`verify-concerto-static`、`check-docs-consistency`、`vitest run`、`tests/e2e/drive.mjs`、`prove-explore-*.mjs`；(4) 对安装器落盘的 preset 驱动一次真实的 `dsh web` 启动 + `session/create` RPC
+> - **时间锚**（MVP 收尾时补记，2026-09-11）：凡涉及仓库现状的陈述与指向本仓库的行列引用，描述的都是验证当日的**升级前**树；事后状态见配套升级记录，已落地的发现在对应小节内联注明（§4、§7、§9、§10）。指向上游的引证（`packages/…`、tag 级 `file:line`）保持原样。
 
 ---
 
@@ -127,7 +128,7 @@ $DSH_HOME/storages/session_projcache/…            ← 新的 projection 缓存
 
 rc.6 写的是 `session.jsonl`（`.npm-global/…/dsh-session-persistence-jsonl/lib/index.js:892`）。v3 format 本身在 `dsh-v0.1.5-alpha.1` 或更早落地（`session-format-v2-to-v3` 迁移包首次出现于该版本；`session-format-v0-to-v1` … `v2-to-v3` 在 HEAD 全部在场）。
 
-`tests/e2e/drive.mjs:687` 按 `entry.name === 'session.jsonl'` 过滤，于是 `findSessionLogs` 什么都找不到，`awaitTurnEnd` 永远等不到 `turn/end`，每个从日志派生的断言同时失败 —— `hello` 5 个、`concerto-delegation-demo` 10 个、`explore-write-denied` 6 个、`explore-nested-delegation-denied` 6 个。mock 侧断言（`mockSawExpectedRequestCounts`、`mockRequestOnSisyphusModel`）仍然通过 —— 这正是"harness 本身是好的、只有观察通道过期"的指纹。
+e2e driver 的 `findSessionLogs`（`tests/e2e/drive.mjs`）在验证当日按 `entry.name === 'session.jsonl'` 过滤，于是在 0.1.5-rc.1 上什么都找不到，`awaitTurnEnd` 永远等不到 `turn/end`，每个从日志派生的断言同时失败 —— `hello` 5 个、`concerto-delegation-demo` 10 个、`explore-write-denied` 6 个、`explore-nested-delegation-denied` 6 个。mock 侧断言（`mockSawExpectedRequestCounts`、`mockRequestOnSisyphusModel`）仍然通过 —— 这正是"harness 本身是好的、只有观察通道过期"的指纹。（升级已修复：`findSessionLogs` 现按下方修复说明匹配代际文件名。）
 
 修复：匹配代际文件名（`session.vN.jsonl`）而非固定名 —— 持久化包自用的那个 format-version 感知读取器才是诚实的形态，因为硬编码 `session.v3.jsonl` 会在 v4 上再次断裂。
 
@@ -137,7 +138,7 @@ rc.6 写的是 `session.jsonl`（`.npm-global/…/dsh-session-persistence-jsonl/
 
 `SUBAGENT_DESCRIPTOR_VERSION` 在 `dsh-v0.1.0-rc.8` 为 `2`，自 `dsh-v0.1.2-rc.1` 起为 `3`（`packages/subagent/subagent/src/descriptor.ts:48`）。版本不匹配不是错误 —— `foldSubagentDescriptor` 返回 `undefined`（`:210`），于是旧 fixture 读作"没有 descriptor"。
 
-rc 时代的复核已为 0.1.2 记录过此事（其 2026-08-29 附录第 3 条），但 driver 的构造 descriptor fixture 仍盖着 `version: 2`（`tests/e2e/drive.mjs:1316`，位于 `fabricatedChildLog`；相邻的 `fabricatedNegativeChildLog` 在 `:1379`，其事件构造不带 descriptor，无需改版本）。一条真实的 0.1.5-rc.1 子代理日志现在是：
+rc 时代的复核已为 0.1.2 记录过此事（其 2026-08-29 附录第 3 条），但 driver 的构造 descriptor fixture 在验证当日仍盖着 `version: 2`（`tests/e2e/drive.mjs` 的 `fabricatedGoodLog` fixture；相邻的 `fabricatedNegativeChildLog` 构造的事件不带 descriptor，无需改版本）。**已落地：** 升级已把 fixture 移到 `version: 3`。一条真实的 0.1.5-rc.1 子代理日志现在是：
 
 ```json
 {"version": 3, "mode": "one-shot", "provider": "spawn", "label": "Attempt a project write"}
@@ -177,7 +178,7 @@ ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
 | `node scripts/check-docs-consistency.mjs` | **7/7 PASS** |
 | `pnpm test:e2e` | 0/4 scenario，`agent-preset/invalid` |
 
-`doctor-lite` 的 `subagent-config` 检查确实急切地运行了已安装的 schema —— 但**只对 `tool-subagent-explore` 那一行**（`scripts/doctor-lite.mjs:377-470`）。`persona` 行从未被校验，而 `verify-concerto-static` 的 c01 只证明 YAML 可解析。于是 MVP 实际弄断的那个 schema，恰好是没有任何 schema 门禁的那一行。
+`doctor-lite` 的 `subagent-config` 检查确实急切地运行了已安装的 schema —— 但验证当日**只对 `tool-subagent-explore` 那一行**（`scripts/doctor-lite.mjs` 的 `checkSubagentConfig` 函数）。`persona` 行从未被校验，而 `verify-concerto-static` 的 c01 只证明 YAML 可解析。于是 MVP 实际弄断的那个 schema，恰好是没有任何 schema 门禁的那一行。
 
 `doctor-lite` 已具备修复所需的一切 —— 它能解析出已安装 dsh 的 `node_modules`（`resolveDshNodeModules`，`:83`），并从那里导入插件的 `Config`。把检查 4 泛化为"渲染后协奏模板的每个带 config 的行，对照该行已安装的 `Config`"，即可以零额外成本为未来的每一次改名拦住这类断裂：
 
@@ -194,6 +195,8 @@ PASS  tool-web / tool-todo / tool-fs-search / skill-filesystem / agent-instructi
 
 ## 7. P2 —— 对齐与派生事项（无断裂）
 
+> **状态更新（MVP 收尾，2026-09-11）：** 下方第 1、2、3、5 项**已随 0.1.5-rc.1 升级提交 `3f84485` 落地**（与本复核同日；见配套升级记录与 PRD §12）—— 两个 preset 现都携带 `present` 行与 `suffix: Your working directory is {{cwd}}.`，两个交付件的 `tool-web` 均为 `fetch: true`，五处过期注释现均写作 `deployment:persona-prefix`。第 6 项已在同一升级中修复（特性探测 `--no-open`）；第 4、7 项是无需动作的上游事实。下方条目请按"发现时原貌"的记录来读。
+
 1. **`present` 行** —— `@deepseek-ai/dsh-tool-present` 是新增的（首现于 `dsh-v0.1.5-alpha.2`），且每个 shipped preset 现在都以 `- id: present` 收尾（`packages/preset/agent-presets/presets/standard/agent.cordis.yml:253-254`）。添加它是派生纪律的默认动作，但该包在 rc.6 上不存在，所以它与地板抬升耦合 —— 而不是与本次修复耦合。
 2. **`tool-web` `fetch`** —— `patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml:293` 仍写 `fetch: false`，而旧模板早已跟随上游为 `fetch: true`（`concerto/agent.cordis.yml:307`）。本仓库内部的跨交付件漂移，与 dsh 无关。
 3. **`persona.suffix`** —— 上游 standard preset 现在设置 `suffix: Your working directory is {{cwd}}.`，因为该行会影子掉部署级 suffix。协奏把它影子为空，恰如它在 rc.6 上影子掉整个部署级 persona，所以这是对齐机会而非回归 —— 且组装出的 omo-sisyphus prompt 仍正确地拒绝 `{{` 序列（`suffix` 是独立 config，若采纳可安全携带 `{{cwd}}`）。
@@ -207,7 +210,7 @@ PASS  tool-web / tool-todo / tool-fs-search / skill-filesystem / agent-instructi
 
    修复刻意**不是**无条件的 `--no-open`：该 flag 与该交接都自 0.1.2 起存在，而更早版本的 web app 的 commander 会直接拒绝未知名选项（P-8.2 那一类 —— 根 flag 与 app flag 是两个解析器）。硬编码它会把每次 0.1.2 之前的运行 —— 包括 `scripts/compat-probe.sh` 刻意的旧版本探测 —— 变成 `error: unknown option`，读起来像 harness bug 而非版本事实。全部四个启动点现在改为询问 app 本身（`dsh --profile web --help | grep -- --no-open`），仅在被宣告时才传该 flag。实测输出：`cold-start: web app advertises --no-open (browser handoff suppressed)`。
 
-   相关的 readiness 行变化无需修复：URL 现在携带 `?token=`，而每个解析器本就容忍它 —— `concerto-mode-probe.sh:412` 显式捕获 token，`tests/e2e/drive.mjs:642` 匹配可选的 token 组，`scripts/smoke-real.mjs:289` 在端口处即止。
+   相关的 readiness 行变化无需修复：URL 现在携带 `?token=`，而每个解析器本就容忍它 —— `concerto-mode-probe.sh` 的 web-RPC 助手显式捕获 token（token→cookie 握手），`tests/e2e/drive.mjs` 在其 readiness 行传输探测中匹配可选的 token 组，`scripts/smoke-real.mjs` 在端口处即止。
 
 7. **`dsh.profile.patchReload` 是新的 manifest 键，且它能让 patch 监听静默冻结。** `web` 是 `'live'`，但其余四个 shipped 模板是 `'startup'`（`packages/boot/app-boot/src/profile.ts:113-129`），且 `normalizeShippedProfile` 会把*已存在*的 rc.6 `headless` profile 原地改写为 `'startup'`（`profile.ts:694-716`）。此处无影响 —— 每个 MVP 脚本都用 profile `web` —— 且 `--patch` overlay 即便在 rc.6 上也从未被监听，所以本项目依赖的 composer 语义未变。记录在案是因为其失败模式是静默的，且会表现为令人困惑的"我的 patch 文件改动不生效了"。
 
@@ -252,6 +255,8 @@ PASS  tool-web / tool-todo / tool-fs-search / skill-filesystem / agent-instructi
 
 ## 9. 滞后于验证的簿记
 
+> 以下为发现时原貌：每一条都已在同日的 0.1.5-rc.1 升级中执行（兼容行已登记为 `tested`，CI 已 pin `0.1.5-rc.1`，README 已点名）。保留于此，让"无行 → 有行"的轨迹保持可读。
+
 - `.omo/compat.yaml` 没有 `0.1.5-rc.1` 的行，也没有 `0.1.3-alpha.*` / `0.1.5-alpha.*` 阶梯的行；已登记的最新 `dsh` 是 `0.1.2-rc.1`（`untested`，自 2026-09-05）。`scripts/compat-probe.sh 0.1.5-rc.1` 是产出该行的机制。
 - `.github/workflows/ci.yml:43` pin 着 `DSH_VERSION: 0.1.0-rc.6`；`.github/workflows/compat-probe.yml:41` 把同一个 rc 装为其 YAML 解析器 provider。
 - `README.md` / `README_zh-CN.md` 的 "Key Facts" 仍写着 dsh `0.1.0-rc.6`。
@@ -261,6 +266,8 @@ PASS  tool-web / tool-todo / tool-fs-search / skill-filesystem / agent-instructi
 ---
 
 ## 10. 建议顺序
+
+> 第 1–6 步已由 2026-09-10 的 0.1.5-rc.1 升级执行（见配套记录）。保留为"当时建议的顺序"，不是今天的待办清单。
 
 1. **修 P0**（§2.4）—— 七个位置，一次键改名。仅此即可让协奏在 0.1.5-rc.1 上可选。
 2. **堵门禁洞**（§6）—— 把 `doctor-lite` 检查 4 从一行泛化到每个带 config 的行，使第 1 步是被证明而非被假定。

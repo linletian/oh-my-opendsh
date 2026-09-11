@@ -32,8 +32,8 @@ rename, review §2). After the upgrade:
 ## e2e verdict (the decisive L1 record)
 
 `{"result":"PASS","scenarios":[hello, concerto-delegation-demo, explore-write-denied,
-explore-nested-delegation-denied],"realDshUntouched":true}` — raw verdict kept beside this
-file as `dsh-0.1.5-rc.1-e2e-verdict.json`.
+explore-nested-delegation-denied],"realDshUntouched":true}` — raw verdict kept at
+`.omo/evidence/dsh-0.1.5-rc.1-e2e-verdict.json`.
 
 Deep assertions from `concerto-delegation-demo` (14/14):
 
@@ -57,13 +57,15 @@ which is precisely the message the old suite scored green through.
 ## Two scripts had already rotted before this upgrade touched anything
 
 Running the full sweep turned up damage that predates this work: `scripts/concerto-mode-probe.sh`
-asserted `deny: [write, edit]` for five days after the 2026-09-05 F1 hardening changed the list to
-`[write, edit, explore]`, and `scripts/prove-route-logging.mjs` carried three independent
-0.1.5-rc.1 breaks (no `sessionProjections` mount, `agentLoop.create` now `async`, generation-bearing
-log filename). Neither could be noticed, because **no chain ran either script** — the probe is named
-in the PRD's bump chain but appears in no automated gate. Both are repaired, and
-`scripts/run-proofs.sh` now runs the three proofs as **gate 8** of `ci-local.sh` and
-`.github/workflows/ci.yml`, so the next rot fails CI instead of waiting for a human to ask.
+asserted `deny: [write, edit]` for six days after the 2026-09-04 F1 hardening (`6203432`) changed
+the list to `[write, edit, explore]`, and `scripts/prove-route-logging.mjs` carried three
+independent 0.1.5-rc.1 breaks (no `sessionProjections` mount, `agentLoop.create` now `async`,
+generation-bearing log filename). Neither could be noticed, because **no chain ran either
+script** — the probe is named in the PRD's bump chain but appears in no automated gate. Both are
+repaired, and `scripts/run-proofs.sh` now runs the three proofs as **gate 8** of `ci-local.sh` and
+`.github/workflows/ci.yml`, so the next rot of a *proof* fails CI instead of waiting for a human
+to ask. The repaired `concerto-mode-probe.sh` itself stays manual-only (it boots a real harness —
+not a zero-cost gate); its next rot would still surface only when someone runs it.
 Full record: `docs/mvp-pitfalls.md` §7 P-20.7.
 
 ## Status of this row

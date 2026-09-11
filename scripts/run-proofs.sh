@@ -6,8 +6,8 @@
 # concerto-mode-probe.sh were manual-only — named in the PRD's rc-bump chain,
 # run by no chain — so nothing failed when they went stale. Two had already
 # rotted silently: concerto-mode-probe.sh asserted `deny: [write, edit]` for
-# five days after the F1 hardening changed the deny list to
-# `[write, edit, explore]` (2026-09-05), and prove-route-logging.mjs had three
+# six days after the F1 hardening changed the deny list to
+# `[write, edit, explore]` (2026-09-04, 6203432), and prove-route-logging.mjs had three
 # separate 0.1.5-rc.1 breaks. docs/mvp-pitfalls.md §7 P-20.7.
 #
 # Zero LLM cost, no network, no boot: each proof builds its own cordis stack

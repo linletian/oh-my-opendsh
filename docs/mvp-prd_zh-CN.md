@@ -232,8 +232,8 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 
 MVP 结项时，V1–V4 的结论直接决定 follow-up 排序：
 
-- [x] **0.1.5-rc.1 两份记录的中文版 —— 2026-09-11 补齐。** [`dsh-0.1.5-rc.1-review_zh-CN.md`](./dsh-0.1.5-rc.1-review_zh-CN.md) 与 [`dsh-0.1.5-rc.1-upgrade_zh-CN.md`](./dsh-0.1.5-rc.1-upgrade_zh-CN.md) 已交付，`docs/` 恢复 EN+zh 成对（此前刻意 EN-only，以便记录随它所描述的变更一同落地）。
-- **FR-6 在两条交付线上由两种机制实现**（收尾登记）：rc 线插件（`patches/omo-dsh/omo-agents/`）按本文档字面实现（`agent/pre-step` + `agent.inject()`）；当前 DSH 线（`patches/omo-dsh/omo-agents-current/`，即安装器交付物）用 persona 影子 + `system-prompt/assemble` 快照证明，且 Hard Blocks / Anti-Patterns 段落直接编进 explore persona 文本——已安装的 preset 不含运行时 listener。两线判定分别见[踩坑表](./mvp-pitfalls_zh-CN.md) §2 与 §6。
+- [x] **0.1.5-rc.1 两份记录的中文版 —— 2026-09-11 补齐。** [`dsh-0.1.5-rc.1-review_zh-CN.md`](./dsh-0.1.5-rc.1-review_zh-CN.md) 与 [`dsh-0.1.5-rc.1-upgrade_zh-CN.md`](./dsh-0.1.5-rc.1-upgrade_zh-CN.md) 已交付（此前刻意 EN-only，以便记录随它所描述的变更一同落地）；`docs/` 自此恢复惯常的 EN+zh 成对——唯一不成对的是纯中文归档 `concerto-current-dsh_zh-CN.md`。
+- **FR-6 在两条交付线上由两种机制实现**（收尾登记）：rc 线插件（`patches/omo-dsh/omo-agents/`）按本文档字面实现（`agent/pre-step` + `agent.inject()`）；当前 DSH 线（`patches/omo-dsh/omo-agents-current/`，即安装器交付物）用 `persona` 影子 + `system-prompt/assemble` 快照证明，且 Hard Blocks / Anti-Patterns 段落直接编进 explore 的 `persona` 文本——已安装的 preset 不含运行时 listener。两线判定分别见[踩坑表](./mvp-pitfalls_zh-CN.md) §2 与 §6。
 - **V1–V4 全部验证通过** → 按调研 §2.10 进入全量移植（OMO core import → 剩余 agent → hook 批量翻译 → Team Mode → …）
 - **任一 V 证伪** → 回到决策文档登记新风险（R7+），重估受影响的工作量块，再定方向
 - MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2e → 完整 L2 层；doctor-lite → 完整 doctor；`mvp-pitfalls.md` → 持续累加的踩坑知识库

@@ -191,7 +191,7 @@ async function run() {
     && String(presetDoc.name).length > 0 && String(presetDoc.description).length > 0),
     presetDoc ? `name="${presetDoc.name}"` : 'preset.yml unavailable (see c01)'))
 
-  // c10 — LEGACY path hardening (PR #1 review F1 fix, 2026-09-05): the rc-era
+  // c10 — LEGACY path hardening (PR #1 review F1 fix, 2026-09-04): the rc-era
   // template under patches/omo-dsh/omo-agents/ (still the load target of
   // build / e2e / cold-start / manual-testing) must carry the same AC-6
   // design as the current-DSH path — no generic delegation rows, and the

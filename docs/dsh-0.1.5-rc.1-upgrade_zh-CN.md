@@ -31,8 +31,8 @@ concerto-static、7/7 docs-consistency —— 而 e2e 是 0/4**（persona 的 `t
 ## e2e 判定（决定性的 L1 记录）
 
 `{"result":"PASS","scenarios":[hello, concerto-delegation-demo, explore-write-denied,
-explore-nested-delegation-denied],"realDshUntouched":true}` —— 原始判定文件放在本文档
-旁边：`dsh-0.1.5-rc.1-e2e-verdict.json`。
+explore-nested-delegation-denied],"realDshUntouched":true}` —— 原始判定文件存于
+`.omo/evidence/dsh-0.1.5-rc.1-e2e-verdict.json`。
 
 来自 `concerto-delegation-demo` 的深层断言（14/14）：
 
@@ -56,14 +56,16 @@ explore-nested-delegation-denied],"realDshUntouched":true}` —— 原始判定�
 
 ## 两个脚本在本次升级触碰任何东西之前就已经腐烂
 
-全量扫描发现了早于本次工作的损坏：`scripts/concerto-mode-probe.sh` 在 2026-09-05
-的 F1 加固把 deny 列表改成 `[write, edit, explore]` 之后，仍断言 `deny: [write, edit]`
-长达五天；`scripts/prove-route-logging.mjs` 携带三处独立的 0.1.5-rc.1 断裂（未挂载
-`sessionProjections`、`agentLoop.create` 变为 `async`、带代际的日志文件名）。两者都
-不可能被察觉，因为**没有任何链跑这两个脚本** —— 探针虽在 PRD 的 bump 链里被点名，
-却不在任何自动门禁中。两者均已修复，且 `scripts/run-proofs.sh` 现在把三个证明作为
-`ci-local.sh` 和 `.github/workflows/ci.yml` 的**第 8 道门禁**运行，于是下一次腐烂
-会红掉 CI，而不是等到有人来问。完整记录：[`mvp-pitfalls_zh-CN.md`](./mvp-pitfalls_zh-CN.md) §7 P-20.7。
+全量扫描发现了早于本次工作的损坏：`scripts/concerto-mode-probe.sh` 在 2026-09-04
+的 F1 加固（`6203432`）把 deny 列表改成 `[write, edit, explore]` 之后，仍断言
+`deny: [write, edit]` 长达六天；`scripts/prove-route-logging.mjs` 携带三处独立的
+0.1.5-rc.1 断裂（未挂载 `sessionProjections`、`agentLoop.create` 变为 `async`、带代际的
+日志文件名）。两者都不可能被察觉，因为**没有任何链跑这两个脚本** —— 探针虽在 PRD 的
+bump 链里被点名，却不在任何自动门禁中。两者均已修复，且 `scripts/run-proofs.sh` 现在
+把三个证明作为 `ci-local.sh` 和 `.github/workflows/ci.yml` 的**第 8 道门禁**运行，于是
+*证明*的下一次腐烂会红掉 CI，而不是等到有人来问。已修复的 `concerto-mode-probe.sh`
+本身仍是纯手工（它要启动真实 harness —— 不是零成本门禁）；它的下一次腐烂仍只会在
+有人运行它时浮现。完整记录：[`mvp-pitfalls_zh-CN.md`](./mvp-pitfalls_zh-CN.md) §7 P-20.7。
 
 ## 本行的状态
 

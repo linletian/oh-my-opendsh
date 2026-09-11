@@ -101,7 +101,7 @@ jobs:
         run: node scripts/check-docs-consistency.mjs
 
       # Gate 8 (2026-09-10): the session-free PROOFS. They were manual-only and
-      # rotted silently — concerto-mode-probe.sh's deny assertion survived five
+      # rotted silently — concerto-mode-probe.sh's deny assertion survived six
       # days past the F1 change that invalidated it, and prove-route-logging.mjs
       # had three separate 0.1.5-rc.1 breaks. Zero LLM cost, no network, no boot.
       - name: gate 8 — session-free proofs

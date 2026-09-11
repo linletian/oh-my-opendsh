@@ -7,6 +7,7 @@
 > - Comparison baseline: dsh `0.1.0-rc.6` — the version this project's CI pins (decision D7) and the runtime the MVP was verified on (`.omo/compat.yaml` `tested` rows)
 > - **Companion**: [`dsh-0.1.5-rc.1-upgrade.md`](./dsh-0.1.5-rc.1-upgrade.md) — the implementation + verification record (what was changed, the before/after gate table)
 > - Method: (1) enumerate every DSH surface the MVP touches; (2) `git diff 15148dbd9a..dsh-v0.1.5-rc.1` per package; (3) **run the MVP's own gates against 0.1.5-rc.1** — `doctor-lite`, `verify-concerto-static`, `check-docs-consistency`, `vitest run`, `tests/e2e/drive.mjs`, `prove-explore-*.mjs`; (4) drive a real `dsh web` boot + `session/create` RPC against the installer-materialized preset
+> - **Time anchor** (noted at MVP closeout, 2026-09-11): repo-state statements and repo-relative citations describe the **pre-upgrade** tree as of the verification date; the companion upgrade record holds the after-state, and sections whose findings have since landed say so inline (§4, §7, §9, §10). Upstream citations (`packages/…`, tag-scoped `file:line`) are intentionally left as written.
 
 ---
 > **中文版**: [`dsh-0.1.5-rc.1-review_zh-CN.md`](./dsh-0.1.5-rc.1-review_zh-CN.md)（2026-09-11 交付；此前刻意 EN-only，以便记录随它所描述的变更一同落地——原 follow-up 见 PRD §12，已关闭）。
@@ -126,7 +127,7 @@ $DSH_HOME/storages/session_projcache/…            ← new projection cache
 
 rc.6 wrote `session.jsonl` (`.npm-global/…/dsh-session-persistence-jsonl/lib/index.js:892`). The v3 format itself landed at or before `dsh-v0.1.5-alpha.1` (the `session-format-v2-to-v3` migration package first appears there; `session-format-v0-to-v1` … `v2-to-v3` are all present at HEAD).
 
-`tests/e2e/drive.mjs:687` filters `entry.name === 'session.jsonl'`, so `findSessionLogs` returns nothing, `awaitTurnEnd` never sees a `turn/end`, and every log-derived assertion fails at once — 5 failures in `hello`, 10 in `concerto-delegation-demo`, 6 in `explore-write-denied`, 6 in `explore-nested-delegation-denied`. The mock-side assertions (`mockSawExpectedRequestCounts`, `mockRequestOnSisyphusModel`) still pass, which is the tell that the harness works and only observation is stale.
+The e2e driver's `findSessionLogs` (`tests/e2e/drive.mjs`) filtered `entry.name === 'session.jsonl'` at review time, so it returns nothing on 0.1.5-rc.1, `awaitTurnEnd` never sees a `turn/end`, and every log-derived assertion fails at once — 5 failures in `hello`, 10 in `concerto-delegation-demo`, 6 in `explore-write-denied`, 6 in `explore-nested-delegation-denied`. The mock-side assertions (`mockSawExpectedRequestCounts`, `mockRequestOnSisyphusModel`) still pass, which is the tell that the harness works and only observation is stale. (Fixed by the upgrade: `findSessionLogs` now matches the generation filename, per the fix note below.)
 
 Fix: match the generation filename (`session.vN.jsonl`) instead of a fixed name — the format-version-aware reader the persistence package itself uses is the honest shape, since a hardcoded `session.v3.jsonl` re-breaks on v4.
 
@@ -136,7 +137,7 @@ Fix: match the generation filename (`session.vN.jsonl`) instead of a fixed name 
 
 `SUBAGENT_DESCRIPTOR_VERSION` is `2` at `dsh-v0.1.0-rc.8` and `3` from `dsh-v0.1.2-rc.1` on (`packages/subagent/subagent/src/descriptor.ts:48`). A non-matching version is not an error — `foldSubagentDescriptor` returns `undefined` (`:210`), so an old fixture reads as "no descriptor".
 
-The rc-era review already recorded this for 0.1.2 (its 2026-08-29 addendum, item 3), but the driver's fabricated descriptor fixture still stamps `version: 2` (`tests/e2e/drive.mjs:1316`, in `fabricatedChildLog`; the neighbouring `fabricatedNegativeChildLog` at `:1379` builds its events without a descriptor and needs no version change). A real 0.1.5-rc.1 child log now reads:
+The rc-era review already recorded this for 0.1.2 (its 2026-08-29 addendum, item 3), but the driver's fabricated descriptor fixture still stamped `version: 2` at review time (the `fabricatedGoodLog` fixture in `tests/e2e/drive.mjs`; the neighbouring `fabricatedNegativeChildLog` builds its events without a descriptor and needs no version change). **Landed:** the upgrade moved the fixture to `version: 3`. A real 0.1.5-rc.1 child log now reads:
 
 ```json
 {"version": 3, "mode": "one-shot", "provider": "spawn", "label": "Attempt a project write"}
@@ -176,7 +177,7 @@ Against 0.1.5-rc.1, with the unmodified repo:
 | `node scripts/check-docs-consistency.mjs` | **7/7 PASS** |
 | `pnpm test:e2e` | 0/4 scenarios, `agent-preset/invalid` |
 
-`doctor-lite`'s `subagent-config` check eagerly runs the installed schema — but **only on the `tool-subagent-explore` row** (`scripts/doctor-lite.mjs:377-470`). The `persona` row is never validated, and `verify-concerto-static` c01 only proves the YAML parses. So the one schema the MVP actually broke was the one row with no schema gate.
+`doctor-lite`'s `subagent-config` check eagerly runs the installed schema — but at review time **only on the `tool-subagent-explore` row** (the `checkSubagentConfig` function in `scripts/doctor-lite.mjs`). The `persona` row was never validated, and `verify-concerto-static` c01 only proves the YAML parses. So the one schema the MVP actually broke was the one row with no schema gate.
 
 `doctor-lite` already has everything the fix needs — it resolves the installed dsh's `node_modules` (`resolveDshNodeModules`, `:83`) and imports a plugin's `Config` from there. Generalising check 4 to "every config-bearing row of the rendered concerto template, against that row's installed `Config`" catches this class of break for every future rename, at zero extra cost:
 
@@ -193,6 +194,8 @@ PASS  tool-web / tool-todo / tool-fs-search / skill-filesystem / agent-instructi
 
 ## 7. P2 — parity and derivation items (no break)
 
+> **Status update (MVP closeout, 2026-09-11):** items 1, 2, 3 and 5 below **landed in the 0.1.5-rc.1 upgrade commit `3f84485`** (same day as this review; recorded in the companion upgrade doc and PRD §12) — both presets now carry the `present` row and `suffix: Your working directory is {{cwd}}.`, `tool-web` is `fetch: true` in both artifacts, and the five stale comments now name `deployment:persona-prefix`. Item 6 was fixed in the same upgrade (feature-probed `--no-open`); items 4 and 7 are upstream facts that needed no change. Read the entries below as the as-found record.
+
 1. **`present` row** — `@deepseek-ai/dsh-tool-present` is new (first present at `dsh-v0.1.5-alpha.2`) and every shipped preset now ends with `- id: present` (`packages/preset/agent-presets/presets/standard/agent.cordis.yml:253-254`). Adding it is the derivation-discipline default, but the package does not exist on rc.6, so it is coupled to moving the floor — not to this fix.
 2. **`tool-web` `fetch`** — `patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml:293` still says `fetch: false` while the legacy template already follows upstream at `fetch: true` (`concerto/agent.cordis.yml:307`). Cross-artifact drift inside this repo, independent of dsh.
 3. **`persona.suffix`** — upstream's standard preset now sets `suffix: Your working directory is {{cwd}}.` because the row shadows the deployment suffix. Concerto shadows it to empty, exactly as it shadowed the whole deployment persona on rc.6, so this is a parity opportunity rather than a regression — and the assembled omo-sisyphus prompt is still correctly rejected for `{{` sequences (the `suffix` is separate config, so it may carry `{{cwd}}` safely if adopted).
@@ -206,7 +209,7 @@ PASS  tool-web / tool-todo / tool-fs-search / skill-filesystem / agent-instructi
 
    The fix is deliberately **not** an unconditional `--no-open`: the flag and the handoff both start at 0.1.2, and before that the web app's commander rejects an unknown option outright (P-8.2's class — root flags and app flags are different parsers). Hardcoding it would turn every pre-0.1.2 run, including `scripts/compat-probe.sh`'s deliberate old-version probes, into `error: unknown option`, which reads as a harness bug rather than a version fact. All four boot sites now ask the app itself (`dsh --profile web --help | grep -- --no-open`) and pass the flag only when it is advertised. Observed: `cold-start: web app advertises --no-open (browser handoff suppressed)`.
 
-   The related readiness-line change needed no fix: the URL now carries `?token=`, and every parser already tolerated it — `concerto-mode-probe.sh:412` captures the token explicitly, `tests/e2e/drive.mjs:642` matches the optional token group, and `scripts/smoke-real.mjs:289` stops at the port.
+   The related readiness-line change needed no fix: the URL now carries `?token=`, and every parser already tolerated it — `concerto-mode-probe.sh`'s web-RPC helper captures the token explicitly (the token→cookie handshake), `tests/e2e/drive.mjs` matches the optional token group in its readiness-line transport detection, and `scripts/smoke-real.mjs` stops at the port.
 
 7. **`dsh.profile.patchReload` is a new manifest key, and it can silently freeze patch watching.** `web` is `'live'`, but the other four shipped templates are `'startup'` (`packages/boot/app-boot/src/profile.ts:113-129`), and `normalizeShippedProfile` rewrites an *existing* rc.6 `headless` profile in place to `'startup'` (`profile.ts:694-716`). No impact here — every MVP script uses profile `web` — and `--patch` overlays were never watched even on rc.6, so the composer semantics this project depends on are unchanged. Recorded because the failure mode is silent and would surface as a confusing "my patch file edits stopped taking effect".
 
@@ -251,6 +254,8 @@ Ruled out by inspection — each is a real API change in the range that this MVP
 
 ## 9. Bookkeeping that trails the verification
 
+> As-found record: every item below was executed by the 0.1.5-rc.1 upgrade on the same day (the compat row is registered and `tested`, CI pins `0.1.5-rc.1`, the READMEs name it). Kept so the trail from "no row" to "row" stays legible.
+
 - `.omo/compat.yaml` has no row for `0.1.5-rc.1`, nor for the `0.1.3-alpha.*` / `0.1.5-alpha.*` ladder; the newest registered `dsh` is `0.1.2-rc.1` (`untested`, since 2026-09-05). `scripts/compat-probe.sh 0.1.5-rc.1` is the mechanism that produces the row.
 - `.github/workflows/ci.yml:43` pins `DSH_VERSION: 0.1.0-rc.6`; `.github/workflows/compat-probe.yml:41` installs the same rc as its YAML parser provider.
 - `README.md` / `README_zh-CN.md` "Key Facts" still state dsh `0.1.0-rc.6`.
@@ -260,6 +265,8 @@ Ruled out by inspection — each is a real API change in the range that this MVP
 ---
 
 ## 10. Recommended sequence
+
+> Steps 1–6 were executed by the 0.1.5-rc.1 upgrade on 2026-09-10 (see the companion record). Kept as the as-recommended sequence, not today's todo list.
 
 1. **Fix P0** (§2.4) — the seven sites, one key rename. This alone makes Concerto selectable on 0.1.5-rc.1.
 2. **Close the gate hole** (§6) — generalise `doctor-lite` check 4 from one row to every config-bearing row, so step 1 is proven rather than assumed.
