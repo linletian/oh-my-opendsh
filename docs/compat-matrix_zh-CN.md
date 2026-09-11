@@ -31,7 +31,7 @@
 
 | dsh | omo | 登记于 | 说明 |
 |---|---|---|---|
-| 0.1.2-rc.1 | 4.19.4 | 2026-09-05 | 静态复核已完成（docs/dsh-0.1.2-review_zh-CN）；运行时探测待 scripts/compat-probe.sh；D7 的 CI pin 翻转以此行为门（PRD §12）——已被 0.1.5-rc.1 取代，保留为历史记录 |
+| 0.1.2-rc.1 | 4.19.4 | 2026-09-05 | 静态复核已完成（docs/archived/dsh-0.1.2-review_zh-CN）；运行时探测待 scripts/compat-probe.sh；D7 的 CI pin 翻转以此行为门（PRD §12）——已被 0.1.5-rc.1 取代，保留为历史记录 |
 
 ## 如何更新
 

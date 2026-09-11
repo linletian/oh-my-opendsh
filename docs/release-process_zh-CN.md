@@ -222,4 +222,4 @@ scripts/release.sh <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--no-gh] [
 ## 10. 决策与首个实战对象
 
 - **D13**（本流程）2026-09-05 按上述两条原则采纳；关闭开放维度 **O6**（上游 release 通知 → 每周哨兵）与 **O7**（升级节奏 → 探测 + 矩阵驱动的刻意升级）。**O1**（OMO core 包 pin 策略）保持开放——矩阵只追踪 omo 的*参照*版本。
-- 首个实战对象：🔬 行 **dsh 0.1.2-rc.1**（静态复核已完成——[`docs/dsh-0.1.2-review_zh-CN.md`](./dsh-0.1.2-review_zh-CN.md)）。通过后即可用 `scripts/bump-dsh.sh 0.1.2-rc.1` 做 D7 的 CI pin 翻转（`.github/workflows/ci.yml` 的 `DSH_VERSION`）——PRD §12 跟踪中。
+- 首个实战对象——**实际以 dsh 0.1.5-rc.1 bump 完成（2026-09-10）**，而非按原文进行：原定的 🔬 行 **dsh 0.1.2-rc.1**（静态复核——[`docs/archived/dsh-0.1.2-review_zh-CN.md`](./archived/dsh-0.1.2-review_zh-CN.md)）在其探针运行之前就被取代——npm 相继发布了 `0.1.3-alpha.*` / `0.1.5-alpha.*` 阶梯与 `0.1.5-rc.1`；pin 经同一套"探测 + 矩阵 + 门禁链"从 rc.6 翻到 0.1.5-rc.1（复核 → 升级记录 → `tested` 行；PRD §12）。下方原文作为该计划的记录保留："通过后即可用 `scripts/bump-dsh.sh 0.1.2-rc.1` 做 D7 的 CI pin 翻转（`.github/workflows/ci.yml` 的 `DSH_VERSION`）——PRD §12 跟踪中。"

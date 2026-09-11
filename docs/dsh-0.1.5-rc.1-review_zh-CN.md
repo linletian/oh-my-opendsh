@@ -260,7 +260,7 @@ PASS  tool-web / tool-todo / tool-fs-search / skill-filesystem / agent-instructi
 - `.omo/compat.yaml` 没有 `0.1.5-rc.1` 的行，也没有 `0.1.3-alpha.*` / `0.1.5-alpha.*` 阶梯的行；已登记的最新 `dsh` 是 `0.1.2-rc.1`（`untested`，自 2026-09-05）。`scripts/compat-probe.sh 0.1.5-rc.1` 是产出该行的机制。
 - `.github/workflows/ci.yml:43` pin 着 `DSH_VERSION: 0.1.0-rc.6`；`.github/workflows/compat-probe.yml:41` 把同一个 rc 装为其 YAML 解析器 provider。
 - `README.md` / `README_zh-CN.md` 的 "Key Facts" 仍写着 dsh `0.1.0-rc.6`。
-- `docs/dsh-0.1.2-review_zh-CN.md` §2 及其 §1.4 结论对 0.1.5-rc.1 仍然准确，除本文档取代它们之处（preset 位置、`persona` schema、`roots` 强制改写、session format v3）。
+- `docs/archived/dsh-0.1.2-review_zh-CN.md` §2 及其 §1.4 结论对 0.1.5-rc.1 仍然准确，除本文档取代它们之处（preset 位置、`persona` schema、`roots` 强制改写、session format v3）。
 - 注意 D7 pin 是"major 0，minor 1"，所以 `doctor-lite` 检查 1 无需任何改动即接受 `0.1.5-rc.1` —— pin 不是本次升级的门。
 
 ---

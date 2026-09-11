@@ -259,7 +259,7 @@ Ruled out by inspection — each is a real API change in the range that this MVP
 - `.omo/compat.yaml` has no row for `0.1.5-rc.1`, nor for the `0.1.3-alpha.*` / `0.1.5-alpha.*` ladder; the newest registered `dsh` is `0.1.2-rc.1` (`untested`, since 2026-09-05). `scripts/compat-probe.sh 0.1.5-rc.1` is the mechanism that produces the row.
 - `.github/workflows/ci.yml:43` pins `DSH_VERSION: 0.1.0-rc.6`; `.github/workflows/compat-probe.yml:41` installs the same rc as its YAML parser provider.
 - `README.md` / `README_zh-CN.md` "Key Facts" still state dsh `0.1.0-rc.6`.
-- `docs/dsh-0.1.2-review.md` §2 and its §1.4 conclusions remain accurate for 0.1.5-rc.1 except where this document supersedes them (preset location, the `persona` schema, the `roots` force-patch, session format v3).
+- `docs/archived/dsh-0.1.2-review.md` §2 and its §1.4 conclusions remain accurate for 0.1.5-rc.1 except where this document supersedes them (preset location, the `persona` schema, the `roots` force-patch, session format v3).
 - Note the D7 pin is "major 0, minor 1", so `doctor-lite` check 1 accepts `0.1.5-rc.1` without any change — the pin is not what gates this upgrade.
 
 ---

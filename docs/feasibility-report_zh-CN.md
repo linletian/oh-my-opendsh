@@ -1616,7 +1616,7 @@ sisyphus-agent.yml 有注释 *"Only issue_comment works for fork PRs (secrets av
 ## 15. 2026-08-29 follow-up note —— dsh 0.1.2-alpha.1 review sediment
 
 **日期**：2026-08-29
-**状态**：follow-up note（非实施计划）。独立复核 dsh 0.1.2-alpha.1 沉淀出的两个事实——它们锐化本报告既有的扩展路径论断，但不推翻任何既有结论。本 note 背后的完整调研见 [dsh 0.1.2 评审报告（英文）](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)。
+**状态**：follow-up note（非实施计划）。独立复核 dsh 0.1.2-alpha.1 沉淀出的两个事实——它们锐化本报告既有的扩展路径论断，但不推翻任何既有结论。本 note 背后的完整调研见 [dsh 0.1.2 评审报告（英文）](./archived/dsh-0.1.2-review.md) / [中文](./archived/dsh-0.1.2-review_zh-CN.md)。
 
 ### 15.1 `SubagentProvider` 是公开扩展点
 

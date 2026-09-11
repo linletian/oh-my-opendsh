@@ -1,12 +1,14 @@
 # dsh 0.1.2-alpha.1 Review Research Report
 
+> **ARCHIVED (2026-09-11).** This review's bump path was superseded before the tag was ever pinned: the project went rc.6 → 0.1.5-rc.1 directly (see [PRD §12](../mvp-prd.md) and the [0.1.5-rc.1 review](../dsh-0.1.5-rc.1-review.md) §9, which also lists where this document's conclusions still hold). Content below is unchanged from the research date.
+>
 > **Primary document (English).** 中文翻译见 [评审报告](./dsh-0.1.2-review_zh-CN.md).
 >
 > **Nature**: a pure research record with no action commitments; it does not update decisions, the PRD, or the feasibility report, and it does not bump any version.
 >
 > - Research date: 2026-08-29
 > - Research target: the deepseek-harness repository (local path `/home/linletian/GithubRepo/deepseek-harness/`, read-only throughout), tag `dsh-v0.1.2-alpha.1`, HEAD commit `6c705be1ce`; note: tag `dsh-v0.1.2-alpha.1` now points at merge commit `cd5ef81481`, whose tree is identical to the research-time HEAD `6c705be1ce` (`git diff` is empty), so the content conclusions are unaffected
-> - Comparison baseline: the dsh `0.1.0-rc.6` pinned by this project's CI (decision D7); the MVP is closed (FR-1~FR-8 implemented, V1~V4 validated, see [mvp-pitfalls](./mvp-pitfalls_zh-CN.md))
+> - Comparison baseline: the dsh `0.1.0-rc.6` pinned by this project's CI (decision D7); the MVP is closed (FR-1~FR-8 implemented, V1~V4 validated, see [mvp-pitfalls](../mvp-pitfalls_zh-CN.md))
 > - Method: static source reading + git history verification (two explore subagents researched in parallel; key conclusions were spot-checked against the original source by the main agent)
 
 ---
