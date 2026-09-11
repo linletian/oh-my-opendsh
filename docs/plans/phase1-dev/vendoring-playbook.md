@@ -250,6 +250,7 @@ scripts/ci-local.sh               # 全门
 | 是否值得独立成 workspace 包 | 单包自包含 → 独立包；若被多个包共享 → 考虑合并落点 | §7 | 单包自包含 → **独立 workspace 包**（`patches/omo-dsh/vendor/*`） |
 | 是否需要在 CI 增门 | 若测试量或运行时长显著增长 | 步骤 6 末段 | **不需要**：78 tests 并入既有门 2；CI 双文件**零改动** |
 | 是否需要 `minimumReleaseAgeExclude` 例外 | 新依赖的发布时间 | §4 | **不需要**：`diff@9.0.0` 未被拒，`minimumReleaseAgeExclude` 未新增条目 |
+| **vendored `AGENTS.md` 是 agent 指令文件** | 它是**逐字节**上游件，落入本仓库后即成为该路径（`patches/omo-dsh/vendor/<PKG>/AGENTS.md`）下的 **agent 指令文件**——不是普通文档 | 读一遍该文件内部的相对链接与消费者说明 | ⚠️ **上游相对链接在本仓库不存在**：`hashline-core` 的 `AGENTS.md` 含父级链接 `../AGENTS.md`（上游指向 `packages/AGENTS.md`）与消费者路径 `omo-opencode/src/tools/hashline-edit/`，本仓库均无对应路径。这是 **verbatim 的必然结果**，不是缺陷，也不因此改写（改了就破坏逐字节一致）；**建议 Phase 7 的漂移/文档清单顺手记一笔**，供 agent 读取时知悉 |
 
 ---
 
@@ -266,7 +267,7 @@ node -e "…" # Phase 1 不写脚本；先用 node/jq 手工核对
 1. **定向搬运**（ROADMAP §2 规则 4）：按文件 cherry-pick 上游修复 → 应**主动更新** manifest 对应条目并在 NOTICES 留痕。
 2. **本项目自己的 shim** → 已在 `deviations[]` 中登记，本就不属 `verbatim`。
 
-**不做的事**（Phase 1 判定）：不为此写 CI 门。等 vendor 包数量 **≥ 3** 时再评估是否脚本化——那时收益才覆盖维护成本。
+**不做的事**（Phase 1 判定）：不为此写 CI 门。**当前漂移检测是纯人工操作——没有 CI 门，也没有校验脚本**：§2 步骤 8 的核对（重算 `verbatim` 条目的 sha256）靠人工执行，不会被任何门自动拦住。等 vendor 包数量 **≥ 3** 时再评估是否脚本化——那时收益才覆盖维护成本。
 
 ---
 

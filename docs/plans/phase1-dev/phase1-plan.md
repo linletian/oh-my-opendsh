@@ -248,7 +248,7 @@ ROADMAP §4 Phase 1 给出 4 条退出标准。逐条落到**可执行的证据*
 | 交付物 | 路径 | 类型 |
 |---|---|---|
 | vendor 包 | `patches/omo-dsh/vendor/hashline-core/`（含 `NOTICE.md`、`VENDOR-MANIFEST.json`） | 代码 |
-| 接入改动 | `pnpm-workspace.yaml` / `pnpm-lock.yaml` / `vitest.config.ts` / `package.json` / **根 `tsconfig.json`**（排除 vendor 测试，§4.2）/ `.github/workflows/ci.yml` / `scripts/ci-local.sh` / **`scripts/verify-licenses.mjs`**（D16 授权的名称门扩展，P1-T9） | 配置 |
+| 接入改动 | `pnpm-workspace.yaml` / `pnpm-lock.yaml` / `vitest.config.ts` / `package.json` / **根 `tsconfig.json`**（排除 vendor 测试，§4.2）/ `.github/workflows/ci.yml` / `scripts/ci-local.sh`（二者本阶段零改动：vendor 测试并入既有门 2）/ **`scripts/verify-licenses.mjs`**（D16 授权的名称门扩展，P1-T9） | 配置 |
 | 署名与合规 | `THIRD_PARTY_NOTICES.md`（29 行逐文件覆盖）+ `NOTICE.md`（包级修改声明）；`LICENSES/oh-my-openagent.LICENSE.md` 校验已通过 | 合规 |
 | 决策 | `docs/decisions.md` + `docs/decisions_zh-CN.md` 的 **D15 与 D16**（均已落） | 决策 |
 | 说明 | `README.md` / `README_zh-CN.md`（如涉及）· `CHANGELOG.md` | 文档 |
