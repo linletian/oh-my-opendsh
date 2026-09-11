@@ -53,17 +53,31 @@ describe('tokenAllowed', () => {
     expect(tokenAllowed('SUL-1.0', 'oh-my-openagent')).toBe(true)
     expect(tokenAllowed('SUL-1.0', 'comodo')).toBe(false)
   })
+
+  it('allows the upstream @oh-my-opencode scope (D16 name-gate extension)', () => {
+    expect(tokenAllowed('SUL-1.0', '@oh-my-opencode/hashline-core')).toBe(true)
+    expect(tokenAllowed('SUL-1.0', 'oh-my-opencode')).toBe(true)
+  })
+
+  it('keeps rejecting SUL-1.0 outside the omo/openagent/opencode scope', () => {
+    expect(tokenAllowed('SUL-1.0', 'comodo')).toBe(false)
+    expect(tokenAllowed('SUL-1.0', 'opencode-core')).toBe(false)
+    expect(tokenAllowed('SUL-1.0', 'some-random-pkg')).toBe(false)
+  })
 })
 
 describe('SUL_ALLOWED_NAME (R2-4: whole-word omo)', () => {
   it.each([
     ['oh-my-openagent', true],
+    ['oh-my-opencode', true],
+    ['@oh-my-opencode/hashline-core', true],
     ['@omo/goal', true],
     ['omo-goal', true],
     ['x.omo', true],
     ['comodo', false],
     ['promo', false],
     ['omocha', false],
+    ['opencode-core', false],
   ])('%s -> %s', (name, expected) => {
     expect(SUL_ALLOWED_NAME.test(name)).toBe(expected)
   })
