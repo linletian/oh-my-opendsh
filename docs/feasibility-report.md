@@ -1615,7 +1615,7 @@ The following were not investigated in this research. The omission is a scoping 
 ## 15. 2026-08-29 follow-up note — dsh 0.1.2-alpha.1 review sediment
 
 **Date**: 2026-08-29
-**Status**: Follow-up note (not a plan). Two facts sedimented by the independent dsh 0.1.2-alpha.1 review — they sharpen this report's extension-path claims without reversing any existing conclusion. The full survey behind this note is [dsh 0.1.2 review (English)](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md).
+**Status**: Follow-up note (not a plan). Two facts sedimented by the independent dsh 0.1.2-alpha.1 review — they sharpen this report's extension-path claims without reversing any existing conclusion. The full survey behind this note is [dsh 0.1.2 review (English)](./archived/dsh-0.1.2-review.md) / [中文](./archived/dsh-0.1.2-review_zh-CN.md).
 
 ### 15.1 `SubagentProvider` is a public extension point
 

@@ -303,7 +303,12 @@ editorial.
   sentinel) and **O7** (upgrade cadence → deliberate bump via probe + matrix).
   **O1** (omo core-package pin strategy) stays open — the matrix tracks the
   omo *reference* version only.
-- First exercise: the 🔬 row **dsh 0.1.2-rc.1** (static review already done —
-  [`docs/dsh-0.1.2-review.md`](./dsh-0.1.2-review.md)). Passing it allows the
-  D7 pin flip via `scripts/bump-dsh.sh 0.1.2-rc.1` (`DSH_VERSION` in
-  `.github/workflows/ci.yml`) — tracked in PRD §12.
+- First exercise — **ran as the dsh 0.1.5-rc.1 bump (2026-09-10)**, not as written here:
+  the originally named 🔬 row **dsh 0.1.2-rc.1** (static review —
+  [`docs/archived/dsh-0.1.2-review.md`](./archived/dsh-0.1.2-review.md)) was superseded
+  before its probe ran, when npm published the `0.1.3-alpha.*` / `0.1.5-alpha.*` ladder and
+  `0.1.5-rc.1`; the pin flipped rc.6 → 0.1.5-rc.1 through this same probe + matrix + gate
+  chain (review → upgrade record → `tested` row; PRD §12). The sentence below is the
+  original plan, kept as the record of it:
+  "Passing it allows the D7 pin flip via `scripts/bump-dsh.sh 0.1.2-rc.1` (`DSH_VERSION` in
+  `.github/workflows/ci.yml`) — tracked in PRD §12."

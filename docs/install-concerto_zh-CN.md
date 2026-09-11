@@ -77,10 +77,10 @@ NO_PIAI=1 EXPLORE_MODEL=my-model sh oh-my-opendsh/scripts/install-concerto.sh   
 | `EXPLORE_PROVIDER=xxx` | 换 explore 走的**路由身份**。一般只在没有 pi-ai 时用；同模型换路由，回答内容基本不变，只是配置面少一段、日志里记的路由对不一样。 |
 | `NO_PIAI=1` | 告诉安装器"**别动我的 settings.yaml**"。⚠️ 单独用会坏：explore 那行还指着 pi-ai 路由，路由没激活 → 每次委派直接报错。跳过 pi-ai 必须同时给 `EXPLORE_PROVIDER`（最好连 `EXPLORE_MODEL` 一起给）。 |
 
-怎么确认换没换成？装完委派一次，解压子会话日志看 `request/context` 那一行：
+怎么确认换没换成？装完委派一次，解压子会话日志看 `request/context` 那一行（文件名带 session-format 代际——`session.vN.jsonl[.zstd]`，今天为 `v3`；更老的会话仍是裸名 `session.jsonl[.zstd]`）：
 
 ```bash
-unzstd -c ~/.dsh/sessions/<工作区目录>/<子会话id>/session.jsonl.zstd | grep request/context
+unzstd -c ~/.dsh/sessions/<工作区目录>/<子会话id>/session.v3.jsonl.zstd | grep request/context
 # {"provider":"deepseek","model":"deepseek-v4-flash"}                ← 默认（pi-ai）
 # {"provider":"deepseek-official","model":"deepseek-v4-flash"}       ← 同 provider 降级
 ```

@@ -31,7 +31,7 @@ Status legend: ✅ tested · 🔬 untested · ❌ broken · 🪦 dropped.
 
 | dsh | omo | since | note |
 |---|---|---|---|
-| 0.1.2-rc.1 | 4.19.4 | 2026-09-05 | static review done (docs/dsh-0.1.2-review); runtime probe pending via scripts/compat-probe.sh; gates the D7 CI pin flip (PRD §12) — SUPERSEDED by 0.1.5-rc.1, retained as the historical record |
+| 0.1.2-rc.1 | 4.19.4 | 2026-09-05 | static review done (docs/archived/dsh-0.1.2-review); runtime probe pending via scripts/compat-probe.sh; gates the D7 CI pin flip (PRD §12) — SUPERSEDED by 0.1.5-rc.1, retained as the historical record |
 
 ## How to update
 

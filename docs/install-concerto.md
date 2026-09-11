@@ -82,10 +82,10 @@ Three facts first:
 | `EXPLORE_PROVIDER=xxx` | Swaps explore's **route identity**. Mostly needed only without pi-ai; for the same model, answers barely change — only the config surface and the logged route pair differ. |
 | `NO_PIAI=1` | Tells the installer "**don't touch my settings.yaml**". ⚠️ Broken on its own: the preset still points explore at the pi-ai route, which is not activated → every delegation errors out. Pair it with `EXPLORE_PROVIDER` (and ideally `EXPLORE_MODEL`). |
 
-How to confirm what actually took effect? Delegate once, then read the child session log:
+How to confirm what actually took effect? Delegate once, then read the child session log (the filename carries the session-format generation — `session.vN.jsonl[.zstd]`, `v3` today; older sessions keep the bare `session.jsonl[.zstd]`):
 
 ```bash
-unzstd -c ~/.dsh/sessions/<workspace-dir>/<child-session-id>/session.jsonl.zstd | grep request/context
+unzstd -c ~/.dsh/sessions/<workspace-dir>/<child-session-id>/session.v3.jsonl.zstd | grep request/context
 # {"provider":"deepseek","model":"deepseek-v4-flash"}                ← default (pi-ai)
 # {"provider":"deepseek-official","model":"deepseek-v4-flash"}       ← same-provider fallback
 ```

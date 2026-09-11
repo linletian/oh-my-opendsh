@@ -3,7 +3,8 @@
 # Positioning per docs/mvp-prd_zh-CN.md §4.1: orchestration-first (编排优先) —
 # the main agent is a conductor that delegates by default, so the right model
 # does the right job by default, not by luck. `order: 5` sorts it after the
-# four shipped system presets (standard/code/minimal/cordis are 1-4).
+# four shipped system presets (standard/ptc/minimal/cordis are 1-4 on the
+# pinned 0.1.5-rc.1 — `ptc` replaced the rc-era `code`).
 name: 协奏模式 (Concerto Mode)
 description: 编排优先：主 agent 是指挥，接到任务先判断“谁最适合做”，默认委派给携带独立模型路由的 subagent——合适的模型做合适的事，不是运气，是默认。
 order: 5

@@ -549,7 +549,7 @@ async function checkSubagentConfig(check1) {
     if (validated.toolName !== 'explore') problems.push(`toolName=${JSON.stringify(validated.toolName)} (want explore)`)
     if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${JSON.stringify(validated.backgroundMode)} (want continuable)`)
     if (validated.maxDepth !== 1) problems.push(`maxDepth=${JSON.stringify(validated.maxDepth)} (want 1, T13)`)
-    // T12 + F1 fix (2026-09-05): deny = the two mutation tools PLUS the
+    // T12 + F1 fix (2026-09-04): deny = the two mutation tools PLUS the
     // delegation tool itself (physical no-delegation, AC-6b parity).
     if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit', 'explore'] })) {
       problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)} (want deny:[write,edit,explore], T12 + F1)`)

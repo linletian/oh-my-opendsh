@@ -162,7 +162,7 @@ MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2
   留在 `system-sections/*.md` 源文件），工程上属脆弱依赖；若未来升级 sections 文本，建议改为
   段落名/结构化元数据探测。
 
-## PR #1 评审处置（2026-09-05）
+## PR #1 评审处置（2026-09-04）
 
 > 评审基线：`feature/dsh-omo-mvp` vs `main`（95 文件 / 16,058 行 / 52 commits）。每条先对照代码库逐项核对再动手：1 条阻断（F1——属实，已修）、8 条建议属实已修（F2–F6/F10/F11）、1 条部分属实（F9——决策其实已登记为 D12，补引用）、2 条驳回（F7——已有缓解；F8——事实性错误）。
 
@@ -257,8 +257,8 @@ schema 及其 `toolFilter`/`maxDepth` 强制；T11 explore persona 影子（真�
 
 | 字段 | 记录 |
 |---|---|
-| **症状** | 两个验证脚本在本次升级碰任何东西之前**就已经坏了**,其中一个已坏了五天。`scripts/concerto-mode-probe.sh` 报 `explore toolFilter deny list missing`;`scripts/prove-route-logging.mjs` 死在 `ctx.agentLoop` 为 undefined。 |
-| **证据** | 探针在两处断言 `deny: [write, edit]`(`:272` 的 eager schema 检查、`:588` 的落盘文件 grep),而 **2026-09-05** 的 F1 硬化早已把模板改成 `deny: [write, edit, explore]`。`prove-route-logging.mjs` 有**三个**彼此独立的 0.1.5-rc.1 断点:没有挂 `sessionProjections`(`dsh-agent-loop` 新增注入,而且循环会**读**它,所以空桩会是个错误 fixture)、对已变成 `async` 的 `agentLoop.create()` 没有 `await`、以及按裸 `session.jsonl` 匹配文件名。 |
+| **症状** | 两个验证脚本在本次升级碰任何东西之前**就已经坏了**,其中一个已坏了六天。`scripts/concerto-mode-probe.sh` 报 `explore toolFilter deny list missing`;`scripts/prove-route-logging.mjs` 死在 `ctx.agentLoop` 为 undefined。 |
+| **证据** | 探针在两处断言 `deny: [write, edit]`(`:272` 的 eager schema 检查、`:588` 的落盘文件 grep),而 **2026-09-04** 的 F1 硬化（`6203432`）早已把模板改成 `deny: [write, edit, explore]`。`prove-route-logging.mjs` 有**三个**彼此独立的 0.1.5-rc.1 断点:没有挂 `sessionProjections`(`dsh-agent-loop` 新增注入,而且循环会**读**它,所以空桩会是个错误 fixture)、对已变成 `async` 的 `agentLoop.create()` 没有 `await`、以及按裸 `session.jsonl` 匹配文件名。 |
 | **根因** | `scripts/ci-local.sh` 跑七道闸门,**其中没有任何一道是探针或三个 `prove-*.mjs`**——而 PRD 自己的 rc 漂移声明却把 `scripts/concerto-mode-probe.sh` 列为强制 bump 链的一环。**没有链条跑的检查,就是会腐烂的检查**:两处损坏都是**别的**提交引入的(F1 硬化、0.1.5-rc.1 升级),而那两个提交都没有办法察觉。 |
 | **先前的验证为何漏掉** | 0.1.5-rc.1 的升级验证跑的恰好是 `ci-local.sh` 里的闸门加 e2e——也就是跑的**正是那套无法发现此类问题的集合**。探针与证明脚本被默认为"已覆盖",只因为它们存在。它们第一次被真正执行,是在"本仓库还有别的需要修订吗?"这个问题促成一次穷尽式清扫时。 |
 | **修复** | (1) 修好两个脚本(deny 列表期望;`sessionProjections` 挂**真**注册表而非桩;`create` 加 `await`;日志文件名感知代际)。(2) **结构性**:新增 `scripts/run-proofs.sh`——单命令,经 `doctor-lite` 已有的 helper 解析实装 dsh 的 node_modules,用插件自己的 `syncConcertoPreset` 渲染模板,跑完三个证明——并把它接成 `scripts/ci-local.sh` 与 `.github/workflows/ci.yml` 的**第 8 道闸门**。零 LLM 成本、无网络、不启动,耗时远低于一分钟。 |

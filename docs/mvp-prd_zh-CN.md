@@ -113,7 +113,7 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 | # | 构件 | 内容 |
 |---|---|---|
 | 1 | `omo-sisyphus` agent preset | 极简编排者 persona（本地 markdown system sections：角色 + 委派纪律 + Hard Blocks） |
-| 2 | `omo-explore` subagent preset | 只读检索者 persona（OMO `call_omo_agent` 白名单同款选型：explore 是 OMO 自己认定的最安全 subagent，§13.3.2） |
+| 2 | `omo-explore` subagent persona | 只读检索者 persona（OMO `call_omo_agent` 白名单同款选型：explore 是 OMO 自己认定的最安全 subagent，§13.3.2）。勘误（收尾）：explore 不是 agent-preset roster 条目——persona 文本经构件 3 的实例 `persona` config 绑定（架构决策见 `patches/omo-dsh/omo-agents/src/explore-prompt.ts`） |
 | 3 | 委派工具 | 一个 `dsh-tool-subagent` 实例绑定 explore，挂到 sisyphus 的工具集（§12.4 绑定形态 A：静态 plugin config） |
 | 4 | 双模型路由 | sisyphus 与 explore 各持一对不同的 `{provider, model}`，使用 DSH 内置 adapter（`dsh-llm-deepseek` + `dsh-llm-pi-ai`），具体模型 id 走 config 不硬编码 |
 | 5 | 1 个 hook listener | `agent/pre-step` + `agent.inject()`：把 Hard Blocks / Anti-Patterns 段落注入子 agent system prompt（验证 V3；内容来自本地 markdown，OMO attribution 记入 `THIRD_PARTY_NOTICES.md`） |
@@ -127,7 +127,7 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 | FR-1 | **仓库与 license 骨架**：独立 `oh-my-opendsh/` scratch plugin 仓库；`package.json` 声明 `"license": "MIT OR SUL-1.0"`；`LICENSES/oh-my-openagent.LICENSE.md` 原样收录；`THIRD_PARTY_NOTICES.md` 完整 attribution（决策 D6/D10）；`cordis.yml` 入口 | AC-1, AC-8 |
 | FR-2 | **协奏模式可激活**：新模式入口存在且与官方 4 模式同级（或执行 §4.4 fallback 并记坑） | AC-2 |
 | FR-3 | **omo-sisyphus preset 注册**：system prompt 由本地 markdown sections 组装（角色 / 委派纪律 / Hard Blocks），快照可断言 | AC-3 |
-| FR-4 | **omo-explore subagent 注册**：只读 toolFilter（禁写类工具）；禁止嵌套委派（depth cap=1，验证透传 DSH `policy.maxDepth`） | AC-4, AC-6 |
+| FR-4 | **omo-explore subagent 注册**：只读 toolFilter（禁写类工具）；禁止嵌套委派（depth cap=1，验证透传 DSH 的 `maxDepth`——勘误：扁平字段，无 `policy` 包装，见[踩坑表](./mvp-pitfalls_zh-CN.md) P-5/P-10.1） | AC-4, AC-6 |
 | FR-5 | **双模型路由**：两个 agent 以不同 `{provider, model}` 运行，且 session log 可观测到各自路由 | AC-5 |
 | FR-6 | **Hard Blocks 注入 hook**：1 个 `agent/pre-step` listener 完成注入；子 agent system prompt 快照中可见注入段落 | AC-3, AC-6 |
 | FR-7 | **演示场景脚本**：编排好的 dummy 检索任务（例："这个仓库的 README 讲了什么"）驱动 sisyphus → explore → 回答 的完整链路；不解决真实工程问题 | AC-4 |
@@ -155,9 +155,9 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 
 | # | 标准 | 验证方式 | 对应假设 |
 |---|---|---|---|
-| AC-1 | `dsh --patch ./cordis.yml`（或协奏模式入口）冷启动到 idle，日志无 plugin 加载错误 | 冷启动脚本 + 日志检查 | V1 |
+| AC-1 | `dsh --profile web --patch ./cordis.yml`（或协奏模式入口）冷启动到 idle，日志无 plugin 加载错误（勘误：`--profile` 必填、根 flag 必须先于 app flag、插件先经 `dsh plugin add` 装入 profile——见[踩坑表](./mvp-pitfalls_zh-CN.md) P-8.2/8.3/8.4） | 冷启动脚本 + 日志检查 | V1 |
 | AC-2 | 协奏模式出现在模式选择入口（或 fallback 路径已文档化 + 坑已记录） | 手动验证 + pitfalls 记录 | V1 |
-| AC-3 | sisyphus system prompt 快照含：编排者角色 + 委派纪律 + Hard Blocks 注入段落 | 快照测试（`DSH_SNAPSHOT=record` 模式，调研 §4.6） | V3 |
+| AC-3 | sisyphus system prompt 快照含：编排者角色 + 委派纪律 + Hard Blocks 注入段落 | 快照测试（勘误：DSH 无 `DSH_SNAPSHOT=record` 模式——rc.6 起仅支持 replay；验收产物是签入的 vitest 文件快照 `tests/omo-agents/__snapshots__/`，见[踩坑表](./mvp-pitfalls_zh-CN.md) P-10.4） | V3 |
 | AC-4 | dummy 演示场景跑通：session log 显示 sisyphus 调用委派工具 → explore 运行 → 结果返回 → sisyphus 总结 | mock-LLM e2e + 1 次真模型手动 run | V1 |
 | AC-5 | session log 中 sisyphus 与 explore 的 `{provider, model}` 可观测且**不同** | e2e 断言 log 记录的路由对 | V2 |
 | AC-6 | explore 写操作被拒（toolFilter 生效）；explore 尝试再委派被拒（depth cap 生效） | e2e 负向断言 | V4 |
@@ -232,7 +232,8 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 
 MVP 结项时，V1–V4 的结论直接决定 follow-up 排序：
 
-- [ ] **0.1.5-rc.1 两份记录的中文版。** [`dsh-0.1.5-rc.1-review.md`](./dsh-0.1.5-rc.1-review.md) 与 [`dsh-0.1.5-rc.1-upgrade.md`](./dsh-0.1.5-rc.1-upgrade.md) 目前仅有英文，以便记录随它所描述的变更一同落地；`docs/` 下的文档通常是 EN+zh 成对的（参见 `dsh-0.1.2-review.md` / `_zh-CN.md`）。两份文档的头部均指向本条。
+- [x] **0.1.5-rc.1 两份记录的中文版 —— 2026-09-11 补齐。** [`dsh-0.1.5-rc.1-review_zh-CN.md`](./dsh-0.1.5-rc.1-review_zh-CN.md) 与 [`dsh-0.1.5-rc.1-upgrade_zh-CN.md`](./dsh-0.1.5-rc.1-upgrade_zh-CN.md) 已交付（此前刻意 EN-only，以便记录随它所描述的变更一同落地）；`docs/` 自此恢复惯常的 EN+zh 成对——唯一不成对的是纯中文归档 `concerto-current-dsh_zh-CN.md`。
+- **FR-6 在两条交付线上由两种机制实现**（收尾登记）：rc 线插件（`patches/omo-dsh/omo-agents/`）按本文档字面实现（`agent/pre-step` + `agent.inject()`）；当前 DSH 线（`patches/omo-dsh/omo-agents-current/`，即安装器交付物）用 `persona` 影子 + `system-prompt/assemble` 快照证明，且 Hard Blocks / Anti-Patterns 段落直接编进 explore 的 `persona` 文本——已安装的 preset 不含运行时 listener。两线判定分别见[踩坑表](./mvp-pitfalls_zh-CN.md) §2 与 §6。
 - **V1–V4 全部验证通过** → 按调研 §2.10 进入全量移植（OMO core import → 剩余 agent → hook 批量翻译 → Team Mode → …）
 - **任一 V 证伪** → 回到决策文档登记新风险（R7+），重估受影响的工作量块，再定方向
 - MVP 产物全部保留并生长：仓库骨架 → 全量 patch 框架；mock e2e → 完整 L2 层；doctor-lite → 完整 doctor；`mvp-pitfalls.md` → 持续累加的踩坑知识库
@@ -248,7 +249,7 @@ MVP 结项时，V1–V4 的结论直接决定 follow-up 排序：
   - **0.1.5-rc.1 上已复验完好**（无需改动）：`--patch` 语义与 patch 引擎（逐字节相同）；`dsh plugin add`；`agentPresets` 服务面（`list`/`resolve`/`copy`/`standingKeyFor`、`AgentPreset.path`）；用户根 `$DSH_HOME/.agent-presets`；`preset.yml` 与 `trust`；挂载期的 isolate realm 不变量；`agent/pre-step` + `agent.inject()`；`tool-subagent` 全套配置 schema（`provider`/`toolName`/`backgroundMode`/`persona`/`agentOptions`/`toolFilter`/`maxDepth`）；T11 explore persona 影子；T12/F1 的 toolFilter 强制；以及 FR-6 hard-blocks 注入——全部经真实运行确认。
   - **本地交付的环境偏离。** Q-3 的 explore 席位走 `llm-pi-ai` 的 catalog 路由 `deepseek`，需要在 `$DSH_HOME/settings.yaml` 写入 `llm-pi-ai.providers` 段。若部署方拒绝该 settings 改动，则改用文档化的环境变量覆盖（`OMO_EXPLORE_PROVIDER=deepseek-official`）把 explore 席位钉到 `deepseek-official`。仓库默认值保持 Q-3（pi-ai）不变——这是按部署的偏离，不是决策变更。
 
-- [x] ~~**DSH pin bump 0.1.0-rc.6 → 0.1.2-alpha.1**~~ —— **已被上方 0.1.5-rc.1 条目取代，保留为历史记录。** 登记自 dsh 0.1.2 复核报告（[English](./dsh-0.1.2-review.md) / [中文](./dsh-0.1.2-review_zh-CN.md)）§4。**状态 2026-08-29：被 npm 发布阻塞**——`@deepseek-ai/dsh@0.1.2-alpha.1` 当时只以 git tag 存在（registry 最高到 `0.1.1-rc.2`）；协奏 preset 已重派生（42e1f84），全部门禁 + 探针链已针对该 tag 的源码构建版本及 rc.6 pin 在本地复验 GREEN（证据 `.omo/evidence/task-{7,8,9}-dsh-012-review-sync.log`）；harness 现已对两种运行时传输自适应（105aa84, 3d949f1）。该阻塞最终未以那种形式解除：npm 相继发布了 `0.1.2-rc.1`、`0.1.3-alpha.*` / `0.1.5-alpha.*` 阶梯，以及 `0.1.5-rc.1`——也就是本项目现在锁定的版本，于是中间那次 `0.1.2-alpha.1` 翻转已无意义。P-1.2/P-1.3 所依赖的 `roots` 强制改写前提在 0.1.5-rc.1 中已消失（见 0.1.5-rc.1 复核 §7.4），因此这些 fallback 不再约束本次 bump。patch 注释中的 rc.6 引用（`patches/omo-dsh/omo-agents/src/explore-prompt.ts:8`、`.../hard-blocks-injection.ts:7`）保留为 rc.6 时代的历史验证记录。
+- [x] ~~**DSH pin bump 0.1.0-rc.6 → 0.1.2-alpha.1**~~ —— **已被上方 0.1.5-rc.1 条目取代，保留为历史记录。** 登记自 dsh 0.1.2 复核报告（[English](./archived/dsh-0.1.2-review.md) / [中文](./archived/dsh-0.1.2-review_zh-CN.md)）§4。**状态 2026-08-29：被 npm 发布阻塞**——`@deepseek-ai/dsh@0.1.2-alpha.1` 当时只以 git tag 存在（registry 最高到 `0.1.1-rc.2`）；协奏 preset 已重派生（42e1f84），全部门禁 + 探针链已针对该 tag 的源码构建版本及 rc.6 pin 在本地复验 GREEN（证据 `.omo/evidence/task-{7,8,9}-dsh-012-review-sync.log`）；harness 现已对两种运行时传输自适应（105aa84, 3d949f1）。该阻塞最终未以那种形式解除：npm 相继发布了 `0.1.2-rc.1`、`0.1.3-alpha.*` / `0.1.5-alpha.*` 阶梯，以及 `0.1.5-rc.1`——也就是本项目现在锁定的版本，于是中间那次 `0.1.2-alpha.1` 翻转已无意义。P-1.2/P-1.3 所依赖的 `roots` 强制改写前提在 0.1.5-rc.1 中已消失（见 0.1.5-rc.1 复核 §7.4），因此这些 fallback 不再约束本次 bump。patch 注释中的 rc.6 引用（`patches/omo-dsh/omo-agents/src/explore-prompt.ts:8`、`.../hard-blocks-injection.ts:7`）保留为 rc.6 时代的历史验证记录。
 
 ---
 

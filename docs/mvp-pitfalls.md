@@ -185,7 +185,7 @@ layer; doctor-lite → full doctor; this file → the cumulative pitfall knowled
   attribution stays in the `system-sections/*.md` sources); engineering-wise it is a fragile
   coupling — if the sections ever change, prefer structured/section-name-based detection.
 
-## PR #1 review disposition (2026-09-05)
+## PR #1 review disposition (2026-09-04)
 
 > Review baseline: `feature/dsh-omo-mvp` vs `main` (95 files / 16,058 lines / 52 commits). Every
 > point was fact-checked against the tree before acting: 1 blocking (F1 — confirmed, fixed),
@@ -287,8 +287,8 @@ hard-blocks injection (a `user/message` whose `source.plugin` is `omo-agents` la
 
 | Field | Record |
 |---|---|
-| **Symptom** | Two verification scripts were already broken before this upgrade touched anything, and one had been broken for five days. `scripts/concerto-mode-probe.sh` failed with `explore toolFilter deny list missing`; `scripts/prove-route-logging.mjs` died at `ctx.agentLoop` being undefined. |
-| **Evidence** | The probe asserted `deny: [write, edit]` in two places (`:272` the eager schema check, `:588` the materialized-file grep) while the F1 hardening of **2026-09-05** had changed the template to `deny: [write, edit, explore]`. `prove-route-logging.mjs` had three independent 0.1.5-rc.1 breaks: it did not mount `sessionProjections` (which `dsh-agent-loop` newly injects — and the loop *reads* it, so a no-op stub would have been a wrong fixture), it called the now-`async` `agentLoop.create()` without `await`, and it matched the bare `session.jsonl` filename. |
+| **Symptom** | Two verification scripts were already broken before this upgrade touched anything, and one had been broken for six days. `scripts/concerto-mode-probe.sh` failed with `explore toolFilter deny list missing`; `scripts/prove-route-logging.mjs` died at `ctx.agentLoop` being undefined. |
+| **Evidence** | The probe asserted `deny: [write, edit]` in two places (`:272` the eager schema check, `:588` the materialized-file grep) while the F1 hardening of **2026-09-04** (`6203432`) had changed the template to `deny: [write, edit, explore]`. `prove-route-logging.mjs` had three independent 0.1.5-rc.1 breaks: it did not mount `sessionProjections` (which `dsh-agent-loop` newly injects — and the loop *reads* it, so a no-op stub would have been a wrong fixture), it called the now-`async` `agentLoop.create()` without `await`, and it matched the bare `session.jsonl` filename. |
 | **Root cause** | `scripts/ci-local.sh` runs seven gates and **none of them is the probe or any of the three `prove-*.mjs` scripts** — yet the PRD's own rc-drift declaration names `scripts/concerto-mode-probe.sh` as part of the mandatory bump chain. A check that no chain runs is a check that rots: both breakages were introduced by *other* commits (the F1 hardening, the 0.1.5-rc.1 upgrade) and neither commit had a way to notice. |
 | **Why the earlier verification missed it** | The 0.1.5-rc.1 upgrade verification ran exactly the gates in `ci-local.sh` plus the e2e — i.e. it ran *the set that cannot detect this class*. The probe and the proofs were assumed to be covered because they exist. They were run for the first time only when the question "is there anything else in this repo that needs revising?" prompted an exhaustive sweep. |
 | **Fix** | (1) Repaired both scripts (deny-list expectations; `sessionProjections` mounted as the REAL registry rather than a stub; `await` on `create`; generation-aware log filename). (2) **Structural:** added `scripts/run-proofs.sh` — one command, resolves the installed dsh's node_modules through `doctor-lite`'s existing helper, renders the template with the plugin's own `syncConcertoPreset`, and runs all three proofs — and wired it as **gate 8** in both `scripts/ci-local.sh` and `.github/workflows/ci.yml`. Zero LLM cost, no network, no boot, well under a minute. |

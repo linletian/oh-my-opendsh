@@ -212,7 +212,7 @@
     - id: tool-subagent-list-agents
       name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 
-    # HARDENING (PR #1 review F1 fix, 2026-09-05 — P-19 sync with the
+    # HARDENING (PR #1 review F1 fix, 2026-09-04 — P-19 sync with the
     # current-DSH path): the generic `tool-subagent` / `tool-subagent-fork`
     # rows are DROPPED. Their children are unrestricted full agents (no
     # toolFilter, default depth budget 3), so a conductor that picked them
@@ -245,7 +245,7 @@
     #                mutation tools (write, edit — dsh-tool-fs is never
     #                platform-gated, so both names always exist for the
     #                child's restrict()) PLUS `explore` itself (PR #1 review
-    #                F1 fix, 2026-09-05): the explore child physically lacks
+    #                F1 fix, 2026-09-04): the explore child physically lacks
     #                its own delegation tool, so nested delegation is
     #                impossible by construction (AC-6b parity with the
     #                current-DSH path) — stronger than the depth cap alone,
@@ -272,7 +272,7 @@
     #                (resolveChildDepth → SubagentDepthError, child-agent.ts:48
     #                -56, before any child exists), a depth-0 parent passes
     #                (control), absent → default 3, and 'provider-managed'
-    #                sends no cap. SINCE the F1 fix (2026-09-05) the cap is
+    #                sends no cap. SINCE the F1 fix (2026-09-04) the cap is
     #                defense-in-depth: `explore` is already absent from the
     #                child's tool list, so the depth gate no longer fires in
     #                the e2e nested-delegation scenario (which now asserts

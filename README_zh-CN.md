@@ -56,11 +56,11 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 
 🟢 **MVP v0.2 线；dsh 0.1.5-rc.1 已 pin 并通过 L1+L2 验证**
 
-- ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，14 节：2026-08-16 主体 + 2026-08-19 追加调研）
-- ✅ 11 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
+- ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，15 节：2026-08-16 主体 + 2026-08-19 追加调研 + 2026-08-29 follow-up note）
+- ✅ 13 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
 - ✅ MVP PRD 已采纳（[`docs/mvp-prd_zh-CN.md`](./docs/mvp-prd_zh-CN.md)：协奏模式 + 1 Agent + 1 Subagent 最小骨架，决策 D11）
 - ✅ MVP 已结项——FR-1~FR-8 已实现、V1~V4 已验证（见 [mvp-pitfalls](./docs/mvp-pitfalls_zh-CN.md)）
-- ✅ **dsh 0.1.5-rc.1 的 pin 已落地**——0.1.2-alpha.1 的复核（[English](./docs/dsh-0.1.2-review.md) / [中文](./docs/dsh-0.1.2-review_zh-CN.md)）在它被 pin 之前就已被取代（那个 tag 从未发布）；升级到 0.1.5-rc.1 已通过 L1+L2 验证——见[复核报告](./docs/dsh-0.1.5-rc.1-review.md) / [升级记录](./docs/dsh-0.1.5-rc.1-upgrade.md)与 PRD §12
+- ✅ **dsh 0.1.5-rc.1 的 pin 已落地**——0.1.2-alpha.1 的复核（[English](./docs/archived/dsh-0.1.2-review.md) / [中文](./docs/archived/dsh-0.1.2-review_zh-CN.md)）在它被 pin 之前就已被取代（那个 tag 从未发布）；升级到 0.1.5-rc.1 已通过 L1+L2 验证——见[复核报告](./docs/dsh-0.1.5-rc.1-review.md) / [升级记录](./docs/dsh-0.1.5-rc.1-upgrade.md)与 PRD §12
 - ✅ **当前 DSH 运行时重跑**（2026-09-04）：协奏模式 MVP 已在当前 DSH 环境重新实现并验证
   （`concerto_verify` 22/22 PASS；双 provider 路由 deepseek-official + pi-ai；持久化
   `concerto` 用户 preset + P-19 加固；踩坑 P-13~P-19）——报告见
