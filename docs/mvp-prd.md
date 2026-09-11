@@ -113,7 +113,7 @@ Note: the exact internal semantics of the official 4 modes are as implemented in
 | # | Component | Content |
 |---|---|---|
 | 1 | `omo-sisyphus` agent preset | Minimal conductor persona (local markdown system sections: role + delegation discipline + Hard Blocks) |
-| 2 | `omo-explore` subagent preset | Read-only retriever persona (same selection as OMO's `call_omo_agent` allow-list: explore is the subagent OMO itself deems safest, §13.3.2) |
+| 2 | `omo-explore` subagent persona | Read-only retriever persona (same selection as OMO's `call_omo_agent` allow-list: explore is the subagent OMO itself deems safest, §13.3.2). Erratum (closeout): explore is NOT an agent-preset roster entry — the persona text is bound as component 3's instance `persona` config (architecture decision: `patches/omo-dsh/omo-agents/src/explore-prompt.ts`) |
 | 3 | Delegation tool | One `dsh-tool-subagent` instance bound to explore, mounted into sisyphus's toolset (§12.4 binding form A: static plugin config) |
 | 4 | Dual model routes | sisyphus and explore each hold a distinct `{provider, model}` pair, using DSH's built-in adapters (`dsh-llm-deepseek` + `dsh-llm-pi-ai`); concrete model ids live in config, not hardcoded |
 | 5 | 1 hook listener | `agent/pre-step` + `agent.inject()`: injects the Hard Blocks / Anti-Patterns sections into the subagent system prompt (validates V3; content from local markdown, OMO attribution recorded in `THIRD_PARTY_NOTICES.md`) |
@@ -127,7 +127,7 @@ Note: the exact internal semantics of the official 4 modes are as implemented in
 | FR-1 | **Repo & license skeleton**: standalone `oh-my-opendsh/` scratch plugin repo; `package.json` declares `"license": "MIT OR SUL-1.0"`; `LICENSES/oh-my-openagent.LICENSE.md` included verbatim; full attribution in `THIRD_PARTY_NOTICES.md` (decisions D6/D10); `cordis.yml` entry point | AC-1, AC-8 |
 | FR-2 | **Concerto Mode activatable**: the new mode entry exists at the same level as the official 4 modes (or the §4.4 fallback is executed and the pitfall recorded) | AC-2 |
 | FR-3 | **omo-sisyphus preset registered**: system prompt assembled from local markdown sections (role / delegation discipline / Hard Blocks), snapshot-assertable | AC-3 |
-| FR-4 | **omo-explore subagent registered**: read-only toolFilter (write-class tools denied); nested delegation forbidden (depth cap = 1, verifying pass-through to DSH `policy.maxDepth`) | AC-4, AC-6 |
+| FR-4 | **omo-explore subagent registered**: read-only toolFilter (write-class tools denied); nested delegation forbidden (depth cap = 1, verifying pass-through to DSH's `maxDepth` — erratum: a FLAT field, no `policy` wrapper; [`mvp-pitfalls.md`](./mvp-pitfalls.md) P-5 / P-10.1) | AC-4, AC-6 |
 | FR-5 | **Dual model routing**: the two agents run on different `{provider, model}` routes, each route observable in the session log | AC-5 |
 | FR-6 | **Hard Blocks injection hook**: one `agent/pre-step` listener performs the injection; the injected sections are visible in the subagent system prompt snapshot | AC-3, AC-6 |
 | FR-7 | **Demo scenario script**: a scripted dummy retrieval task (e.g., "what does this repo's README say") drives the full sisyphus → explore → answer chain; solves no real engineering problem | AC-4 |
@@ -155,9 +155,9 @@ Note: the exact internal semantics of the official 4 modes are as implemented in
 
 | # | Criterion | Verification | Assumption |
 |---|---|---|---|
-| AC-1 | `dsh --patch ./cordis.yml` (or the Concerto Mode entry) cold-starts to idle with no plugin load errors in the log | cold-start script + log inspection | V1 |
+| AC-1 | `dsh --profile web --patch ./cordis.yml` (or the Concerto Mode entry) cold-starts to idle with no plugin load errors in the log (erratum: `--profile` is required, root flags precede app flags, and the plugin is first installed into the profile via `dsh plugin add` — [`mvp-pitfalls.md`](./mvp-pitfalls.md) P-8.2/8.3/8.4) | cold-start script + log inspection | V1 |
 | AC-2 | Concerto Mode appears in the mode selection entry (or the fallback path is documented + the pitfall recorded) | manual verification + pitfall record | V1 |
-| AC-3 | sisyphus system prompt snapshot contains: conductor role + delegation discipline + injected Hard Blocks sections | snapshot test (`DSH_SNAPSHOT=record` mode, report §4.6) | V3 |
+| AC-3 | sisyphus system prompt snapshot contains: conductor role + delegation discipline + injected Hard Blocks sections | snapshot test (erratum: DSH has no `DSH_SNAPSHOT=record` mode — replay-only since rc.6; the acceptance artifact is the checked-in vitest file snapshot under `tests/omo-agents/__snapshots__/`, [`mvp-pitfalls.md`](./mvp-pitfalls.md) P-10.4) | V3 |
 | AC-4 | Dummy demo scenario passes end-to-end: session log shows sisyphus invoking the delegation tool → explore runs → result returns → sisyphus summarizes | mock-LLM e2e + one real-model manual run | V1 |
 | AC-5 | The `{provider, model}` pairs of sisyphus and explore are observable in the session log and **differ** | e2e assertion on logged routes | V2 |
 | AC-6 | explore's write attempts are denied (toolFilter effective); explore's attempt to delegate further is denied (depth cap effective) | negative e2e assertions | V4 |

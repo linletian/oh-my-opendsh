@@ -113,7 +113,7 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 | # | 构件 | 内容 |
 |---|---|---|
 | 1 | `omo-sisyphus` agent preset | 极简编排者 persona（本地 markdown system sections：角色 + 委派纪律 + Hard Blocks） |
-| 2 | `omo-explore` subagent preset | 只读检索者 persona（OMO `call_omo_agent` 白名单同款选型：explore 是 OMO 自己认定的最安全 subagent，§13.3.2） |
+| 2 | `omo-explore` subagent persona | 只读检索者 persona（OMO `call_omo_agent` 白名单同款选型：explore 是 OMO 自己认定的最安全 subagent，§13.3.2）。勘误（收尾）：explore 不是 agent-preset roster 条目——persona 文本经构件 3 的实例 `persona` config 绑定（架构决策见 `patches/omo-dsh/omo-agents/src/explore-prompt.ts`） |
 | 3 | 委派工具 | 一个 `dsh-tool-subagent` 实例绑定 explore，挂到 sisyphus 的工具集（§12.4 绑定形态 A：静态 plugin config） |
 | 4 | 双模型路由 | sisyphus 与 explore 各持一对不同的 `{provider, model}`，使用 DSH 内置 adapter（`dsh-llm-deepseek` + `dsh-llm-pi-ai`），具体模型 id 走 config 不硬编码 |
 | 5 | 1 个 hook listener | `agent/pre-step` + `agent.inject()`：把 Hard Blocks / Anti-Patterns 段落注入子 agent system prompt（验证 V3；内容来自本地 markdown，OMO attribution 记入 `THIRD_PARTY_NOTICES.md`） |
@@ -127,7 +127,7 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 | FR-1 | **仓库与 license 骨架**：独立 `oh-my-opendsh/` scratch plugin 仓库；`package.json` 声明 `"license": "MIT OR SUL-1.0"`；`LICENSES/oh-my-openagent.LICENSE.md` 原样收录；`THIRD_PARTY_NOTICES.md` 完整 attribution（决策 D6/D10）；`cordis.yml` 入口 | AC-1, AC-8 |
 | FR-2 | **协奏模式可激活**：新模式入口存在且与官方 4 模式同级（或执行 §4.4 fallback 并记坑） | AC-2 |
 | FR-3 | **omo-sisyphus preset 注册**：system prompt 由本地 markdown sections 组装（角色 / 委派纪律 / Hard Blocks），快照可断言 | AC-3 |
-| FR-4 | **omo-explore subagent 注册**：只读 toolFilter（禁写类工具）；禁止嵌套委派（depth cap=1，验证透传 DSH `policy.maxDepth`） | AC-4, AC-6 |
+| FR-4 | **omo-explore subagent 注册**：只读 toolFilter（禁写类工具）；禁止嵌套委派（depth cap=1，验证透传 DSH 的 `maxDepth`——勘误：扁平字段，无 `policy` 包装，见[踩坑表](./mvp-pitfalls_zh-CN.md) P-5/P-10.1） | AC-4, AC-6 |
 | FR-5 | **双模型路由**：两个 agent 以不同 `{provider, model}` 运行，且 session log 可观测到各自路由 | AC-5 |
 | FR-6 | **Hard Blocks 注入 hook**：1 个 `agent/pre-step` listener 完成注入；子 agent system prompt 快照中可见注入段落 | AC-3, AC-6 |
 | FR-7 | **演示场景脚本**：编排好的 dummy 检索任务（例："这个仓库的 README 讲了什么"）驱动 sisyphus → explore → 回答 的完整链路；不解决真实工程问题 | AC-4 |
@@ -155,9 +155,9 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 
 | # | 标准 | 验证方式 | 对应假设 |
 |---|---|---|---|
-| AC-1 | `dsh --patch ./cordis.yml`（或协奏模式入口）冷启动到 idle，日志无 plugin 加载错误 | 冷启动脚本 + 日志检查 | V1 |
+| AC-1 | `dsh --profile web --patch ./cordis.yml`（或协奏模式入口）冷启动到 idle，日志无 plugin 加载错误（勘误：`--profile` 必填、根 flag 必须先于 app flag、插件先经 `dsh plugin add` 装入 profile——见[踩坑表](./mvp-pitfalls_zh-CN.md) P-8.2/8.3/8.4） | 冷启动脚本 + 日志检查 | V1 |
 | AC-2 | 协奏模式出现在模式选择入口（或 fallback 路径已文档化 + 坑已记录） | 手动验证 + pitfalls 记录 | V1 |
-| AC-3 | sisyphus system prompt 快照含：编排者角色 + 委派纪律 + Hard Blocks 注入段落 | 快照测试（`DSH_SNAPSHOT=record` 模式，调研 §4.6） | V3 |
+| AC-3 | sisyphus system prompt 快照含：编排者角色 + 委派纪律 + Hard Blocks 注入段落 | 快照测试（勘误：DSH 无 `DSH_SNAPSHOT=record` 模式——rc.6 起仅支持 replay；验收产物是签入的 vitest 文件快照 `tests/omo-agents/__snapshots__/`，见[踩坑表](./mvp-pitfalls_zh-CN.md) P-10.4） | V3 |
 | AC-4 | dummy 演示场景跑通：session log 显示 sisyphus 调用委派工具 → explore 运行 → 结果返回 → sisyphus 总结 | mock-LLM e2e + 1 次真模型手动 run | V1 |
 | AC-5 | session log 中 sisyphus 与 explore 的 `{provider, model}` 可观测且**不同** | e2e 断言 log 记录的路由对 | V2 |
 | AC-6 | explore 写操作被拒（toolFilter 生效）；explore 尝试再委派被拒（depth cap 生效） | e2e 负向断言 | V4 |
