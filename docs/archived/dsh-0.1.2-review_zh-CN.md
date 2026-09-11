@@ -1,12 +1,14 @@
 # dsh 0.1.2-alpha.1 复核调研报告
 
+> **已归档（2026-09-11）。** 本复核的 bump 路径在该 tag 被 pin 之前即被取代：项目从 rc.6 直接升到 0.1.5-rc.1（见 [PRD §12](../mvp-prd_zh-CN.md) 与 [0.1.5-rc.1 复核](../dsh-0.1.5-rc.1-review_zh-CN.md) §9——后者同时列出了本文结论仍然成立之处）。正文保持调研当日原样。
+>
 > 中文译本；主文档（英文）见 [dsh 0.1.2 Review (English)](./dsh-0.1.2-review.md)。
 >
 > **性质**：纯调研记录，不含任何行动承诺；不更新决策、PRD、可行性报告，不 bump 版本。
 >
 > - 调研日期：2026-08-29
 > - 调研对象：deepseek-harness 仓库（本地路径 `/home/linletian/GithubRepo/deepseek-harness/`，全程只读），tag `dsh-v0.1.2-alpha.1`，HEAD commit `6c705be1ce`；注：tag `dsh-v0.1.2-alpha.1` 现指向 merge commit `cd5ef81481`，与调研时 HEAD `6c705be1ce` 树完全相同（`git diff` 为空），内容结论不受影响
-> - 对照基线：本项目 CI pin 的 dsh `0.1.0-rc.6`（决策 D7）；MVP 已结项（FR-1~FR-8 实现、V1~V4 验证通过，见 [mvp-pitfalls](./mvp-pitfalls_zh-CN.md)）
+> - 对照基线：本项目 CI pin 的 dsh `0.1.0-rc.6`（决策 D7）；MVP 已结项（FR-1~FR-8 实现、V1~V4 验证通过，见 [mvp-pitfalls](../mvp-pitfalls_zh-CN.md)）
 > - 调研方法：静态源码阅读 + git 历史核实（两个 explore 子代理并行调研，关键结论由主代理抽查原文复核）
 
 ---
