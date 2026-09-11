@@ -4,15 +4,16 @@
 >
 > **配套**：[开发计划书](./phase1-plan.md) · [任务清单](./phase1-tasks.md) · [License 与署名清单](./phase1-license-attribution.md)
 >
-> **状态**：📝 **计划稿**。本文的步骤**尚未全部经过 Phase 1 自身的实测**（唯一例外是 §1 的上游事实基线，已在 2026-09-11 实测）。
-> 按任务清单 **P1-T11**，Phase 1 收尾时必须回填为**实录稿**：凡"预计/应该/若…则"字样，要么改为实测结论，要么显式标为未验证。**未回填的 playbook 不满足退出标准 (d)。**
+> **状态**：✅ **实录稿**（2026-09-11 经 Phase 1 实测回填，P1-T11）。本文每一步都由 `hashline-core` 的 vendoring **实际走过一遍**：正文中的结论均对应实测输出（命令 + 关键行见[任务清单](./phase1-tasks.md)）；保留下来的条件性处置规则（"若 X 则 Y"）均以就地标注或相邻实测列标明 **Phase 1 状态**，没有任何以计划语气冒充实测结论的句子。**实测环境**：Linux x64 / Node 24.19 / pnpm 11.9.0 / vitest 4.1.11 / tsc 7.0.2 / pnpm-lockfile v9。
+>
+> **回填来源（P1-T11）**：S-1/S-2 的真实现象与修法、门链的实际选择（并入既有门 2）、b2 的实测方法（`checked` 51→52）、LICENSE 重验结果、`tsc --listFiles` 的覆盖验证手法，以及"辅助文件实为 5 行"的更正。
 >
 
 ---
 
 ## 0. 这份 playbook 是什么
 
-ROADMAP 把 vendor 验证定位为"为后续每个阶段去风险"的一步。它的产出物里，**最长期有用的不是 hashline-core 本身，而是这份操作手册**：Phase 2–6 每个需要 OMO core 源码的阶段，都应该能照抄这里的步骤，把第二个、第三个包搬进来，且不产生新的决策成本。
+ROADMAP 把 vendor 验证定位为"为后续每个阶段去风险"的一步。它的产出物里，**最长期有用的不是 hashline-core 本身，而是这份操作手册**：目标是让 Phase 2–6 每个需要 OMO core 源码的阶段都能照抄这里的步骤，把第二个、第三个包搬进来，且不产生新的决策成本。**（这是设计目标，不是已证结论**——Phase 1 只实测走通了 `hashline-core` 这一条路径；"下一个包确实零新决策"要等下一个包落地时验证，见 §5 的变量表。）
 
 因此本文的写作标准是：**一个没参与过 Phase 1 的人（或一次新的会话），只看本文就能独立完成下一个包的 vendor。**
 
@@ -43,7 +44,7 @@ ROADMAP 把 vendor 验证定位为"为后续每个阶段去风险"的一步。�
 | 上游许可 | 仓库根 `LICENSE.md` = SUL-1.0，sha256 `b61ac928…ddc32` | 本仓库副本**已逐字节校验一致** |
 | **core 包的 `license` 字段** | ⚠️ **19 个包全部缺失** | 见 §4 步骤 5 与[署名清单 §5](./phase1-license-attribution.md) |
 | OMO 构建工具 | Bun（测试 `bun test`；typecheck `tsgo`）；包为 `private: true` workspace 成员 | 包 `package.json` |
-| 本项目工具链 | Node 24.19 / pnpm 11.9 / vitest 4 / tsc 7；pnpm-lockfile v9 | 实测 |
+| 本项目工具链 | Node 24.19 / pnpm 11.9.0 / vitest 4.1.11 / tsc 7.0.2；pnpm-lockfile v9 | 实测 |
 
 **tag 选择规则（D14）**：v5.0.0 正式版**已发布**则用 v5.0.0，否则用 **v4.19.4**。第 1 步必须重跑判定，不得沿用本文的结论。
 
@@ -83,7 +84,7 @@ git -C <OMO> show "<TAG>:packages/<PKG>/package.json"
 | 有 harness 依赖（opencode / cordis / DSH）吗？ | ROADMAP §3 约束 5 要求只取 core 层 |
 | 测试用什么框架？测试文件在哪？ | 决定 shim 数量（§3） |
 | 有跨包测试辅助（`../../../`、`test-support/`）吗？ | Phase 1 的 S-2 就是这一类；逐个都要处置 |
-| 有 `license` 字段吗？ | **预计没有**（19/19）——见步骤 5 |
+| 有 `license` 字段吗？ | **实测没有**（19/19，Phase 1 在 v4.19.4 上确认）——见步骤 5 |
 | 源码有非 Node 运行时的全局假设吗？ | Phase 1 实证：`globalThis.Bun?.hash` 这种**调用时探测 + 纯 JS 回退**是安全的；硬依赖 `Bun.*` 则需要 shim |
 | `tsconfig.json` 的 `lib` / `types`？ | `types: ["bun-types"]` 在本仓库不存在（§3 M-2） |
 
@@ -131,16 +132,24 @@ done
 - **根 `tsconfig.json`**：加 `exclude: ["patches/omo-dsh/vendor/**/*.test.ts"]`。⚠️ 门 1（`pnpm typecheck`）用**根**配置编译 `patches/**`，vendor 包自身 tsconfig 的 exclude 对门 1 **无效**——不排除则 6 个 `bun:test` 测试文件报 `TS2307`（评审实测）。
 - `pnpm-workspace.yaml`：必须**追加** `patches/omo-dsh/vendor/*`。⚠️ 既有行 `patches/omo-dsh/*` **不递归**匹配子目录，不能替代它。
 - `vitest.config.ts`：显式 `include` 覆盖 vendor 路径（**不要**覆盖掉既有 `tests/`），加 `bun:test` → `vitest` 的 alias。
-- `pnpm install` 后**提交 `pnpm-lock.yaml`**（CI 是 `--frozen-lockfile`）。
-- 门链：如新增门，`.github/workflows/ci.yml` 与 `scripts/ci-local.sh` **两处同步**（仓库硬约束）。
+- `pnpm install` 后**提交 `pnpm-lock.yaml`**（CI 是 `--frozen-lockfile`）。**实测**：vendor 接入后 `pnpm install --frozen-lockfile` 退出 0（`Scope: all 3 workspace projects / Already up to date`）。
+- **门链（Phase 1 的实际选择，P1-T7）**：**不新增门**，把 vendor 测试**并入既有门 2**（`pnpm vitest run`）——`vitest.config.ts` 的显式 `include` 已让门 2 自然收集 vendor 路径（步骤 6 上一段）。于是 `.github/workflows/ci.yml` 与 `scripts/ci-local.sh` **零改动**，既有门序列的 byte-equivalent 原样保持。**实测**：`git diff --stat 89c0ef7 HEAD -- .github/workflows/ci.yml scripts/ci-local.sh` → 空；8 条门的命令序列两处逐条相同；门 2 收集 **15 文件 / 187 tests** 全绿（含 vendor 6 文件 78 tests）。若某个包的测试量/时长显著增长，再评估新增独立门（§5）**（Phase 1 未触发）**。
 
 ### 步骤 7 — 署名与许可（详见[署名清单](./phase1-license-attribution.md)；**细则见 D15**）
 
 1. **包级"已修改"声明 `NOTICE.md`**（vendor 包根，**D15 第 3 条**）：写明来源（repo + tag + commit）、**本副本已被修改**、修改清单指向 `VENDOR-MANIFEST.json`、版权属原作者。这是 SUL-1.0 "Notices" 要求的醒目声明主落点。
-2. `VENDOR-MANIFEST.json`（vendor 包根）：`upstream` 段 + 逐文件 `files[]`（sha256 + `origin`）+ `deviations[]`（`class: modification` / `addition`）。
+2. `VENDOR-MANIFEST.json`（vendor 包根）：`upstream` 段 + 逐文件 `files[]`（sha256 + `origin`）+ `deviations[]`（`class: modification` / `copied-in` / `addition`，与 NOTICES 的非 verbatim 处置一一对应）。
 3. `THIRD_PARTY_NOTICES.md`：**逐文件**列出（**D15 第 2 条**——D14 第 3 条按字面执行），每行 = 文件名 + 处置（`verbatim` / `已修改` / `包外复制` / `本项目新增`）；小节头含来源；并补指向 `NOTICE.md` / manifest 的"已修改"声明。
-4. 校验 `LICENSES/oh-my-openagent.LICENSE.md` 仍与上游根 `LICENSE.md` 逐字节一致（**已通过**，但每次 vendor 都重跑——许可可能变）。
-5. **首次 vendor 的一次性动作（D16）**：把 `scripts/verify-licenses.mjs` 的 `SUL_ALLOWED_NAME` 增加 `oh-my-opencode` 分支（决策授权，非绕过），脚本头注释留痕，并在 `tests/omo-agents/verify-licenses.test.ts` 补放行用例。然后跑 `scripts/verify-licenses.sh --json`，确认 `pass: true` 且 `checked` 计数较接入前 **+1**（`checked` 是计数不是名单；计数差证明新包**被检查而非漏检**）。
+4. 校验 `LICENSES/oh-my-openagent.LICENSE.md` 仍与上游根 `LICENSE.md` 逐字节一致（**每次** vendor 都重跑——许可可能变）。**Phase 1 实测（2026-09-11）**：`git -C <OMO> show v4.19.4:LICENSE.md | sha256sum` 与本仓库副本**均为** `b61ac928f152d13517328263e6bee9175b928f9ab696a2d2ca2b6cfd961ddc32` → **一致**。
+5. **首次 vendor 的一次性动作（D16）**：把 `scripts/verify-licenses.mjs` 的 `SUL_ALLOWED_NAME` 增加 `oh-my-opencode` 分支（决策授权，非绕过），脚本头注释留痕，并在 `tests/omo-agents/verify-licenses.test.ts` 补放行用例。然后跑 `scripts/verify-licenses.sh --json`，确认 `pass: true`。**"被检查而非漏检"的实测方法（Phase 1，b2）**：
+   ```bash
+   # 接入前：取 vendor 之前的提交做临时 worktree，软链本仓库 node_modules 让脚本能解析已安装包
+   git worktree add --detach /tmp/p1-b2-before 89c0ef7
+   ln -s "$PWD/node_modules" /tmp/p1-b2-before/node_modules
+   node /tmp/p1-b2-before/scripts/verify-licenses.mjs --json --root /tmp/p1-b2-before   # → checked:51
+   node scripts/verify-licenses.mjs --json                                              # → checked:52
+   ```
+   **实测结果**：接入前 `checked: 51`、接入后 `checked: 52`，**+1**。`checked` 是**计数不是名单**，repo 内包不进 lockfile `packages:` 段、也不会出现在 `skippedNames`，所以计数差就是"新包被检查"的可复核证据。
 
 > **一致性自检（数必须一一对得上）**：NOTICES 行数 = `files[]` 条目数；每种非 verbatim 处置与 `deviations[]` 的 `class` 一一对应——标"已修改"行数 = `class: "modification"` 条数；标"包外复制"行数 = `class: "copied-in"` 条数；标"本项目新增"行数 = `class: "addition"` 条数。**Phase 1 参照值**：29 行 = 23 verbatim + 3 已修改 + 1 包外复制 + 2 本项目新增；`deviations[]` 共 6 条。
 
@@ -158,6 +167,8 @@ scripts/ci-local.sh               # 全门
 
 **并断言测试真的被收集**：记录收集到的测试文件数，与上游 `*.test.ts` 数量对照。测试"没被收集"会表现为**完美的假绿**。
 
+**Phase 1 实测（2026-09-11）**：`pnpm test:vendor` → **6 文件 / 78 tests 全绿**（收集数 = 上游 `*.test.ts` 数，非零）；`pnpm install --frozen-lockfile` → 退出 0；`scripts/verify-licenses.sh` → `PASS: checked=52 · violations=0`；`node scripts/check-docs-consistency.mjs` → **8/8 PASS**；`scripts/ci-local.sh` → **8/8 绿**（退出 0）。
+
 最后：把本次的新发现（新 shim 类别、新依赖、新坑）回填 §3 与 §5。
 
 ---
@@ -166,15 +177,24 @@ scripts/ci-local.sh               # 全门
 
 ### S-1 · `bun:test` → `vitest`
 
-- **现象**：上游测试 `import { describe, it, expect } from "bun:test"`。
+- **现象**：上游全部 6 个测试文件 `import { describe, it, expect } from "bun:test"`。
 - **修法**：`vitest.config.ts` 加 `resolve.alias: { 'bun:test': 'vitest' }`。**不改测试源码。**
-- **未验证（P1-T5 回填）**：vitest 4 下 alias 是否足够，还是需要自定义 resolver plugin；两者在 `expect` 语义 / `test.each` / 快照上的行为差异是否导致失败。
-- **判定标准**：若出现失败，逐个判定是**测试框架差异**（继续 shim）还是**真实缺陷**（停止并升级为风险）。
+- **实测结论 Q-1（2026-09-11）**：vitest **4.1.11** 下该 alias **足够**——**不需要**自定义 resolver plugin；6 个 `bun:test` 测试文件**零源码改动**全绿。反证：不配 alias 时，6 个文件会在 import 处立即解析失败。
+- **实测结论 Q-2**：bun 与 vitest 之间**没有**任何 `expect` / `test.each` / 快照行为差异导致失败——vendor 侧 **78/78 一次通过**（`pnpm test:vendor`，6 文件）。
+- **分流标准（保留给下一个包，Phase 1 未触发）**：若某个包出现失败，逐个判定是**测试框架差异**（继续 shim）还是**真实缺陷**（停止并升级为风险）。
 
 ### S-2 · 包外测试辅助 import
 
-- **现象**：`src/normalize-edits.test.ts` import `../../../test-support/unsafe-test-value`（OMO 仓库根下的 4 行类型辅助函数，**不在包内**）。
-- **修法**：把该文件 vendor 到 `src/test-support/unsafe-test-value.ts`，import 改一行。
+- **现象**：`src/normalize-edits.test.ts` import `../../../test-support/unsafe-test-value`（OMO 仓库根下的类型辅助函数，**不在包内**）。**实测该文件为 5 行**（2 个重载签名 + 1 个实现签名 + `return` + 右花括号）；计划稿写的"4 行"是笔误，P1-T11 更正。
+  ```ts
+  export function unsafeTestValue<TValue extends PropertyKey>(value: TValue): TValue
+  export function unsafeTestValue<TValue>(value: unknown): TValue
+  export function unsafeTestValue<TValue>(value: unknown): TValue {
+    return value as TValue
+  }
+  ```
+- **修法**：把该文件 vendor 到 `src/test-support/unsafe-test-value.ts`（**内容逐字节 verbatim**，但来源在包外，故 manifest 记为 `origin: "copied-in"`），并把 `normalize-edits.test.ts` 的 import 改一行。
+- **实测结论**：`pnpm test:vendor` 收集 6 文件 **78 tests** 全绿。`grep -rn "test-support" patches/omo-dsh/vendor/hashline-core/src` 只命中 **1 行内容**（改写后的 import）；本步骤的"两处"精确指 shim 的两个**产物**：新增文件 `src/test-support/unsafe-test-value.ts`（路径本身不产生 grep 内容行）+ 上述那一行 import。`grep -rn '\.\./\.\./\.\.' src` → 无命中。
 - **被否决的替代方案**：vitest alias 指向仓库外的 OMO 检出——那会让 CI 依赖 `~/GithubRepo/oh-my-openagent` 存在（CI 必红），且违反"vendor 的意义是自包含"。
 - **通用化**：凡遇 `<PKG>` 之外的相对 import，一律**复制进包内**并登记偏离；不要引外部路径。
 
@@ -198,7 +218,7 @@ scripts/ci-local.sh               # 全门
 - **现象**：`"exports": { ".": { "types": "./index.d.ts", "import": "./src/index.ts" } }`，而包根**没有** `index.d.ts`。
 - **处置**：**不改**。但要注意这是**两件事**，别混为一谈：
   1. **`types` 条件指向不存在的文件**：影响的是"以包名 import 时的类型解析"。本项目在 `pnpm typecheck` 与测试里都走**显式路径**（`./src/index.ts`），不触发该条件，故无影响。
-  2. **包内对第三方依赖的解析仍然走包名**：`src/diff-utils.ts` 里的 `import { createTwoFilesPatch } from "diff"` 是裸包名，由 pnpm 以 `patches/omo-dsh/vendor/hashline-core/node_modules/` 解析。这不是 exports 问题，而是"工作区依赖是否装到位"——见 §4 排查表。若将来有消费方依赖包名解析，届时再单独决策。
+  2. **包内对第三方依赖的解析仍然走包名**：`src/diff-utils.ts` 里的 `import { createTwoFilesPatch } from "diff"` 是裸包名，由 pnpm 以 `patches/omo-dsh/vendor/hashline-core/node_modules/` 解析。这不是 exports 问题，而是"工作区依赖是否装到位"——见 §4 排查表。若将来有消费方依赖包名解析，届时再单独决策（**Phase 1 未触发**）。
 
 ---
 
@@ -208,27 +228,28 @@ scripts/ci-local.sh               # 全门
 |---|---|---|
 | CI `pnpm install --frozen-lockfile` 失败 | ① 忘了在 `pnpm-workspace.yaml` 追加 `patches/omo-dsh/vendor/*`；② 本地 `pnpm install` 后没提交 `pnpm-lock.yaml` | 补 workspace 行 → 重跑 install → **提交 lockfile** |
 | `verify-licenses` 报 `MISSING` | 忘了补 `license` 字段（步骤 5） | 补 `"license": "SUL-1.0"` + 登记偏离 |
-| `verify-licenses` 报 `…: SUL-1.0` violation | 包名不匹配名称门（`SUL_ALLOWED_NAME` 不含上游 scope） | 确认 D16 的 `oh-my-opencode` 扩展已落地（首个包的一次性动作，步骤 7 第 5 项）；若是**新 scope** 的包，升级为决策，不得擅自放宽 |
+| `verify-licenses` 报 `…: SUL-1.0` violation | 包名不匹配名称门（`SUL_ALLOWED_NAME` 不含上游 scope） | 确认 D16 的 `oh-my-opencode` 扩展已落地（首个包的一次性动作，步骤 7 第 5 项）；若是**新 scope** 的包，升级为决策，不得擅自放宽。**Phase 1 实测触发过**：扩展落地前 `@oh-my-opencode/hashline-core@0.1.0: SUL-1.0` 被判 violation，D16 落地后通过 |
 | `verify-licenses` 报某个新依赖越界 | 该依赖的许可不在 `UNIVERSAL_WHITELIST` | **不要**改白名单绕过（ROADMAP §3 约束 4）。要么换依赖，要么走**决策**（D12 先例） |
 | vendor 测试"全绿"但数量为 0 | vitest `include` 没覆盖 vendor 路径 | 显式声明 `include`，并**断言收集数** |
-| `pnpm` 拒绝某个依赖（发布年龄策略） | `pnpm-workspace.yaml` 的 `minimumReleaseAge` | 按既有 `minimumReleaseAgeExclude` 惯例**单独登记该包**并留痕 |
+| `pnpm` 拒绝某个依赖（发布年龄策略） | `pnpm-workspace.yaml` 的 `minimumReleaseAge` | 按既有 `minimumReleaseAgeExclude` 惯例**单独登记该包**并留痕。**Phase 1 的 `diff@9.0.0` 未触发**（`minimumReleaseAgeExclude` 未新增条目） |
 | 测试报 `Cannot find package 'diff'`（或同类裸包名） | vendor 包没被 workspace 认到，依赖没装进包的 `node_modules` | 检查 `pnpm-workspace.yaml` 的追加行（步骤 6），重跑 `pnpm install`。对应 M-3 第 2 点 |
 | `tsc` 报 `bun:test` 无法解析 | 测试文件没被排除在 typecheck 之外 | 检查**根** `tsconfig.json` 的 `exclude`——门 1 用根配置编译 `patches/**`，vendor 包自身 tsconfig 的 exclude 对门 1 无效 |
-| `tsc` 报 `Bun` 未定义 | 上游源码**硬**依赖 Bun 全局（不是 `globalThis` 探测） | 这是真 shim 需求，不是配置问题：做最小改动并登记偏离；同时回填本节 |
-| 测试失败但错误指向框架语义 | bun 与 vitest 的 `expect` / 生命周期差异 | 逐个判定"框架差异 vs 真实缺陷"（S-1 判定标准） |
+| typecheck "绿"但**未证明** vendor 源码真被编译 | vendor 测试被两层 `exclude` 后，门 1 的覆盖范围不可见 | 用 `pnpm exec tsc --noEmit --listFiles \| grep 'vendor/hashline-core'` 点检。**Phase 1 实测**：18 个非测试源码在根编译程序内（17 源码 + 包外复制件），`.test.ts` = **0**（6 个测试被根 exclude 排除）。**不要**把"门 1 绿"当作 vendor 正确性证据——正确性证据是 `test:vendor` |
+| `tsc` 报 `Bun` 未定义 | 上游源码**硬**依赖 Bun 全局（不是 `globalThis` 探测） | 这是真 shim 需求，不是配置问题：做最小改动并登记偏离；同时回填本节。**Phase 1 未触发**：`xxhash32.ts` 是调用时 `globalThis` 探测 + 纯 JS 回退 |
+| 测试失败但错误指向框架语义 | bun 与 vitest 的 `expect` / 生命周期差异 | 逐个判定"框架差异 vs 真实缺陷"（S-1 分流标准）。**Phase 1 未触发**（78/78 一次通过） |
 
 ---
 
 ## 5. 下一个包会不同的地方（Phase 1 已知的变量）
 
-| 变量 | 为什么可能不同 | 动手前要看什么 |
-|---|---|---|
-| tag 是否仍是 v4.19.4 | D14 的条件式选择 | 步骤 1a |
-| shim 数量 | 取决于包外 import 与运行时假设 | 步骤 2 的两张检查表 |
-| 是否引入新依赖 | `hashline-core` 只有 1 个（`diff`），别的包可能更多 | 步骤 2 + `verify-licenses` |
-| 是否值得独立成 workspace 包 | 单包自包含 → 独立包；若被多个包共享 → 考虑合并落点 | §7 |
-| 是否需要在 CI 增门 | 若测试量或运行时长显著增长 | 步骤 6 末段 |
-| 是否需要 `minimumReleaseAgeExclude` 例外 | 新依赖的发布时间 | §4 |
+| 变量 | 为什么可能不同 | 动手前要看什么 | Phase 1 实测值（`hashline-core` @ v4.19.4） |
+|---|---|---|---|
+| tag 是否仍是 v4.19.4 | D14 的条件式选择 | 步骤 1a | v4.19.4（2026-09-11 复核：`latest`=4.19.4、commit `b072d279…`） |
+| shim 数量 | 取决于包外 import 与运行时假设 | 步骤 2 的两张检查表 | **2 类**：S-1（纯配置 alias，零源码改动）；S-2（1 行 import 改写 + 1 个包外复制件）。无源码逻辑 shim（`xxhash32.ts` 已自带 `globalThis` 探测 + 纯 JS 回退） |
+| 是否引入新依赖 | `hashline-core` 只有 1 个（`diff`），别的包可能更多 | 步骤 2 + `verify-licenses` | **1 个**：`diff@9.0.0`（BSD-3-Clause，白名单内）；R-3 **未触发**（未被 `minimumReleaseAge` 拒绝） |
+| 是否值得独立成 workspace 包 | 单包自包含 → 独立包；若被多个包共享 → 考虑合并落点 | §7 | 单包自包含 → **独立 workspace 包**（`patches/omo-dsh/vendor/*`） |
+| 是否需要在 CI 增门 | 若测试量或运行时长显著增长 | 步骤 6 末段 | **不需要**：78 tests 并入既有门 2；CI 双文件**零改动** |
+| 是否需要 `minimumReleaseAgeExclude` 例外 | 新依赖的发布时间 | §4 | **不需要**：`diff@9.0.0` 未被拒，`minimumReleaseAgeExclude` 未新增条目 |
 
 ---
 

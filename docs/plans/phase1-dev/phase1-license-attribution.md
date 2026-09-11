@@ -16,7 +16,7 @@
 | 上游仓库 | `https://github.com/code-yeongyu/oh-my-openagent` |
 | 作者 | code-yeongyu |
 | 冻结基线 tag | `v4.19.4` |
-| tag commit（实施时复核） | `b072d279110bdda2c6ac2525d0d24dc54d16148a` |
+| tag commit（2026-09-11 复核一致） | `b072d279110bdda2c6ac2525d0d24dc54d16148a` |
 | 上游许可文件 | 仓库根 `LICENSE.md` = **Sustainable Use License 1.0（SUL-1.0）** |
 | 上游许可文件 sha256 | `b61ac928f152d13517328263e6bee9175b928f9ab696a2d2ca2b6cfd961ddc32` |
 | 本仓库许可副本 | `LICENSES/oh-my-openagent.LICENSE.md` |
@@ -49,7 +49,7 @@ SUL-1.0 的约束以原文为准，此处只抽出**对本阶段有操作含义*
 |---|---|---|---|
 | A-1 | SUL-1.0 原文随包分发 | `LICENSES/oh-my-openagent.LICENSE.md`（已存在，sha256 与上游一致） | ✅ 已满足（本次校验确认） |
 | A-2 | 许可原文**不失真** | 保持上游英文原文，不改名、不翻译、不加注释 | ✅ 已满足 |
-| A-3 | 框架自身保持双许可 | 仓库根 `package.json` 的 `"license": "MIT OR SUL-1.0"`；vendor 包 `"license": "SUL-1.0"` | ⬜ P1-T4 待做 |
+| A-3 | 框架自身保持双许可 | 仓库根 `package.json` 的 `"license": "MIT OR SUL-1.0"`；vendor 包 `"license": "SUL-1.0"` | ✅ 已满足（P1-T4 落地；`pnpm exec tsc`/`verify-licenses` 均见该字段） |
 
 ### 3.2 逐文件署名覆盖（`THIRD_PARTY_NOTICES.md`）
 
@@ -59,7 +59,7 @@ SUL-1.0 的约束以原文为准，此处只抽出**对本阶段有操作含义*
 
 #### 3.2.1 覆盖表（26 个上游文件 + 1 个包外复制件 + 2 个项目新增 = 29 行）
 
-> 实施时（P1-T8）把下表落进 `THIRD_PARTY_NOTICES.md`；`处置` 列取值 = `verbatim` / `已修改` / `包外复制` / `本项目新增`。
+> 下表已由 P1-T8 落进 `THIRD_PARTY_NOTICES.md`（2026-09-11，逐文件 29 行）；`处置` 列取值 = `verbatim` / `已修改` / `包外复制` / `本项目新增`。
 > `sha256` 列在 NOTICES 中**是否逐行保留**：建议保留（它是"这个文件确实是那个 tag 的那份"的唯一机器可验证据）。若复查认为 NOTICES 过于冗长，可只保留**处置**列并指向 manifest——但**文件名必须逐行在 NOTICES 中出现**（这是 D15 的硬要求，不是可选项）。
 
 | # | 文件（相对 `packages/hashline-core`） | 处置 | 说明 |
@@ -90,13 +90,13 @@ SUL-1.0 的约束以原文为准，此处只抽出**对本阶段有操作含义*
 | 24 | `src/validation.test.ts` | `verbatim` | — |
 | 25 | `src/validation.ts` | `verbatim` | — |
 | 26 | `src/xxhash32.ts` | `verbatim` | `globalThis` 探测 Bun 绑定 + 纯 JS 回退 |
-| 27 | `src/test-support/unsafe-test-value.ts` | `包外复制` | 内容 verbatim，但自上游**包外**路径 `test-support/unsafe-test-value.ts` 复制进来（4 行类型辅助）——不属包内 26 个上游文件 |
+| 27 | `src/test-support/unsafe-test-value.ts` | `包外复制` | 内容 verbatim，但自上游**包外**路径 `test-support/unsafe-test-value.ts` 复制进来（**5 行**类型辅助；计划稿写"4 行"系笔误，P1-T11 实测更正）——不属包内 26 个上游文件 |
 | 28 | `NOTICE.md`（包根） | `本项目新增` | **非上游内容**：SUL-1.0 要求的醒目"已修改"声明（D15 第 3 条，见 §3.3 N-1） |
 | 29 | `VENDOR-MANIFEST.json`（包根） | `本项目新增` | **非上游内容**：来源 tag/commit + 逐文件 sha256 + `deviations[]` |
 
 **合计**：上游 26 文件 = **23 verbatim + 3 已修改**；包外复制 **1**（第 27 行）；本项目新增 **2**（第 28、29 行）。NOTICES 共 **29 行**，与 manifest `files[]` 的 29 条一一对齐。
 
-> ⚠️ **实施时的判定点**：若实施中发现真实偏离多于上表（例如又出现一处包外 import），**必须回到本表补行**并把新行同步进 NOTICES，而不是就近塞进 manifest 了事。上表是**计划态**，P1-T8 落地时以实测为准。
+> ⚠️ **实施判定点（已结项）**：若实施中发现真实偏离多于上表，**必须回到本表补行**并把新行同步进 NOTICES。**实测结果**：未出现预料之外的偏离——上表 29 行与落地后的 `THIRD_PARTY_NOTICES.md`、`VENDOR-MANIFEST.json` `files[]`（29 条）**逐一对齐**（P1-T8/P1-T12 实测；`grep -c` 处置列 = 23/3/1/2）。
 
 #### 3.2.2 与 manifest 的分工（避免两处重复维护出错）
 
@@ -113,9 +113,9 @@ SUL-1.0 的约束以原文为准，此处只抽出**对本阶段有操作含义*
 
 | # | 落点 | 内容要求 | 依据 | 状态 |
 |---|---|---|---|---|
-| N-1 | vendor 包根 `NOTICE.md`（**主声明**） | 醒目写明：本副本 **vendored from OMO v4.19.4**（含 commit）、**已被修改**、修改清单指向同目录 `VENDOR-MANIFEST.json`；版权仍属原作者，本项目只声明"已修改" | D15 第 3 条 | ⬜ P1-T4 待做 |
-| N-2 | `patches/omo-dsh/vendor/hashline-core/VENDOR-MANIFEST.json` | **机器可读的修改声明**（`deviations[]`：4 条，含类型/位置/理由），与 N-1、N-3 互相印证 | D15 第 3 条 | ⬜ P1-T4 待做 |
-| N-3 | 仓库根 `THIRD_PARTY_NOTICES.md` | 条目内写明：本项目**修改了**该 vendored 副本，指向 `NOTICE.md` 与 `VENDOR-MANIFEST.json` | D15 第 3 条 | ⬜ P1-T8 待做 |
+| N-1 | vendor 包根 `NOTICE.md`（**主声明**） | 醒目写明：本副本 **vendored from OMO v4.19.4**（含 commit）、**已被修改**、修改清单指向同目录 `VENDOR-MANIFEST.json`；版权仍属原作者，本项目只声明"已修改" | D15 第 3 条 | ✅ 已落地（P1-T4；文件含 "**This copy has been MODIFIED.**"） |
+| N-2 | `patches/omo-dsh/vendor/hashline-core/VENDOR-MANIFEST.json` | **机器可读的修改声明**（`deviations[]`：**6 条**，含类型/位置/理由），与 N-1、N-3 互相印证 | D15 第 3 条 | ✅ 已落地（P1-T4；`deviations[]` = modification 3 + copied-in 1 + addition 2） |
+| N-3 | 仓库根 `THIRD_PARTY_NOTICES.md` | 条目内写明：本项目**修改了**该 vendored 副本，指向 `NOTICE.md` 与 `VENDOR-MANIFEST.json` | D15 第 3 条 | ✅ 已落地（P1-T8；"MODIFIED COPY" 醒目块，指向两文件） |
 | N-4 | `LICENSES/oh-my-openagent.LICENSE.md` | SUL-1.0 原文随包（**不改动该文件**）——L-2 义务 | SUL-1.0 Notices 第一句 | ✅ 已满足（§1 校验） |
 
 > **不做的事**：不在每个 `.ts` 文件头插入"modified by …"注释——那会让 23 个 verbatim 文件全部偏离上游，**直接摧毁**后续定向搬运（ROADMAP §2 规则 4）与漂移检测的可操作性。（D15 第 3 条明确否决了该做法。）
@@ -128,7 +128,7 @@ vendor 包引入的**唯一**外部依赖，同样需要许可覆盖：
 
 | # | 包 | 版本 | License | 覆盖方式 | 状态 |
 |---|---|---|---|---|---|
-| D-1 | `diff` | `^9.0.0`（实测 `9.0.0`） | **BSD-3-Clause** | ① 在 `UNIVERSAL_WHITELIST` 内 → `verify-licenses` 自动通过；② 已由 `THIRD_PARTY_NOTICES.md` 的既有第三方段落覆盖（无需新增署名——本项目**不 vendor** 该包，只是声明 npm 依赖） | ⬜ P1-T9 验证 |
+| D-1 | `diff` | `^9.0.0`（实测 `9.0.0`） | **BSD-3-Clause** | ① 在 `UNIVERSAL_WHITELIST` 内 → `verify-licenses` 自动通过；② 已由 `THIRD_PARTY_NOTICES.md` 的既有第三方段落覆盖（无需新增署名——本项目**不 vendor** 该包，只是声明 npm 依赖） | ✅ 已验证（P1-T9：`violations` 为空；`npm view diff@^9.0.0 license` = BSD-3-Clause） |
 
 ## 4. 结项核对表
 
@@ -136,17 +136,17 @@ vendor 包引入的**唯一**外部依赖，同样需要许可覆盖：
 
 | # | 核对项 | 判定命令 / 证据 | 结果 |
 |---|---|---|---|
-| K-1 | `verify-licenses` 退出 0 | `scripts/verify-licenses.sh` | ⬜ |
-| K-2 | vendor 包**被检查**（非漏检） | `scripts/verify-licenses.sh --json` 的 `checked` 计数较接入前 **+1**（`checked` 是计数不是名单；repo 内包不进 lockfile `packages:` 段，故不会出现在 `skippedNames`——计数差是可复核证据） | ⬜ |
-| K-3 | `diff@9.0.0` 被判 BSD-3-Clause 通过 | 同上；`violations` 为空 | ⬜ |
-| K-4 | NOTICES 含**来源**条目 | `THIRD_PARTY_NOTICES.md` 含 `hashline-core` + repo + tag + commit + License + 落点 | ⬜ |
-| K-5 | NOTICES **逐文件**列出（D15 第 2 条） | §3.2.1 的 **29 行**全部出现在 NOTICES，每行含文件名 + 处置 | ⬜ |
-| K-6 | "已修改"声明四处齐备 | N-1（`NOTICE.md`）+ N-2（manifest `deviations[]`）+ N-3（NOTICES）+ N-4（许可原文未改） | ⬜ |
-| K-7 | 偏离数与 manifest 一致 | NOTICES 标 `已修改` = `class: "modification"` = **3**；标 `包外复制` = `class: "copied-in"` = **1**；标 `本项目新增` = `class: "addition"` = **2** | ⬜ |
-| K-8 | 既有署名**零改动**（只增不改） | `git diff THIRD_PARTY_NOTICES.md` 无删除行、无修改行 | ⬜ |
-| K-9 | 许可原文字节一致 | §1 两条 sha256 相等 | ✅ **已通过**（2026-09-11） |
-| K-10 | 非商业边界未被突破 | 新增文案无"可商用/授权商用/SaaS"含义（D8） | ⬜ |
-| K-11 | 未向 OMO 提交任何内容（D5） | 无 fork/PR/branch push | ⬜ |
+| K-1 | `verify-licenses` 退出 0 | `scripts/verify-licenses.sh` | ✅ 退出 0（`PASS: checked=52 · violations=0 · skipped(lockfile-only, not installed)=43`；2026-09-11） |
+| K-2 | vendor 包**被检查**（非漏检） | `scripts/verify-licenses.sh --json` 的 `checked` 计数较接入前 **+1**（`checked` 是计数不是名单；repo 内包不进 lockfile `packages:` 段，故不会出现在 `skippedNames`——计数差是可复核证据） | ✅ 实测 **51 → 52（+1）**。接入前 = 在 `89c0ef7` 建临时 `git worktree` + 软链本仓库 `node_modules`，`node .../verify-licenses.mjs --json --root <worktree>` → `checked:51`；接入后本树 → `checked:52`（两侧 `pass:true`） |
+| K-3 | `diff@9.0.0` 被判 BSD-3-Clause 通过 | 同上；`violations` 为空 | ✅ `violations: []`；`npm view diff@^9.0.0 version license` → `9.0.0` / `BSD-3-Clause`（在 `UNIVERSAL_WHITELIST` 内） |
+| K-4 | NOTICES 含**来源**条目 | `THIRD_PARTY_NOTICES.md` 含 `hashline-core` + repo + tag + commit + License + 落点 | ✅ `THIRD_PARTY_NOTICES.md` L18–L29：小节标题含 `@oh-my-opencode/hashline-core`（OMO v4.19.4）、`Source repository`、`Tag: v4.19.4`、`Commit: b072d279…`、`Upstream path`、`License: SUL-1.0`、`Vendored into … patches/omo-dsh/vendor/hashline-core` |
+| K-5 | NOTICES **逐文件**列出（D15 第 2 条） | §3.2.1 的 **29 行**全部出现在 NOTICES，每行含文件名 + 处置 | ✅ 29 行齐备：`grep -c` 处置列 = `verbatim` **23** / `已修改` **3** / `包外复制` **1** / `本项目新增` **2**；NOTICES 声明 "**29 files** total"，与 `files[]` 29 条对齐 |
+| K-6 | "已修改"声明四处齐备 | N-1（`NOTICE.md`）+ N-2（manifest `deviations[]`）+ N-3（NOTICES）+ N-4（许可原文未改） | ✅ 四处齐备：`NOTICE.md` 含 "**This copy has been MODIFIED.**"；manifest `deviations[]` 6 条；NOTICES L31–L40 "MODIFIED COPY" 醒目块；`LICENSES/oh-my-openagent.LICENSE.md` 未改（sha256 见 K-9） |
+| K-7 | 偏离数与 manifest 一致 | NOTICES 标 `已修改` = `class: "modification"` = **3**；标 `包外复制` = `class: "copied-in"` = **1**；标 `本项目新增` = `class: "addition"` = **2** | ✅ `files[]` = 29 条（`verbatim:23 / modified:3 / copied-in:1 / project-new:2`）；`deviations[]` = **6** 条（`modification:3 / copied-in:1 / addition:2`）——与 NOTICES 非 verbatim 行一一对应 |
+| K-8 | 既有署名**零改动**（只增不改） | `git diff THIRD_PARTY_NOTICES.md` 无删除行、无修改行 | ✅ `git diff --numstat 89c0ef7 HEAD -- THIRD_PARTY_NOTICES.md` → `66  0`（66 插入 / **0 删除**）；diff 中无 `-` 行 |
+| K-9 | 许可原文字节一致 | §1 两条 sha256 相等 | ✅ **已通过**（2026-09-11 复跑：上游 `git show v4.19.4:LICENSE.md \| sha256sum` 与本仓库副本同为 `b61ac928f152d13517328263e6bee9175b928f9ab696a2d2ca2b6cfd961ddc32`） |
+| K-10 | 非商业边界未被突破 | 新增文案无"可商用/授权商用/SaaS"含义（D8） | ✅ 新增文案只有否定式表述：`NOTICE.md` "makes no implication of any commercial license or commercial-use right"；NOTICES L16 "no commercial distribution is authorized"、L39–L40 "No commercial use or distribution is authorized" |
+| K-11 | 未向 OMO 提交任何内容（D5） | 无 fork/PR/branch push | ✅ `git remote -v` 只有本项目 `origin`（`linletian/oh-my-opendsh`），无 OMO remote/fork；Phase 1 全部提交只落在本仓库 `feature/phase1-dev` |
 
 ## 5. `license` 字段缺失的处置（D15 第 1 条）
 

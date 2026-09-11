@@ -37,7 +37,9 @@
 
 已交付：`concerto` 运行模式（持久 preset）、omo-sisyphus 指挥人格 + omo-explore 子代理绑定、双模型路由（deepseek-official + pi-ai）、Hard-Blocks 注入 listener、doctor-lite + mock e2e、发布流程（D13）。踩坑 P-1～P-21 记录于 `docs/mvp-pitfalls.md`。
 
-### Phase 1 —— core 源码 vendor 验证（修正后的 O1）
+### Phase 1 —— core 源码 vendor 验证（修正后的 O1）✅（2026-09-11 结项）
+
+已交付：`hashline-core`（`@oh-my-opencode/hashline-core` @ v4.19.4，commit `b072d279…`）vendor 进 `patches/omo-dsh/vendor/`，并接入 pnpm workspace 与 vitest（6 文件 78 测试绿）；`THIRD_PARTY_NOTICES.md` **逐文件**署名 29 行（D15）；`verify-licenses` 常绿（D15 补 `license` 字段 + D16 名称门扩展，`checked` 51→52）；`docs/plans/phase1-dev/vendoring-playbook.md` 实录稿。**已 vendor、未消费**（preset 尚未接线）。
 
 - **目标**：在最小有用面上端到端打通 git-vendor 引进路径。
 - **范围**：选一个 core 包（候选：`hashline-core`——自包含、无 harness 依赖），从选定 tag vendor 进 `patches/omo-dsh/vendor/`；在本项目工具链下构建 + 单测全绿；署名与 License 条目落地。

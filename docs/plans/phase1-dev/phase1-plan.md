@@ -6,7 +6,7 @@
 >
 > **配套文档**：[任务清单](./phase1-tasks.md) · [License 与署名清单](./phase1-license-attribution.md) · [vendoring playbook](./vendoring-playbook.md)
 >
-> **状态**：📋 计划已定稿（2026-09-11），**尚未开始实施**。范围 = 计划内容；勾选进度以任务清单为准。
+> **状态**：✅ **已实施并结项（2026-09-11）**。范围 = 计划内容；逐任务证据与退出标准核对见[任务清单](./phase1-tasks.md)（14/14 完成）。实施期实测对本文的回填见 §3.1 与 §4.3（辅助文件实为 5 行）、§4.6.2（manifest 模板与落地一致）、§5（a–g 实测）、§6（Q-1/Q-2/Q-3 结论）。
 
 ---
 
@@ -24,7 +24,7 @@ Phase 1 不解决工程问题，也不消费 vendor 代码——它要证明的�
 
 | 约束 | 来源 | 本阶段的具体含义 |
 |---|---|---|
-| **冻结基线 = OMO v4.19.4** | ROADMAP §2 规则 3 / D14 | tag 选择已定：**v4.19.4**。v5.0.0 正式版**未发布**（2026-09-11 实测 npm `latest`=4.19.4、`beta`=5.0.0-beta.53），故不适用"v5.0.0 正式版已发布则用它"分支。选择已闭合，实施时只需**复核**（§6 风险 R-2） |
+| **冻结基线 = OMO v4.19.4** | ROADMAP §2 规则 3 / D14 | tag 选择已定：**v4.19.4**。v5.0.0 正式版**未发布**（2026-09-11 实测 npm `latest`=4.19.4、`beta`=5.0.0-beta.53），故不适用"v5.0.0 正式版已发布则用它"分支。选择已闭合，实施时只需**复核**（§6 风险 R-2）——2026-09-11 复核：`latest` 仍为 `4.19.4`，tag 保持 v4.19.4 |
 | **不追 beta** | ROADMAP §2 规则 2 | 不 vendor `5.0.0-beta.*` 的任何内容；`compat-probe` 哨兵仍只盯 DSH |
 | **每个 vendor 文件的 SUL-1.0 合规** | ROADMAP §3 约束 1 + **D15** | ① `LICENSES/oh-my-openagent.LICENSE.md` 与上游 v4.19.4 的 `LICENSE.md` **已实测逐字节一致**（sha256 `b61ac928…ddc32`，2026-09-11——原本的 R-6 风险就此关闭）；② **署名按 D14 第 3 条字面执行 → 逐文件列出**（D15 第 2 条），见[署名清单](./phase1-license-attribution.md) §3.2.1 的 29 行覆盖表；③ 必须携带 SUL-1.0 要求的**醒目"已修改"声明**，落点在包级文件（D15 第 3 条），见署名清单 §3.3 |
 | **非商业** | ROADMAP §3 约束 2 / D8 | 无新增动作，但署名文案不得暗示商用授权 |
@@ -40,14 +40,14 @@ ROADMAP 给出的候选即 `hashline-core`（"自包含、无 harness 依赖"）
 
 | 项 | 实测结果 |
 |---|---|
-| tag 提交 | `v4.19.4` → `b072d279110bdda2c6ac2525d0d24dc54d16148a`（实施时需复核，见 R-2） |
+| tag 提交 | `v4.19.4` → `b072d279110bdda2c6ac2525d0d24dc54d16148a`（2026-09-11 实施时复核**一致**，R-2 关闭） |
 | 包名 / 版本 | `@oh-my-opencode/hashline-core` @ `0.1.0`，`private: true`（印证 D14：从未上 npm） |
 | 源码规模 | 包内共 **26 个文件**（`AGENTS.md`、`package.json`、`tsconfig.json` + `src/` 下 **23** 个：**17** 源码 `.ts` + **6** 测试 `.test.ts`），约 2.5k 行 |
 | 运行时外部依赖 | **1 个**：`diff@^9.0.0`——仅 `diff-utils.ts` 的 `createTwoFilesPatch` 使用。其余全部自包含 |
 | harness 依赖 | **0 个**。无 opencode / cordis / DSH 引用，无 `@oh-my-opencode/*` 跨包 import |
 | 测试框架 | `bun test`（**6** 个 `*.test.ts`，全部位于 `src/`，`bun:test` import） |
 | 运行时假设 | `xxhash32.ts` 在**调用时**经 `globalThis` 探测 `Bun.hash.xxHash32`，缺失则回退纯 JS 实现——**Node 24 下不需要 bun 运行时**（这是它"harness-neutral"的实证，不是推断） |
-| 跨包测试耦合 | **1 处**：`src/normalize-edits.test.ts` import `../../../test-support/unsafe-test-value`（OMO 仓库根下的 4 行类型辅助函数，**不在包内**） |
+| 跨包测试耦合 | **1 处**：`src/normalize-edits.test.ts` import `../../../test-support/unsafe-test-value`（OMO 仓库根下的 5 行类型辅助函数，**不在包内**；计划稿曾写"4 行"，P1-T11 实测更正） |
 | 上游 License 声明 | ⚠️ **该包 `package.json` 无 `license` 字段**（OMO 19 个 core 包一致）；许可来自仓库根 `LICENSE.md`（SUL-1.0）。**这是本阶段最重要的发现**，处置见 §4.4 与 R-4 |
 | v5 beta 对比 | `git diff v4.19.4 v5.0.0-beta.53 -- packages/hashline-core` = **空**（两版逐字节相同，印证 D14 的"低赌注"判断） |
 
@@ -103,7 +103,7 @@ patches/omo-dsh/vendor/
 | # | 问题 | 方案 | 偏离性质 |
 |---|---|---|---|
 | S-1 | 6 个测试文件 `import { describe, it, expect } from "bun:test"` | `vitest.config.ts` 加 `resolve.alias: { 'bun:test': 'vitest' }`（vitest 导出同名 API）。**不改测试源码** | 环境适配，零源码改动 |
-| S-2 | `normalize-edits.test.ts` import 包外的 `../../../test-support/unsafe-test-value` | 把该 4 行辅助函数随包 vendor 到 `src/test-support/unsafe-test-value.ts`，并把 import 改一行 | **1 行源码偏离**，必须记入 `VENDOR-MANIFEST.json` 与[署名清单](./phase1-license-attribution.md) |
+| S-2 | `normalize-edits.test.ts` import 包外的 `../../../test-support/unsafe-test-value` | 把该 5 行辅助函数随包 vendor 到 `src/test-support/unsafe-test-value.ts`，并把 import 改一行 | **1 行源码偏离**，必须记入 `VENDOR-MANIFEST.json` 与[署名清单](./phase1-license-attribution.md) |
 
 > S-2 曾考虑用 vitest alias 指向仓库外的 OMO 检出——**否决**：那会让 CI 依赖 `~/GithubRepo/oh-my-openagent` 存在，CI 必然失败，且违反"vendor 的意义是自包含"。
 
@@ -152,11 +152,11 @@ ROADMAP 退出标准 d 要求 playbook 记录"怎么复制、需要什么 shim"�
   "upstream": {
     "repo": "https://github.com/code-yeongyu/oh-my-openagent",
     "tag": "v4.19.4",
-    "commit": "<实施时复核并填入 40 位 SHA>",
+    "commit": "b072d279110bdda2c6ac2525d0d24dc54d16148a",
     "path": "packages/hashline-core",
     "license": "SUL-1.0 (repository root LICENSE.md; the package manifest carries no license field)"
   },
-  "vendoredAt": "<日期>",
+  "vendoredAt": "2026-09-11",
   "files": [ { "path": "src/hash-computation.ts", "sha256": "…", "origin": "verbatim" }, … ],
   // files[] 共 29 条，origin 取值：verbatim(23) / modified(3) / copied-in(1，位于 src/test-support/) / project-new(2，包根 NOTICE.md 与本文件)
   // deviations = 与上游包内容不同的全部位置，共 6 条；class 与 NOTICES 的非 verbatim 处置一一对应：
@@ -164,10 +164,10 @@ ROADMAP 退出标准 d 要求 playbook 记录"怎么复制、需要什么 shim"�
   //   class "copied-in"    = 1（包外复制件）         = NOTICES 标 "包外复制" 的行
   //   class "addition"     = 2（包根新增文件）       = NOTICES 标 "本项目新增" 的行
   "deviations": [
-    { "class": "modification", "path": "package.json", "kind": "field-added", "field": "license", "value": "SUL-1.0", "decision": "D15.1", "why": "verify-licenses scores a missing field as MISSING/FAIL; upstream permission comes from the repository-root LICENSE.md" },
+    { "class": "modification", "path": "package.json", "kind": "fields-added", "field": "license", "value": "SUL-1.0", "decision": "D15.1", "additionalField": "scripts.test:vitest", "additionalValue": "pnpm -w exec vitest run patches/omo-dsh/vendor/hashline-core", "why": "two additions in one entry: license=SUL-1.0 because verify-licenses scores a missing field as MISSING/FAIL (upstream permission comes from the repository-root LICENSE.md, D15.1), and a test:vitest script so the vendored tests run under this repo's toolchain while the upstream bun `test` script is retained" },
     { "class": "modification", "path": "tsconfig.json", "kind": "rewritten", "why": "no bun-types in this repo; upstream lib/types replaced with the repo-root ES2022 + node shape, test files excluded" },
     { "class": "modification", "path": "src/normalize-edits.test.ts", "kind": "one-line-import-rewrite", "why": "upstream imports ../../../test-support/unsafe-test-value from outside the package; the helper is vendored into src/test-support/ instead" },
-    { "class": "copied-in", "path": "src/test-support/unsafe-test-value.ts", "kind": "copied-from-outside-package", "upstreamPath": "test-support/unsafe-test-value.ts", "why": "the 4-line type helper the modified test above now imports; content is verbatim, but it is not one of the package's 26 upstream files, so it is tracked as its own class rather than as a vendored file" },
+    { "class": "copied-in", "path": "src/test-support/unsafe-test-value.ts", "kind": "copied-from-outside-package", "upstreamPath": "test-support/unsafe-test-value.ts", "why": "the 5-line type helper the modified test above now imports; content is verbatim, but it is not one of the package's 26 upstream files, so it is tracked as its own class rather than as a vendored file" },
     { "class": "addition", "path": "NOTICE.md", "kind": "project-notice", "decision": "D15.3", "why": "SUL-1.0 'Notices' requires a prominent notice in modified copies; this is the package-level notice" },
     { "class": "addition", "path": "VENDOR-MANIFEST.json", "kind": "project-record", "why": "this file: provenance + per-file sha256 + the deviation list" }
   ]
@@ -200,6 +200,8 @@ ROADMAP §4 Phase 1 给出 4 条退出标准。逐条落到**可执行的证据*
 - **f**：本计划目录的 4 份文档与实测结果**无冲突**——凡实测推翻计划假设处，改文档而不是改结论。
 - **g**：未修改 `THIRD_PARTY_NOTICES.md` 既有任何条目，未移除任何署名。
 
+> ✅ **结项实测（2026-09-11，P1-T12）**：a–g 全部有可复核证据，逐条命令与输出见[任务清单](./phase1-tasks.md) 的"退出标准核对表"。关键值：`pnpm install --frozen-lockfile` 退出 0；`pnpm test:vendor` 6 文件 **78 tests** 全绿；门 2 `pnpm vitest run` 15 文件 **187 tests** 全绿且 `.github/workflows/ci.yml` / `scripts/ci-local.sh` **零改动**（门序列仍 byte-equivalent）；`scripts/verify-licenses.sh --json` → `{"pass":true,"violations":[],"checked":52}`（接入前相同方法测得 `checked:51`）；NOTICES **29 行**（23 verbatim / 3 已修改 / 1 包外复制 / 2 本项目新增）与 manifest `files[]`/`deviations[]` 对齐；`scripts/ci-local.sh` **8/8 绿**；`node scripts/check-docs-consistency.mjs` **8/8 PASS**。
+
 **明确不属于退出标准**（避免范围蔓延）：
 
 - ❌ hashline 被 preset / concerto 消费或注册为工具（ROADMAP 明示"不在范围"）
@@ -211,22 +213,22 @@ ROADMAP §4 Phase 1 给出 4 条退出标准。逐条落到**可执行的证据*
 
 | # | 风险 / 问题 | 影响 | 处置 |
 |---|---|---|---|
-| **R-1** | **CI 的 `pnpm install --frozen-lockfile` 因新增 workspace 包而失败** | 高（直接堵死退出标准 a） | 计划已识别唯一成因：`pnpm-workspace.yaml` 的 `patches/omo-dsh/*` **不递归**。实施时先补 `patches/omo-dsh/vendor/*` 再 `pnpm install`，并**必须**提交更新后的 `pnpm-lock.yaml`（CI 不会自己补） |
-| **R-2** | 上游 v4.19.4 tag 被移动 / 本地检出与 tag 不一致 | 中（可复现性） | `VENDOR-MANIFEST.json` 记录 40 位 commit 而非仅 tag；实施时用 `git rev-parse v4.19.4^{commit}` 复核（本次实测为 `b072d279…`）。**注意**：本地检出 `~/GithubRepo/oh-my-openagent` 当前 HEAD 不在该 tag 上（有未提交的 `.omo/evidence` 改动），必须用 `git show v4.19.4:<path>` 取文件，**不得**从工作树复制 |
-| **R-3** | `diff@9.0.0` 引入失败（`minimumReleaseAge` 策略 / 网络） | 中 | 实测 registry 可达且 `diff@9.0.0` 存在、BSD-3-Clause。若 `pnpm` 因发布年龄策略拒绝，按 `pnpm-workspace.yaml` 既有 `minimumReleaseAgeExclude` 惯例，**单独登记该包**并在任务清单留痕 |
+| **R-1** | **CI 的 `pnpm install --frozen-lockfile` 因新增 workspace 包而失败** | 高（直接堵死退出标准 a） | 计划已识别唯一成因：`pnpm-workspace.yaml` 的 `patches/omo-dsh/*` **不递归**。实施时先补 `patches/omo-dsh/vendor/*` 再 `pnpm install`，并**必须**提交更新后的 `pnpm-lock.yaml`（CI 不会自己补）。✅ **实施结果（2026-09-11）**：按此处置，`pnpm install --frozen-lockfile` 退出 0（`Already up to date`）。 |
+| **R-2** | 上游 v4.19.4 tag 被移动 / 本地检出与 tag 不一致 | 中（可复现性） | `VENDOR-MANIFEST.json` 记录 40 位 commit 而非仅 tag；实施时用 `git rev-parse v4.19.4^{commit}` 复核（本次实测为 `b072d279…`）。**注意**：本地检出 `~/GithubRepo/oh-my-openagent` 当前 HEAD 不在该 tag 上（有未提交的 `.omo/evidence` 改动），必须用 `git show v4.19.4:<path>` 取文件，**不得**从工作树复制。✅ **实施结果（2026-09-11）**：复核 commit 未变（`b072d279110bdda2c6ac2525d0d24dc54d16148a`），导入走 tag 内容。 |
+| **R-3** | `diff@9.0.0` 引入失败（`minimumReleaseAge` 策略 / 网络） | 中 | 实测 registry 可达且 `diff@9.0.0` 存在、BSD-3-Clause。若 `pnpm` 因发布年龄策略拒绝，按 `pnpm-workspace.yaml` 既有 `minimumReleaseAgeExclude` 惯例，**单独登记该包**并在任务清单留痕。✅ **实施结果（2026-09-11）**：**未触发**——`diff@9.0.0` 未被拒，`minimumReleaseAgeExclude` 未新增条目。 |
 | **R-4** | ⚠️ **上游 core 包无 `license` 字段** | **高（合规判定）** | ✅ **已升级为决策 D15 第 1 条**（2026-09-11，中英双语已落）。事实：19 个 core 包 `package.json` 均无 `license`；许可仅由 OMO 仓库根 `LICENSE.md`（SUL-1.0）承载。处置：vendor 副本**显式补 `"license": "SUL-1.0"`**——不是"我授予自己许可"，而是**记录该文件实际适用的许可**，且是 `verify-licenses` 通过的必要条件（§4.4）。D15 的另外两条同时解决了计划阶段发现的另两个同源问题：署名粒度（第 2 条 → 逐文件）与 SUL-1.0"已修改"声明（第 3 条 → 包级 `NOTICE.md`）。**后续 18 个包按 D15 直接处置，不再重判。** 评审又发现名称门问题（补字段必要但不充分：`SUL_ALLOWED_NAME` 不匹配 `@oh-my-opencode/*`）→ 已固化为 **D16**（2026-09-11 第八批，扩展经决策授权）。 |
-| **R-5** | vendor 测试被静默地"不收集"（假绿） | 中 | 退出标准 a 的证据②要求**断言测试数量非零**。实施时以 vitest 输出的 collected 文件数对照上游 6 个 `*.test.ts` |
-| **R-6** | ~~`LICENSES/oh-my-openagent.LICENSE.md` 与本仓库不符~~ | ~~中~~ → **已关闭** | ✅ **已在计划阶段实测关闭**：`LICENSES/oh-my-openagent.LICENSE.md` 与上游 v4.19.4 `LICENSE.md` **逐字节相同**（两侧 sha256 均为 `b61ac928…ddc32`）。结项时（P1-T9）重跑一次即可——上游许可可能变，这一步在**每次** vendor 时都要做 |
+| **R-5** | vendor 测试被静默地"不收集"（假绿） | 中 | 退出标准 a 的证据②要求**断言测试数量非零**。实施时以 vitest 输出的 collected 文件数对照上游 6 个 `*.test.ts`。✅ **实施结果（2026-09-11）**：收集 **6 文件 / 78 tests**（非零），无假绿。 |
+| **R-6** | ~~`LICENSES/oh-my-openagent.LICENSE.md` 与本仓库不符~~ | ~~中~~ → **已关闭** | ✅ **已在计划阶段实测关闭**：`LICENSES/oh-my-openagent.LICENSE.md` 与上游 v4.19.4 `LICENSE.md` **逐字节相同**（两侧 sha256 均为 `b61ac928…ddc32`）。结项时（P1-T9）重跑一次即可——上游许可可能变，这一步在**每次** vendor 时都要做。✅ **结项重跑（2026-09-11）**：两侧仍为 `b61ac928f152d13517328263e6bee9175b928f9ab696a2d2ca2b6cfd961ddc32`，**一致**。 |
 | **R-7** | 本阶段产出被误解为"hashline 已接入项目" | 低（沟通） | README / CHANGELOG 的措辞必须写明"已 vendor、未消费"；ROADMAP 已把"preset 尚未消费 vendor 代码"列为不在范围 |
-| **R-8** | 方案 A 让 typecheck 门不覆盖 vendor 测试 | 低 | §4.5 已显式记录代价；不把门 1 绿当作 vendor 证据。后续如需硬化，方案 B 是现成路径 |
+| **R-8** | 方案 A 让 typecheck 门不覆盖 vendor 测试 | 低 | §4.5 已显式记录代价；不把门 1 绿当作 vendor 证据。后续如需硬化，方案 B 是现成路径。✅ **实施结果（2026-09-11）**：`tsc --listFiles` 实测 vendor **18 个非测试源码**在根编译程序内、**0 个测试**；vendor 正确性证据取自 `test:vendor`（78/78）。 |
 
 ### 开放问题（需在实施中回答，不阻塞启动）
 
-| # | 问题 | 何时回答 |
-|---|---|---|
-| Q-1 | vitest `resolve.alias` 对 `bun:test` 是否够用，还是需要自定义 resolver plugin？（受 vitest 4 解析行为影响） | P1-T5 首次跑 `test:vendor` 时 |
-| Q-2 | 上游 6 个测试文件在 vitest 下是否有**行为差异**导致的失败（bun 与 vitest 在 `expect` 语义、快照、`test.each` 上的细节差异）？ | 同上。若出现，逐个判定是"测试框架差异"（可 shim）还是"vendor 引入的真实缺陷"（升级为风险） |
-| Q-3 | `diff@9.0.0` 的 `createTwoFilesPatch` 在 Node 24 + ESM 下的行为是否与 bun 下一致（影响 `diff-utils.test.ts`）？ | 同上 |
+| # | 问题 | 何时回答 | 实测结论（2026-09-11，实施期） |
+|---|---|---|---|
+| Q-1 | vitest `resolve.alias` 对 `bun:test` 是否够用，还是需要自定义 resolver plugin？（受 vitest 4 解析行为影响） | P1-T5 首次跑 `test:vendor` 时 | ✅ **alias 足够**。vitest **4.1.11** 下 `resolve.alias: { 'bun:test': 'vitest' }` 即可，**未**使用自定义 resolver plugin；6 个 `bun:test` 测试文件**零源码改动**全绿。 |
+| Q-2 | 上游 6 个测试文件在 vitest 下是否有**行为差异**导致的失败（bun 与 vitest 在 `expect` 语义、快照、`test.each` 上的细节差异）？ | 同上。若出现，逐个判定是"测试框架差异"（可 shim）还是"vendor 引入的真实缺陷"（升级为风险） | ✅ **无差异导致的失败**：`pnpm test:vendor` **78/78 一次通过**（6 文件），未触发"框架差异 vs 真实缺陷"分流。该分流标准保留给下一个包。 |
+| Q-3 | `diff@9.0.0` 的 `createTwoFilesPatch` 在 Node 24 + ESM 下的行为是否与 bun 下一致（影响 `diff-utils.test.ts`）？ | 同上 | ✅ **行为一致**：`src/diff-utils.test.ts` **9 tests 全绿**（Node 24.19 / ESM / `diff@9.0.0`），无 bun/Node 差异。 |
 
 ## 7. 工作包与估算
 

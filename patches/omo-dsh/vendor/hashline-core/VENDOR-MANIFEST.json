@@ -159,11 +159,13 @@
     {
       "class": "modification",
       "path": "package.json",
-      "kind": "field-added",
+      "kind": "fields-added",
       "field": "license",
       "value": "SUL-1.0",
       "decision": "D15.1",
-      "why": "verify-licenses scores a missing field as MISSING/FAIL; upstream permission comes from the repository-root LICENSE.md"
+      "additionalField": "scripts.test:vitest",
+      "additionalValue": "pnpm -w exec vitest run patches/omo-dsh/vendor/hashline-core",
+      "why": "Two additions, one entry: (1) verify-licenses scores a missing license field as MISSING/FAIL; upstream permission comes from the repository-root LICENSE.md (D15.1); (2) a test:vitest script is added so the vendored tests run under this repo's toolchain, while the upstream bun `test` script is retained. All other fields are unchanged."
     },
     {
       "class": "modification",
@@ -182,7 +184,7 @@
       "path": "src/test-support/unsafe-test-value.ts",
       "kind": "copied-from-outside-package",
       "upstreamPath": "test-support/unsafe-test-value.ts",
-      "why": "the 4-line type helper the modified test above now imports; content is verbatim, but it is not one of the package's 26 upstream files, so it is tracked as its own class rather than as a vendored file"
+      "why": "the 5-line type helper the modified test above now imports; content is verbatim, but it is not one of the package's 26 upstream files, so it is tracked as its own class rather than as a vendored file"
     },
     {
       "class": "addition",

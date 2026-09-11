@@ -75,7 +75,7 @@ coverage table is [`docs/plans/phase1-dev/phase1-license-attribution.md`](docs/p
 | 24 | `src/validation.test.ts` | `verbatim` | — |
 | 25 | `src/validation.ts` | `verbatim` | — |
 | 26 | `src/xxhash32.ts` | `verbatim` | Probes the Bun binding via `globalThis`, with a pure-JS fallback |
-| 27 | `src/test-support/unsafe-test-value.ts` | `包外复制` | Content verbatim, but copied from the upstream **out-of-package** path `test-support/unsafe-test-value.ts` (4-line type helper) — not one of the package's 26 upstream files |
+| 27 | `src/test-support/unsafe-test-value.ts` | `包外复制` | Content verbatim, but copied from the upstream **out-of-package** path `test-support/unsafe-test-value.ts` (5-line type helper) — not one of the package's 26 upstream files |
 | 28 | `NOTICE.md` (package root) | `本项目新增` | **Not upstream content:** the prominent "modified" notice required by SUL-1.0 (D15 ¶3, N-1) |
 | 29 | `VENDOR-MANIFEST.json` (package root) | `本项目新增` | **Not upstream content:** source tag/commit + per-file sha256 + `deviations[]` |
 
