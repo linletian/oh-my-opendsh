@@ -11,7 +11,7 @@
 > version CI now pins) · Research basis: [`dsh-0.1.5-rc.1-review.md`](./dsh-0.1.5-rc.1-review.md)
 > · Pitfall records: [`mvp-pitfalls.md`](./mvp-pitfalls.md) §7 (P-20)
 >
-> **Chinese twin: outstanding** — same deliberate deferral as the review doc; see its header.
+> **中文版**: [`dsh-0.1.5-rc.1-upgrade_zh-CN.md`](./dsh-0.1.5-rc.1-upgrade_zh-CN.md)（2026-09-11 交付；此前与复核报告同样刻意 EN-only——原 follow-up 见 PRD §12，已关闭）。
 
 ## What was broken, and what the gate scores are now
 

@@ -9,8 +9,7 @@
 > - Method: (1) enumerate every DSH surface the MVP touches; (2) `git diff 15148dbd9a..dsh-v0.1.5-rc.1` per package; (3) **run the MVP's own gates against 0.1.5-rc.1** — `doctor-lite`, `verify-concerto-static`, `check-docs-consistency`, `vitest run`, `tests/e2e/drive.mjs`, `prove-explore-*.mjs`; (4) drive a real `dsh web` boot + `session/create` RPC against the installer-materialized preset
 
 ---
->
-> **Chinese twin: outstanding.** `docs/` docs are normally EN+zh pairs (cf. `dsh-0.1.2-review.md`). This one and its companion `dsh-0.1.5-rc.1-upgrade.md` are deliberately EN-only for now so the record lands with the change it describes; the translation is a follow-up, tracked in PRD §12.
+> **中文版**: [`dsh-0.1.5-rc.1-review_zh-CN.md`](./dsh-0.1.5-rc.1-review_zh-CN.md)（2026-09-11 交付；此前刻意 EN-only，以便记录随它所描述的变更一同落地——原 follow-up 见 PRD §12，已关闭）。
 
 ## 1. Verdict
 
