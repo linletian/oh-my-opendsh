@@ -125,7 +125,7 @@
 //     outcome that the target file never appears on disk.
 //   explore-nested-delegation-denied (AC-6b): the mock scripts the explore
 //     child (depth 1) calling `explore` again; since the F1 hardening
-//     (2026-09-05) the deny list includes the delegation tool itself, so the
+//     (2026-09-04) the deny list includes the delegation tool itself, so the
 //     child is NEVER offered `explore` and the call is rejected as an unknown
 //     tool — asserted verbatim: 'Error: unknown tool "explore"' (dsh-tools
 //     ToolNotFoundError + toolErrorResult wrap), the tool's ABSENCE from the
@@ -289,7 +289,7 @@ function demoScript(sandbox) {
 //                  ${attempted} exceeds maxDepth ${max}` (lib/index.js:470)
 //                  → same wrap → 'Error: subagent depth 2 exceeds maxDepth 1'.
 const UNKNOWN_TOOL_WRITE_RESULT = 'Error: unknown tool "write"'
-// F1 hardening (2026-09-05): with `explore` in the child's deny list, the
+// F1 hardening (2026-09-04): with `explore` in the child's deny list, the
 // nested attempt is rejected as an unknown tool — the depth gate (which
 // stays as defense-in-depth) no longer fires in this scenario.
 const UNKNOWN_TOOL_EXPLORE_RESULT = 'Error: unknown tool "explore"'
@@ -1225,7 +1225,7 @@ export function analyzeExploreNestedDelegationDenied(
   )
   const checks = {
     ...givens,
-    // F1 hardening (2026-09-05): `explore` is PHYSICALLY ABSENT from the
+    // F1 hardening (2026-09-04): `explore` is PHYSICALLY ABSENT from the
     // child's advertised tools — the deny list includes the delegation tool
     // itself (stronger than the T13 depth cap, which stays as
     // defense-in-depth).

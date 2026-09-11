@@ -269,7 +269,7 @@ if (validated.provider !== 'spawn') problems.push(`provider=${validated.provider
 if (validated.toolName !== 'explore') problems.push(`toolName=${validated.toolName}`)
 if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${validated.backgroundMode}`)
 if (validated.maxDepth !== 1) problems.push(`maxDepth=${validated.maxDepth}`)
-// F1 fix (2026-09-05): the deny list also names the delegation tool itself, so the
+// F1 fix (2026-09-04): the deny list also names the delegation tool itself, so the
 // child physically cannot delegate (AC-6b parity with the current-DSH path).
 if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit', 'explore'] })) {
   problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)}`)

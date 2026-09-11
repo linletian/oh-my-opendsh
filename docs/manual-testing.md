@@ -1,4 +1,4 @@
-# Manual Testing Guide — Concerto MVP (dsh 0.1.0-rc.6)
+# Manual Testing Guide — Concerto MVP (dsh 0.1.5-rc.1)
 
 > **Primary document (English).** 中文翻译见 [手工测试验证指南](./manual-testing_zh-CN.md).
 
@@ -7,26 +7,28 @@ This guide is for a developer who wants to run the MVP by hand **today**. Every 
 ## Current state
 
 - MVP closed: FR-1~FR-8 implemented, V1~V4 verified.
-- All automated gates green on **dsh 0.1.0-rc.6** (the CI pin; effective local runtime = rc.6 umbrella + rc.7-scheme deps, P-11.5).
-- The same chain verified green on a source build of 0.1.2-alpha.1; CI flip pending npm publish.
+- All automated gates green on **dsh 0.1.5-rc.1** (the CI pin, decision D7; L1 + L2 both green — see [the upgrade record](./dsh-0.1.5-rc.1-upgrade.md)).
+- The intermediate 0.1.2-alpha.1 verification line was superseded by the 0.1.5-rc.1 bump (2026-09-10, PRD §12).
 - Manual testing adds the **real-model layer** (PRD §8 L4): delegation compliance, answer quality, and the AC-4/AC-5 eyeball checks that mock-LLM e2e cannot prove.
 
 ## What the MVP is
 
 A 5th run mode, 协奏模式 / **Concerto Mode** (preset id `concerto`, trust user):
 
-- Conductor `omo-sisyphus` + read-only subagent `omo-explore` (tool name `explore`, toolFilter deny `[write, edit]`, maxDepth 1).
+- Conductor `omo-sisyphus` + read-only subagent `omo-explore` (tool name `explore`, toolFilter deny `[write, edit, explore]` — post-F1 the delegation tool itself is also denied, so the child physically cannot delegate; maxDepth 1 stays as defense-in-depth).
 - Hard-blocks injection + dual model routes.
 - Defaults: sisyphus on `deepseek-official/deepseek-v4-pro` (env `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL`); explore on `deepseek/deepseek-v4-flash` via llm-pi-ai (env `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL`).
 
 ## Prerequisites
 
 1. Node 24 and pnpm.
-2. dsh 0.1.0-rc.6 on PATH:
+2. dsh 0.1.5-rc.1 on PATH:
 
    ```bash
    dsh --version
    ```
+
+   Install exactly the pinned version, the way CI does: `npm i -g @deepseek-ai/dsh@0.1.5-rc.1`.
 
 3. Repo deps installed (`node_modules` present).
 4. ONE DeepSeek API key covering BOTH routes, available either as:
@@ -37,7 +39,7 @@ A 5th run mode, 协奏模式 / **Concerto Mode** (preset id `concerto`, trust us
 
    or already stored in `~/.dsh/.credentials.yaml` (present on this machine — smoke-real reads it READ-ONLY and injects it into its sandbox).
 
-> **CAUTION:** never naive-reinstall dsh. `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` today pulls rc.8 deps and breaks the stack (P-11.5 landmine; see the validated-tree restore recipe there).
+> **CAUTION:** install the pinned version exactly (`@0.1.5-rc.1`); never substitute another rc. rc-era lesson (P-11.5): a naive `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` pulled rc.8 deps and broke the stack — see P-11.5 for the validated-tree restore recipe.
 
 ## L0 — Zero-cost automated smoke
 
@@ -47,7 +49,7 @@ No key needed. Re-run any time. These touch neither the real `~/.dsh` nor real k
 scripts/ci-local.sh
 ```
 
-Expected: `PASS — all 5 gates green` (typecheck, 104 unit tests, mock-LLM e2e 4 scenarios, doctor-lite, licenses).
+Expected: `PASS — all 8 gates green` (typecheck, 104 unit tests, mock-LLM e2e 4 scenarios, doctor-lite, licenses, concerto static, docs consistency, session-free proofs).
 
 ```bash
 scripts/cold-start.sh
@@ -78,7 +80,7 @@ What it does: boots a real dsh (web profile + plugin) in a throwaway sandbox, se
   - AC-5 two distinct routes.
   - Plus `verdict.json`, `routes.json` (every request/header of parent+child), `session-parent.jsonl` / `session-child.jsonl`, `boot.log`, `llm.providers.json`.
 - A previous real run's evidence exists at `.omo/evidence/smoke-real-2026-08-21-*` as a reference of what a PASS looks like.
-- Note: `smoke-real.mjs` still rides the rc.6 flat web-RPC (not yet adapted to 0.1.2's token transport — P-11.6; fine today because rc.6 is the pin).
+- Note: `smoke-real.mjs` is transport-adaptive (rc.6 flat web-RPC and the 0.1.2+ token transport; P-11.6 closed).
 
 ## L2 — Interactive web-UI testing (real dsh home)
 
@@ -105,7 +107,7 @@ llm-pi-ai:
 dsh --profile web --patch ./cordis.yml --port 4173
 ```
 
-Readiness line: `dsh web: http://127.0.0.1:4173` (rc.6: NO token in the URL; on a future 0.1.2 runtime the line will carry `?token=` — open the FULL URL then). Open the URL in a browser.
+Readiness line: `dsh web: http://127.0.0.1:4173/?token=<launch-token>` — on the pinned 0.1.5-rc.1 the URL carries a launch token (browser auth since 0.1.2): open the FULL URL.
 
 ### Mode + model selection
 
@@ -113,30 +115,32 @@ Pick 协奏模式 / Concerto Mode in the mode selector (user-trust roster entry;
 
 ### Five scenarios
 
-Session JSONL lives at `$DSH_HOME/sessions/<path>/session.jsonl`.
+Session JSONL lives at `$DSH_HOME/sessions/<path>/session.vN.jsonl` (the filename carries the session-format generation — `v3` today; an at-rest file may be compressed to `session.vN.jsonl.zstd`, in which case pipe through `unzstd -c` first).
 
 **S1 — Basic chat.** Ask anything; the conductor answers directly. Verify: the session log's `request/header` shows provider `deepseek-official`, model `deepseek-v4-pro`:
 
 ```bash
-grep -E '"(provider|model)"' "$DSH_HOME/sessions/<path>/session.jsonl"
+grep -E '"(provider|model)"' "$DSH_HOME/sessions/<path>/session.v3.jsonl"
 ```
 
 **S2 — Delegation chain (AC-4/AC-5).** Type e.g. `用 explore 查一下这个仓库的 README 讲了什么，然后总结给我`. Expected: conductor calls the `explore` tool → a CHILD session runs the read-only research → result returns → conductor summarizes. Verify: a second (child) session JSONL appears; the parent's `subagent/descriptor` + the child's `request/header` show the child route `deepseek/deepseek-v4-flash` ≠ parent `deepseek-official/deepseek-v4-pro`:
 
 ```bash
-grep -E '"(provider|model)"' "$DSH_HOME/sessions/<parent>/session.jsonl" "$DSH_HOME/sessions/<child>/session.jsonl"
+grep -E '"(provider|model)"' "$DSH_HOME/sessions/<parent>/session.v3.jsonl" "$DSH_HOME/sessions/<child>/session.v3.jsonl"
 ```
 
 **S3 — Read-only denial (AC-6a).** Ask: `让 explore 把 README 里的项目名改成 foo`. Expected: the explore child's write/edit attempts are rejected with `Error: unknown tool "write"` (or `"edit"`); the file on disk is unchanged. Verify in the child JSONL tool results:
 
 ```bash
-grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.jsonl"
+grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v3.jsonl"
 ```
 
-**S4 — Depth cap (AC-6b).** Ask: `让 explore 自己再派一个子代理去查别的东西`. Expected: the child's nested-delegation attempt is rejected `Error: subagent depth 2 exceeds maxDepth 1` while the `explore` tool stays visible to it. Verify in the child JSONL:
+Caveat (P-21, accepted threat-model boundary): the denial is **tool-layer**, not a capability boundary — the child keeps `bash`, so a determined or instructed child can still write via the shell, or even spawn an unrestricted `dsh` process (P-21.2). Do not read S3 as "writes are unreachable".
+
+**S4 — No nested delegation (AC-6b).** Ask: `让 explore 自己再派一个子代理去查别的东西`. Expected (post-F1): the `explore` tool is **physically absent** from the child's roster, so the child either reports honestly that it has no delegation tool, or its attempt is rejected `Error: unknown tool "explore"` — both pass; the depth cap (`maxDepth: 1`) stays on as defense-in-depth but no longer fires. Verify in the child JSONL:
 
 ```bash
-grep 'maxDepth' "$DSH_HOME/sessions/<child>/session.jsonl"
+grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v3.jsonl"
 ```
 
 **S5 — Hard-blocks persona (FR-6).** The explore child carries the injected Hard Blocks + Anti-Patterns sections; behaviorally it should cite read-only discipline when refusing writes (observable in its replies). The injection itself is boot-logged as `[omo-agents]` markers and proven structurally by the L0 probe.
@@ -154,7 +158,7 @@ Ctrl-C (SIGTERM exits 0).
 | S1 | AC-2 / AC-3 |
 | S2 | AC-4 / AC-5 + V2 |
 | S3 | AC-6a + V4 (toolFilter) |
-| S4 | AC-6b + V4 (maxDepth) |
+| S4 | AC-6b + V4 (delegation-tool absence + maxDepth backstop) |
 | S5 | FR-6 + V3 |
 
 AC-9 (docs) already closed at MVP sign-off.
@@ -167,11 +171,10 @@ AC-9 (docs) already closed at MVP sign-off.
 | Concerto missing from the mode roster | Plugin didn't load: check the boot log for `[omo-agents] loaded`; the preset is authored into `$DSH_HOME/.agent-presets/concerto/` at boot — check that dir exists. |
 | `MISSING_CREDENTIAL` naming the explore route | The `settings.yaml` llm-pi-ai block (L2-b) is missing, or the key is absent from credentials.yaml/env. |
 | `ctx.agents.get is not a function` anywhere | You have rc.8 deps (naive reinstall pulled them) — see P-11.5 for the validated-tree recipe. |
-| Boot readiness line carries `?token=` | You are on 0.1.2: open the FULL URL (browser auth); our harness scripts already handle both transports. |
-| Conductor can now fetch URLs directly | tool-web fetch: false→true following the 0.1.2 standard — intended behavior delta, see the preset's derivation ledger. |
+| Boot readiness line carries `?token=` | Normal on the pinned 0.1.5-rc.1 (browser auth since 0.1.2): open the FULL URL; our harness scripts already handle both transports. |
+| Conductor can fetch URLs directly | tool-web `fetch: true` follows the shipped standard preset (derivation discipline; both concerto presets carry it since the 0.1.5-rc.1 parity pass) — intended behavior, see the preset's derivation ledger. |
 
 ## Current limits
 
-- CI flip to 0.1.2 pending npm publish (PRD §12).
-- `smoke-real.mjs` transport adaptation rides with it (P-11.6).
+- The DSH pin is 0.1.5-rc.1 (done 2026-09-10, PRD §12); the earlier "CI flip to 0.1.2" item is superseded, and `smoke-real.mjs`'s transport adaptation landed with it (P-11.6 closed).
 - Shrinkwrap of the dsh dep tree is a registered follow-up (P-11.5).
