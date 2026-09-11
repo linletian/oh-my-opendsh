@@ -56,8 +56,8 @@ Full guide (options, adaptation, uninstall — incl. a plain-language "what the 
 
 🟢 **MVP v0.2 line; dsh 0.1.5-rc.1 pinned and verified (L1+L2)**
 
-- ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 14 sections: 2026-08-16 main body + 2026-08-19 follow-up research)
-- ✅ 11 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
+- ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 15 sections: 2026-08-16 main body + 2026-08-19 follow-up research + 2026-08-29 follow-up note)
+- ✅ 13 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
 - ✅ MVP PRD adopted ([`docs/mvp-prd.md`](./docs/mvp-prd.md): Concerto Mode + 1 Agent + 1 Subagent minimal skeleton, decision D11)
 - ✅ MVP closed — FR-1~FR-8 implemented, V1~V4 verified (see [mvp-pitfalls](./docs/mvp-pitfalls.md))
 - ✅ **dsh 0.1.5-rc.1 pin landed** — the 0.1.2-alpha.1 review ([English](./docs/archived/dsh-0.1.2-review.md) / [中文](./docs/archived/dsh-0.1.2-review_zh-CN.md)) was superseded before it was ever pinned (that tag was never published); the upgrade to 0.1.5-rc.1 is verified L1+L2 — see the [review](./docs/dsh-0.1.5-rc.1-review.md) / [upgrade record](./docs/dsh-0.1.5-rc.1-upgrade.md) and PRD §12
