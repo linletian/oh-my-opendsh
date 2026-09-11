@@ -1,5 +1,6 @@
 packages:
   - patches/omo-dsh/*
+  - patches/omo-dsh/vendor/*
 minimumReleaseAgeExclude:
   - '@vitest/expect@4.1.11'
   - '@vitest/mocker@4.1.11'

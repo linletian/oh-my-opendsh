@@ -59,6 +59,7 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 - ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，16 节：2026-08-16 主体 + 2026-08-19 追加调研 + 2026-08-29 follow-up note + 2026-09-11 OMO v5.0 勘误）
 - ✅ 14 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
 - ✅ **OMO v5.0 已调研；基线冻结在 v4.19.4**（2026-09-11，决策 D14）——全量移植开发遵循 [ROADMAP](./docs/roadmap_zh-CN.md)；v5 发现沉淀于两份调查报告（[架构](./docs/omo-v4.19.4-vs-v5.0.0-beta.53-architecture-investigation.md)、[agent 团队](./docs/omo-v4.19.4-vs-v5.0.0-beta.53-agent-team-investigation.md)）与可行性报告 §16
+- ✅ **`@oh-my-opencode/hashline-core` 已 vendor——但尚未被消费**（2026-09-11，Phase 1）——OMO v4.19.4 的该包已 vendor 到 [`patches/omo-dsh/vendor/hashline-core`](./patches/omo-dsh/vendor/hashline-core)，作为 pnpm workspace 包、其测试已纳入 `pnpm vitest run`；**目前没有任何消费方**：没有 preset、也没有协奏模式代码 import 它，因此这**不是**"hashline 已接入"——来源、逐文件署名与"已修改"声明见 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)，计划与合规核对表见 [`docs/plans/phase1-dev/`](./docs/plans/phase1-dev/)
 - ✅ MVP PRD 已采纳（[`docs/mvp-prd_zh-CN.md`](./docs/mvp-prd_zh-CN.md)：协奏模式 + 1 Agent + 1 Subagent 最小骨架，决策 D11）
 - ✅ MVP 已结项——FR-1~FR-8 已实现、V1~V4 已验证（见 [mvp-pitfalls](./docs/mvp-pitfalls_zh-CN.md)）
 - ✅ **dsh 0.1.5-rc.1 的 pin 已落地**——0.1.2-alpha.1 的复核（[English](./docs/archived/dsh-0.1.2-review.md) / [中文](./docs/archived/dsh-0.1.2-review_zh-CN.md)）在它被 pin 之前就已被取代（那个 tag 从未发布）；升级到 0.1.5-rc.1 已通过 L1+L2 验证——见[复核报告](./docs/dsh-0.1.5-rc.1-review.md) / [升级记录](./docs/dsh-0.1.5-rc.1-upgrade.md)与 PRD §12

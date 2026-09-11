@@ -8,5 +8,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["patches", "scripts", "tests", "vitest.config.ts"]
+  "include": ["patches", "scripts", "tests", "vitest.config.ts"],
+  "exclude": ["patches/omo-dsh/vendor/**/*.test.ts"]
 }

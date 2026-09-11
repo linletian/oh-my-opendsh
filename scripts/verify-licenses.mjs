@@ -20,9 +20,10 @@
  *
  * ALLOWLIST (plan T3 + task spec): MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause,
  * ISC, 0BSD, CC0-1.0, MIT-0, Unicode-DFS-2016, BlueOak-1.0.0, Python-2.0.
- * SUL-1.0 is allowed ONLY when the package name contains "omo" or
- * "oh-my-openagent". License expressions: "X OR Y" passes if any branch is
- * allowed; "X AND Y" requires all branches.
+ * SUL-1.0 is allowed ONLY when the package name contains a whole-word "omo",
+ * "oh-my-openagent", or "oh-my-opencode" (the last added by decision D16).
+ * License expressions: "X OR Y" passes if any branch is allowed; "X AND Y"
+ * requires all branches.
  *
  * EXTENSION BEYOND THE PLAN'S LIST — MPL-2.0 (see UNIVERSAL_WHITELIST below):
  *   vite@8.2.1 (a hard dependency of vitest@4, declared in its
@@ -35,6 +36,24 @@
  *   accepts MPL-2.0 into the whitelist — the authoritative record lives
  *   there; this comment is only the implementation note. If the policy is
  *   ever reversed: delete the entry below and pin/replace vite.
+ *
+ * EXTENSION BEYOND THE ORIGINAL SUL NAME GATE — `oh-my-opencode` (see
+ * SUL_ALLOWED_NAME below):
+ *   The vendored package @oh-my-opencode/hashline-core (Phase 1,
+ *   patches/omo-dsh/vendor/hashline-core) carries "license": "SUL-1.0" —
+ *   recorded by decision D15 ¶1 — but the original gate matched only a
+ *   whole-word "omo" or the literal "oh-my-openagent", so it REJECTED the
+ *   upstream scope `@oh-my-opencode/*`: the gate failed even with the field
+ *   present. DECIDED: decision D16 (docs/decisions.md /
+ *   docs/decisions_zh-CN.md, 2026-09-11) authorizes extending the name gate to
+ *   the whole `oh-my-opencode` scope, on the same footing as D12's MPL-2.0
+ *   entry above: it records the upstream's actual license (OMO repository-root
+ *   LICENSE.md = SUL-1.0, verified byte-for-byte) rather than working around
+ *   the check, and it is explicitly authorized — not an ad-hoc bypass of
+ *   ROADMAP §3 constraint 4. The authoritative record lives in the decision
+ *   docs; this comment is only the implementation note. Scope: all 19 upstream
+ *   core packages (D16 ¶5). If the policy is ever reversed: drop the
+ *   `oh-my-opencode` alternative from SUL_ALLOWED_NAME.
  *
  * Usage:
  *   scripts/verify-licenses.sh [--json] [--root <dir>]
@@ -69,10 +88,13 @@ const UNIVERSAL_WHITELIST = new Set([
 /**
  * SUL-1.0 is allowed only for packages whose name matches this pattern:
  * a whole-word "omo" (start/end or a non-letter boundary — rejects loose
- * substrings like "comodo", "promo", "omocha") or the "oh-my-openagent" name.
+ * substrings like "comodo", "promo", "omocha"), the "oh-my-openagent" name, or
+ * the upstream "oh-my-opencode" scope (D16, 2026-09-11 — see the header note
+ * for the decision record; this alternative is the authorized whitelist-class
+ * change, not an out-of-scope widening).
  * R2-4: the previous /omo|oh-my-openagent/i matched any "omo" substring.
  */
-export const SUL_ALLOWED_NAME = /(^|[^a-z])omo([^a-z]|$)|oh-my-openagent/i;
+export const SUL_ALLOWED_NAME = /(^|[^a-z])omo([^a-z]|$)|oh-my-openagent|oh-my-opencode/i;
 
 /** Dirs the in-repo walk never descends into (incl. `.codegraph` symlink). */
 const EXCLUDED_DIRS = new Set(['node_modules', '.git', '.omo', '.codegraph', 'dist']);

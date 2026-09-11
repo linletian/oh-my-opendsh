@@ -37,7 +37,9 @@ Every phase is governed by the README's two principles (DSH-native first; honor 
 
 Delivered: `concerto` run mode (persistent preset), omo-sisyphus conductor persona + omo-explore subagent binding, dual model routes (deepseek-official + pi-ai), Hard-Blocks injection listener, doctor-lite + mock e2e, release process (D13). Pitfalls P-1–P-21 recorded in `docs/mvp-pitfalls.md`.
 
-### Phase 1 — Core-source vendoring spike (revised O1)
+### Phase 1 — Core-source vendoring spike (revised O1) ✅ (closed 2026-09-11)
+
+Delivered: `hashline-core` (`@oh-my-opencode/hashline-core` @ v4.19.4, commit `b072d279…`) vendored into `patches/omo-dsh/vendor/` and wired into the pnpm workspace + vitest (6 files / 78 tests green); `THIRD_PARTY_NOTICES.md` **per-file** attribution of 29 rows (D15); `verify-licenses` green (D15 `license` field + D16 name-gate extension, `checked` 51→52); `docs/plans/phase1-dev/vendoring-playbook.md` field-record version. **Vendored, not consumed** (the preset does not wire it yet).
 
 - **Goal**: prove the git-vendor intake path end-to-end on the smallest useful surface.
 - **Scope**: pick ONE core package (candidate: `hashline-core` — self-contained, no harness deps); vendor it from the chosen tag into `patches/omo-dsh/vendor/`; build + unit-test green under our toolchain; attribution + license entries landed.
