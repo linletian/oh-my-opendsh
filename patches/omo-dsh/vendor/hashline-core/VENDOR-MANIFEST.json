@@ -1,0 +1,201 @@
+{
+  "upstream": {
+    "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+    "tag": "v4.19.4",
+    "commit": "b072d279110bdda2c6ac2525d0d24dc54d16148a",
+    "path": "packages/hashline-core",
+    "license": "SUL-1.0 (repository root LICENSE.md; the package manifest carries no license field)"
+  },
+  "vendoredAt": "2026-09-11",
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "e96d630a02b6d98bed6e0eefdadef1be566047d17328377e784e19a25ef15ff3",
+      "origin": "verbatim"
+    },
+    {
+      "path": "package.json",
+      "sha256": "a6d7ced094acef37e3163623fb33874e181e6d9d6393ca32b8712ad97c4c51ae",
+      "origin": "modified"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "022ebfb88477ed80c0457a0fef115b1fabc0956d47aed634f5d917d9dcbeed43",
+      "origin": "modified"
+    },
+    {
+      "path": "src/autocorrect-replacement-lines.ts",
+      "sha256": "e56e1c4dcfade8a3dc835745aa4931640487805179ec4872b10f564678fdfd06",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/constants.ts",
+      "sha256": "a09c16206f1e9dccda99786c7538eba94eadb7b99c240a8f9375e7fa02643031",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/diff-utils.test.ts",
+      "sha256": "b40f158704890ae6253938af46cb1bb6ecb295c97dbcbc101a58ad3ebd5c103d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/diff-utils.ts",
+      "sha256": "7ac41c6d22a64dcf6f158b8081df07daf1d77fb52bc273a416df5fdc085b1232",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/edit-deduplication.ts",
+      "sha256": "b4735f609e26a19ab57c4f54c6cf7a3f4b50681fdca638b28ec1b599da973c91",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/edit-operation-primitives.ts",
+      "sha256": "a91ecae52922ce0e1eefc19bd1b64234af281fe2a29d73d33cdac3aba0105acc",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/edit-operations.test.ts",
+      "sha256": "04a8955c7d99060515392c2c60847c69f4b3bf31cf4f2973b902ada85f8409d0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/edit-operations.ts",
+      "sha256": "66cdae2fa9df12d9884eda40475556802ade58421bb44e90ec1af291ab86af2a",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/edit-ordering.ts",
+      "sha256": "0d832fabdf39153a72931971cc2490eb1a4c530e4bf12bc74116f1be18b8e076",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/edit-text-normalization.ts",
+      "sha256": "f47e6d9a3a9496cfbf99127176fa221018579d4ece915c4e24ed4beb1e04bb60",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/file-text-canonicalization.ts",
+      "sha256": "2d507e4bd4bdf8d348b5823367d24f36b6702b9cee31cd6406f51c5420124dbb",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/hash-computation.test.ts",
+      "sha256": "07b1dcf6da59d21555fcf81ce7fe8a02875975e5d231d39d167b7df171499fa6",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/hash-computation.ts",
+      "sha256": "faf4c01919b59375a07e0012381f1c0ddc77655bc04e4658ec444681ebc2f372",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/hashline-chunk-formatter.ts",
+      "sha256": "aebcd1f4c77533778eb6846ce57ffbc2af793bdd5aa3877cb6bd0993214fa8dd",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/hashline-edit-diff.ts",
+      "sha256": "470a81add6a0e97f5e28858096ae2b44bfc6cc5b652ca64ed0c1c4bce1bf63d4",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "8e3c3f13339a3f6c6c355e8111d274a39fb2b92eb232c563a1ed9d95055b2d21",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/normalize-edits.test.ts",
+      "sha256": "3c3c7ad2faf808e2708609338e8fcc6c594e7f5c52bce58f5da946a5aef4c389",
+      "origin": "modified"
+    },
+    {
+      "path": "src/normalize-edits.ts",
+      "sha256": "20f5fffbe7cc9990b681be2a01b7518bf703da7ab12892a4809571edd06c78b1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/smoke-untested-modules.test.ts",
+      "sha256": "413b6ff3aaa55d09a045070f3c0851b1588ccb674690c9c366217a6c919d9656",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/types.ts",
+      "sha256": "a6c1219ee291f7d790bfd3ca837bd59b28baa783711430a7d71e282643db53d5",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/validation.test.ts",
+      "sha256": "991d1e849e123e982fae1fc1ac34d180bcdb687323fbd0a36678c1b51278d11d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/validation.ts",
+      "sha256": "e8273bc53a48f8b3aefecdb157e9e900620e05a1e0efa0e4b1765130a01bffc9",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/xxhash32.ts",
+      "sha256": "02bee6d882d2ebf9fcc8d13545741e80efdff9fa099263725793382bfe7306bd",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/test-support/unsafe-test-value.ts",
+      "sha256": "96822c1314cb05b96acf11a0a4cd5c8348f7a0f1d56690830cacb08433a148e1",
+      "origin": "copied-in"
+    },
+    {
+      "path": "NOTICE.md",
+      "sha256": "74408e5e743cae7d2ae0d255d37cce66f4eb06284c19aef93fdfce53491f4430",
+      "origin": "project-new"
+    },
+    {
+      "path": "VENDOR-MANIFEST.json",
+      "sha256": null,
+      "note": "self-referential; hash omitted",
+      "origin": "project-new"
+    }
+  ],
+  "deviations": [
+    {
+      "class": "modification",
+      "path": "package.json",
+      "kind": "field-added",
+      "field": "license",
+      "value": "SUL-1.0",
+      "decision": "D15.1",
+      "why": "verify-licenses scores a missing field as MISSING/FAIL; upstream permission comes from the repository-root LICENSE.md"
+    },
+    {
+      "class": "modification",
+      "path": "tsconfig.json",
+      "kind": "rewritten",
+      "why": "no bun-types in this repo; upstream lib/types replaced with the repo-root ES2022 + node shape, test files excluded"
+    },
+    {
+      "class": "modification",
+      "path": "src/normalize-edits.test.ts",
+      "kind": "one-line-import-rewrite",
+      "why": "upstream imports ../../../test-support/unsafe-test-value from outside the package; the helper is vendored into src/test-support/ instead"
+    },
+    {
+      "class": "copied-in",
+      "path": "src/test-support/unsafe-test-value.ts",
+      "kind": "copied-from-outside-package",
+      "upstreamPath": "test-support/unsafe-test-value.ts",
+      "why": "the 4-line type helper the modified test above now imports; content is verbatim, but it is not one of the package's 26 upstream files, so it is tracked as its own class rather than as a vendored file"
+    },
+    {
+      "class": "addition",
+      "path": "NOTICE.md",
+      "kind": "project-notice",
+      "decision": "D15.3",
+      "why": "SUL-1.0 'Notices' requires a prominent notice in modified copies; this is the package-level notice"
+    },
+    {
+      "class": "addition",
+      "path": "VENDOR-MANIFEST.json",
+      "kind": "project-record",
+      "why": "this file: provenance + per-file sha256 + the deviation list"
+    }
+  ]
+}
