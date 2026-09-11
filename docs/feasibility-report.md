@@ -27,7 +27,7 @@ DSH is a modern harness framework built on a Cordis plugin tree + dual-face buil
 OMO is a battle-tested harness with over a year of production use. Its design philosophy (11-agent orchestration / 54+ lifecycle hooks / multi-provider LLM routing / Team Mode parallel collaboration / ultrawork continuous drive / hashline edit / etc.) is the project's core value.
 
 - **Preserve OMO's full capability surface** — no capability cuts. 11 agents + 30+ hooks + 5 MCP + Team Mode + hashline + every slash command ported in full.
-- **Directly import OMO source** (do not reimplement) — let OMO upstream's optimizations and bug fixes flow in naturally; simultaneously, **upgrade cost is minimized** (under 1 hour per OMO bump).
+- **Directly import OMO source** (do not reimplement) — let OMO upstream's optimizations and bug fixes flow in naturally; simultaneously, **upgrade cost is minimized** (under 1 hour per OMO bump). *(Upgrade mechanics revised 2026-09-11 by D14: frozen v4.19.4 baseline + SUL-1.0 git vendoring, no standing rebase cadence — see §16.)*
 - **Fully respect OMO's SUL-1.0 open-source License** — framework dual license (MIT OR SUL-1.0); `LICENSES/` contains the OMO LICENSE text verbatim; `THIRD_PARTY_NOTICES.md` provides full attribution; README header has prominent credits.
 - **No PRs to OMO** (avoids their "anti-over-abstraction" maintenance philosophy conflict) — exist as an OMO user, not an OMO contributor.
 - **No commercial sales** (satisfies SUL-1.0's "non-commercial" requirement) — internal use + open source = full compliance.
@@ -46,11 +46,11 @@ OMO is a battle-tested harness with over a year of production use. Its design ph
 
 ## Summary
 
-**Goal**: Bring OMO's capability system (11 agents, 54+ hooks, LSP/AST-grep/codegraph MCP, `/goal`, `/ultrawork`, Team Mode, hashline edit, Rules Injection, etc.) onto the DSH framework as a DSH-official scratch plugin (`dsh --patch` overlay), and build a sustainable patch framework that lets us rebase against OMO upstream in under 1 hour.
+**Goal**: Bring OMO's capability system (11 agents, 54+ hooks, LSP/AST-grep/codegraph MCP, `/goal`, `/ultrawork`, Team Mode, hashline edit, Rules Injection, etc.) onto the DSH framework as a DSH-official scratch plugin (`dsh --patch` overlay), and build a sustainable patch framework that lets us rebase against OMO upstream in under 1 hour. *(Superseded 2026-09-11 by D14: the goal is now a one-time semantic transplant on a frozen v4.19.4 baseline; codegraph is removed from the capability list; see §16 and the [Roadmap](./roadmap.md).)*
 
 **Core conclusions (the four key takeaways)**:
 1. **Feasibility: HIGH.** DSH's extension surface (`agent/*`, `tools/*`, `ctx.goals`, `ctx.shell`, `ctx.fs`, `ctx.skill`, `ctx.jobs`, `ctx.subagent`, `ctx.terminals`, `ctx.plan`, `ctx.compaction`, `ctx.todo`) almost one-to-one maps to OMO's 11 major capabilities. OMO's ROADMAP has already split it into 19 harness-agnostic core packages, which DSH can consume directly without rewriting. DSH's own `dsh-base` bundle already includes `goal/plan/skill/compaction/ralph/workflow/todo/subagent/web-search` — meaning **OMO's 60% capabilities already have native DSH equivalents**. The port is mainly about "getting the mapping and naming right", not "building new implementations".
-2. **Sustainable patch framework: feasible, and DSH is naturally aligned.** DSH's cookbook lists 4 official plugin shapes (tool / hook / UI / protocol-driver), plus the DSH-recommended `dsh --patch ./scratch-plugin/cordis.yml` scratch plugin pattern — DSH is loaded **with zero modifications** to DSH itself. OMO is imported as an npm dependency directly; the upgrade flow = `pnpm update oh-my-opencode` + `pnpm test` (5-minute script + 0–1 hour listener fix).
+2. **Sustainable patch framework: feasible, and DSH is naturally aligned.** DSH's cookbook lists 4 official plugin shapes (tool / hook / UI / protocol-driver), plus the DSH-recommended `dsh --patch ./scratch-plugin/cordis.yml` scratch plugin pattern — DSH is loaded **with zero modifications** to DSH itself. OMO is imported as an npm dependency directly; the upgrade flow = `pnpm update oh-my-opencode` + `pnpm test` (5-minute script + 0–1 hour listener fix). *(The npm-import premise was falsified 2026-09-11: the core packages are `private: true` and never published; intake = git vendoring per D14 — see §16.2.)*
 3. **Not "replacing OMO", but "building a DSH adapter for OMO".** OMO's ROADMAP already treats multi-harness adaptation as a first-class concern (with `omo-opencode`, `omo-codex`, `omo-senpi` as precedent), so "add a DSH adapter" is an officially-sanctioned extension path, consistent with the OMO maintainer's philosophy.
 4. **A hard constraint is already handled: OMO's SUL-1.0 license.** The framework adopts **dual license (MIT OR SUL-1.0)** — OMO source can be imported directly (lowest-cost upgrades), while giving end users a choice. "Free + non-commercial + no sales" already satisfies SUL-1.0. See §7 for details.
 
@@ -649,6 +649,8 @@ If the project proceeds, this research identified the following 12 capabilities 
 > This report is the **research & evidence document**: every decision in the decision record cites this report's sections (by D# / R# / O#) as its basis. This section keeps the **research-stage options analysis** for the 8 open dimensions below (former §10.2) — that is research content; whether each dimension is currently decided is tracked in the decision record (O1–O8). (The earlier draft of this section marked some options as "Recommended" — those labels have been removed because they conflated research-stage analysis with project decision. The "Recommended" labels' underlying analysis is preserved as plain text in the right-hand column.)
 
 ### 10.1 OMO 19 core packages pin strategy
+
+> ✅ **Decided (2026-09-11)**: D14 — and the npm-based premise below was **falsified** (the 19 core packages are `private: true`, never published to npm; §16.2). Intake = git vendoring on a frozen v4.19.4 baseline. The table is kept as a research-phase record only.
 
 | Option | Meaning |
 |---|---|
@@ -1624,3 +1626,33 @@ The DSH subagent service exposes a public `SubagentProvider` contract (`packages
 ### 15.2 Out-of-process providers have zero start capabilities
 
 `NO_START_CAPABILITIES` means exactly what it says: a child in another process cannot honor parent-enforced start features (`agentOptions`/`outputSchema`/`maxDepth`/`toolFilter`/`persona`), so the service rejects any request needing one of them before `start` runs — never accepted-then-ignored (`packages/subagent/subagent/src/out-of-process.ts:51-63`). Consequence for our own design: the per-agent `{provider, model}` routing, `toolFilter`, and numeric `maxDepth` discipline this report relies on holds **only for in-process providers** (`spawn`/`fork`). For codex-class children, the model is pinned in the provider-instance config field `model` (since 0.1.2, `packages/subagent/subagent-codex/src/index.ts:40`), and `maxDepth` can only be written as `'provider-managed'` (see the shipped standard preset, `packages/preset/agent-presets/presets/standard/agent.cordis.yml:216`).
+
+---
+
+## 16. 2026-09-11 follow-up note — OMO v5.0.0-beta survey errata
+
+**Date**: 2026-09-11
+**Status**: Follow-up note (errata, not a reversal). A full survey of upstream OMO v4.19.4 → v5.0.0-beta.53 was conducted (6457 files changed, +727k/-89k). Everything below is grounded in git evidence preserved in two investigation reports: [architecture investigation](./omo-v4.19.4-vs-v5.0.0-beta.53-architecture-investigation.md) and [agent-team investigation](./omo-v4.19.4-vs-v5.0.0-beta.53-agent-team-investigation.md). The decisions this note feeds are **D14** (baseline freeze + vendoring) and the [Roadmap](./roadmap.md).
+
+### 16.1 Version landscape
+
+- **v4.19.4 (2026-08-01) is the last v4 release**; the v4 line is unmaintained (no 4.x tag or maintenance branch since).
+- **v5.0.0-beta**: beta.1 (2026-08-10) → beta.53 (2026-09-11), 53 tags in 33 days (≈1.6/day) on a single `dev` trunk, published to npm dist-tag `beta`. npm state (2026-09-11): `oh-my-openagent`/`oh-my-opencode` `latest`=4.19.4, `beta`=5.0.0-beta.53; the new native-edition package `omo-ai` is beta-channel-only by design.
+
+### 16.2 What v5 changes about this report's claims (errata)
+
+| This report's claim (section) | v5.0 reality | Disposition |
+|---|---|---|
+| "11 agents" roster incl. `metis` / `momus` (§1.2, §2.1) | OpenCode-edition roster **byte-identical** (11 agents unchanged); **senpi edition renamed** `metis`→`plan-consultant`, `momus`→`plan-reviewer` (old ids deprecated, removed next tagged publish); codex edition not renamed | When expanding the Concerto roster, use the v5 role names; mapping to legacy names lives in upstream `packages/utils/src/migration/agent-names.ts` |
+| "LSP/AST-grep/**codegraph** MCP" (§1.2, §8) | **CodeGraph was deleted wholesale** (commit `e5ab78a2d`, first tag v5.0.0-beta.35): MCP server, bootstrap hook, codex component, config block all removed. **ast-grep-mcp returned** (re-scaffolded 2026-08-03, `@oh-my-opencode/ast-grep-mcp`) | **codegraph is removed from the port list**; ast-grep stays |
+| Team Mode design (§2.5, §14) | **No qualitative change.** `team-core` +136/-5, `delegate-core` +17/-7; the 12 `team_*` tools, mailbox, tmux visualization, and worktree automation are unchanged. The v5 doc model ("the lead is always the current session"; members = any resolvable **category worker** or **user-defined agent**; curated read-only agents rejected at parse) matches what v4.19.4's senpi code path already implemented (`TEAM_LEAD_SENTINEL`) — v5 aligns docs and the OpenCode path to that model | Team Mode follow-up designs against the v5 model, which maps more directly onto DSH `ctx.subagent` (main-session conductor + worker sessions) than the v4 doc model did; effort estimate should be revised **downward** |
+| (not in this report) | v5 adds a **third parallel topology**: mass-ulw / `workflow` DAG orchestration (`packages/senpi-task/src/dag/`, journaled waves, external-viewer wire protocol `docs/reference/mass-ulw-protocol.md`) — senpi-only, complementary to teams (no mid-run conversation between DAG nodes) | Registered as a **watch item**; conceptually overlaps DSH's own workflow engine (`dsh-workflow`/`ralph`), which principle #1 says to prefer anyway |
+| (not in this report) | v5 adds **memory-core**, a Letta-Code-style persistent agent memory system (git-backed MemFS, background reflection, facts pipeline), default-on in the senpi edition; plus `model_profiles` (capable/simple-work/deep-work) that select the **main-session model only** and never enter delegation chains | Registered as candidate capability domains, **DSH-native-first** per principle #1 (DSH session/storage for memory; DSH model routing for profiles) |
+| §10.1 O1 premise: "npm import of the 19 core packages" | The 19 core packages are **`private: true` workspace packages in both versions, never published to npm** (all 404 on the registry, 2026-09-11); the published `oh-my-opencode` package exports only a bundled `dist/index.js` | **O1 closed by D14 with its framing revised**: code intake = git vendoring under SUL-1.0, not an npm dependency stream |
+| Rename surface (§8 command list) | `/start-work` → `/ulw-execute` (hard cutover, no alias); `omo` CLI → `omo-agent-toolkit`; `shared/<name>` skill prefixes removed (landed v4.19.4 already); unified `omo.jsonc` config landed **v4.19.3** (not a v5 break) | Follow the new anchors when porting commands/config |
+
+### 16.3 What v5 does NOT change
+
+- The core conclusions (Summary 1–4) stand and are **reinforced**: upstream's completed Core→MCP→Adapters→Platform layering and the ROADMAP's new "Why Not OpenCode-Native" section ("We treat OpenCode as one adapter target among several. Not the center of the architecture.") confirm that a DSH adapter is an officially-sanctioned extension path; v5's team-mode model independently converged on the Concerto posture (the main session is the conductor; workers carry their own model routes).
+- The §1.2 DSH extension-point mapping, the §12/§13 sub-agent routing findings, the §14 test-pyramid analysis, and the MVP's V1–V4 validations are unaffected.
+- The strategic read: **v5's investment is overwhelmingly senpi-side** (omo-senpi +130k lines, components 12→26; the OpenCode hook surface gained zero new modules). For a porter anchored on the shared core + OpenCode surface, v5.x offers little that v4.19.4 lacks — which is precisely why D14's freeze is low-cost.

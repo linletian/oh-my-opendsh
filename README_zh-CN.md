@@ -16,7 +16,7 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 
 ## 项目目标
 
-把 [oh-my-openagent (OMO)](https://github.com/code-yeongyu/oh-my-openagent) 的 harness 能力体系（11 agent、54+ hook、LSP/AST-grep/codegraph MCP、`/goal`、`/ultrawork`、Team Mode、hashline edit、Rules Injection 等）以 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 官方 scratch plugin 形式（`dsh --patch` overlay）接到 DSH 框架上，并搭一个让 OMO 升级时 **1 小时内完成 rebase** 的可持续 patch 工程。
+把 [oh-my-openagent (OMO)](https://github.com/code-yeongyu/oh-my-openagent) 的 harness 能力体系（11 agent、54+ hook、LSP/AST-grep MCP、`/goal`、`/ultrawork`、Team Mode、hashline edit、Rules Injection 等）以 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 官方 scratch plugin 形式（`dsh --patch` overlay）接到 DSH 框架上。这是**一次性语义移植，不是持续依赖**：OMO 基线冻结在 **v4.19.4**（决策 D14），全量移植时的代码引进按 SUL-1.0 以 git vendor 方式进行，上游认知通过在本项目自己的 release 节点读 OMO changelog 维持——不追 beta、不设常驻 rebase 节奏。开发方向由 [ROADMAP](./docs/roadmap_zh-CN.md) 指导。
 
 ## 设计原则
 
@@ -30,7 +30,7 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 
 ### 2. 完整引入 OMO 的 harness 设计哲学，尊重 OMO 开源 License
 - 完整保留 OMO 能力体系（11 agent + 30+ hook + 5 MCP + Team Mode + hashline + 所有 slash command **全量移植**）
-- 直接 import OMO 19 个核心包源码（升级成本最低，5 分钟脚本 + 0–1 小时修 listener）
+- 需要时按 SUL-1.0 vendor OMO core 包源码（决策 D14：19 个 core 包全是 `private: true`、从未发布 npm，引进 = git vendor + LICENSE 原文 + 完整署名——不是 npm 依赖流）
 - 完整尊重 OMO 的 SUL-1.0 开源 License（框架 dual license：**MIT OR SUL-1.0**）
 - 不向 OMO 提 PR（避免其"反过度抽象"的维护哲学冲突）
 - 不做销售（满足 SUL-1.0 的"非商业"要求）
@@ -56,8 +56,9 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 
 🟢 **MVP v0.2 线；dsh 0.1.5-rc.1 已 pin 并通过 L1+L2 验证**
 
-- ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，15 节：2026-08-16 主体 + 2026-08-19 追加调研 + 2026-08-29 follow-up note）
-- ✅ 13 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
+- ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，16 节：2026-08-16 主体 + 2026-08-19 追加调研 + 2026-08-29 follow-up note + 2026-09-11 OMO v5.0 勘误）
+- ✅ 14 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
+- ✅ **OMO v5.0 已调研；基线冻结在 v4.19.4**（2026-09-11，决策 D14）——全量移植开发遵循 [ROADMAP](./docs/roadmap_zh-CN.md)；v5 发现沉淀于两份调查报告（[架构](./docs/omo-v4.19.4-vs-v5.0.0-beta.53-architecture-investigation.md)、[agent 团队](./docs/omo-v4.19.4-vs-v5.0.0-beta.53-agent-team-investigation.md)）与可行性报告 §16
 - ✅ MVP PRD 已采纳（[`docs/mvp-prd_zh-CN.md`](./docs/mvp-prd_zh-CN.md)：协奏模式 + 1 Agent + 1 Subagent 最小骨架，决策 D11）
 - ✅ MVP 已结项——FR-1~FR-8 已实现、V1~V4 已验证（见 [mvp-pitfalls](./docs/mvp-pitfalls_zh-CN.md)）
 - ✅ **dsh 0.1.5-rc.1 的 pin 已落地**——0.1.2-alpha.1 的复核（[English](./docs/archived/dsh-0.1.2-review.md) / [中文](./docs/archived/dsh-0.1.2-review_zh-CN.md)）在它被 pin 之前就已被取代（那个 tag 从未发布）；升级到 0.1.5-rc.1 已通过 L1+L2 验证——见[复核报告](./docs/dsh-0.1.5-rc.1-review.md) / [升级记录](./docs/dsh-0.1.5-rc.1-upgrade.md)与 PRD §12
@@ -68,12 +69,16 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
   [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)；
   快速安装见 [`docs/install-concerto_zh-CN.md`](./docs/install-concerto_zh-CN.md)
 - ✅ 版本管理与发布流程已落地（决策 D13：三方兼容矩阵 + `scripts/release.sh` 六步发行 + 每周上游探测哨兵；「release 通知」「升级节奏」两个开放维度就此关闭）——见 [`docs/release-process_zh-CN.md`](./docs/release-process_zh-CN.md)
-- ⏳ 3 个开放维度待决策（OMO core 包 pin 策略、npm 命名、telemetry；详见决策记录"开放维度"）
+- ⏳ 2 个开放维度待决策（npm 命名、telemetry；详见决策记录"开放维度"——OMO core 包引进策略已由 D14 关闭）
 - ⏳ 工作量粗估：~16 周（一人主力）
 
 ## 项目决策
 
-项目决策记录见[决策记录](./docs/decisions_zh-CN.md)——已确认决策（D1–D13）、风险处置（R1–R6）、开放维度状态跟踪（O1–O8）。可行性报告是决策的调研依据。
+项目决策记录见[决策记录](./docs/decisions_zh-CN.md)——已确认决策（D1–D14）、风险处置（R1–R6）、开放维度状态跟踪（O1–O8）。可行性报告是决策的调研依据。
+
+## ROADMAP
+
+冻结 OMO v4.19.4 基线下的开发路线图（2026-09-11 与决策 D14 同时采纳）：[中文](./docs/roadmap_zh-CN.md) / [English](./docs/roadmap.md)。
 
 ## MVP PRD
 
@@ -99,7 +104,7 @@ MVP 产品需求文档（已采纳，决策 D11）见 [MVP PRD：协奏骨架](.
 | 项 | 值 |
 |---|---|
 | **DSH 版本** | **0.1.5-rc.1**（MIT；CI-pinned）——已在 2026-09-10 升级中端到端验证（[复核报告](./docs/dsh-0.1.5-rc.1-review.md)、[踩坑 P-20](./docs/mvp-pitfalls.md)）。历史 pin：0.1.0-rc.6（MVP 结项）；0.1.2-alpha.1 曾复核但从未 pin |
-| **OMO 上游** | 19 个 core 包 + 4 个小 adapter（harness-agnostic）（SUL-1.0） |
+| **OMO 上游** | 19 个 core 包 + 4 个小 adapter（harness-agnostic）（SUL-1.0）；**基线冻结 v4.19.4**（D14）——v5.0 已于 2026-09-11 调研，仅作认知跟踪 |
 | **本项目 license** | **MIT OR SUL-1.0**（dual license） |
 | **OMO LICENSE 原文** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |
 | **目标用户** | DSH 框架使用者 + 想用 OMO 风格 harness 的开发者 |
@@ -134,7 +139,7 @@ MVP 产品需求文档（已采纳，决策 D11）见 [MVP PRD：协奏骨架](.
 本项目以 **MIT OR SUL-1.0** dual license 发布。
 
 - 框架代码部分以 MIT 协议发布
-- OMO 源码部分（通过 npm 依赖）以 OMO 自身 SUL-1.0 协议发布
+- OMO 源码部分（需要时从冻结的 v4.19.4 基线 vendor，决策 D14）以 OMO 自身 SUL-1.0 协议发布
 - OMO LICENSE 原文见 [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md)
 - 本项目不进行任何形式的商业分发
 

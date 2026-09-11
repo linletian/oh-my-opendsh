@@ -100,6 +100,8 @@ V1–V4 全部验证通过，按 PRD §12 与 D11/Q-2 进入全量移植轨道�
 
 1. **第一个 follow-up（Q-2 选项 B）：经 npm import 一个最小 OMO core 包**，端到端验证
    import + 双 license + typecheck 链路。这是剩余最便宜且卡后续一切的未验证前提。
+   *（2026-09-11 由 D14 修订：core 包从未发布 npm——该 follow-up 现为 git-vendor 验证，
+   见 [ROADMAP](./roadmap_zh-CN.md) Phase 1。）*
 2. 剩余 agent（另外 10 个 OMO agent）套用到已验证的协奏预设形态上。
 3. hooks 批量翻译到 P-3 已验证的 `agent/pre-step` waterfall（及同类事件）上。
 4. Team Mode，然后按可行性报告覆盖其余能力面。

@@ -12,7 +12,10 @@
 #   dsh = @deepseek-ai/dsh (RUNTIME compatibility — the harness our preset and
 #         plugin run on; probed via npm registry and git tags `dsh-v*`)
 #   omo = oh-my-openagent (architecture REFERENCE — semantic source of the
-#         conductor/explore design; tracked for awareness, not runtime compat)
+#         conductor/explore design; tracked for awareness, not runtime compat.
+#         D14 (2026-09-11): baseline FROZEN at v4.19.4 — no v5.0 beta tracking,
+#         code intake = SUL-1.0 git vendoring, upstream changelog read once per
+#         own release node. See docs/decisions.md D14 + docs/roadmap.md §2)
 #
 # Row status: tested | untested | broken | dropped — see docs/release-process.
 # Release gate: the row a release is made on must be `tested`.

@@ -144,7 +144,7 @@ Note: the exact internal semantics of the official 4 modes are as implemented in
 | MCPs (LSP / ast-grep / codegraph / git-bash / web) | follow-up |
 | hashline edit | follow-up |
 | slash commands (ultrawork / ulw / team / hyperplan / search) | follow-up |
-| OMO 19 core packages via npm import | **NOT in the MVP** (Q-2 resolved → D11): MVP defaults to local markdown + attribution; import-chain validation is the first follow-up immediately after the MVP |
+| OMO 19 core packages via npm import | **NOT in the MVP** (Q-2 resolved → D11): MVP defaults to local markdown + attribution; import-chain validation is the first follow-up immediately after the MVP *(revised by D14: intake = git vendoring — the core packages were never on npm; [Roadmap](./roadmap.md) Phase 1)* |
 | Real engineering task driving | Never part of this MVP |
 | Windows / WSL | Settled by decision D9 |
 | Performance / token cost optimization | follow-up |

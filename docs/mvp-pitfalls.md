@@ -118,7 +118,8 @@ order:
 
 1. **FIRST follow-up (Q-2, option B): import one minimal OMO core package via npm** and verify the
    import + dual-license + typecheck chain end to end. This is the cheapest unverified premise left
-   and gates everything after it.
+   and gates everything after it. *(Revised 2026-09-11 by D14: the core packages were never published
+   to npm — this follow-up is now a git-vendoring spike, [Roadmap](./roadmap.md) Phase 1.)*
 2. Remaining agents (the other 10 OMO agents) onto the proven concerto preset shape.
 3. Hooks batch translation onto the P-3-proven `agent/pre-step` waterfall (and sibling events).
 4. Team Mode, then the rest of the capability surface per the feasibility report.

@@ -302,7 +302,8 @@ editorial.
   closes open dimensions **O6** (upstream release notification → weekly
   sentinel) and **O7** (upgrade cadence → deliberate bump via probe + matrix).
   **O1** (omo core-package pin strategy) stays open — the matrix tracks the
-  omo *reference* version only.
+  omo *reference* version only. *(O1 closed 2026-09-11 by D14: baseline frozen
+  at v4.19.4, intake = git vendoring; the omo column's role is unchanged.)*
 - First exercise — **ran as the dsh 0.1.5-rc.1 bump (2026-09-10)**, not as written here:
   the originally named 🔬 row **dsh 0.1.2-rc.1** (static review —
   [`docs/archived/dsh-0.1.2-review.md`](./archived/dsh-0.1.2-review.md)) was superseded

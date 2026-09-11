@@ -16,9 +16,9 @@
 
 ## 编号约定
 
-- **D#**（D1–D13）：已确认决策
+- **D#**（D1–D14）：已确认决策
 - **R#**（R1–R6）：风险处置决策（接受现状 / 暂不处理）
-- **O#**（O1–O8）：开放维度（其中 O2 / O4 / O6 / O7 / O8 已转为决策）
+- **O#**（O1–O8）：开放维度（其中 O1 / O2 / O4 / O6 / O7 / O8 已转为决策）
 - 引用格式：`决策文档 D7` / `decisions.md D7`
 
 ## 已确认决策
@@ -32,7 +32,7 @@
 | D3 | LLM 范围：全做 + 分期 + 优先社区复用 | §2.4 |
 | D4 | 可视化：方案 B（web ChatNode via `ConversationNodeDefinition`） | §2.5 |
 | D5 | OMO PR：不给外部 PR；遵守 License 规范 + 致谢 | §11.5 |
-| D6 | 升级方式：方案 B（dual license + 直接 import OMO 源码） | §7.3 / §7.4 |
+| D6 | 升级方式：方案 B（dual license + 直接 import OMO 源码）——*import 机制由 D14 修正：npm import → git vendor；基线冻结 v4.19.4* | §7.3 / §7.4 |
 
 ### 2026-08-19（第二批，4 项）
 
@@ -61,6 +61,12 @@
 |---|---|---|
 | D13 | 版本管理与发布流程：采纳《发布流程》（[English](./release-process.md) / [中文](./release-process_zh-CN.md)）——三方兼容矩阵（`.omo/compat.yaml` 单一事实来源，机器渲染为矩阵文档）、tag 约定（不可变 `vX.Y.Z` + 移动别名 `vX.Y`）、本地优先测试分层（L0 静态 / L1 零成本 e2e / L2 真模型仅本地）、`scripts/release.sh` 六步发行 + docs 一致性检查器、D7 命名的 `scripts/bump-dsh.sh` pin 翻转、每周 `compat-probe` 哨兵。原则：优先自动化、本地优先省成本 | 本次讨论拍板（O6/O7 就此关闭） |
 
+### 2026-09-11（第六批，1 项）
+
+| # | 决策 | 依据 |
+|---|---|---|
+| D14 | OMO 上游策略：**冻结 v4.19.4 基线**——不跟踪 v5.0 beta 线、不设常驻 rebase 节奏；全量移植引进代码时**从 git tag vendor 源码**（届时若 v5.0.0 正式版已发布则用它，否则用 v4.19.4），按 SUL-1.0 保留 LICENSE 原文 + 完整署名；允许随时定向搬运上游修复（按文件 cherry-pick，非版本升级）；在本项目自己的 release 节点各读一次上游 CHANGELOG（认知，非跟踪）；命名/能力取舍遵循 v5.0 勘误（可行性报告 §16）。**关闭 O1 并修正其提法**："npm import 19 个 core 包"方案由 git vendor 取代，因为这些 core 包全是 `private: true`，从未发布到 npm | v5.0.0-beta 调查：[架构调查](./omo-v4.19.4-vs-v5.0.0-beta.53-architecture-investigation.md) + [agent 团队调查](./omo-v4.19.4-vs-v5.0.0-beta.53-agent-team-investigation.md)；可行性报告 §16 |
+
 ### 决策详情（完整措辞以此为准）
 
 **D7 — DSH pin 策略：pin minor（`0.1.x`）**
@@ -76,10 +82,21 @@
 尊重原作者、完整署名——hashline（概念源自 `oh-my-pi`）等在 `THIRD_PARTY_NOTICES.md` / README 致谢中完整标注（调研报告 §11.6）；具体措辞在实施时定。
 
 **D11 — MVP 范围：采纳《MVP PRD：协奏骨架》**
-采纳 [MVP PRD](./mvp-prd_zh-CN.md) 定义的 MVP 范围，关闭开放维度 O8（调研报告 §10.8）：最小骨架 = 新运行模式「协奏模式（Concerto Mode，标识 `concerto`）」+ 1 主 agent（omo-sisyphus）+ 1 subagent（omo-explore）+ 1 hook listener + 双模型路由（deepseek + pi-ai）；目标是验证假设 V1–V4（scratch plugin 冷启动 / per-subagent LLM 路由 / listener 翻译层 / subagent 限制链）并提前踩坑，不解决真实工程问题。OMO core 包 npm import 不并入 MVP（Q-2 选 B），为紧随其后的第一个 follow-up。完整范围、验收标准（AC-1～AC-9）与踩坑计划（P-1～P-9）以 MVP PRD 为准。
+采纳 [MVP PRD](./mvp-prd_zh-CN.md) 定义的 MVP 范围，关闭开放维度 O8（调研报告 §10.8）：最小骨架 = 新运行模式「协奏模式（Concerto Mode，标识 `concerto`）」+ 1 主 agent（omo-sisyphus）+ 1 subagent（omo-explore）+ 1 hook listener + 双模型路由（deepseek + pi-ai）；目标是验证假设 V1–V4（scratch plugin 冷启动 / per-subagent LLM 路由 / listener 翻译层 / subagent 限制链）并提前踩坑，不解决真实工程问题。OMO core 包 npm import 不并入 MVP（Q-2 选 B），为紧随其后的第一个 follow-up*（该 follow-up 现由 D14 定义为 git vendor——core 包从未上 npm；见 [ROADMAP](./roadmap_zh-CN.md) Phase 1）*。完整范围、验收标准（AC-1～AC-9）与踩坑计划（P-1～P-9）以 MVP PRD 为准。
 
 **D12 — License 白名单扩展：接受 MPL-2.0**
 `scripts/verify-licenses` 白名单在调研报告 §4.7 草拟的 MIT / Apache-2.0 / BSD / ISC / SUL-1.0（仅 OMO）基础上增加 MPL-2.0。依据：MVP 实施 T3 实证 vite@8.2.1（vitest 4 硬依赖）传递依赖 lightningcss@1.33.0 为 MPL-2.0；MPL-2.0 是文件级弱 copyleft，业界普遍允许；lightningcss 仅为开发链构建工具（devDependencies 传递），本项目不分发。若未来 MPL-2.0 政策收紧，撤除脚本中对应单行并改 pin vite 版本。
+
+**D14 — OMO 上游策略：冻结 v4.19.4 基线**
+在 2026-09-11 的 v5.0.0-beta 调查之后采纳（证据：[架构调查](./omo-v4.19.4-vs-v5.0.0-beta.53-architecture-investigation.md)与 [agent 团队调查](./omo-v4.19.4-vs-v5.0.0-beta.53-agent-team-investigation.md)；勘误已吸收进可行性报告 §16）。权威措辞：
+
+1. **冻结基线。** OMO 语义与代码基线冻结在 **v4.19.4**（v4 线最后一个 release，2026-08-01）。本项目已对 OMO 验证过的一切——persona、hook 映射、协奏设计——保持锚定该版本。
+2. **不追 beta、不设常驻 rebase 节奏。** v5.0 beta 线（33 天 53 个 tag）不予跟踪。R4 的"首轮 OMO bump 实证 1 小时 rebase"前提作为**目标**退役：不存在可 rebase 的依赖流——19 个 core 包全是 `private: true` workspace 包，从未发布到 npm（2026-09-11 实测 registry 全部 404；发布的 `oh-my-opencode` 包只导出打包后的 `dist/index.js`）。
+3. **引进 = git vendor。** 全量移植需要 OMO 源码时（原 O1 方案），按 SUL-1.0 从 git tag vendor：`LICENSES/oh-my-openagent.LICENSE.md` 保留原文，`THIRD_PARTY_NOTICES.md` 按 vendor 文件逐一署名，保持非商业（D8）。引进时的 tag 选择：**届时若 v5.0.0 正式版已发布则用它**（同样的功夫、无 codegraph 死代码、角色名为新版），**否则用 v4.19.4**——我们目标的核心包（team-core / delegate-core / hashline-core / rules-engine / …）在两版间几乎逐字相同，该选择无论哪边都低赌注。
+4. **定向搬运。** 任何上游修复或能力，凡我们有具体需求者（例如 team-mode 的 fallback-wake 修复），可随时从新 tag 按文件搬运——是带署名的定点 cherry-pick，不是版本升级。
+5. **认知而非跟踪。** 在本项目自己的 release 节点（`scripts/release.sh` 运行时）读一次上游 CHANGELOG，记录任何推翻 §16 勘误假设的事项；不为 OMO 增设每周哨兵（现有哨兵只盯 DSH，不变）。
+6. **命名与能力取舍遵循 §16**（v5 角色名 `plan-consultant` / `plan-reviewer`、`/ulw-execute`、codegraph 移出移植清单、memory/DAG/model-profiles 登记为"DSH 原生优先"的候选能力域）。
+7. **O1 由本决策关闭并修正提法**："npm import 的 pin 策略"预设了一个不存在的发布产物流；上述 vendor 政策取而代之。
 
 ## 风险处置（2026-08-19）
 
@@ -90,7 +107,7 @@
 | R1 | LLM adapter 工作量可能被低估 | 接受现状；维持分期策略（先 DeepSeek + OpenAI-compatible，其余按需补） | §5.1 |
 | R2 | DSH 无 fallback chain | 接受现状；薄 retry wrapper（30–80 行 / plugin 实例）保留为可选缓解，未 commit | §12.5 |
 | R3 | 16 周工作量估算无 buffer | 接受现状；按研究阶段估算使用，不作承诺（其依赖的 DSH pin 前提已确认为 D7） | §2.10 |
-| R4 | "1 小时 rebase"依赖 listener 薄层假设 | 暂不处理；待项目启动后首轮 OMO bump 实证 | §4.5 |
+| R4 | "1 小时 rebase"依赖 listener 薄层假设 | ✅ 已关闭（2026-09-11）→ D14 + MVP V3：常驻 rebase 节奏退役（无依赖流可 rebase）；薄 listener 假设本身已由 V3 实证 | §4.5 |
 | R5 | `args.prompt` 信任边界缺口 | 接受现状；与 OMO 同一假设——父 agent 为受信内部 LLM，不引入不可信输入源 | §13.7.1 |
 | R6 | `<plan>` 信封非安全边界 | 接受现状 | §13.7.2 |
 
@@ -98,7 +115,7 @@
 
 | # | 维度 | 状态 | 选项分析（调研报告） |
 |---|---|---|---|
-| O1 | OMO 19 core 包 pin 策略 | 开放（上游参照版本追踪已按 D13 落地——npm 仓库） | §10.1 |
+| O1 | OMO 19 core 包 pin 策略 | ✅ 已决 → D14（提法修正：npm import → git vendor；基线冻结 v4.19.4） | §10.1 |
 | O2 | DSH 自身 pin 策略 | ✅ 已决 → D7 | §10.2 |
 | O3 | npm 包命名 | 开放 | §10.3 |
 | O4 | Windows 是否在范围 | ✅ 已决 → D9 | §10.4 |
@@ -116,6 +133,7 @@
 - **2026-08-29**：已登记 DSH 0.1.2-alpha.1 复核报告（[English](./archived/dsh-0.1.2-review.md) / [中文](./archived/dsh-0.1.2-review_zh-CN.md)）；无新增决策——rc.6 → 0.1.2-alpha.1 的 pin 升级按 D7 的刻意升级机制执行，并已在 PRD §12 登记跟踪；SubagentProvider 扩展路径事实以调研沉淀形式登记于可行性报告的 2026-08-29 follow-up note 中。
 - **2026-09-05**：D13 确认（版本管理与发布流程——三方矩阵、tag 约定、本地优先测试分层、发行自动化、每周哨兵）；开放维度 O6/O7 关闭。
 - **2026-09-10**：已登记 DSH 0.1.5-rc.1 复核报告（[`dsh-0.1.5-rc.1-review.md`](./dsh-0.1.5-rc.1-review.md)）；**无新增决策**——rc.6 → 0.1.5-rc.1 的 pin 升级按 D7 的刻意升级机制执行，并已在 PRD §12 登记跟踪（该节已按复核结论重写）。本次唯一的 P0（`@deepseek-ai/dsh-persona` 的 `text:` → `prefix:` 改名，落点 `dsh-v0.1.3-alpha.2`）是一个**破坏性**配置变更，而本仓库自己的门禁却对它给出全绿——这使 L3 门禁的覆盖面作为实施项被重新打开，而非作为决策项。两点值得在此登记的副作用：(1) **Q-3 的双 provider 配对现已成为"按部署可选"而非固定**——不写入 `llm-pi-ai.providers` 段的部署，通过文档化的 `OMO_EXPLORE_PROVIDER` 覆盖把 explore 席位钉到 `deepseek-official`，而仓库默认值仍为 pi-ai；AC-5 的要求（两对**互不相同**）在两种情况下都成立，因为"不同"是按 provider+model 合并判定的。(2) **P-1.3 的前提已退场**——`composeProfile` 不再强制改写 `agent-presets` 行的 `roots`（0.1.5-rc.1 中已移除），于是"用配置声明 preset root"重新成为可用机制；须留意的注意点是 shipped root 现在**排在**配置 roots **之前**，依赖它之前要先确认按 id 首个根胜出的规则。
+- **2026-09-11**：D14 确认（OMO 上游策略——冻结 v4.19.4 基线、不追 beta、引进 = 按 SUL-1.0 git vendor、定向搬运修复、在本项目 release 节点以纯认知方式读上游 CHANGELOG）；开放维度 **O1 关闭并修正提法**（19 个 core 包全是 `private: true`、从未上 npm，"npm import" 由 vendor 取代）；v5.0.0-beta 完整调查沉淀为两份调查报告（[架构](./omo-v4.19.4-vs-v5.0.0-beta.53-architecture-investigation.md)、[agent 团队](./omo-v4.19.4-vs-v5.0.0-beta.53-agent-team-investigation.md)），并作为勘误吸收进可行性报告 §16；冻结基线下的开发方向由正式 [ROADMAP](./roadmap_zh-CN.md) 承载。
 
 ---
 

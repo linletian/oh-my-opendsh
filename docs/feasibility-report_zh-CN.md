@@ -27,7 +27,7 @@ DSH 是一个以 Cordis 插件树 + 双面构建（host + client）+ 显式扩�
 OMO 是一个经过一年多实战检验的高质量 harness，其设计哲学（11 agent 编排 / 54+ lifecycle hook / 多 provider LLM 路由 / Team Mode 并行协作 / ultrawork 持续驱动 / hashline edit / etc.）是项目的核心价值。
 
 - **完整保留 OMO 的能力体系** —— 不做能力裁剪，11 agent + 30+ hook + 5 MCP + Team Mode + hashline + 一切 slash command 全量移植
-- **直接 import OMO 源码**（不重新实现）—— 让 OMO 上游的优化和 bug fix 自然流入；同时**升级成本最低**（1 小时内完成一次 OMO bump）
+- **直接 import OMO 源码**（不重新实现）—— 让 OMO 上游的优化和 bug fix 自然流入；同时**升级成本最低**（1 小时内完成一次 OMO bump）。*（升级机制 2026-09-11 起由 D14 修订：冻结 v4.19.4 基线 + 按 SUL-1.0 git vendor，不设常驻 rebase 节奏——见 §16。）*
 - **完整尊重 OMO 的 SUL-1.0 开源 License** —— 框架 dual license (MIT OR SUL-1.0)；`LICENSES/` 原样放 OMO LICENSE 文本；`THIRD_PARTY_NOTICES.md` 完整 attribution；README 顶部显式致谢
 - **不向 OMO 提 PR**（避免其"反对过度抽象"的维护哲学冲突）—— 作为 OMO 用户而非贡献者身份存在
 - **不做销售**（满足 SUL-1.0 的"非商业"要求）—— 内部使用 + 开源 = 完整合规
@@ -46,11 +46,11 @@ OMO 是一个经过一年多实战检验的高质量 harness，其设计哲学�
 
 ## Summary
 
-**目标**：把 OMO 的能力体系（11 agent、54+ hook、LSP/AST-grep/codegraph MCP、`/goal`、`/ultrawork`、Team Mode、hashline edit、Rules Injection 等）以 DSH 官方 scratch plugin 形式（`dsh --patch` overlay）接到 DSH 框架之上，并搭一个能让 OMO 升级时 1 小时内完成 rebase 的 patch 工程。
+**目标**：把 OMO 的能力体系（11 agent、54+ hook、LSP/AST-grep/codegraph MCP、`/goal`、`/ultrawork`、Team Mode、hashline edit、Rules Injection 等）以 DSH 官方 scratch plugin 形式（`dsh --patch` overlay）接到 DSH 框架之上，并搭一个能让 OMO 升级时 1 小时内完成 rebase 的 patch 工程。*（此目标 2026-09-11 已由 D14 修订：现为冻结 v4.19.4 基线上的一次性语义移植；codegraph 移出能力清单；见 §16 与 [ROADMAP](./roadmap_zh-CN.md)。）*
 
 **核心结论（先看这四条）**：
 1. **可行性：高。** DSH 的扩展面（`agent/*`、`tools/*`、`ctx.goals`、`ctx.shell`、`ctx.fs`、`ctx.skill`、`ctx.jobs`、`ctx.subagent`、`ctx.terminals`、`ctx.plan`、`ctx.compaction`、`ctx.todo`）几乎一一对应 OMO 的 11 大能力。OMO 的 ROADMAP 已经把它拆成 19 个 harness-agnostic 核心包，恰好可被 DSH 直接吃下，无需重写。DSH 自己的 `dsh-base` bundle 已经内置了 `goal/plan/skill/compaction/ralph/workflow/todo/subagent/web-search` —— 这意味着 OMO 的 60% 能力**在 DSH 里早就有等价原生实现**，移植主要工作在"做对映射和命名"，不是"做新实现"。
-2. **可持续 patch 框架：可行，且 DSH 体系天然契合。** DSH cookbook 列了 4 种官方插件形态（tool / hook / UI / protocol-driver），加上 DSH 官方推荐的 `dsh --patch ./scratch-plugin/cordis.yml` scratch plugin 模式，**DSH 零修改**就能加载我们的 OMO 适配器。OMO 通过 npm 依赖直接 import，升级流程 = `pnpm update oh-my-opencode` + `pnpm test`（5 分钟脚本 + 0–1 小时修 listener）。
+2. **可持续 patch 框架：可行，且 DSH 体系天然契合。** DSH cookbook 列了 4 种官方插件形态（tool / hook / UI / protocol-driver），加上 DSH 官方推荐的 `dsh --patch ./scratch-plugin/cordis.yml` scratch plugin 模式，**DSH 零修改**就能加载我们的 OMO 适配器。OMO 通过 npm 依赖直接 import，升级流程 = `pnpm update oh-my-opencode` + `pnpm test`（5 分钟脚本 + 0–1 小时修 listener）。*（npm import 前提已于 2026-09-11 被证伪：core 包全是 `private: true`、从未发布 npm；引进 = 按 D14 git vendor——见 §16.2。）*
 3. **不是"替换 OMO"，是"做 OMO 的 DSH 适配器"。** OMO 已经在 ROADMAP 里把多 harness 适配器化（已有 `omo-opencode`、`omo-codex`、`omo-senpi`），因此"再加一个 DSH 适配器"是 OMO 官方允诺的扩展路径，与 OMO 维护者哲学一致。
 4. **有一个硬约束已处理：OMO 的 SUL-1.0 license。** 框架采用 **dual license（MIT OR SUL-1.0）**——OMO 源码可直接 import（升级最省事），同时给最终用户选择空间。"免费 + 非商业 + 不销售"已满足 SUL-1.0。详见 §7。
 
@@ -652,6 +652,8 @@ scripts/verify-licenses.sh
 > 本报告定位为**调研与依据文档**：决策文档中的每项决策以编号（D# / R# / O#）引用本报告章节作为依据。本节保留下列 8 个开放维度的**研究阶段选项分析**（原 §10.2）——这属于调研内容；各维度当前是否已决，见决策文档 O1–O8。（本节早期版本把某些选项标为"推荐"——那些标签已移除，因为它们把研究阶段分析与项目决策混在一起。"推荐"标签的底层分析以纯文本形式保留在右栏中。）
 
 ### 10.1 OMO 19 core 包 pin 策略
+
+> ✅ **已决（2026-09-11）**：D14——且下表的 npm 前提已被**证伪**（19 个 core 包全是 `private: true`，从未发布 npm；§16.2）。引进 = 冻结 v4.19.4 基线上的 git vendor。下表仅作研究阶段记录保留。
 
 | 备选 | 含义 |
 |---|---|
@@ -1625,3 +1627,33 @@ DSH 的 subagent 服务对外暴露公开的 `SubagentProvider` 契约（`packag
 ### 15.2 进程外 provider 的启动能力为零
 
 `NO_START_CAPABILITIES` 名副其实：另一个进程里的 child 无法兑现父侧强制的 start 特性（`agentOptions`/`outputSchema`/`maxDepth`/`toolFilter`/`persona`），因此服务会在 `start` 之前拒绝任何需要其中一项的请求——绝不"接受后忽略"（`packages/subagent/subagent/src/out-of-process.ts:51-63`）。对我们设计的推论：本报告依赖的每 agent `{provider, model}` 路由、`toolFilter`、数值 `maxDepth` 纪律**只对 in-process provider**（`spawn`/`fork`）成立。codex 类 child 的模型只能固定在 provider 实例 config 的 `model` 字段（0.1.2 起，`packages/subagent/subagent-codex/src/index.ts:40`），`maxDepth` 只能写 `'provider-managed'`（见随包 standard preset，`packages/preset/agent-presets/presets/standard/agent.cordis.yml:216`）。
+
+---
+
+## 16. 2026-09-11 follow-up note —— OMO v5.0.0-beta 调查勘误
+
+**日期**：2026-09-11
+**状态**：follow-up note（勘误，非推翻）。已完成对上游 OMO v4.19.4 → v5.0.0-beta.53 的全量调查（6457 文件变更，+727k/-89k）。以下每条均有 git 证据，沉淀于两份调查报告：[架构调查](./omo-v4.19.4-vs-v5.0.0-beta.53-architecture-investigation.md) 与 [agent 团队调查](./omo-v4.19.4-vs-v5.0.0-beta.53-agent-team-investigation.md)。本节喂养的决策是 **D14**（基线冻结 + vendor）与 [ROADMAP](./roadmap_zh-CN.md)。
+
+### 16.1 版本格局
+
+- **v4.19.4（2026-08-01）是 v4 线最后一个 release**；v4 线已停维护（此后无任何 4.x tag 或维护分支）。
+- **v5.0.0-beta**：beta.1（2026-08-10）→ beta.53（2026-09-11），33 天 53 个 tag（≈1.6 个/天），单 `dev` 主干推进，发布在 npm dist-tag `beta`。npm 现状（2026-09-11）：`oh-my-openagent`/`oh-my-opencode` 的 `latest`=4.19.4、`beta`=5.0.0-beta.53；新的原生版包 `omo-ai` 按设计只有 beta channel。
+
+### 16.2 v5 对本报告结论的勘误
+
+| 本报告原表述（章节） | v5.0 实况 | 处置 |
+|---|---|---|
+| "11 agents" 花名册含 `metis` / `momus`（§1.2、§2.1） | OpenCode 版名册**逐字未变**（11 个 agent 原样）；**senpi 版改名** `metis`→`plan-consultant`、`momus`→`plan-reviewer`（旧 id 弃用、下一个 tagged publish 移除）；codex 版未改名 | 协奏扩花名册时用 v5 角色名；新旧名映射见上游 `packages/utils/src/migration/agent-names.ts` |
+| "LSP/AST-grep/**codegraph** MCP"（§1.2、§8） | **CodeGraph 被整体删除**（commit `e5ab78a2d`，首含于 v5.0.0-beta.35）：MCP server、bootstrap hook、codex 组件、配置块全移除。**ast-grep-mcp 回归**（2026-08-03 重建，`@oh-my-opencode/ast-grep-mcp`） | **codegraph 移出移植清单**；ast-grep 保留 |
+| Team Mode 设计（§2.5、§14） | **无质的差异。** `team-core` +136/-5、`delegate-core` +17/-7；12 个 `team_*` 工具、mailbox、tmux 可视化、worktree 自动化原样。v5 文档模型（"lead 恒为当前会话"；成员=任意可解析 **category worker** 或**用户自定义 agent**；curated 只读 agent 解析期硬拒）与 v4.19.4 的 senpi 代码路径已有的实现（`TEAM_LEAD_SENTINEL`）一致——v5 是把文档与 OpenCode 路径对齐到该模型 | Team Mode follow-up 按 v5 模型设计——它比 v4 文档模型更直接映射 DSH `ctx.subagent`（主会话指挥 + worker 会话），工量估算应**下调** |
+| （本报告未覆盖） | v5 新增**第三种并行拓扑**：mass-ulw / `workflow` DAG 编排（`packages/senpi-task/src/dag/`，journaled 波次调度，外部 viewer 有线协议 `docs/reference/mass-ulw-protocol.md`）——senpi 独占，与 team 互补（DAG 节点间无中途对话） | 登记为**观察项**；概念上与 DSH 自家 workflow 引擎（`dsh-workflow`/`ralph`）重叠，按原则一优先用 DSH 原生 |
+| （本报告未覆盖） | v5 新增 **memory-core**：Letta-Code 风格持久 agent 记忆系统（git-backed MemFS、后台 reflection、facts pipeline），senpi 版默认开启；另有 `model_profiles`（capable/simple-work/deep-work），**只选主会话模型**，不进任何委派链 | 登记为候选能力域，按原则一 **DSH 原生优先**（记忆对应 DSH session/storage；profiles 对应 DSH 模型路由） |
+| §10.1 O1 前提："npm import 19 个 core 包" | 19 个 core 包**在两版中均为 `private: true` workspace 包，从未发布 npm**（2026-09-11 实测 registry 全部 404）；发布的 `oh-my-opencode` 包只导出打包后的 `dist/index.js` | **O1 由 D14 关闭并修正提法**：代码引进 = 按 SUL-1.0 git vendor，而非 npm 依赖流 |
+| 改名面（§8 命令清单） | `/start-work` → `/ulw-execute`（硬切换无 alias）；`omo` CLI → `omo-agent-toolkit`；`shared/<name>` skill 前缀移除（v4.19.4 已含）；统一 `omo.jsonc` 配置在 **v4.19.3** 落地（非 v5 破坏） | 移植命令/配置时以新锚点为准 |
+
+### 16.3 v5 没有改变的东西
+
+- 核心结论（Summary 1–4）成立且被**加强**：上游 Core→MCP→Adapters→Platform 分层完成，ROADMAP 新增 "Why Not OpenCode-Native" 一节（"We treat OpenCode as one adapter target among several. Not the center of the architecture."），确认 DSH adapter 是官方认可的扩展路径；v5 的 team-mode 模型独立收敛到了协奏姿态（主会话即指挥、worker 自带模型路由）。
+- §1.2 的 DSH 扩展点映射、§12/§13 的 sub-agent 路由结论、§14 的测试金字塔分析、MVP 的 V1–V4 验证，全部不受影响。
+- 战略读法：**v5 的投资压倒性在 senpi 侧**（omo-senpi +13 万行、组件 12→26；OpenCode hook 面零新增模块）。对锚定在共享 core + OpenCode 面的移植方，v5.x 相对 v4.19.4 没有多少可拿之物——这正是 D14 冻结低成本的根源。

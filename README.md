@@ -16,7 +16,7 @@ OMO's Agent Team mode is the answer to that belief: instead of betting on one "d
 
 ## Project Goal
 
-Bring the harness capability system of [oh-my-openagent (OMO)](https://github.com/code-yeongyu/oh-my-openagent) (11 agents, 54+ hooks, LSP/AST-grep/codegraph MCP, `/goal`, `/ultrawork`, Team Mode, hashline edit, Rules Injection, etc.) onto the [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) framework as a DSH-official scratch plugin (loaded via `dsh --patch` overlay), and build a sustainable patch framework that lets us rebase against OMO upstream in **under 1 hour** per OMO bump.
+Bring the harness capability system of [oh-my-openagent (OMO)](https://github.com/code-yeongyu/oh-my-openagent) (11 agents, 54+ hooks, LSP/AST-grep MCP, `/goal`, `/ultrawork`, Team Mode, hashline edit, Rules Injection, etc.) onto the [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) framework as a DSH-official scratch plugin (loaded via `dsh --patch` overlay). This is a **one-time semantic transplant, not an ongoing dependency**: the OMO baseline is frozen at **v4.19.4** (decision D14), code intake happens by SUL-1.0-compliant git vendoring at full-port time, and upstream awareness is maintained by reading the OMO changelog at our own release nodes — no beta chasing, no standing rebase cadence. Development is guided by the [Roadmap](./docs/roadmap.md).
 
 ## Design Principles
 
@@ -30,7 +30,7 @@ Every decision in this project is governed by these two principles, which have e
 
 ### 2. Fully honor OMO's harness design philosophy and open-source License
 - **Preserve OMO's capability system in full** (11 agents + 30+ hooks + 5 MCPs + Team Mode + hashline + every slash command — ported **completely, no capability cuts**)
-- **Directly import OMO's 19 core packages** (lowest upgrade cost: 5-minute script + 0–1 hour listener fix)
+- **Vendor OMO core-package source under SUL-1.0 when needed** (decision D14: the 19 core packages are `private: true` and never published to npm, so intake = git vendoring with verbatim LICENSE + full attribution — not an npm dependency stream)
 - **Fully respect OMO's SUL-1.0 open-source License** (framework dual license: **MIT OR SUL-1.0**)
 - **No PRs to OMO** (avoids their "anti-over-abstraction" maintenance philosophy)
 - **No commercial distribution** (satisfies SUL-1.0's "non-commercial" requirement)
@@ -56,8 +56,9 @@ Full guide (options, adaptation, uninstall — incl. a plain-language "what the 
 
 🟢 **MVP v0.2 line; dsh 0.1.5-rc.1 pinned and verified (L1+L2)**
 
-- ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 15 sections: 2026-08-16 main body + 2026-08-19 follow-up research + 2026-08-29 follow-up note)
-- ✅ 13 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
+- ✅ Feasibility report complete ([`docs/feasibility-report.md`](./docs/feasibility-report.md), 16 sections: 2026-08-16 main body + 2026-08-19 follow-up research + 2026-08-29 follow-up note + 2026-09-11 OMO v5.0 errata)
+- ✅ 14 decisions confirmed + 6 risk dispositions registered (see the [decision record](./docs/decisions.md))
+- ✅ **OMO v5.0 surveyed; baseline frozen at v4.19.4** (2026-09-11, decision D14) — full-port development follows the [Roadmap](./docs/roadmap.md); the v5 findings live in two investigation reports ([architecture](./docs/omo-v4.19.4-vs-v5.0.0-beta.53-architecture-investigation.md), [agent teams](./docs/omo-v4.19.4-vs-v5.0.0-beta.53-agent-team-investigation.md)) and feasibility report §16
 - ✅ MVP PRD adopted ([`docs/mvp-prd.md`](./docs/mvp-prd.md): Concerto Mode + 1 Agent + 1 Subagent minimal skeleton, decision D11)
 - ✅ MVP closed — FR-1~FR-8 implemented, V1~V4 verified (see [mvp-pitfalls](./docs/mvp-pitfalls.md))
 - ✅ **dsh 0.1.5-rc.1 pin landed** — the 0.1.2-alpha.1 review ([English](./docs/archived/dsh-0.1.2-review.md) / [中文](./docs/archived/dsh-0.1.2-review_zh-CN.md)) was superseded before it was ever pinned (that tag was never published); the upgrade to 0.1.5-rc.1 is verified L1+L2 — see the [review](./docs/dsh-0.1.5-rc.1-review.md) / [upgrade record](./docs/dsh-0.1.5-rc.1-upgrade.md) and PRD §12
@@ -68,12 +69,16 @@ Full guide (options, adaptation, uninstall — incl. a plain-language "what the 
   (Chinese), source archive [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/),
   and the quick install guide [`docs/install-concerto.md`](./docs/install-concerto.md)
 - ✅ Version management & release process landed (decision D13: three-party compat matrix + `scripts/release.sh` six-step release + weekly upstream sentinel; the "release notifications" and "upgrade cadence" open dimensions are closed) — see [`docs/release-process.md`](./docs/release-process.md)
-- ⏳ 3 open dimensions pending decision (OMO core-package pin strategy, npm package naming, telemetry; see "Open dimensions" in the decision record)
+- ⏳ 2 open dimensions pending decision (npm package naming, telemetry; see "Open dimensions" in the decision record — the OMO core-package intake strategy was closed as D14)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
 
 ## Project Decisions
 
-The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D13), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
+The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D14), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
+
+## Roadmap
+
+The development roadmap under the frozen OMO v4.19.4 baseline (adopted 2026-09-11 with decision D14) lives in [English](./docs/roadmap.md) / [中文](./docs/roadmap_zh-CN.md).
 
 ## MVP PRD
 
@@ -99,7 +104,7 @@ The version management & release process (decision D13; principles: automation f
 | Item | Value |
 |---|---|
 | **DSH version** | **0.1.5-rc.1** (MIT; CI-pinned) — verified end-to-end in the 2026-09-10 upgrade ([review](./docs/dsh-0.1.5-rc.1-review.md), [pitfalls P-20](./docs/mvp-pitfalls.md)). Previous pins: 0.1.0-rc.6 (MVP closeout), with 0.1.2-alpha.1 reviewed but never pinned |
-| **OMO upstream** | 19 core packages + 4 small adapters (harness-agnostic) (SUL-1.0) |
+| **OMO upstream** | 19 core packages + 4 small adapters (harness-agnostic) (SUL-1.0); **baseline frozen at v4.19.4** (D14) — v5.0 surveyed 2026-09-11, tracked for awareness only |
 | **This project's license** | **MIT OR SUL-1.0** (dual license) |
 | **OMO LICENSE (original text)** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |
 | **Target users** | DSH framework users + developers who want OMO-style harness capabilities |
@@ -134,7 +139,7 @@ See report §2.10 (Port Workload Rough Estimate) and §8 (Acceptance Criteria) f
 This project is released under the **MIT OR SUL-1.0** dual license.
 
 - Framework code is released under MIT
-- OMO source (via npm dependency) is under OMO's own SUL-1.0
+- OMO source (vendored from the frozen v4.19.4 baseline when needed, decision D14) is under OMO's own SUL-1.0
 - OMO LICENSE original text: [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md)
 - This project conducts no commercial distribution
 

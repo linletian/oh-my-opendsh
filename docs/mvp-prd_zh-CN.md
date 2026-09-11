@@ -144,7 +144,7 @@ DSH 官方现有 4 个运行模式：**标准 / PTC / 极简 / 创造**。四者
 | MCP（LSP / ast-grep / codegraph / git-bash / web） | follow-up |
 | hashline edit | follow-up |
 | slash commands（ultrawork / ulw / team / hyperplan / search） | follow-up |
-| OMO 19 core 包 npm import | **不并入 MVP**（Q-2 已决 → D11）：MVP 默认用本地 markdown + attribution；import 链路验证为紧随 MVP 之后的第一个 follow-up |
+| OMO 19 core 包 npm import | **不并入 MVP**（Q-2 已决 → D11）：MVP 默认用本地 markdown + attribution；import 链路验证为紧随 MVP 之后的第一个 follow-up *（D14 已修订：引进 = git vendor——core 包从未上 npm；[ROADMAP](./roadmap_zh-CN.md) Phase 1）* |
 | 真实工程任务驱动 | 永不属于本 MVP |
 | Windows / WSL | 决策文档 D9 已定 |
 | 性能 / token 成本优化 | follow-up |
