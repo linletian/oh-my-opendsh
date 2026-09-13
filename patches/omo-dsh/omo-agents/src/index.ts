@@ -2,7 +2,8 @@
 // registration (FR-2, AC-2) + T8 omo-sisyphus system prompt (FR-3, AC-3)
 // + T14 dual model route resolution (FR-5, P-2; AC-5 config half)
 // + T16 Hard Blocks injection listener (FR-6, P-3)
-// + T10 omo-explore read-only subagent persona (FR-4).
+// + T10 omo-explore read-only subagent persona (FR-4)
+// + P2-T16 roster-wide boot markers and non-blocking route warnings.
 //
 // T6: apply-time authoring registers the 协奏 / Concerto Mode preset as a real
 // 5th run mode at the same roster level as the official 4 (P-1 verdict:
@@ -16,25 +17,63 @@
 // T8: the materialized preset's persona is the assembled omo-sisyphus system
 // prompt — buildSisyphusSystemPrompt() renders the sentinel in the template
 // at apply() time (design (a); see system-prompt.ts), so the concerto mode's
-// main-agent brain is the four system-sections markdown files, rebuilt fresh
-// on every boot. The `omo-sisyphus system prompt assembled` line is the
-// in-process marker the probe asserts.
+// main-agent brain is the system-sections markdown files, rebuilt fresh on
+// every boot. The `omo-sisyphus system prompt assembled` line is the
+// in-process marker the probe asserts. The conductor has NO child persona
+// marker: it is a preset persona, not a dsh-tool-subagent instance.
 //
 // T16: one `agent/pre-step` waterfall listener injects the Hard Blocks +
 // Anti-Patterns sections into every sub-agent's context via agent.inject()
 // (see hard-blocks-injection.ts for the verified API citations). The
 // `hard-blocks injection listener registered on agent/pre-step` line is the
-// boot-level registration observable; unit tests assert the inject call and
-// the single registration; live sub-agent prompt proof lands in T20 (e2e).
+// boot-level registration observable.
 //
-// T10: the omo-explore read-only retrieval subagent persona is assembled at
-// apply() time from system-sections/explore-persona.md (see explore-prompt.ts
-// for the architecture decision + the T11 binding contract). The persona is
-// NOT a run mode and authors no preset roster entry — T11 binds the built
-// text as a dsh-tool-subagent instance's `persona` config. The
-// `omo-explore persona assembled` line is the boot-level observable the
-// probe asserts (a broken persona file is loud at boot, never at T11's
-// first delegation).
+// T10 → P2-T16(A): the omo-explore read-only retrieval subagent persona is
+// assembled at apply() time from system-sections/explore-persona.md (see
+// explore-prompt.ts for the architecture decision + the T11 binding contract).
+// Since P2-T16 the explore-only block is a LOOP over roster.ts
+// DELEGATION_ENTRIES, so every one of the 10 delegation agents logs its own
+// assembly at boot — with an independent try/catch per agent, so one broken
+// persona file never takes the other nine down (loud-but-non-fatal). A broken
+// persona is loud at boot, never at the first delegation.
+//
+// P2-T16 marker formats (documented in full, with the probe-anchor reasoning,
+// in boot-markers.ts — the pure module that builds every line below; KEEP
+// THESE FORMATS STABLE, extend the probe rather than the format):
+//   * `[omo-agents] omo-<id> persona assembled: 1 section, <N> chars`
+//     — 10 lines, one per DELEGATION_ENTRIES row, in roster order. The explore
+//       line is byte-identical to the pre-P2-T16 T10 marker, which
+//       scripts/concerto-mode-probe.sh:694 greps as a substring.
+//   * `[omo-agents] omo-<id> persona FAILED: <describeError>`
+//     — the per-agent failure form (same wording the T10 block already used).
+//   * `[omo-agents] model routes: sisyphus=<P>/<M> explore=<P>/<M>
+//      hephaestus=<P>/<M> oracle=<P>/<M> librarian=<P>/<M>
+//      plan-consultant=<P>/<M> plan-reviewer=<P>/<M> atlas=<P>/<M>
+//      multimodal-looker=<P>/<M> sisyphus-junior=<P>/<M> prometheus=<P>/<M>`
+//     — ONE line, all 11 roster routes in roster order (P2-T16(B)). The
+//       `sisyphus=<P>/<M> explore=<P>/<M>` prefix is byte-compatible with the
+//       T14 marker the probe greps (concerto-mode-probe.sh:707, no line-end
+//       anchor); the full 11-field line is the P2-T20 11-route anchor. The
+//       AC-5 throw path keeps the `[omo-agents] model routes FAILED: …` line.
+//   * `[omo-agents] route warning [<code>]: <message>`
+//     — ONE non-blocking line per resolveModelRoutesWithWarnings() warning
+//       (plan §4.6 rules 1/2; P2-T16(C)). Nothing logs when they do not fire —
+//       the default three-seat distribution must stay silent.
+//   * `[omo-agents] route provider not registered: <provider> (agents: <ids>)`
+//     — ONE non-blocking line per distinct route provider with no registered
+//       adapter (plan §4.6 third warning, runtime layer; P2-T16(D)). Read
+//       through ctx.inject(['llm']) -> llm.listProviders() (verified surface:
+//       dsh-llm lib/index.js:1846, LlmProviderInfo {id,name}). Registration is
+//       keyless and hot-loadable, so this NEVER throws and NEVER blocks; when
+//       the llm service is absent the inject simply never fires. The read is
+//       SETTLED, not literally synchronous at apply(): a bare t0 read is a
+//       measured false positive because dsh-llm-pi-ai registers its
+//       settings-driven routes asynchronously AFTER our apply() — see
+//       boot-markers.ts ROUTE_PROVIDER_CHECK_SETTLE_MS for the measured
+//       timeline and the registry-growth + quiet-fallback design.
+//   * `[omo-agents] route provider check FAILED: <describeError>` /
+//     `[omo-agents] llm inject FAILED: <describeError>`
+//     — unexpected-error discipline shared with every sibling boot block.
 
 // The `.ts` extension is load-bearing: Node 24 type-stripping (P-8.6) does no
 // specifier resolution, and there is no bundler to rewrite it.
@@ -45,8 +84,18 @@ import {
   type ConcertoSyncOutcome,
 } from './concerto-preset.ts'
 import { SISYPHUS_SECTION_ORDER, buildSisyphusSystemPrompt } from './system-prompt.ts'
-import { EXPLORE_SECTION_ORDER, buildExploreSystemPrompt } from './explore-prompt.ts'
-import { resolveModelRoutes } from './model-routes.ts'
+import { resolveModelRoutesWithWarnings, type ModelRoutes } from './model-routes.ts'
+import { DELEGATION_ENTRIES } from './roster.ts'
+import { buildAgentPersona } from './persona-prompts.ts'
+import {
+  describeError,
+  formatPersonaAssembledLine,
+  formatPersonaFailedLine,
+  formatRouteSummaryLine,
+  formatRouteWarningLine,
+  registerRouteProviderCheck,
+  type LlmServiceLike,
+} from './boot-markers.ts'
 import {
   HARD_BLOCKS_INJECTION_EVENT,
   registerHardBlocksInjection,
@@ -68,12 +117,33 @@ interface AgentPresetsLike {
   list(): Promise<RosterEntry[]>
 }
 
+/**
+ * `ctx.inject` is cordis's "start this callback once these services exist"
+ * form. One overload per call site keeps each callback's injected surface
+ * exact: agentPresets for the T6 roster read, and — since P2-T16(D) — the llm
+ * service for the provider-registration warning. The `llm` overload types ONLY
+ * the method the check calls (boot-markers.ts `LlmServiceLike`).
+ */
 interface InjectingContext extends PreStepRegistrationContext {
-  inject(deps: string[], cb: (ctx: { agentPresets: AgentPresetsLike }) => unknown): void
+  inject(
+    deps: readonly ['agentPresets'],
+    cb: (injected: { agentPresets: AgentPresetsLike }) => unknown,
+  ): void
+  inject(
+    deps: readonly ['llm'],
+    cb: (injected: LlmInjection) => unknown,
+  ): void
 }
 
-function describeError(err: unknown): string {
-  return err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+/**
+ * The `ctx.inject(['llm'])` surface: the service plus `on`, which the settled
+ * provider check uses to observe `llm/adapters-updated` (see
+ * boot-markers.ts `registerRouteProviderCheck`). `on` is the same cordis
+ * listener form as PreStepRegistrationContext's, just without a payload.
+ */
+interface LlmInjection {
+  llm: LlmServiceLike
+  on(event: string, listener: () => void): unknown
 }
 
 export function apply(ctx: InjectingContext): void {
@@ -90,30 +160,57 @@ export function apply(ctx: InjectingContext): void {
     console.log(`[omo-agents] hard-blocks injection FAILED: ${describeError(err)}`)
   }
 
-  // T14: resolve + validate the dual routes at apply() time so a
-  // misconfiguration is loud at boot (the probe asserts this marker), and so
-  // T11/T15/T20 read the same validated pairs from model-routes.ts.
+  // T14 → P2-T16(B/C): resolve + validate all 11 roster routes at apply() time
+  // so a misconfiguration is loud at boot (the probe asserts the summary
+  // marker), log the ONE 11-route summary line, and surface the two
+  // non-blocking plan §4.6 route-value warnings. The AC-5 precheck still
+  // throws through this same catch: `model routes FAILED` is unchanged.
+  let routes: ModelRoutes | undefined
   try {
-    const routes = resolveModelRoutes()
-    console.log(
-      `[omo-agents] model routes: sisyphus=${routes.sisyphus.provider}/${routes.sisyphus.model} `
-      + `explore=${routes.explore.provider}/${routes.explore.model}`,
-    )
+    const resolved = resolveModelRoutesWithWarnings()
+    routes = resolved.routes
+    console.log(formatRouteSummaryLine(resolved.routes))
+    for (const warning of resolved.warnings) console.log(formatRouteWarningLine(warning))
   } catch (err) {
     console.log(`[omo-agents] model routes FAILED: ${describeError(err)}`)
   }
 
-  // T10: assemble the omo-explore subagent persona at apply() time — same
-  // loud-but-non-fatal discipline: the probe asserts the marker, and a broken
-  // persona file surfaces here rather than at T11's first delegation.
-  try {
-    const explorePrompt = buildExploreSystemPrompt()
-    console.log(
-      `[omo-agents] omo-explore persona assembled: `
-      + `${EXPLORE_SECTION_ORDER.length} section, ${explorePrompt.length} chars`,
-    )
-  } catch (err) {
-    console.log(`[omo-agents] omo-explore persona FAILED: ${describeError(err)}`)
+  // P2-T16(D): runtime provider-registration check (plan §4.6 third warning).
+  // NON-BLOCKING by contract — registration is keyless and hot-loadable, so a
+  // missing adapter must never take the boot down; a deployment missing e.g.
+  // the pi-ai settings section otherwise only fails later, when a fast-seat
+  // child is first delegated to (session-level model-unavailable, not a
+  // boot-visible line). `ctx.inject` never fires without the llm service, in
+  // which case no line is logged at all. Only runs when the routes resolved,
+  // because the check is a function of them. The reporting read is SETTLED
+  // (boot-markers.ts registerRouteProviderCheck): a settings-driven adapter
+  // registers after this apply() runs, so an immediate read would false-
+  // positive on a fully registered deployment.
+  if (routes !== undefined) {
+    const resolvedRoutes = routes
+    try {
+      ctx.inject(['llm'], (injected) => {
+        registerRouteProviderCheck(injected, injected.llm, resolvedRoutes, console.log)
+      })
+    } catch (err) {
+      console.log(`[omo-agents] llm inject FAILED: ${describeError(err)}`)
+    }
+  }
+
+  // P2-T16(A): assemble every delegation persona at apply() time — the T10
+  // explore block generalized to `DELEGATION_ENTRIES` (roster order). Same
+  // loud-but-non-fatal discipline, now PER AGENT: each row gets its own
+  // try/catch, so one broken persona file surfaces here (naming the agent)
+  // rather than at that agent's first delegation, and never suppresses the
+  // other nine markers. The conductor keeps its separate
+  // `omo-sisyphus system prompt assembled` marker below.
+  for (const entry of DELEGATION_ENTRIES) {
+    try {
+      const persona = buildAgentPersona(entry.id)
+      console.log(formatPersonaAssembledLine(entry.id, persona))
+    } catch (err) {
+      console.log(formatPersonaFailedLine(entry.id, err))
+    }
   }
 
   let outcome: ConcertoSyncOutcome
