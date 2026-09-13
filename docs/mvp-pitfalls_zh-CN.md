@@ -309,3 +309,50 @@ schema 及其 `toolFilter`/`maxDepth` 强制；T11 explore persona 影子（真�
 
 **测试设计的教训保留(P-21.3 仍成立)。** 自动化场景是通过"确认预期工具缺席"来认证安全的。无论本条处置如何,这都是真实的覆盖上限:一项限制需要的是"用任何可用手段去够到被禁**结果**"的场景。在 MVP 威胁模型下不紧急;但在全量移植宣称任何限制"已强制"之前,它是必需的。
 
+## 9. P-22（2026-09-13，Phase 2 名册移植——运行时深度语义发现）
+
+**由 Phase 2（11-agent 名册）工作登记；见 [Phase 2 计划书](./plans/phase2-dev/phase2-plan.md) §4.4/§4.5/§4.7
+与任务 P2-T19。** 这一条是**设计模型**层面的坑，不是代码缺陷:交付的设计自洽、每一道门都绿,错的是对
+harness 某个字段的心智模型。它只在阶段自己的**正向**嵌套委派场景被执行时才暴露。仲裁决定 `D-2026-09-13-01`。
+
+| 字段 | 记录 |
+|---|---|
+| **症状** | 名册最初的设计给 `atlas` `maxDepth: 2`、其余委派行 `maxDepth: 1`,含义是"atlas 可再委派、其余不可"。在该设计下 **atlas 的再委派物理上不可能**:e2e 第一条正向链(指挥 → atlas → explore)根本跑不完。 |
+| **证据** | 该链路写在 pinned harness 源码里,不是解释:`dsh-tool-subagent/lib/index.js:508-519` 把**该行自身**的 `config.maxDepth` 折进 `request.maxDepth`,`dsh-subagent/lib/index.js:432-438`(`resolveChildDepth`)计算 `childDepth = parent.depth + 1`,一旦 `childDepth > maxDepth` 即抛 `SubagentDepthError`。因此一个上限为 1 的行只能从 depth 0 被调用——depth 1 的 atlas 去调任何上限 1 的行,等于拿 depth 2 去对它 1 的上限。由新增的 `atlas-nested-delegation` 场景(P2-T19,commit `2882fb4`)复现:它必须先失败,才有后面的更正。 |
+| **根因** | `maxDepth` 被读成了**调用方的子树预算**("这个 agent 的后代能到多深"),实际是**被调用行的上限**("这个工具最深的可被调用子级深度")。两种读法对紧邻指挥的行一致,对任何处于链中间的行都分叉。`roster.ts` 最初的行内注释与计划书 §4.4 的映射表都按错的读法写,所以错误是被**一致地**复制,而不是被抓出来。 |
+| **门禁为何漏掉** | 每一道门都与**错的模型**自洽。静态门(c10、doctor-lite)断言"每行的 `maxDepth` 等于名册值"——为真。`prove-explore-maxdepth` 证明断言 depth-1 拒绝的逐字文案——为真,而且会一直真。既有的嵌套场景断言子 agent 的委派工具**物理缺席**(`unknown tool`),而这一条 deny 名单本就保证,因此没有任何场景要求一条**可到达**的链在 depth 2 上跑通。这是 P-21.3 的教训换了一层:断言描述的是"建成的机制",而不是"宣称的能力"("atlas 能编排 worker")。 |
+| **修复** | **10 个委派行统一 `maxDepth: 2`**(指挥不带上限——它是主会话 persona,不是一行)。委派链最深 2 层(指挥 0 → atlas 1 → worker 2),depth-3 结构性不可能;atlas 自身递归按同一条规则封顶在 depth 2。逐类 deny 名单(每个非 atlas 子级物理缺席 10 个委派 toolName)仍是嵌套委派的**主防**;深度门是纵深防御。一次过重新钉死:`roster.ts` + YAML 模板值与注释、`roster.test.ts`、重新生成的 `roster.md` 快照、`concerto-preset.test.ts`、c10、doctor-lite、probe 的名册派生断言,以及 `prove-explore-maxdepth.mjs`(depth-1 现在**通过**——那正是 atlas→worker 路径;depth-2 在两条启动路径上都被 `depth 3 exceeds maxDepth 2` 拒绝;退役的那个断言场景保留为非真空控制)。计划书与基准表按**退出标准 d** 改文档,而不是改结论。 |
+| **考虑过的替代方案** | 给 atlas 单独一个更大的上限、其余保持 1。否决:在"被调用行"语义下,atlas 的上限管的是**atlas 自己能否被调用**,而不是它的子级,所以它根本表达不了"只有 atlas 可委派"——唯一能表达这件事的机制是 deny 名单,而名单已经做到了。 |
+| **状态** | 🔧 **已更正 + 已验证**(2026-09-13/14,P2-T19;`atlas-nested-delegation` 19/19、`plan-reviewer-write-denied` 13/13、本地 8/8 门绿)。 |
+| **可迁移的教训** | **深度/上限类字段的语义必须由正向测试钉住,而不只是负向测试。** 拒绝性测试只证明"上限会拒",只有一条可执行的**最深合法链**才能证明它"该放行的都放行"。另外:一张统一从某一种语义读法推导出来的设计表,会统一地错、统一地绿——那个读法本身需要一次运行时探针,然后这张表才配被当作数据。 |
+
+## 10. P-23（2026-09-14，Phase 2 boot marker——settings 驱动的 provider 注册是异步的）
+
+**由 Phase 2 的 boot marker 工作登记;任务 P2-T16(D)。** 该检查按决定本就是非阻断的,这里记的是**时序**
+——第一版实现与实测的偏差——因为同一形状适用于本仓库未来每一个"在 boot 时读 harness 注册表"的检查。
+
+| 字段 | 记录 |
+|---|---|
+| **症状** | 新增的 `route provider not registered` boot marker 用来在 11 条路由中某 provider 未注册时**警告**(永不阻断)。第一版在 `apply()` 时刻同步直读,结果在一个 provider **全部已注册**的 probe 沙箱里打出 `route provider not registered: deepseek`——对健康部署的误报,会让这条警告彻底失去意义(并训练读者忽略它)。 |
+| **证据** | 真实 probe 启动(`scripts/concerto-mode-probe.sh`,dsh 0.1.5-rc.1,2026-09-12):`t+0` 我们 `apply()` 运行时,`llm.listProviders()` 返回 `[deepseek-official]`;`t+16ms…` 注册表经一个 `llm/adapters-updated` 事件**增长**为 `[deepseek-official, deepseek]`;观测到的最坏情况是同一个增长事件出现在 `t+5.8s`;而晚到的 session scope 抖动会持续抛出事件,其注册表读取**瞬时为空**。依赖里的根因:`dsh-llm-pi-ai` 在它**自己的** `ctx.inject(['settings'])` 回调里注册 settings 驱动的路由(`pi-ai/lib/index.js:2659-2681`),那是**在我们之后**才跑的。因此快座 provider 在裸的 apply 时刻直读时,确实"不在"。 |
+| **根因** | 对一张由**别的插件**的 inject 回调**异步**填充的注册表,在 boot 时做**同步**读取,是一场竞态,而且输家是确定的(我们的 `apply()` 永远先跑)。在这里误报比漏报更糟:`provider` 是静态部署事实,早读会报出一个并不存在的部署缺陷。 |
+| **门禁为何漏掉** | boot-marker 单测钉的是行的**格式**,以及"缺 provider 时 fire / provider 齐时不 fire"两侧,且跑在桩服务上——那里根本不建模注册顺序。probe 的 boot 断言是后加的,而它第一次真跑就抓到了它:健康 boot 里少了一行 marker,这正是那个误报。诚实记录:设计评审当时把"在 `apply()` 里读 provider 列表"当成了显然正确。 |
+| **修复** | **settled 检查模式**,实现在 [`patches/omo-dsh/omo-agents/src/boot-markers.ts`](../patches/omo-dsh/omo-agents/src/boot-markers.ts) 的 `registerRouteProviderCheck`:(1) 判定读发生在注册表相对 inject 时刻快照**增长**之后——那个增长**就是** settings 驱动的注册;否则退回到自最后一次拓扑变化起算的静默窗口(`ROUTE_PROVIDER_CHECK_SETTLE_MS = 8000`),好让**什么都没注册**的部署照样被报出来;(2) 注册表增长事件触发时先过一个短宽限期(`ROUTE_PROVIDER_CHECK_EVENT_GRACE_MS = 50`),把一次 settings 加载产生的注册突发合并;(3) **那一次上报读发生在 timer 回调里**,而不是事件处理器里——timer 跑在派发 fiber 的 scope 之外,而事件处理器可能解析到隔离的 session realm(同一次 boot 就见过晚到抖动带来的瞬时空列表);(4) 一个 `settled` 标志保证只跑一次检查,晚到抖动既不能重复也不能撤回 boot 裁定;(5) 抛异常的列表读取或抛异常的 `ctx.on` 仍只留下恰好一个诚实结果(一行 `FAILED`,或 fallback 仍在武装)。8 秒是刻意慷慨的:缺 provider 是静态事实,而"慢启动时提前上报"正是要避开的失败模式。由 `tests/omo-agents/boot-markers.test.ts` 覆盖(P2-T16 时 32 用例,含假定时器的 settle 覆盖),probe 现在断言健康 boot 上**没有** missing-provider 行,并带一个伪造 provider 的敏感性检查。 |
+| **状态** | 🔧 **已更正 + 已验证**(2026-09-13,P2-T16;probe boot marker 绿,本地 8/8 门绿)。 |
+| **可迁移的教训** | **在 boot 时读一张异步填充的注册表,是竞态,不是事实。** 要么等拓扑 settled(并把"settled"的含义写进代码、写成具名常量),要么把检查挪到一个答案稳定的时点。而当这个检查的存在意义是抓**缺失配置**时,宁可要一条迟到的真话,也不要一条早到的假话:一条在每次健康启动时都喊狼来了的警告,严格劣于没有警告。 |
+
+## 11. P-24（2026-09-13，Phase 2 e2e harness——"取首个命中"的字符串锚点在名册规模下失去唯一性）
+
+**由 Phase 2 的 e2e 工作登记;任务 P2-T18。** 与 P-23 同族(一个在 n=1 成立、在 n=10 崩掉的假设),
+但层不同:这一条住在**测试 harness 自己**里,而且它的失败形态是"悄悄产出错误的物件",不是"门变红"。
+
+| 字段 | 记录 |
+|---|---|
+| **症状** | `roster-parade` 场景必须为每条委派 lane 注入一个 `MOCKROLE=<agent>` 标记,好让 mock LLM server 把每个子级路由到对应剧本。既有的注入器(`appendMockRoleMarker`,`tests/e2e/drive.mjs`)用 `String.replace(needle, …)` 定位插入点,其中 needle 是字面块标头 `persona: |-`,而 `MOCKROLE_BLOCK_SCALARS` 是一张硬编码的 2 条目表。这两个假设都来自那个只有**一行**委派行的 preset。到了 12 行,10 个委派行渲染出的都是同一个 `persona: |-` 标头,于是"取首个命中"的 `replace` 会把**后面**某个 agent 的标记写进**第一**行——parade 此后就会去跑错的 agent,而它的断言照样运行。 |
+| **证据** | 在泛化该机制时发现;`git log -1 c28d5a7`(P2-T15)正是让十行共享 `persona: |-` 形状的那次改动,也就是 needle 失去唯一性的时刻。随后 P2-T18 自己的 hermetic `--self-test` 把它钉住:用**真实**模板经**真实**渲染器渲染,断言 11 个标记各自落在自己那行的 `id: tool-subagent-<id>` 锚点下(11/11),并在修复前把旧的"首个命中"bug 复现为一次变异 QA(commit `a9484d3`)。 |
+| **根因** | 两个 n=1 的硬编码假设叠加:注入器的锚点是**每一行共享的模板形状**,而不是**行身份**;它的查找用的是"首个命中即胜",且没有任何"命中唯一"的断言。对歧义锚点做 `String.replace` 不会失败——它会在错的目标上成功。 |
+| **门禁为何漏掉** | 没有门禁能抓到:这就是那个**产出**门禁所读证据的 harness。单测覆盖的是渲染器,不是注入器;而 e2e 场景在标记落错行的情况下照样会绿——只要每个子级还能匹配到**某个**剧本(而 `detectRole` 的"首个含 `MOCKROLE=` 的 system message 胜出"会把这种混淆伪装成一个路由结果)。它是在泛化过程中读代码读出来的——这正是为什么这次泛化交付的是一个落点校验器,而不是一句注释。 |
+| **修复** | 机制改为名册驱动,锚点改为行身份:`MOCKROLE_BLOCK_SCALARS` 从名册计算得出,needle 改为唯一的 `id: tool-subagent-<id>` 行,插入发生在该行**首个内容行**、且限定在该行的有界扫描内(因此不可能跨行绑定),行锚幂等(`sisyphus` 与 `sisyphus-junior` 不会相撞),**未知 role 响亮 throw**,命中数不等于恰好一次时 throw 而不是替换首个。`verifyMockRoleMarkerLanding` 独立断言落点,`--self-test` 对真实模板 + 真实渲染器跑满 11 行。 |
+| **状态** | 🔧 **已更正 + 已验证**(2026-09-13,P2-T18;`--self-test` 11/11 落点、`roster-parade` 19/19 断言、本地 8/8 门绿)。 |
+| **可迁移的教训** | **当字符串注入的锚点是"形状"而非"身份"时,它必须断言自己的命中次数。** "取首个命中"不是一种查找策略,而是"没有策略":在 n=1 它与正确无法区分,在 n=10 它悄悄写进错的对象——产出一个断言了**错主体**的**绿色**测试,这比红色更糟(又是 P-21.3 与 P-22 的教训,这次发生在 harness 自己身上)。 |
+

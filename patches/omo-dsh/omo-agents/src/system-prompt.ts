@@ -2,7 +2,7 @@
 // AC-3). Assembles the four T7 markdown policy sections plus the P2-T14
 // delegation roster in the fixed order
 // [role, delegationDiscipline, delegationRoster, hardBlocks, antiPatterns] —
-// the roster arrived as the 5th markdown section in P2-T14 (plan §4.5 item 2:
+// the roster arrived as the 3rd markdown section (of five) in P2-T14 (plan §4.5 item 2:
 // the static port of OMO's dynamically generated Delegation Table), inserted
 // directly after `delegationDiscipline` so the policy and the target list it
 // applies to read together. No hardcoded prompt strings here; the markdown

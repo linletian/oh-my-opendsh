@@ -139,7 +139,7 @@
 - **证据**：2026-09-12 批次3。prometheus-persona.md 174 行 + 快照；访谈式规划框架完整（intent 路由 CLEAR/UNCLEAR/explicit-ask/on-the-fence + 两过滤器 + owner-decision 例外、topology lock、clearance check、decision-complete 北极星含 full-scope/Must-NOT-Have/column-zero 任务行/agent 执行 QA）；访谈对象改为指挥（问题入报告含选项/分叉/推荐默认，不 ask_user、不停摆、跨 continuation 续谈）；只读收窄记录（上游 hook 限 .md 写不移植）；/ulw-plan 及评审环未作为可用引用。双 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：2 小时。
 
-### [x] P2-T14 — sisyphus 第 5 段：名册委派表
+### [x] P2-T14 — sisyphus 第 3 段（总 5 段）：名册委派表
 
 - **产出**：`system-sections/delegation-roster.md` + `SISYPHUS_SECTION_ORDER` 更新 + sisyphus 快照更新。
 - **做法**：数据取自 P2-T1 摘出的上游元数据全量值；每 agent 一行：域 / 何时派 / 何时不派 / 成本档（FREE/CHEAP/EXPENSIVE）；署名头标注元数据来源；插入顺序 `delegationDiscipline` 之后；`{{` 检查通过。
@@ -197,12 +197,12 @@
 - **证据**：2026-09-13/14（deepseek-flash，2 轮）。轮1 发现运行时语义：深度门读被调用行 maxDepth（dsh-tool-subagent:508-519 / dsh-subagent:432-438）——atlas 再委派物理不通；仲裁决定 D-2026-09-13-01：10 委派行 maxDepth 统一 2（链最深 2 层、depth-3 结构性不可能、deny 名单仍主防），计划书/基准表按 DoD-d 由仲裁更正。轮2 落地：roster.ts/模板值+注记、全部 pin 重钉（roster.test.ts/roster.md 再生成/concerto-preset/c10/doctor-lite/probe roster 派生）、prove-explore-maxdepth 重钉（depth-1 通过=atlas→worker 修正路径、depth-2 双路径拒绝 "depth 3 exceeds maxDepth 2"、retired1 非空控制、default3 不变）。plan-reviewer-write-denied PASS（13/13：write/edit+全 10 委派工具物理缺席 roster 派生、unknown tool 逐字、目标未落盘、env 钉独立座位）；atlas-nested-delegation PASS（19/19：指挥→atlas→explore depth-2 链完成、grandchild 真实 explore 座/persona、atlas 广告全 10 工具而只读 grandchild 全缺席、对照物理缺席语义未照搬退役报错文案）。评审 Kimi APPROVE（独立执行 prove 三模式）+ mcode APPROVE（30 分钟限额重试）；CI 8/8 绿（门2=419、e2e 7/7、探针 exit 0）。
 - **依赖**：P2-T18。**量级**：3 小时。
 
-### [ ] P2-T20 — 静态门 / doctor-lite / probe 扩展
+### [x] P2-T20 — 静态门 / doctor-lite / probe 扩展
 
 - **产出**：`scripts/verify-concerto-static.mjs`（c10 泛化）+ `scripts/doctor-lite-core.ts`（subagent 行**逐行契约断言**）+ `scripts/concerto-mode-probe.sh` 与 `scripts/prove-route-logging.mjs`（名册 marker）。
 - **做法**：c10 泛化为名册类断言——目标清单按计划书 §5 DoD-c（12 行名单 + 四类 filter/maxDepth 形状 + 无通用/产品行；断言数 ≥ 现状 4 类基线）；c01–c09 **不动**（归档路径冻结）；doctor-lite 现状已对每行跑 Config schema（`validateCompositionRows`）——本任务把它从"逐行 schema 合法"扩展为"**逐行契约断言**"（每行 toolName/filter/maxDepth/哨兵渲染结果符合名册类；0.1.5-rc.1 复核 P1 教训的语义门补白）；probe 断言 10 个 persona marker + 路由汇总 + 三条警告行 + **11 条路由的 provider 均 active**（POST /api/llm.providers——把"可审计"从配置层推到运行时层，退出标准 a 的补强，计划书 §4.7）；proofs 扩展名册路由断言。
 - **判定**：✅ 门 4/6/8 绿；c10 断言清单变长（逐条列出对比）。
-- **证据**：（待填）
+- **证据**：2026-09-14（deepseek-flash，1 P3 修复轮）。c10 泛化为 10 条名册派生记录（DoD-c ①-④：无通用/产品行、12 行普查 roster 序、四类 filter 形状+类普查、maxDepth==entry.maxDepth 统一），每条 ≥ 4 类基线对应项，c01-c09 零改动，敏感性实测具名命中；doctor-lite-core.ts 纯助手 + 全 10 行逐行契约断言（语义门补白 0.1.5-rc.1 P1 教训）+ doctor-lite.test.ts 11→24 含变异负例；probe 名册启动契约：10 persona 行（roster 派生）、11 路由汇总**整行相等**（mcode P3 修复：子串 glob 容忍尾部字段 → [[ == ]]，A/B 敏感性证明）、三条警告缺失断言 + 伪造 provider 敏感性失败、distinct provider active（transport-adaptive）、全 10 行物化 greps，双 boot exit 0 且既有断言零回归；prove-route-logging 第二 roster 子级（looker 视觉路由，3 互异路由，--expect unlogged 不变）；prove-toolfilter 旧 fetch:false 注释修正。评审：Kimi APPROVE（2 NIT 信息级）→ mcode P3 → 修复 → 复审双 APPROVE；CI 8/8 绿（门2=432）。
 - **依赖**：P2-T16。**量级**：3 小时。
 
 ---
@@ -212,7 +212,7 @@
 ### [ ] P2-T21 — 署名与文档
 
 - **产出**：`THIRD_PARTY_NOTICES.md` 新增 "Phase 2 persona semantic ports" 小节 + `README*.md` / `docs/install-concerto*.md` 注记 + **`README*.md` 协奏节"名册路由与 env 覆盖表"** + `CHANGELOG.md` 条目 + 踩坑登记（如有）。
-- **做法**：NOTICES 逐文件列出 9 个 persona + `delegation-roster.md`（含既有 4 个 OMO 派生文件补登，计划书 §4.9）；README 的协奏描述更新为 11-agent 名册并写明"名册完整 ≠ `/ulw-*` ≠ Team Mode"（R-8）；**README 协奏节新增"名册路由与 env 覆盖表"**（11 agent × 席位 × `OMO_*` env 对——部署前可查"模型链留在配置"的操作面，ROADMAP 关键约束的落地证据，数据从 roster.ts/基准表 §1 复制并标注单一事实源）；install-concerto 文档注记 installer 仍为 1+1（§4.8）；实施期真实踩坑按 P-xx 模板登记 `docs/mvp-pitfalls*.md`。
+- **做法**：NOTICES 逐文件列出 9 个 persona + `delegation-roster.md`（含既有 OMO 派生文件补登，计划书 §4.9——2026-09-14 实测为 3 个：explore-persona/hard-blocks/anti-patterns；role/delegation-discipline 系原创内容不补登）；README 的协奏描述更新为 11-agent 名册并写明"名册完整 ≠ `/ulw-*` ≠ Team Mode"（计划书 §6 R-8）；**README 协奏节新增"名册路由与 env 覆盖表"**（11 agent × 席位 × `OMO_*` env 对——部署前可查"模型链留在配置"的操作面，ROADMAP 关键约束的落地证据，数据从 roster.ts/基准表 §1 复制并标注单一事实源）；install-concerto 文档注记 installer 仍为 1+1（§4.8）；实施期真实踩坑按 P-xx 模板登记 `docs/mvp-pitfalls*.md`。
 - **判定**：✅ 门 7（docs consistency）绿；NOTICES 新小节行数 == 派生文件清单数；既有条目零改动（git diff 核对）。
 - **证据**：（待填）
 - **依赖**：P2-T17…T20 完成后统一措辞。**量级**：2 小时。

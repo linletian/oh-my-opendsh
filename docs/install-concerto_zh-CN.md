@@ -15,6 +15,13 @@
 基础体验只需 preset：指挥 persona 与 explore 绑定（persona + `toolFilter` + `maxDepth:1` +
 双路由）全部烘焙在两个 YAML 文件里，自包含、无仓库依赖。
 
+> 📌 **本通道的范围（2026-09-14）。** 本文下面装的全部是 **1+1 preset**——指挥 + 唯一的 `explore`
+> 委派绑定——来自冻结归档 [`patches/omo-dsh/omo-agents-current/`](../patches/omo-dsh/omo-agents-current/)
+> （v0.2 动态插件的逐字存档）。**完整 11-agent 名册**（指挥 `sisyphus` + 10 个委派目标，见
+> [README](../README_zh-CN.md) 的"名册路由与 env 覆盖表"）只存在于开发树，随**未来 release** 提供；
+> 是否/何时经本 installer 通道下发属 **Phase 7** 的发布节奏决策，不是本文的承诺。在那之前，本文的
+> 安装途径与开发树的名册**预期就是不一致的**——这个分歧被如实记录，而不是粉饰过去。
+
 ## 前置条件
 
 - DeepSeek Harness（含 agent preset 体系；依赖与 shipped `standard` preset 同套包）。

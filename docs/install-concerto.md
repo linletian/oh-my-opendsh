@@ -15,6 +15,17 @@
 The base experience needs only the preset: the conductor persona and the explore binding
 (persona + `toolFilter` + `maxDepth:1` + dual route) are all baked into the two YAML files.
 
+> 📌 **Scope of this channel (2026-09-14).** Everything below installs the **1+1 preset** — the
+> conductor plus the single `explore` delegation binding — served from the frozen
+> [`patches/omo-dsh/omo-agents-current/`](../patches/omo-dsh/omo-agents-current/) archive
+> (the verbatim v0.2 dynamic-plugin snapshot). The **full 11-agent roster**
+> (conductor `sisyphus` + 10 delegation targets, see the roster route & env override table in
+> the [README](../README.md#roster-routes--env-override-table--名册路由与-env-覆盖表)) lives in the
+> development tree only and ships with a **future release**; whether and when it is pushed down
+> this installer channel is a **Phase 7** release-cadence decision, not a promise of this
+> document. Until then, the install paths here and the development tree's roster are expected to
+> differ, and that difference is recorded rather than papered over.
+
 ## Prerequisites
 
 - A DeepSeek Harness with the agent-preset system (the shipped `standard` preset's package set).

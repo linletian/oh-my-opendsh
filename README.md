@@ -38,6 +38,27 @@ Every decision in this project is governed by these two principles, which have e
 ## Installation
 
 Concerto Mode (协奏模式) installs as a persistent agent preset (core) plus an optional dynamic plugin.
+The preset carries an **11-agent roster**: the conductor **sisyphus** plus **10 delegation
+targets**, each on its own route binding.
+
+| Delegation target | Class | Seat (default provider / model) |
+|---|---|---|
+| `explore` | read-only | fast — `deepseek` / `deepseek-v4-flash` |
+| `hephaestus` | worker | strong — `deepseek-official` / `deepseek-v4-pro` |
+| `oracle` | read-only | strong — `deepseek-official` / `deepseek-v4-pro` |
+| `librarian` | read-only | fast — `deepseek` / `deepseek-v4-flash` |
+| `plan-consultant` | read-only | strong — `deepseek-official` / `deepseek-v4-pro` |
+| `plan-reviewer` | read-only | strong — `deepseek-official` / `deepseek-v4-pro` |
+| `atlas` | orchestrator | strong — `deepseek-official` / `deepseek-v4-pro` |
+| `multimodal-looker` | allowlist (`read`, `read_image`) | vision — `deepseek-official` / `deepseek-v4-flash-vision-exp` |
+| `sisyphus-junior` | worker | fast — `deepseek` / `deepseek-v4-flash` |
+| `prometheus` | read-only | strong — `deepseek-official` / `deepseek-v4-pro` |
+
+> ⚠️ **A complete roster is not a complete OMO orchestration surface**
+> (risk R-8, docs/plans/phase2-dev/phase2-plan.md §6). Concretely, and in three separate
+> senses: the 11-agent roster is complete **≠** the `/ulw-*` command face (Phase 4) **≠**
+> Team Mode membership semantics (Phase 5). Nothing in this repository claims either of the
+> latter two today.
 
 - **One line** (recommended):
 
@@ -51,6 +72,50 @@ Concerto Mode (协奏模式) installs as a persistent agent preset (core) plus a
   [docs/install-concerto.md](./docs/install-concerto.md) and it sets itself up.
 
 Full guide (options, adaptation, uninstall — incl. a plain-language "what the options actually change" section): [English](./docs/install-concerto.md) / [中文](./docs/install-concerto_zh-CN.md).
+
+> 📌 **Installer channel:** the install paths above still ship the **1+1 preset** (the frozen
+> v0.2 archive, [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)),
+> not the 11-agent roster. The full roster ships with a **future release**; whether and when it
+> is pushed down this channel is a Phase 7 release-cadence decision (plan §4.8).
+
+### Roster routes & env override table / 名册路由与 env 覆盖表
+
+**Single source of truth:** [`patches/omo-dsh/omo-agents/src/roster.ts`](./patches/omo-dsh/omo-agents/src/roster.ts)
+(the `ROSTER` rows below are copied from it) — mirrored as the data table in
+[`docs/plans/phase2-dev/phase2-roster.md`](./docs/plans/phase2-dev/phase2-roster.md) §1. Every
+default is overridable per agent through the env pair, so the model chain stays in configuration
+rather than in code.
+
+| # | Agent | Class | `maxDepth` | Seat | Default `provider` / `model` | Env override pair |
+|---|---|---|---|---|---|---|
+| 1 | `sisyphus` (conductor — route only, not a delegation tool) | — | — | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL` |
+| 2 | `explore` | read-only | 2 | fast | `deepseek` / `deepseek-v4-flash` | `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL` |
+| 3 | `hephaestus` | worker | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_HEPHAESTUS_PROVIDER` / `OMO_HEPHAESTUS_MODEL` |
+| 4 | `oracle` | read-only | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_ORACLE_PROVIDER` / `OMO_ORACLE_MODEL` |
+| 5 | `librarian` | read-only | 2 | fast | `deepseek` / `deepseek-v4-flash` | `OMO_LIBRARIAN_PROVIDER` / `OMO_LIBRARIAN_MODEL` |
+| 6 | `plan-consultant` | read-only | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_CONSULTANT_PROVIDER` / `OMO_PLAN_CONSULTANT_MODEL` |
+| 7 | `plan-reviewer` | read-only | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_REVIEWER_PROVIDER` / `OMO_PLAN_REVIEWER_MODEL` |
+| 8 | `atlas` | orchestrator | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_ATLAS_PROVIDER` / `OMO_ATLAS_MODEL` |
+| 9 | `multimodal-looker` | allowlist | 2 | vision | `deepseek-official` / `deepseek-v4-flash-vision-exp` | `OMO_MULTIMODAL_LOOKER_PROVIDER` / `OMO_MULTIMODAL_LOOKER_MODEL` |
+| 10 | `sisyphus-junior` | worker | 2 | fast | `deepseek` / `deepseek-v4-flash` | `OMO_SISYPHUS_JUNIOR_PROVIDER` / `OMO_SISYPHUS_JUNIOR_MODEL` |
+| 11 | `prometheus` | read-only | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_PROMETHEUS_PROVIDER` / `OMO_PROMETHEUS_MODEL` |
+
+- **Hard precheck (AC-5):** the conductor route and the `explore` route must **differ**. An
+  equal pair is a loud, fatal error at apply time, not a warning — "don't bet on a single
+  model" is only real if the conductor and its retrieval child sit on different routes.
+- **Two non-blocking seat warnings** (boot log only; each says "check this deployment's
+  config", never "the boot failed"): ① every one of the 11 rows resolves to the *same* route;
+  ② **all 10 delegation targets** land on the *same* seat (a single-seat concentration hint).
+- **Provider-registration warning (non-blocking):** a route whose provider is not registered
+  (typically a deployment with no `llm-pi-ai` settings section, which leaves the fast seat
+  unregistered) logs `route provider not registered: <provider> (agents: …)` at boot. The check
+  is **settled**, not synchronous — settings-driven adapters register *after* a plugin's
+  `apply()`, so a bare apply-time read false-positives. Deliberate consequence: the missing
+  provider is visible at **boot**, not first discovered when a fast-seat child is delegated to.
+- **`maxDepth: 2` on every delegation row** is the *invoked* row's cap (dsh reads
+  `config.maxDepth` → `request.maxDepth` → `resolveChildDepth`), so chains reach 2 levels
+  (conductor 0 → `atlas` 1 → worker 2) and depth 3 is structurally impossible; the per-class
+  deny lists remain the primary nested-delegation guard.
 
 ## Current Status
 

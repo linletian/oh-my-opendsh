@@ -50,7 +50,7 @@ Phase 0 交付、Phase 1 未触碰的 live 路径当前是 **1+1 编制**：
 |---|---|---|
 | `src/concerto-preset.ts` | apply() 时把 `concerto/` 模板同步进 `$DSH_HOME/.agent-presets/concerto/`；3 个哨兵（sisyphus persona / explore persona / explore agentOptions） | 哨兵机制从 3 个推广到 **29** 个（11 persona + 10 agentOptions + 8 逐行 deny，§4.4）；渲染器需名册驱动化 |
 | `src/model-routes.ts` | 2 条路由（sisyphus / explore），env 可覆盖，AC-5 预检"两对必须不同" | 推广为 11 条路由的名册映射（§4.6） |
-| `src/system-prompt.ts` + `system-sections/` | sisyphus 4 段（role / delegation-discipline / hard-blocks / anti-patterns）；explore 1 段 persona | 新增 9 个 persona 文件 + sisyphus 增"名册委派表"第 5 段（§4.3/§4.5） |
+| `src/system-prompt.ts` + `system-sections/` | sisyphus 4 段（role / delegation-discipline / hard-blocks / anti-patterns）；explore 1 段 persona | 新增 9 个 persona 文件 + sisyphus prompt 扩为 5 段、新增"名册委派表"为第 3 段（§4.3/§4.5） |
 | `src/hard-blocks-injection.ts` | 1 个 `agent/pre-step` listener 向**每个** subagent 注入 Hard Blocks + Anti-Patterns | ✅ **零改动自动覆盖** 9 个新 agent（注入门是 `origin === 'subagent'`）；e2e 对一个新 agent 断言即可 |
 | `concerto/agent.cordis.yml` | delegation 组 3 行（control / list-agents / tool-subagent-explore）；通用 subagent 行已 DROP（F1 加固） | delegation 组扩为 **12 行**（+9 个 `dsh-tool-subagent` 实例）；每行的 toolFilter/maxDepth 按名册类（§4.4） |
 | 测试 | 187 单测（门 2 现状，含 2 个 persona 快照与 vendor 78）；e2e 4 场景（hello / demo / write-denied / nested-denied）；静态门 c01–c10 | 名册快照测试（退出标准）；e2e 增名册场景（§4.7）；静态门 **c10**（live 路径加固断言）需泛化，c01–c09 断在**归档路径**不受影响 |
@@ -149,7 +149,7 @@ OMO 的限制是 `permission` 表（deny 列表 / allowlist）；DSH 的等价�
 "agent 间的委派绑定"在本项目的 DSH 形态下分解为三件事：
 
 1. **指挥 → 10 个委派目标**：delegation 组的 10 个 `dsh-tool-subagent` 实例行本身即绑定（形态 A，可行性报告 §12.4）。`backgroundMode: continuable` **全员**沿用 explore 先例——决策记录（为何不 per-class 取 one-shot）：① OMO v5 把 `run_in_background=true` 升格为 "the standard spawn"（调查报告 §4.3），continuable 是其 DSH 对应物；② oracle 上游 prompt 明确支持 "follow-up questions via session continuation"，one-shot 会砍掉这类追问能力；③ 全员统一省去 per-class 心智分叉。**代价明示**：librarian / multimodal-looker / plan-reviewer 类无状态一次性任务常驻槽位，压力记入 Q-4——若 Q-4 实测咬人，per-class `one-shot` 是现成 fallback（改 YAML 单字段即可），届时按 DoD-d 回填。
-2. **指挥的"名册委派表"**：OMO 的 sisyphus prompt 有从 `agentMetadata`（useWhen/avoidWhen/triggers/cost/keyTrigger）动态生成的 Delegation Table / Tool Selection / Key Triggers 段落。移植为 `system-sections/delegation-roster.md`——一张静态 markdown 表：每 agent 的域、何时派、何时不派、成本档（FREE/CHEAP/EXPENSIVE 取自上游元数据）。插入 `SISYPHUS_SECTION_ORDER` 的 `delegationDiscipline` 之后（第 5 段），快照同步更新。内容源自上游 `agents/types.ts` 的 `AgentPromptMetadata` 与各 agent 文件的 `*_PROMPT_METADATA`（署名头标注）。
+2. **指挥的"名册委派表"**：OMO 的 sisyphus prompt 有从 `agentMetadata`（useWhen/avoidWhen/triggers/cost/keyTrigger）动态生成的 Delegation Table / Tool Selection / Key Triggers 段落。移植为 `system-sections/delegation-roster.md`——一张静态 markdown 表：每 agent 的域、何时派、何时不派、成本档（FREE/CHEAP/EXPENSIVE 取自上游元数据）。插入 `SISYPHUS_SECTION_ORDER` 的 `delegationDiscipline` 之后（即其第 3 段，总段数 5），快照同步更新。内容源自上游 `agents/types.ts` 的 `AgentPromptMetadata` 与各 agent 文件的 `*_PROMPT_METADATA`（署名头标注）。
 3. **atlas 的再委派**：atlas 行不 deny 委派工具。⚠️ **maxDepth 语义修正（2026-09-13，P2-T19 运行时发现）**：dsh 深度门读的是**被调用行**的 `maxDepth`（`dsh-tool-subagent/lib/index.js`:508-519 `config.maxDepth` → `request.maxDepth`；`dsh-subagent/lib/index.js`:432-438 `resolveChildDepth`：`childDepth = parent.depth + 1 > maxDepth → SubagentDepthError`）——它是"该工具可被调用的最大子级深度"，不是调用方的子树预算。原案"atlas=2、其余=1"在此语义下使 atlas 再委派物理不通。**修正：全部 10 个委派行 `maxDepth: 2`**——委派链最深 2 层（指挥 0 → atlas 1 → worker 2），depth-3 结构性不可能；其余 agent 全量 deny 不变，嵌套委派对非 atlas **物理不可能**（AC-6b 模式的推广）；e2e 正向场景证明此链路（§4.7）。
 
 ### 4.6 路由默认：DeepSeek 系优先的三席位
@@ -191,7 +191,7 @@ R1 分期策略（DeepSeek 系路由优先）+ OMO 模型链的角色语义（�
 
 ### 4.9 署名与合规
 
-- `THIRD_PARTY_NOTICES.md` 新增 "Phase 2 persona semantic ports" 小节：**逐文件**列出 9 个 persona markdown + `delegation-roster.md`，每行标注上游来源文件（tag 路径）与"语义移植"处置（沿用 D15 逐文件精神到非 vendor 的派生内容；explore-persona.md 等既有 4 个文件一并补登，使 OMO 派生内容清单完整）。
+- `THIRD_PARTY_NOTICES.md` 新增 "Phase 2 persona semantic ports" 小节：**逐文件**列出 9 个 persona markdown + `delegation-roster.md`，每行标注上游来源文件（tag 路径）与"语义移植"处置（沿用 D15 逐文件精神到非 vendor 的派生内容；既有 OMO 派生文件一并补登，使 OMO 派生内容清单完整——2026-09-14 实测更正：既有 OMO 派生 markdown 共 3 个：explore-persona.md + 2 个 sisyphus 段（hard-blocks.md / anti-patterns.md）；sisyphus 另两段 role.md / delegation-discipline.md 署名头为 "Source: original (oh-my-opendsh task T7 spec, this repo)"，系本项目原创内容，补登将捏造归属）。
 - 每个新 persona 文件的 HTML 注释署名头（§4.3 纪律 2）。
 - 本阶段不新增 npm 依赖、不动 vendor/：`verify-licenses` 的 `checked` 计数应**不变**（任务清单判定项）。
 

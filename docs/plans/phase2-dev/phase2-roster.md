@@ -131,7 +131,7 @@
 ### 2.11 `sisyphus`（指挥，既有）
 
 - **上游源**：`packages/omo-opencode/src/agents/{sisyphus.ts,sisyphus-*.ts}` + `agents/types.ts`（`AgentPromptMetadata` 体系）✅（文件集）
-- **Phase 2 改动**：persona 增第 5 段 `delegation-roster.md`（名册委派表：每 agent 的域/何时派/何时不派/成本档——内容源自上游各 `*_PROMPT_METADATA` 的 useWhen/avoidWhen/triggers/cost/keyTrigger，P2-T1 已全量直核：6 个上桌 agent 逐值可用；hephaestus/atlas 的 metadata 存在但未上桌、sisyphus-junior/prometheus 无 metadata——此 4 行内容由 prompt 角色描述推导并标注，见 §2 头部 P2-T1 直核注记 ③）；`SISYPHUS_SECTION_ORDER` 与快照同步。
+- **Phase 2 改动**：persona 增第 3 段（总 5 段）`delegation-roster.md`（名册委派表：每 agent 的域/何时派/何时不派/成本档——内容源自上游各 `*_PROMPT_METADATA` 的 useWhen/avoidWhen/triggers/cost/keyTrigger，P2-T1 已全量直核：6 个上桌 agent 逐值可用；hephaestus/atlas 的 metadata 存在但未上桌、sisyphus-junior/prometheus 无 metadata——此 4 行内容由 prompt 角色描述推导并标注，见 §2 头部 P2-T1 直核注记 ③）；`SISYPHUS_SECTION_ORDER` 与快照同步。
 
 ## 3. DSH 机制事实（installed dsh 已核实 ✅）
 
