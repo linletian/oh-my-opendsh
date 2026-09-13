@@ -1,7 +1,8 @@
 // scripts/doctor-lite-core.ts — pure helpers shared by scripts/doctor-lite.mjs
 // (T21) and its vitest coverage (tests/omo-agents/doctor-lite.test.ts). Zero
-// dependencies, zero I/O: the version-range matcher for the D7 pin and the
-// P-8 patch-entry analysis. Node 24 type-stripping runs this file as source
+// dependencies, zero I/O: the version-range matcher for the D7 pin, the P-8
+// patch-entry analysis, and (P2-T20) the per-row delegation contract used by
+// check 4's semantic gate. Node 24 type-stripping runs this file as source
 // (the prove-* scripts already rely on that for patches/…/src/*.ts, P-8.6).
 
 /** A parsed semver triple from a `dsh --version` line. */
@@ -103,3 +104,124 @@ export function findRowsById(rows: unknown[], id: string): Array<Record<string, 
   walk(rows)
   return found
 }
+
+// ── P2-T20: per-row delegation contract (the semantic gate for check 4) ─────
+//
+// WHY THIS EXISTS. `validateCompositionRows` proves every row is SCHEMA-legal;
+// it says nothing about whether a row MEANS what the roster says it means.
+// The 0.1.5-rc.1 persona break shipped through exactly that gap: the row's
+// config validated, but the row no longer carried the contract
+// (docs/dsh-0.1.5-rc.1-review.md §6). These two pure functions close it: the
+// caller derives ONE expectation per roster delegation entry from roster.ts
+// (toolName == the entry id, the class filter via the same `denyToolNamesFor` /
+// `allowToolNamesFor` the renderer uses, maxDepth from the entry, agentOptions
+// from `resolveModelRoutes()[id]`), and the checker compares the row the
+// installed dsh Config just normalized against it. No literal list is ever
+// restated here — the filter contents arrive from the roster.
+
+/**
+ * The roster-side view of ONE expected rendered delegation row. The caller
+ * builds it from a `roster.ts` `DelegationRosterEntry` plus the renderer's own
+ * filter computation, so this module stays free of any plugin import.
+ */
+export interface DelegationRowRosterView {
+  /** Roster id — simultaneously the DSH `toolName` and the persona basename. */
+  readonly id: string
+  /** The plan §4.4 mirror class (for messages + shape selection). */
+  readonly className: string
+  /** The roster entry's maxDepth (the target-row cap, D-2026-09-13-01). */
+  readonly maxDepth: unknown
+  /** `denyToolNamesFor(entry)` — undefined for orchestrator/allowlist. */
+  readonly deny?: readonly string[]
+  /** `allowToolNamesFor(entry)` — defined for the allowlist class only. */
+  readonly allow?: readonly string[]
+}
+
+/** The expected shape of one rendered delegation row. */
+export interface DelegationRowContract {
+  readonly id: string
+  readonly className: string
+  readonly maxDepth: unknown
+  /**
+   * The expected `toolFilter` value, or `null` when the row must carry NO
+   * `toolFilter` key at all (the orchestrator class keeps the delegation tools
+   * and relies on maxDepth as its structural cap).
+   */
+  readonly toolFilter: Record<string, unknown> | null
+  readonly agentOptions: { readonly provider: unknown; readonly model: unknown }
+}
+
+/**
+ * Derives one row's contract from the roster view + the entry's resolved
+ * route. The class → filter SHAPE rule lives here (deny list present →
+ * `{deny}`; allow list present → `{allow}`; neither → the key must be absent);
+ * the list CONTENTS come from the caller, i.e. from roster.ts / the renderer.
+ */
+export function expectedDelegationRowContract(
+  entry: DelegationRowRosterView,
+  route: { readonly provider: unknown; readonly model: unknown },
+): DelegationRowContract {
+  const toolFilter = entry.deny !== undefined
+    ? { deny: [...entry.deny] }
+    : entry.allow !== undefined
+      ? { allow: [...entry.allow] }
+      : null
+  return {
+    id: entry.id,
+    className: entry.className,
+    maxDepth: entry.maxDepth,
+    toolFilter,
+    agentOptions: { provider: route.provider, model: route.model },
+  }
+}
+
+/**
+ * Compares one schema-validated rendered row against its roster-derived
+ * contract and returns one human-readable problem per violation (empty array =
+ * the row honours the contract). `provider`/`backgroundMode` are the T11/T15
+ * binding constants shared by every delegation row; everything else is the
+ * caller's expectation, never a literal inside this function.
+ */
+export function delegationRowContractProblems(
+  config: Record<string, unknown>,
+  want: DelegationRowContract,
+): string[] {
+  const problems: string[] = []
+  if (config.provider !== 'spawn') {
+    problems.push(`provider=${JSON.stringify(config.provider)} (want spawn)`)
+  }
+  if (config.toolName !== want.id) {
+    problems.push(`toolName=${JSON.stringify(config.toolName)} (want ${JSON.stringify(want.id)})`)
+  }
+  if (config.backgroundMode !== 'continuable') {
+    problems.push(`backgroundMode=${JSON.stringify(config.backgroundMode)} (want continuable)`)
+  }
+  if (config.maxDepth !== want.maxDepth) {
+    problems.push(`maxDepth=${JSON.stringify(config.maxDepth)} (want ${JSON.stringify(want.maxDepth)} — roster value)`)
+  }
+  if (want.toolFilter === null) {
+    if (config.toolFilter !== undefined) {
+      problems.push(
+        `toolFilter=${JSON.stringify(config.toolFilter)} (class ${want.className} carries NO filter key)`,
+      )
+    }
+  } else if (JSON.stringify(config.toolFilter) !== JSON.stringify(want.toolFilter)) {
+    problems.push(
+      `toolFilter=${JSON.stringify(config.toolFilter)} `
+      + `(want ${JSON.stringify(want.toolFilter)} — class ${want.className}, roster-computed)`,
+    )
+  }
+  const options = isMappingRow(config.agentOptions) ? config.agentOptions : undefined
+  if (options?.provider !== want.agentOptions.provider || options?.model !== want.agentOptions.model) {
+    problems.push(
+      `agentOptions=${JSON.stringify(config.agentOptions)} `
+      + `(want ${JSON.stringify(want.agentOptions.provider)}/${JSON.stringify(want.agentOptions.model)})`,
+    )
+  }
+  const persona = config.persona
+  if (typeof persona !== 'string' || persona.trim().length === 0) {
+    problems.push('persona missing or empty (sentinels unrendered?)')
+  }
+  return problems
+}
+

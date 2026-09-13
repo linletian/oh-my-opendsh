@@ -189,12 +189,12 @@
 - **证据**：2026-09-13（deepseek-flash 一轮过）。MOCKROLE 泛化：roster 驱动 Map + 行 id 锚点（恰好一次否则 throw、同行有界扫描防跨行绑定、首内容行插入、行锚幂等 sisyphus vs sisyphus-junior 安全、未知 role loud throw、verifyMockRoleMarkerLanding 不抛）；hermetic --self-test 用真实模板+真实渲染器 11/11 落点 + 变异 QA 复现旧首个命中 bug。mock-llm-server 加 tool_calls 并行批次（单数路径字节不变，6 既有 mock 测试过）。roster-parade：10 agent 分布 7 真实 catalog 对（无假 id，librarian 置 vision 对为机制性分布有注记；sisyphus≠explore；looker 在 vision 座）；单消息 10 并行委派；verdict JSON 含每子级 configured/resolved/observed 座明细（全匹配）+ 11/11 marker 落点行号 + hard-blocks 10 子级可见。Q-4：maxParallelToolCalls=10=批次恰好、无数字 resident 上限、foreground one-shot caveat 记录（resident-continuable 压力留 T22/L4，Kimi MINOR 跟踪）。门 3 绿（5 场景，parade 19/19 断言）；双评审 APPROVE；CI 8/8 绿（门2=419）。
 - **依赖**：P2-T17。**量级**：5 小时（MOCKROLE 泛化 +2h 自评审）。
 
-### [ ] P2-T19 — e2e：只读负向 + atlas 正向嵌套
+### [x] P2-T19 — e2e：只读负向 + atlas 正向嵌套
 
 - **产出**：`tests/e2e/drive.mjs` 新增 `plan-reviewer-write-denied` 与 `atlas-nested-delegation` 两个 scenario。
 - **做法**：① 负向（AC-6a 模式推广）：mock 剧本让 plan-reviewer 子级幻觉 `write` 调用 → 断言该工具对其**物理缺席**（未知工具拒绝）；② 正向：指挥 → atlas（depth 1）→ explore（depth 2）链路跑通——**对照语义注意**：F1 之后既有 explore 嵌套场景断的是"未知工具**物理缺席**"（depth 门不再触发），本正向链对照的是物理缺席语义，**不是** maxDepth 报错文案（不得照搬旧断言，计划书 §4.7）。
 - **判定**：✅ 门 3 绿；两个 scenario 的断言明细进 verdict JSON。
-- **证据**：（待填）
+- **证据**：2026-09-13/14（deepseek-flash，2 轮）。轮1 发现运行时语义：深度门读被调用行 maxDepth（dsh-tool-subagent:508-519 / dsh-subagent:432-438）——atlas 再委派物理不通；仲裁决定 D-2026-09-13-01：10 委派行 maxDepth 统一 2（链最深 2 层、depth-3 结构性不可能、deny 名单仍主防），计划书/基准表按 DoD-d 由仲裁更正。轮2 落地：roster.ts/模板值+注记、全部 pin 重钉（roster.test.ts/roster.md 再生成/concerto-preset/c10/doctor-lite/probe roster 派生）、prove-explore-maxdepth 重钉（depth-1 通过=atlas→worker 修正路径、depth-2 双路径拒绝 "depth 3 exceeds maxDepth 2"、retired1 非空控制、default3 不变）。plan-reviewer-write-denied PASS（13/13：write/edit+全 10 委派工具物理缺席 roster 派生、unknown tool 逐字、目标未落盘、env 钉独立座位）；atlas-nested-delegation PASS（19/19：指挥→atlas→explore depth-2 链完成、grandchild 真实 explore 座/persona、atlas 广告全 10 工具而只读 grandchild 全缺席、对照物理缺席语义未照搬退役报错文案）。评审 Kimi APPROVE（独立执行 prove 三模式）+ mcode APPROVE（30 分钟限额重试）；CI 8/8 绿（门2=419、e2e 7/7、探针 exit 0）。
 - **依赖**：P2-T18。**量级**：3 小时。
 
 ### [ ] P2-T20 — 静态门 / doctor-lite / probe 扩展

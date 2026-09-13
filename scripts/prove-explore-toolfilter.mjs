@@ -184,7 +184,7 @@ const CONCERTO_TOOLS = [
   ...DELEGATION_TOOL_NAMES, // delegation group: the 10 named roster rows (P2-T15)
   'ask_user_question', // tool-ask-user
   'todo_write', // tool-todo
-  'web_search', // tool-web (fetch: false in the row → no web_fetch)
+  'web_search', 'web_fetch', // tool-web (the template row sets `fetch: true`, so both tools register)
 ]
 
 // The parent agent-plane scope plays the role of the preset's standing mount:

@@ -22,15 +22,19 @@
 //   c07 installer TAG pin equals .omo/compat.yaml tag_alias
 //   c08 preset.yml identity (name + description non-empty)
 //   c09 persona shadow      (hard-blocks + anti-patterns in both personas)
-//   c10 live path roster integrity (P2-T15: the template under
-//       patches/omo-dsh/omo-agents/ — still the build/e2e/cold-start load
-//       target — carries the FULL 12-row delegation roster derived from
-//       roster.ts: control + list-agents + one `tool-subagent-<id>` row per
-//       roster delegation entry in roster order, no generic/product rows, the
-//       per-class sentinel/filter shape (deny sentinel for read-only/worker,
-//       NO filter key for atlas, static allow for multimodal-looker) and the
-//       roster maxDepth (2 on every delegation row — target-row semantics,
-//       D-2026-09-13-01))
+//   c10 live path roster integrity (P2-T15; generalized into per-class
+//       assertion records by P2-T20 — the template under
+//       patches/omo-dsh/omo-agents/, still the build/e2e/cold-start load
+//       target, carries the FULL 12-row delegation roster derived from
+//       roster.ts). ONE record per DoD-c assertion class (c10.1 … c10.10):
+//       ①a no generic spawn/fork rows, ①b no product-provider rows,
+//       ② delegation group == 12-row census in roster order, ②/③ per-row
+//       binding to the roster entry, ③a read-only class filter shape,
+//       ③b worker class filter shape, ③c orchestrator (atlas) NO toolFilter
+//       key, ③d allowlist (multimodal-looker) allow == entry.allowTools,
+//       ③e per-class row census, ④ uniform roster maxDepth on every row
+//       (target-row semantics, D-2026-09-13-01). Every expectation is derived
+//       from roster.ts + the renderer's sentinel naming, never restated.)
 //
 // Usage: node scripts/verify-concerto-static.mjs [--json]
 // Exit: 1 iff any check FAILs (a check that could not run is also a FAIL,
@@ -66,6 +70,27 @@ function flatten(rows) {
   }
   return out
 }
+
+/**
+ * The ten c10 assertion records (P2-T20): ONE result per DoD-c assertion
+ * class, so the gate's assertion count is enumerable and the pre-Phase-2
+ * 4-class baseline (generic rows / single explore row / explore deny /
+ * explore maxDepth, all lumped into one record) can be compared record by
+ * record. Every record below is at least as strict as its baseline peer.
+ */
+const C10_ASSERTIONS = [
+  ['c10.1', 'live roster ①a: no generic delegation rows'],
+  ['c10.2', 'live roster ①b: no product-provider rows'],
+  ['c10.3', 'live roster ②: delegation group == 12-row census in roster order'],
+  ['c10.4', 'live roster ②/③: one roster-bound row per delegation entry'],
+  ['c10.5', 'live roster ③a: read-only class filter shape'],
+  ['c10.6', 'live roster ③b: worker class filter shape'],
+  ['c10.7', 'live roster ③c: orchestrator row carries NO toolFilter key'],
+  ['c10.8', 'live roster ③d: allowlist row allow == entry.allowTools'],
+  ['c10.9', 'live roster ③e: per-class row census matches the roster'],
+  ['c10.10', 'live roster ④: uniform roster maxDepth on every delegation row'],
+]
+const C10_NAMES = new Map(C10_ASSERTIONS)
 
 async function run() {
   const results = []
@@ -197,26 +222,32 @@ async function run() {
     && String(presetDoc.name).length > 0 && String(presetDoc.description).length > 0),
     presetDoc ? `name="${presetDoc.name}"` : 'preset.yml unavailable (see c01)'))
 
-  // c10 — LIVE path roster integrity (P2-T15; generalized from the PR #1
-  // review F1 hardening, 2026-09-04): the template under
+  // c10 — LIVE path roster integrity (P2-T15; per-class records by P2-T20;
+  // origin: PR #1 review F1 hardening, 2026-09-04): the template under
   // patches/omo-dsh/omo-agents/ (still the load target of build / e2e /
   // cold-start / manual-testing) must carry the FULL roster-derived
   // delegation group. All expectations below are DERIVED from roster.ts and
   // from the renderer's own sentinel naming — never restated literals — so
-  // this check cannot drift from the single source.
+  // this check cannot drift from the single source. See C10_ASSERTIONS for
+  // the record-per-class mapping.
   try {
-    const { DELEGATION_ENTRIES, denyToolNamesFor } = await import(
+    const {
+      DELEGATION_ENTRIES,
+      MUTATION_TOOL_NAMES,
+      DELEGATION_TOOL_NAMES,
+      denyToolNamesFor,
+      allowToolNamesFor,
+    } = await import(
       pathToFileURL(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'src', 'roster.ts')).href
     )
     const { agentSentinelName } = await import(
       pathToFileURL(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'src', 'concerto-preset.ts')).href
     )
+    const c10 = (id, pass, detail) => results.push(check(id, C10_NAMES.get(id), pass, detail))
+
     const legacyPath = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'concerto', 'agent.cordis.yml')
     const legacyRows = await loadYamlDialect(legacyPath)
     const legacyFlat = flatten(legacyRows)
-    const legacyProblems = []
-
-    // ① the delegation group IS the 12-row roster, in roster order.
     const delegation = legacyRows.find((r) => r && r.id === 'delegation')
     const groupIds = delegation && Array.isArray(delegation.config)
       ? delegation.config.map((r) => r && r.id)
@@ -226,88 +257,198 @@ async function run() {
       'tool-subagent-list-agents',
       ...DELEGATION_ENTRIES.map((entry) => `tool-subagent-${entry.id}`),
     ]
-    if (JSON.stringify(groupIds) !== JSON.stringify(wantGroupIds)) {
-      legacyProblems.push(
-        `delegation group rows=${JSON.stringify(groupIds)} `
-        + `(want ${wantGroupIds.join(', ')} — roster order, no generic/product rows)`,
-      )
-    }
 
-    // ② no generic spawn/fork rows, no product-provider rows anywhere.
+    // ①a — no generic spawn/fork delegation tools anywhere (F1 hardening).
     const legacyToolNames = legacyFlat.map((r) => r && r.config && r.config.toolName).filter(Boolean)
     const legacyBanned = legacyToolNames.filter((t) => t === 'subagent' || t === 'subagent_fork')
-    if (legacyBanned.length > 0) legacyProblems.push(`generic delegation tools present: ${legacyBanned.join(', ')}`)
+    c10('c10.1', legacyBanned.length === 0,
+      legacyBanned.length === 0
+        ? 'no `subagent`/`subagent_fork` toolName anywhere in the live template'
+        : `generic delegation tools present: ${legacyBanned.join(', ')}`)
+
+    // ①b — no product-provider delegation rows (codex / claude-code).
     const legacyProduct = legacyFlat
       .map((r) => r && r.id)
       .filter((i) => i === 'tool-subagent-codex' || i === 'tool-subagent-claude-code')
-    if (legacyProduct.length > 0) legacyProblems.push(`product rows present: ${legacyProduct.join(', ')}`)
+    c10('c10.2', legacyProduct.length === 0,
+      legacyProduct.length === 0
+        ? 'no tool-subagent-codex / tool-subagent-claude-code row in the live template'
+        : `product rows present: ${legacyProduct.join(', ')}`)
 
-    // ③ every roster delegation entry has exactly one row with the class
-    //    sentinel/filter shape and the class maxDepth.
+    // ② — the delegation group IS the 12-row roster, in roster order.
+    const censusOk = JSON.stringify(groupIds) === JSON.stringify(wantGroupIds)
+    c10('c10.3', censusOk,
+      censusOk
+        ? `delegation group = ${wantGroupIds.length} rows `
+          + `(control + list-agents + ${DELEGATION_ENTRIES.length} roster agents, roster order)`
+        : `delegation group rows=${JSON.stringify(groupIds)} `
+          + `(want ${wantGroupIds.join(', ')} — roster order, no generic/product rows)`)
+
+    // Per-row traversal shared by the ②/③/④ records below.
     const rowsByTool = new Map(
       legacyFlat
         .filter((r) => r && r.name === '@deepseek-ai/dsh-tool-subagent' && r.config && r.config.toolName)
         .map((r) => [r.config.toolName, r]),
     )
+    const entriesByClass = new Map()
     for (const entry of DELEGATION_ENTRIES) {
+      if (!entriesByClass.has(entry.class)) entriesByClass.set(entry.class, [])
+      entriesByClass.get(entry.class).push(entry)
+    }
+    const classOf = (cls) => entriesByClass.get(cls) ?? []
+    const bindingProblems = []
+    const filterProblems = new Map()
+    const depthProblems = []
+    const liveRowsByClass = new Map()
+    for (const entry of DELEGATION_ENTRIES) {
+      const label = `live ${entry.id}`
+      if (!filterProblems.has(entry.class)) filterProblems.set(entry.class, [])
+      const classProblems = filterProblems.get(entry.class)
       const row = rowsByTool.get(entry.id)
       if (row === undefined) {
-        legacyProblems.push(`no dsh-tool-subagent row for roster entry '${entry.id}'`)
+        bindingProblems.push(`no dsh-tool-subagent row for roster entry '${entry.id}'`)
         continue
       }
+      liveRowsByClass.set(entry.class, (liveRowsByClass.get(entry.class) ?? 0) + 1)
       const cfg = row.config
-      const label = `legacy ${entry.id}`
       if (row.id !== `tool-subagent-${entry.id}`) {
-        legacyProblems.push(`${label}: row id=${JSON.stringify(row.id)} (want tool-subagent-${entry.id})`)
+        bindingProblems.push(`${label}: row id=${JSON.stringify(row.id)} (want tool-subagent-${entry.id})`)
       }
-      if (cfg.provider !== 'spawn') legacyProblems.push(`${label}: provider=${JSON.stringify(cfg.provider)} (want spawn)`)
+      if (row.name !== '@deepseek-ai/dsh-tool-subagent') {
+        bindingProblems.push(`${label}: row name=${JSON.stringify(row.name)} (want @deepseek-ai/dsh-tool-subagent)`)
+      }
+      if (cfg.provider !== 'spawn') {
+        bindingProblems.push(`${label}: provider=${JSON.stringify(cfg.provider)} (want spawn)`)
+      }
       if (cfg.backgroundMode !== 'continuable') {
-        legacyProblems.push(`${label}: backgroundMode=${JSON.stringify(cfg.backgroundMode)} (want continuable)`)
+        bindingProblems.push(`${label}: backgroundMode=${JSON.stringify(cfg.backgroundMode)} (want continuable)`)
       }
       if (cfg.persona !== agentSentinelName(entry.id, 'PERSONA')) {
-        legacyProblems.push(`${label}: persona sentinel=${JSON.stringify(cfg.persona)} (want ${agentSentinelName(entry.id, 'PERSONA')})`)
+        bindingProblems.push(
+          `${label}: persona sentinel=${JSON.stringify(cfg.persona)} (want ${agentSentinelName(entry.id, 'PERSONA')})`,
+        )
       }
       if (cfg.agentOptions !== agentSentinelName(entry.id, 'AGENT_OPTIONS')) {
-        legacyProblems.push(`${label}: agentOptions sentinel=${JSON.stringify(cfg.agentOptions)} (want ${agentSentinelName(entry.id, 'AGENT_OPTIONS')})`)
+        bindingProblems.push(
+          `${label}: agentOptions sentinel=${JSON.stringify(cfg.agentOptions)} `
+          + `(want ${agentSentinelName(entry.id, 'AGENT_OPTIONS')})`,
+        )
       }
-      // Roster-derived (not the old per-class 2/1 split): maxDepth caps the
-      // INVOKED row (dsh-tool-subagent folds config.maxDepth into
-      // request.maxDepth; dsh-subagent resolveChildDepth rejects
-      // parent.depth + 1 > maxDepth), so all ten delegation rows carry 2 —
-      // arbiter D-2026-09-13-01 / phase2-roster.md §1 修正块.
-      if (cfg.maxDepth !== entry.maxDepth) {
-        legacyProblems.push(`${label}: maxDepth=${JSON.stringify(cfg.maxDepth)} (want ${JSON.stringify(entry.maxDepth)} — roster value for ${entry.id})`)
-      }
+      // ③ per-class filter shape. The template value is the row's own DENY
+      // sentinel; the list the renderer substitutes for it is computed by the
+      // SAME roster function and must equal the DoD-c class shape built from
+      // roster.ts's own constants — so neither half can drift silently.
       const deny = denyToolNamesFor(entry)
       if (deny !== undefined) {
         const wantSentinel = agentSentinelName(entry.id, 'DENY')
         if (cfg.toolFilter === undefined || cfg.toolFilter.deny !== wantSentinel) {
-          legacyProblems.push(
+          classProblems.push(
             `${label}: toolFilter=${JSON.stringify(cfg.toolFilter)} (want deny: ${wantSentinel} — class ${entry.class})`,
           )
         }
+        const wantDeny = entry.class === 'read-only'
+          ? [...MUTATION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES]
+          : [...DELEGATION_TOOL_NAMES]
+        if (JSON.stringify(deny) !== JSON.stringify(wantDeny)) {
+          classProblems.push(
+            `${label}: denyToolNamesFor=${JSON.stringify(deny)} `
+            + `(want ${JSON.stringify(wantDeny)} — class ${entry.class})`,
+          )
+        }
       } else if (entry.class === 'allowlist') {
-        if (JSON.stringify(cfg.toolFilter) !== JSON.stringify({ allow: entry.allowTools })) {
-          legacyProblems.push(
+        const wantAllow = allowToolNamesFor(entry)
+        if (JSON.stringify(cfg.toolFilter) !== JSON.stringify({ allow: wantAllow })) {
+          classProblems.push(
             `${label}: toolFilter=${JSON.stringify(cfg.toolFilter)} `
-            + `(want static allow ${JSON.stringify(entry.allowTools)})`,
+            + `(want static allow ${JSON.stringify(wantAllow)})`,
           )
         }
       } else if (cfg.toolFilter !== undefined) {
-        legacyProblems.push(
+        classProblems.push(
           `${label}: toolFilter present (${JSON.stringify(cfg.toolFilter)}) — an orchestrator row carries NO filter key`,
+        )
+      }
+      // ④ maxDepth: the row carries its own roster entry's value.
+      if (cfg.maxDepth !== entry.maxDepth) {
+        depthProblems.push(
+          `${label}: maxDepth=${JSON.stringify(cfg.maxDepth)} `
+          + `(want ${JSON.stringify(entry.maxDepth)} — roster value for ${entry.id})`,
         )
       }
     }
 
-    results.push(check('c10', 'live path roster integrity (P2-T15)', legacyProblems.length === 0,
-      legacyProblems.join('; ')
-      || `delegation group = ${wantGroupIds.length} rows (control + list-agents + ${DELEGATION_ENTRIES.length} roster agents, roster order); `
-        + 'read-only/worker deny sentinels; atlas no filter key; multimodal-looker allow [read, read_image]; '
-        + `maxDepth = roster value on every row (all ${DELEGATION_ENTRIES.length} delegation rows are 2, `
-        + 'target-row semantics D-2026-09-13-01)'))
+    // ②/③ — one roster-bound row per delegation entry.
+    c10('c10.4', DELEGATION_ENTRIES.length > 0 && bindingProblems.length === 0,
+      bindingProblems.length === 0
+        ? `each of the ${DELEGATION_ENTRIES.length} roster entries has exactly one dsh-tool-subagent row `
+          + '(id / name / provider=spawn / backgroundMode=continuable / persona + agentOptions sentinels)'
+        : bindingProblems.join('; '))
+
+    // ③a — read-only class: per-row deny sentinel + the class deny list.
+    const readOnly = classOf('read-only')
+    const readOnlyProblems = filterProblems.get('read-only') ?? []
+    const readOnlyShape = `${readOnly.length} rows: per-row deny sentinel; class deny list == `
+      + `[${[...MUTATION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES].join(', ')}] `
+      + `(write/edit + all ${DELEGATION_TOOL_NAMES.length} roster delegation names)`
+    c10('c10.5', readOnly.length > 0 && readOnlyProblems.length === 0,
+      readOnlyProblems.length > 0 ? readOnlyProblems.join('; ') : readOnlyShape)
+
+    // ③b — worker class: per-row deny sentinel + the class deny list.
+    const worker = classOf('worker')
+    const workerProblems = filterProblems.get('worker') ?? []
+    const workerShape = `${worker.length} rows: per-row deny sentinel; class deny list == `
+      + `[${[...DELEGATION_TOOL_NAMES].join(', ')}] (all ${DELEGATION_TOOL_NAMES.length} roster delegation names)`
+    c10('c10.6', worker.length > 0 && workerProblems.length === 0,
+      workerProblems.length > 0 ? workerProblems.join('; ') : workerShape)
+
+    // ③c — orchestrator: NO filter key at all.
+    const orchestrator = classOf('orchestrator')
+    const orchestratorProblems = filterProblems.get('orchestrator') ?? []
+    c10('c10.7', orchestrator.length > 0 && orchestratorProblems.length === 0,
+      orchestratorProblems.length > 0
+        ? orchestratorProblems.join('; ')
+        : `${orchestrator.map((entry) => entry.id).join(', ')} carr${orchestrator.length === 1 ? 'ies' : 'y'} `
+          + 'NO toolFilter key (delegation tools kept; maxDepth is the structural cap)')
+
+    // ③d — allowlist: the static allow list IS the roster entry's allowTools.
+    const allowlist = classOf('allowlist')
+    const allowlistProblems = filterProblems.get('allowlist') ?? []
+    c10('c10.8', allowlist.length > 0 && allowlistProblems.length === 0,
+      allowlistProblems.length > 0
+        ? allowlistProblems.join('; ')
+        : `${allowlist.map((entry) => `${entry.id} allow == ${JSON.stringify(entry.allowTools)}`).join(', ')}`)
+
+    // ③e — class census: every class the roster declares has exactly its own
+    // number of bound live rows (a silently dropped row, or a whole class, is
+    // loud here even before the per-class record above).
+    const censusProblems = []
+    for (const [cls, entries] of entriesByClass) {
+      const observed = liveRowsByClass.get(cls) ?? 0
+      if (observed !== entries.length) {
+        censusProblems.push(`class ${cls}: ${observed} bound live row(s) (roster declares ${entries.length})`)
+      }
+    }
+    c10('c10.9', DELEGATION_ENTRIES.length > 0 && censusProblems.length === 0,
+      censusProblems.length > 0
+        ? censusProblems.join('; ')
+        : `${[...entriesByClass].map(([cls, entries]) => `${cls}=${entries.length}`).join(', ')} `
+          + `(all ${entriesByClass.size} roster classes present, each fully bound)`)
+
+    // ④ — uniform roster maxDepth on every delegation row.
+    const uniformDepths = [...new Set(DELEGATION_ENTRIES.map((entry) => entry.maxDepth))]
+    c10('c10.10', depthProblems.length === 0 && uniformDepths.length === 1,
+      depthProblems.length === 0 && uniformDepths.length === 1
+        ? `maxDepth == entry.maxDepth on all ${DELEGATION_ENTRIES.length} rows; `
+          + `the roster maxDepth is uniform (${uniformDepths[0]}) — target-row semantics D-2026-09-13-01`
+        : [
+          ...depthProblems,
+          ...(uniformDepths.length === 1 ? [] : [`roster maxDepth is NOT uniform: ${JSON.stringify(uniformDepths)}`]),
+        ].join('; '))
   } catch (e) {
-    results.push(check('c10', 'live path roster integrity (P2-T15)', false, String(e.message ?? e)))
+    // A c10 record that could not run is a FAIL with the reason (same honesty
+    // rule as doctor-lite) — one record per assertion, not one lump.
+    const reason = `could not evaluate the live-path roster assertions: ${String(e.message ?? e)}`
+    for (const [id] of C10_ASSERTIONS) results.push(check(id, C10_NAMES.get(id), false, reason))
   }
 
   // Report.
