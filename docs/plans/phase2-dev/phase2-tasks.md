@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 2 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，基准表给出"每 agent 的数据"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **0/22 完成**（计划立项，待实施）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）。
+> **状态**：🚧 **1/22 完成**（PRE-1…PRE-5 ✅；P2-T1 ✅ 2026-09-12；WP-1 进行中）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）。
 >
 > **编号**：`P2-T<n>`（Phase 2 - Task n）。工作包归属见计划书 §7。
 
@@ -12,17 +12,17 @@
 
 | # | 条件 | 判定 | 复核结果 |
 |---|---|---|---|
-| PRE-1 | 上游 OMO v4.19.4 可取到源码 | `git -C <omo> rev-parse v4.19.4^{commit}` 返回 `b072d279110bdda2c6ac2525d0d24dc54d16148a` | ⬜ 待复核 |
-| PRE-2 | v5.0.0 正式版**未**发布 → tag 选择闭合为 v4.19.4（D14 规则 3） | `npm view oh-my-openagent dist-tags --json` 的 `latest` 仍为 `4.19.4` | ⬜ 待复核 |
-| PRE-3 | 基线绿：`scripts/ci-local.sh` 8 门全绿 | 退出 0；记录基线（含门 2 测试数、门 3 场景数） | ⬜ 待复核 |
-| PRE-4 | installed dsh = pin 的 0.1.5-rc.1 | `dsh --version`；doctor-lite 基线 PASS | ⬜ 待复核 |
-| PRE-5 | 本地 OMO 检出只读可用 | `git -C ~/GithubRepo/oh-my-openagent ls-tree v4.19.4 packages/omo-opencode/src/agents/` 非空；全程只用 `git show/ls-tree`，工作树不动 | ⬜ 待复核 |
+| PRE-1 | 上游 OMO v4.19.4 可取到源码 | `git -C <omo> rev-parse v4.19.4^{commit}` 返回 `b072d279110bdda2c6ac2525d0d24dc54d16148a` | ✅ 2026-09-12 实测：返回值与锚点逐字一致 |
+| PRE-2 | v5.0.0 正式版**未**发布 → tag 选择闭合为 v4.19.4（D14 规则 3） | `npm view oh-my-openagent dist-tags --json` 的 `latest` 仍为 `4.19.4` | ✅ 2026-09-12 实测：`latest=4.19.4`（`beta=5.0.0-beta.62`，非正式版） |
+| PRE-3 | 基线绿：`scripts/ci-local.sh` 8 门全绿 | 退出 0；记录基线（含门 2 测试数、门 3 场景数） | ✅ 2026-09-12 实测：8/8 门 PASS 退出 0；门 2 = **187 单测 / 15 文件**；门 3 = **4 场景**（hello / concerto-delegation-demo / explore-write-denied / explore-nested-delegation-denied）；门 5 `checked=52`；门 6 = 10/10；门 7 = 8/8 |
+| PRE-4 | installed dsh = pin 的 0.1.5-rc.1 | `dsh --version`；doctor-lite 基线 PASS | ✅ 2026-09-12 实测：`0.1.5-rc.1`；doctor-lite 基线 PASS（门 4） |
+| PRE-5 | 本地 OMO 检出只读可用 | `git -C ~/GithubRepo/oh-my-openagent ls-tree v4.19.4 packages/omo-opencode/src/agents/` 非空；全程只用 `git show/ls-tree`，工作树不动 | ✅ 2026-09-12 实测：ls-tree 返回完整 agents/ 清单（hephaestus/、atlas/、sisyphus-junior/、prometheus/ 子目录与各单文件均在） |
 
 ---
 
 ## WP-0 调研核对（计划书 §4.1/§4.4/§4.6，基准表 §4）
 
-### [ ] P2-T1 — 上游名册事实与 DSH 机制逐件复核
+### [x] P2-T1 — 上游名册事实与 DSH 机制逐件复核
 
 - **产出**：回填后的 [名册基准表](./phase2-roster.md)（全部 🔍 转 ✅ 或更正）。
 - **做法**：
@@ -33,27 +33,27 @@
   5. **视觉座与连字符名**（待核清单 A.4）：确认 pinned dsh（0.1.5-rc.1）的 `dsh-llm-deepseek` catalog 含 `deepseek-v4-flash-vision-exp`；确认 OpenAI 兼容 tool name 模式接受连字符（adapter lib 或 probe 冷启动注册日志）。
   6. **pi-ai `deepseek` 路由可用 model id 清单**（P2-T18 路由分布的依赖，评审已实测 = 3 id：基准表 §3）：复核 pinned dsh 安装的 `@earendil-works/pi-ai` 版本该清单未漂移。
 - **判定**：✅ 基准表 §4 **A 组（输入核实）4 项**全部闭环（✅ 或更正值 + 更正理由）；B 组 Q-3 结论写进基准表 §3（Q-1 复核引用即可）。
-- **证据**：（待填）
+- **证据**：2026-09-12 复核完成，基准表 §4 六项全闭环：① 上游 permission 逐文件复核（hephaestus/atlas/sisyphus-junior/prometheus/oracle/metis + 辅助函数 + L2 层）——更正 1 处预期（prometheus 实为 hook 限 `.md` 写而非 permission 只读）、3 处"有意收窄"注记（hephaestus 的 task、sisyphus-junior 的 call_omo_agent、metis 的 call_omo_agent 委派权不镜像，理由记录）；证据 `.omo/evidence/p2t1-upstream-permissions.md`。② `*_PROMPT_METADATA` + `AGENT_MODEL_REQUIREMENTS` 全量逐字提取（上桌 6 / 未上桌 2 / 无常量 2）；证据 `.omo/evidence/p2t1-upstream-metadata.md`；T14 数据源就绪。③ Q-1：行号引用复核一致（:332-333/:1257/:1267-1269/:1040）+ 子会话枚举实证（门 3 `explore-write-denied` verdict bonus `childAdvertisedToolNames` 含 `read_image`，基线复跑于 pinned dsh）。④ Q-3 = **allow ∧ ¬deny**，multimodal-looker 无需补 deny 委派名（结论入基准表 §3，`admits()` :2545-2547）。⑤ 视觉座 catalog 直核未漂移（DEFAULT_MODELS :1864 + deepseek.json 3 id）；连字符名 lib 层结构性安全（dsh-tools 无字符集限制 + adapter 逐字转发 :231），boot 断言留 P2-T15。⑥ pi-ai `deepseek.json` = 3 id 未漂移。
 - **依赖**：PRE-1…PRE-5。**量级**：0.5 天。
 
 ---
 
 ## WP-1 名册事实源（计划书 §4.2/§4.6）
 
-### [ ] P2-T2 — `src/roster.ts`：名册唯一事实源
+### [x] P2-T2 — `src/roster.ts`：名册唯一事实源
 
 - **产出**：`patches/omo-dsh/omo-agents/src/roster.ts`（新增）。
 - **做法**：按计划书 §4.2 的 `RosterEntry` 形状声明 11 个条目（sisyphus 只持路由、不进委派工具部分——用字段或分立常量表达，实施时择一并注释理由）；每条的 `defaultRoute` 带注释写明 OMO 链首参照与选座理由（基准表 §1）；委派 toolName 列表的计算函数（供逐行 deny 哨兵与断言消费）。
 - **判定**：✅ `pnpm typecheck` 绿；11 条目的字段与基准表 §1 总表逐格一致（id / class / maxDepth / 默认路由 / env 名）。
-- **证据**：（待填）
+- **证据**：2026-09-12 编码完成（编码 sub-agent：deepseek-official/deepseek-flash）。roster.ts 371 行：`delegation: false` 字段表达指挥 route-only（择一理由注释于文件头）；每条 defaultRoute 带 OMO 链首 + 选座注释；`DELEGATION_TOOL_NAMES`（10 名，名册序）+ `denyToolNamesFor`/`allowToolNamesFor` 按类计算（read-only = [write,edit]+10 名 / worker = 10 名 / orchestrator·allowlist = undefined；委派行缺 class 则 throw）。`pnpm typecheck` exit 0。双评审：**Kimi K3(max) APPROVE**（2 NIT，非缺陷——ENV_VARS 形状扩展系 T3 授权；deny 序以 roster 行为准已写回基准表）+ **mcode review APPROVE**（"未发现需要处理的问题"）；CI 全 8 门绿。
 - **依赖**：P2-T1。**量级**：2 小时。
 
-### [ ] P2-T3 — `model-routes.ts` 名册化 + 校验规则
+### [x] P2-T3 — `model-routes.ts` 名册化 + 校验规则
 
 - **产出**：改后的 `model-routes.ts` + 单测更新。
 - **做法**：`resolveModelRoutes()` 返回名册路由映射（11 条）；保留：env 覆盖、空值 loud throw、**sisyphus≠explore 硬预检**（AC-5 语义内核）；新增两条**非阻断**警告标记（boot log 用）：① 全员（11 条）同一路由；② **全部委派 agent（10 条）同座**（强座单点集中提示——计划书 §4.6 校验规则）；`MODEL_ROUTE_ENV_VARS` 扩为 11 组（既有 4 个变量名**不改**——向后兼容）。
 - **判定**：✅ 单测覆盖：默认值全景（11 条 = 基准表）、每组 env 覆盖、空值 throw、AC-5 预检仍 fire、两条警告各自 fire/不 fire 的边界；既有 explore/sisyphus 用例不回归。
-- **证据**：（待填）
+- **证据**：2026-09-12 编码完成（deepseek-flash）。`resolveModelRoutes()` 返回 `Record<AgentId, ModelRoute>`（属性访问向后兼容，index.ts/concerto-preset.ts/scripts/e2e 全部消费点零改动实证）；警告经 `evaluateModelRouteWarnings` 纯函数 + `resolveModelRoutesWithWarnings` 返回（非阻断纪律保持）；文件头诚实注记 warning① 经 resolver 不可达（AC-5 先 throw）——评审确认 sane。单测 202/202 PASS（16 文件，新增 roster.test.ts 11 用例 + model-routes.test.ts 12 用例；硬编码期望表非推导，变异敏感性经评审实测：路由翻转→2 文件红、env 名错字→2 红、类翻转→4 红）。双评审 APPROVE（同 P2-T2）；CI 全 8 门绿（门 2 = 202 测试、门 3 = 4 场景无回归）。
 - **依赖**：P2-T2。**量级**：3 小时。
 
 ---
