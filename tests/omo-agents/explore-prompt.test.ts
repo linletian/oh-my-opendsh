@@ -164,10 +164,13 @@ describe('buildExploreSystemPrompt (T10)', () => {
   it('no cross-contamination: the explore persona never leaks into the sisyphus prompt', () => {
     const sisyphus = buildSisyphusSystemPrompt()
     expect(sisyphus).not.toContain(PERSONA_MARKERS.roleHeading)
-    // …and the four sisyphus sections are exactly the T7 four (no 5th key).
+    // …and the five sisyphus sections are exactly the T7/T14 five (no 6th key;
+    // the P2-T14 roster sits between the delegation discipline and the two
+    // runtime-injected sections).
     expect(Object.keys(loadSystemSections())).toEqual([
       'role',
       'delegationDiscipline',
+      'delegationRoster',
       'hardBlocks',
       'antiPatterns',
     ])

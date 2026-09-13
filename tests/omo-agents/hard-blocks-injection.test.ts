@@ -85,6 +85,7 @@ describe('hard-blocks injection listener (T16, FR-6, P-3)', () => {
     const sections: SystemSections = {
       role: 'ROLE',
       delegationDiscipline: 'DELEGATION',
+      delegationRoster: 'ROSTER',
       hardBlocks: '## Hard Blocks\n\n- Never X\n',
       antiPatterns: '## Anti-Patterns (BLOCKING violations)\n\n- Bad Y\n',
     }
@@ -92,9 +93,10 @@ describe('hard-blocks injection listener (T16, FR-6, P-3)', () => {
     expect(text).toContain('## Hard Blocks')
     expect(text).toContain('## Anti-Patterns')
     expect(text.indexOf('## Hard Blocks')).toBeLessThan(text.indexOf('## Anti-Patterns'))
-    // Only those two sections — role/delegation never leak into the injection.
+    // Only those two sections — role/delegation/roster never leak into the injection.
     expect(text).not.toContain('ROLE')
     expect(text).not.toContain('DELEGATION')
+    expect(text).not.toContain('ROSTER')
   })
 
   it('the REAL sections produce text carrying both AC markers', () => {
@@ -156,6 +158,7 @@ describe('hard-blocks injection listener (T16, FR-6, P-3)', () => {
     const sections: SystemSections = {
       role: 'ROLE',
       delegationDiscipline: 'DELEGATION',
+      delegationRoster: 'ROSTER',
       hardBlocks: '## Hard Blocks\n\nCACHED',
       antiPatterns: '## Anti-Patterns\n\nCACHED',
     }

@@ -16,6 +16,15 @@ export const SYSTEM_SECTIONS_DIR = resolve(
 export interface SystemSections {
   role: string
   delegationDiscipline: string
+  /**
+   * P2-T14: the conductor's static delegation roster (one row per delegation
+   * target). Sits AFTER `delegationDiscipline` in SISYPHUS_SECTION_ORDER — the
+   * discipline states the policy, the roster names the targets it applies to.
+   * It is a conductor-only section: like `role` / `delegationDiscipline` it is
+   * NOT injected into sub-agents by hard-blocks-injection.ts, and it must not
+   * carry the runtime-injected headings (test-enforced).
+   */
+  delegationRoster: string
   hardBlocks: string
   antiPatterns: string
 }
@@ -31,11 +40,12 @@ export function loadSectionFile(dir: string, fileName: string): string {
   }
 }
 
-/** Loads all four sections in the fixed order [role, delegationDiscipline, hardBlocks, antiPatterns]. */
+/** Loads all five sections in the fixed order [role, delegationDiscipline, delegationRoster, hardBlocks, antiPatterns]. */
 export function loadSystemSections(dir: string = SYSTEM_SECTIONS_DIR): SystemSections {
   return {
     role: loadSectionFile(dir, 'role.md'),
     delegationDiscipline: loadSectionFile(dir, 'delegation-discipline.md'),
+    delegationRoster: loadSectionFile(dir, 'delegation-roster.md'),
     hardBlocks: loadSectionFile(dir, 'hard-blocks.md'),
     antiPatterns: loadSectionFile(dir, 'anti-patterns.md'),
   }

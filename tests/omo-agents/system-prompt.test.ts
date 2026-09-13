@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CONCERTO_TEMPLATE_DIR } from '../../patches/omo-dsh/omo-agents/src/concerto-preset'
-import { loadSystemSections } from '../../patches/omo-dsh/omo-agents/src/system-sections'
+import { loadSystemSections, type SystemSections } from '../../patches/omo-dsh/omo-agents/src/system-sections'
 import {
   PERSONA_TEXT_SENTINEL,
   SISYPHUS_SECTION_ORDER,
@@ -23,11 +23,14 @@ import {
   renderPersonaIntoComposition,
 } from '../../patches/omo-dsh/omo-agents/src/system-prompt'
 
-// The three AC-3 markers (orchestrator role + delegation discipline + the
-// injected hard-blocks section) plus the fourth section's heading.
+// The five section headings used as markers. The AC-3 case below asserts the
+// first four (orchestrator role + delegation discipline + the P2-T14 roster +
+// the injected hard-blocks section); `antiPatterns` is the fifth, checked by
+// the persona-rendering tests.
 const SECTION_MARKERS = {
   role: '# Orchestrator Role',
   delegationDiscipline: '# Delegation Discipline',
+  delegationRoster: '# Delegation Roster',
   hardBlocks: '## Hard Blocks',
   antiPatterns: '## Anti-Patterns (BLOCKING violations)',
 } as const
@@ -50,20 +53,22 @@ function personaBlockLines(rendered: string): string[] {
 }
 
 describe('omo-sisyphus system prompt builder (T8)', () => {
-  it('declares the fixed section order [role, delegationDiscipline, hardBlocks, antiPatterns]', () => {
+  it('declares the fixed section order [role, delegationDiscipline, delegationRoster, hardBlocks, antiPatterns]', () => {
     expect([...SISYPHUS_SECTION_ORDER]).toEqual([
       'role',
       'delegationDiscipline',
+      'delegationRoster',
       'hardBlocks',
       'antiPatterns',
     ])
   })
 
-  it('assembles exactly the 4 T7 sections, each trimmed, joined by a single blank line', () => {
+  it('assembles exactly the 5 T7/T14 sections, each trimmed, joined by a single blank line', () => {
     const sections = loadSystemSections()
     const expected = [
       sections.role,
       sections.delegationDiscipline,
+      sections.delegationRoster,
       sections.hardBlocks,
       sections.antiPatterns,
     ]
@@ -72,11 +77,12 @@ describe('omo-sisyphus system prompt builder (T8)', () => {
     expect(buildSisyphusSystemPrompt()).toBe(expected)
   })
 
-  it('carries no 5th section: exactly the 4 section headings, in ascending order', () => {
+  it('carries exactly the 5 section headings, in ascending order (the roster 3rd, before the runtime-injected pair)', () => {
     const prompt = buildSisyphusSystemPrompt()
     const positions = [
       SECTION_MARKERS.role,
       SECTION_MARKERS.delegationDiscipline,
+      SECTION_MARKERS.delegationRoster,
       SECTION_MARKERS.hardBlocks,
       SECTION_MARKERS.antiPatterns,
     ].map((marker) => prompt.indexOf(marker))
@@ -86,25 +92,48 @@ describe('omo-sisyphus system prompt builder (T8)', () => {
     }
   })
 
+  it('the roster section (P2-T14) is non-empty and names every delegation target id', () => {
+    const { delegationRoster } = loadSystemSections()
+    expect(delegationRoster.trim().length).toBeGreaterThan(0)
+    for (const id of [
+      'explore',
+      'hephaestus',
+      'oracle',
+      'librarian',
+      'plan-consultant',
+      'plan-reviewer',
+      'atlas',
+      'multimodal-looker',
+      'sisyphus-junior',
+      'prometheus',
+    ]) {
+      expect(delegationRoster).toContain(`\`${id}\``)
+    }
+  })
+
   it('contains no {{...}} sequences (dsh renderPrompt throws on unknown prompt variables)', () => {
     expect(buildSisyphusSystemPrompt()).not.toContain('{{')
   })
 
-  it('rejects a section carrying a {{...}} sequence instead of poisoning the persona row', () => {
-    expect(() =>
-      buildSisyphusSystemPrompt({
-        role: 'conductor with {{unknown_var}}',
-        delegationDiscipline: 'delegate',
-        hardBlocks: 'blocks',
-        antiPatterns: 'patterns',
-      }),
-    ).toThrow(/\{\{/)
+  it('rejects a {{...}} sequence in ANY of the 5 sections, including the new roster section', () => {
+    const base: SystemSections = {
+      role: 'role',
+      delegationDiscipline: 'delegate',
+      delegationRoster: 'roster',
+      hardBlocks: 'blocks',
+      antiPatterns: 'patterns',
+    }
+    for (const key of SISYPHUS_SECTION_ORDER) {
+      const sections: SystemSections = { ...base, [key]: 'section with {{unknown_var}}' }
+      expect(() => buildSisyphusSystemPrompt(sections)).toThrow(/\{\{/)
+    }
   })
 
-  it('AC-3: matches the checked-in snapshot and asserts all three required markers', () => {
+  it('AC-3: matches the checked-in snapshot and asserts all required markers (5 sections)', () => {
     const prompt = buildSisyphusSystemPrompt()
     expect(prompt).toContain(SECTION_MARKERS.role) // orchestrator role content
     expect(prompt).toContain(SECTION_MARKERS.delegationDiscipline) // delegation discipline content
+    expect(prompt).toContain(SECTION_MARKERS.delegationRoster) // the P2-T14 delegation roster content
     expect(prompt).toContain(SECTION_MARKERS.hardBlocks) // the injected `## Hard Blocks` section
     expect(prompt).toMatchFileSnapshot('__snapshots__/sisyphus-system-prompt.md')
   })

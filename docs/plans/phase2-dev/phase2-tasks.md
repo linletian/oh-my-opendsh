@@ -115,28 +115,28 @@
 - **证据**：2026-09-12 批次2。atlas-persona.md 183 行 + 快照；NEVER-THE-IMPLEMENTER 绝对规则 + 写权限限定为编排簿记、可委派声明（唯一保留委派工具的子级）、6 段 dispatch 契约、默认并行、独立验证纪律、durable-id 续作、指挥激活（无 /ulw-* 命令面）；上游 prompt 真身在 prompts-core/prompts/atlas/default.md（源集拓宽经评审核实）；category/load_skills/notepads/Codex 表/start-work 各 drop 逐项经评审验证。双 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：2 小时。
 
-### [ ] P2-T11 — persona：`multimodal-looker`
+### [x] P2-T11 — persona：`multimodal-looker`
 
 - **产出**：`system-sections/multimodal-looker-persona.md` + 快照。
 - **做法**：按 T4 配方；工具面声明按基准表 §2.8 的评审实测结论写（allow 精确值 `[read, read_image]`；`read_image` 条件注册 caveat 写入 persona 注释或正文注记）；保留"提取信息而非返回原文"的输出纪律。
 - **判定**：同 P2-T5。
-- **证据**：（待填）
+- **证据**：2026-09-12 批次3（deepseek-flash 一轮过）。multimodal-looker-persona.md 90 行 + 快照；工具面声明 = 恰好 [read, read_image] 双工具 + read_image 条件注册 caveat 入正文；look_at 调用模型反转（无附件机制，caller 给路径）已在署名头披露；提取而非转储/诚实报告纪律保留；when-to-use 清单作为 caller 侧路由指引删除（归 T14 委派表）。双评审 APPROVE（Kimi 4 NIT 仲裁接受；mcode P3 抓仲裁者文档错误已更正）；CI 8/8 绿（门2=306）。
 - **依赖**：P2-T4 + P2-T1（复核 §2.8 行号引用）。**量级**：1.5 小时。
 
-### [ ] P2-T12 — persona：`sisyphus-junior`
+### [x] P2-T12 — persona：`sisyphus-junior`
 
 - **产出**：`system-sections/sisyphus-junior-persona.md` + 快照。
 - **做法**：按 T4 配方；上游主源 `sisyphus-junior/default.ts`；保留"无委派权的专注执行器"内核；category 中介语义**不移植**（基准表 2.9 注记）。
 - **判定**：同 P2-T5。
-- **证据**：（待填）
+- **证据**：2026-09-12 批次3。sisyphus-junior-persona.md 91 行 + 快照；worker 形态正确（可写、不可委派——上游 call_omo_agent 强制 allow 有意不镜像）；todo 纪律/验证门/终止纪律（首次成功验证后停止）保留；category 路由中介语义未移植（Phase 5，正文无 categor* 残留，署名头有 NOT-ported 注记）；default.ts 唯一移植源（8 变体排除经评审对照 agent.ts:28-35 核实）。双 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：1.5 小时。
 
-### [ ] P2-T13 — persona：`prometheus`
+### [x] P2-T13 — persona：`prometheus`
 
 - **产出**：`system-sections/prometheus-persona.md` + 快照。
 - **做法**：按 T4 配方；保留访谈式规划框架（explore-first / CLEAR-UNCLEAR intent 路由）；访谈对象改写为指挥（问题写回报告，不经 `ask_user`——基准表 2.10 注记）。
 - **判定**：同 P2-T5。
-- **证据**：（待填）
+- **证据**：2026-09-12 批次3。prometheus-persona.md 174 行 + 快照；访谈式规划框架完整（intent 路由 CLEAR/UNCLEAR/explicit-ask/on-the-fence + 两过滤器 + owner-decision 例外、topology lock、clearance check、decision-complete 北极星含 full-scope/Must-NOT-Have/column-zero 任务行/agent 执行 QA）；访谈对象改为指挥（问题入报告含选项/分叉/推荐默认，不 ask_user、不停摆、跨 continuation 续谈）；只读收窄记录（上游 hook 限 .md 写不移植）；/ulw-plan 及评审环未作为可用引用。双 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：2 小时。
 
 ### [ ] P2-T14 — sisyphus 第 5 段：名册委派表

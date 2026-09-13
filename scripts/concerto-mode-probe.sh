@@ -548,9 +548,12 @@ boot_once() {
 
   # T8 (FR-3, AC-3): the persona the concerto mode boots with is the assembled
   # omo-sisyphus system prompt. Plugin-side marker + the materialized
-  # composition carries the rendered block scalar (sentinel gone, three
-  # section markers present inside it).
-  grep -q "\[omo-agents\] omo-sisyphus system prompt assembled: 4 sections, " "$boot_log" \
+  # composition carries the rendered block scalar (sentinel gone).
+  # The assembly is now five sections (role, delegationDiscipline,
+  # delegationRoster, hardBlocks, antiPatterns); this probe still asserts only
+  # three of their markers below — P2-T20 will extend it to the full roster
+  # markers.
+  grep -q "\[omo-agents\] omo-sisyphus system prompt assembled: 5 sections, " "$boot_log" \
     || fail "[$label] omo-sisyphus prompt assembly marker missing from boot log"
   local materialized="$DSH_HOME/.agent-presets/concerto/agent.cordis.yml"
   [[ -f "$materialized" ]] \
