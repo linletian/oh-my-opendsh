@@ -105,7 +105,7 @@
 - **角色**：视觉/媒体文件分析（utility，cost CHEAP；PDF/图片/图表的信息提取与描述）
 - **OMO 限制**：**allowlist `[read]`** ✅（`createAgentToolAllowlist(["read"])`，multimodal-looker.ts:14-15 → `{"*":"deny", read:"allow"}`——P2-T1 复核逐字确认；L2 层同义 `{read:true}`）
 - **OMO 链首**：gpt-5.6-sol low → kimi-k3 → glm-4.6v → gpt-5-nano ✅（转引）
-- **镜像映射**：`toolFilter.allow: [read, read_image]`（**评审实测闭环，2026-09-11**：OMO 的单 `read` 在 DSH 拆成 `read`（纯文本，`dsh-tool-fs/lib/index.js`:332）+ `read_image`（独立工具，`ctx.inject(["attachments"])` 条件注册，1256/1267 行；attachments 在 host 层 `dsh-base/cordis.patch.yml`:118，子会话继承）。`admits()` 的 allow 是白名单过滤继承面（`dsh-tools/lib/index.js`:2545-2546）——只写 `[read]` 会挡掉 `read_image`、关闭视觉入口；`restrict()` 对未注册名 throw（2801-2803），故条件注册名写入名单的漂移风险入计划书 R-9）；maxDepth 1
+- **镜像映射**：`toolFilter.allow: [read, read_image]`（**评审实测闭环，2026-09-11**：OMO 的单 `read` 在 DSH 拆成 `read`（纯文本，`dsh-tool-fs/lib/index.js`:332）+ `read_image`（独立工具，`ctx.inject(["attachments"])` 条件注册，:1257 注释 / :1270-1271 注册点；attachments 在 host 层 `dsh-base/cordis.patch.yml`:118，子会话继承）。`admits()` 的 allow 是白名单过滤继承面（`dsh-tools/lib/index.js`:2545-2546）——只写 `[read]` 会挡掉 `read_image`、关闭视觉入口；`restrict()` 对未注册名 throw（2801-2803），故条件注册名写入名单的漂移风险入计划书 R-9）；maxDepth 1
 - **适配注记**：① 视觉座默认 `deepseek-official / deepseek-v4-flash-vision-exp`——该 id **同在两个 catalog**（dsh-llm-deepseek DEFAULT_MODELS:1864 ✅ + pi-ai builtin `deepseek` 路由，deepseek.json 实测 3 id ✅）；默认提供方选 `deepseek-official`（base composition 已注册、无 settings 依赖），回退同理优先已注册侧（R-4 修正，计划书 §6）；② 真实视觉验证属 L4 手工，e2e 用 mock 文本回。
 
 ### 2.9 `sisyphus-junior`
@@ -150,12 +150,12 @@
 | 事实 | 证据 |
 |---|---|
 | `read` 只读 UTF-8 文本（"Read a UTF-8 text file"），**不含**图片 | `dsh-tool-fs/lib/index.js`:332 |
-| `read_image` 是**独立**工具，`ctx.inject(["attachments"], …)` 内**条件注册**（"exists only while a durable store is mounted"） | 同文件 1256 注释 / 1267-1269 注册点；`applyReadImageTool` ~1040 |
+| `read_image` 是**独立**工具，`ctx.inject(["attachments"], …)` 内**条件注册**（"exists only while a durable store is mounted"） | 同文件 :1257 注释 / :1270-1271 注册点；`applyReadImageTool` :1040 |
 | `attachments` 服务在 host 层 → concerto 子会话继承 → `read_image` 存在 | `dsh-base/cordis.patch.yml`:118 `attachment-local` |
 | `admits()`：allow 白名单过滤继承面（不在 allow 集合即不可见）；`allow: [read]` 会挡掉 `read_image` | `dsh-tools/lib/index.js`:2545-2546 |
 | `restrict()` 对**未注册名** throw（"names unknown global tool"）——filter 名单必须与 composition 已注册名一致 | 同文件 2801-2803 |
 | **Q-3 闭环（P2-T1，2026-09-12）**：`allow` 与 `deny` 同给时语义 = 白名单 ∧ ¬deny（`admits()` 逐 filter 判定：`allow` 不在集合即拒、`deny` 在集合即拒）——multimodal-looker 的 `allow: [read, read_image]` **无需**再显式 deny 委派名（委派名本就不在 allow 集合，物理不可见；补 deny 为纯冗余且增大 R-9 漂移面，故不补）；P2-T17 单测钉住该渲染结果 | 同文件 2545-2547 `admits(name)` |
-| **Q-1 子会话枚举（P2-T1，2026-09-12）**：pinned dsh 0.1.5-rc.1 上，concerto 子会话 advertised 工具名单实测含 `read_image`（门 3 `explore-write-denied` 场景 verdict bonus `childAdvertisedToolNames`，基线复跑 2026-09-12）；行号引用复核一致（`read` :332-333、条件注册注释 :1257、注册点 :1267-1269、`applyReadImageTool` :1040） | `tests/e2e/drive.mjs` verdict JSON；`dsh-tool-fs/lib/index.js` |
+| **Q-1 子会话枚举（P2-T1，2026-09-12）**：pinned dsh 0.1.5-rc.1 上，concerto 子会话 advertised 工具名单实测含 `read_image`（门 3 `explore-write-denied` 场景 verdict bonus `childAdvertisedToolNames`，基线复跑 2026-09-12）；行号引用复核一致（`read` :332、条件注册注释 :1257、注册点 :1270-1271、`applyReadImageTool` :1040） | `tests/e2e/drive.mjs` verdict JSON；`dsh-tool-fs/lib/index.js` |
 | **连字符工具名（A.4 后半，P2-T1 lib 层）**：dsh-tools 注册无字符集限制（仅 `run_code` 保留名，:2780）；deepseek adapter 逐字转发 `name: tool.name`（dsh-llm-deepseek/lib/index.js:231），OpenAI 兼容模式 `^[a-zA-Z0-9_-]{1,64}$` 接受连字符——`plan-consultant`/`plan-reviewer` 结构性安全；boot 注册成功断言按计划留 P2-T15 冷启动兜底 | 上述行号 |
 
 **LLM catalog 与 `model-unavailable`（评审实测 2026-09-11，H-4/H-5）**：

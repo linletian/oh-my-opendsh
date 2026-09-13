@@ -33,7 +33,7 @@
   5. **视觉座与连字符名**（待核清单 A.4）：确认 pinned dsh（0.1.5-rc.1）的 `dsh-llm-deepseek` catalog 含 `deepseek-v4-flash-vision-exp`；确认 OpenAI 兼容 tool name 模式接受连字符（adapter lib 或 probe 冷启动注册日志）。
   6. **pi-ai `deepseek` 路由可用 model id 清单**（P2-T18 路由分布的依赖，评审已实测 = 3 id：基准表 §3）：复核 pinned dsh 安装的 `@earendil-works/pi-ai` 版本该清单未漂移。
 - **判定**：✅ 基准表 §4 **A 组（输入核实）4 项**全部闭环（✅ 或更正值 + 更正理由）；B 组 Q-3 结论写进基准表 §3（Q-1 复核引用即可）。
-- **证据**：2026-09-12 复核完成，基准表 §4 六项全闭环：① 上游 permission 逐文件复核（hephaestus/atlas/sisyphus-junior/prometheus/oracle/metis + 辅助函数 + L2 层）——更正 1 处预期（prometheus 实为 hook 限 `.md` 写而非 permission 只读）、3 处"有意收窄"注记（hephaestus 的 task、sisyphus-junior 的 call_omo_agent、metis 的 call_omo_agent 委派权不镜像，理由记录）；证据 `.omo/evidence/p2t1-upstream-permissions.md`。② `*_PROMPT_METADATA` + `AGENT_MODEL_REQUIREMENTS` 全量逐字提取（上桌 6 / 未上桌 2 / 无常量 2）；证据 `.omo/evidence/p2t1-upstream-metadata.md`；T14 数据源就绪。③ Q-1：行号引用复核一致（:332-333/:1257/:1267-1269/:1040）+ 子会话枚举实证（门 3 `explore-write-denied` verdict bonus `childAdvertisedToolNames` 含 `read_image`，基线复跑于 pinned dsh）。④ Q-3 = **allow ∧ ¬deny**，multimodal-looker 无需补 deny 委派名（结论入基准表 §3，`admits()` :2545-2547）。⑤ 视觉座 catalog 直核未漂移（DEFAULT_MODELS :1864 + deepseek.json 3 id）；连字符名 lib 层结构性安全（dsh-tools 无字符集限制 + adapter 逐字转发 :231），boot 断言留 P2-T15。⑥ pi-ai `deepseek.json` = 3 id 未漂移。
+- **证据**：2026-09-12 复核完成，基准表 §4 六项全闭环：① 上游 permission 逐文件复核（hephaestus/atlas/sisyphus-junior/prometheus/oracle/metis + 辅助函数 + L2 层）——更正 1 处预期（prometheus 实为 hook 限 `.md` 写而非 permission 只读）、3 处"有意收窄"注记（hephaestus 的 task、sisyphus-junior 的 call_omo_agent、metis 的 call_omo_agent 委派权不镜像，理由记录）；证据 `.omo/evidence/p2t1-upstream-permissions.md`。② `*_PROMPT_METADATA` + `AGENT_MODEL_REQUIREMENTS` 全量逐字提取（上桌 6 / 未上桌 2 / 无常量 2）；证据 `.omo/evidence/p2t1-upstream-metadata.md`；T14 数据源就绪。③ Q-1：行号引用复核一致（:332/:1257/:1270-1271/:1040；批次3 评审 NIT 复核后于 2026-09-12 更正两处行号）+ 子会话枚举实证（门 3 `explore-write-denied` verdict bonus `childAdvertisedToolNames` 含 `read_image`，基线复跑于 pinned dsh）。④ Q-3 = **allow ∧ ¬deny**，multimodal-looker 无需补 deny 委派名（结论入基准表 §3，`admits()` :2545-2547）。⑤ 视觉座 catalog 直核未漂移（DEFAULT_MODELS :1864 + deepseek.json 3 id）；连字符名 lib 层结构性安全（dsh-tools 无字符集限制 + adapter 逐字转发 :231），boot 断言留 P2-T15。⑥ pi-ai `deepseek.json` = 3 id 未漂移。
 - **依赖**：PRE-1…PRE-5。**量级**：0.5 天。
 
 ---
@@ -91,28 +91,28 @@
 - **证据**：批次1。librarian-persona.md 86 行 + 快照；评审核实：TYPE A-D 分类与触发路由保留、文档发现流完整（官方优先/版本确认/sitemap 三回退/定向抓取/跳过条件）、引用契约绑定要素齐全、失败恢复全覆盖（context7/grep_app/gh 项正确删除或泛化）、正文无 context7/MCP 残留（剥离归属注释后断言）；header :7-22 核验精确。双评审 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：1.5 小时。
 
-### [ ] P2-T8 — persona：`plan-consultant`（v4 metis）
+### [x] P2-T8 — persona：`plan-consultant`（v4 metis）
 
 - **产出**：`system-sections/plan-consultant-persona.md` + 快照。
 - **做法**：按 T4 配方；上游主源 `agents/metis.ts`（K2.7 变体不取）；保留 gap 分析框架（隐藏意图/歧义/失败点）；署名头注明改名映射（metis → plan-consultant，ROADMAP 命名锚点）。
 - **判定**：同 P2-T5。
-- **证据**：（待填）
+- **证据**：2026-09-12 批次2（deepseek-flash，1 修复轮）。plan-consultant-persona.md 176 行 + 快照；6 类 intent 分类 + 逐类 gap 分析 + 输出契约（含 agent 可执行 QA MANDATORY 块）保留；call_omo_agent 改写为委派缺席；Anti-Duplication 正确排除；改名映射真实（agent-names.ts:28 有 plan-consultant→metis 条目）。评审轮1 Kimi REJECT 含本文件 2 项（2x 量化词系 oracle 跨 agent 污染——属实已删；oracle 措辞改指 caller/planner），修复后双 APPROVE；CI 8/8 绿（门2=271）。
 - **依赖**：P2-T4。**量级**：2 小时。
 
-### [ ] P2-T9 — persona：`plan-reviewer`（v4 momus）
+### [x] P2-T9 — persona：`plan-reviewer`（v4 momus）
 
 - **产出**：`system-sections/plan-reviewer-persona.md` + 快照。
 - **做法**：按 T4 配方；上游主源 `agents/momus.ts`（GPT-5.6 变体不取）；保留 clarity/verification/context 三轴评审框架。
 - **判定**：同 P2-T5。
-- **证据**：（待填）
+- **证据**：2026-09-12 批次2。plan-reviewer-persona.md 165 行（修复轮后；轮1 时 153 行）+ 快照；立场经评审确认 faithful——上游实为 APPROVAL BIAS/OKAY 默认/max-3/BLOCKER-finder（非"找出一切毛病"，基准表 §2.6 措辞按 DoD-d 以此为准）；三轴检查零阈值损失；输入契约泛化（YAML 拒绝被吞并并已记录）。评审轮1 Kimi REJECT（MAJOR：归属头伪造 agent-names.ts 映射——仲裁复核属实，上游无 momus 改名条目），修复轮改为"project-anchored 非 upstream-mapped"诚实措辞 + 测试双向钉死；复审双 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：2 小时。
 
-### [ ] P2-T10 — persona：`atlas`
+### [x] P2-T10 — persona：`atlas`
 
 - **产出**：`system-sections/atlas-persona.md` + 快照。
 - **做法**：按 T4 配方；保留"纯编排、绝不亲手实现（NEVER THE IMPLEMENTER）"内核与独立验证纪律；写明其可再委派 worker（maxDepth 2 的 persona 表达）；`/ulw-execute` 命令面引用改为"由指挥激活"（Phase 4 前不引用未移植命令）。
 - **判定**：同 P2-T5。
-- **证据**：（待填）
+- **证据**：2026-09-12 批次2。atlas-persona.md 183 行 + 快照；NEVER-THE-IMPLEMENTER 绝对规则 + 写权限限定为编排簿记、可委派声明（唯一保留委派工具的子级）、6 段 dispatch 契约、默认并行、独立验证纪律、durable-id 续作、指挥激活（无 /ulw-* 命令面）；上游 prompt 真身在 prompts-core/prompts/atlas/default.md（源集拓宽经评审核实）；category/load_skills/notepads/Codex 表/start-work 各 drop 逐项经评审验证。双 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：2 小时。
 
 ### [ ] P2-T11 — persona：`multimodal-looker`
