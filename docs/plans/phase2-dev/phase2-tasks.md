@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 2 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，基准表给出"每 agent 的数据"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🚧 **1/22 完成**（PRE-1…PRE-5 ✅；P2-T1 ✅ 2026-09-12；WP-1 进行中）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）。
+> **状态**：✅ **22/22 完成**（PRE-1…PRE-5 ✅ 2026-09-12；P2-T1…P2-T22 全绿，退出标准核对表全 ✅ 2026-09-14）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）。
 >
 > **编号**：`P2-T<n>`（Phase 2 - Task n）。工作包归属见计划书 §7。
 
@@ -209,20 +209,20 @@
 
 ## WP-5 收口（计划书 §4.8/§4.9/§5）
 
-### [ ] P2-T21 — 署名与文档
+### [x] P2-T21 — 署名与文档
 
 - **产出**：`THIRD_PARTY_NOTICES.md` 新增 "Phase 2 persona semantic ports" 小节 + `README*.md` / `docs/install-concerto*.md` 注记 + **`README*.md` 协奏节"名册路由与 env 覆盖表"** + `CHANGELOG.md` 条目 + 踩坑登记（如有）。
 - **做法**：NOTICES 逐文件列出 9 个 persona + `delegation-roster.md`（含既有 OMO 派生文件补登，计划书 §4.9——2026-09-14 实测为 3 个：explore-persona/hard-blocks/anti-patterns；role/delegation-discipline 系原创内容不补登）；README 的协奏描述更新为 11-agent 名册并写明"名册完整 ≠ `/ulw-*` ≠ Team Mode"（计划书 §6 R-8）；**README 协奏节新增"名册路由与 env 覆盖表"**（11 agent × 席位 × `OMO_*` env 对——部署前可查"模型链留在配置"的操作面，ROADMAP 关键约束的落地证据，数据从 roster.ts/基准表 §1 复制并标注单一事实源）；install-concerto 文档注记 installer 仍为 1+1（§4.8）；实施期真实踩坑按 P-xx 模板登记 `docs/mvp-pitfalls*.md`。
 - **判定**：✅ 门 7（docs consistency）绿；NOTICES 新小节行数 == 派生文件清单数；既有条目零改动（git diff 核对）。
-- **证据**：（待填）
+- **证据**：2026-09-14（deepseek-flash，2 修复轮）。NOTICES "Phase 2 persona semantic ports" 44 行纯插入零删改：10 派生文件逐行上游源（spot-check 与文件内署名头一致）+ 3 既有 OMO 派生补登；delegation-discipline.md 实测系原创（Source: original）排除，计划书 4→3 更正（DoD-d）。README 双语：11-agent 名册 + "名册路由与 env 覆盖表"（11 行逐格对 roster.ts 一致、单一事实源标注、AC-5/双座位警告/provider 警告注）+ R-8 明示并锚定 §6。install-concerto 双语 1+1 注记。CHANGELOG：## Unreleased 块（d06 绿，v0.2.1 块字节不变）。pitfalls P-22（maxDepth 目标行语义，lib 引用精确）/P-23（异步注册时序→settled 检查）/P-24（MOCKROLE 错行注入类）。门 7 = 8/8；NOTICES 纯插入（git diff 0 删除行）；既有条目零改动；checked=52 不变（退出标准 e）。评审：Kimi APPROVE → mcode 3+3 findings 全修复 → 终审双 APPROVE；CI 8/8 绿（门2=432）。
 - **依赖**：P2-T17…T20 完成后统一措辞。**量级**：2 小时。
 
-### [ ] P2-T22 — 退出标准核对 + 全门链复跑
+### [x] P2-T22 — 退出标准核对 + 全门链复跑
 
 - **产出**：本文件的"退出标准核对表"逐条填证据；L4 手工冒烟记录（`.omo/evidence/`，gitignored，结论回填本行）。
 - **做法**：① **先提交**：`git add` + commit 全部 Phase 2 产出（含本计划目录——评审实测其初稿长期 untracked，若不复跑于已提交快照上，退出标准 b/c 的证据将没有可复现对应物）；② 按计划书 §5 的 a/b/c/d/e 逐条取证；`scripts/ci-local.sh` 全 8 门复跑；`verify-licenses --json` 的 `checked` 与基线（52）比对；③ L4：真 key 手工 run，指挥真实调用 2–3 个新 agent（含 multimodal-looker 若视觉 key 可用）。
 - **判定**：✅ 下方核对表全绿。
-- **证据**：（待填）
+- **证据**：2026-09-14 全项完成。① 提交：Phase 2 全部产出含本计划目录逐任务提交（df9cf4e…4d3c57a，共 14 个提交），退出标准证据复跑于已提交快照之上。② a/b/c/d/e 逐条取证见下方核对表（全绿）。③ L4 真 key 手工 run ×4（仲裁亲自执行，`.omo/evidence/smoke-real-*` gitignored）：explore PASS（基线，AUTO-CHECKS PASS）；librarian——指挥真实调用、librarian 真实 web_fetch+web_search、发现返回（AUTO FAIL 于 link-2 夹具通道形状 → 冒烟工具按仲裁判断加第三通道 web-tool，同一证据回放 PASS）；oracle——OMO_ORACLE_* 钉独立座位，AC-5 互异真实 PASS；multimodal-looker——视觉座 deepseek-v4-flash-vision-exp 真实 read_image PASS。④ 冒烟工具泛化+un-rot 经双评审（Kimi APPROVE；mcode 连续 7 次 5h 窗口限额后按半小时周期第 8 次重试 APPROVE）。⑤ `scripts/ci-local.sh` 最终树 8/8 门 PASS（门2=432 测试、门3=7 场景）；`verify-licenses --json` checked=52 与基线一致。
 - **依赖**：P2-T21。**量级**：2 小时。
 
 ---
@@ -231,8 +231,8 @@
 
 | # | 标准（计划书 §5） | 证据 | 结论 |
 |---|---|---|---|
-| a | 每 agent 可经指挥调用、路由在会话日志可观测 | roster-parade verdict + probe 路由行 + L4 记录 | ⬜ |
-| b | 名册快照测试常绿 | roster.md + 9 persona 快照签入、门 2 绿、非空断言 | ⬜ |
-| c | 全 8 门绿、门扩展只加严 | ci-local 输出 + c10 断言对比 | ⬜ |
-| d | 文档与实测无冲突 | P2-T1 基准表回填记录 + 实施期改文档记录 | ⬜ |
-| e | 署名只增不改、`checked` 计数不变（52） | NOTICES diff + `verify-licenses --json` | ⬜ |
+| a | 每 agent 可经指挥调用、路由在会话日志可观测 | ① roster-parade verdict（门 3，commit a9484d3）：19/19 断言，10/10 子级 configuredSeat==resolvedSeat==observedRoute（7 真实 catalog 对，无假 id），11/11 MOCKROLE 落点正确，hard-blocks 注入 10 子级可见；② 探针（P2-T20，commit 76f47d7）：双 boot 11 路由汇总整行相等 + distinct provider active + 10 persona assembled 行；③ L4 真实 run ×4（`.omo/evidence/smoke-real-2026-09-13T18-21-50-040Z` explore PASS / `…18-22-43-420Z` librarian——修复后分析回放 PASS，channel=web-tool / `…18-24-08-643Z` oracle PASS，env 钉独立座位 AC-5 互异 / `…18-24-08-819Z` multimodal-looker PASS，视觉座 read_image 实跑）——指挥真实调用 3 个新 agent 且各自路由与名册座一致 | ✅ |
+| b | 名册快照测试常绿 | `tests/omo-agents/__snapshots__/roster.md`（32 行结构化快照，字节断言内嵌反假绿、无重写路径，commit 3c985cc）+ 9 个新 persona 快照 + 既有 explore/sisyphus 快照全部签入；门 2 = 432 测试全绿；变异反向证明：翻一个 roster 字段恰 4 具名失败（评审独立复现） | ✅ |
+| c | 全 8 门绿、门扩展只加严 | `scripts/ci-local.sh` 全 8 门复跑 PASS（exit 0，2026-09-14 最终树：门 1 typecheck · 门 2 = 432 测试/24 文件 · 门 3 = 7 e2e 场景 · 门 4 doctor-lite · 门 5 checked=52 · 门 6 = 19/19 · 门 7 = 8/8 · 门 8 = 3/3 proofs）；门扩展只加严：c10 从 4 类基线扩为 10 条名册派生记录（每条 ≥ 其基线对应项，c01–c09 零改动）；doctor-lite 从逐行 schema 扩为全 10 行逐行契约断言；探针增名册启动契约（10 persona 行/整行 11 路由/警告缺失/distinct active）；prove-route-logging 增第二 roster 子级 | ✅ |
+| d | 文档与实测无冲突 | P2-T1 基准表回填（§4 六项全闭环，`.omo/evidence/p2t1-*.md`）；实施期 DoD-d 更正逐条记录：① momus 立场（上游实为 APPROVAL BIAS/max-3，批次2 评审确认 faithful，基准表措辞以此为准）；② maxDepth 语义修正（D-2026-09-13-01：深度门读被调用行——10 行统一 2，计划书/基准表同步更正）；③ OMO 派生文件 4→3（delegation-discipline.md 实测系原创，计划书/任务书同步）；④ dsh-tool-fs 行号钉 :1256→:1257、:1267-1269→:1270-1271（批次3 评审 NIT 复核属实）；⑤ "第 5 段"措辞更正为第 3 段（计划书自身笔误，7 处文档+1 处注释同步） | ✅ |
+| e | 署名只增不改、`checked` 计数不变（52） | `THIRD_PARTY_NOTICES.md` 新增 "Phase 2 persona semantic ports" 小节 = 44 行纯插入、0 删除行（git diff 核对，commit 7595f0d）；既有条目零改动；`verify-licenses --json`：`pass:true, violations:[], checked:52`——与 PRE-3 基线一致（本阶段零新增 npm 依赖、零新 vendor） | ✅ |
