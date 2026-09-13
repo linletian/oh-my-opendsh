@@ -54,10 +54,15 @@
 #                                      tool-result-pruner; realm reasons as in
 #                                      standard: pruner shares the realm,
 #                                      tokenMeter stays host-plane).
-# KEEP  delegation group             — THE point of the mode: subagent
-#                                      spawn/fork + control + list-agents,
-#                                      verbatim from standard, PLUS the T11
-#                                      omo-explore instance (see its row).
+# KEEP  delegation group             — THE point of the mode: the control +
+#                                      list-agents pair from standard, PLUS the
+#                                      full Phase 2 roster (P2-T15): ten
+#                                      `dsh-tool-subagent` instances, one per
+#                                      roster delegation entry, the T11
+#                                      omo-explore instance being the first of
+#                                      them. The generic `tool-subagent` /
+#                                      `tool-subagent-fork` rows stay DROPPED
+#                                      (F1 fix).
 # DEV   modelSelectionSettings        — kept ONLY on the generic
 #                                      `tool-subagent` (provider: spawn) row,
 #                                      as in 0.1.2 standard. NOT on
@@ -66,9 +71,9 @@
 #                                      stay equal to the parent and the
 #                                      inherited history keeps its KV Cache
 #                                      prefix — standard's fork comment) and
-#                                      NOT on `tool-subagent-explore` (FR-5
-#                                      pins the route via agentOptions;
-#                                      explore never samples host model
+#                                      NOT on any `tool-subagent-<agent>` row
+#                                      (FR-5 pins each route via agentOptions;
+#                                      no roster child samples host model
 #                                      selection).
 # KEEP  tool-ask-user                — the conductor escalates decisions.
 # KEEP  tool-todo                    — orchestration tracking.
@@ -95,8 +100,11 @@
 #                                      Dropping (not disabling) keeps the MVP
 #                                      roster honest; DROP unchanged under
 #                                      0.1.2. Per-agent model routes
-#                                      (PRD §4.4 piece 4) land with the real
-#                                      agent presets later.
+#                                      (PRD §4.4 piece 4) — noted here as
+#                                      landing "with the real agent presets" —
+#                                      arrived in Phase 2 on the ten named rows
+#                                      below, whose agentOptions is rendered
+#                                      from src/model-routes.ts at apply() time.
 # DROP  workflow-worker-thread /
 #       tool-workflow                — workflow engine rows; not needed for
 #                                      the 1+1 (conductor + subagent) skeleton.
@@ -216,67 +224,104 @@
     # current-DSH path): the generic `tool-subagent` / `tool-subagent-fork`
     # rows are DROPPED. Their children are unrestricted full agents (no
     # toolFilter, default depth budget 3), so a conductor that picked them
-    # instead of `explore` bypassed every guardrail. With them gone, `explore`
-    # below is the conductor's ONLY delegation path — same verdict as
-    # patches/omo-dsh/omo-agents-current/ (2026-09-04).
-
-    # T11 (FR-4 persona + FR-5 route binding; form A static plugin config):
-    # ONE more dsh-tool-subagent instance, bound to omo-explore. The conductor
-    # sees a single delegation tool named `explore` (with the generic rows
-    # gone, no toolName collision is possible).
+    # instead of a named roster agent bypassed every guardrail. With them gone,
+    # the ten rows below are the conductor's ONLY delegation paths — same
+    # verdict as patches/omo-dsh/omo-agents-current/ (2026-09-04).
     #
-    # SINGLE-SOURCE discipline — no prompt text or route literals are pasted
-    # into this file. Two values are SENTINELS (the EXPLORE_PERSONA_SENTINEL /
-    # EXPLORE_AGENT_OPTIONS_SENTINEL constants in src/concerto-preset.ts)
-    # rendered by syncConcertoPreset at apply() time — same mechanism as the
-    # T8 persona sentinel:
-    #   persona      ← buildExploreSystemPrompt() (src/explore-prompt.ts, T10).
-    #                The spawn provider declares the `persona` capability, so
-    #                the text shadows the child's deployment persona
-    #                (tool-subagent/src/index.ts:92,384).
-    #   agentOptions ← resolveModelRoutes().explore (src/model-routes.ts, T14).
+    # PHASE 2 (P2-T15; plan §4.4/§4.5, phase2-roster.md §1 总表): the T11
+    # single-instance shape generalizes to the FULL roster — one
+    # dsh-tool-subagent instance per roster DELEGATION entry, in ROSTER ORDER
+    # (explore, hephaestus, oracle, librarian, plan-consultant, plan-reviewer,
+    # atlas, multimodal-looker, sisyphus-junior, prometheus), so the conductor
+    # sees exactly ten named delegation tools. sisyphus (the conductor) is NOT
+    # here: it is the main-session persona row above and holds no delegation
+    # tool of its own (roster.ts expresses that as `delegation: false`).
+    #
+    # SINGLE-SOURCE discipline — no prompt text, no route literal and no deny
+    # list is pasted into this file. THREE sentinel families are rendered by
+    # syncConcertoPreset (src/concerto-preset.ts `renderAgentSentinels`) from
+    # the single sources at apply() time — same mechanism as the T8 persona
+    # sentinel. Each one is spelled `agentSentinelName(id, kind)`: the row id
+    # upper-cased with hyphens folded to underscores (the roster.ts env-name
+    # convention), framed by the plugin's sentinel delimiters; the delimiter
+    # literal itself is deliberately never written in this file, so "the
+    # template still carries a sentinel" stays a grep-able, unambiguous
+    # statement about the rendered artifact.
+    #   persona       sentinel                 ← buildAgentPersona(id)
+    #                (src/persona-prompts.ts, reading system-sections/
+    #                <id>-persona.md; the T11 explore instance used the T10
+    #                explore-prompt.ts wrapper, which is now a thin alias of
+    #                the same builder). The spawn provider declares the
+    #                `persona` capability, so the text shadows the child's
+    #                deployment persona (tool-subagent/src/index.ts:92,384).
+    #   agentOptions  sentinel                 ← resolveModelRoutes()[id]
+    #                (src/model-routes.ts ← roster.ts defaults + the
+    #                OMO_<AGENT>_{PROVIDER,MODEL} env pair, T14/P2-T3).
     #                Env-overridable, so the route MUST be resolved at apply()
     #                time — a static literal would fork the single source of
     #                truth. Rendered as JSON-quoted YAML scalars
     #                (injection-safe).
-    # Declared with the intended final values; verification status noted:
-    #   toolFilter   T12 read-only filter, VERIFIED (P-4; evidence
-    #                .omo/evidence/task-12-mvp-implementation.log): deny the
-    #                mutation tools (write, edit — dsh-tool-fs is never
-    #                platform-gated, so both names always exist for the
-    #                child's restrict()) PLUS `explore` itself (PR #1 review
-    #                F1 fix, 2026-09-04): the explore child physically lacks
-    #                its own delegation tool, so nested delegation is
-    #                impossible by construction (AC-6b parity with the
-    #                current-DSH path) — stronger than the depth cap alone,
-    #                which stays as defense-in-depth. OMO parity: OMO's own
-    #                explore denies write/edit/apply_patch/task/call_omo_agent
-    #                — apply_patch does not exist in dsh and task/call_omo_agent
-    #                map to the maxDepth cap below. `bash` is deliberately NOT
-    #                denied (T12 verdict a): it is platform-gated (absent on
-    #                win32 — a deny would throw "unknown global tool" at the
-    #                child's restrict() there) and OMO's explore keeps shell
-    #                access; write-capable commands are governed by the
-    #                persona's Read-Only Declarations plus T16 hard-blocks
-    #                injection.
-    #   maxDepth     T13 depth cap, VERIFIED (P-5; evidence
-    #                .omo/evidence/task-13-mvp-implementation.log). Field shape:
-    #                a FLAT `maxDepth` (tool-subagent/src/index.ts:98,
-    #                z.natural()|'provider-managed', default 3) — there is NO
-    #                `policy` wrapper; 1 = the explore child cannot delegate.
-    #                Enforcement proven through the real start path
-    #                (scripts/prove-explore-maxdepth.mjs): a depth-1 parent's
-    #                nested-delegation attempt is rejected on BOTH the
-    #                foreground and continuable starts with the errored tool
-    #                result "Error: subagent depth 2 exceeds maxDepth 1"
-    #                (resolveChildDepth → SubagentDepthError, child-agent.ts:48
-    #                -56, before any child exists), a depth-0 parent passes
-    #                (control), absent → default 3, and 'provider-managed'
-    #                sends no cap. SINCE the F1 fix (2026-09-04) the cap is
-    #                defense-in-depth: `explore` is already absent from the
-    #                child's tool list, so the depth gate no longer fires in
-    #                the e2e nested-delegation scenario (which now asserts
-    #                the unknown-tool rejection instead).
+    #   deny          sentinel                 ← denyToolNamesFor(roster row)
+    #                (src/roster.ts), rendered as a YAML flow sequence of
+    #                JSON-quoted names. PER-ROW UNIQUE (the id is part of the
+    #                sentinel) because the exactly-once guard applies to each
+    #                row independently; one shared sentinel string across rows
+    #                would collide with that guard, and a static list would
+    #                make adding an agent an eleven-line YAML edit.
+    # Sentinel census: 1 conductor `prefix` (T8) + 10 persona + 10 agentOptions
+    # + 8 deny = 29. syncConcertoPreset renders all of them and then rejects any
+    # surviving sentinel residue, so a missed or doubled sentinel is a loud
+    # apply-time failure (R-7 discipline).
+    #
+    # toolFilter BY CLASS (plan §4.4 mirror table: OMO `permission` semantics →
+    # the DSH `toolFilter` of each instance; per-row Config validity is checked
+    # by doctor-lite against the installed schema, the class shape is pinned
+    # statically by c10):
+    #   read-only (explore, oracle, librarian, plan-consultant, plan-reviewer,
+    #                prometheus — 6 rows): deny the mutation tools (write, edit
+    #                — dsh-tool-fs is never platform-gated, so both names
+    #                always exist for the child's restrict()) PLUS all ten
+    #                delegation tool names. OMO parity: its read-only agents
+    #                deny write/edit/apply_patch/task/call_omo_agent —
+    #                apply_patch does not exist in dsh and task/call_omo_agent
+    #                map onto the ten named tools. F1 generalization (PR #1
+    #                review, 2026-09-04): a read-only child must not even SEE
+    #                another agent's delegation tool (physical absence beats
+    #                refusal), so nested delegation is impossible by
+    #                construction — stronger than the depth cap alone, which
+    #                stays as defense-in-depth (AC-6b parity with the
+    #                current-DSH path).
+    #   worker (hephaestus, sisyphus-junior — 2 rows): deny all ten delegation
+    #                names; write/edit stay, because both are write-capable
+    #                executors (phase2-roster.md §2.2/§2.9).
+    #   orchestrator (atlas): NO `toolFilter` key at all. atlas is the ONE
+    #                sub-agent that keeps the delegation tools and may delegate
+    #                again (plan §4.5); its cap is the structural `maxDepth: 2`
+    #                below (conductor depth 0 → atlas 1 → worker 2).
+    #   allowlist (multimodal-looker): the STATIC `allow: [read, read_image]`
+    #                on its row below — short list, no sentinel. `read` alone
+    #                would hide `read_image` (conditionally registered by
+    #                dsh-tool-fs while `attachments` is mounted) and close the
+    #                vision entry point (plan §4.4 H-1); name-drift risk: R-9.
+    #   `bash` is deliberately NOT denied on any row (T12 verdict a): it is
+    #   platform-gated (absent on win32 — a deny would throw "unknown global
+    #   tool" at the child's restrict() there) and OMO's read-only agents keep
+    #   shell access; write-capable commands are governed by each persona's
+    #   read-only declarations plus the T16 hard-blocks injection.
+    #
+    # maxDepth: a FLAT `maxDepth` field (tool-subagent/src/index.ts:98,
+    # z.natural()|'provider-managed', default 3) — there is NO `policy`
+    # wrapper. atlas = 2; every other row = 1. Enforcement proven through the
+    # real start path (scripts/prove-explore-maxdepth.mjs, T13): a depth-1
+    # parent's nested-delegation attempt is rejected on BOTH the foreground and
+    # continuable starts with the errored tool result "Error: subagent depth 2
+    # exceeds maxDepth 1" (resolveChildDepth → SubagentDepthError,
+    # child-agent.ts:48-56, before any child exists), a depth-0 parent passes
+    # (control), absent → default 3, and 'provider-managed' sends no cap. SINCE
+    # the F1 fix the cap is defense-in-depth for the deny-ing rows: their
+    # delegation tools are already absent from the child's tool list, so the
+    # depth gate no longer fires in the e2e nested-delegation scenario (which
+    # asserts the unknown-tool rejection instead).
     # NOT SETTABLE in form A: a custom tool `description`. The schema has no
     # such field; the model-facing description is generated from the spawn
     # provider's inheritsParentContext=false wording
@@ -284,6 +329,11 @@
     # PRESERVED by schemastery (verified on the installed rc.6), so a bogus
     # `description:` key would be dead config, not an error — recorded as a
     # P-4/P-5 delta; the probe pins the real generated wording instead.
+
+    # explore — read-only code retrieval (phase2-roster.md §2.1). The T11 row,
+    # changed ONLY in its deny value: the inline [write, edit, explore] literal
+    # became the roster-computed sentinel (P2-T15), whose rendered list is the
+    # full six-row read-only class list.
     - id: tool-subagent-explore
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
@@ -293,7 +343,136 @@
         persona: __OMO_EXPLORE_PERSONA__
         agentOptions: __OMO_EXPLORE_AGENT_OPTIONS__
         toolFilter:
-          deny: [write, edit, explore]
+          deny: __OMO_EXPLORE_DENY__
+        maxDepth: 1
+
+    # hephaestus — worker class: autonomous deep worker ("a goal, not a
+    # recipe"), write-capable, no delegation (phase2-roster.md §2.2).
+    - id: tool-subagent-hephaestus
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: hephaestus
+        backgroundMode: continuable
+        persona: __OMO_HEPHAESTUS_PERSONA__
+        agentOptions: __OMO_HEPHAESTUS_AGENT_OPTIONS__
+        toolFilter:
+          deny: __OMO_HEPHAESTUS_DENY__
+        maxDepth: 1
+
+    # oracle — read-only class: high-IQ architecture/debug advisor with a
+    # binding structured output contract (phase2-roster.md §2.3).
+    - id: tool-subagent-oracle
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: oracle
+        backgroundMode: continuable
+        persona: __OMO_ORACLE_PERSONA__
+        agentOptions: __OMO_ORACLE_AGENT_OPTIONS__
+        toolFilter:
+          deny: __OMO_ORACLE_DENY__
+        maxDepth: 1
+
+    # librarian — read-only class: documentation / OSS source search; inherits
+    # the web tools from this composition (phase2-roster.md §2.4).
+    - id: tool-subagent-librarian
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: librarian
+        backgroundMode: continuable
+        persona: __OMO_LIBRARIAN_PERSONA__
+        agentOptions: __OMO_LIBRARIAN_AGENT_OPTIONS__
+        toolFilter:
+          deny: __OMO_LIBRARIAN_DENY__
+        maxDepth: 1
+
+    # plan-consultant — read-only class: pre-plan gap analysis (OMO v4 name
+    # metis; v5 naming anchor, phase2-roster.md §2.5).
+    - id: tool-subagent-plan-consultant
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: plan-consultant
+        backgroundMode: continuable
+        persona: __OMO_PLAN_CONSULTANT_PERSONA__
+        agentOptions: __OMO_PLAN_CONSULTANT_AGENT_OPTIONS__
+        toolFilter:
+          deny: __OMO_PLAN_CONSULTANT_DENY__
+        maxDepth: 1
+
+    # plan-reviewer — read-only class: adversarial plan review (OMO v4 name
+    # momus; v5 naming anchor, phase2-roster.md §2.6). Hyphenated tool names
+    # are legal under the OpenAI-compatible tool-name pattern (R-1).
+    - id: tool-subagent-plan-reviewer
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: plan-reviewer
+        backgroundMode: continuable
+        persona: __OMO_PLAN_REVIEWER_PERSONA__
+        agentOptions: __OMO_PLAN_REVIEWER_AGENT_OPTIONS__
+        toolFilter:
+          deny: __OMO_PLAN_REVIEWER_DENY__
+        maxDepth: 1
+
+    # atlas — orchestrator class: the ONE sub-agent that keeps the delegation
+    # tools, hence deliberately NO toolFilter key; maxDepth 2 is its structural
+    # cap (conductor 0 → atlas 1 → worker 2, plan §4.5; phase2-roster.md §2.7).
+    - id: tool-subagent-atlas
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: atlas
+        backgroundMode: continuable
+        persona: __OMO_ATLAS_PERSONA__
+        agentOptions: __OMO_ATLAS_AGENT_OPTIONS__
+        maxDepth: 2
+
+    # multimodal-looker — allowlist class: the vision entry point. The filter is
+    # a STATIC short list (no sentinel): `read` alone would hide `read_image`,
+    # which dsh-tool-fs registers conditionally while `attachments` is mounted
+    # (plan §4.4 H-1; phase2-roster.md §2.8). Name-drift risk: R-9.
+    - id: tool-subagent-multimodal-looker
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: multimodal-looker
+        backgroundMode: continuable
+        persona: __OMO_MULTIMODAL_LOOKER_PERSONA__
+        agentOptions: __OMO_MULTIMODAL_LOOKER_AGENT_OPTIONS__
+        toolFilter:
+          allow: [read, read_image]
+        maxDepth: 1
+
+    # sisyphus-junior — worker class: focused, write-capable executor without
+    # delegation rights (phase2-roster.md §2.9).
+    - id: tool-subagent-sisyphus-junior
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: sisyphus-junior
+        backgroundMode: continuable
+        persona: __OMO_SISYPHUS_JUNIOR_PERSONA__
+        agentOptions: __OMO_SISYPHUS_JUNIOR_AGENT_OPTIONS__
+        toolFilter:
+          deny: __OMO_SISYPHUS_JUNIOR_DENY__
+        maxDepth: 1
+
+    # prometheus — read-only class: interview-style strategic planning; as a
+    # delegation target its interviewer is the conductor, not the user
+    # (phase2-roster.md §2.10).
+    - id: tool-subagent-prometheus
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: prometheus
+        backgroundMode: continuable
+        persona: __OMO_PROMETHEUS_PERSONA__
+        agentOptions: __OMO_PROMETHEUS_AGENT_OPTIONS__
+        toolFilter:
+          deny: __OMO_PROMETHEUS_DENY__
         maxDepth: 1
 
 # ── remaining model-facing rows ─────────────────────────────────────────────

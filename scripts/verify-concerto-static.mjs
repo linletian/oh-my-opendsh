@@ -22,10 +22,14 @@
 //   c07 installer TAG pin equals .omo/compat.yaml tag_alias
 //   c08 preset.yml identity (name + description non-empty)
 //   c09 persona shadow      (hard-blocks + anti-patterns in both personas)
-//   c10 legacy path hardened (PR #1 review F1: the rc-era template under
+//   c10 live path roster integrity (P2-T15: the template under
 //       patches/omo-dsh/omo-agents/ — still the build/e2e/cold-start load
-//       target — carries the same AC-6 design: no generic delegation rows,
-//       deny [write, edit, explore], maxDepth 1)
+//       target — carries the FULL 12-row delegation roster derived from
+//       roster.ts: control + list-agents + one `tool-subagent-<id>` row per
+//       roster delegation entry in roster order, no generic/product rows, the
+//       per-class sentinel/filter shape (deny sentinel for read-only/worker,
+//       NO filter key for atlas, static allow for multimodal-looker) and the
+//       per-class maxDepth)
 //
 // Usage: node scripts/verify-concerto-static.mjs [--json]
 // Exit: 1 iff any check FAILs (a check that could not run is also a FAIL,
@@ -34,6 +38,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { REPO_ROOT, loadYamlDialect } from './doctor-lite.mjs'
 
 const PATCH_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents-current')
@@ -191,32 +196,112 @@ async function run() {
     && String(presetDoc.name).length > 0 && String(presetDoc.description).length > 0),
     presetDoc ? `name="${presetDoc.name}"` : 'preset.yml unavailable (see c01)'))
 
-  // c10 — LEGACY path hardening (PR #1 review F1 fix, 2026-09-04): the rc-era
-  // template under patches/omo-dsh/omo-agents/ (still the load target of
-  // build / e2e / cold-start / manual-testing) must carry the same AC-6
-  // design as the current-DSH path — no generic delegation rows, and the
-  // explore child's deny list includes its own delegation tool name.
+  // c10 — LIVE path roster integrity (P2-T15; generalized from the PR #1
+  // review F1 hardening, 2026-09-04): the template under
+  // patches/omo-dsh/omo-agents/ (still the load target of build / e2e /
+  // cold-start / manual-testing) must carry the FULL roster-derived
+  // delegation group. All expectations below are DERIVED from roster.ts and
+  // from the renderer's own sentinel naming — never restated literals — so
+  // this check cannot drift from the single source.
   try {
-    const legacyRows = await loadYamlDialect(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'concerto', 'agent.cordis.yml'))
+    const { DELEGATION_ENTRIES, denyToolNamesFor } = await import(
+      pathToFileURL(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'src', 'roster.ts')).href
+    )
+    const { agentSentinelName } = await import(
+      pathToFileURL(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'src', 'concerto-preset.ts')).href
+    )
+    const legacyPath = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'concerto', 'agent.cordis.yml')
+    const legacyRows = await loadYamlDialect(legacyPath)
     const legacyFlat = flatten(legacyRows)
-    const legacyToolNames = legacyFlat.map((r) => r && r.config && r.config.toolName).filter(Boolean)
-    const legacyExplore = legacyFlat.filter((r) => r && r.config && r.config.toolName === 'explore')
     const legacyProblems = []
+
+    // ① the delegation group IS the 12-row roster, in roster order.
+    const delegation = legacyRows.find((r) => r && r.id === 'delegation')
+    const groupIds = delegation && Array.isArray(delegation.config)
+      ? delegation.config.map((r) => r && r.id)
+      : []
+    const wantGroupIds = [
+      'tool-subagent-control',
+      'tool-subagent-list-agents',
+      ...DELEGATION_ENTRIES.map((entry) => `tool-subagent-${entry.id}`),
+    ]
+    if (JSON.stringify(groupIds) !== JSON.stringify(wantGroupIds)) {
+      legacyProblems.push(
+        `delegation group rows=${JSON.stringify(groupIds)} `
+        + `(want ${wantGroupIds.join(', ')} — roster order, no generic/product rows)`,
+      )
+    }
+
+    // ② no generic spawn/fork rows, no product-provider rows anywhere.
+    const legacyToolNames = legacyFlat.map((r) => r && r.config && r.config.toolName).filter(Boolean)
     const legacyBanned = legacyToolNames.filter((t) => t === 'subagent' || t === 'subagent_fork')
     if (legacyBanned.length > 0) legacyProblems.push(`generic delegation tools present: ${legacyBanned.join(', ')}`)
-    if (legacyExplore.length !== 1) {
-      legacyProblems.push(`expected exactly 1 explore row, found ${legacyExplore.length}`)
-    } else {
-      const deny = Array.isArray(legacyExplore[0].config.toolFilter && legacyExplore[0].config.toolFilter.deny) ? legacyExplore[0].config.toolFilter.deny : []
-      for (const t of ['write', 'edit', 'explore']) {
-        if (!deny.includes(t)) legacyProblems.push(`legacy deny missing "${t}"`)
+    const legacyProduct = legacyFlat
+      .map((r) => r && r.id)
+      .filter((i) => i === 'tool-subagent-codex' || i === 'tool-subagent-claude-code')
+    if (legacyProduct.length > 0) legacyProblems.push(`product rows present: ${legacyProduct.join(', ')}`)
+
+    // ③ every roster delegation entry has exactly one row with the class
+    //    sentinel/filter shape and the class maxDepth.
+    const rowsByTool = new Map(
+      legacyFlat
+        .filter((r) => r && r.name === '@deepseek-ai/dsh-tool-subagent' && r.config && r.config.toolName)
+        .map((r) => [r.config.toolName, r]),
+    )
+    for (const entry of DELEGATION_ENTRIES) {
+      const row = rowsByTool.get(entry.id)
+      if (row === undefined) {
+        legacyProblems.push(`no dsh-tool-subagent row for roster entry '${entry.id}'`)
+        continue
       }
-      if (legacyExplore[0].config.maxDepth !== 1) legacyProblems.push(`legacy maxDepth=${legacyExplore[0].config.maxDepth} (want 1)`)
+      const cfg = row.config
+      const label = `legacy ${entry.id}`
+      if (row.id !== `tool-subagent-${entry.id}`) {
+        legacyProblems.push(`${label}: row id=${JSON.stringify(row.id)} (want tool-subagent-${entry.id})`)
+      }
+      if (cfg.provider !== 'spawn') legacyProblems.push(`${label}: provider=${JSON.stringify(cfg.provider)} (want spawn)`)
+      if (cfg.backgroundMode !== 'continuable') {
+        legacyProblems.push(`${label}: backgroundMode=${JSON.stringify(cfg.backgroundMode)} (want continuable)`)
+      }
+      if (cfg.persona !== agentSentinelName(entry.id, 'PERSONA')) {
+        legacyProblems.push(`${label}: persona sentinel=${JSON.stringify(cfg.persona)} (want ${agentSentinelName(entry.id, 'PERSONA')})`)
+      }
+      if (cfg.agentOptions !== agentSentinelName(entry.id, 'AGENT_OPTIONS')) {
+        legacyProblems.push(`${label}: agentOptions sentinel=${JSON.stringify(cfg.agentOptions)} (want ${agentSentinelName(entry.id, 'AGENT_OPTIONS')})`)
+      }
+      const wantDepth = entry.class === 'orchestrator' ? 2 : 1
+      if (cfg.maxDepth !== wantDepth) {
+        legacyProblems.push(`${label}: maxDepth=${JSON.stringify(cfg.maxDepth)} (want ${wantDepth} for class ${entry.class})`)
+      }
+      const deny = denyToolNamesFor(entry)
+      if (deny !== undefined) {
+        const wantSentinel = agentSentinelName(entry.id, 'DENY')
+        if (cfg.toolFilter === undefined || cfg.toolFilter.deny !== wantSentinel) {
+          legacyProblems.push(
+            `${label}: toolFilter=${JSON.stringify(cfg.toolFilter)} (want deny: ${wantSentinel} — class ${entry.class})`,
+          )
+        }
+      } else if (entry.class === 'allowlist') {
+        if (JSON.stringify(cfg.toolFilter) !== JSON.stringify({ allow: entry.allowTools })) {
+          legacyProblems.push(
+            `${label}: toolFilter=${JSON.stringify(cfg.toolFilter)} `
+            + `(want static allow ${JSON.stringify(entry.allowTools)})`,
+          )
+        }
+      } else if (cfg.toolFilter !== undefined) {
+        legacyProblems.push(
+          `${label}: toolFilter present (${JSON.stringify(cfg.toolFilter)}) — an orchestrator row carries NO filter key`,
+        )
+      }
     }
-    results.push(check('c10', 'legacy path hardened (F1)', legacyProblems.length === 0,
-      legacyProblems.join('; ') || 'no generic rows; deny [write, edit, explore]; maxDepth 1'))
+
+    results.push(check('c10', 'live path roster integrity (P2-T15)', legacyProblems.length === 0,
+      legacyProblems.join('; ')
+      || `delegation group = ${wantGroupIds.length} rows (control + list-agents + ${DELEGATION_ENTRIES.length} roster agents, roster order); `
+        + 'read-only/worker deny sentinels; atlas no filter key; multimodal-looker allow [read, read_image]; '
+        + 'maxDepth 2 for atlas, 1 for the rest'))
   } catch (e) {
-    results.push(check('c10', 'legacy path hardened (F1)', false, String(e.message ?? e)))
+    results.push(check('c10', 'live path roster integrity (P2-T15)', false, String(e.message ?? e)))
   }
 
   // Report.

@@ -139,12 +139,12 @@
 - **证据**：2026-09-12 批次3。prometheus-persona.md 174 行 + 快照；访谈式规划框架完整（intent 路由 CLEAR/UNCLEAR/explicit-ask/on-the-fence + 两过滤器 + owner-decision 例外、topology lock、clearance check、decision-complete 北极星含 full-scope/Must-NOT-Have/column-zero 任务行/agent 执行 QA）；访谈对象改为指挥（问题入报告含选项/分叉/推荐默认，不 ask_user、不停摆、跨 continuation 续谈）；只读收窄记录（上游 hook 限 .md 写不移植）；/ulw-plan 及评审环未作为可用引用。双 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：2 小时。
 
-### [ ] P2-T14 — sisyphus 第 5 段：名册委派表
+### [x] P2-T14 — sisyphus 第 5 段：名册委派表
 
 - **产出**：`system-sections/delegation-roster.md` + `SISYPHUS_SECTION_ORDER` 更新 + sisyphus 快照更新。
 - **做法**：数据取自 P2-T1 摘出的上游元数据全量值；每 agent 一行：域 / 何时派 / 何时不派 / 成本档（FREE/CHEAP/EXPENSIVE）；署名头标注元数据来源；插入顺序 `delegationDiscipline` 之后；`{{` 检查通过。
 - **判定**：✅ sisyphus 快照更新签入（5 段）；表中 10 个委派目标与 roster.ts 的 toolName 集合**逐一对应**（单测断言，防文档与名册漂移）。
-- **证据**：（待填）
+- **证据**：2026-09-12（deepseek-flash，1 修复轮）。delegation-roster.md 79 行：10 行委派表（域/何时派/何时不派/成本档），6 行转录自上游 *_PROMPT_METADATA、4 行+2 格+1 行内联为推导并逐条披露；OMO 引用泛化（改名对、无 .omo/plans、无缺席工具名）；SISYPHUS_SECTION_ORDER = [role, delegationDiscipline, delegationRoster, hardBlocks, antiPatterns]（必填键）；sisyphus 快照更新（唯一变动的快照）；delegation-roster.test.ts 10 用例 anti-drift（集合+顺序 ↔ roster.ts DELEGATION_TOOL_NAMES、成本档硬编码、解析对畸形行 throw、删除/改名/交换/成本漂移反向证明）；probe 最小修复 4→5 sections（gate 8 不断，全量名册化留 T20）。评审轮1 Kimi APPROVE 3 NIT + mcode 4 P3 → 仲裁合并 6 项有效修复 → 复审双 APPROVE；CI 8/8 绿（门2=318）。
 - **依赖**：P2-T2 + P2-T1（元数据）。**量级**：2 小时。
 
 ---

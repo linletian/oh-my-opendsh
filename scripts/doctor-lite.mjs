@@ -472,6 +472,8 @@ async function checkSubagentConfig(check1) {
   let Config
   let concerto
   let resolveModelRoutes
+  let DELEGATION_ENTRIES
+  let denyToolNamesFor
   try {
     yaml = (await imp(nm, 'js-yaml/dist/js-yaml.mjs')).default
     ;({ Config } = await imp(nm, '@deepseek-ai/dsh-tool-subagent/lib/index.js'))
@@ -482,6 +484,11 @@ async function checkSubagentConfig(check1) {
     )
     ;({ resolveModelRoutes } = await import(
       pathToFileURL(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'src', 'model-routes.ts')).href
+    ))
+    // P2-T15: the explore contract's deny list is roster-computed now, so the
+    // expectation is derived from the same single source the renderer uses.
+    ;({ DELEGATION_ENTRIES, denyToolNamesFor } = await import(
+      pathToFileURL(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'src', 'roster.ts')).href
     ))
   } catch (error) {
     return check(
@@ -549,10 +556,25 @@ async function checkSubagentConfig(check1) {
     if (validated.toolName !== 'explore') problems.push(`toolName=${JSON.stringify(validated.toolName)} (want explore)`)
     if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${JSON.stringify(validated.backgroundMode)} (want continuable)`)
     if (validated.maxDepth !== 1) problems.push(`maxDepth=${JSON.stringify(validated.maxDepth)} (want 1, T13)`)
-    // T12 + F1 fix (2026-09-04): deny = the two mutation tools PLUS the
-    // delegation tool itself (physical no-delegation, AC-6b parity).
-    if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit', 'explore'] })) {
-      problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)} (want deny:[write,edit,explore], T12 + F1)`)
+    // T12 + F1 fix (2026-09-04), generalized by P2-T15: deny = the two mutation
+    // tools PLUS every delegation toolName, COMPUTED from the roster row
+    // (roster.ts is the single source the renderer uses) — restating the list
+    // here would create a second source of truth for the same contract.
+    const exploreEntry = DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')
+    const expectedDeny = exploreEntry === undefined ? undefined : denyToolNamesFor(exploreEntry)
+    if (expectedDeny === undefined) {
+      return check(
+        'subagent-config',
+        'fail',
+        "roster.ts declares no delegation entry with id 'explore' — the T11 contract has no row to check",
+        ['roster.ts is the single source for this check (P2-T15)'],
+      )
+    }
+    if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: expectedDeny })) {
+      problems.push(
+        `toolFilter=${JSON.stringify(validated.toolFilter)} `
+        + `(want deny:${JSON.stringify(expectedDeny)} — roster-computed, T12 + F1 + P2-T15)`,
+      )
     }
     // F1 fix: no generic delegation rows may remain in the rendered template
     // (findRowsById is group-recursive — the rows were nested in `delegation`).
@@ -579,7 +601,7 @@ async function checkSubagentConfig(check1) {
       'pass',
       `${String(sweep.checked.length)} row(s) validate against their installed Config schemas, plus the T11 contract — `
         + 'tool-subagent-explore: '
-        + `provider=spawn toolName=explore backgroundMode=continuable maxDepth=1 deny=[write,edit,explore] route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars`
+        + `provider=spawn toolName=explore backgroundMode=continuable maxDepth=1 deny=[${expectedDeny.join(',')}] route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars`
         + (sweep.unchecked.length === 0
           ? ''
           : `; unchecked (package exports no Config schema): ${sweep.unchecked.join(', ')}`)

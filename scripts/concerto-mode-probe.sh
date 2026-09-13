@@ -153,6 +153,9 @@ timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
 # provider route. Adapter REGISTRATION is the gate (no API keys exist in the
 # sandbox): credentials resolve per request, so a route registers keylessly
 # and a missing key would only fail a REQUEST with MISSING_CREDENTIAL.
+# The same resolution also reaches into src/roster.ts for the explore row's
+# deny list (P2-T15 shape), so both deny assertions below share one computed
+# expectation instead of an inline literal.
 ROUTES_ENV="$(node --input-type=module -e "
   import('./patches/omo-dsh/omo-agents/src/model-routes.ts').then((m) => {
     const r = m.resolveModelRoutes()
@@ -160,17 +163,37 @@ ROUTES_ENV="$(node --input-type=module -e "
     console.log('SISYPHUS_MODEL=' + r.sisyphus.model)
     console.log('EXPLORE_PROVIDER=' + r.explore.provider)
     console.log('EXPLORE_MODEL=' + r.explore.model)
+    return import('./patches/omo-dsh/omo-agents/src/roster.ts')
+  }).then((roster) => {
+    console.log('EXPLORE_DENY_JSON=' + JSON.stringify(roster.denyToolNamesFor(roster.ROSTER.find((e) => e.id === 'explore'))))
   })
-")" || fail "model-routes module resolution failed: $ROUTES_ENV"
+")" || fail "model-routes/roster module resolution failed: $ROUTES_ENV"
 SISYPHUS_PROVIDER="$(printf '%s\n' "$ROUTES_ENV" | grep '^SISYPHUS_PROVIDER=' | cut -d= -f2-)"
 SISYPHUS_MODEL="$(printf '%s\n' "$ROUTES_ENV" | grep '^SISYPHUS_MODEL=' | cut -d= -f2-)"
 EXPLORE_PROVIDER="$(printf '%s\n' "$ROUTES_ENV" | grep '^EXPLORE_PROVIDER=' | cut -d= -f2-)"
 EXPLORE_MODEL="$(printf '%s\n' "$ROUTES_ENV" | grep '^EXPLORE_MODEL=' | cut -d= -f2-)"
+EXPLORE_DENY_JSON="$(printf '%s\n' "$ROUTES_ENV" | grep '^EXPLORE_DENY_JSON=' | cut -d= -f2-)"
 [[ -n "$SISYPHUS_PROVIDER" && -n "$SISYPHUS_MODEL" && -n "$EXPLORE_PROVIDER" && -n "$EXPLORE_MODEL" ]] \
   || fail "could not parse model-routes output: $ROUTES_ENV"
+[[ -n "$EXPLORE_DENY_JSON" ]] \
+  || fail "could not parse the roster-computed explore deny list from: $ROUTES_ENV"
 [[ "$SISYPHUS_PROVIDER/$SISYPHUS_MODEL" != "$EXPLORE_PROVIDER/$EXPLORE_MODEL" ]] \
   || fail "AC-5 precheck: both agents resolve to the SAME route ($SISYPHUS_PROVIDER/$SISYPHUS_MODEL)"
 echo "concerto-probe: T14 routes: sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL"
+
+# P2-T15 (plan §4.4 deny-sentinel rendering): the explore row's deny is no
+# longer the inline F1 triple. It is the ROSTER-COMPUTED list — write/edit plus
+# all 10 delegation toolNames, in roster order — emitted above from
+# src/roster.ts's denyToolNamesFor(). Both assertions below (the schema gate on
+# the parsed row, and the materialized-composition grep) derive their
+# expectation from that same JSON instead of restating the 12 names, so a
+# roster change cannot leave a stale pin behind. P2-T20 generalizes this probe
+# from the explore row to every roster row.
+EXPLORE_DENY_SEQUENCE="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).map((n) => JSON.stringify(n)).join(", "))' "$EXPLORE_DENY_JSON")" \
+  || fail "could not build the rendered explore deny sequence from $EXPLORE_DENY_JSON"
+[[ -n "$EXPLORE_DENY_SEQUENCE" ]] \
+  || fail "empty rendered explore deny sequence from $EXPLORE_DENY_JSON"
+echo "concerto-probe: T15 explore deny (roster-computed): $EXPLORE_DENY_JSON"
 
 # The explore seat rides the llm-pi-ai adapter, which the shipped composition
 # mounts DORMANT (zero routes); a settings profile registers the route at
@@ -226,10 +249,10 @@ fi
 VALIDATE_EXPLORE_MJS="$SANDBOX/validate-explore-row.mjs"
 cat > "$VALIDATE_EXPLORE_MJS" <<'EOF'
 // T11: validate the materialized explore row against the installed dsh's schema.
-// argv: <dsh node_modules dir> <materialized agent.cordis.yml> <provider> <model>
+// argv: <dsh node_modules dir> <materialized agent.cordis.yml> <provider> <model> <expected explore deny JSON>
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-const [nm, compositionPath, expectedProvider, expectedModel] = process.argv.slice(2)
+const [nm, compositionPath, expectedProvider, expectedModel, expectedDenyJson] = process.argv.slice(2)
 const yaml = (await import(pathToFileURL(nm + '/js-yaml/dist/js-yaml.mjs').href)).default
 const { Config } = await import(pathToFileURL(nm + '/@deepseek-ai/dsh-tool-subagent/lib/index.js').href)
 const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
@@ -269,10 +292,19 @@ if (validated.provider !== 'spawn') problems.push(`provider=${validated.provider
 if (validated.toolName !== 'explore') problems.push(`toolName=${validated.toolName}`)
 if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${validated.backgroundMode}`)
 if (validated.maxDepth !== 1) problems.push(`maxDepth=${validated.maxDepth}`)
-// F1 fix (2026-09-04): the deny list also names the delegation tool itself, so the
-// child physically cannot delegate (AC-6b parity with the current-DSH path).
-if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit', 'explore'] })) {
-  problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)}`)
+// P2-T15 shape: the deny list is the ROSTER-COMPUTED 12-name list (write/edit
+// plus the 10 delegation toolNames, roster order) handed in as JSON by the
+// probe, which resolved it from src/roster.ts's denyToolNamesFor(). Never
+// restate the names here. Order-sensitive JSON comparison is correct: the
+// sentinel renderer emits roster order. P2-T20 generalizes this gate (and the
+// materialized-composition grep below) to every roster row.
+if (typeof expectedDenyJson !== 'string' || expectedDenyJson.length === 0) {
+  console.error('T11-VALIDATE FAIL: probe did not supply the roster-computed explore deny list')
+  process.exit(1)
+}
+const expectedDeny = JSON.parse(expectedDenyJson)
+if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: expectedDeny })) {
+  problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)} expected ${JSON.stringify({ deny: expectedDeny })}`)
 }
 if (validated.agentOptions?.provider !== expectedProvider || validated.agentOptions?.model !== expectedModel) {
   problems.push(`agentOptions=${JSON.stringify(validated.agentOptions)} expected ${expectedProvider}/${expectedModel}`)
@@ -285,7 +317,7 @@ if (problems.length > 0) {
   process.exit(1)
 }
 console.log(`T11-VALIDATE PASS: tool-subagent-explore row validates against the installed dsh-tool-subagent Config `
-  + `(toolName=explore provider=spawn route=${expectedProvider}/${expectedModel} maxDepth=1 deny=[write,edit,explore] persona=${validated.persona.length} chars)`)
+  + `(toolName=explore provider=spawn route=${expectedProvider}/${expectedModel} maxDepth=1 deny=[${validated.toolFilter.deny.join(',')}] persona=${validated.persona.length} chars)`)
 EOF
 
 # Adaptive web-RPC helper (T9). The readiness line decides the transport:
@@ -590,11 +622,17 @@ boot_once() {
     || fail "[$label] explore agentOptions provider mismatch (want $EXPLORE_PROVIDER)"
   grep -q "^          model: \"$EXPLORE_MODEL\"$" "$materialized" \
     || fail "[$label] explore agentOptions model mismatch (want $EXPLORE_MODEL)"
-  grep -q "^          deny: \[write, edit, explore\]$" "$materialized" \
-    || fail "[$label] explore toolFilter deny list missing (T12 + F1: want [write, edit, explore])"
+  # P2-T15 shape: the rendered deny is the roster-computed list (write/edit +
+  # the 10 delegation toolNames, roster order) emitted by the P2-T15 sentinel
+  # renderer as a JSON-quoted YAML flow sequence at the row's 10-space content
+  # indent. The expected line is assembled from the same $EXPLORE_DENY_JSON the
+  # schema gate above compared against, so this pin cannot go stale on its own;
+  # P2-T20 generalizes it to every roster row.
+  grep -qxF -- "          deny: [$EXPLORE_DENY_SEQUENCE]" "$materialized" \
+    || fail "[$label] explore toolFilter deny list missing or not the roster-computed sequence (T12 + F1, P2-T15 shape: want deny: [$EXPLORE_DENY_SEQUENCE])"
   grep -q "^        maxDepth: 1$" "$materialized" \
     || fail "[$label] explore maxDepth: 1 missing (T13 pre-declared value)"
-  node "$VALIDATE_EXPLORE_MJS" "$DSH_NM_UNION" "$materialized" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" \
+  node "$VALIDATE_EXPLORE_MJS" "$DSH_NM_UNION" "$materialized" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" "$EXPLORE_DENY_JSON" \
     || fail "[$label] explore row failed validation against the installed dsh-tool-subagent Config"
 
   # T12 (P-4, AC-6 negative-a): the deny list is not just valid config — it is
@@ -683,5 +721,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=[write,edit,explore] PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit/the delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=1 depth cap PROVEN enforced via the real delegation start path (depth-1 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 2 exceeds maxDepth 1", tool stays visible at the cap, depth-0 control passes); idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and the materialized-composition grep both derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=1 depth cap PROVEN enforced via the real delegation start path (depth-1 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 2 exceeds maxDepth 1", tool stays visible at the cap, depth-0 control passes); idempotent re-boot confirmed"
 exit 0
