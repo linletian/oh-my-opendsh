@@ -311,17 +311,35 @@
     #
     # maxDepth: a FLAT `maxDepth` field (tool-subagent/src/index.ts:98,
     # z.natural()|'provider-managed', default 3) — there is NO `policy`
-    # wrapper. atlas = 2; every other row = 1. Enforcement proven through the
-    # real start path (scripts/prove-explore-maxdepth.mjs, T13): a depth-1
-    # parent's nested-delegation attempt is rejected on BOTH the foreground and
-    # continuable starts with the errored tool result "Error: subagent depth 2
-    # exceeds maxDepth 1" (resolveChildDepth → SubagentDepthError,
-    # child-agent.ts:48-56, before any child exists), a depth-0 parent passes
-    # (control), absent → default 3, and 'provider-managed' sends no cap. SINCE
-    # the F1 fix the cap is defense-in-depth for the deny-ing rows: their
+    # wrapper. EVERY delegation row = 2 (all ten, atlas included).
+    #
+    # CORRECTION (2026-09-13, P2-T19 runtime finding, arbiter
+    # D-2026-09-13-01; phase2-roster.md §1 修正块): the original ledger here
+    # said "atlas = 2; every other row = 1" under the belief that maxDepth caps
+    # the CALLER's subtree. It does not. dsh reads the INVOKED row's
+    # `config.maxDepth` (dsh-tool-subagent/lib/index.js:508-519 → request.maxDepth)
+    # and `resolveChildDepth` throws as soon as `parent.depth + 1 > maxDepth`
+    # (dsh-subagent/lib/index.js:432-438 → SubagentDepthError). So maxDepth is
+    # the maximum child depth AT WHICH THIS TOOL MAY BE CALLED. Under the old
+    # values, atlas at depth 1 invoking any maxDepth-1 row produced depth 2 > 1:
+    # atlas re-delegation was physically impossible (plan §4.5 intent broken).
+    # With all ten rows at 2 the chain cap is 2 levels — conductor 0 → atlas 1 →
+    # worker 2 — and depth 3 is structurally impossible; atlas self-recursion
+    # also ceilings at depth 2. The F1 deny lists remain the PRIMARY guard for
+    # nested delegation (a deny-ing child cannot even see a delegation tool);
+    # this depth gate is defense-in-depth behind them.
+    #
+    # Enforcement proven through the real start path
+    # (scripts/prove-explore-maxdepth.mjs, T13): with the committed maxDepth 2,
+    # a depth-1 parent PASSES the gate and a depth-2 parent's nested-delegation
+    # attempt is rejected on BOTH the foreground and continuable starts with the
+    # errored tool result "Error: subagent depth 3 exceeds maxDepth 2"
+    # (resolveChildDepth → SubagentDepthError, child-agent.ts:48-56, before any
+    # child exists); absent → default 3, and 'provider-managed' sends no cap.
+    # SINCE the F1 fix the cap is defense-in-depth for the deny-ing rows: their
     # delegation tools are already absent from the child's tool list, so the
-    # depth gate no longer fires in the e2e nested-delegation scenario (which
-    # asserts the unknown-tool rejection instead).
+    # e2e nested-delegation scenario pins the unknown-tool rejection for them
+    # and the atlas scenario proves the depth-2 SUCCESS path.
     # NOT SETTABLE in form A: a custom tool `description`. The schema has no
     # such field; the model-facing description is generated from the spawn
     # provider's inheritsParentContext=false wording
@@ -344,7 +362,7 @@
         agentOptions: __OMO_EXPLORE_AGENT_OPTIONS__
         toolFilter:
           deny: __OMO_EXPLORE_DENY__
-        maxDepth: 1
+        maxDepth: 2
 
     # hephaestus — worker class: autonomous deep worker ("a goal, not a
     # recipe"), write-capable, no delegation (phase2-roster.md §2.2).
@@ -358,7 +376,7 @@
         agentOptions: __OMO_HEPHAESTUS_AGENT_OPTIONS__
         toolFilter:
           deny: __OMO_HEPHAESTUS_DENY__
-        maxDepth: 1
+        maxDepth: 2
 
     # oracle — read-only class: high-IQ architecture/debug advisor with a
     # binding structured output contract (phase2-roster.md §2.3).
@@ -372,7 +390,7 @@
         agentOptions: __OMO_ORACLE_AGENT_OPTIONS__
         toolFilter:
           deny: __OMO_ORACLE_DENY__
-        maxDepth: 1
+        maxDepth: 2
 
     # librarian — read-only class: documentation / OSS source search; inherits
     # the web tools from this composition (phase2-roster.md §2.4).
@@ -386,7 +404,7 @@
         agentOptions: __OMO_LIBRARIAN_AGENT_OPTIONS__
         toolFilter:
           deny: __OMO_LIBRARIAN_DENY__
-        maxDepth: 1
+        maxDepth: 2
 
     # plan-consultant — read-only class: pre-plan gap analysis (OMO v4 name
     # metis; v5 naming anchor, phase2-roster.md §2.5).
@@ -400,7 +418,7 @@
         agentOptions: __OMO_PLAN_CONSULTANT_AGENT_OPTIONS__
         toolFilter:
           deny: __OMO_PLAN_CONSULTANT_DENY__
-        maxDepth: 1
+        maxDepth: 2
 
     # plan-reviewer — read-only class: adversarial plan review (OMO v4 name
     # momus; v5 naming anchor, phase2-roster.md §2.6). Hyphenated tool names
@@ -415,11 +433,14 @@
         agentOptions: __OMO_PLAN_REVIEWER_AGENT_OPTIONS__
         toolFilter:
           deny: __OMO_PLAN_REVIEWER_DENY__
-        maxDepth: 1
+        maxDepth: 2
 
     # atlas — orchestrator class: the ONE sub-agent that keeps the delegation
     # tools, hence deliberately NO toolFilter key; maxDepth 2 is its structural
     # cap (conductor 0 → atlas 1 → worker 2, plan §4.5; phase2-roster.md §2.7).
+    # Every other row also carries 2 (target-row semantics, D-2026-09-13-01) —
+    # exactly what makes atlas(1)'s call to a worker land at depth 2 instead of
+    # being rejected by the invoked row's own cap.
     - id: tool-subagent-atlas
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
@@ -444,7 +465,7 @@
         agentOptions: __OMO_MULTIMODAL_LOOKER_AGENT_OPTIONS__
         toolFilter:
           allow: [read, read_image]
-        maxDepth: 1
+        maxDepth: 2
 
     # sisyphus-junior — worker class: focused, write-capable executor without
     # delegation rights (phase2-roster.md §2.9).
@@ -458,7 +479,7 @@
         agentOptions: __OMO_SISYPHUS_JUNIOR_AGENT_OPTIONS__
         toolFilter:
           deny: __OMO_SISYPHUS_JUNIOR_DENY__
-        maxDepth: 1
+        maxDepth: 2
 
     # prometheus — read-only class: interview-style strategic planning; as a
     # delegation target its interviewer is the conductor, not the user
@@ -473,7 +494,7 @@
         agentOptions: __OMO_PROMETHEUS_AGENT_OPTIONS__
         toolFilter:
           deny: __OMO_PROMETHEUS_DENY__
-        maxDepth: 1
+        maxDepth: 2
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 

@@ -134,7 +134,8 @@
 //     child's advertised list is asserted (the stronger AC-6b property:
 //     physically cannot delegate, not merely depth-capped), and no session
 //     with parentSession = the child id may exist. The T13 depth cap
-//     (maxDepth 1) stays as defense-in-depth; its enforcement semantics are
+//     (maxDepth 2 on every delegation row since D-2026-09-13-01) stays as
+//     defense-in-depth; its enforcement semantics are
 //     source-proven by scripts/prove-explore-maxdepth.mjs.
 // AC-7: every scenario verdict carries `assertions` (the check names, in
 // order) alongside `checks`/`failed`, and the overall verdict stays
@@ -188,6 +189,61 @@
 // `run_in_background: false`, so the children are foreground one-shot children
 // and the resident-continuable path is deliberately not exercised; the parade
 // ran as ONE batch (no batching fallback needed).
+//
+// ── P2-T19: READ-ONLY REPRESENTATIVE + THE POSITIVE NESTED CHAIN (plan §4.7) ──
+// Two scenarios extend the AC-6 family to the Phase 2 roster:
+//
+// plan-reviewer-write-denied (AC-6a generalized to a NEW read-only row). The
+// mock scripts the plan-reviewer child HALLUCINATING a `write` tool_call, and
+// the scenario asserts the WHOLE read-only class contract on that child: write
+// AND edit are physically absent (the mutation half of denyToolNamesFor), ALL
+// TEN delegation toolNames are physically absent too (the F1 half — a read-only
+// child must not even see another agent's delegation tool), the hallucinated
+// call is rejected by the REAL runtime verbatim ('Error: unknown tool "write"',
+// the same ToolNotFoundError → toolErrorResult contract explore-write-denied
+// pins), the target file never lands on disk, and the child ran on its OWN
+// env-pinned seat (OMO_PLAN_REVIEWER_{PROVIDER,MODEL}, a real catalog pair,
+// distinct from the conductor's seat — so "configured seat" is not satisfied by
+// coincidence). plan-reviewer is the roster's designated read-only exemplar
+// (ROADMAP via phase2-roster.md §2.6).
+//
+// atlas-nested-delegation (the POSITIVE chain, plan §4.5 point 3): conductor →
+// atlas (depth 1) → explore (depth 2), with atlas — the ONE row that keeps the
+// delegation tools (no toolFilter; maxDepth 2) — calling the `explore` tool,
+// which is advertised to it (unlike every read-only/worker child). The chain
+// asserts: the depth-1 atlas child ran on its own env-pinned seat; atlas
+// advertises ALL TEN delegation toolNames; the depth-2 grandchild session
+// really exists under atlas with delegationDepth 2, on the explore seat, having
+// answered its own script; the four-leg chain is observed in order in BOTH
+// channels (session-log seq + mock arrival order); and the read-only grandchild
+// PHYSICALLY LACKS write/edit and all ten delegation tools.
+//
+// ⚠️ 对照语义注意 (plan §4.7): the F1 hardening (2026-09-04) made the OLD
+// explore-nested-denied scenario assert the delegation tool's PHYSICAL ABSENCE
+// ('Error: unknown tool "explore"'), NOT the T13 maxDepth error text — the
+// depth gate no longer fires there. The positive chain is the mirror image of
+// that same semantics: it asserts a SUCCESSFUL depth-2 dispatch (a real
+// grandchild, findings flowing back up), and the read-only absence claim is
+// re-asserted on the GRANDCHILD rather than any depth error. No assertion in
+// this file copies the retired maxDepth rejection shape.
+//
+// ✅ P2-T19 RESOLVED (2026-09-13, arbiter D-2026-09-13-01; was the WITHHELD
+// blocker): the positive chain initially COULD NOT succeed on the then-committed
+// composition. dsh's depth gate is resolveChildDepth(parent, request.maxDepth)
+// where request.maxDepth is the INVOKED row's `config.maxDepth` (tool-subagent
+// folds its own config at execute: installed 0.1.5-rc.1 lib/index.js:508-519;
+// subagent gate: lib/index.js:432-438 — the same path
+// scripts/prove-explore-maxdepth.mjs pins). With the old per-class caps
+// (explore/worker/allowlist = 1, atlas = 2), a depth-1 atlas calling the
+// `explore` row was rejected verbatim with 'Error: subagent depth 2 exceeds
+// maxDepth 1' BEFORE any child existed, and no depth-2 session log was written.
+// The runtime evidence drove the correction: all TEN delegation rows now carry
+// maxDepth 2, so the chain cap is 2 levels (conductor 0 → atlas 1 → worker 2),
+// depth 3 is structurally impossible, and atlas→worker is admitted exactly as
+// plan §4.4/§4.5 intended. The scenario is therefore ENABLED in the default
+// SCENARIOS chain (previously it was withheld and reachable only through
+// DSH_E2E_ONLY); the F1 deny lists remain the primary nested-delegation guard
+// and the depth gate is defense-in-depth behind them.
 
 // ── LLM WIRING (sandbox $DSH_HOME/settings.yaml only; nothing touches the
 // host). Both adapters are pointed at the mock with a dummy key:
@@ -229,15 +285,20 @@
 // HOST_VOLATILE_SETTINGS_KEYS idea at path granularity).
 //
 // Usage:
-//   node tests/e2e/drive.mjs               run ALL scenarios (hello + demo +
+//   node tests/e2e/drive.mjs               run ALL 7 scenarios (hello + demo +
 //                                          the two AC-6 negatives + the P2-T18
-//                                          roster parade), print verdict JSON
+//                                          roster parade + the P2-T19 read-only
+//                                          representative + the P2-T19
+//                                          positive nested chain, ENABLED
+//                                          2026-09-13 by D-2026-09-13-01), print
+//                                          verdict JSON
 //   node tests/e2e/drive.mjs --self-test   run the analysis logic against
 //                                          fabricated logs only (no spawn)
 // Env:
 //   DSH_E2E_DIGEST_TARGET  digest this dir instead of ~/.dsh (negative demo)
 //   DSH_E2E_ONLY           comma-separated scenario names: run a subset (dev
-//                          iteration knob; CI leaves it unset and runs ALL)
+//                          iteration knob; CI leaves it unset and runs ALL
+//                          scenarios).
 //   DSH_E2E_KEEP_SANDBOX=1 keep the sandbox for postmortem inspection
 //   DSH_E2E_*_TIMEOUT_MS   boot / scenario / install budgets
 //   DSH_E2E_DEMO_SKIP_EXPLORE=1  T19 failure QA: drop the explore role from
@@ -276,7 +337,10 @@ const { resolveModelRoutes } = await import(
 // P2-T18: the delegation role ids (and their row anchors) come from the
 // roster — the SAME single source the template renderer walks — so the
 // MOCKROLE registry can never drift from the rows it must address.
-const { CONDUCTOR_ID, DELEGATION_ENTRIES } = await import(
+// P2-T19 additionally consumes DELEGATION_TOOL_NAMES: the read-only child's
+// "all ten delegation tools are physically absent" claim and atlas's "keeps
+// all ten" claim both have to be the roster's own list, never a restatement.
+const { CONDUCTOR_ID, DELEGATION_ENTRIES, DELEGATION_TOOL_NAMES } = await import(
   new URL('../../patches/omo-dsh/omo-agents/src/roster.ts', import.meta.url).href
 )
 
@@ -343,7 +407,11 @@ function demoScript(sandbox) {
 //                  (:3472-3482) → 'Error: unknown tool "write"'.
 //   depth cap:     dsh-subagent SubagentDepthError `subagent depth
 //                  ${attempted} exceeds maxDepth ${max}` (lib/index.js:470)
-//                  → same wrap → 'Error: subagent depth 2 exceeds maxDepth 1'.
+//                  → same wrap → 'Error: subagent depth <n> exceeds maxDepth <m>'
+//                  (no scenario here asserts this shape any more; its live
+//                  enforcement is pinned by scripts/prove-explore-maxdepth.mjs,
+//                  whose committed cap is 2 → 'Error: subagent depth 3 exceeds
+//                  maxDepth 2').
 const UNKNOWN_TOOL_WRITE_RESULT = 'Error: unknown tool "write"'
 // F1 hardening (2026-09-04): with `explore` in the child's deny list, the
 // nested attempt is rejected as an unknown tool — the depth gate (which
@@ -528,6 +596,132 @@ function paradeScript(sandbox) {
     ]
   }
   return script
+}
+
+// ── P2-T19 constants (see the header's P2-T19 section) ──────────────────────
+//
+// Both scenarios pin the ONE child they exercise onto its OWN
+// OMO_<AGENT>_{PROVIDER,MODEL} override, resolved through the SAME
+// resolveModelRoutes the spawned dsh runs. Every seat below is a REAL catalog
+// pair (plan §4.7 / base table §3 — no fake ids, for the same honesty reason as
+// the parade) chosen to be DISTINCT from the conductor's default seat
+// (deepseek-official/deepseek-v4-pro), so "the child ran on its configured
+// seat" is a discriminating assertion rather than a coincidence.
+
+/** plan-reviewer's P2-T19 seat: pi-ai `deepseek` / deepseek-v4-pro (real id). */
+const PLAN_REVIEWER_SEAT = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+/** atlas's P2-T19 seat: pi-ai `deepseek` / deepseek-v4-pro (real id). */
+const ATLAS_SEAT = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+
+/**
+ * The OMO_<AGENT>_{PROVIDER,MODEL} env overlay for ONE roster delegation row,
+ * derived from the row's OWN env-name pair (never restated). Throws for a
+ * non-roster id so a typo cannot silently seed nothing.
+ */
+function delegationSeatEnv(agentId, seat) {
+  const entry = DELEGATION_ENTRIES.find((candidate) => candidate.id === agentId)
+  if (entry === undefined) {
+    throw new Error(
+      `e2e: '${agentId}' is not a roster delegation id `
+      + `(${DELEGATION_ENTRIES.map((candidate) => candidate.id).join(', ')})`,
+    )
+  }
+  return { [entry.routeEnvVars.provider]: seat.provider, [entry.routeEnvVars.model]: seat.model }
+}
+
+// plan-reviewer-write-denied (AC-6a generalized to a new read-only row).
+const PLAN_REVIEWER_DENY_PROMPT =
+  'e2e plan-reviewer-write-denied: ask plan-reviewer to write a file and report what happened'
+const PLAN_REVIEWER_WRITE_TARGET_NAME = 'MOCK-PLAN-REVIEWER-WRITE-DENIED.txt'
+const PLAN_REVIEWER_WRITE_NOTE =
+  'MOCK-PLAN-REVIEWER-WRITE-DENIED-7a4c2e: the write call was rejected (unknown tool — read-only class)'
+const SISYPHUS_PLAN_REVIEWER_SUMMARY =
+  'MOCK-SISYPHUS-PLAN-REVIEWER-SUMMARY-4e8b1d: plan-reviewer could not write — the read-only class filter held'
+
+/** plan-reviewer-write-denied script: the child hallucinates a `write`. */
+function planReviewerWriteDeniedScript(sandbox) {
+  const targetPath = join(sandbox.project, PLAN_REVIEWER_WRITE_TARGET_NAME)
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'plan-reviewer',
+        arguments: {
+          description: 'Attempt a project write during plan review',
+          prompt: `Use the write tool to create the file ${targetPath} with any content, then report exactly what happened.`,
+          run_in_background: false,
+        },
+      },
+      { type: 'text', text: SISYPHUS_PLAN_REVIEWER_SUMMARY },
+    ],
+    'plan-reviewer': [
+      {
+        type: 'tool_call',
+        name: 'write',
+        arguments: { file_path: targetPath, content: 'this file must never exist\n' },
+      },
+      { type: 'text', text: PLAN_REVIEWER_WRITE_NOTE },
+    ],
+  }
+}
+
+// atlas-nested-delegation (the positive chain: conductor → atlas → explore).
+const ATLAS_NESTED_PROMPT =
+  'e2e atlas-nested-delegation: have atlas delegate a README read to explore, then summarize the chain'
+// The grandchild's own report (asserted in the atlas log AND in the conductor's
+// mock context, proving the bytes climbed both legs).
+const ATLAS_GRANDCHILD_NOTE =
+  'MOCK-ATLAS-NESTED-EXPLORE-NOTE-2f6c9a: the grandchild explore read the README'
+// atlas's report back to the conductor.
+const ATLAS_NESTED_NOTE =
+  'MOCK-ATLAS-NESTED-REPORT-8b3d7e: atlas received the explore findings and reports the chain complete'
+const SISYPHUS_ATLAS_SUMMARY =
+  'MOCK-SISYPHUS-ATLAS-SUMMARY-5c1f4a: the conductor → atlas → explore chain completed'
+
+/**
+ * atlas-nested-delegation script. Three roles:
+ *   sisyphus → tool_call `atlas` (foreground: the summary needs atlas's report);
+ *   atlas    → tool_call `explore` (the delegation tool atlas KEEPS) and, once
+ *              the grandchild's findings return, its own report; the grandchild
+ *              does a real `read` of the sandbox README first, so the chain is
+ *              proven by BYTES (report §14.4.4), not by "a tool was called".
+ */
+function atlasNestedDelegationScript(sandbox) {
+  const readmePath = join(sandbox.project, 'README.md')
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'atlas',
+        arguments: {
+          description: 'Delegate the README read through atlas',
+          prompt: `Use the explore tool to have a sub-agent read ${readmePath}, then report its findings and confirm the chain.`,
+          run_in_background: false,
+        },
+      },
+      { type: 'text', text: SISYPHUS_ATLAS_SUMMARY },
+    ],
+    atlas: [
+      {
+        type: 'tool_call',
+        name: 'explore',
+        arguments: {
+          description: 'atlas→explore README read',
+          // The prompt must NOT carry ATLAS_GRANDCHILD_NOTE: the findings
+          // sentinel has to enter atlas's context through the grandchild's
+          // RESULT, otherwise "the findings reached atlas" could pass on the
+          // prompt bytes alone.
+          prompt: `Read the file ${readmePath} with the read tool, then report what it says.`,
+          run_in_background: false,
+        },
+      },
+      { type: 'text', text: ATLAS_NESTED_NOTE },
+    ],
+    explore: [
+      { type: 'tool_call', name: 'read', arguments: { file_path: readmePath } },
+      { type: 'text', text: ATLAS_GRANDCHILD_NOTE },
+    ],
+  }
 }
 
 // §14.5: path-based volatile allowlist (see header). Symlinks are skipped by
@@ -1489,13 +1683,15 @@ export function analyzeExploreWriteDenied(
 }
 
 /**
- * AC-6b e2e negative (T13's depth cap, closed at e2e). The mock scripts the
- * explore child (delegationDepth 1) calling `explore` again. T13's contract:
- * the delegation tool STAYS VISIBLE at the cap (asserted as observed), and
- * the per-start depth gate rejects BEFORE any grandchild exists with the
- * verbatim 'Error: subagent depth 2 exceeds maxDepth 1'. `allLogs` is every
- * session log in the sandbox — no header.parentSession may equal the child
- * id.
+ * AC-6b e2e negative. The mock scripts the explore child (delegationDepth 1)
+ * calling `explore` again. Since the F1 hardening (2026-09-04) the deny list
+ * includes the delegation tool itself, so the child is never offered `explore`
+ * and the attempt is rejected as an UNKNOWN TOOL — asserted verbatim. The T13
+ * depth cap (2 on every delegation row since D-2026-09-13-01) stays as
+ * defense-in-depth and is deliberately NOT what this scenario observes (its
+ * live enforcement is pinned by scripts/prove-explore-maxdepth.mjs).
+ * `allLogs` is every session log in the sandbox — no header.parentSession may
+ * equal the child id.
  */
 export function analyzeExploreNestedDelegationDenied(
   { log, childLog, allLogs, requests, providersJson, bootLog },
@@ -1769,6 +1965,339 @@ export function analyzeRosterParade(
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
 }
 
+// ── P2-T19 analyses ─────────────────────────────────────────────────────────
+
+/**
+ * The common givens for a ONE-child scenario whose child is NOT necessarily
+ * explore (P2-T19). `childRole` keys every child-specific observation, so the
+ * helper never assumes explore the way negativeScenarioGivens does. Returns the
+ * child's resolved seat alongside the events for the scenario's own checks.
+ */
+function oneDelegationChildGivens(
+  { log, childLog, requests, providersJson, bootLog },
+  routes,
+  { childRole, childNote, parentSummary },
+) {
+  const events = log?.events ?? []
+  const childEvents = childLog?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const childRequests = requests.filter((request) => request.role === childRole)
+  const childSeat = routes[childRole]
+  const childResult = events.find(
+    (event) => event.type === 'tool/result' && eventText(event).includes(childNote),
+  )
+  const summaryMessage = events.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(parentSummary),
+  )
+  const turnCompleted = events.some(
+    (event) =>
+      event.type === 'turn/end'
+      && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+  )
+  const givens = {
+    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    // The child's OWN seat provider is registered/active — the wiring proof for
+    // the (env-pinned) route this scenario asserts below.
+    childSeatProviderActive: new RegExp(
+      `"provider":"${childSeat.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    parentSessionLogFound: log !== undefined,
+    childSessionLogFound:
+      childLog !== undefined
+      && childLog.header?.origin === 'subagent'
+      && String(childLog.header?.parentSession) === String(log?.header?.id),
+    childOutcomeReturnedAndParentClosed:
+      childResult !== undefined && summaryMessage !== undefined && turnCompleted,
+    mockSawExpectedRequestCounts:
+      sisyphusRequests.length === 2 && childRequests.length === 2,
+  }
+  return { events, childEvents, sisyphusRequests, childRequests, childSeat, givens }
+}
+
+/**
+ * plan-reviewer-write-denied (P2-T19; AC-6a generalized to a new read-only
+ * row). The mock scripts the plan-reviewer child HALLUCINATING a `write`; the
+ * scenario asserts the read-only class contract end to end:
+ *   * the child's advertised schema excludes write AND edit (the mutation half
+ *     of denyToolNamesFor);
+ *   * it excludes ALL TEN delegation toolNames (the F1 half: another agent's
+ *     delegation tool is PHYSICALLY ABSENT, not merely refused);
+ *   * the real runtime rejects the hallucinated call verbatim
+ *     ('Error: unknown tool "write"', isError);
+ *   * the business outcome: no bytes on disk at the target path;
+ *   * the child ran on its own env-pinned seat, which differs from the
+ *     conductor's — AC-5's per-child pattern applied to the read-only class.
+ */
+export function analyzePlanReviewerWriteDenied(
+  { log, childLog, requests, providersJson, bootLog, writeTargetPath },
+  routes,
+) {
+  const childRole = 'plan-reviewer'
+  const { childEvents, childRequests, childSeat, givens } = oneDelegationChildGivens(
+    { log, childLog, requests, providersJson, bootLog },
+    routes,
+    {
+      childRole,
+      childNote: PLAN_REVIEWER_WRITE_NOTE,
+      parentSummary: SISYPHUS_PLAN_REVIEWER_SUMMARY,
+    },
+  )
+  const toolNames = advertisedToolNames(childEvents)
+  const results = toolResultParts(childEvents)
+  const writeCall = childEvents.find(
+    (event) => event.type === 'tool/call' && event.data?.name === 'write',
+  )
+  const childRoute = requestHeaderRoute(childEvents)
+  const conductorRoute = requestHeaderRoute(log?.events ?? [])
+  const checks = {
+    ...givens,
+    // T12's deny contract on a NEW read-only row: the two mutation tools are
+    // never advertised (the child inherits tool-fs; the filter hides them).
+    childAdvertisedToolsExcludeWriteEdit:
+      toolNames !== undefined
+      && toolNames.length > 0
+      && !toolNames.includes('write')
+      && !toolNames.includes('edit'),
+    // F1 generalization: every delegation toolName is physically absent too —
+    // the roster's own list, so the claim cannot drift from the rendered deny.
+    childAdvertisedToolsExcludeAllDelegationTools:
+      toolNames !== undefined
+      && toolNames.length > 0
+      && DELEGATION_TOOL_NAMES.every((name) => !toolNames.includes(name)),
+    // THE negative: the hallucinated write is dispatched and the real runtime
+    // rejects it with the verbatim unknown-tool contract.
+    writeAttemptRejectedWithUnknownTool:
+      writeCall !== undefined
+      && results.some((part) => part.isError && part.text === UNKNOWN_TOOL_WRITE_RESULT),
+    // Business outcome: no bytes on disk (the sandbox path the mock aimed at).
+    writeTargetAbsentOnDisk:
+      typeof writeTargetPath === 'string' && !existsSync(writeTargetPath),
+    // The child ran on its CONFIGURED seat (env-pinned via
+    // OMO_PLAN_REVIEWER_*, resolved by the same resolver the spawned dsh runs).
+    childRanOnItsConfiguredSeat:
+      sameSeat(childRoute, childSeat)
+      && childRequests.length >= 1
+      && childRequests.every((request) => request.body?.model === childSeat.model),
+    // ... and that seat is observably DIFFERENT from the conductor's, so the
+    // check cannot pass on a coincidental shared default.
+    childSeatDiffersFromConductorSeat:
+      childRoute !== undefined
+      && conductorRoute !== undefined
+      && (childRoute.provider !== conductorRoute.provider
+        || childRoute.model !== conductorRoute.model),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    childAdvertisedToolNames: toolNames ?? null,
+    childToolResults: results,
+    writeTargetPath: writeTargetPath ?? null,
+    routePair: { conductor: conductorRoute ?? null, child: childRoute ?? null },
+    mockRequestRoles: requests.map((request) => request.role),
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
+/**
+ * atlas-nested-delegation (P2-T19; the POSITIVE depth-2 chain). The vocabulary
+ * is deliberately the OPPOSITE of the retired depth-rejection shape (plan §4.7
+ * 对照语义注意): success is a REAL grandchild session plus findings flowing back
+ * up, and the delegation tools' absence is asserted on the read-only
+ * GRANDCHILD (physical absence) rather than inferred from any depth error.
+ * `allLogs` is every session log in the sandbox; the grandchild is the log
+ * whose parentSession is the atlas child's id.
+ */
+export function analyzeAtlasNestedDelegation(
+  { log, childLog, allLogs, requests, providersJson, bootLog },
+  routes,
+) {
+  const GRANDCHILD_DEPTH = 2
+  const events = log?.events ?? []
+  const atlasEvents = childLog?.events ?? []
+  const parentId = log?.header?.id
+  const conductorSeat = routes.sisyphus
+  const atlasSeat = routes.atlas
+  const exploreSeat = routes.explore
+
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const atlasRequests = requests.filter((request) => request.role === 'atlas')
+  const exploreRequests = requests.filter((request) => request.role === 'explore')
+
+  const conductorRoute = requestHeaderRoute(events)
+  const atlasRoute = requestHeaderRoute(atlasEvents)
+
+  // The depth-2 grandchild, found through PROVEN lineage (parentSession chain),
+  // never through a name guess.
+  const grandchildLog = Array.isArray(allLogs) && childLog !== undefined
+    ? allLogs.find(
+        (candidate) =>
+          candidate.header?.origin === 'subagent'
+          && String(candidate.header?.parentSession) === String(childLog.header?.id),
+      )
+    : undefined
+  const grandchildEvents = grandchildLog?.events ?? []
+  const grandchildRoute = requestHeaderRoute(grandchildEvents)
+  const grandchildToolNames = advertisedToolNames(grandchildEvents)
+  const atlasToolNames = advertisedToolNames(atlasEvents)
+
+  // Conductor-leg evidence.
+  const atlasCall = events.find(
+    (event) => event.type === 'tool/call' && event.data?.name === 'atlas',
+  )
+  const atlasResult = events.find(
+    (event) => event.type === 'tool/result' && eventText(event).includes(ATLAS_NESTED_NOTE),
+  )
+  const summaryMessage = events.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(SISYPHUS_ATLAS_SUMMARY),
+  )
+  const turnCompleted = events.some(
+    (event) =>
+      event.type === 'turn/end'
+      && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+  )
+  // atlas-leg evidence.
+  const exploreCall = atlasEvents.find(
+    (event) => event.type === 'tool/call' && event.data?.name === 'explore',
+  )
+  const exploreResult = atlasEvents.find(
+    (event) => event.type === 'tool/result' && eventText(event).includes(ATLAS_GRANDCHILD_NOTE),
+  )
+  const atlasReport = atlasEvents.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(ATLAS_NESTED_NOTE),
+  )
+
+  const conductorSecondBody = sisyphusRequests.length >= 2
+    ? JSON.stringify(sisyphusRequests[1].body)
+    : ''
+  const atlasSecondBody = atlasRequests.length >= 2
+    ? JSON.stringify(atlasRequests[atlasRequests.length - 1].body)
+    : ''
+  const lastExploreBody = exploreRequests.length > 0
+    ? JSON.stringify(exploreRequests[exploreRequests.length - 1].body)
+    : ''
+  const grandchildAnsweredOwnScript = grandchildEvents.some(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(ATLAS_GRANDCHILD_NOTE),
+  )
+  const routeProviders = [...new Set([
+    conductorSeat.provider,
+    atlasSeat.provider,
+    exploreSeat.provider,
+  ])]
+
+  const checks = {
+    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    everyRouteProviderActive: routeProviders.every((provider) =>
+      new RegExp(`"provider":"${provider}"[^}]*"active":true`).test(providersJson),
+    ),
+    parentSessionLogFound: log !== undefined,
+    userQuestionRecorded: events.some(
+      (event) => event.type === 'user/message' && eventText(event).includes(ATLAS_NESTED_PROMPT),
+    ),
+    // Leg 0→1: the conductor really called atlas, and a depth-1 atlas child
+    // session exists under the conductor.
+    conductorCalledAtlas: atlasCall !== undefined,
+    atlasChildSessionLogFound:
+      childLog !== undefined
+      && childLog.header?.origin === 'subagent'
+      && String(childLog.header?.parentSession) === String(parentId)
+      && childLog.header?.delegationDepth === 1,
+    // atlas ran on its OWN configured seat (env-pinned) — and that seat is not
+    // the conductor's, so the pair is genuinely observable.
+    atlasRanOnItsConfiguredSeat:
+      sameSeat(atlasRoute, atlasSeat)
+      && atlasRequests.length === 2
+      && atlasRequests.every((request) => request.body?.model === atlasSeat.model),
+    atlasSeatDistinctFromConductorSeat:
+      atlasRoute !== undefined && !sameSeat(atlasRoute, conductorSeat),
+    // atlas is the orchestrator row: it keeps the WHOLE delegation roster
+    // (no toolFilter), which is exactly what lets leg 1→2 exist at all.
+    atlasAdvertisesAllDelegationTools:
+      atlasToolNames !== undefined
+      && atlasToolNames.length > 0
+      && DELEGATION_TOOL_NAMES.every((name) => atlasToolNames.includes(name)),
+    // THE positive (mirror of the F1 negative): atlas's `explore` call is
+    // DISPATCHED and returns the grandchild's findings — success semantics, not
+    // a rejection of any kind.
+    atlasExploreCallReturnedFindings:
+      exploreCall !== undefined
+      && typeof exploreCall.data?.arguments === 'string'
+      && exploreResult !== undefined
+      && atlasReport !== undefined,
+    // ... because a REAL depth-2 grandchild session ran under atlas.
+    grandchildSessionRan:
+      grandchildLog !== undefined
+      && grandchildLog.header?.origin === 'subagent'
+      && String(grandchildLog.header?.parentSession) === String(childLog?.header?.id)
+      && grandchildLog.header?.delegationDepth === GRANDCHILD_DEPTH,
+    // The grandchild ran on the explore seat (route observability) and its
+    // persona is what reached the mock (role='explore' is only detectable from
+    // the MOCKROLE=explore marker riding the explore persona), with the README
+    // bytes provably in its model context.
+    grandchildRanOnExploreSeat: sameSeat(grandchildRoute, exploreSeat),
+    grandchildPersonaAndScriptObserved:
+      exploreRequests.length === 2
+      && grandchildAnsweredOwnScript
+      && lastExploreBody.includes(DEMO_README_SENTINEL),
+    // 对照语义 (plan §4.7): the read-only grandchild PHYSICALLY lacks write/edit
+    // and all ten delegation tools — the absence claim lives HERE, on the
+    // grandchild, instead of being read off any depth error.
+    readOnlyGrandchildLacksMutationAndDelegationTools:
+      grandchildToolNames !== undefined
+      && grandchildToolNames.length > 0
+      && !grandchildToolNames.includes('write')
+      && !grandchildToolNames.includes('edit')
+      && DELEGATION_TOOL_NAMES.every((name) => !grandchildToolNames.includes(name)),
+    // The findings climbed BOTH legs as bytes in the parent's model context.
+    grandchildFindingsReachedAtlasModel: atlasSecondBody.includes(ATLAS_GRANDCHILD_NOTE),
+    atlasReportReachedConductorModel:
+      atlasResult !== undefined && conductorSecondBody.includes(ATLAS_NESTED_NOTE),
+    conductorSummarized: summaryMessage !== undefined && turnCompleted,
+    // ORDER in BOTH channels: conductor log seq, atlas log seq, and the mock
+    // arrival order sisyphus#1 < atlas#1 < explore#1 < explore#2 < atlas#2 <
+    // sisyphus#2 (the foreground chain is strictly sequential).
+    chainObservedInOrder:
+      atlasCall !== undefined
+      && atlasResult !== undefined
+      && summaryMessage !== undefined
+      && atlasCall.seq < atlasResult.seq
+      && atlasResult.seq < summaryMessage.seq
+      && exploreCall !== undefined
+      && exploreResult !== undefined
+      && atlasReport !== undefined
+      && exploreCall.seq < exploreResult.seq
+      && exploreResult.seq < atlasReport.seq
+      && sisyphusRequests.length >= 2
+      && atlasRequests.length >= 2
+      && exploreRequests.length >= 2
+      && requests.indexOf(sisyphusRequests[0]) < requests.indexOf(atlasRequests[0])
+      && requests.indexOf(atlasRequests[0]) < requests.indexOf(exploreRequests[0])
+      && requests.indexOf(exploreRequests[0]) < requests.indexOf(exploreRequests[exploreRequests.length - 1])
+      && requests.indexOf(exploreRequests[exploreRequests.length - 1])
+        < requests.indexOf(atlasRequests[atlasRequests.length - 1])
+      && requests.indexOf(atlasRequests[atlasRequests.length - 1])
+        < requests.indexOf(sisyphusRequests[sisyphusRequests.length - 1]),
+    // Exact request accounting: 2 conductor + 2 atlas + 2 grandchild.
+    mockSawExpectedRequestCounts:
+      sisyphusRequests.length === 2
+      && atlasRequests.length === 2
+      && exploreRequests.length === 2,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    conductorRoute: conductorRoute ?? null,
+    atlasRoute: atlasRoute ?? null,
+    grandchildRoute: grandchildRoute ?? null,
+    atlasAdvertisedToolNames: atlasToolNames ?? null,
+    grandchildAdvertisedToolNames: grandchildToolNames ?? null,
+    atlasChildLogPath: childLog?.path ?? null,
+    grandchildLogPath: grandchildLog?.path ?? null,
+    mockRequestRoles: requests.map((request) => request.role),
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
 // ── --self-test: the analysis must earn its PASS (report §14.4.5) ────────────
 
 function fabricatedGoodLog(routes) {
@@ -1915,7 +2444,7 @@ function fabricatedGoodDemoInput(routes) {
 
 // ── fabricated AC-6 NEGATIVE logs (both negative analyses must earn PASS) ──
 
-function fabricatedNegativeParentLog(routes, prompt, childNote, parentSummary) {
+function fabricatedNegativeParentLog(routes, prompt, childNote, parentSummary, childRole = 'explore') {
   return {
     path: '/fabricated/negative-parent/session.jsonl',
     header: { type: 'session', id: FABRICATED_PARENT_ID },
@@ -1933,7 +2462,7 @@ function fabricatedNegativeParentLog(routes, prompt, childNote, parentSummary) {
           turn: 1,
           step: 1,
           callId: 'mock-llm-tool-1',
-          name: 'explore',
+          name: childRole,
           arguments: JSON.stringify({ description: 'd', prompt: 'p', run_in_background: false }),
         },
       },
@@ -1948,7 +2477,15 @@ function fabricatedNegativeParentLog(routes, prompt, childNote, parentSummary) {
   }
 }
 
-function fabricatedNegativeChildLog(routes, attemptName, attemptArgs, rejectionText, childNote, toolsList) {
+function fabricatedNegativeChildLog(
+  routes,
+  attemptName,
+  attemptArgs,
+  rejectionText,
+  childNote,
+  toolsList,
+  childRole = 'explore',
+) {
   return {
     path: '/fabricated/negative-child/session.jsonl',
     header: {
@@ -1964,7 +2501,7 @@ function fabricatedNegativeChildLog(routes, attemptName, attemptArgs, rejectionT
         type: 'request/header',
         data: {
           header: {
-            config: { provider: routes.explore.provider, model: routes.explore.model },
+            config: { provider: routes[childRole].provider, model: routes[childRole].model },
             tools: toolsList ?? [
               { type: 'function', function: { name: 'read' } },
               { type: 'function', function: { name: 'grep' } },
@@ -2199,6 +2736,284 @@ function fabricatedParadeInput(baseRoutes) {
       providersJson: fabricatedParadeProvidersJson(routes),
       bootLog: '[omo-agents] loaded',
       markerLanding: [CONDUCTOR_ID, ...PARADE_AGENTS].map((role) => ({ role, ok: true })),
+    },
+    routes,
+  }
+}
+
+// ── fabricated P2-T19 inputs (both new analyses must earn their PASS) ────────
+
+/**
+ * The read-only child tool set the REAL read-only rows leave visible (mutation
+ * tools and all ten delegation names filtered out); fabricated good inputs
+ * mirror it, so "the absence checks are sensitive" has a matching positive.
+ */
+const FABRICATED_READ_ONLY_TOOLS = [
+  { type: 'function', function: { name: 'read' } },
+  { type: 'function', function: { name: 'grep' } },
+  { type: 'function', function: { name: 'glob' } },
+  { type: 'function', function: { name: 'bash' } },
+]
+
+const FABRICATED_PLAN_REVIEWER_WRITE_TARGET =
+  '/fabricated/project/MOCK-PLAN-REVIEWER-WRITE-DENIED.txt'
+const FABRICATED_ATLAS_ID = 'session-fabricated-atlas-child'
+const FABRICATED_GRANDCHILD_ID = 'session-fabricated-grandchild'
+
+/** Provider directory carrying EVERY provider in the given resolved route map. */
+function fabricatedAllProvidersJson(routes) {
+  return JSON.stringify({
+    type: 'server-response',
+    rpcId: 'x',
+    result: {
+      ok: true,
+      value: {
+        providers: [...new Set(Object.values(routes).map((route) => route.provider))]
+          .map((provider) => ({ provider, active: true })),
+      },
+    },
+  })
+}
+
+/** The effective route map the plan-reviewer scenario's env overlay resolves to. */
+function fabricatedPlanReviewerRoutes(baseRoutes) {
+  return { ...baseRoutes, 'plan-reviewer': PLAN_REVIEWER_SEAT }
+}
+
+/** The effective route map the atlas scenario's env overlay resolves to. */
+function fabricatedAtlasRoutes(baseRoutes) {
+  return { ...baseRoutes, atlas: ATLAS_SEAT }
+}
+
+/** Requests for a ONE-child scenario whose child role is not explore. */
+function fabricatedSingleChildRequests(routes, childRole, childNote) {
+  return [
+    {
+      role: 'sisyphus',
+      body: { model: routes.sisyphus.model, messages: [{ role: 'system', content: `MOCKROLE=${CONDUCTOR_ID}` }] },
+      receivedAt: 10,
+    },
+    {
+      role: childRole,
+      body: { model: routes[childRole].model, messages: [{ role: 'system', content: `MOCKROLE=${childRole}` }] },
+      receivedAt: 20,
+    },
+    {
+      role: childRole,
+      body: {
+        model: routes[childRole].model,
+        messages: [
+          { role: 'system', content: `MOCKROLE=${childRole}` },
+          { role: 'user', content: `tool result: ${UNKNOWN_TOOL_WRITE_RESULT}` },
+        ],
+      },
+      receivedAt: 30,
+    },
+    {
+      role: 'sisyphus',
+      body: {
+        model: routes.sisyphus.model,
+        messages: [
+          { role: 'system', content: `MOCKROLE=${CONDUCTOR_ID}` },
+          { role: 'user', content: `tool result: ${childNote}` },
+        ],
+      },
+      receivedAt: 40,
+    },
+  ]
+}
+
+function fabricatedPlanReviewerInput(baseRoutes) {
+  const routes = fabricatedPlanReviewerRoutes(baseRoutes)
+  return {
+    input: {
+      log: fabricatedNegativeParentLog(
+        routes,
+        PLAN_REVIEWER_DENY_PROMPT,
+        PLAN_REVIEWER_WRITE_NOTE,
+        SISYPHUS_PLAN_REVIEWER_SUMMARY,
+        'plan-reviewer',
+      ),
+      childLog: fabricatedNegativeChildLog(
+        routes,
+        'write',
+        { file_path: FABRICATED_PLAN_REVIEWER_WRITE_TARGET, content: 'x' },
+        UNKNOWN_TOOL_WRITE_RESULT,
+        PLAN_REVIEWER_WRITE_NOTE,
+        FABRICATED_READ_ONLY_TOOLS,
+        'plan-reviewer',
+      ),
+      requests: fabricatedSingleChildRequests(routes, 'plan-reviewer', PLAN_REVIEWER_WRITE_NOTE),
+      providersJson: fabricatedAllProvidersJson(routes),
+      bootLog: '[omo-agents] loaded',
+      writeTargetPath: FABRICATED_PLAN_REVIEWER_WRITE_TARGET,
+    },
+    routes,
+  }
+}
+
+function fabricatedAtlasParentLog(routes) {
+  return {
+    path: '/fabricated/atlas-nested/parent/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: ATLAS_NESTED_PROMPT }] } },
+      {
+        seq: 2,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'initial' },
+      },
+      {
+        seq: 3,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: 'mock-llm-tool-1', name: 'atlas', arguments: JSON.stringify({ description: 'atlas', prompt: 'delegate', run_in_background: false }) },
+      },
+      {
+        seq: 4,
+        type: 'tool/result',
+        data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: ATLAS_NESTED_NOTE }], isError: false }] } },
+      },
+      { seq: 5, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: SISYPHUS_ATLAS_SUMMARY }] } } },
+      { seq: 6, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedAtlasChildLog(routes) {
+  return {
+    path: '/fabricated/atlas-nested/atlas/session.jsonl',
+    header: {
+      type: 'session',
+      id: FABRICATED_ATLAS_ID,
+      origin: 'subagent',
+      parentSession: FABRICATED_PARENT_ID,
+      delegationDepth: 1,
+    },
+    events: [
+      {
+        seq: 0,
+        type: 'subagent/descriptor',
+        data: { version: 3, mode: 'continuable', provider: 'spawn', label: 'atlas', agentProvider: routes.atlas.provider, agentModel: routes.atlas.model },
+      },
+      {
+        seq: 1,
+        type: 'request/header',
+        data: {
+          header: {
+            config: { provider: routes.atlas.provider, model: routes.atlas.model },
+            // atlas is the orchestrator row: it keeps the WHOLE delegation roster.
+            tools: [
+              { type: 'function', function: { name: 'read' } },
+              { type: 'function', function: { name: 'grep' } },
+              ...DELEGATION_TOOL_NAMES.map((name) => ({ type: 'function', function: { name } })),
+            ],
+          },
+          reason: 'initial',
+        },
+      },
+      {
+        seq: 2,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: 'mock-llm-tool-1', name: 'explore', arguments: JSON.stringify({ description: 'atlas→explore', prompt: 'read the README', run_in_background: false }) },
+      },
+      {
+        seq: 3,
+        type: 'tool/result',
+        data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: ATLAS_GRANDCHILD_NOTE }], isError: false }] } },
+      },
+      { seq: 4, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: ATLAS_NESTED_NOTE }] } } },
+      { seq: 5, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedGrandchildLog(routes) {
+  return {
+    path: '/fabricated/atlas-nested/grandchild/session.jsonl',
+    header: {
+      type: 'session',
+      id: FABRICATED_GRANDCHILD_ID,
+      origin: 'subagent',
+      parentSession: FABRICATED_ATLAS_ID,
+      delegationDepth: 2,
+    },
+    events: [
+      {
+        seq: 1,
+        type: 'request/header',
+        data: {
+          header: {
+            config: { provider: routes.explore.provider, model: routes.explore.model },
+            tools: FABRICATED_READ_ONLY_TOOLS,
+          },
+          reason: 'initial',
+        },
+      },
+      {
+        seq: 2,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: 'mock-llm-tool-1', name: 'read', arguments: JSON.stringify({ file_path: '/fabricated/project/README.md' }) },
+      },
+      { seq: 3, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: ATLAS_GRANDCHILD_NOTE }] } } },
+      { seq: 4, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedAtlasNestedRequests(routes) {
+  return [
+    { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'system', content: `MOCKROLE=${CONDUCTOR_ID}` }] }, receivedAt: 10 },
+    { role: 'atlas', body: { model: routes.atlas.model, messages: [{ role: 'system', content: 'MOCKROLE=atlas' }] }, receivedAt: 20 },
+    { role: 'explore', body: { model: routes.explore.model, messages: [{ role: 'system', content: 'MOCKROLE=explore' }] }, receivedAt: 30 },
+    {
+      role: 'explore',
+      body: {
+        model: routes.explore.model,
+        messages: [
+          { role: 'system', content: 'MOCKROLE=explore' },
+          { role: 'user', content: `read result: This is the omo-dsh ${DEMO_README_SENTINEL}` },
+        ],
+      },
+      receivedAt: 40,
+    },
+    {
+      role: 'atlas',
+      body: {
+        model: routes.atlas.model,
+        messages: [
+          { role: 'system', content: 'MOCKROLE=atlas' },
+          { role: 'user', content: `tool result: ${ATLAS_GRANDCHILD_NOTE}` },
+        ],
+      },
+      receivedAt: 50,
+    },
+    {
+      role: 'sisyphus',
+      body: {
+        model: routes.sisyphus.model,
+        messages: [
+          { role: 'system', content: `MOCKROLE=${CONDUCTOR_ID}` },
+          { role: 'user', content: `tool result: ${ATLAS_NESTED_NOTE}` },
+        ],
+      },
+      receivedAt: 60,
+    },
+  ]
+}
+
+function fabricatedAtlasNestedInput(baseRoutes) {
+  const routes = fabricatedAtlasRoutes(baseRoutes)
+  const parentLog = fabricatedAtlasParentLog(routes)
+  const atlasLog = fabricatedAtlasChildLog(routes)
+  const grandchildLog = fabricatedGrandchildLog(routes)
+  return {
+    input: {
+      log: parentLog,
+      childLog: atlasLog,
+      allLogs: [parentLog, atlasLog, grandchildLog],
+      requests: fabricatedAtlasNestedRequests(routes),
+      providersJson: fabricatedAllProvidersJson(routes),
+      bootLog: '[omo-agents] loaded',
     },
     routes,
   }
@@ -2584,6 +3399,130 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P2-T19 plan-reviewer-write-denied self-test: the fabricated good input
+  // must PASS; each fabricated defect must fail on its OWN named check.
+  const planReviewer = fabricatedPlanReviewerInput(routes)
+  const goodPlanReviewer = analyzePlanReviewerWriteDenied(planReviewer.input, planReviewer.routes)
+  if (goodPlanReviewer.result !== 'PASS') {
+    problems.push(`fabricated GOOD plan-reviewer-write-denied must PASS, got FAIL on: ${goodPlanReviewer.failed.join(', ')}`)
+  }
+  const planReviewerDefectCases = [
+    ['write attempt not rejected (success instead of unknown-tool error)', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'tool/result'
+          ? { ...event, data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: 'file written' }], isError: false }] } } }
+          : event)
+    }, 'writeAttemptRejectedWithUnknownTool'],
+    ['write advertised in the read-only child tool schema', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'request/header'
+          ? { ...event, data: { header: { ...event.data.header, tools: [...event.data.header.tools, { type: 'function', function: { name: 'write' } }] } } }
+          : event)
+    }, 'childAdvertisedToolsExcludeWriteEdit'],
+    ['a delegation tool advertised in the read-only child schema', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'request/header'
+          ? { ...event, data: { header: { ...event.data.header, tools: [...event.data.header.tools, { type: 'function', function: { name: 'hephaestus' } }] } } }
+          : event)
+    }, 'childAdvertisedToolsExcludeAllDelegationTools'],
+    ['write target landed on disk', (input) => {
+      input.writeTargetPath = fileURLToPath(import.meta.url) // this very file exists
+    }, 'writeTargetAbsentOnDisk'],
+    ['the child ran on the wrong seat', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'request/header'
+          ? { ...event, data: { header: { config: { provider: 'wrong', model: 'wrong' } }, reason: 'initial' } }
+          : event)
+    }, 'childRanOnItsConfiguredSeat'],
+    ['the child note never returned to the parent', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'tool/result')
+    }, 'childOutcomeReturnedAndParentClosed'],
+  ]
+  for (const [label, mutate, expectedCheck] of planReviewerDefectCases) {
+    const mutated = fabricatedPlanReviewerInput(routes)
+    mutate(mutated.input)
+    const verdict = analyzePlanReviewerWriteDenied(mutated.input, mutated.routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated plan-reviewer-write-denied defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  // ── P2-T19 atlas-nested-delegation self-test: the fabricated good input must
+  // PASS; each fabricated defect must fail on its OWN named check — including
+  // the depth-rejection mutation, which proves the positive chain's success
+  // assertions are sensitive to a dispatch that never produced a grandchild.
+  const atlas = fabricatedAtlasNestedInput(routes)
+  const goodAtlas = analyzeAtlasNestedDelegation(atlas.input, atlas.routes)
+  if (goodAtlas.result !== 'PASS') {
+    problems.push(`fabricated GOOD atlas-nested-delegation must PASS, got FAIL on: ${goodAtlas.failed.join(', ')}`)
+  }
+  const atlasDefectCases = [
+    ['the nested dispatch was rejected with the depth-cap error (no grandchild)', (input) => {
+      input.allLogs = input.allLogs.filter((candidate) => candidate.header?.id !== FABRICATED_GRANDCHILD_ID)
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'tool/result'
+          ? { ...event, data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-1', content: [{ type: 'text', text: 'Error: subagent depth 3 exceeds maxDepth 2' }], isError: true }] } } }
+          : event)
+    }, 'grandchildSessionRan'],
+    ['the grandchild ran on the wrong route', (input) => {
+      input.allLogs = input.allLogs.map((candidate) =>
+        candidate.header?.id === FABRICATED_GRANDCHILD_ID
+          ? {
+              ...candidate,
+              events: candidate.events.map((event) =>
+                event.type === 'request/header'
+                  ? { ...event, data: { header: { config: { provider: 'wrong', model: 'wrong' } }, reason: 'initial' } }
+                  : event),
+            }
+          : candidate)
+    }, 'grandchildRanOnExploreSeat'],
+    ['atlas ran on the wrong seat', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'request/header'
+          ? { ...event, data: { header: { config: { provider: 'wrong', model: 'wrong' } }, reason: 'initial' } }
+          : event)
+    }, 'atlasRanOnItsConfiguredSeat'],
+    ['atlas lost the delegation tools it needs to re-delegate', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'request/header'
+          ? { ...event, data: { header: { ...event.data.header, tools: event.data.header.tools.filter((tool) => tool.function.name !== 'explore') } } }
+          : event)
+    }, 'atlasAdvertisesAllDelegationTools'],
+    ['the read-only grandchild advertised the delegation tools', (input) => {
+      input.allLogs = input.allLogs.map((candidate) =>
+        candidate.header?.id === FABRICATED_GRANDCHILD_ID
+          ? {
+              ...candidate,
+              events: candidate.events.map((event) =>
+                event.type === 'request/header'
+                  ? { ...event, data: { header: { ...event.data.header, tools: [...event.data.header.tools, { type: 'function', function: { name: 'explore' } }] } } }
+                  : event),
+            }
+          : candidate)
+    }, 'readOnlyGrandchildLacksMutationAndDelegationTools'],
+    ['the grandchild findings never reached atlas', (input) => {
+      input.requests = input.requests.map((request) =>
+        request.role === 'atlas' && request.receivedAt === 50
+          ? { ...request, body: { model: request.body.model, messages: [] } }
+          : request)
+    }, 'grandchildFindingsReachedAtlasModel'],
+    ['atlas report never returned to the conductor', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'tool/result')
+    }, 'atlasReportReachedConductorModel'],
+    ['out-of-order atlas-leg events', (input) => {
+      const call = input.childLog.events.find((event) => event.type === 'tool/call')
+      call.seq = 99
+    }, 'chainObservedInOrder'],
+  ]
+  for (const [label, mutate, expectedCheck] of atlasDefectCases) {
+    const mutated = fabricatedAtlasNestedInput(routes)
+    mutate(mutated.input)
+    const verdict = analyzeAtlasNestedDelegation(mutated.input, mutated.routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated atlas-nested-delegation defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
@@ -2653,6 +3592,47 @@ const SCENARIOS = [
     },
     script: paradeScript,
     analyze: analyzeRosterParade,
+  },
+  {
+    // P2-T19 (plan §4.7 scenario ②; AC-6a generalized to a new read-only row):
+    // plan-reviewer hallucinates a `write`; the class filter rejects it as an
+    // unknown tool and the target never lands on disk. The child's own seat is
+    // env-pinned (OMO_PLAN_REVIEWER_*) to a real pair distinct from the
+    // conductor's, so the route assertion is discriminating.
+    name: 'plan-reviewer-write-denied',
+    prompt: PLAN_REVIEWER_DENY_PROMPT,
+    roles: [CONDUCTOR_ID, 'plan-reviewer'],
+    env: delegationSeatEnv('plan-reviewer', PLAN_REVIEWER_SEAT),
+    script: planReviewerWriteDeniedScript,
+    analysisInput: (sandbox) => ({
+      writeTargetPath: join(sandbox.project, PLAN_REVIEWER_WRITE_TARGET_NAME),
+    }),
+    analyze: analyzePlanReviewerWriteDenied,
+  },
+  {
+    // P2-T19 (plan §4.7 scenario ③): the POSITIVE nested chain —
+    // conductor → atlas (depth 1) → explore (depth 2). atlas keeps the
+    // delegation roster, so its `explore` call is advertised and the depth-2
+    // grandchild really runs; the read-only absence claim is re-asserted on the
+    // GRANDCHILD (plan §4.7 对照语义注意), never as a depth error.
+    //
+    // ENABLED in the default chain 2026-09-13 (arbiter D-2026-09-13-01): it was
+    // withheld while the composition carried the per-class caps
+    // (explore/worker/allowlist = 1, atlas = 2), because dsh's depth gate reads
+    // the INVOKED row's `config.maxDepth` — a depth-1 atlas calling the
+    // maxDepth-1 explore row was rejected with 'Error: subagent depth 2 exceeds
+    // maxDepth 1' before any child existed. All ten delegation rows now carry
+    // maxDepth 2, so the depth-2 dispatch this scenario asserts is legal by
+    // construction (chain cap 2: conductor 0 → atlas 1 → worker 2).
+    name: 'atlas-nested-delegation',
+    prompt: ATLAS_NESTED_PROMPT,
+    roles: [CONDUCTOR_ID, 'atlas', 'explore'],
+    env: delegationSeatEnv('atlas', ATLAS_SEAT),
+    seed: (sandbox) => {
+      writeFileSync(join(sandbox.project, 'README.md'), DEMO_README_CONTENT)
+    },
+    script: atlasNestedDelegationScript,
+    analyze: analyzeAtlasNestedDelegation,
   },
 ]
 
@@ -2783,11 +3763,18 @@ async function main() {
     .split(',')
     .map((name) => name.trim())
     .filter((name) => name.length > 0)
-  const unknown = only.filter((name) => !SCENARIOS.some((def) => def.name === name))
+  // Name-addressable = the default chain. atlas-nested-delegation is ENABLED in
+  // SCENARIOS since 2026-09-13 (D-2026-09-13-01); DSH_E2E_ONLY can still run
+  // any single scenario by name.
+  const nameAddressable = SCENARIOS
+  const unknown = only.filter((name) => !nameAddressable.some((def) => def.name === name))
   if (unknown.length > 0) {
     throw new Error(`DSH_E2E_ONLY names no such scenario: ${unknown.join(', ')}`)
   }
-  const selected = only.length === 0 ? SCENARIOS : SCENARIOS.filter((def) => only.includes(def.name))
+  // No DSH_E2E_ONLY ⇒ the full default chain.
+  const selected = only.length === 0
+    ? SCENARIOS
+    : nameAddressable.filter((def) => only.includes(def.name))
   for (const def of selected) {
     const { scenario, sandboxRoot } = await runScenario(def, routes)
     scenarios.push(scenario)
@@ -2830,7 +3817,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

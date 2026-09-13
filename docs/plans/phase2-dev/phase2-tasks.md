@@ -179,14 +179,14 @@
 - **证据**：2026-09-13（deepseek-flash；首个全量委托遇工作流中止，紧凑型补全轮完成——此后委托 prompt 全面收紧）。roster-composition.test.ts 56 用例（每 roster 委派条目 ↔ 恰好一渲染行：toolName/类 filter/maxDepth/agentOptions==resolveModelRoutes()[id]/persona 字节一致；12 行普查；指挥/通用/产品行缺席）；roster-snapshot.ts 生成器 + __snapshots__/roster.md 32 行结构化快照（退出标准 b：字节断言内嵌反假绿、无重写路径、再生命令文档化且复核字节一致）；roster-toolfilter-mechanism.test.ts 4 用例（Q-3 机制层：真实 applyChildComposition→restrict 证明 allow∧¬deny 两键同给；looker 真实 filter 无 deny 键隐藏全部 10 委派工具；非空控制+父隔离）。反向证明：翻 explore maxDepth 1→2 恰 4 具名失败（评审独立复现并字节恢复）。双评审 APPROVE（Kimi 2 NIT 接受）；CI 8/8 绿（门2=419）。
 - **依赖**：P2-T16。**量级**：3 小时。
 
-### [ ] P2-T18 — e2e：MOCKROLE 泛化 + roster-parade 场景
+### [x] P2-T18 — e2e：MOCKROLE 泛化 + roster-parade 场景
 
 - **产出**：`tests/e2e/drive.mjs` 的 MOCKROLE 机制泛化 + 新增 `roster-parade` scenario。
 - **做法**：
   1. **MOCKROLE 泛化（前置子任务，评审实测驱动）**：`MOCKROLE_BLOCK_SCALARS` 从硬编码 2 条泛化为 **roster 驱动**——每委派 role 一条映射；needle 改为**行 id 锚点**（`id: tool-subagent-<id>` 在渲染后文件中唯一）而非 `persona: |-`（10 行 persona 都渲染为该标头后旧 needle 失唯一性，`appendMockRoleMarker` 的 `String.replace` 首个命中会打错行）；缩进按行在 delegation 组内的实际嵌套层（模板注释口径复核）；与 `mock-llm-server.mjs` `detectRole` 的"首个含 MOCKROLE= 的 system message 胜出"顺序相容（marker 须落在该子级**首个** system message 内——persona 标头下第一行，与 explore 现状同款）；settings 种子保持单 baseURL（同一 adapter 的多个 model 路由共用其一），pi-ai 侧 `providers` map 按需加键。
   2. **parade 场景**：沙箱 env 把 10 个 agent 分布到**真实可服务的可区分路由对**（deepseek-official 默认 catalog 4 id + pi-ai `deepseek` 3 id = 7 个真实对，基准表 §3；**不用假 id** 的诚实理由见计划书 §4.7——假 id 在 mock 下机械可行但断言将失去"真实可服务"意义），逐 agent 断言"已解析路由 == env 配置座"；mock 剧本（**每委派 lane 独立 MOCKROLE=<agent>**，剧本以 role 为键——不是按 model 分流）：指挥一条消息内并行发起 10 个委派调用 → 每子级剧本回答 → 指挥总结；断言：10 个子级全部真实运行、session log 中每子级 `{provider, model}` 与配置一致（AC-5 模式推广）、hard-blocks 注入在一个新 agent 子级可见（T16 listener 覆盖面抽查）；Q-4 实测（10 个 continuable 子级的 resident 上限——若受限则分批并记录，fallback 口径见基准表 §1 continuable 决策块）。
 - **判定**：✅ 门 3 绿；scenario verdict JSON 含每子级路由断言明细；`appendMockRoleMarker` 对 10 个新 role 各自落点正确（marker 出现在对应行的 persona 标头下，grep 行号比对）。
-- **证据**：（待填）
+- **证据**：2026-09-13（deepseek-flash 一轮过）。MOCKROLE 泛化：roster 驱动 Map + 行 id 锚点（恰好一次否则 throw、同行有界扫描防跨行绑定、首内容行插入、行锚幂等 sisyphus vs sisyphus-junior 安全、未知 role loud throw、verifyMockRoleMarkerLanding 不抛）；hermetic --self-test 用真实模板+真实渲染器 11/11 落点 + 变异 QA 复现旧首个命中 bug。mock-llm-server 加 tool_calls 并行批次（单数路径字节不变，6 既有 mock 测试过）。roster-parade：10 agent 分布 7 真实 catalog 对（无假 id，librarian 置 vision 对为机制性分布有注记；sisyphus≠explore；looker 在 vision 座）；单消息 10 并行委派；verdict JSON 含每子级 configured/resolved/observed 座明细（全匹配）+ 11/11 marker 落点行号 + hard-blocks 10 子级可见。Q-4：maxParallelToolCalls=10=批次恰好、无数字 resident 上限、foreground one-shot caveat 记录（resident-continuable 压力留 T22/L4，Kimi MINOR 跟踪）。门 3 绿（5 场景，parade 19/19 断言）；双评审 APPROVE；CI 8/8 绿（门2=419）。
 - **依赖**：P2-T17。**量级**：5 小时（MOCKROLE 泛化 +2h 自评审）。
 
 ### [ ] P2-T19 — e2e：只读负向 + atlas 正向嵌套

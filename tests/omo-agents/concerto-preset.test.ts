@@ -292,13 +292,16 @@ describe('concerto rendered composition — per-row contract (P2-T15)', () => {
     expect([...DELEGATION_TOOL_NAMES]).toEqual(DELEGATION_ORDER)
   })
 
-  it('gives every row provider spawn + backgroundMode continuable, and the class maxDepth', async () => {
+  it('gives every row provider spawn + backgroundMode continuable, and the roster maxDepth', async () => {
     const { group } = await renderDefault()
     for (const entry of DELEGATION_ENTRIES) {
       const row = toolRow(group, entry.id)
       expect(row.config.provider, entry.id).toBe('spawn')
       expect(row.config.backgroundMode, entry.id).toBe('continuable')
-      expect(row.config.maxDepth, entry.id).toBe(entry.class === 'orchestrator' ? 2 : 1)
+      // Roster-derived: dsh caps on the INVOKED row, so a uniform 2 on all ten
+      // rows is what makes the chain cap 2 (D-2026-09-13-01; roster §1 修正块).
+      expect(row.config.maxDepth, entry.id).toBe(entry.maxDepth)
+      expect(entry.maxDepth, entry.id).toBe(2)
     }
     expect(toolRow(group, 'atlas').config.maxDepth).toBe(2)
   })
@@ -373,7 +376,10 @@ describe('concerto rendered composition — per-row contract (P2-T15)', () => {
     expect(explore.config.provider).toBe('spawn')
     expect(explore.config.toolName).toBe('explore')
     expect(explore.config.backgroundMode).toBe('continuable')
-    expect(explore.config.maxDepth).toBe(1)
+    // Roster-derived (was the literal 1 before the D-2026-09-13-01 correction):
+    // explore is a delegation target, and every target row caps at 2.
+    expect(explore.config.maxDepth)
+      .toBe(DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')!.maxDepth)
     expect(explore.config.persona).toContain('# Explore: Read-Only Retrieval Agent')
     expect(explore.config.agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-v4-flash' })
     // The T12 + F1 guardrails, now the read-only class list (P2-T15): write/edit
@@ -470,7 +476,10 @@ describe('concerto sentinel renderers — injection and guard (P2-T15)', () => {
     // Real route from src/model-routes.ts defaults (T14 source).
     expect(composition).toContain('          provider: "deepseek"')
     expect(composition).toContain('          model: "deepseek-v4-flash"')
-    expect(composition).toContain('maxDepth: 1')
+    // Roster-derived (was the literal `maxDepth: 1` before the
+    // D-2026-09-13-01 correction): the rendered row carries the roster value.
+    const exploreMaxDepth = DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')!.maxDepth
+    expect(composition).toContain(`maxDepth: ${exploreMaxDepth}`)
     // F1 fix (2026-09-04) generalized by P2-T15: the rendered deny is the
     // roster-computed read-only class list, not the old inline triple.
     expect(composition).toContain(

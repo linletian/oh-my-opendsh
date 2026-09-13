@@ -13,18 +13,20 @@
 | # | Agent（DSH toolName） | v4 名 | 类 | 写权限 | 委派权 | maxDepth | 默认路由（席位） | env 覆盖对 |
 |---|---|---|---|---|---|---|---|---|
 | 1 | `sisyphus`（指挥，主会话 persona） | 同 | — | ✅ | — | — | `deepseek-official` / `deepseek-v4-pro`（强座，既有） | `OMO_SISYPHUS_PROVIDER/MODEL`（既有） |
-| 2 | `explore`（既有） | 同 | 只读 | ❌ | ❌ | 1 | `deepseek` / `deepseek-v4-flash`（快座，既有） | `OMO_EXPLORE_PROVIDER/MODEL`（既有） |
-| 3 | `hephaestus` | 同 | worker | ✅ | ❌ | 1 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_HEPHAESTUS_PROVIDER/MODEL` |
-| 4 | `oracle` | 同 | 只读 | ❌ | ❌ | 1 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_ORACLE_PROVIDER/MODEL` |
-| 5 | `librarian` | 同 | 只读 | ❌ | ❌ | 1 | `deepseek` / `deepseek-v4-flash`（快座） | `OMO_LIBRARIAN_PROVIDER/MODEL` |
-| 6 | `plan-consultant` | metis | 只读 | ❌ | ❌ | 1 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_PLAN_CONSULTANT_PROVIDER/MODEL` |
-| 7 | `plan-reviewer` | momus | 只读 | ❌ | ❌ | 1 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_PLAN_REVIEWER_PROVIDER/MODEL` |
+| 2 | `explore`（既有） | 同 | 只读 | ❌ | ❌ | 2 | `deepseek` / `deepseek-v4-flash`（快座，既有） | `OMO_EXPLORE_PROVIDER/MODEL`（既有） |
+| 3 | `hephaestus` | 同 | worker | ✅ | ❌ | 2 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_HEPHAESTUS_PROVIDER/MODEL` |
+| 4 | `oracle` | 同 | 只读 | ❌ | ❌ | 2 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_ORACLE_PROVIDER/MODEL` |
+| 5 | `librarian` | 同 | 只读 | ❌ | ❌ | 2 | `deepseek` / `deepseek-v4-flash`（快座） | `OMO_LIBRARIAN_PROVIDER/MODEL` |
+| 6 | `plan-consultant` | metis | 只读 | ❌ | ❌ | 2 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_PLAN_CONSULTANT_PROVIDER/MODEL` |
+| 7 | `plan-reviewer` | momus | 只读 | ❌ | ❌ | 2 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_PLAN_REVIEWER_PROVIDER/MODEL` |
 | 8 | `atlas` | 同 | orchestrator | ✅ | ✅ | **2** | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_ATLAS_PROVIDER/MODEL` |
-| 9 | `multimodal-looker` | 同 | allowlist | ❌（仅 `read` + `read_image`） | ❌ | 1 | `deepseek-official` / `deepseek-v4-flash-vision-exp`（视觉座） | `OMO_MULTIMODAL_LOOKER_PROVIDER/MODEL` |
-| 10 | `sisyphus-junior` | 同 | worker | ✅ | ❌ | 1 | `deepseek` / `deepseek-v4-flash`（快座） | `OMO_SISYPHUS_JUNIOR_PROVIDER/MODEL` |
-| 11 | `prometheus` | 同 | 只读 | ❌ | ❌ | 1 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_PROMETHEUS_PROVIDER/MODEL` |
+| 9 | `multimodal-looker` | 同 | allowlist | ❌（仅 `read` + `read_image`） | ❌ | 2 | `deepseek-official` / `deepseek-v4-flash-vision-exp`（视觉座） | `OMO_MULTIMODAL_LOOKER_PROVIDER/MODEL` |
+| 10 | `sisyphus-junior` | 同 | worker | ✅ | ❌ | 2 | `deepseek` / `deepseek-v4-flash`（快座） | `OMO_SISYPHUS_JUNIOR_PROVIDER/MODEL` |
+| 11 | `prometheus` | 同 | 只读 | ❌ | ❌ | 2 | `deepseek-official` / `deepseek-v4-pro`（强座） | `OMO_PROMETHEUS_PROVIDER/MODEL` |
 
 **全部委派行共有配置**：`provider: spawn` · `backgroundMode: continuable` · persona 哨兵 + agentOptions 哨兵（apply 时渲染）。
+
+> **maxDepth 语义修正（2026-09-13，P2-T19 运行时发现，仲裁决定 D-2026-09-13-01）**：dsh 深度门读的是**被调用行**的 `maxDepth`——`dsh-tool-subagent/lib/index.js`:508-519 把 `config.maxDepth` 直接作 `request.maxDepth`，`dsh-subagent/lib/index.js`:432-438 `resolveChildDepth`：`childDepth = parent.depth + 1; childDepth > maxDepth → SubagentDepthError`。即 maxDepth = **该工具可被调用的最大子级深度**，不是调用方的子树预算。原设计"atlas=2、其余=1"在此语义下使 atlas(depth 1) 调任何 maxDepth 1 的行都得到 depth 2 > 1 的拒绝——atlas 再委派物理不通。**修正：10 个委派行 maxDepth 统一为 2**——委派链最深 2 层（指挥 0 → atlas 1 → worker 2）；depth-3 结构性不可能；F1 物理缺席（deny 名单）仍是嵌套委派主防，深度门为纵深防御；atlas 自递归在 depth 2 自然封顶。
 
 > **为何全员 `continuable` 而非 per-class `one-shot`**（决策记录，评审意见沉淀）：① OMO v5 把 `run_in_background=true` 定为 "the standard spawn"；② oracle 上游 prompt 明确支持 session continuation 追问，one-shot 会砍掉该能力；③ 全员统一省去 per-class 心智分叉。**代价明示**：librarian / multimodal-looker / plan-reviewer 类无状态任务常驻槽位——压力记入 Q-4，实测咬人时 per-class `one-shot`（改 YAML 单字段）是现成 fallback，届时按 DoD-d 回填本表。
 
@@ -43,7 +45,7 @@
 
 - **上游源**：`packages/omo-opencode/src/agents/explore.ts` ✅
 - **OMO 限制**：deny `[write, edit, apply_patch, task, call_omo_agent]` ✅
-- **现状**：已交付（persona 46 行 + deny `[write, edit, explore]` + maxDepth 1）。Phase 2 唯一改动：deny 列表从自名单点扩展为按类渲染的 `__OMO_EXPLORE_DENY__` 哨兵（F1 加固的推广，见 §1「deny 列表与逐行哨兵」块）。
+- **现状**：已交付（persona 46 行 + deny `[write, edit, explore]` + 当时 maxDepth 1——2026-09-13 统一为 2，见 §1 修正块）。Phase 2 唯一改动：deny 列表从自名单点扩展为按类渲染的 `__OMO_EXPLORE_DENY__` 哨兵（F1 加固的推广，见 §1「deny 列表与逐行哨兵」块）。
 
 ### 2.2 `hephaestus`
 
@@ -51,7 +53,7 @@
 - **角色**：GPT 原生自主 deep worker——"give it a goal, not a recipe"；目标驱动、工作到完成
 - **OMO 限制**：✅ **P2-T1 复核闭环**：L1 permission = `{question:"allow", call_omo_agent:"deny"}`（agent.ts:177-181）+ 动态分支 `{grep:"deny", glob:"deny"}` 仅 frontier 模型（Opus≥4.7/Fable/GPT-5.5/5.6，frontier-tool-schema-guard.ts:8-12）；**无 write/edit/apply_patch 禁——完全可写**（如预期）；**委派未全禁**：legacy `call_omo_agent` deny 但现代 `task` **允许**（prompt 用 `task(subagent_type="explore"|"librarian"|"oracle")`，gpt-5-6.ts:132）
 - **OMO 链首**（`AGENT_MODEL_REQUIREMENTS`，packages/model-core/src/agent-model-requirements.ts:3-186 直核）：仅 `gpt-5.6-sol medium`，`requiresProvider: openai/copilot/opencode/vercel`（v5 加 `openai-codex`）✅
-- **镜像映射**：worker 类（deny 全部委派名，不 deny write/edit）；maxDepth 1
+- **镜像映射**：worker 类（deny 全部委派名，不 deny write/edit）；maxDepth 2（统一规则，§1 修正块）
 - **适配注记**：① prompt 是 GPT 调优文本，DeepSeek 座上的保真度风险记入 R-3——移植保留"目标驱动/自主完成"语义内核，删 GPT 特定引用；② OMO 的 requiresProvider 门不移植（R1：DeepSeek 系优先，配置层 env 可改路由）；③ **有意收窄**：上游 `task` 委派权不镜像——本阶段仅 atlas 可再委派（计划 §4.5），worker 的检索需求由指挥预置或其自身读工具满足。
 
 ### 2.3 `oracle`
@@ -60,7 +62,7 @@
 - **角色**：只读高智商架构/调试顾问（advisor，cost EXPENSIVE）；结构化输出（Bottom line ≤3 句 / Action plan ≤7 步 / Effort 标签）
 - **OMO 限制**：✅ **P2-T1 复核闭环**：L1 = deny `[write, edit, apply_patch, task]`（oracle.ts:411-417 经 `createAgentToolRestrictions`）；`call_omo_agent` L1 未列、L2 层（shared/agent-tool-restrictions.ts:36-41）deny。上游 AGENTS.md:40 与此不符（列了 call_omo_agent、漏了 apply_patch）——文档过期，以代码为准
 - **OMO 链首**：gpt-5.6-sol xhigh → gemini-3.1-pro high → claude-opus-5 max → glm-5.2 ✅（转引）
-- **镜像映射**：只读类；maxDepth 1
+- **镜像映射**：只读类；maxDepth 2（统一规则，§1 修正块）
 - **适配注记**：输出契约（verbosity spec / 三段响应结构）是其核心价值，浓缩时**完整保留**；"follow-up questions via session continuation"一句保留（continuable 对应）。
 
 ### 2.4 `librarian`
@@ -69,7 +71,7 @@
 - **角色**：文档与 OSS 代码搜索（exploration，cost CHEAP；keyTrigger："External library/source mentioned → fire librarian background"）
 - **OMO 限制**：deny `[write, edit, apply_patch, task, call_omo_agent]` ✅
 - **OMO 链首**：gpt-5.6-luna-fast low → deepseek-v4-flash → qwen3.7-plus → … ✅（转引；链上本有 deepseek-v4-flash，快座默认与上游同向）
-- **镜像映射**：只读类；maxDepth 1。子会话经 composition 继承 `web_search`/`web_fetch`（tool-web 行在 concerto preset 中），满足其"文档搜索"工具需求
+- **镜像映射**：只读类；maxDepth 2（统一规则，§1 修正块）。子会话经 composition 继承 `web_search`/`web_fetch`（tool-web 行在 concerto preset 中），满足其"文档搜索"工具需求
 - **适配注记**：OMO 的 context7 MCP 属 Phase 6（MCP），本阶段 persona 引用 web 工具即可。
 
 ### 2.5 `plan-consultant`（v4 名 metis）
@@ -78,7 +80,7 @@
 - **角色**：计划前 gap 分析——抓隐藏意图、歧义、AI 失败点（advisor；命名取自希腊智慧女神）
 - **OMO 限制**：✅ **P2-T1 复核闭环**：deny `[write, edit, apply_patch]`（metis.ts:392-396，grep 初核 3 项确认）；**委派未禁**——prompt 主动 `call_omo_agent(subagent_type="explore"|"librarian")`（metis.ts:88-90, :199-201）
 - **OMO 链首**：claude-opus-5 high → kimi-k3 low ✅（转引）
-- **镜像映射**：只读类；maxDepth 1
+- **镜像映射**：只读类；maxDepth 2（统一规则，§1 修正块）
 - **适配注记**：① v5 改名 `plan-consultant`（ROADMAP 命名锚点；上游映射 `packages/utils/src/migration/agent-names.ts`）；② K2.7 变体 prompt 不移植（模型特定分支，DSH 侧无对应路由语义）；③ OMO 中它是 plan-gated（/ulw-plan 激活）——门控流属 Phase 4，本阶段它是普通可调用只读顾问；④ **有意收窄**：上游 `call_omo_agent` 委派权不镜像（同 §2.2-③ 的计划级理由）。
 
 ### 2.6 `plan-reviewer`（v4 名 momus）
@@ -87,7 +89,7 @@
 - **角色**：计划评审（clarity/verification/context 三轴；找出一切毛病——希腊嘲弄之神）
 - **OMO 限制**：deny `[write, edit, apply_patch]` ✅（P2-T1 补核：L2 层另有 `{write:false, edit:false}`，shared/agent-tool-restrictions.ts——同语义双轨，镜像不受影响）
 - **OMO 链首**（v4）：gpt-5.6-terra high → gpt-5.6-sol xhigh → …（v5 改 gpt-6-astra，不取）✅（转引）
-- **镜像映射**：只读类；maxDepth 1
+- **镜像映射**：只读类；maxDepth 2（统一规则，§1 修正块）
 - **适配注记**：同 plan-consultant 的 ②③；ROADMAP 点名"plan-reviewer 只读"作工具限制镜像的示例——e2e 负向场景（write-denied）用它（计划书 §4.7）。
 
 ### 2.7 `atlas`
@@ -105,7 +107,7 @@
 - **角色**：视觉/媒体文件分析（utility，cost CHEAP；PDF/图片/图表的信息提取与描述）
 - **OMO 限制**：**allowlist `[read]`** ✅（`createAgentToolAllowlist(["read"])`，multimodal-looker.ts:14-15 → `{"*":"deny", read:"allow"}`——P2-T1 复核逐字确认；L2 层同义 `{read:true}`）
 - **OMO 链首**：gpt-5.6-sol low → kimi-k3 → glm-4.6v → gpt-5-nano ✅（转引）
-- **镜像映射**：`toolFilter.allow: [read, read_image]`（**评审实测闭环，2026-09-11**：OMO 的单 `read` 在 DSH 拆成 `read`（纯文本，`dsh-tool-fs/lib/index.js`:332）+ `read_image`（独立工具，`ctx.inject(["attachments"])` 条件注册，:1257 注释 / :1270-1271 注册点；attachments 在 host 层 `dsh-base/cordis.patch.yml`:118，子会话继承）。`admits()` 的 allow 是白名单过滤继承面（`dsh-tools/lib/index.js`:2545-2546）——只写 `[read]` 会挡掉 `read_image`、关闭视觉入口；`restrict()` 对未注册名 throw（2801-2803），故条件注册名写入名单的漂移风险入计划书 R-9）；maxDepth 1
+- **镜像映射**：`toolFilter.allow: [read, read_image]`（**评审实测闭环，2026-09-11**：OMO 的单 `read` 在 DSH 拆成 `read`（纯文本，`dsh-tool-fs/lib/index.js`:332）+ `read_image`（独立工具，`ctx.inject(["attachments"])` 条件注册，:1257 注释 / :1270-1271 注册点；attachments 在 host 层 `dsh-base/cordis.patch.yml`:118，子会话继承）。`admits()` 的 allow 是白名单过滤继承面（`dsh-tools/lib/index.js`:2545-2546）——只写 `[read]` 会挡掉 `read_image`、关闭视觉入口；`restrict()` 对未注册名 throw（2801-2803），故条件注册名写入名单的漂移风险入计划书 R-9）；maxDepth 2（统一规则，§1 修正块）
 - **适配注记**：① 视觉座默认 `deepseek-official / deepseek-v4-flash-vision-exp`——该 id **同在两个 catalog**（dsh-llm-deepseek DEFAULT_MODELS:1864 ✅ + pi-ai builtin `deepseek` 路由，deepseek.json 实测 3 id ✅）；默认提供方选 `deepseek-official`（base composition 已注册、无 settings 依赖），回退同理优先已注册侧（R-4 修正，计划书 §6）；② 真实视觉验证属 L4 手工，e2e 用 mock 文本回。
 
 ### 2.9 `sisyphus-junior`
@@ -114,7 +116,7 @@
 - **角色**：无委派权的专注执行器；v4 兼 category 路由中介
 - **OMO 限制**：✅ **P2-T1 复核闭环**：`{task:"deny", call_omo_agent:"allow"}` 两键**强制**覆盖用户配置（agent.ts:39-41 `BLOCKED_TOOLS=["task"]` + :126-141 合并逻辑——注释明示 "call_omo_agent is ALLOWED so subagents can spawn explore/librarian"）；**write/edit/apply_patch 未禁——可写执行器**（如预期）
 - **OMO 链首**：同 atlas 链 + big-pickle 兜底 ✅（转引）
-- **镜像映射**：worker 类；maxDepth 1
+- **镜像映射**：worker 类；maxDepth 2（统一规则，§1 修正块）
 - **适配注记**：① "category 路由中介"功能**不移植**（v5 senpi 已去中介、category 直连 worker；category 体系属 Phase 5 邻域，计划书 §4.1）；② 多模型变体文件取 `default.ts` 为移植主源，其余变体不取（模型特定分支）；③ **有意收窄**：上游 `call_omo_agent` 强制 allow 不镜像（同 §2.2-③ 的计划级理由）。
 
 ### 2.10 `prometheus`
@@ -123,7 +125,7 @@
 - **角色**：访谈式战略规划（v4 Tab 主 agent；`/ulw-plan` 人格；explore-first 规划顾问，CLEAR/UNCLEAR intent 路由）
 - **OMO 限制**：✅ **P2-T1 复核闭环（更正"预期只读"）**：L1 permission = 显式 allow 表 `{edit, bash, webfetch, question: "allow"}`（system-prompt.ts:3-8，**无 deny、无通配**——write/apply_patch/task/call_omo_agent 均落默认）；只读**行为**实际来自 `prometheus-md-only` hook（非 permission）：`tool.execute.before` 拦截 Write/Edit/write/edit，仅放行 workspace 内 `.omo/` 段下的 `.md`（path-policy.ts:14-39）；委派未禁（hook 仅向 task/call_omo_agent 的 prompt 注入规划上下文警告）
 - **OMO 链首**（v4）：claude-fable-5 xhigh → kimi-k3 max ✅（转引）
-- **镜像映射**：只读类；maxDepth 1
+- **镜像映射**：只读类；maxDepth 2（统一规则，§1 修正块）
 - **适配注记**：① OMO 中它**访谈用户**；作为委派目标移植时访谈对象改为**指挥**——把问题与分支写回报告（适配语句入 persona），不经 `ask_user`；② `/ulw-plan` 完整流（含 plan-reviewer 评审环）属 Phase 4；③ **有意收窄**：上游的 hook 限 .md 写能力不镜像（hook 移植属 Phase 3 范畴；本阶段只读镜像——计划产出写回报告由指挥决定是否落盘）。
 
 ### 2.11 `sisyphus`（指挥，既有）
@@ -140,6 +142,7 @@
 | `toolFilter` 支持 `allow` 与 `deny` 两键（字符串数组） | Config schema，第 265–268 行 |
 | `toolFilter` 配置存在但两键皆空 → throw（"remove the key or fill the filter"） | 第 370 行 |
 | `maxDepth` 扁平字段，`z.natural()` 或 `'provider-managed'`，默认 3 | 第 269 行 |
+| **maxDepth 生效语义 = 被调用行的上限**：`config.maxDepth` → `request.maxDepth` → `resolveChildDepth`（`childDepth = parent.depth + 1 > maxDepth → SubagentDepthError`）——P2-T19 实测确认 | `dsh-tool-subagent/lib/index.js`:508-519；`dsh-subagent/lib/index.js`:432-438 |
 | provider 无 `depthLimit` capability 时给数值 maxDepth → throw | 第 377 行（spawn provider 具备该 capability——MVP P-5 已验证 maxDepth 1 生效） |
 | `toolName` 自由字符串，默认 `"subagent"` | 第 254 行 |
 | 工具未注册时静默等待 provider 出现（不阻断 boot） | 第 575 行 |

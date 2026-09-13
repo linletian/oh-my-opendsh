@@ -77,7 +77,17 @@ export interface RosterEntry {
   readonly defaultRoute: ModelRoute
   /** The plan §4.4 mirror class (absent on the conductor row). */
   readonly class?: AgentClass
-  /** orchestrator (atlas) = 2; every other row = 1 (absent on the conductor). */
+  /**
+   * The INVOKED row's depth cap — every delegation row is 2 (absent on the
+   * conductor). Semantics corrected 2026-09-13 (arbiter D-2026-09-13-01): dsh
+   * reads the CALLED row's cap, not the caller's subtree budget
+   * (dsh-tool-subagent/lib/index.js:508-519 folds `config.maxDepth` into
+   * `request.maxDepth`; dsh-subagent/lib/index.js:432-438 `resolveChildDepth`
+   * throws once `parent.depth + 1 > maxDepth`). A uniform 2 therefore permits
+   * the chain conductor 0 → atlas 1 → worker 2 while making depth 3
+   * structurally impossible; the deny lists (F1) remain the primary guard and
+   * this cap is defense-in-depth. The 1|2 union is unchanged.
+   */
   readonly maxDepth?: 1 | 2
   /** Only multimodal-looker: ['read', 'read_image'] (plan §4.4 H-1 mapping). */
   readonly allowTools?: readonly string[]
@@ -118,7 +128,11 @@ const ROSTER_ROWS = [
     // T14 exploration seat, UNCHANGED (env names included).
     defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
     class: 'read-only',
-    maxDepth: 1,
+    // maxDepth 2 (roster §1 修正块): pre-Phase-2 this row was 1; under the
+    // corrected target-row semantics a maxDepth-1 row could never be invoked by
+    // depth-1 atlas (its call would be depth 2 > 1). All 10 delegation rows are
+    // 2 — chain cap 2 levels.
+    maxDepth: 2,
     writeCapable: false,
     delegation: true,
   },
@@ -133,7 +147,7 @@ const ROSTER_ROWS = [
     // gate is deliberately not ported).
     defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     class: 'worker',
-    maxDepth: 1,
+    maxDepth: 2,
     writeCapable: true,
     delegation: true,
   },
@@ -146,7 +160,7 @@ const ROSTER_ROWS = [
     // claude-opus-5 max → glm-5.2; a max-effort advisor belongs on the strong seat.
     defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     writeCapable: false,
     delegation: true,
   },
@@ -160,7 +174,7 @@ const ROSTER_ROWS = [
     // the same direction (cheap exploration volume).
     defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     writeCapable: false,
     delegation: true,
   },
@@ -173,7 +187,7 @@ const ROSTER_ROWS = [
     // AI failure points is a reasoning task, so the strong seat.
     defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     writeCapable: false,
     delegation: true,
   },
@@ -186,7 +200,7 @@ const ROSTER_ROWS = [
     // is a strong-seat task (ROADMAP names plan-reviewer as the read-only exemplar).
     defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     writeCapable: false,
     delegation: true,
   },
@@ -197,7 +211,9 @@ const ROSTER_ROWS = [
     // STRONG seat — todo-execution orchestrator (the only sub-agent that keeps
     // the delegation tools). OMO chain head (roster §2.7): claude-sonnet-5 →
     // kimi-k3 → gpt-5.6-sol medium → minimax-m3; orchestration quality justifies
-    // the strong seat. maxDepth 2 is the structural expression of that role.
+    // the strong seat. maxDepth 2 expresses its role AND, under the corrected
+    // target-row semantics, is what lets atlas(1) call the other rows at depth 2
+    // (roster §1 修正块). Its own recursion caps at depth 2 by the same rule.
     defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     class: 'orchestrator',
     maxDepth: 2,
@@ -216,7 +232,7 @@ const ROSTER_ROWS = [
     // composition in every profile with no settings dependency (plan §6 R-4).
     defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' },
     class: 'allowlist',
-    maxDepth: 1,
+    maxDepth: 2,
     // Plan §4.4 H-1 mapping: OMO's single `read` splits in DSH into `read`
     // (UTF-8 text) + `read_image` (conditionally registered by dsh-tool-fs while
     // `attachments` is mounted — inherited by concerto children). `allow: [read]`
@@ -234,7 +250,7 @@ const ROSTER_ROWS = [
     // category-worker successor it is throughput-oriented, so the fast seat.
     defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
     class: 'worker',
-    maxDepth: 1,
+    maxDepth: 2,
     writeCapable: true,
     delegation: true,
   },
@@ -248,7 +264,7 @@ const ROSTER_ROWS = [
     // on the strong seat.
     defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     writeCapable: false,
     delegation: true,
   },

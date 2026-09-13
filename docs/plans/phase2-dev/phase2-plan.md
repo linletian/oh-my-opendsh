@@ -98,7 +98,7 @@ interface RosterEntry {
   readonly routeEnvVars: { provider: string; model: string }  // 'OMO_ORACLE_PROVIDER' / 'OMO_ORACLE_MODEL'
   readonly defaultRoute: ModelRoute                            // §4.6 的席位默认
   readonly class: 'read-only' | 'worker' | 'orchestrator' | 'allowlist'
-  readonly maxDepth: 1 | 2       // orchestrator(atlas) = 2，其余 = 1
+  readonly maxDepth: 1 | 2       // 全部委派行 = 2（目标行语义修正，见 §4.5-3）
   readonly allowTools?: readonly string[]  // 仅 multimodal-looker: ['read', 'read_image']（§4.4 评审实证）
   readonly writeCapable: boolean // worker + atlas(orchestrator) = true；read-only / allowlist = false
 }
@@ -126,10 +126,10 @@ OMO 的限制是 `permission` 表（deny 列表 / allowlist）；DSH 的等价�
 
 | 类 | Agent | toolFilter | maxDepth |
 |---|---|---|---|
-| 只读 | explore（既有）/ oracle / librarian / plan-consultant / plan-reviewer / prometheus | `deny: [write, edit]` + **全部委派工具名** | 1 |
-| Worker | hephaestus / sisyphus-junior | `deny:` **全部委派工具名** | 1 |
+| 只读 | explore（既有）/ oracle / librarian / plan-consultant / plan-reviewer / prometheus | `deny: [write, edit]` + **全部委派工具名** | 2（统一规则，见 §4.5-3 修正） |
+| Worker | hephaestus / sisyphus-junior | `deny:` **全部委派工具名** | 2（统一规则） |
 | Orchestrator | atlas | **不 deny 委派工具** | **2** |
-| Allowlist | multimodal-looker | `allow: [read, read_image]`（OMO `allowlist [read]` 的 DSH 工具名空间映射，实证见下） | 1 |
+| Allowlist | multimodal-looker | `allow: [read, read_image]`（OMO `allowlist [read]` 的 DSH 工具名空间映射，实证见下） | 2（统一规则） |
 
 **OMO `read` → DSH 双工具的映射实证**（2026-09-11 评审实测，installed dsh）：OMO 的 `read` 在 DSH 拆成两个工具——`read` 只读 UTF-8 文本（`dsh-tool-fs/lib/index.js`:332 描述 "Read a UTF-8 text file"）；`read_image` 是**独立**工具，由 dsh-tool-fs 在 `ctx.inject(["attachments"], …)` 内**条件注册**（同文件 :1257 注释 "plus `read_image` while `attachments` is mounted"、:1270-1271 注册点）。`attachments` 服务在 host 层（`dsh-base/cordis.patch.yml`:118 `attachment-local`），concerto 子会话经继承获得，故 `read_image` 存在。而 `tools.restrict()` 的 `allow` 是**白名单过滤继承面**（`dsh-tools/lib/index.js` `admits()` 2545-2546：不在 allow 集合即不可见）——**`allow: [read]` 会把 `read_image` 一并挡掉**，multimodal-looker 拿到图片路径也读不出像素，恰好命中 R-4 想防的"视觉不可用"（工具白名单一侧，R-4 原本只覆盖 model/catalog 一侧）。只写 `[read]` 是把 OMO 的单一 read 语义照搬、未做工具名空间映射——与本表对 `apply_patch`→write/edit 的映射纪律不一致，故映射为 `[read, read_image]`。⚠️ 配套约束：`restrict()` 对**未注册名**会 throw（`dsh-tools/lib/index.js`:2801-2803，"names unknown global tool"）——`read_image` 是条件注册，若某部署未挂 `attachments`，写进 allow 的名字会让子级启动直接抛错（见 R-9）。
 
@@ -150,7 +150,7 @@ OMO 的限制是 `permission` 表（deny 列表 / allowlist）；DSH 的等价�
 
 1. **指挥 → 10 个委派目标**：delegation 组的 10 个 `dsh-tool-subagent` 实例行本身即绑定（形态 A，可行性报告 §12.4）。`backgroundMode: continuable` **全员**沿用 explore 先例——决策记录（为何不 per-class 取 one-shot）：① OMO v5 把 `run_in_background=true` 升格为 "the standard spawn"（调查报告 §4.3），continuable 是其 DSH 对应物；② oracle 上游 prompt 明确支持 "follow-up questions via session continuation"，one-shot 会砍掉这类追问能力；③ 全员统一省去 per-class 心智分叉。**代价明示**：librarian / multimodal-looker / plan-reviewer 类无状态一次性任务常驻槽位，压力记入 Q-4——若 Q-4 实测咬人，per-class `one-shot` 是现成 fallback（改 YAML 单字段即可），届时按 DoD-d 回填。
 2. **指挥的"名册委派表"**：OMO 的 sisyphus prompt 有从 `agentMetadata`（useWhen/avoidWhen/triggers/cost/keyTrigger）动态生成的 Delegation Table / Tool Selection / Key Triggers 段落。移植为 `system-sections/delegation-roster.md`——一张静态 markdown 表：每 agent 的域、何时派、何时不派、成本档（FREE/CHEAP/EXPENSIVE 取自上游元数据）。插入 `SISYPHUS_SECTION_ORDER` 的 `delegationDiscipline` 之后（第 5 段），快照同步更新。内容源自上游 `agents/types.ts` 的 `AgentPromptMetadata` 与各 agent 文件的 `*_PROMPT_METADATA`（署名头标注）。
-3. **atlas 的再委派**：atlas 行不 deny 委派工具 + `maxDepth: 2`（指挥 depth 0 → atlas depth 1 → worker depth 2）。e2e 正向场景证明此链路（§4.7）。其余 agent `maxDepth: 1` + 全量 deny，嵌套委派**物理不可能**（AC-6b 模式的推广）。
+3. **atlas 的再委派**：atlas 行不 deny 委派工具。⚠️ **maxDepth 语义修正（2026-09-13，P2-T19 运行时发现）**：dsh 深度门读的是**被调用行**的 `maxDepth`（`dsh-tool-subagent/lib/index.js`:508-519 `config.maxDepth` → `request.maxDepth`；`dsh-subagent/lib/index.js`:432-438 `resolveChildDepth`：`childDepth = parent.depth + 1 > maxDepth → SubagentDepthError`）——它是"该工具可被调用的最大子级深度"，不是调用方的子树预算。原案"atlas=2、其余=1"在此语义下使 atlas 再委派物理不通。**修正：全部 10 个委派行 `maxDepth: 2`**——委派链最深 2 层（指挥 0 → atlas 1 → worker 2），depth-3 结构性不可能；其余 agent 全量 deny 不变，嵌套委派对非 atlas **物理不可能**（AC-6b 模式的推广）；e2e 正向场景证明此链路（§4.7）。
 
 ### 4.6 路由默认：DeepSeek 系优先的三席位
 
@@ -176,7 +176,7 @@ R1 分期策略（DeepSeek 系路由优先）+ OMO 模型链的角色语义（�
 | **L1 单测（门 2）** | ① roster.ts 与渲染后 composition 的一致性：每个 roster 条目 ↔ 恰好一行 `dsh-tool-subagent` 实例（toolName 相等、哨兵全部渲染、deny/allow 与类匹配、maxDepth 正确）——**名册快照测试**，签入 `tests/omo-agents/__snapshots__/roster.md`（结构化清单，非整份 composition）；② 9 个 persona 快照（§4.3）；③ resolveModelRoutes 的名册解析（默认值/空值 throw/env 覆盖/AC-5 预检）；④ 逐行 deny 哨兵渲染（恰好一次护栏、JSON-quote、按类内容）。 |
 | **e2e（门 3）** | 新增 3 个 scenario，复用既有 mock-LLM 与沙箱：① **roster-parade**：mock 剧本让指挥**并行**调用全部 10 个委派工具，每子级回答后指挥总结；断言 10 个子级各自运行、session log 中每子级的 `{provider, model}` 等于其配置座（AC-5 模式推广——e2e 沙箱用 env 覆盖把 10 个 agent 分布到**真实可服务的可区分路由对**：`deepseek-official` 默认 catalog 固定 4 个 id——`deepseek-flash` / `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-v4-flash-vision-exp`（`dsh-llm-deepseek/lib/index.js` DEFAULT_MODELS:1841；config `models:` 可覆盖但 e2e 不依赖），pi-ai builtin `deepseek` 路由另有 3 个 id（`@earendil-works/pi-ai` deepseek.json：`deepseek-v4-pro` / `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp`，评审实测）——两侧合计 **7 个真实对**可分配；**不用假 id** 的诚实理由：`session/model-unavailable` 只由 session-controller 的选模型路径抛出（lib 628/743），deepseek adapter 请求期**不**校验 model，mock baseURL 下假 id 机械可行——但那样"路由可观测"断言将失去"路由真实可服务"的意义）。② **plan-reviewer-write-denied**（只读类代表，AC-6a 模式推广）；③ **atlas-nested-delegation**：指挥 → atlas → explore 的正向链（depth 2 合法）——**对照语义注意**：F1 之后既有 explore 嵌套场景断的是"未知工具**物理缺席**"（depth 门不再触发），正向链对照的是这个物理缺席语义，**不是** maxDepth 报错文案，实施者不得照搬旧断言。⚠️ **MOCKROLE 机制必须先泛化**（前置子任务，详见 P2-T18）：`tests/e2e/drive.mjs` 的 `MOCKROLE_BLOCK_SCALARS` 硬编码 2 条且 `appendMockRoleMarker` 对未知 role throw、用 `String.replace` 打**首个** needle 命中——10 行 persona 都渲染为 `persona: |-` 后该 needle 失唯一性，现有注入会打错行；`mock-llm-server.mjs` 的 `detectRole` 是"首个含 MOCKROLE= 的 system message 胜出"、剧本以 role 为键。泛化 = 注册表 roster 驱动 + needle 改行 id 锚点（每行 `id: tool-subagent-<id>` 唯一）+ 与 detectRole 首匹配顺序相容。 |
 | **doctor-lite（门 4）** | `validateCompositionRows` **已对每行跑 Config schema**（doctor-lite.mjs:407 起逐行循环）——现状不缺逐行 schema 校验，缺的是**逐行契约断言**（每行的 toolName/filter/maxDepth/哨兵渲染结果符合名册类）。本阶段把校验从"逐行 schema 合法"扩展为"逐行契约断言"，直接响应 0.1.5-rc.1 复核的 P1 教训（挂掉的那行没有任何 schema 门——语义门仍是空白）。 |
-| **concerto-static（门 6）** | c01–c09 断在归档路径（1+1 冻结，不动）；**c10 泛化**：live 路径的加固断言从"无通用行 + deny [write, edit, explore] + maxDepth 1"泛化为名册类断言（每类的 deny/allow/maxDepth 形状 + delegation 组 = 12 行名单 + 无通用/产品行）。 |
+| **concerto-static（门 6）** | c01–c09 断在归档路径（1+1 冻结，不动）；**c10 泛化**：live 路径的加固断言从"无通用行 + deny [write, edit, explore] + maxDepth 1"泛化为名册类断言（每类的 deny/allow 形状 + delegation 组 = 12 行名单 + 无通用/产品行 + maxDepth 统一为 2——§4.5-3 修正）。 |
 | **probe（门 8 run-proofs）** | `concerto-mode-probe.sh` 的 boot marker 断言扩展到 10 个 persona assembled 行 + 路由汇总行 + 三条警告行（§4.6/T16），并新增**运行时层断言：11 条路由的 provider 在 POST /api/llm.providers 均 active**——现有 probe 只断言两个既有 provider，名册化后缺 pi-ai 段的部署会让快座子级到**被委派时**才 `model-unavailable`（会话级失败而非 boot 失败）；此断言把"可审计"从配置层推到运行时层，是退出标准 a 的补强。`prove-route-logging.mjs` 扩展到名册路由。 |
 
 **L4 真模型手动冒烟**（非 CI）：一次手工 run 核对指挥真实选择 2–3 个新 agent（含 multimodal-looker 的图片输入若 key 可用）；证据进 `.omo/evidence/`（gitignored），结论回填任务清单。
@@ -206,7 +206,7 @@ ROADMAP §4 Phase 2 给出 2 条退出标准，逐条落到可执行证据：
 
 **DoD 补充**（ROADMAP 未明说、由仓库规则推出，沿用 Phase 1 e/f/g）：
 
-- **c**：`scripts/ci-local.sh` 全 8 门绿（任何既有门不得变红；门扩展只加严不放松——c10 泛化后断言数不得少于现状）。**c10 现状基线（可比对象）**：4 类断言——① 无通用委派行（`subagent`/`subagent_fork`）；② 恰好 1 个 explore 行；③ 其 deny ⊇ `{write, edit, explore}`；④ 其 maxDepth == 1。**泛化目标清单**：① 无通用/产品行（保留）；② delegation 组 == 12 行名单（control / list-agents / 10 个 `tool-subagent-<id>`）；③ 四类行的 filter 形状逐类断言（只读 6 行 deny 含 write/edit+全委派名，worker 2 行 deny 全委派名，atlas 无 filter 键，multimodal-looker allow == [read, read_image]）；④ maxDepth 逐类断言（atlas 2，其余 1）。
+- **c**：`scripts/ci-local.sh` 全 8 门绿（任何既有门不得变红；门扩展只加严不放松——c10 泛化后断言数不得少于现状）。**c10 现状基线（可比对象）**：4 类断言——① 无通用委派行（`subagent`/`subagent_fork`）；② 恰好 1 个 explore 行；③ 其 deny ⊇ `{write, edit, explore}`；④ 其 maxDepth == 1。**泛化目标清单**：① 无通用/产品行（保留）；② delegation 组 == 12 行名单（control / list-agents / 10 个 `tool-subagent-<id>`）；③ 四类行的 filter 形状逐类断言（只读 6 行 deny 含 write/edit+全委派名，worker 2 行 deny 全委派名，atlas 无 filter 键，multimodal-looker allow == [read, read_image]）；④ maxDepth 统一为 2 的断言（§4.5-3 修正：被调用行上限语义，委派链最深 2 层）。
 - **d**：本计划目录文档与实测无冲突——凡实测推翻计划假设处（如 P2-T1 核实的上游限制表与基准表不符），改文档而不是改结论。
 - **e**：未移除任何既有署名；`verify-licenses` 的 `checked` 计数与基线一致（52）；`THIRD_PARTY_NOTICES.md` 既有条目只增不改。
 

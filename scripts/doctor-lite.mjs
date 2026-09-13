@@ -552,14 +552,11 @@ async function checkSubagentConfig(check1) {
       )
     }
     const problems = []
-    if (validated.provider !== 'spawn') problems.push(`provider=${JSON.stringify(validated.provider)} (want spawn)`)
-    if (validated.toolName !== 'explore') problems.push(`toolName=${JSON.stringify(validated.toolName)} (want explore)`)
-    if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${JSON.stringify(validated.backgroundMode)} (want continuable)`)
-    if (validated.maxDepth !== 1) problems.push(`maxDepth=${JSON.stringify(validated.maxDepth)} (want 1, T13)`)
     // T12 + F1 fix (2026-09-04), generalized by P2-T15: deny = the two mutation
     // tools PLUS every delegation toolName, COMPUTED from the roster row
     // (roster.ts is the single source the renderer uses) — restating the list
-    // here would create a second source of truth for the same contract.
+    // here would create a second source of truth for the same contract. The
+    // same roster row now also supplies the maxDepth expectation below.
     const exploreEntry = DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')
     const expectedDeny = exploreEntry === undefined ? undefined : denyToolNamesFor(exploreEntry)
     if (expectedDeny === undefined) {
@@ -569,6 +566,15 @@ async function checkSubagentConfig(check1) {
         "roster.ts declares no delegation entry with id 'explore' — the T11 contract has no row to check",
         ['roster.ts is the single source for this check (P2-T15)'],
       )
+    }
+    if (validated.provider !== 'spawn') problems.push(`provider=${JSON.stringify(validated.provider)} (want spawn)`)
+    if (validated.toolName !== 'explore') problems.push(`toolName=${JSON.stringify(validated.toolName)} (want explore)`)
+    if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${JSON.stringify(validated.backgroundMode)} (want continuable)`)
+    // Roster-derived (was the literal 1 before D-2026-09-13-01): dsh caps on the
+    // INVOKED row's maxDepth, so every delegation row — explore included — is 2
+    // and the chain cap is 2 levels (phase2-roster.md §1 修正块).
+    if (validated.maxDepth !== exploreEntry.maxDepth) {
+      problems.push(`maxDepth=${JSON.stringify(validated.maxDepth)} (want ${JSON.stringify(exploreEntry.maxDepth)} — roster value, T13)`)
     }
     if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: expectedDeny })) {
       problems.push(
@@ -601,7 +607,7 @@ async function checkSubagentConfig(check1) {
       'pass',
       `${String(sweep.checked.length)} row(s) validate against their installed Config schemas, plus the T11 contract — `
         + 'tool-subagent-explore: '
-        + `provider=spawn toolName=explore backgroundMode=continuable maxDepth=1 deny=[${expectedDeny.join(',')}] route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars`
+        + `provider=spawn toolName=explore backgroundMode=continuable maxDepth=${JSON.stringify(exploreEntry.maxDepth)} deny=[${expectedDeny.join(',')}] route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars`
         + (sweep.unchecked.length === 0
           ? ''
           : `; unchecked (package exports no Config schema): ${sweep.unchecked.join(', ')}`)

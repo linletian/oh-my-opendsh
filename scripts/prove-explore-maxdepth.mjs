@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // scripts/prove-explore-maxdepth.mjs — T13 (P-5, AC-6 negative-b): session-free
-// proof that the concerto explore row's `maxDepth: 1` is ENFORCED through
+// proof that the concerto explore row's depth cap (roster-derived maxDepth: 2;
+// the pre-2026-09-13 per-class value was 1) is ENFORCED through
 // dsh's real delegation start path — not merely present as config text. A
 // live model session closes the loop in T20; this script proves everything up
 // to the model boundary by executing the installed dsh's own modules
@@ -45,8 +46,16 @@
 //     the throw propagates out of the tool's execute() and the tool runtime
 //     converts it — core/tools/src/index.ts:1554-1555 → toolErrorResult
 //     :1870-1877 — into { isError: true, content: [{ type: 'text', text:
-//     `Error: subagent depth 2 exceeds maxDepth 1` }] }. The tool remains
+//     `Error: subagent depth 3 exceeds maxDepth 2` }] }. The tool remains
 //     registered and model-visible throughout.
+//
+// SEMANTICS NOTE (arbiter D-2026-09-13-01, P2-T19 runtime finding): the cap is
+// read from the INVOKED row (config.maxDepth → request.maxDepth), not from the
+// caller, so the committed maxDepth 2 admits a depth-1 parent's call (the
+// child lands at depth 2) and rejects the depth-2 parent's attempt at
+// resolveChildDepth — exactly the corrected atlas re-delegation contract. The
+// retired per-class value 1 is kept as a sensitivity control (--expect
+// retired1) so the depth-1 pass cannot be vacuous.
 //
 // Session-free honesty: the parent is a stub Agent surface (id/options/
 // session.header/ctx) carried by a REAL scope key. The depth gate reads only
@@ -57,19 +66,26 @@
 // (a real session creates the child there; that half closes in T20).
 //
 // Modes:
-//   (default)                  capped gate — the committed row (maxDepth: 1):
-//                              a depth-1 parent is rejected on BOTH the
-//                              foreground path (run_in_background: false →
-//                              ctx.subagents.start) and the row's default
-//                              continuable path (startContinuable) with the
-//                              exact errored tool result; a depth-0 parent
-//                              PASSES the same gate (factory sentinel);
-//                              `explore` stays model-visible before and after.
-//   --expect passed            failure-mode control for QA: run against a
-//                              copy of the composition with maxDepth: 2 — the
-//                              depth-1 parent must PASS the gate, proving the
-//                              capped-mode assertions are sensitive to the
-//                              cap value, not vacuous.
+//   (default)                  committed gate — the committed row
+//                              (roster-derived maxDepth: 2): a depth-1 parent
+//                              PASSES the gate on the foreground path
+//                              (run_in_background: false → ctx.subagents.start
+//                              → spawn provider → agent factory) — the
+//                              corrected atlas(1) → worker(2) re-delegation
+//                              path; a depth-2 parent's further attempt is
+//                              REJECTED on BOTH the foreground path and the
+//                              row's default continuable path
+//                              (startContinuable) with the exact errored tool
+//                              result "Error: subagent depth 3 exceeds maxDepth
+//                              2"; a depth-0 parent PASSES the same gate
+//                              (control); `explore` stays model-visible before
+//                              and after.
+//   --expect retired1          sensitivity control for QA: run against a copy
+//                              of the composition with the RETIRED per-class
+//                              value maxDepth: 1 — the depth-1 parent must be
+//                              REJECTED ("depth 2 exceeds maxDepth 1"), proving
+//                              the committed-mode depth-1 PASS is sensitive to
+//                              the cap value, not vacuous.
 //   --expect default3          P-5 default documentation: run against a copy
 //                              with the maxDepth key REMOVED — the schema
 //                              default must be 3 (tool-subagent/src/index.ts:98):
@@ -82,7 +98,7 @@
 //                              recursion budget (for out-of-process backends).
 //
 // Usage:
-//   node scripts/prove-explore-maxdepth.mjs <dsh-node_modules> <agent.cordis.yml> [--expect capped|passed|default3|provider-managed]
+//   node scripts/prove-explore-maxdepth.mjs <dsh-node_modules> <agent.cordis.yml> [--expect capped|retired1|default3|provider-managed]
 // Exit 0 = PASS (mode-dependent), exit 1 = FAIL.
 
 import { readFileSync } from 'node:fs'
@@ -90,11 +106,11 @@ import { pathToFileURL } from 'node:url'
 
 const [nm, compositionPath, ...flags] = process.argv.slice(2)
 if (!nm || !compositionPath) {
-  console.error('usage: prove-explore-maxdepth.mjs <dsh-node_modules> <agent.cordis.yml> [--expect capped|passed|default3|provider-managed]')
+  console.error('usage: prove-explore-maxdepth.mjs <dsh-node_modules> <agent.cordis.yml> [--expect capped|retired1|default3|provider-managed]')
   process.exit(1)
 }
 const expectMode = flags.includes('--expect') ? flags[flags.indexOf('--expect') + 1] : 'capped'
-const MODES = ['capped', 'passed', 'default3', 'provider-managed']
+const MODES = ['capped', 'retired1', 'default3', 'provider-managed']
 if (!MODES.includes(expectMode)) {
   console.error(`T13-PROOF FAIL: --expect must be ${MODES.join('|')}, got "${expectMode}"`)
   process.exit(1)
@@ -142,7 +158,7 @@ try {
   console.error(`T13-PROOF FAIL: dsh-tool-subagent Config rejected the row: ${err.name}: ${err.message}`)
   process.exit(1)
 }
-const expectedMax = { capped: 1, passed: 2, default3: 3, 'provider-managed': 'provider-managed' }[expectMode]
+const expectedMax = { capped: 2, retired1: 1, default3: 3, 'provider-managed': 'provider-managed' }[expectMode]
 if (validated.maxDepth !== expectedMax) {
   console.error(`T13-PROOF FAIL: mode ${expectMode} expects validated maxDepth=${expectedMax}, got ${JSON.stringify(validated.maxDepth)}`)
   process.exit(1)
@@ -270,22 +286,34 @@ function expectGatePassed(outcome, label) {
 // ── 4. Mode matrix ──────────────────────────────────────────────────────────
 if (expectMode === 'capped') {
   const depth1 = await parentAt(1)
-  const before = visibleTo(depth1)
-  console.log(`T13-PROOF explore visible to depth-1 parent BEFORE attempts: ${before.includes('explore')}`)
-  if (!before.includes('explore')) problems.push('explore tool not visible to the depth-1 parent (the cap must NOT hide the tool)')
+  const before1 = visibleTo(depth1)
+  console.log(`T13-PROOF explore visible to depth-1 parent BEFORE attempts: ${before1.includes('explore')}`)
+  if (!before1.includes('explore')) problems.push('explore tool not visible to the depth-1 parent (the cap must NOT hide the tool)')
 
-  expectRejection(await execExplore(depth1, false), 2, 1, 'foreground start (run_in_background:false → ctx.subagents.start) at depth 1')
-  expectRejection(await execExplore(depth1, true), 2, 1, 'continuable start (row default → ctx.subagents.startContinuable) at depth 1')
+  // THE CORRECTED RE-DELEGATION PATH: a depth-1 parent (atlas) calls a row
+  // whose cap is 2, the child lands at depth 2, and the gate passes through to
+  // the agent factory. The factory sentinel is the strongest session-free
+  // evidence short of a live session (the old proof asserted a rejection here
+  // under the retired per-class value 1).
+  expectGatePassed(await execExplore(depth1, false), 'maxDepth=2: depth-1 parent foreground start passes (atlas → worker path)')
+
+  const depth2 = await parentAt(2)
+  const before2 = visibleTo(depth2)
+  console.log(`T13-PROOF explore visible to depth-2 parent BEFORE attempts: ${before2.includes('explore')}`)
+  if (!before2.includes('explore')) problems.push('explore tool not visible to the depth-2 parent (the cap must NOT hide the tool)')
+
+  expectRejection(await execExplore(depth2, false), 3, 2, 'foreground start (run_in_background:false → ctx.subagents.start) at depth 2')
+  expectRejection(await execExplore(depth2, true), 3, 2, 'continuable start (row default → ctx.subagents.startContinuable) at depth 2')
 
   const depth0 = await parentAt(0)
   expectGatePassed(await execExplore(depth0, false), 'control: depth-0 parent foreground start passes the same gate')
 
-  const after = visibleTo(depth1)
-  console.log(`T13-PROOF explore visible to depth-1 parent AFTER rejection: ${after.includes('explore')}`)
-  if (!after.includes('explore')) problems.push('explore tool disappeared after the rejection (must stay model-visible at the cap)')
-} else if (expectMode === 'passed') {
+  const after2 = visibleTo(depth2)
+  console.log(`T13-PROOF explore visible to depth-2 parent AFTER rejection: ${after2.includes('explore')}`)
+  if (!after2.includes('explore')) problems.push('explore tool disappeared after the rejection (must stay model-visible at the cap)')
+} else if (expectMode === 'retired1') {
   const depth1 = await parentAt(1)
-  expectGatePassed(await execExplore(depth1, false), 'maxDepth=2: depth-1 parent foreground start')
+  expectRejection(await execExplore(depth1, false), 2, 1, 'retired maxDepth=1: depth-1 parent foreground start rejected')
 } else if (expectMode === 'default3') {
   const depth3 = await parentAt(3)
   expectRejection(await execExplore(depth3, false), 4, 3, 'default maxDepth=3: depth-3 parent foreground start')
@@ -302,8 +330,8 @@ if (problems.length > 0) {
   process.exit(1)
 }
 const PASS_LINES = {
-  capped: 'T13-PROOF PASS: maxDepth=1 enforced by the installed dsh\'s real delegation start path — the depth-1 explore child is rejected on BOTH the foreground (ctx.subagents.start → spawn → startInProcessRun) and continuable (ctx.subagents.startContinuable) starts with the exact errored tool result "Error: subagent depth 2 exceeds maxDepth 1" (isError=true), the explore tool stays model-visible at the cap, and a depth-0 parent PASSES the same gate (control)',
-  passed: 'T13-PROOF PASSED-GATE PASS: with maxDepth=2 the depth-1 child PASSES the depth gate (agent-factory boundary reached) — the capped-mode rejection is sensitive to the cap value, not vacuous',
+  capped: 'T13-PROOF PASS: maxDepth=2 (roster-derived; target-row semantics, arbiter D-2026-09-13-01) enforced by the installed dsh\'s real delegation start path — a depth-1 parent\'s call PASSES the gate (agent-factory boundary reached: the corrected atlas(1) → worker(2) re-delegation path), while a depth-2 parent\'s further attempt is rejected on BOTH the foreground (ctx.subagents.start → spawn → startInProcessRun) and continuable (ctx.subagents.startContinuable) starts with the exact errored tool result "Error: subagent depth 3 exceeds maxDepth 2" (isError=true); the explore tool stays model-visible at the cap, and a depth-0 parent PASSES the same gate (control)',
+  retired1: 'T13-PROOF RETIRED-1 SENSITIVITY PASS: with the RETIRED per-class maxDepth=1 the same depth-1 parent is rejected ("Error: subagent depth 2 exceeds maxDepth 1") — the committed-mode depth-1 PASS is sensitive to the cap value, not vacuous',
   default3: 'T13-PROOF DEFAULT-3 PASS: maxDepth absent → schemastery default 3 (P-5): a depth-3 parent is rejected with "Error: subagent depth 4 exceeds maxDepth 3" and a depth-2 parent passes — the default semantics match the documented contract',
   'provider-managed': 'T13-PROOF PROVIDER-MANAGED PASS: maxDepth: \'provider-managed\' sends no cap (execute folds undefined) — the depth-1 parent passes dsh\'s gate; the recursion budget belongs to the provider (out-of-process backends)',
 }

@@ -29,7 +29,8 @@
 //       roster delegation entry in roster order, no generic/product rows, the
 //       per-class sentinel/filter shape (deny sentinel for read-only/worker,
 //       NO filter key for atlas, static allow for multimodal-looker) and the
-//       per-class maxDepth)
+//       roster maxDepth (2 on every delegation row — target-row semantics,
+//       D-2026-09-13-01))
 //
 // Usage: node scripts/verify-concerto-static.mjs [--json]
 // Exit: 1 iff any check FAILs (a check that could not run is also a FAIL,
@@ -269,9 +270,13 @@ async function run() {
       if (cfg.agentOptions !== agentSentinelName(entry.id, 'AGENT_OPTIONS')) {
         legacyProblems.push(`${label}: agentOptions sentinel=${JSON.stringify(cfg.agentOptions)} (want ${agentSentinelName(entry.id, 'AGENT_OPTIONS')})`)
       }
-      const wantDepth = entry.class === 'orchestrator' ? 2 : 1
-      if (cfg.maxDepth !== wantDepth) {
-        legacyProblems.push(`${label}: maxDepth=${JSON.stringify(cfg.maxDepth)} (want ${wantDepth} for class ${entry.class})`)
+      // Roster-derived (not the old per-class 2/1 split): maxDepth caps the
+      // INVOKED row (dsh-tool-subagent folds config.maxDepth into
+      // request.maxDepth; dsh-subagent resolveChildDepth rejects
+      // parent.depth + 1 > maxDepth), so all ten delegation rows carry 2 —
+      // arbiter D-2026-09-13-01 / phase2-roster.md §1 修正块.
+      if (cfg.maxDepth !== entry.maxDepth) {
+        legacyProblems.push(`${label}: maxDepth=${JSON.stringify(cfg.maxDepth)} (want ${JSON.stringify(entry.maxDepth)} — roster value for ${entry.id})`)
       }
       const deny = denyToolNamesFor(entry)
       if (deny !== undefined) {
@@ -299,7 +304,8 @@ async function run() {
       legacyProblems.join('; ')
       || `delegation group = ${wantGroupIds.length} rows (control + list-agents + ${DELEGATION_ENTRIES.length} roster agents, roster order); `
         + 'read-only/worker deny sentinels; atlas no filter key; multimodal-looker allow [read, read_image]; '
-        + 'maxDepth 2 for atlas, 1 for the rest'))
+        + `maxDepth = roster value on every row (all ${DELEGATION_ENTRIES.length} delegation rows are 2, `
+        + 'target-row semantics D-2026-09-13-01)'))
   } catch (e) {
     results.push(check('c10', 'live path roster integrity (P2-T15)', false, String(e.message ?? e)))
   }

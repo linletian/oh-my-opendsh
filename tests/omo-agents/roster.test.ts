@@ -48,7 +48,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     id: 'explore',
     personaFile: 'explore-persona.md',
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     delegation: true,
     writeCapable: false,
     allowTools: undefined,
@@ -59,7 +59,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     id: 'hephaestus',
     personaFile: 'hephaestus-persona.md',
     class: 'worker',
-    maxDepth: 1,
+    maxDepth: 2,
     delegation: true,
     writeCapable: true,
     allowTools: undefined,
@@ -70,7 +70,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     id: 'oracle',
     personaFile: 'oracle-persona.md',
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     delegation: true,
     writeCapable: false,
     allowTools: undefined,
@@ -81,7 +81,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     id: 'librarian',
     personaFile: 'librarian-persona.md',
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     delegation: true,
     writeCapable: false,
     allowTools: undefined,
@@ -92,7 +92,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     id: 'plan-consultant',
     personaFile: 'plan-consultant-persona.md',
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     delegation: true,
     writeCapable: false,
     allowTools: undefined,
@@ -106,7 +106,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     id: 'plan-reviewer',
     personaFile: 'plan-reviewer-persona.md',
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     delegation: true,
     writeCapable: false,
     allowTools: undefined,
@@ -131,7 +131,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     id: 'multimodal-looker',
     personaFile: 'multimodal-looker-persona.md',
     class: 'allowlist',
-    maxDepth: 1,
+    maxDepth: 2,
     delegation: true,
     writeCapable: false,
     allowTools: ['read', 'read_image'],
@@ -145,7 +145,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     id: 'sisyphus-junior',
     personaFile: 'sisyphus-junior-persona.md',
     class: 'worker',
-    maxDepth: 1,
+    maxDepth: 2,
     delegation: true,
     writeCapable: true,
     allowTools: undefined,
@@ -159,7 +159,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     id: 'prometheus',
     personaFile: 'prometheus-persona.md',
     class: 'read-only',
-    maxDepth: 1,
+    maxDepth: 2,
     delegation: true,
     writeCapable: false,
     allowTools: undefined,
@@ -251,11 +251,16 @@ describe('omo-agents roster (P2-T2)', () => {
     expect(ROSTER.filter(isDelegationEntry)).toHaveLength(10)
   })
 
-  it('caps depth by class: only atlas (orchestrator) is maxDepth 2', () => {
+  it('caps every delegation row at maxDepth 2 (target-row semantics, D-2026-09-13-01)', () => {
+    // dsh reads the INVOKED row's cap, so the chain cap is 2 levels only when
+    // EVERY delegation row is 2: atlas(depth 1) invoking any row yields
+    // depth 2, which must not exceed that row's own maxDepth. A per-class 1
+    // here would make atlas re-delegation impossible (roster §1 修正块).
     for (const entry of DELEGATION_ENTRIES) {
-      expect(entry.maxDepth).toBe(entry.class === 'orchestrator' ? 2 : 1)
+      expect(entry.maxDepth, entry.id).toBe(2)
     }
     expect(entryById('atlas').maxDepth).toBe(2)
+    expect(entryById('explore').maxDepth).toBe(2)
   })
 
   it('derives writeCapable from the class (worker/orchestrator true, read-only/allowlist false)', () => {
