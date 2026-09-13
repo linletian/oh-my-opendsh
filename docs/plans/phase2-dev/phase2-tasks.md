@@ -171,12 +171,12 @@
 
 ## WP-4 门与 e2e（计划书 §4.7）
 
-### [ ] P2-T17 — 名册快照测试 + roster 一致性单测
+### [x] P2-T17 — 名册快照测试 + roster 一致性单测
 
 - **产出**：`tests/omo-agents/roster.test.ts`（或并入既有 suite）+ 签入快照 `tests/omo-agents/__snapshots__/roster.md`。
 - **做法**：① 渲染后 composition ↔ roster.ts 一致性：每 roster 委派条目恰好一行、toolName 相等、deny/allow 与类匹配、maxDepth 正确、路由 == resolveModelRoutes() 对应座；② 名册结构快照（roster.md：每 agent 的 id/类/路由/filter/maxDepth 清单，结构化、人读可评审）；③ Q-3 行为钉住（allow+deny 同给时渲染结果与断言）；④ 快照非空断言（R-5 假绿教训）。
 - **判定**：✅ 门 2 绿且 roster.md 签入；故意改一个 roster 条目 → 测试红（反向证明）。
-- **证据**：（待填）
+- **证据**：2026-09-13（deepseek-flash；首个全量委托遇工作流中止，紧凑型补全轮完成——此后委托 prompt 全面收紧）。roster-composition.test.ts 56 用例（每 roster 委派条目 ↔ 恰好一渲染行：toolName/类 filter/maxDepth/agentOptions==resolveModelRoutes()[id]/persona 字节一致；12 行普查；指挥/通用/产品行缺席）；roster-snapshot.ts 生成器 + __snapshots__/roster.md 32 行结构化快照（退出标准 b：字节断言内嵌反假绿、无重写路径、再生命令文档化且复核字节一致）；roster-toolfilter-mechanism.test.ts 4 用例（Q-3 机制层：真实 applyChildComposition→restrict 证明 allow∧¬deny 两键同给；looker 真实 filter 无 deny 键隐藏全部 10 委派工具；非空控制+父隔离）。反向证明：翻 explore maxDepth 1→2 恰 4 具名失败（评审独立复现并字节恢复）。双评审 APPROVE（Kimi 2 NIT 接受）；CI 8/8 绿（门2=419）。
 - **依赖**：P2-T16。**量级**：3 小时。
 
 ### [ ] P2-T18 — e2e：MOCKROLE 泛化 + roster-parade 场景

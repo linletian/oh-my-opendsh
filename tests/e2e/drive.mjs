@@ -78,14 +78,16 @@
 // ensureStanding re-stamps the file on every use (:1130-1160), so the edit is
 // honored. The persona IS the system prompt (T8), so the marker rides the
 // real prompt-assembly path. The mock's recorded requests[] prove delivery.
-// T19 generalizes the delivery to BOTH persona scalars of the same file
+// T19 generalized the delivery to BOTH persona scalars of the same file
 // (MOCKROLE_BLOCK_SCALARS): the conductor persona row (`prefix: |-`, content
 // indent 6 — src/system-prompt.ts renderPersonaIntoComposition) and the T11
 // explore tool-subagent row (`persona: |-`, content indent 10 —
-// src/concerto-preset.ts renderExplorePersonaIntoComposition). The explore
-// marker is what lets the mock select the explore sub-script when the CHILD
-// loop's requests arrive (the child inherits the persona from its tool
-// config, so the marker rides the spawn provider's persona shadowing).
+// src/concerto-preset.ts renderExplorePersonaIntoComposition). The marker is
+// what lets the mock select that role's sub-script when the CHILD loop's
+// requests arrive (the child inherits the persona from its tool config, so the
+// marker rides the spawn provider's persona shadowing). P2-T18 turns that
+// two-entry registry into the roster-wide one described in the T18 section
+// below.
 //
 // ── T19 DEMO SCENARIO (FR-7, AC-4; plan task 19): "concerto-delegation-demo"
 // The scripted dummy demo (PRD §2.2 — an ORCHESTRATED task, no real
@@ -142,6 +144,51 @@
 // mutation), a fabricated log without the unknown-tool error, and one
 // with the delegation tool still present each FAIL on their own named check.
 //
+// ── P2-T18: MOCKROLE GENERALIZATION + THE ROSTER PARADE (plan §4.7, R-6) ──
+// Phase 2 grew the preset from 1 delegation row to 10, and the pre-P2 mock-role
+// registry could not express that: MOCKROLE_BLOCK_SCALARS hardcoded TWO block
+// scalars and used `persona: |-` as explore's needle. After P2-T15 the
+// materialized composition carries TEN `persona: |-` headers (one per
+// delegation row), so that needle stopped being unique and String.replace's
+// first hit could stamp the marker into the WRONG row — a silent e2e lie
+// (plan §6 R-6). The registry is now ROSTER-DRIVEN: ids come from roster.ts
+// (the same type-stripping import model-routes.ts already uses) and each
+// role's needle is its ROW-ID ANCHOR (`- id: tool-subagent-<id>`, unique in
+// the materialized file). The marker is inserted as the FIRST content line
+// under that row's block scalar — `persona: |-` at 10-space content indent for
+// delegation rows, `prefix: |-` at 6 for the conductor — which keeps
+// mock-llm-server.mjs `detectRole`'s "first system message carrying
+// MOCKROLE= wins" contract intact: the child's persona IS its first system
+// message. Unknown roles still throw, and the injection stays idempotent
+// (line-anchored match, so `MOCKROLE=sisyphus` can never satisfy
+// `MOCKROLE=sisyphus-junior`).
+//
+// THE roster-parade scenario then answers the Phase 2 exit criterion (a) for
+// the WHOLE roster in one run. The sandbox env distributes the 10 delegation
+// agents over the 7 REAL catalog route pairs (plan §4.7): dsh-llm-deepseek's
+// DEFAULT_MODELS ids (deepseek-flash / deepseek-v4-flash / deepseek-v4-pro /
+// deepseek-v4-flash-vision-exp) and pi-ai's builtin deepseek ids
+// (deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp).
+// NO fake ids: a session-controller `model-unavailable` is the only thing a
+// fake id would trip, and the deepseek adapter does not validate model ids at
+// request time under a mock baseURL — so a fake id is mechanically feasible,
+// which is exactly why it would hollow out the assertion: "route observable"
+// would stop meaning "route really servable" (plan §4.7, H-5). The mock scripts are keyed by ROLE
+// (MOCKROLE=<agent>), not by model: the conductor emits all 10 delegation
+// tool calls inside ONE assistant message (the mock's `tool_calls` step), each
+// child answers its own script, and the conductor summarizes. Asserted: (a)
+// ten child session logs, one per role; (b) every child's session-log
+// request/header route equals its env-configured seat (the AC-5 pattern
+// generalized per child — the per-child details ride the verdict JSON); (c)
+// the T16 hard-blocks injection observed in a NEW agent's child; (d) Q-4 — 10
+// parallel foreground delegations all dispatched. Q-4's resident-continuable
+// concern is recorded honestly in the verdict (`paradeObservation`): the
+// installed dsh-subagent has no numeric resident cap (only the depth gate),
+// the agent loop's `maxParallelToolCalls` default is 10, and the parade uses
+// `run_in_background: false`, so the children are foreground one-shot children
+// and the resident-continuable path is deliberately not exercised; the parade
+// ran as ONE batch (no batching fallback needed).
+
 // ── LLM WIRING (sandbox $DSH_HOME/settings.yaml only; nothing touches the
 // host). Both adapters are pointed at the mock with a dummy key:
 //   llm-deepseek: {apiKeyEnv: DEEPSEEK_API_KEY, baseURL: <mock>/v1}
@@ -183,11 +230,14 @@
 //
 // Usage:
 //   node tests/e2e/drive.mjs               run ALL scenarios (hello + demo +
-//                                          the two AC-6 negatives), print verdict JSON
+//                                          the two AC-6 negatives + the P2-T18
+//                                          roster parade), print verdict JSON
 //   node tests/e2e/drive.mjs --self-test   run the analysis logic against
 //                                          fabricated logs only (no spawn)
 // Env:
 //   DSH_E2E_DIGEST_TARGET  digest this dir instead of ~/.dsh (negative demo)
+//   DSH_E2E_ONLY           comma-separated scenario names: run a subset (dev
+//                          iteration knob; CI leaves it unset and runs ALL)
 //   DSH_E2E_KEEP_SANDBOX=1 keep the sandbox for postmortem inspection
 //   DSH_E2E_*_TIMEOUT_MS   boot / scenario / install budgets
 //   DSH_E2E_DEMO_SKIP_EXPLORE=1  T19 failure QA: drop the explore role from
@@ -222,6 +272,12 @@ const CONCERTO_PRESET_ID = 'concerto'
 // same import scripts/prove-route-logging.mjs uses).
 const { resolveModelRoutes } = await import(
   new URL('../../patches/omo-dsh/omo-agents/src/model-routes.ts', import.meta.url).href
+)
+// P2-T18: the delegation role ids (and their row anchors) come from the
+// roster — the SAME single source the template renderer walks — so the
+// MOCKROLE registry can never drift from the rows it must address.
+const { CONDUCTOR_ID, DELEGATION_ENTRIES } = await import(
+  new URL('../../patches/omo-dsh/omo-agents/src/roster.ts', import.meta.url).href
 )
 
 const INSTALL_TIMEOUT_MS = Number(process.env.DSH_E2E_INSTALL_TIMEOUT_MS ?? 300_000)
@@ -367,6 +423,113 @@ function nestedDelegationScript() {
   }
 }
 
+// ── P2-T18 ROSTER-PARADE scenario constants (plan §4.7; see the header) ─────
+
+/** The 10 delegation targets, in roster order (single source: roster.ts). */
+const PARADE_AGENTS = DELEGATION_ENTRIES.map((entry) => entry.id)
+
+const PARADE_PROMPT = 'e2e roster-parade: send every roster delegation in one parallel batch, then summarize what came back'
+const PARADE_SUMMARY = 'MOCK-PARADE-SUMMARY-2c9f41: all ten roster children reported back'
+
+/** Unique per-child script sentinel (proves WHICH script answered). */
+function paradeChildNote(agent) {
+  return `MOCK-PARADE-CHILD-${agent.toUpperCase().replaceAll('-', '_')}-4b7e`
+}
+
+/** Durable child-session label: the ONLY link from a child log to its role. */
+function paradeLabel(agent) {
+  return `parade-${agent}`
+}
+
+// THE SEAT DISTRIBUTION (plan §4.7). 10 delegation agents over the 7 REAL
+// catalog pairs, every id verified against the pinned install:
+//   * dsh-llm-deepseek DEFAULT_MODELS (lib/index.js:1841; ids :1843
+//     deepseek-flash, :1852 deepseek-v4-flash, :1858 deepseek-v4-pro, :1864
+//     deepseek-v4-flash-vision-exp) — provider route `deepseek-official`.
+//   * @earendil-works/pi-ai dist/providers/data/deepseek.json (builtin
+//     `deepseek` provider: deepseek-v4-flash, deepseek-v4-pro,
+//     deepseek-v4-flash-vision-exp) — provider route `deepseek`.
+// NO fake ids: under the mock baseURL a fake id would be mechanically
+// accepted, which is exactly why it would hollow out the assertion (plan §4.7
+// H-5 — "route observable" must keep meaning "route really servable").
+// multimodal-looker sits on a vision id (its natural seat). `librarian` is the
+// one TEXT agent deliberately parked on the second vision pair: with 10 agents
+// and 2 vision pairs, covering all 7 real pairs requires exactly one non-looker
+// on a vision seat, and the vision models are text+image supersets. This is a
+// routing-mechanics distribution, not a claim about semantic seat fitness.
+const PARADE_SEATS = new Map([
+  ['explore', { provider: 'deepseek', model: 'deepseek-v4-flash' }],
+  ['hephaestus', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
+  ['oracle', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
+  ['librarian', { provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp' }],
+  ['plan-consultant', { provider: 'deepseek-official', model: 'deepseek-flash' }],
+  ['plan-reviewer', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
+  ['atlas', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
+  ['multimodal-looker', { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' }],
+  ['sisyphus-junior', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }],
+  ['prometheus', { provider: 'deepseek', model: 'deepseek-v4-pro' }],
+])
+
+/**
+ * The 7 pairs the distribution must cover, derived from PARADE_SEATS (never
+ * restated) — the scenario asserts all of them were actually exercised.
+ */
+const PARADE_SEAT_PAIRS = [...new Set(
+  [...PARADE_SEATS.values()].map((seat) => `${seat.provider}/${seat.model}`),
+)]
+
+/** The scenario's OMO_<AGENT>_{PROVIDER,MODEL} env overlay, from the roster rows. */
+function paradeEnv() {
+  const env = {}
+  for (const entry of DELEGATION_ENTRIES) {
+    const seat = PARADE_SEATS.get(entry.id)
+    if (seat === undefined) {
+      throw new Error(`parade: roster delegation row '${entry.id}' has no seat in PARADE_SEATS`)
+    }
+    env[entry.routeEnvVars.provider] = seat.provider
+    env[entry.routeEnvVars.model] = seat.model
+  }
+  return env
+}
+
+/**
+ * The parade mock script, keyed per ROLE (MOCKROLE=<agent>) — not per model:
+ * the conductor's step 1 is the ONE assistant message carrying all 10
+ * delegation tool calls (the mock's `tool_calls` parallel-batch primitive,
+ * ids auto-assigned per batch index), each child's own script does a real
+ * `read` of the sandbox README and then reports its sentinel. The child needs
+ * TWO steps: the T16 hard-blocks injection lands at the NEXT pre-step boundary
+ * (hard-blocks-injection.ts P-3), so a one-step child would never surface it.
+ * The conductor's step 2 (all ten results in context) closes with the summary.
+ */
+function paradeScript(sandbox) {
+  const readmePath = join(sandbox.project, 'README.md')
+  const script = {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: PARADE_AGENTS.map((agent) => ({
+          name: agent,
+          arguments: {
+            description: paradeLabel(agent),
+            prompt: `Read the file ${readmePath} with the read tool, then reply with exactly: ${paradeChildNote(agent)}`,
+            // foreground: the conductor's summary step needs all ten replies.
+            run_in_background: false,
+          },
+        })),
+      },
+      { type: 'text', text: PARADE_SUMMARY },
+    ],
+  }
+  for (const agent of PARADE_AGENTS) {
+    script[agent] = [
+      { type: 'tool_call', name: 'read', arguments: { file_path: readmePath } },
+      { type: 'text', text: paradeChildNote(agent) },
+    ]
+  }
+  return script
+}
+
 // §14.5: path-based volatile allowlist (see header). Symlinks are skipped by
 // the walk (Dirent.isFile() is false for them).
 const VOLATILE_PREFIXES = ['sessions/', 'storages/']
@@ -384,9 +547,13 @@ function createSandbox() {
   }
 }
 
-/** Spawned-process environment: every dsh/home pointer redirected into the sandbox. */
-function scenarioEnv(sandbox) {
-  const env = { ...process.env }
+/** Spawned-process environment: every dsh/home pointer redirected into the sandbox.
+ * `overrides` are the scenario's own env additions (P2-T18's OMO_<AGENT>_* seat
+ * distribution). They are merged FIRST so the sandbox pointers and the
+ * DEEPSEEK_BASE_URL strip below always win: a scenario can pin a route but can
+ * never re-route around the mock or escape the sandbox. */
+function scenarioEnv(sandbox, overrides = {}) {
+  const env = { ...process.env, ...overrides }
   // A host DEEPSEEK_BASE_URL could mask a broken settings override (the
   // adapter falls back to it); strip it so wiring bugs fail LOUD (the request
   // would go to api.deepseek.com with the dummy key and 401).
@@ -401,32 +568,55 @@ function scenarioEnv(sandbox) {
 }
 
 /**
+ * The provider id registered by the dsh-llm-deepseek adapter's shipped route
+ * (plan §4.6 STRONG/VISION seat); every OTHER route provider in a scenario is
+ * a pi-ai catalog route and therefore needs a settings profile key.
+ */
+const DEEPSEEK_ADAPTER_PROVIDER = 'deepseek-official'
+
+/**
  * Seed the sandbox: settings.yaml wiring BOTH adapters to the mock, and the
  * persistence patch overlay (compression:none, packChunks:false — T15 layout).
+ * `routes` is the scenario's EFFECTIVE resolved route map (env overrides
+ * included), so the seeded seats are exactly what the spawned dsh resolves.
+ * ONE baseURL per adapter (P2-T18): the deepseek adapter gets one baseURL, and
+ * the pi-ai providers map gets one key per distinct non-deepseek-adapter route
+ * provider — the same mock `/v1` for all of them (the mock keys its script by
+ * MOCKROLE role, never by model, so a shared baseURL is the correct wiring).
  * Returns the patch overlay path (passed as a second --patch).
  */
 function seedSandbox(sandbox, routes, mockBaseUrl) {
   for (const dir of [sandbox.project, sandbox.dshHome, sandbox.agentsHome, sandbox.xdg, sandbox.home]) {
     mkdirSync(dir, { recursive: true })
   }
-  writeFileSync(
-    join(sandbox.dshHome, 'settings.yaml'),
-    [
-      '# T18 e2e seed: both LLM adapters route to the mock server (dummy key).',
-      'agent-default-model:',
-      `  provider: ${routes.sisyphus.provider}`,
-      `  model: ${routes.sisyphus.model}`,
-      'llm-deepseek:',
-      '  apiKeyEnv: DEEPSEEK_API_KEY',
-      `  baseURL: ${mockBaseUrl}/v1`,
-      'llm-pi-ai:',
-      '  providers:',
-      `    ${routes.explore.provider}:`,
+  const piAiProviders = [...new Set(
+    Object.values(routes)
+      .map((route) => route.provider)
+      .filter((provider) => provider !== DEEPSEEK_ADAPTER_PROVIDER),
+  )]
+  const settingsLines = [
+    '# T18 e2e seed: both LLM adapters route to the mock server (dummy key).',
+    '# ONE baseURL per adapter (P2-T18): "deepseek-official" is registered by the',
+    '# base composition, so only its baseURL is set here; every other route',
+    '# provider is a pi-ai catalog route and needs a profile key (same mock /v1).',
+    'agent-default-model:',
+    `  provider: ${routes.sisyphus.provider}`,
+    `  model: ${routes.sisyphus.model}`,
+    'llm-deepseek:',
+    '  apiKeyEnv: DEEPSEEK_API_KEY',
+    `  baseURL: ${mockBaseUrl}/v1`,
+    'llm-pi-ai:',
+    '  providers:',
+  ]
+  for (const provider of piAiProviders) {
+    settingsLines.push(
+      `    ${provider}:`,
       '      apiKeyEnv: DEEPSEEK_API_KEY',
       `      baseURL: ${mockBaseUrl}/v1`,
-      '',
-    ].join('\n'),
-  )
+    )
+  }
+  settingsLines.push('')
+  writeFileSync(join(sandbox.dshHome, 'settings.yaml'), settingsLines.join('\n'))
   const patchPath = join(sandbox.root, 'e2e.patch.yml')
   writeFileSync(
     patchPath,
@@ -609,10 +799,10 @@ async function sessionPrompt(boot, request) {
 
 // ── dsh process management (cold-start.sh discipline) ───────────────────────
 
-function installPlugin(sandbox) {
+function installPlugin(sandbox, env) {
   const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', PLUGIN_DIR], {
     cwd: REPO_ROOT,
-    env: scenarioEnv(sandbox),
+    env,
     encoding: 'utf8',
     timeout: INSTALL_TIMEOUT_MS,
   })
@@ -669,7 +859,7 @@ function supportsNoOpen() {
  * readiness line lands — and, on the 0.1.2 transport (the line carries
  * ?token=<launch-token>), once the token→cookie handshake has completed.
  */
-function bootDsh(sandbox, patchPath) {
+function bootDsh(sandbox, patchPath, env) {
   return new Promise((resolveBoot, rejectBoot) => {
     const child = spawn(
       'dsh',
@@ -677,7 +867,7 @@ function bootDsh(sandbox, patchPath) {
         '--profile', PROFILE, '--patch', './cordis.yml', '--patch', patchPath, '--port', '0',
         ...supportsNoOpen() ? ['--no-open'] : [],
       ],
-      { cwd: REPO_ROOT, env: scenarioEnv(sandbox) },
+      { cwd: REPO_ROOT, env },
     )
     let log = ''
     let readinessHandled = false
@@ -793,42 +983,141 @@ async function awaitTurnEnd(sandbox, sessionId) {
 
 // ── MOCKROLE delivery (see header): extend the materialized persona scalar ──
 
-/**
- * Where each role's marker goes inside the SAME materialized composition file
- * ($DSH_HOME/.agent-presets/concerto/agent.cordis.yml). `needle` is the block
- * scalar header of that role's persona; `indent` is the content indent the
- * renderer used (system-prompt.ts: 6 spaces under the persona row's `prefix:`;
- * concerto-preset.ts: 10 spaces under the explore row's nested `persona:`).
- * Both needles are unique in the materialized file (verified against the
- * template: only the persona row carries `prefix:`, only the T11 explore row
- * carries `persona:`).
- */
-const MOCKROLE_BLOCK_SCALARS = {
-  sisyphus: { needle: 'prefix: |-', indent: '      ' },
-  explore: { needle: 'persona: |-', indent: '          ' },
+/** The materialized preset every scenario edits after boot (T6 apply-time sync). */
+function materializedCompositionPath(sandbox) {
+  return join(sandbox.dshHome, '.agent-presets', CONCERTO_PRESET_ID, 'agent.cordis.yml')
 }
 
-function appendMockRoleMarker(sandbox, role) {
-  const spec = MOCKROLE_BLOCK_SCALARS[role]
-  if (spec === undefined) {
-    throw new Error(`no MOCKROLE block-scalar mapping for role '${role}'`)
+// Roster-driven block-scalar registry (P2-T18; see the header's T18 section).
+// Each spec names the role's ROW-ID ANCHOR (exact line, indentation included:
+// delegation rows sit at 4 spaces inside the delegation group, the conductor
+// persona row at column 0), the block-scalar HEADER line that follows it, and
+// the content indent the renderer used for that row's content lines.
+//   * delegation rows → `    - id: tool-subagent-<id>` + `        persona: |-`
+//     (content indent 10 = concerto-preset.ts AGENT_ROW_CONTENT_INDENT)
+//   * conductor      → `- id: persona` + `    prefix: |-`
+//     (content indent 6 = system-prompt.ts renderPersonaIntoComposition)
+// The row anchors are unique in the materialized file — the property the old
+// `persona: |-` needle lost when the template grew to 10 delegation rows.
+const DELEGATION_ROW_CONTENT_INDENT = '          '
+const CONDUCTOR_ROW_CONTENT_INDENT = '      '
+const MOCKROLE_BLOCK_SCALARS = new Map([
+  [CONDUCTOR_ID, {
+    rowAnchor: '- id: persona',
+    header: '    prefix: |-',
+    indent: CONDUCTOR_ROW_CONTENT_INDENT,
+  }],
+  ...DELEGATION_ENTRIES.map((entry) => [entry.id, {
+    rowAnchor: `    - id: tool-subagent-${entry.id}`,
+    header: '        persona: |-',
+    indent: DELEGATION_ROW_CONTENT_INDENT,
+  }]),
+])
+
+/** Escape a literal string for a RegExp body. */
+function escapeRegExp(literal) {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Locate one role's block scalar in the materialized composition: the exact
+ * anchor line and the header line belonging to THAT row (the scan stops at the
+ * next row, so a missing header can never silently bind to the following row's
+ * persona scalar). `lines` = the file split on '\n'; returns 0-based indices.
+ */
+function locateRoleBlockScalar(lines, spec, role) {
+  const anchors = []
+  for (const [index, line] of lines.entries()) {
+    if (line === spec.rowAnchor) anchors.push(index)
   }
-  const compositionPath = join(
-    sandbox.dshHome,
-    '.agent-presets',
-    CONCERTO_PRESET_ID,
-    'agent.cordis.yml',
+  if (anchors.length !== 1) {
+    throw new Error(
+      `materialized concerto preset must carry the row anchor \`${spec.rowAnchor}\` `
+      + `for role '${role}' exactly once; found ${anchors.length}`,
+    )
+  }
+  const rowIndex = anchors[0]
+  const rowIndent = spec.rowAnchor.length - spec.rowAnchor.trimStart().length
+  for (let index = rowIndex + 1; index < lines.length; index++) {
+    const line = lines[index]
+    // A sibling/next row ends this row's body (any row at the same or a
+    // shallower indent — delegation rows nest at 4, top-level rows at 0).
+    if (/^\s*- id: /.test(line) && line.length - line.trimStart().length <= rowIndent) break
+    if (line === spec.header) return { rowIndex, headerIndex: index }
+  }
+  throw new Error(
+    `materialized concerto preset row '${role}' carries no \`${spec.header}\` block scalar`,
   )
+}
+
+/**
+ * P2-T18 MOCKROLE injection: idempotently stamp `MOCKROLE=<role>` as the FIRST
+ * content line of that role's persona block scalar in the materialized
+ * composition. Throws loudly on an unknown role, a missing/duplicated row
+ * anchor, a missing block scalar, or a missing materialized file (sync did not
+ * run). Idempotence is LINE-ANCHORED: `MOCKROLE=sisyphus` is not satisfied by
+ * the `MOCKROLE=sisyphus-junior` line.
+ */
+export function appendMockRoleMarker(sandbox, role) {
+  const spec = MOCKROLE_BLOCK_SCALARS.get(role)
+  if (spec === undefined) {
+    throw new Error(
+      `no MOCKROLE block-scalar mapping for role '${role}' `
+      + `(roster delegation ids: ${DELEGATION_ENTRIES.map((entry) => entry.id).join(', ')})`,
+    )
+  }
+  const compositionPath = materializedCompositionPath(sandbox)
   if (!existsSync(compositionPath)) {
     throw new Error(`materialized concerto preset missing at ${compositionPath} (sync did not run?)`)
   }
   const text = readFileSync(compositionPath, 'utf8')
-  if (!text.includes(spec.needle)) {
-    throw new Error(`materialized concerto preset has no \`${spec.needle}\` block scalar for role '${role}'`)
+  const markerPattern = new RegExp(`^${spec.indent}MOCKROLE=${escapeRegExp(role)}$`, 'm')
+  if (markerPattern.test(text)) return // idempotent
+  const lines = text.split('\n')
+  const { headerIndex } = locateRoleBlockScalar(lines, spec, role)
+  lines.splice(headerIndex + 1, 0, `${spec.indent}MOCKROLE=${role}`)
+  writeFileSync(compositionPath, lines.join('\n'))
+}
+
+/**
+ * Verify where a role's marker actually LANDED (P2-T18 acceptance: the grep /
+ * line-number check, automated). Returns the 1-based line numbers of the row
+ * anchor, the persona header and the marker, plus whether the marker is the
+ * FIRST content line under that row's header and appears exactly once.
+ * Never throws: a layout failure is returned as `{ok:false, reason}` so the
+ * verdict can report it instead of collapsing into a driver error.
+ */
+export function verifyMockRoleMarkerLanding(sandbox, role) {
+  const spec = MOCKROLE_BLOCK_SCALARS.get(role)
+  if (spec === undefined) return { role, ok: false, reason: `unknown role '${role}'` }
+  const compositionPath = materializedCompositionPath(sandbox)
+  let lines
+  try {
+    lines = readFileSync(compositionPath, 'utf8').split('\n')
+  } catch (error) {
+    return { role, ok: false, reason: `cannot read materialized preset: ${error.message}` }
   }
-  const markerLine = `${spec.indent}MOCKROLE=${role}\n`
-  if (text.includes(`MOCKROLE=${role}`)) return // idempotent
-  writeFileSync(compositionPath, text.replace(spec.needle, `${spec.needle}\n${markerLine}`))
+  let location
+  try {
+    location = locateRoleBlockScalar(lines, spec, role)
+  } catch (error) {
+    return { role, ok: false, reason: error.message }
+  }
+  const expected = `${spec.indent}MOCKROLE=${role}`
+  const markerLineIndex = location.headerIndex + 1
+  const markerCount = lines.filter((line) => line === expected).length
+  const actual = lines[markerLineIndex]
+  return {
+    role,
+    ok: actual === expected && markerCount === 1,
+    rowAnchor: spec.rowAnchor,
+    rowAnchorLine: location.rowIndex + 1,
+    personaHeaderLine: location.headerIndex + 1,
+    markerLine: markerLineIndex + 1,
+    markerCount,
+    expected,
+    actual: actual ?? null,
+  }
 }
 
 // ── Analysis (pure — the --self-test QA targets exactly this) ────────────────
@@ -1261,6 +1550,225 @@ export function analyzeExploreNestedDelegationDenied(
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
 }
 
+// ── P2-T18 roster-parade analysis (Phase 2 exit criterion a, per child) ─────
+
+/** The shipped dsh-agent-loop concurrency default (dsh-agent-loop/lib/index.js:1424). */
+const DSH_AGENT_LOOP_MAX_PARALLEL_TOOL_CALLS = 10
+
+/** Compare a {provider, model} route pair (undefined-safe). */
+function sameSeat(route, seat) {
+  return route !== undefined
+    && seat !== undefined
+    && route.provider === seat.provider
+    && route.model === seat.model
+}
+
+/**
+ * The roster-parade assertions (plan §4.7). Ten delegation agents, one
+ * assistant message of ten parallel calls, ten child sessions — each asserted
+ * on its OWN env-configured seat (the AC-5 pattern generalized per child).
+ * `allLogs` is every session log in the sandbox (the child↔role link is the
+ * child's durable `subagent/descriptor` label = the delegation `description`);
+ * `markerLanding` is the driver's own grep/line-number verification of the
+ * MOCKROLE injections (P2-T18's landing half).
+ */
+export function analyzeRosterParade(
+  { log, allLogs, requests, providersJson, bootLog, markerLanding },
+  routes,
+) {
+  const events = log?.events ?? []
+  const parentRoute = requestHeaderRoute(events)
+  const parentId = log?.header?.id
+
+  // (1) The conductor's ONE assistant message with the ten delegation calls.
+  const batchMessages = events.filter(
+    (event) =>
+      event.type === 'assistant/message'
+      && (event.data?.message?.content ?? []).some((block) => block?.type === 'tool-call'),
+  )
+  const batchBlocks = batchMessages.length === 1
+    ? (batchMessages[0].data.message.content ?? []).filter((block) => block?.type === 'tool-call')
+    : []
+  const batchNames = batchBlocks.map((block) => block.name)
+  const parentToolCalls = events.filter((event) => event.type === 'tool/call')
+  const parentCallSteps = new Set(
+    parentToolCalls.map((event) => `${event.data?.turn}/${event.data?.step}`),
+  )
+
+  // (a) Child session logs, linked to their role by the descriptor label.
+  const childLogs = Array.isArray(allLogs)
+    ? allLogs.filter(
+        (candidate) =>
+          candidate.header?.origin === 'subagent'
+          && String(candidate.header?.parentSession) === String(parentId),
+      )
+    : []
+  const childByLabel = new Map()
+  for (const child of childLogs) {
+    const descriptor = child.events.find((event) => event.type === 'subagent/descriptor')
+    const label = descriptor?.data?.label
+    if (typeof label === 'string') childByLabel.set(label, child)
+  }
+
+  const childDetails = PARADE_AGENTS.map((agent) => {
+    const configuredSeat = PARADE_SEATS.get(agent)
+    const resolvedSeat = routes[agent]
+    const child = childByLabel.get(paradeLabel(agent))
+    const observedRoute = child === undefined ? undefined : requestHeaderRoute(child.events)
+    const reportedOwnSentinel = child !== undefined
+      && child.events.some(
+        (event) => event.type === 'assistant/message' && eventText(event).includes(paradeChildNote(agent)),
+      )
+    const hardBlocksInjected = child !== undefined
+      && child.events.some(
+        (event) =>
+          event.type === 'user/message' && eventText(event).includes('"plugin":"omo-agents"'),
+      )
+    const roleRequests = requests.filter((request) => request.role === agent)
+    return {
+      agent,
+      configuredSeat: configuredSeat ?? null,
+      resolvedSeat: resolvedSeat ?? null,
+      sessionLogPath: child?.path ?? null,
+      observedRoute: observedRoute ?? null,
+      seatMatches: sameSeat(observedRoute, configuredSeat),
+      configuredSeatResolved: sameSeat(resolvedSeat, configuredSeat),
+      reportedOwnSentinel,
+      hardBlocksInjected,
+      mockRequestCount: roleRequests.length,
+      mockRequestModels: [...new Set(roleRequests.map((request) => request.body?.model))],
+    }
+  })
+
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const secondSisyphusBody = sisyphusRequests.length >= 2
+    ? JSON.stringify(sisyphusRequests[1].body)
+    : ''
+  const summaryMessage = events.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(PARADE_SUMMARY),
+  )
+  const turnCompleted = events.some(
+    (event) =>
+      event.type === 'turn/end'
+      && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+  )
+  // The OBSERVED seats (session-log request/header), not the configured table:
+  // this counts what actually ran.
+  const observedPairCount = new Set(
+    childDetails
+      .filter((detail) => detail.observedRoute !== null)
+      .map((detail) => `${detail.observedRoute.provider}/${detail.observedRoute.model}`),
+  ).size
+  const distinctRouteProviders = [
+    ...new Set(Object.values(routes).map((route) => route.provider)),
+  ]
+  const hardBlocksChildren = childDetails
+    .filter((detail) => detail.hardBlocksInjected)
+    .map((detail) => detail.agent)
+
+  const checks = {
+    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    // (b) Wiring proof for every distinct route provider this scenario seats.
+    everyRouteProviderActive: distinctRouteProviders.every((provider) =>
+      new RegExp(`"provider":"${provider}"[^}]*"active":true`).test(providersJson),
+    ),
+    parentSessionLogFound: log !== undefined,
+    userQuestionRecorded: events.some(
+      (event) => event.type === 'user/message' && eventText(event).includes(PARADE_PROMPT),
+    ),
+    // (1) THE PARALLEL BATCH: all 10 delegation calls in ONE assistant message.
+    allTenDelegationsInOneMessage:
+      batchBlocks.length === PARADE_AGENTS.length
+      && new Set(batchNames).size === PARADE_AGENTS.length
+      && PARADE_AGENTS.every((agent) => batchNames.includes(agent)),
+    allTenDelegationCallsDispatchedInOneStep:
+      parentToolCalls.length === PARADE_AGENTS.length && parentCallSteps.size === 1,
+    // (a) Ten child sessions really ran — one per role — and each answered its
+    // OWN script (the role-keyed sentinel, not merely "a child ran").
+    allTenChildSessionsRan:
+      childLogs.length === PARADE_AGENTS.length
+      && childDetails.every((detail) => detail.sessionLogPath !== null),
+    everyChildRanItsOwnScript: childDetails.every((detail) => detail.reportedOwnSentinel),
+    // (b) AC-5 per child: the session-log request/header route equals the
+    // env-configured seat, and that seat is what the resolver produced from
+    // the same env the spawned dsh saw.
+    everyChildRouteMatchedConfiguredSeat: childDetails.every((detail) => detail.seatMatches),
+    everyConfiguredSeatResolvedFromEnv:
+      childDetails.every((detail) => detail.configuredSeatResolved),
+    // The distribution really covers all 7 real catalog pairs.
+    allSevenRealSeatsExercised: observedPairCount === PARADE_SEAT_PAIRS.length,
+    // Every role's wire requests carried the configured model (route
+    // observability on the mock channel too, not just the session log).
+    everyMockRequestOnConfiguredModel: childDetails.every(
+      (detail) =>
+        detail.mockRequestCount === 2
+        && detail.mockRequestModels.length === 1
+        && detail.mockRequestModels[0] === detail.configuredSeat?.model,
+    ),
+    mockSawExpectedRequestCounts:
+      sisyphusRequests.length === 2
+      && childDetails.every((detail) => detail.mockRequestCount === 2),
+    // The children's replies returned to the conductor AND provably entered
+    // its next model request.
+    everyChildNoteReturnedToConductor: PARADE_AGENTS.every((agent) =>
+      events.some(
+        (event) => event.type === 'tool/result' && eventText(event).includes(paradeChildNote(agent)),
+      ),
+    ),
+    allChildNotesEnteredConductorContext:
+      sisyphusRequests.length >= 2
+      && PARADE_AGENTS.every((agent) => secondSisyphusBody.includes(paradeChildNote(agent))),
+    conductorSummarized: summaryMessage !== undefined && turnCompleted,
+    // AC-5's kernel survives the override: the conductor's observed seat IS the
+    // sisyphus seat and it is NOT the explore child's seat (the parade rewrites
+    // nine seats, never this pair).
+    routePairDistinct:
+      parentRoute !== undefined
+      && sameSeat(parentRoute, routes.sisyphus)
+      && !sameSeat(parentRoute, routes.explore),
+    // (c) T16's injection reaches a NEW roster child (spot-check: at least one
+    // non-explore agent), which is the listener-coverage claim of plan §4.4.
+    hardBlocksInjectionObservedInNewAgent:
+      hardBlocksChildren.some((agent) => agent !== 'explore'),
+    // The MOCKROLE markers landed under the correct rows (driver grep check).
+    mockRoleMarkersLandedInCorrectRows:
+      Array.isArray(markerLanding)
+      && markerLanding.length === PARADE_AGENTS.length + 1
+      && markerLanding.every((entry) => entry?.ok === true),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    // The per-child route assertion DETAILS required by the P2-T18 acceptance.
+    childRouteDetails: childDetails,
+    hardBlocksInjectionChildren: hardBlocksChildren,
+    mockRoleMarkerLanding: Array.isArray(markerLanding) ? markerLanding : null,
+    // Q-4 (plan §6): the resident-continuable-child question, answered honestly.
+    paradeObservation: {
+      batchCount: 1,
+      parallelDelegationsRequested: PARADE_AGENTS.length,
+      dispatchedInOneAssistantMessage: batchBlocks.length,
+      childSessionsObserved: childLogs.length,
+      distinctSeatsExercised: observedPairCount,
+      agentLoopMaxParallelToolCalls: DSH_AGENT_LOOP_MAX_PARALLEL_TOOL_CALLS,
+      residentContinuableChildren: {
+        blockedTenWayParallelism: false,
+        numericCapFound: null,
+        exercised: false,
+        note:
+          'installed dsh-subagent exposes only the depth gate (SubagentDepthError); no numeric '
+          + 'resident-continuable cap was found, and the parade runs run_in_background:false, so the '
+          + 'children are foreground one-shot sessions and the resident-continuable path is NOT '
+          + 'exercised. The batch fit the shipped agent-loop pool exactly '
+          + `(maxParallelToolCalls default ${DSH_AGENT_LOOP_MAX_PARALLEL_TOOL_CALLS}), so no batching `
+          + 'fallback was needed.',
+      },
+    },
+    routePair: { parent: parentRoute ?? null },
+    mockRequestRoles: requests.map((request) => request.role),
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
 // ── --self-test: the analysis must earn its PASS (report §14.4.5) ────────────
 
 function fabricatedGoodLog(routes) {
@@ -1525,7 +2033,275 @@ function fabricatedGoodNestedInput(routes) {
   }
 }
 
-function runAnalysisSelfTest(routes) {
+// ── fabricated P2-T18 parade input (the parade analysis must earn its PASS) ──
+
+/** The effective route map the parade scenario's env overlay resolves to. */
+function fabricatedParadeRoutes(baseRoutes) {
+  const routes = { ...baseRoutes }
+  for (const [agent, seat] of PARADE_SEATS) routes[agent] = seat
+  return routes
+}
+
+function fabricatedParadeProvidersJson(routes) {
+  return JSON.stringify({
+    type: 'server-response',
+    rpcId: 'x',
+    result: {
+      ok: true,
+      value: {
+        providers: [...new Set(Object.values(routes).map((route) => route.provider))]
+          .map((provider) => ({ provider, active: true })),
+      },
+    },
+  })
+}
+
+function fabricatedParadeParentLog(routes) {
+  const argumentsFor = (agent) => JSON.stringify({
+    description: paradeLabel(agent),
+    prompt: `read the README and report as ${agent}`,
+    run_in_background: false,
+  })
+  const callBlocks = PARADE_AGENTS.map((agent, index) => ({
+    type: 'tool-call',
+    id: `mock-llm-tool-1-${index}`,
+    name: agent,
+    arguments: argumentsFor(agent),
+  }))
+  const events = [
+    { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: PARADE_PROMPT }] } },
+    {
+      seq: 2,
+      type: 'request/header',
+      data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'initial' },
+    },
+    { seq: 3, type: 'assistant/message', data: { turn: 1, step: 1, message: { content: callBlocks } } },
+  ]
+  let seq = 4
+  for (const [index, agent] of PARADE_AGENTS.entries()) {
+    events.push({
+      seq: seq++,
+      type: 'tool/call',
+      data: { turn: 1, step: 1, callId: `mock-llm-tool-1-${index}`, name: agent, arguments: argumentsFor(agent) },
+    })
+  }
+  for (const [index, agent] of PARADE_AGENTS.entries()) {
+    events.push({
+      seq: seq++,
+      type: 'tool/result',
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          role: 'user',
+          content: [{
+            type: 'tool-result',
+            toolCallId: `mock-llm-tool-1-${index}`,
+            content: [{ type: 'text', text: paradeChildNote(agent) }],
+            isError: false,
+          }],
+        },
+      },
+    })
+  }
+  events.push({ seq: seq++, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: PARADE_SUMMARY }] } } })
+  events.push({ seq: seq++, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+  return {
+    path: '/fabricated/parade/parent/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events,
+  }
+}
+
+function fabricatedParadeChildLog(agent, seat) {
+  return {
+    path: `/fabricated/parade/${agent}/session.jsonl`,
+    header: {
+      type: 'session',
+      id: `session-fabricated-parade-${agent}`,
+      origin: 'subagent',
+      parentSession: FABRICATED_PARENT_ID,
+      delegationDepth: 1,
+    },
+    events: [
+      {
+        seq: 0,
+        type: 'subagent/descriptor',
+        data: { version: 3, mode: 'one-shot', provider: 'spawn', label: paradeLabel(agent) },
+      },
+      {
+        seq: 1,
+        type: 'request/header',
+        data: { header: { config: { provider: seat.provider, model: seat.model } }, reason: 'initial' },
+      },
+      {
+        seq: 2,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: 'mock-llm-tool-1', name: 'read', arguments: JSON.stringify({ file_path: '/fabricated/project/README.md' }) },
+      },
+      {
+        seq: 3,
+        type: 'user/message',
+        data: {
+          content: [{ type: 'text', text: 'hard blocks injection' }],
+          source: { kind: 'plugin', plugin: 'omo-agents' },
+        },
+      },
+      { seq: 4, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: paradeChildNote(agent) }] } } },
+      { seq: 5, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedParadeRequests(routes) {
+  const requests = [
+    {
+      role: 'sisyphus',
+      body: { model: routes.sisyphus.model, messages: [{ role: 'system', content: `MOCKROLE=${CONDUCTOR_ID}` }] },
+      receivedAt: 10,
+    },
+  ]
+  for (const agent of PARADE_AGENTS) {
+    const seat = PARADE_SEATS.get(agent)
+    requests.push({
+      role: agent,
+      body: { model: seat.model, messages: [{ role: 'system', content: `MOCKROLE=${agent}` }] },
+      receivedAt: 20,
+    })
+    requests.push({
+      role: agent,
+      body: { model: seat.model, messages: [{ role: 'user', content: 'read result: fixture' }] },
+      receivedAt: 30,
+    })
+  }
+  requests.push({
+    role: 'sisyphus',
+    body: {
+      model: routes.sisyphus.model,
+      messages: [{ role: 'user', content: PARADE_AGENTS.map(paradeChildNote).join('\n') }],
+    },
+    receivedAt: 100,
+  })
+  return requests
+}
+
+function fabricatedParadeInput(baseRoutes) {
+  const routes = fabricatedParadeRoutes(baseRoutes)
+  const parentLog = fabricatedParadeParentLog(routes)
+  return {
+    input: {
+      log: parentLog,
+      allLogs: [
+        parentLog,
+        ...PARADE_AGENTS.map((agent) => fabricatedParadeChildLog(agent, PARADE_SEATS.get(agent))),
+      ],
+      requests: fabricatedParadeRequests(routes),
+      providersJson: fabricatedParadeProvidersJson(routes),
+      bootLog: '[omo-agents] loaded',
+      markerLanding: [CONDUCTOR_ID, ...PARADE_AGENTS].map((role) => ({ role, ok: true })),
+    },
+    routes,
+  }
+}
+
+/**
+ * P2-T18 MOCKROLE landing self-test (hermetic, no spawn). Renders the REAL
+ * concerto template through the REAL renderers (concerto-preset.ts
+ * renderAgentSentinels + system-prompt.ts renderPersonaIntoComposition),
+ * materializes it into a throwaway sandbox, injects all 11 markers, and
+ * verifies BY LINE NUMBER that each marker is the first content line under its
+ * OWN row's block scalar — the exact failure R-6 predicted (a marker stamped
+ * into a neighbouring persona row). Also pins idempotence and the loud
+ * unknown-role throw. Async only because the plugin modules are imported
+ * lazily (the driver's hot path does not need them).
+ */
+async function runMockRoleLandingSelfTest() {
+  const problems = []
+  const sandbox = createSandbox()
+  try {
+    const template = readFileSync(join(PLUGIN_DIR, 'concerto', 'agent.cordis.yml'), 'utf8')
+    const preset = await import(
+      new URL('../../patches/omo-dsh/omo-agents/src/concerto-preset.ts', import.meta.url).href
+    )
+    const systemPrompt = await import(
+      new URL('../../patches/omo-dsh/omo-agents/src/system-prompt.ts', import.meta.url).href
+    )
+    const rendered = systemPrompt.renderPersonaIntoComposition(
+      preset.renderAgentSentinels(template),
+      systemPrompt.buildSisyphusSystemPrompt(),
+    )
+    const compositionPath = materializedCompositionPath(sandbox)
+    mkdirSync(dirname(compositionPath), { recursive: true })
+    writeFileSync(compositionPath, rendered)
+
+    const roles = [CONDUCTOR_ID, ...PARADE_AGENTS]
+    for (const role of roles) appendMockRoleMarker(sandbox, role)
+    const once = readFileSync(compositionPath, 'utf8')
+    for (const role of roles) appendMockRoleMarker(sandbox, role)
+    if (readFileSync(compositionPath, 'utf8') !== once) {
+      problems.push('appendMockRoleMarker is not idempotent (a second pass changed the file)')
+    }
+    for (const role of roles) {
+      const landing = verifyMockRoleMarkerLanding(sandbox, role)
+      if (landing.ok !== true) {
+        problems.push(`MOCKROLE landing for '${role}' is wrong: ${JSON.stringify(landing)}`)
+      }
+    }
+    const markerLines = once.split('\n').filter((line) => /^\s*MOCKROLE=/.test(line))
+    if (markerLines.length !== roles.length) {
+      problems.push(`expected ${roles.length} MOCKROLE lines, found ${markerLines.length}`)
+    }
+    // The idempotence guard must be line-anchored, not substring-based:
+    // `MOCKROLE=sisyphus` must NOT be satisfied by `MOCKROLE=sisyphus-junior`
+    // (still present in the file when the shorter role's own line is removed).
+    for (const role of [CONDUCTOR_ID, 'explore']) {
+      const markerLine = `${MOCKROLE_BLOCK_SCALARS.get(role).indent}MOCKROLE=${role}`
+      const stripped = once.split('\n').filter((line) => line !== markerLine).join('\n')
+      writeFileSync(compositionPath, stripped)
+      appendMockRoleMarker(sandbox, role)
+      const reLanding = verifyMockRoleMarkerLanding(sandbox, role)
+      if (reLanding.ok !== true) {
+        problems.push(`re-injection of '${role}' after removal landed wrong: ${JSON.stringify(reLanding)}`)
+      }
+      writeFileSync(compositionPath, once)
+    }
+    try {
+      appendMockRoleMarker(sandbox, 'not-a-roster-agent')
+      problems.push('appendMockRoleMarker must throw for an unknown role')
+    } catch {
+      // expected: loud unknown-role failure
+    }
+
+    // MUTATION QA for the R-6 failure mode itself: reproduce the OLD
+    // implementation's `String.replace('persona: |-', …)` — since that header is
+    // no longer unique (ten delegation rows), the marker lands under the FIRST
+    // persona row (explore's), not the intended role's. The verifier MUST
+    // report that as a failed landing, otherwise the landing check could not
+    // catch the very bug it exists for.
+    const naiveRole = 'oracle'
+    writeFileSync(
+      compositionPath,
+      once.replace('persona: |-\n', `persona: |-\n          MOCKROLE=${naiveRole}\n`),
+    )
+    const naiveLanding = verifyMockRoleMarkerLanding(sandbox, naiveRole)
+    if (naiveLanding.ok !== false) {
+      problems.push(
+        'the landing verifier missed the R-6 wrong-row injection (first-hit needle) '
+        + `for '${naiveRole}': ${JSON.stringify(naiveLanding)}`,
+      )
+    }
+    if (!verifyMockRoleMarkerLanding(sandbox, 'explore').actual?.includes(naiveRole)) {
+      problems.push('the R-6 mutation fixture did not actually land oracle\'s marker in explore\'s row')
+    }
+  } catch (error) {
+    problems.push(`MOCKROLE landing self-test crashed: ${error.message}`)
+  } finally {
+    rmSync(sandbox.root, { recursive: true, force: true })
+  }
+  return problems
+}
+
+async function runAnalysisSelfTest(routes) {
   const problems = []
   const good = analyzeHello(
     {
@@ -1743,15 +2519,85 @@ function runAnalysisSelfTest(routes) {
       problems.push(`fabricated nested-delegation defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
     }
   }
+
+  // ── P2-T18 roster-parade self-test: the fabricated good input must PASS and
+  // every fabricated defect must fail on its OWN named check.
+  const parade = fabricatedParadeInput(routes)
+  const goodParade = analyzeRosterParade(parade.input, parade.routes)
+  if (goodParade.result !== 'PASS') {
+    problems.push(`fabricated GOOD roster-parade must PASS, got FAIL on: ${goodParade.failed.join(', ')}`)
+  }
+  const paradeDefectCases = [
+    ['a MOCKROLE marker landed in the wrong row', (input) => {
+      input.markerLanding[3] = { ...input.markerLanding[3], ok: false }
+    }, 'mockRoleMarkersLandedInCorrectRows'],
+    ['one child session never ran', (input) => {
+      input.allLogs = input.allLogs.filter((candidate) => !candidate.path.includes('/oracle/'))
+    }, 'allTenChildSessionsRan'],
+    ['a child ran on the wrong route', (input) => {
+      input.allLogs = input.allLogs.map((candidate) =>
+        candidate.path.includes('/atlas/')
+          ? {
+              ...candidate,
+              events: candidate.events.map((event) =>
+                event.type === 'request/header'
+                  ? { ...event, data: { header: { config: { provider: 'wrong', model: 'wrong' } }, reason: 'initial' } }
+                  : event),
+            }
+          : candidate)
+    }, 'everyChildRouteMatchedConfiguredSeat'],
+    ['the conductor split the batch across two messages', (input) => {
+      const batchIndex = input.log.events.findIndex(
+        (event) => event.type === 'assistant/message'
+          && (event.data?.message?.content ?? []).some((block) => block?.type === 'tool-call'),
+      )
+      const batch = input.log.events[batchIndex]
+      const blocks = batch.data.message.content
+      const half = Math.floor(blocks.length / 2)
+      input.log.events.splice(
+        batchIndex,
+        1,
+        { ...batch, data: { ...batch.data, message: { content: blocks.slice(0, half) } } },
+        { ...batch, seq: batch.seq + 0.5, data: { ...batch.data, message: { content: blocks.slice(half) } } },
+      )
+    }, 'allTenDelegationsInOneMessage'],
+    ['a child note never returned to the conductor', (input) => {
+      const note = paradeChildNote(PARADE_AGENTS[0])
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'tool/result' && eventText(event).includes(note)),
+      )
+    }, 'everyChildNoteReturnedToConductor'],
+    ['a route provider is not active', (input) => {
+      input.providersJson = JSON.stringify({
+        type: 'server-response',
+        rpcId: 'x',
+        result: { ok: true, value: { providers: [{ provider: 'deepseek', active: false }] } },
+      })
+    }, 'everyRouteProviderActive'],
+  ]
+  for (const [label, mutate, expectedCheck] of paradeDefectCases) {
+    const mutated = fabricatedParadeInput(routes)
+    mutate(mutated.input)
+    const verdict = analyzeRosterParade(mutated.input, mutated.routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated roster-parade defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
+  problems.push(...await runMockRoleLandingSelfTest())
   return problems
 }
 
 // ── scenario definitions ─────────────────────────────────────────────────────
 // Each scenario runs fully isolated: its own sandbox, its own mock server
 // (per-role cursors stay scenario-scoped), its own dsh boot. `roles` lists
-// the MOCKROLE markers to deliver into the materialized preset; `seed` runs
-// before the mock starts (fixtures the script points at); `script(sandbox)`
-// builds the mock script (absolute fixture paths need the sandbox).
+// the MOCKROLE markers to deliver into the materialized preset; `env` is the
+// scenario's OMO_<AGENT>_* seat overlay (P2-T18; resolved through the SAME
+// resolveModelRoutes the spawned dsh runs, so settings/agentOptions and the
+// assertions share one source); `seed` runs before the mock starts (fixtures
+// the script points at); `script(sandbox)` builds the mock script (absolute
+// fixture paths need the sandbox).
 
 const SCENARIOS = [
   {
@@ -1792,15 +2638,36 @@ const SCENARIOS = [
     script: nestedDelegationScript,
     analyze: analyzeExploreNestedDelegationDenied,
   },
+  {
+    // P2-T18 (plan §4.7; Phase 2 exit criterion a): the conductor delegates to
+    // ALL 10 roster agents in ONE message; every child runs on its own
+    // env-configured REAL catalog seat. `env` distributes the 10 seats over
+    // the 7 real pairs (PARADE_SEATS); the conductor keeps its default seat so
+    // the AC-5 sisyphus≠explore pair stays meaningful.
+    name: 'roster-parade',
+    prompt: PARADE_PROMPT,
+    roles: [CONDUCTOR_ID, ...PARADE_AGENTS],
+    env: paradeEnv(),
+    seed: (sandbox) => {
+      writeFileSync(join(sandbox.project, 'README.md'), DEMO_README_CONTENT)
+    },
+    script: paradeScript,
+    analyze: analyzeRosterParade,
+  },
 ]
 
 /**
  * Run one scenario end-to-end. Returns the scenario verdict object; the
  * sandbox root is handed back for the caller's cleanup/digest accounting.
  */
-async function runScenario(def, routes) {
+async function runScenario(def, baseRoutes) {
   const sandbox = createSandbox()
   console.error(`drive: [${def.name}] sandbox ${sandbox.root}`)
+  // P2-T18: the scenario's own env overlay is resolved through the SAME
+  // resolver the spawned dsh runs, so agentOptions/settings and the assertions
+  // can never disagree about a seat.
+  const env = scenarioEnv(sandbox, def.env)
+  const routes = def.env === undefined ? baseRoutes : resolveModelRoutes(env)
   const server = await startMockLlmServer({ script: def.script(sandbox) })
   let child
   let scenario = { name: def.name, result: 'FAIL', failed: ['driver did not complete'] }
@@ -1808,16 +2675,19 @@ async function runScenario(def, routes) {
     const patchPath = seedSandbox(sandbox, routes, server.baseUrl)
     def.seed?.(sandbox) // fixtures land after seedSandbox mkdirs the project dir
     console.error(`drive: [${def.name}] stage 0 — dsh plugin add into the sandbox profile`)
-    installPlugin(sandbox)
+    installPlugin(sandbox, env)
 
     console.error(`drive: [${def.name}] booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0`)
-    const boot = await bootDsh(sandbox, patchPath)
+    const boot = await bootDsh(sandbox, patchPath, env)
     child = boot.child
     console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port} (transport ${boot.transport})`)
 
     // The plugin sync materializes the concerto preset at boot; then the
-    // MOCKROLE markers ride both personas into the system prompts (header).
+    // MOCKROLE markers ride each role's persona into its child system prompt.
+    // P2-T18: verify where each marker LANDED (grep/line-number check) — the
+    // parade gates on it, and every scenario carries the raw detail.
     for (const role of def.roles) appendMockRoleMarker(sandbox, role)
+    const markerLanding = def.roles.map((role) => verifyMockRoleMarkerLanding(sandbox, role))
 
     // Wiring proof for BOTH adapters (transport-adaptive; same contract).
     const providers = await listProvidersJoined(boot)
@@ -1859,6 +2729,7 @@ async function runScenario(def, routes) {
         requests: server.requests,
         providersJson,
         bootLog: boot.log(),
+        markerLanding,
         ...(def.analysisInput?.(sandbox) ?? {}),
       },
       routes,
@@ -1895,7 +2766,7 @@ async function runScenario(def, routes) {
 async function main() {
   const routes = resolveModelRoutes()
   // §14.4.5: analysis QA runs BEFORE the expensive spawn.
-  const selfTestProblems = runAnalysisSelfTest(routes)
+  const selfTestProblems = await runAnalysisSelfTest(routes)
   if (selfTestProblems.length > 0) {
     console.log(JSON.stringify({ result: 'FAIL', reason: `analysis self-test: ${selfTestProblems.join('; ')}`, scenarios: [] }))
     process.exit(1)
@@ -1908,7 +2779,16 @@ async function main() {
 
   const scenarios = []
   const sandboxRoots = []
-  for (const def of SCENARIOS) {
+  const only = (process.env.DSH_E2E_ONLY ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0)
+  const unknown = only.filter((name) => !SCENARIOS.some((def) => def.name === name))
+  if (unknown.length > 0) {
+    throw new Error(`DSH_E2E_ONLY names no such scenario: ${unknown.join(', ')}`)
+  }
+  const selected = only.length === 0 ? SCENARIOS : SCENARIOS.filter((def) => only.includes(def.name))
+  for (const def of selected) {
     const { scenario, sandboxRoot } = await runScenario(def, routes)
     scenarios.push(scenario)
     sandboxRoots.push(sandboxRoot)
@@ -1945,12 +2825,12 @@ async function main() {
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.argv.includes('--self-test')) {
     const routes = resolveModelRoutes()
-    const problems = runAnalysisSelfTest(routes)
+    const problems = await runAnalysisSelfTest(routes)
     if (problems.length > 0) {
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return) FAILs on its own named check')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

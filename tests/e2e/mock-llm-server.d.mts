@@ -4,6 +4,12 @@
 export type MockStep =
   | { type: "text"; text: string }
   | { type: "tool_call"; name: string; arguments: Record<string, unknown>; id?: string }
+  // P2-T18 parallel-batch primitive: N calls inside ONE assistant delta
+  // (OpenAI `index` 0..N-1). The singular step above is unchanged.
+  | {
+      type: "tool_calls";
+      calls: Array<{ name: string; arguments: Record<string, unknown>; id?: string }>;
+    }
   | { type: "hang" };
 
 export type MockScript = Record<string, MockStep[]>;

@@ -54,7 +54,16 @@ const CREATED = 0;
 /**
  * @typedef {{ type: "text", text: string }}
  *        | {{ type: "tool_call", name: string, arguments: Record<string, unknown>, id?: string }}
+ *        | {{ type: "tool_calls", calls: Array<{ name: string, arguments: Record<string, unknown>, id?: string }> }}
  *        | {{ type: "hang" }} MockStep
+ *
+ * `tool_calls` (plural, P2-T18) is the PARALLEL-batch primitive: every call is
+ * emitted inside ONE assistant delta with the OpenAI-mandated increasing
+ * `index`, which is exactly what "the conductor fires N delegations in one
+ * message" looks like on the wire. The singular `tool_call` step stays
+ * byte-identical for every pre-existing scenario. Ids default to
+ * `mock-llm-tool-<callIndex>-<i>`: the singular step's `<callIndex>` alone
+ * would collide across the batch (one cursor advance, N calls).
  */
 
 /**
@@ -68,6 +77,7 @@ export async function startMockLlmServer({ script, host = "127.0.0.1" }) {
   if (script === null || typeof script !== "object" || Array.isArray(script)) {
     throw new TypeError("mock-llm: script must be a Record<role, MockStep[]>");
   }
+  assertScriptShape(script);
   const cursors = new Map(); // role -> next step index (see SESSION MODEL above)
   const requests = []; // observation channel: T18/T20 assert on recorded payloads
 
@@ -145,6 +155,43 @@ export async function startMockLlmServer({ script, host = "127.0.0.1" }) {
   };
 }
 
+/**
+ * Fail LOUD at startup on a malformed script step (P2-T18): a bad step is
+ * author error in the scenario definition, and discovering it mid-stream would
+ * either crash the request handler or replay a nonsense frame. An empty
+ * `tool_calls` batch is the one shape that looks valid but produces a
+ * `finish_reason: "tool_calls"` frame with zero calls — rejected here.
+ */
+function assertScriptShape(script) {
+  for (const [role, steps] of Object.entries(script)) {
+    if (!Array.isArray(steps)) {
+      throw new TypeError(`mock-llm: script role '${role}' must map to MockStep[]`);
+    }
+    for (const [index, step] of steps.entries()) {
+      const where = `script['${role}'][${index}]`;
+      if (step === null || typeof step !== "object") {
+        throw new TypeError(`mock-llm: ${where} must be a MockStep object`);
+      }
+      if (step.type === "tool_calls") {
+        if (!Array.isArray(step.calls) || step.calls.length === 0) {
+          throw new TypeError(`mock-llm: ${where} is a tool_calls step with no calls`);
+        }
+        for (const [callIndex, call] of step.calls.entries()) {
+          if (typeof call?.name !== "string" || call.name.length === 0) {
+            throw new TypeError(`mock-llm: ${where}.calls[${callIndex}] needs a non-empty name`);
+          }
+        }
+      } else if (step.type === "tool_call") {
+        if (typeof step.name !== "string" || step.name.length === 0) {
+          throw new TypeError(`mock-llm: ${where} needs a non-empty tool name`);
+        }
+      } else if (step.type !== "text" && step.type !== "hang") {
+        throw new TypeError(`mock-llm: ${where} has unknown step type '${String(step.type)}'`);
+      }
+    }
+  }
+}
+
 /** Extract the MOCKROLE marker from the request's system message(s). */
 function detectRole(body) {
   const messages = body !== null && typeof body === "object" ? body.messages : undefined;
@@ -215,24 +262,33 @@ function writeCompletion(response, step, body, role, callIndex) {
   if (step.type === "text") {
     send({ content: step.text });
   } else {
+    // Both the singular step (one call, index 0) and the plural batch (N calls,
+    // indices 0..N-1, ONE delta) take this path: the wire shape is identical,
+    // only the count differs. The adapters accumulate by `index`.
+    const calls = step.type === "tool_calls"
+      ? step.calls
+      : [{ name: step.name, arguments: step.arguments, id: step.id }];
     send({
-      tool_calls: [
-        {
-          index: 0,
-          id: step.id ?? `${TOOL_CALL_ID_PREFIX}${callIndex}`,
-          type: "function",
-          function: {
-            name: step.name,
-            arguments: JSON.stringify(step.arguments ?? {}),
-          },
+      tool_calls: calls.map((call, index) => ({
+        index,
+        id: call.id ?? (step.type === "tool_calls"
+          ? `${TOOL_CALL_ID_PREFIX}${callIndex}-${index}`
+          : `${TOOL_CALL_ID_PREFIX}${callIndex}`),
+        type: "function",
+        function: {
+          name: call.name,
+          arguments: JSON.stringify(call.arguments ?? {}),
         },
-      ],
+      })),
     });
   }
-  send({}, step.type === "tool_call" ? "tool_calls" : "stop");
+  send({}, step.type === "text" ? "stop" : "tool_calls");
 
-  const outputTokens =
-    step.type === "text" ? step.text.length : JSON.stringify(step.arguments ?? {}).length;
+  const outputTokens = step.type === "text"
+    ? step.text.length
+    : step.type === "tool_calls"
+      ? step.calls.reduce((total, call) => total + JSON.stringify(call.arguments ?? {}).length, 0)
+      : JSON.stringify(step.arguments ?? {}).length;
   response.write(
     `data: ${JSON.stringify({
       id,
