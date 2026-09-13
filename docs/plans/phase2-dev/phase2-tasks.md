@@ -67,28 +67,28 @@
 - **证据**：（待填）
 - **依赖**：P2-T2。**量级**：2 小时。
 
-### [ ] P2-T5 — persona：`hephaestus`
+### [x] P2-T5 — persona：`hephaestus`
 
 - **产出**：`system-sections/hephaestus-persona.md` + 快照 `tests/omo-agents/__snapshots__/hephaestus-system-prompt.md`（命名约定见 T4-⑥）。
 - **做法**：按 T4 配方；上游主源 `agents/hephaestus/`（模型变体文件取通用层，GPT 特定引用按 R-3 注记改写）；保留"目标驱动、自主工作到完成"语义内核。
 - **判定**：✅ 快照签入且非空；署名头列出实际上游源文件；对照上游逐节核对三要素无缺失。
-- **证据**：（待填）
+- **证据**：2026-09-12 批次1（deepseek-flash 一轮过）。hephaestus-persona.md 68 行 + 快照 68 行（builder 实出生成）；评审逐节对照上游核实：goal-not-recipe 内核保留、GPT 特定调优剥离（lsp_diagnostics→typecheck、无 background-ID 契约）、Manual-QA 本质以 "exercise the result directly" 改写、3 次失败协议保留、write/edit 授予明示且无 read-only 标记、委派缺席改写正确、假设入报告。双评审 APPROVE（Kimi 3 NIT 装饰性归属措辞——仲裁不修复并记录；mcode 无问题）；CI 8/8 绿（门2=240）。
 - **依赖**：P2-T4。**量级**：2 小时。
 
-### [ ] P2-T6 — persona：`oracle`
+### [x] P2-T6 — persona：`oracle`
 
 - **产出**：`system-sections/oracle-persona.md` + 快照。
 - **做法**：按 T4 配方；**输出契约完整保留**（verbosity spec / Bottom line / Action plan / Effort 标签 / 三段响应结构——基准表 2.3 注记）；保留 session continuation 追问句。
 - **判定**：同 P2-T5。
-- **证据**：（待填）
+- **证据**：批次1。oracle-persona.md 108 行 + 快照；评审逐条对照上游核实输出契约**零缺失**（5 项数值上限、三层结构含 Escalation triggers/Alternative sketch、Effort 四档精确、追问句、2x-effort ask、不捏造、max-2 optional considerations、高风险自检 4 项）；header 行号引用 :8-38 核验精确。双评审 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：2 小时。
 
-### [ ] P2-T7 — persona：`librarian`
+### [x] P2-T7 — persona：`librarian`
 
 - **产出**：`system-sections/librarian-persona.md` + 快照。
 - **做法**：按 T4 配方；工具面引用写 `web_search`/`web_fetch`（composition 继承），context7/MCP 类引用删除（Phase 6）。
 - **判定**：同 P2-T5。
-- **证据**：（待填）
+- **证据**：批次1。librarian-persona.md 86 行 + 快照；评审核实：TYPE A-D 分类与触发路由保留、文档发现流完整（官方优先/版本确认/sitemap 三回退/定向抓取/跳过条件）、引用契约绑定要素齐全、失败恢复全覆盖（context7/grep_app/gh 项正确删除或泛化）、正文无 context7/MCP 残留（剥离归属注释后断言）；header :7-22 核验精确。双评审 APPROVE；CI 绿。
 - **依赖**：P2-T4。**量级**：1.5 小时。
 
 ### [ ] P2-T8 — persona：`plan-consultant`（v4 metis）
