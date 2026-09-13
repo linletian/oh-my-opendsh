@@ -151,20 +151,20 @@
 
 ## WP-3 Composition 扩展（计划书 §4.4/§4.5）
 
-### [ ] P2-T15 — 模板 9 个新委派行 + 逐行 deny 哨兵渲染器
+### [x] P2-T15 — 模板 9 个新委派行 + 逐行 deny 哨兵渲染器
 
 - **产出**：`concerto/agent.cordis.yml` 的 delegation 组扩为 12 行 + `concerto-preset.ts` 的名册驱动渲染（`renderAgentSentinels`：persona / agentOptions / 逐行 `__OMO_<ID>_DENY__` 三类哨兵统一从 roster 渲染）。
 - **做法**：每行：`id: tool-subagent-<id>`、`provider: spawn`、`toolName: <id>`、`backgroundMode: continuable`、`persona: __OMO_<ID>_PERSONA__`、`agentOptions: __OMO_<ID>_AGENT_OPTIONS__`、toolFilter 按类（只读 6 行 / worker 2 行写 `deny: __OMO_<ID>_DENY__` 逐行唯一哨兵；atlas 无 filter 键；multimodal-looker 静态 `allow`，基准表 §1）、maxDepth 按类；渲染器从 roster.ts 按类计算委派名集合渲染各 deny 哨兵（JSON-quote 名字）；`replaceSentinelOnce` 恰好一次护栏原样适用（sentinel 名带行 id）；哨兵位合计 11 persona + 10 agentOptions + 8 deny = **29 个**；台账注释（KEEP/DROP/DEV 体例）补记本次扩展。
 - **判定**：✅ 渲染后 composition：哨兵零残留（grep `__OMO_` 无命中）；每行 filter/maxDepth 与基准表一致；`loadYamlDialect` 解析通过；explore 行形状除 deny 哨兵外无回归；**两次冷启动 / 12 行并存**时无 "prompt section already registered" 类报错（每个实例注册 `tool:<toolName>` 段——toolName 唯一则段名结构性不撞，此处取冷启动日志实证兜底，基准表 §3）。
-- **证据**：（待填）
+- **证据**：2026-09-12/13（deepseek-flash，1 修复轮=探针断钉）。模板 delegation 组 12 行（control+list-agents+10 roster 行 roster 序；逐行 persona/agentOptions 哨兵；只读 6+worker 2 行逐行唯一 deny 哨兵；atlas 无 toolFilter 键 maxDepth 2；looker 静态 allow [read, read_image]；台账注释更新、散文不写 __OMO_ 字面量）。renderAgentSentinels 名册驱动渲染（29 哨兵逐行恰好一次、空 deny 拒绝、SENTINEL_PATTERN 残留检查）；sync 签名 {personas?, routes?} 局部回退注入；index.ts 零改动兼容。门最小修复全部 roster 派生（doctor-lite explore 契约 + doctor-lite.d.mts、c10 名册完整性、prove-toolfilter 反真空断言、probe 两处 deny 钉从 roster.ts 计算）；双 boot 冷启动实证 12 行并存无 already-registered 类报错、零残留。评审 Kimi APPROVE（2 NIT 留 T20）+ mcode APPROVE；CI 8/8 绿（门2=327，e2e 4 场景零改动）。
 - **依赖**：P2-T2 + P2-T5…T13（persona 文件齐备，渲染才有内容）。**量级**：4 小时。
 
-### [ ] P2-T16 — apply 接线与 boot marker
+### [x] P2-T16 — apply 接线与 boot marker
 
 - **产出**：`index.ts` 名册化 boot marker（子级 10 行 `persona assembled` + 路由汇总行 + **三条**非阻断警告行——全员同值 / 委派同座（T3）/ **route provider not registered**（本条，M-2））；`syncConcertoPreset` 签名/默认值名册化；`concerto-preset.test.ts` 更新。
 - **做法**：保持 loud-but-non-fatal 纪律（每 agent 独立 try/catch，一个 persona 坏不拖垮其余）；marker 文案保持 probe 可断言的稳定格式。**provider 注册检查**：apply() 时经 `ctx.inject` 读 llm 服务的 provider 列表（确切服务名/方法以实施时源码核实为准——probe 的 POST /api/llm.providers 是外部等价物），11 条路由中 provider 未注册者打一**非阻断**警告行（注册是 keyless 且可热加载，故只警告不阻断——与 T3 两条警告同纪律）；没有该检查，缺 pi-ai 段的部署会让快座子级到被委派时才 `model-unavailable`（会话级失败而非 boot 可见）。
 - **判定**：✅ 单测绿；probe 沙箱冷启动日志含 10 个 persona assembled 行 + 路由汇总行（11 条）+ 三条警告行的 fire/不 fire 与种子一致。**口径注**（与 §3 的 29 哨兵位并读）：**11** = persona 哨兵位（含指挥——指挥 marker 走既有 `omo-sisyphus system prompt assembled`，index.ts:124）；**10** = 子级 `persona assembled` 行。
-- **证据**：（待填）
+- **证据**：2026-09-13（deepseek-flash 一轮过）。boot-markers.ts（317 行纯函数模块：10 子级 persona 行/11 路由汇总行/座位警告行/provider 检查行格式与求值）+ index.ts 改薄（DELEGATION_ENTRIES 循环逐 agent try/catch、resolveModelRoutesWithWarnings 消费、ctx.inject(['llm']) 接线）；boot-markers.test.ts 32 用例（格式钉、假定时器 settle 覆盖、分组、纪律、apply 接线）。provider 检查为 SETTLED 设计（增长+50ms / 静默 8s / run-once）——编码实测 pi-ai 异步注册致 t0 直读误报；评审负向 boot 实证缺省部署真的打出 missing 行。探针零改动通过（两锚点字节兼容）。评审 Kimi APPROVE（3 NIT 论证非缺陷）+ mcode APPROVE（首轮遇 MiniMax Token Plan 5h 窗口限额，按半小时周期重试成功）；CI 8/8 绿（门2=359）。
 - **依赖**：P2-T15。**量级**：2 小时。
 
 ---
