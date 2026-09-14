@@ -151,6 +151,57 @@ describe('omo-agents model routes (T14 + P2-T3 roster)', () => {
     expect(legal.oracle).toEqual({ provider: 'deepseek', model: 'deepseek-v4-flash' })
   })
 
+  it('AC-5 precheck message: leads with the two clashing env pairs, keeps the 22-name diagnostic tail', () => {
+    // PR-review fix: the pinned prefix stays byte-stable, the actionable hint
+    // must LEAD with the sisyphus/explore pairs before any other agent's name,
+    // and the full 22-name list survives only as the trailing diagnostic line.
+    let message = ''
+    try {
+      resolveModelRoutes({
+        OMO_SISYPHUS_PROVIDER: 'deepseek',
+        OMO_SISYPHUS_MODEL: 'deepseek-v4-flash',
+      })
+    } catch (error) {
+      message = (error as Error).message
+    }
+    // The prefix tests/consumers match on — byte-stable, and the FR-5 clause too.
+    expect(message.startsWith(
+      'AC-5 precheck failed: sisyphus and explore resolve to the SAME route '
+      + 'deepseek/deepseek-v4-flash',
+    )).toBe(true)
+    expect(message).toContain(
+      'dual model routing (FR-5) requires two distinct {provider,model} pairs',
+    )
+
+    // The actionable hint region ends where the diagnostic tail begins.
+    const tailMarker = 'all available overrides for diagnosis: '
+    const hintEnd = message.indexOf(tailMarker)
+    expect(hintEnd).toBeGreaterThan(0)
+    const hint = message.slice(0, hintEnd)
+
+    const sisyphusPair = MODEL_ROUTE_ENV_VARS.sisyphus
+    const explorePair = MODEL_ROUTE_ENV_VARS.explore
+    const clashing = [
+      sisyphusPair.provider, sisyphusPair.model,
+      explorePair.provider, explorePair.model,
+    ]
+    // LEAD: all four clashing override names are in the hint, before the tail.
+    for (const envVar of clashing) {
+      expect(hint).toContain(envVar)
+      expect(message.indexOf(envVar)).toBeLessThan(hintEnd)
+    }
+    // …and NO other agent's override name appears in the hint at all.
+    for (const envVar of MODEL_ROUTE_ENV_VAR_NAMES) {
+      if (!clashing.includes(envVar)) expect(hint).not.toContain(envVar)
+    }
+
+    // The full 22-name diagnostic tail is still present, byte-for-byte as the
+    // roster-order slash-joined list.
+    expect(MODEL_ROUTE_ENV_VAR_NAMES).toHaveLength(22)
+    const tail = message.slice(hintEnd)
+    expect(tail).toBe(`${tailMarker}${MODEL_ROUTE_ENV_VAR_NAMES.join('/')}`)
+  })
+
   it('same provider with DIFFERENT models is a legal dual route (pair-level distinctness)', () => {
     const routes = resolveModelRoutes({
       OMO_SISYPHUS_PROVIDER: 'deepseek-official',

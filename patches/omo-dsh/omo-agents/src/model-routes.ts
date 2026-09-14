@@ -199,10 +199,20 @@ export function resolveModelRoutes(env: ModelRouteEnv = process.env): ModelRoute
     model: readRouteField(env, entry.routeEnvVars.model, entry.defaultRoute.model),
   }))
   if (sameRoute(routes.sisyphus, routes.explore)) {
+    // Message shape (PR-review fix): the pinned prefix stays BYTE-STABLE
+    // (tests/consumers match it), then the ACTIONABLE hint leads with the two
+    // env pairs that can actually clash — the sisyphus pair and the explore
+    // pair — and only the full 22-name list is demoted to a trailing
+    // diagnostic line, so the hint is not diluted by 22 env names.
+    const sisyphusEnvPair = MODEL_ROUTE_ENV_VARS.sisyphus
+    const exploreEnvPair = MODEL_ROUTE_ENV_VARS.explore
     throw new ModelRouteConfigError(
       `AC-5 precheck failed: sisyphus and explore resolve to the SAME route `
       + `${formatRoute(routes.sisyphus)} — dual model routing (FR-5) requires two distinct `
-      + `{provider,model} pairs; check the ${MODEL_ROUTE_ENV_VAR_NAMES.join('/')} overrides`,
+      + `{provider,model} pairs; check the two clashing override pairs first: `
+      + `${sisyphusEnvPair.provider}/${sisyphusEnvPair.model} vs `
+      + `${exploreEnvPair.provider}/${exploreEnvPair.model}; `
+      + `all available overrides for diagnosis: ${MODEL_ROUTE_ENV_VAR_NAMES.join('/')}`,
     )
   }
   return routes

@@ -434,7 +434,7 @@ async function run() {
         : `${[...entriesByClass].map(([cls, entries]) => `${cls}=${entries.length}`).join(', ')} `
           + `(all ${entriesByClass.size} roster classes present, each fully bound)`)
 
-    // ④ — uniform roster maxDepth on every delegation row.
+    // ④ — uniform roster maxDepth on every delegation row. The uniform maxDepth=2 binding is DELIBERATE design (arbiter decision D-2026-09-13-01), not an accident a future edit should casually relax: the dsh depth gate reads the INVOKED row's config.maxDepth → request.maxDepth → resolveChildDepth (childDepth = parent.depth + 1 > maxDepth → SubagentDepthError), so a uniform 2 caps every delegation chain at 2 levels and makes depth-3 structurally impossible.
     const uniformDepths = [...new Set(DELEGATION_ENTRIES.map((entry) => entry.maxDepth))]
     c10('c10.10', depthProblems.length === 0 && uniformDepths.length === 1,
       depthProblems.length === 0 && uniformDepths.length === 1
