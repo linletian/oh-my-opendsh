@@ -1,10 +1,22 @@
 #!/usr/bin/env node
-// scripts/prove-explore-toolfilter.mjs — T12 (P-4, AC-6 negative-a): session-free
-// proof that the concerto explore row's `toolFilter: deny: [write, edit, explore]` is
-// ENFORCED through dsh's real child-composition path — not merely present as
-// config text. A live model session closes the loop in T20; this script proves
-// everything up to the model boundary by executing the installed dsh's own
-// modules (read-only, exactly like T11's validator):
+// scripts/prove-explore-toolfilter.mjs — T12 (P-4, AC-6 negative-a); updated by
+// P2-T15 for the roster-computed deny list: session-free proof that the
+// concerto explore row's `toolFilter.deny` is ENFORCED through dsh's real
+// child-composition path — not merely present as config text. A live model
+// session closes the loop in T20; this script proves everything up to the model
+// boundary by executing the installed dsh's own modules (read-only, exactly
+// like T11's validator):
+//
+// The deny list is no longer the F1-era inline triple `[write, edit, explore]`:
+// it is the read-only CLASS list computed by roster.ts's `denyToolNamesFor` —
+// `[write, edit, ...DELEGATION_TOOL_NAMES]`, i.e. the two mutation tools plus
+// ALL TEN delegation toolNames (explore, hephaestus, oracle, librarian,
+// plan-consultant, plan-reviewer, atlas, multimodal-looker, sisyphus-junior,
+// prometheus). This proof IMPORTS that list from roster.ts — the same single
+// source the renderer consumes — so it follows the roster instead of restating
+// it, and it also asserts the composed row's filter EQUALS that list (without
+// that check the proof would validate the row against its own, possibly
+// weakened, filter).
 //
 //   js-yaml (JSON_SCHEMA + !!js, the dialect dsh-app-boot loads compositions
 //     with) parses the MATERIALIZED agent.cordis.yml;
@@ -32,13 +44,14 @@
 // name a layer does not admit (`layers.every(layer => layer.admits(name))`,
 // src/index.ts:1174; rc.6 lib/index.js:2850). Consequences asserted below:
 //   * schemas(childKey) — the model-facing tool list a presenter renders —
-//     contains neither `write` nor `edit` (the child never sees them);
-//   * get/resolveExecution return undefined for both, so a hallucinated call
-//     surfaces ToolNotFoundError UNKNOWN_TOOL, indistinguishable from a tool
-//     that does not exist (src/index.ts:1204-1226; ToolNotFoundError :494);
-//   * read/grep/glob + the platform shell (bash here, pwsh on win32) survive —
-//     the deliberate OMO-faithful read-only surface (verdict (a), see the
-//     T12 evidence log);
+//     contains neither `write` nor `edit` NOR ANY of the ten delegation tools
+//     (the read-only child never sees another agent's tool either);
+//   * get/resolveExecution return undefined for all of them, so a hallucinated
+//     call surfaces ToolNotFoundError UNKNOWN_TOOL, indistinguishable from a
+//     tool that does not exist (src/index.ts:1204-1226; ToolNotFoundError :494);
+//   * read/grep/glob/read_image + the platform shell (bash here, pwsh on win32)
+//     survive — the deliberate OMO-faithful read-only surface (verdict (a), see
+//     the T12 evidence log; read_image is the H-1 vision entry point);
 //   * the parent scope's own view is untouched (restrictions are child-scoped).
 //
 // Modes:
@@ -60,6 +73,15 @@
 
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+
+// The deny list this proof asserts is the roster's read-only class list
+// (P2-T15). Import it from roster.ts — the single source the renderer itself
+// consumes — through Node 24 type-stripping (P-8.6), the same move
+// scripts/doctor-lite.mjs makes.
+const { DELEGATION_TOOL_NAMES, MUTATION_TOOL_NAMES } = await import(
+  new URL('../patches/omo-dsh/omo-agents/src/roster.ts', import.meta.url).href
+)
+const ROSTER_READ_ONLY_DENY = [...MUTATION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES]
 
 const [nm, compositionPath, ...flags] = process.argv.slice(2)
 if (!nm || !compositionPath) {
@@ -115,6 +137,16 @@ try {
   process.exit(1)
 }
 let toolFilter = validated.toolFilter
+// The composed row must BE the roster's read-only class list (P2-T15):
+// reading the row's own filter without this check would let a weakened
+// composition pass its own weaker expectation — the same vacuity the
+// --expect reachable control guards against from the other side.
+if (expectMode === 'denied' && denyExtra === undefined
+  && JSON.stringify(toolFilter) !== JSON.stringify({ deny: ROSTER_READ_ONLY_DENY })) {
+  console.error(`T12-PROOF FAIL: composed explore deny=${JSON.stringify(toolFilter)} `
+    + `(want the roster read-only class list ${JSON.stringify(ROSTER_READ_ONLY_DENY)})`)
+  process.exit(1)
+}
 if (denyExtra !== undefined) {
   toolFilter = { ...(toolFilter ?? {}), deny: [...(toolFilter?.deny ?? []), denyExtra] }
 }
@@ -130,7 +162,10 @@ await ctx.plugin(ToolRuntime)
 // restriction semantics live in the registry, not in tool bodies. The roster
 // mirrors the materialized concerto composition's model-facing tools
 // (read/write/edit/read_image from tool-fs, glob/grep from tool-fs-search,
-// the platform-gated shell, and the remaining rows' tool names).
+// the platform-gated shell, the ten named delegation tools of the P2-T15
+// roster, and the remaining rows' tool names). The T11-era generic
+// `subagent`/`subagent_fork` names are GONE from the composition (F1) and so
+// are gone here: the stub roster tracks the real one.
 const stubTool = (name) => ({
   name,
   description: `probe stub for ${name}`,
@@ -146,10 +181,10 @@ const CONCERTO_TOOLS = [
   'job_list', 'job_output', 'job_kill', // tool-jobs
   'skill', // tool-skill
   'create_goal', 'get_goal', 'update_goal', // tool-goal
-  'subagent', 'subagent_fork', 'explore', // delegation group (T11 row included)
+  ...DELEGATION_TOOL_NAMES, // delegation group: the 10 named roster rows (P2-T15)
   'ask_user_question', // tool-ask-user
   'todo_write', // tool-todo
-  'web_search', // tool-web (fetch: false in the row → no web_fetch)
+  'web_search', 'web_fetch', // tool-web (the template row sets `fetch: true`, so both tools register)
 ]
 
 // The parent agent-plane scope plays the role of the preset's standing mount:
@@ -219,9 +254,13 @@ console.log(`T12-PROOF child visible AFTER  applyChildComposition (${after.lengt
 const writeExec = await execAsChild('write')
 const editExec = await execAsChild('edit')
 const readExec = await execAsChild('read')
+// The F1 case generalized: one delegation tool as the representative of the
+// ten (the visible-list assertions below cover all of them).
+const exploreExec = await execAsChild('explore')
 console.log(`T12-PROOF exec as child: write → ${writeExec}`)
 console.log(`T12-PROOF exec as child: edit → ${editExec}`)
 console.log(`T12-PROOF exec as child: read → ${readExec}`)
+console.log(`T12-PROOF exec as child: explore → ${exploreExec}`)
 const parentSeesWrite = ctx.tools.get('write', parentKey) !== undefined
 console.log(`T12-PROOF parent scope still sees write: ${parentSeesWrite}`)
 
@@ -239,19 +278,25 @@ if (expectMode === 'reachable') {
 
 // ── 4b. Expect-denied gate ──────────────────────────────────────────────────
 const problems = []
-if (after.includes('write')) problems.push('write still visible to the child')
-if (after.includes('edit')) problems.push('edit still visible to the child')
-for (const keep of ['read', 'glob', 'grep', SHELL]) {
+// Every name in the roster-computed deny list must be physically absent from
+// the child's model-facing list (P2-T15: write/edit AND the ten delegation
+// tools), and the read-only surface must survive intact.
+for (const name of ROSTER_READ_ONLY_DENY) {
+  if (after.includes(name)) problems.push(`${name} still visible to the child`)
+}
+for (const keep of ['read', 'read_image', 'glob', 'grep', SHELL]) {
   if (!after.includes(keep)) problems.push(`${keep} wrongly removed from the child`)
 }
 if (writeExec !== 'Error: unknown tool "write"') problems.push(`write exec = "${writeExec}" (want Error: unknown tool "write")`)
 if (editExec !== 'Error: unknown tool "edit"') problems.push(`edit exec = "${editExec}" (want Error: unknown tool "edit")`)
+if (exploreExec !== 'Error: unknown tool "explore"') problems.push(`explore exec = "${exploreExec}" (want Error: unknown tool "explore")`)
 if (readExec !== 'ran:read') problems.push(`read exec = "${readExec}" (read must still run)`)
 if (!parentSeesWrite) problems.push('parent scope lost write (restriction leaked upward)')
 if (problems.length > 0) {
   console.error(`T12-PROOF FAIL: ${problems.join('; ')}`)
   process.exit(1)
 }
-console.log(`T12-PROOF PASS: deny=[write,edit,explore] enforced by the installed dsh's real child-composition path — `
-  + `the child's model-facing tool list excludes write/edit, execution surfaces UNKNOWN_TOOL, `
-  + `read/grep/glob/${SHELL} retained (OMO-faithful read-only surface), parent scope unaffected`)
+console.log(`T12-PROOF PASS: deny=[${ROSTER_READ_ONLY_DENY.join(',')}] enforced by the installed dsh's real child-composition path — `
+  + `the child's model-facing tool list excludes write/edit AND all ${DELEGATION_TOOL_NAMES.length} delegation tools, `
+  + `execution surfaces UNKNOWN_TOOL, read/read_image/grep/glob/${SHELL} retained (OMO-faithful read-only surface), `
+  + 'parent scope unaffected')

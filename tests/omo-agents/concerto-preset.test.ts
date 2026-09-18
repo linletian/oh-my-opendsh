@@ -1,5 +1,22 @@
 // T6 — concerto preset sync module (TDD: written BEFORE the module existed;
 // first run must fail on the unresolved import).
+//
+// P2-T15 — the module's sentinel pipeline is roster-driven now: the concerto
+// template carries ONE `dsh-tool-subagent` instance per roster delegation
+// entry (10 rows) beside control / list-agents, and every per-row value
+// (persona / agentOptions / class-filter deny) is rendered from a single
+// source. These tests pin (a) the template's sentinel census, (b) the
+// rendered row contract per class, derived from roster.ts AND restated as
+// independent literals, and (c) the exactly-once guard.
+//
+// The rendered composition is parsed with `loadYamlDialect` — the repo's own
+// wrapper over the INSTALLED dsh's js-yaml in the exact loader dialect
+// (JSON_SCHEMA + `!!js`). The repo has no js-yaml dependency of its own, so
+// importing the installed runtime's parser is the same zero-dep move
+// scripts/doctor-lite.mjs and scripts/verify-concerto-static.mjs make; gate 2
+// already requires the installed dsh (the workflow installs it before the
+// gate chain), and `loadYamlDialect` fails loudly with code NO_PARSER rather
+// than silently skipping.
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -11,12 +28,27 @@ import {
   CONCERTO_TEMPLATE_DIR,
   EXPLORE_AGENT_OPTIONS_SENTINEL,
   EXPLORE_PERSONA_SENTINEL,
+  agentSentinelName,
   concertoPresetDir,
+  renderAgentDenyIntoComposition,
+  renderAgentOptionsIntoComposition,
+  renderAgentPersonaIntoComposition,
   renderExploreAgentOptionsIntoComposition,
   renderExplorePersonaIntoComposition,
   resolveDshHome,
   syncConcertoPreset,
 } from '../../patches/omo-dsh/omo-agents/src/concerto-preset'
+import {
+  DELEGATION_ENTRIES,
+  DELEGATION_TOOL_NAMES,
+  allowToolNamesFor,
+  denyToolNamesFor,
+} from '../../patches/omo-dsh/omo-agents/src/roster'
+import type { AgentId } from '../../patches/omo-dsh/omo-agents/src/roster'
+import { buildAgentPersona } from '../../patches/omo-dsh/omo-agents/src/persona-prompts'
+import { PERSONA_TEXT_SENTINEL } from '../../patches/omo-dsh/omo-agents/src/system-prompt'
+import { resolveModelRoutes } from '../../patches/omo-dsh/omo-agents/src/model-routes'
+import { loadYamlDialect } from '../../scripts/doctor-lite.mjs'
 
 // Independently computed expectation (not taken from the module) so the test
 // proves the module's import.meta.url resolution, not its own input.
@@ -40,6 +72,69 @@ function makeSandbox(): string {
 afterEach(() => {
   while (sandboxes.length > 0) rmSync(sandboxes.pop()!, { recursive: true, force: true })
 })
+
+/** Minimal row shape of a loaded composition (loose: js-yaml returns data). */
+type YamlRow = { id?: string; name?: string; config?: any }
+
+function delegationGroup(rows: any): YamlRow[] {
+  const group = (rows as YamlRow[]).find((row) => row.id === 'delegation')
+  if (group === undefined || !Array.isArray(group.config)) {
+    throw new Error('loaded composition has no `delegation` group with a row list')
+  }
+  return group.config as YamlRow[]
+}
+
+function toolRow(group: YamlRow[], toolName: string): YamlRow {
+  const row = group.find(
+    (candidate) => candidate.name === '@deepseek-ai/dsh-tool-subagent'
+      && candidate.config?.toolName === toolName,
+  )
+  if (row === undefined) throw new Error(`no dsh-tool-subagent row with toolName '${toolName}'`)
+  return row
+}
+
+/** Independent literals (not derived) — the roster order and classes of plan §4.1. */
+const DELEGATION_ORDER = [
+  'explore',
+  'hephaestus',
+  'oracle',
+  'librarian',
+  'plan-consultant',
+  'plan-reviewer',
+  'atlas',
+  'multimodal-looker',
+  'sisyphus-junior',
+  'prometheus',
+]
+const READ_ONLY_IDS = ['explore', 'oracle', 'librarian', 'plan-consultant', 'plan-reviewer', 'prometheus']
+const WORKER_IDS = ['hephaestus', 'sisyphus-junior']
+
+/** Spot-check headings: first heading of each system-sections/<id>-persona.md. */
+const PERSONA_HEADINGS: Record<string, string> = {
+  explore: '# Explore: Read-Only Retrieval Agent',
+  hephaestus: '# Hephaestus: Autonomous Deep Worker',
+  oracle: '# Oracle: Read-Only Technical Advisor',
+  librarian: '# The Librarian: Documentation and OSS Source Search',
+  'plan-consultant': '# Plan Consultant: Pre-Planning Gap Analysis',
+  'plan-reviewer': '# Plan Reviewer: Plan Critic and Review Gate',
+  atlas: '# Atlas: Master Orchestrator (TODO Execution)',
+  'multimodal-looker': '# Multimodal Looker: Media and Document Analysis',
+  'sisyphus-junior': '# Sisyphus-Junior: Focused Task Executor',
+  prometheus: '# Prometheus: Interview-Style Strategic Planner',
+}
+
+/** The 29 sentinels of the T8 + P2-T15 template, from the renderer's naming. */
+function templateSentinels(): string[] {
+  const sentinels = [`prefix: ${PERSONA_TEXT_SENTINEL}`]
+  for (const entry of DELEGATION_ENTRIES) {
+    sentinels.push(`persona: ${agentSentinelName(entry.id, 'PERSONA')}`)
+    sentinels.push(`agentOptions: ${agentSentinelName(entry.id, 'AGENT_OPTIONS')}`)
+    if (denyToolNamesFor(entry) !== undefined) {
+      sentinels.push(`deny: ${agentSentinelName(entry.id, 'DENY')}`)
+    }
+  }
+  return sentinels
+}
 
 describe('omo-agents concerto preset sync (T6)', () => {
   it('resolves CONCERTO_TEMPLATE_DIR from import.meta.url to the expected absolute path', () => {
@@ -84,7 +179,7 @@ describe('omo-agents concerto preset sync (T6)', () => {
     // preset.yml is copied verbatim; agent.cordis.yml is RENDERED at sync
     // time (T8 design a): the persona sentinel becomes the assembled
     // omo-sisyphus system prompt, so the materialized file differs from the
-    // template exactly in the persona value.
+    // template exactly in the rendered sentinel positions.
     expect(readFileSync(join(target, 'preset.yml'), 'utf8')).toBe(
       readFileSync(join(EXPECTED_TEMPLATE_DIR, 'preset.yml'), 'utf8'),
     )
@@ -93,6 +188,8 @@ describe('omo-agents concerto preset sync (T6)', () => {
     expect(composition).toContain('# Orchestrator Role')
     expect(composition).toContain('# Delegation Discipline')
     expect(composition).toContain('## Hard Blocks')
+    // P2-T15: EVERY sentinel is consumed — no marker of any family survives.
+    expect(composition).not.toContain('__OMO_')
   })
 
   it('syncConcertoPreset is a no-op when the target content is already identical', () => {
@@ -133,77 +230,241 @@ describe('omo-agents concerto preset sync (T6)', () => {
   })
 })
 
-describe('omo-agents explore delegation binding (T11, form A static config)', () => {
-  const EXPLORE_MARKER = 'T11-EXPLORE-PERSONA-MARKER\nsecond line of the injected explore persona'
+describe('concerto template — the 12-row delegation roster (P2-T15)', () => {
+  const template = readFileSync(join(EXPECTED_TEMPLATE_DIR, 'agent.cordis.yml'), 'utf8')
 
-  it('the template mounts exactly one explore tool-subagent row carrying both sentinels', () => {
-    const template = readFileSync(join(EXPECTED_TEMPLATE_DIR, 'agent.cordis.yml'), 'utf8')
-    expect(template.split('- id: tool-subagent-explore').length - 1).toBe(1)
-    expect(template.split('toolName: explore').length - 1).toBe(1)
-    // HARDENING (PR #1 review F1 fix, 2026-09-04): the generic spawn/fork
-    // rows are DROPPED — `explore` is the ONLY delegation path (negative
-    // probe; presence here would bypass every guardrail, P-19).
+  it('carries control + list-agents + one tool-subagent row per roster delegation entry, in roster order', async () => {
+    const group = delegationGroup(await loadYamlDialect(join(EXPECTED_TEMPLATE_DIR, 'agent.cordis.yml')))
+    expect(group.map((row) => row.id)).toEqual([
+      'tool-subagent-control',
+      'tool-subagent-list-agents',
+      ...DELEGATION_ORDER.map((id) => `tool-subagent-${id}`),
+    ])
+    // F1 (PR #1 review, 2026-09-04): no generic spawn/fork row, no product row.
+    expect(group.some((row) => row.config?.toolName === 'subagent')).toBe(false)
+    expect(group.some((row) => row.config?.toolName === 'subagent_fork')).toBe(false)
+    expect(group.some((row) => row.id === 'tool-subagent-codex' || row.id === 'tool-subagent-claude-code')).toBe(false)
     expect(template).not.toContain('toolName: subagent\n')
     expect(template).not.toContain('toolName: subagent_fork')
-    expect(template.split(`persona: ${EXPLORE_PERSONA_SENTINEL}`).length - 1).toBe(1)
-    expect(template.split(`agentOptions: ${EXPLORE_AGENT_OPTIONS_SENTINEL}`).length - 1).toBe(1)
-    // The T8 sentinel path stays intact alongside them.
-    expect(template.split('prefix: __OMO_SISYPHUS_SYSTEM_PROMPT__').length - 1).toBe(1)
   })
 
-  it('sync renders the explore persona sentinel into a |- block scalar inside the explore row', () => {
+  it('declares every sentinel exactly once (29: 1 conductor prefix + 10 persona + 10 agentOptions + 8 deny)', () => {
+    const sentinels = templateSentinels()
+    expect(sentinels).toHaveLength(29)
+    for (const sentinel of sentinels) {
+      expect(template.split(sentinel).length - 1, sentinel).toBe(1)
+    }
+    // The deny family is per-row unique: the old inline explore triple is gone
+    // and the class filters are sentinels now, not literals.
+    expect(template).not.toContain('deny: [write')
+    expect(template).not.toContain('deny: [write, edit, explore]')
+    // Sentinel delimiters appear ONLY in value/sentinel positions, never inside
+    // prose comments: a "is the template still carrying a sentinel" grep stays
+    // an unambiguous statement about the artifact.
+    const proseLines = template.split('\n').filter((line) => line.trimStart().startsWith('#'))
+    expect(proseLines.filter((line) => line.includes('__OMO_'))).toEqual([])
+  })
+})
+
+describe('concerto rendered composition — per-row contract (P2-T15)', () => {
+  async function renderDefault(): Promise<{ group: YamlRow[]; composition: string }> {
     const target = join(makeSandbox(), '.agent-presets', 'concerto')
-    expect(syncConcertoPreset(target, EXPECTED_TEMPLATE_DIR, 'SISYPHUS-STUB', EXPLORE_MARKER)).toBe('materialized')
+    expect(syncConcertoPreset(target)).toBe('materialized')
+    const composition = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
+    const group = delegationGroup(await loadYamlDialect(join(target, 'agent.cordis.yml')))
+    return { group, composition }
+  }
+
+  it('renders all 29 sentinels: a parsed composition with no `__OMO_` residue', async () => {
+    const { composition, group } = await renderDefault()
+    expect(composition).not.toContain('__OMO_')
+    expect(group).toHaveLength(12)
+  })
+
+  it('binds every roster delegation entry to exactly one row, in roster order', async () => {
+    const { group } = await renderDefault()
+    const tools = group.filter((row) => row.name === '@deepseek-ai/dsh-tool-subagent')
+    expect(tools.map((row) => row.config?.toolName)).toEqual(DELEGATION_ORDER)
+    for (const entry of DELEGATION_ENTRIES) {
+      const row = toolRow(group, entry.id)
+      expect(row.id).toBe(`tool-subagent-${entry.id}`)
+    }
+    expect([...DELEGATION_TOOL_NAMES]).toEqual(DELEGATION_ORDER)
+  })
+
+  it('gives every row provider spawn + backgroundMode continuable, and the roster maxDepth', async () => {
+    const { group } = await renderDefault()
+    for (const entry of DELEGATION_ENTRIES) {
+      const row = toolRow(group, entry.id)
+      expect(row.config.provider, entry.id).toBe('spawn')
+      expect(row.config.backgroundMode, entry.id).toBe('continuable')
+      // Roster-derived: dsh caps on the INVOKED row, so a uniform 2 on all ten
+      // rows is what makes the chain cap 2 (D-2026-09-13-01; roster §1 修正块).
+      expect(row.config.maxDepth, entry.id).toBe(entry.maxDepth)
+      expect(entry.maxDepth, entry.id).toBe(2)
+    }
+    expect(toolRow(group, 'atlas').config.maxDepth).toBe(2)
+  })
+
+  it('renders each row\'s agentOptions as the resolved {provider, model} route', async () => {
+    const { group } = await renderDefault()
+    const routes = resolveModelRoutes()
+    for (const entry of DELEGATION_ENTRIES) {
+      const route = routes[entry.id as AgentId]
+      expect(toolRow(group, entry.id).config.agentOptions, entry.id)
+        .toEqual({ provider: route.provider, model: route.model })
+    }
+    // Spot checks (independent of the roster rows): the two pre-existing seats
+    // plus the one vision seat stay where the plan puts them.
+    expect(toolRow(group, 'explore').config.agentOptions)
+      .toEqual({ provider: 'deepseek', model: 'deepseek-v4-flash' })
+    expect(toolRow(group, 'multimodal-looker').config.agentOptions)
+      .toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' })
+  })
+
+  it('renders each row\'s persona as that agent\'s block scalar', async () => {
+    const { group } = await renderDefault()
+    for (const entry of DELEGATION_ENTRIES) {
+      const persona = toolRow(group, entry.id).config.persona
+      expect(typeof persona, entry.id).toBe('string')
+      expect(persona, entry.id).toBe(buildAgentPersona(entry.id))
+      expect(persona, entry.id).toContain(PERSONA_HEADINGS[entry.id])
+    }
+  })
+
+  it('mirrors the roster classes onto toolFilter: read-only and worker deny, atlas none, allowlist allow', async () => {
+    const { group } = await renderDefault()
+    const delegationNames = DELEGATION_ORDER
+    // The class split itself, restated independently (plan §4.4).
+    expect(DELEGATION_ENTRIES.filter((entry) => entry.class === 'read-only').map((entry) => entry.id))
+      .toEqual(READ_ONLY_IDS)
+    expect(DELEGATION_ENTRIES.filter((entry) => entry.class === 'worker').map((entry) => entry.id))
+      .toEqual(WORKER_IDS)
+    expect(DELEGATION_ENTRIES.filter((entry) => entry.class === 'orchestrator').map((entry) => entry.id))
+      .toEqual(['atlas'])
+    expect(DELEGATION_ENTRIES.filter((entry) => entry.class === 'allowlist').map((entry) => entry.id))
+      .toEqual(['multimodal-looker'])
+
+    for (const id of READ_ONLY_IDS) {
+      expect(toolRow(group, id).config.toolFilter, id)
+        .toEqual({ deny: ['write', 'edit', ...delegationNames] })
+    }
+    for (const id of WORKER_IDS) {
+      expect(toolRow(group, id).config.toolFilter, id).toEqual({ deny: [...delegationNames] })
+    }
+    // atlas (orchestrator): the key is ABSENT — it keeps the delegation tools.
+    expect('toolFilter' in toolRow(group, 'atlas').config).toBe(false)
+    // multimodal-looker (allowlist): the static vision-safe list.
+    expect(toolRow(group, 'multimodal-looker').config.toolFilter).toEqual({ allow: ['read', 'read_image'] })
+
+    // The response above is the roster's own computation, per row.
+    for (const entry of DELEGATION_ENTRIES) {
+      const row = toolRow(group, entry.id)
+      const deny = denyToolNamesFor(entry)
+      const allow = allowToolNamesFor(entry)
+      if (deny !== undefined) expect(row.config.toolFilter, entry.id).toEqual({ deny })
+      else if (allow !== undefined) expect(row.config.toolFilter, entry.id).toEqual({ allow })
+      else expect('toolFilter' in row.config, entry.id).toBe(false)
+    }
+  })
+
+  it('keeps the explore row unregressed except for its roster-computed deny', async () => {
+    const { group } = await renderDefault()
+    const explore = toolRow(group, 'explore')
+    expect(explore.id).toBe('tool-subagent-explore')
+    expect(explore.name).toBe('@deepseek-ai/dsh-tool-subagent')
+    expect(explore.config.provider).toBe('spawn')
+    expect(explore.config.toolName).toBe('explore')
+    expect(explore.config.backgroundMode).toBe('continuable')
+    // Roster-derived (was the literal 1 before the D-2026-09-13-01 correction):
+    // explore is a delegation target, and every target row caps at 2.
+    expect(explore.config.maxDepth)
+      .toBe(DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')!.maxDepth)
+    expect(explore.config.persona).toContain('# Explore: Read-Only Retrieval Agent')
+    expect(explore.config.agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-v4-flash' })
+    // The T12 + F1 guardrails, now the read-only class list (P2-T15): write/edit
+    // plus all ten delegation tools, so the child physically cannot delegate.
+    const deny = denyToolNamesFor(DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')!)!
+    expect(explore.config.toolFilter).toEqual({ deny })
+    for (const name of ['write', 'edit', ...DELEGATION_ORDER]) {
+      expect(explore.config.toolFilter.deny, name).toContain(name)
+    }
+    expect(explore.config.toolFilter.deny).not.toEqual(['write', 'edit', 'explore'])
+  })
+
+  it('renders the explore persona block scalar at the row\'s 10-space content indent', async () => {
+    const { composition } = await renderDefault()
+    expect(composition).toContain('        persona: |-\n')
+    expect(composition).toContain('          # Explore: Read-Only Retrieval Agent\n')
+    // Every one of the ten rows is a block scalar under its own persona key.
+    expect(composition.split('        persona: |-\n').length - 1).toBe(10)
+  })
+})
+
+describe('concerto sentinel renderers — injection and guard (P2-T15)', () => {
+  const EXPLORE_MARKER = 'T11-EXPLORE-PERSONA-MARKER\nsecond line of the injected explore persona'
+
+  it('renders an injected persona at the row indent and an injected route JSON-quoted', () => {
+    const target = join(makeSandbox(), '.agent-presets', 'concerto')
+    expect(syncConcertoPreset(target, EXPECTED_TEMPLATE_DIR, 'SISYPHUS-STUB', {
+      personas: { explore: EXPLORE_MARKER },
+      routes: { explore: { provider: 'deep"seek', model: 'x: y # z' } },
+    })).toBe('materialized')
     const composition = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
     expect(composition).not.toContain(EXPLORE_PERSONA_SENTINEL)
     expect(composition).not.toContain(EXPLORE_AGENT_OPTIONS_SENTINEL)
-    expect(composition).not.toContain('__OMO_SISYPHUS_SYSTEM_PROMPT__')
-    // The explore persona lands as a block scalar at the row's config indent
-    // (persona key at 8 spaces inside the delegation group → content at 10).
-    expect(composition).toContain('        persona: |-\n')
+    expect(composition).not.toContain('__OMO_')
     expect(composition).toContain('          T11-EXPLORE-PERSONA-MARKER\n')
     expect(composition).toContain('          second line of the injected explore persona\n')
+    expect(composition).toContain(`          provider: ${JSON.stringify('deep"seek')}\n`)
+    expect(composition).toContain(`          model: ${JSON.stringify('x: y # z')}\n`)
   })
 
-  it('sync renders agentOptions from the injected explore route (YAML-safe quoted scalars)', () => {
-    const target = join(makeSandbox(), '.agent-presets', 'concerto')
-    syncConcertoPreset(
-      target,
-      EXPECTED_TEMPLATE_DIR,
-      'SISYPHUS-STUB',
-      'EXPLORE-STUB',
-      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+  it('renders deny names as a JSON-quoted YAML flow sequence', () => {
+    const rendered = renderAgentDenyIntoComposition(
+      `deny: ${agentSentinelName('oracle', 'DENY')}`,
+      'oracle',
+      ['write', 'x: y # z', 'a"b'],
     )
-    const composition = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
-    expect(composition).toContain('        agentOptions:\n')
-    expect(composition).toContain('          provider: "deepseek"\n')
-    expect(composition).toContain('          model: "deepseek-v4-flash"\n')
+    expect(rendered).toBe(`deny: ["write", "x: y # z", "a\\"b"]`)
+    expect(rendered).not.toContain(agentSentinelName('oracle', 'DENY'))
+    expect(() => renderAgentDenyIntoComposition('no sentinel here', 'oracle', ['write']))
+      .toThrow(/exactly once/)
+    expect(() => renderAgentDenyIntoComposition(`deny: ${agentSentinelName('oracle', 'DENY')}`, 'oracle', []))
+      .toThrow(/EMPTY deny list/)
   })
 
-  it('renders route values JSON-quoted so YAML-hostile characters cannot break the composition', () => {
-    const rendered = renderExploreAgentOptionsIntoComposition(
-      `agentOptions: ${EXPLORE_AGENT_OPTIONS_SENTINEL}`,
-      { provider: 'deep"seek', model: 'x: y # z' },
-    )
-    expect(rendered).toContain(`provider: ${JSON.stringify('deep"seek')}`)
-    expect(rendered).toContain(`model: ${JSON.stringify('x: y # z')}`)
-    expect(rendered).not.toContain(EXPLORE_AGENT_OPTIONS_SENTINEL)
-  })
-
-  it('the rendered explore row survives sync idempotence (second sync is a no-op)', () => {
-    const target = join(makeSandbox(), '.agent-presets', 'concerto')
-    expect(syncConcertoPreset(target, EXPECTED_TEMPLATE_DIR, 'SISYPHUS-STUB', EXPLORE_MARKER)).toBe('materialized')
-    const first = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
-    expect(first).toContain('          T11-EXPLORE-PERSONA-MARKER\n')
-    expect(syncConcertoPreset(target, EXPECTED_TEMPLATE_DIR, 'SISYPHUS-STUB', EXPLORE_MARKER)).toBe('unchanged')
-    expect(readFileSync(join(target, 'agent.cordis.yml'), 'utf8')).toBe(first)
-  })
-
-  it('each renderer throws when its sentinel does not occur exactly once', () => {
+  it('throws for a sentinel that does not occur exactly once (every family)', () => {
     expect(() => renderExplorePersonaIntoComposition('no sentinel here', 'x')).toThrow(/exactly once/)
-    expect(() => renderExploreAgentOptionsIntoComposition('no sentinel here', { provider: 'p', model: 'm' })).toThrow(/exactly once/)
+    expect(() => renderExploreAgentOptionsIntoComposition('no sentinel here', { provider: 'p', model: 'm' }))
+      .toThrow(/exactly once/)
+    expect(() => renderAgentPersonaIntoComposition('no sentinel here', 'plan-consultant', 'x'))
+      .toThrow(/exactly once/)
+    expect(() => renderAgentOptionsIntoComposition('no sentinel here', 'plan-reviewer', { provider: 'p', model: 'm' }))
+      .toThrow(/exactly once/)
     const doubled = `persona: ${EXPLORE_PERSONA_SENTINEL}\npersona: ${EXPLORE_PERSONA_SENTINEL}`
     expect(() => renderExplorePersonaIntoComposition(doubled, 'x')).toThrow(/exactly once/)
+    const doubledDeny = `deny: ${agentSentinelName('atlas', 'DENY')}\ndeny: ${agentSentinelName('atlas', 'DENY')}`
+    expect(() => renderAgentDenyIntoComposition(doubledDeny, 'atlas', ['write'])).toThrow(/exactly once/)
+  })
+
+  it('sentinel names follow the roster env-name convention (id upper-cased, hyphens folded)', () => {
+    expect(agentSentinelName('explore', 'PERSONA')).toBe('__OMO_EXPLORE_PERSONA__')
+    expect(agentSentinelName('explore', 'AGENT_OPTIONS')).toBe('__OMO_EXPLORE_AGENT_OPTIONS__')
+    expect(agentSentinelName('plan-consultant', 'DENY')).toBe('__OMO_PLAN_CONSULTANT_DENY__')
+    expect(agentSentinelName('multimodal-looker', 'AGENT_OPTIONS')).toBe('__OMO_MULTIMODAL_LOOKER_AGENT_OPTIONS__')
+    expect(EXPLORE_PERSONA_SENTINEL).toBe(agentSentinelName('explore', 'PERSONA'))
+    expect(EXPLORE_AGENT_OPTIONS_SENTINEL).toBe(agentSentinelName('explore', 'AGENT_OPTIONS'))
+  })
+
+  it('the rendered composition survives sync idempotence (second sync is a no-op)', () => {
+    const target = join(makeSandbox(), '.agent-presets', 'concerto')
+    const inputs = { personas: { explore: EXPLORE_MARKER } }
+    expect(syncConcertoPreset(target, EXPECTED_TEMPLATE_DIR, 'SISYPHUS-STUB', inputs)).toBe('materialized')
+    const first = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
+    expect(first).toContain('          T11-EXPLORE-PERSONA-MARKER\n')
+    expect(syncConcertoPreset(target, EXPECTED_TEMPLATE_DIR, 'SISYPHUS-STUB', inputs)).toBe('unchanged')
+    expect(readFileSync(join(target, 'agent.cordis.yml'), 'utf8')).toBe(first)
   })
 
   it('default sync (no injected values) renders the real explore persona and the resolved route', () => {
@@ -215,8 +476,14 @@ describe('omo-agents explore delegation binding (T11, form A static config)', ()
     // Real route from src/model-routes.ts defaults (T14 source).
     expect(composition).toContain('          provider: "deepseek"')
     expect(composition).toContain('          model: "deepseek-v4-flash"')
-    expect(composition).toContain('maxDepth: 1')
-    // F1 fix (2026-09-04): deny also includes the delegation tool itself.
-    expect(composition).toContain('deny: [write, edit, explore]')
+    // Roster-derived (was the literal `maxDepth: 1` before the
+    // D-2026-09-13-01 correction): the rendered row carries the roster value.
+    const exploreMaxDepth = DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')!.maxDepth
+    expect(composition).toContain(`maxDepth: ${exploreMaxDepth}`)
+    // F1 fix (2026-09-04) generalized by P2-T15: the rendered deny is the
+    // roster-computed read-only class list, not the old inline triple.
+    expect(composition).toContain(
+      `deny: [${['write', 'edit', ...DELEGATION_ORDER].map((name) => JSON.stringify(name)).join(', ')}]`,
+    )
   })
 })

@@ -1,8 +1,12 @@
 // system-prompt.ts — T8 builder for the omo-sisyphus system prompt (FR-3,
-// AC-3). Assembles the four T7 markdown policy sections in the fixed order
-// [role, delegationDiscipline, hardBlocks, antiPatterns] — no 5th section,
-// no hardcoded prompt strings here; the markdown files are the only source
-// of prompt text.
+// AC-3). Assembles the four T7 markdown policy sections plus the P2-T14
+// delegation roster in the fixed order
+// [role, delegationDiscipline, delegationRoster, hardBlocks, antiPatterns] —
+// the roster arrived as the 3rd markdown section (of five) in P2-T14 (plan §4.5 item 2:
+// the static port of OMO's dynamically generated Delegation Table), inserted
+// directly after `delegationDiscipline` so the policy and the target list it
+// applies to read together. No hardcoded prompt strings here; the markdown
+// files are the only source of prompt text.
 //
 // Integration design (a) — sync-time rendering: the concerto template's
 // agent.cordis.yml keeps PERSONA_TEXT_SENTINEL as its persona value, and
@@ -22,13 +26,14 @@
 // docs/dsh-0.1.5-rc.1-review.md §2), and dsh-system-prompt's renderPrompt
 // interpolates strict `{{variable}}` references, THROWING on unknown ones —
 // so the assembled prompt is rejected at build time if any section smuggles
-// a `{{` sequence in (none of the four markdown files contains one today).
+// a `{{` sequence in (none of the five markdown files contains one today).
 import { loadSystemSections, type SystemSections } from './system-sections.ts'
 
 /** Fixed assembly order — the ONLY order the omo-sisyphus prompt is built in. */
 export const SISYPHUS_SECTION_ORDER = [
   'role',
   'delegationDiscipline',
+  'delegationRoster',
   'hardBlocks',
   'antiPatterns',
 ] as const satisfies readonly (keyof SystemSections)[]
@@ -42,7 +47,14 @@ export const SISYPHUS_SECTION_ORDER = [
  */
 export const PERSONA_TEXT_SENTINEL = '__OMO_SISYPHUS_SYSTEM_PROMPT__'
 
-/** Assembles the system prompt: the four sections, trimmed, blank-line joined. */
+/**
+ * Assembles the system prompt: the five sections in SISYPHUS_SECTION_ORDER,
+ * trimmed, blank-line joined. Note the heading guard asymmetry: the runtime
+ * hard-blocks injection (hard-blocks-injection.ts) delivers `## Hard Blocks` /
+ * `## Anti-Patterns` to every SUB-agent, so those two sections are legitimate
+ * here (the conductor is not a sub-agent) but must never appear in
+ * `delegationRoster`; delegation-roster.test.ts enforces that.
+ */
 export function buildSisyphusSystemPrompt(
   sections: SystemSections = loadSystemSections(),
 ): string {

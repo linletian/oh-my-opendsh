@@ -73,7 +73,9 @@ run_proof() {
 run_proof "T12 toolFilter enforced" \
   node scripts/prove-explore-toolfilter.mjs "$NM" "$RENDERED/agent.cordis.yml" --expect denied
 
-# T13: the real delegation start path must reject a depth-2 attempt on BOTH the
+# T13: the real delegation start path must ADMIT a depth-1 parent's call (the
+# corrected atlas(1) → worker(2) path under target-row maxDepth 2,
+# D-2026-09-13-01) and reject a depth-2 parent's further attempt on BOTH the
 # foreground and continuable starts, with the tool still visible at the cap.
 run_proof "T13 maxDepth cap enforced" \
   node scripts/prove-explore-maxdepth.mjs "$NM" "$RENDERED/agent.cordis.yml" --expect capped

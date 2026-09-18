@@ -21,7 +21,13 @@ const EXPECTED_SECTIONS_DIR = resolve(
   'system-sections',
 )
 
-const FIXED_ORDER = ['role', 'delegationDiscipline', 'hardBlocks', 'antiPatterns'] as const
+const FIXED_ORDER = [
+  'role',
+  'delegationDiscipline',
+  'delegationRoster',
+  'hardBlocks',
+  'antiPatterns',
+] as const
 
 describe('omo-agents system-sections loader (T7)', () => {
   it('resolves SYSTEM_SECTIONS_DIR from import.meta.url to the expected absolute path', () => {
@@ -29,16 +35,22 @@ describe('omo-agents system-sections loader (T7)', () => {
     expect(SYSTEM_SECTIONS_DIR.startsWith('/')).toBe(true)
   })
 
-  it('loads all 4 sections and each is non-empty', () => {
+  it('loads all 5 sections and each is non-empty', () => {
     const sections = loadSystemSections()
     for (const key of FIXED_ORDER) {
       expect(sections[key].trim().length).toBeGreaterThan(0)
     }
   })
 
-  it('returns sections in the fixed order [role, delegationDiscipline, hardBlocks, antiPatterns]', () => {
+  it('returns sections in the fixed order [role, delegationDiscipline, delegationRoster, hardBlocks, antiPatterns]', () => {
     const sections = loadSystemSections()
     expect(Object.keys(sections)).toEqual([...FIXED_ORDER])
+  })
+
+  it('delegation-roster.md (P2-T14) carries the `# Delegation Roster` heading and a 5-column delegation table', () => {
+    const { delegationRoster } = loadSystemSections()
+    expect(delegationRoster).toContain('# Delegation Roster')
+    expect(delegationRoster).toContain('| Agent | Domain | Delegate when | Never delegate when | Cost |')
   })
 
   it('role.md describes the orchestrator as conductor-not-worker whose default action is to delegate', () => {

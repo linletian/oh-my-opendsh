@@ -23,17 +23,27 @@
 //                      XDG_CONFIG_HOME / DSH_HOME / DSH_AGENTS_HOME
 //                      redirection — the user's real ~/.dsh is never touched.
 //                      Skipped (cascade honesty) when check 1 already failed.
-//   4. subagent-config the tool-subagent-explore row of our concerto template
+//   4. subagent-config every config-bearing row of our concerto template
 //                      validates against the REAL installed dsh-tool-subagent
 //                      Config schema (schemastery) — the T11 validator
 //                      approach: the installed dsh's node_modules are resolved
 //                      from the dsh binary itself (read-only imports of its
-//                      js-yaml + Config), the template's two T11 sentinels are
-//                      rendered by the plugin's own syncConcertoPreset (single
-//                      source of truth, Node type-stripping), and the row's
-//                      config runs through the exact schema cordis applies
-//                      lazily at session composition. Imports impossible →
-//                      skip with reason, not fail.
+//                      js-yaml + Config), the template's 29 T11/P2-T15
+//                      sentinels are rendered by the plugin's own
+//                      syncConcertoPreset (single source of truth, Node
+//                      type-stripping), and every row's config runs through the
+//                      exact schema cordis applies lazily at session
+//                      composition. P2-T20 adds the SEMANTIC half: each of the
+//                      10 roster delegation rows is asserted against its
+//                      roster-derived contract (toolName == entry id, class
+//                      filter — roster-computed deny / no key for the
+//                      orchestrator / allowTools for the allowlist — the
+//                      entry's maxDepth, the entry's resolved route, and a
+//                      rendered non-empty persona), plus the explore-named T10
+//                      heading specialization. The 0.1.5-rc.1 persona break
+//                      shipped because schema legality was the ONLY gate
+//                      (docs/dsh-0.1.5-rc.1-review.md §6). Imports impossible
+//                      → skip with reason, not fail.
 //
 // Zero npm dependencies of its own: the only external modules are read-only
 // imports from the installed dsh (checks 2 and 4). No boot anywhere: checks
@@ -55,6 +65,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import {
   analyzePatchEntries,
+  delegationRowContractProblems,
+  expectedDelegationRowContract,
   findRowsById,
   isPinnedDshVersion,
   LLM_ADAPTER_ROWS,
@@ -472,6 +484,9 @@ async function checkSubagentConfig(check1) {
   let Config
   let concerto
   let resolveModelRoutes
+  let DELEGATION_ENTRIES
+  let denyToolNamesFor
+  let allowToolNamesFor
   try {
     yaml = (await imp(nm, 'js-yaml/dist/js-yaml.mjs')).default
     ;({ Config } = await imp(nm, '@deepseek-ai/dsh-tool-subagent/lib/index.js'))
@@ -482,6 +497,11 @@ async function checkSubagentConfig(check1) {
     )
     ;({ resolveModelRoutes } = await import(
       pathToFileURL(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'src', 'model-routes.ts')).href
+    ))
+    // P2-T15/P2-T20: every per-row expectation (toolName, class filter,
+    // maxDepth) is derived from the same roster the renderer uses.
+    ;({ DELEGATION_ENTRIES, denyToolNamesFor, allowToolNamesFor } = await import(
+      pathToFileURL(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'src', 'roster.ts')).href
     ))
   } catch (error) {
     return check(
@@ -501,8 +521,9 @@ async function checkSubagentConfig(check1) {
       schema: yaml.JSON_SCHEMA.extend(makeJsExprType(yaml)),
     })
     // The general pass FIRST: every row's config against its own installed
-    // schema. The T11 contract checks below are stricter assertions on ONE of
-    // those rows; this pass is what makes a rename in any OTHER row loud.
+    // schema. The per-row roster contract below is a STRICTER assertion on the
+    // ten delegation rows; this pass is what makes a rename in any OTHER row
+    // loud.
     const sweep = await validateCompositionRows(nm, rows, imp)
     if (sweep.failures.length > 0) {
       return check(
@@ -515,71 +536,122 @@ async function checkSubagentConfig(check1) {
         ],
       )
     }
-    const found = findRowsById(rows, 'tool-subagent-explore')
-    if (found.length !== 1) {
-      return check(
-        'subagent-config',
-        'fail',
-        `expected exactly 1 tool-subagent-explore row in the rendered concerto template, found ${found.length}`,
-        [`the T11 delegation tool instance is the contract this check validates`],
-      )
+
+    // ── P2-T20: PER-ROW CONTRACT ASSERTIONS for all 10 roster rows ──────────
+    // Schema legality is not meaning. Each delegation row must additionally
+    // honour the roster: toolName == the entry id, the class filter (deny for
+    // read-only/worker — roster-computed; NO filter key for the orchestrator;
+    // allowTools for the allowlist), the entry's maxDepth, the resolved route
+    // of THAT entry, and a rendered (non-empty) persona. Every expectation is
+    // derived from roster.ts / model-routes.ts, never restated.
+    const routes = resolveModelRoutes()
+    const contractProblems = []
+    const validatedDelegationRows = new Map()
+    if (DELEGATION_ENTRIES.length === 0) {
+      contractProblems.push('roster.ts declares no delegation entries — the per-row contract has no rows to check')
     }
-    const row = found[0]
-    if (row.name !== '@deepseek-ai/dsh-tool-subagent') {
-      return check(
-        'subagent-config',
-        'fail',
-        `tool-subagent-explore row has name ${JSON.stringify(row.name)} — expected '@deepseek-ai/dsh-tool-subagent'`,
-        ['the row must be a dsh-tool-subagent instance (T11 form A)'],
+    for (const entry of DELEGATION_ENTRIES) {
+      const rowId = `tool-subagent-${entry.id}`
+      const found = findRowsById(rows, rowId)
+      if (found.length !== 1) {
+        contractProblems.push(`${rowId}: expected exactly 1 row in the rendered concerto template, found ${found.length}`)
+        continue
+      }
+      const row = found[0]
+      if (row.name !== '@deepseek-ai/dsh-tool-subagent') {
+        contractProblems.push(
+          `${rowId}: row name ${JSON.stringify(row.name)} — expected '@deepseek-ai/dsh-tool-subagent' (T11 form A)`,
+        )
+        continue
+      }
+      let validated
+      try {
+        validated = Config(row.config)
+      } catch (error) {
+        contractProblems.push(
+          `${rowId}: installed dsh-tool-subagent Config rejected the row: ${error.name ?? 'Error'}: ${error.message}`,
+        )
+        continue
+      }
+      const contract = expectedDelegationRowContract(
+        {
+          id: entry.id,
+          className: entry.class,
+          maxDepth: entry.maxDepth,
+          deny: denyToolNamesFor(entry),
+          allow: allowToolNamesFor(entry),
+        },
+        routes[entry.id],
       )
-    }
-    let validated
-    try {
-      validated = Config(row.config)
-    } catch (error) {
-      return check(
-        'subagent-config',
-        'fail',
-        `installed dsh-tool-subagent Config rejected the row: ${error.name ?? 'Error'}: ${error.message}`,
-        ['this is the exact schema cordis applies lazily at session composition — a broken row fails here instead of at first session'],
-      )
-    }
-    const problems = []
-    if (validated.provider !== 'spawn') problems.push(`provider=${JSON.stringify(validated.provider)} (want spawn)`)
-    if (validated.toolName !== 'explore') problems.push(`toolName=${JSON.stringify(validated.toolName)} (want explore)`)
-    if (validated.backgroundMode !== 'continuable') problems.push(`backgroundMode=${JSON.stringify(validated.backgroundMode)} (want continuable)`)
-    if (validated.maxDepth !== 1) problems.push(`maxDepth=${JSON.stringify(validated.maxDepth)} (want 1, T13)`)
-    // T12 + F1 fix (2026-09-04): deny = the two mutation tools PLUS the
-    // delegation tool itself (physical no-delegation, AC-6b parity).
-    if (JSON.stringify(validated.toolFilter) !== JSON.stringify({ deny: ['write', 'edit', 'explore'] })) {
-      problems.push(`toolFilter=${JSON.stringify(validated.toolFilter)} (want deny:[write,edit,explore], T12 + F1)`)
+      for (const problem of delegationRowContractProblems(validated, contract)) {
+        contractProblems.push(`${rowId} (${entry.class}): ${problem}`)
+      }
+      validatedDelegationRows.set(entry.id, validated)
     }
     // F1 fix: no generic delegation rows may remain in the rendered template
     // (findRowsById is group-recursive — the rows were nested in `delegation`).
+    // P2-T15 opened delegation to the TEN named roster rows, so the stale
+    // "only `explore` may delegate" wording became false: the invariant is
+    // that delegation happens ONLY through the named roster tools.
     if (findRowsById(rows, 'tool-subagent').length > 0 || findRowsById(rows, 'tool-subagent-fork').length > 0) {
-      problems.push('generic subagent/subagent_fork rows present (F1: must be dropped — only `explore` may delegate)')
+      contractProblems.push(
+        'generic subagent/subagent_fork rows present (F1: must be dropped — delegation goes only through '
+        + `the ${DELEGATION_ENTRIES.length} named roster tools)`,
+      )
     }
-    const expectedRoute = resolveModelRoutes().explore
-    if (validated.agentOptions?.provider !== expectedRoute.provider || validated.agentOptions?.model !== expectedRoute.model) {
-      problems.push(`agentOptions=${JSON.stringify(validated.agentOptions)} (want ${expectedRoute.provider}/${expectedRoute.model}, T14)`)
-    }
-    if (typeof validated.persona !== 'string' || !validated.persona.includes('# Explore: Read-Only Retrieval Agent')) {
-      problems.push('persona missing the T10 explore persona heading (sentinels unrendered?)')
-    }
-    if (problems.length > 0) {
+    if (contractProblems.length > 0) {
       return check(
         'subagent-config',
         'fail',
-        `validated row mismatches the T11 contract: ${problems.join('; ')}`,
-        problems,
+        `${String(contractProblems.length)} roster-contract violation(s) in the rendered concerto template`,
+        [
+          ...contractProblems,
+          'every delegation row must match its roster entry (toolName / class filter / maxDepth / route / persona) — the semantic gate absent at 0.1.5-rc.1 (docs/dsh-0.1.5-rc.1-review.md §6)',
+        ],
       )
     }
+
+    // Explore SPECIALIZATION of the generic contract above: the T11 row must
+    // still carry the T10 persona heading (a per-file property the generic
+    // roster-driven checker cannot know). Everything else about the row was
+    // already asserted by the loop.
+    const validated = validatedDelegationRows.get('explore')
+    if (validated === undefined) {
+      return check(
+        'subagent-config',
+        'fail',
+        "roster.ts declares no delegation entry with id 'explore' — the T11 contract has no row to check",
+        ['roster.ts is the single source for this check (P2-T15)'],
+      )
+    }
+    if (typeof validated.persona !== 'string' || !validated.persona.includes('# Explore: Read-Only Retrieval Agent')) {
+      return check(
+        'subagent-config',
+        'fail',
+        'tool-subagent-explore persona is missing the T10 explore persona heading (sentinels unrendered?)',
+        ['the T11 specialization asserts the explore persona heading on top of the generic per-row contract'],
+      )
+    }
+    const exploreEntry = DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')
+    const expectedDeny = denyToolNamesFor(exploreEntry)
+    const expectedRoute = routes.explore
+    const rowSummary = DELEGATION_ENTRIES.map((entry) => {
+      const deny = denyToolNamesFor(entry)
+      const allow = allowToolNamesFor(entry)
+      const filter = deny !== undefined
+        ? `deny:${deny.length}`
+        : allow !== undefined
+          ? `allow:${allow.length}`
+          : 'no-filter'
+      return `${entry.id}[${entry.class} ${filter} depth=${JSON.stringify(entry.maxDepth)} ${routes[entry.id].provider}/${routes[entry.id].model}]`
+    }).join(' ')
     return check(
       'subagent-config',
       'pass',
-      `${String(sweep.checked.length)} row(s) validate against their installed Config schemas, plus the T11 contract — `
-        + 'tool-subagent-explore: '
-        + `provider=spawn toolName=explore backgroundMode=continuable maxDepth=1 deny=[write,edit,explore] route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars`
+      `${String(sweep.checked.length)} row(s) validate against their installed Config schemas, plus the roster contract on all `
+        + `${DELEGATION_ENTRIES.length} delegation rows — ${rowSummary}; explore specialization: `
+        + `maxDepth=${JSON.stringify(exploreEntry.maxDepth)} deny=[${expectedDeny.join(',')}] `
+        + `route=${expectedRoute.provider}/${expectedRoute.model} persona=${validated.persona.length} chars`
         + (sweep.unchecked.length === 0
           ? ''
           : `; unchecked (package exports no Config schema): ${sweep.unchecked.join(', ')}`)

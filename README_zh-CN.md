@@ -38,6 +38,23 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
 ## 安装方式
 
 协奏模式以持久化 agent preset（核心）+ 可选动态插件的形式安装。
+preset 携带 **11-agent 名册**：指挥 **sisyphus** + **10 个委派目标**，各自持有独立的可覆盖路由绑定。
+
+| 委派目标 | 类 | 席位（默认 provider / model） |
+|---|---|---|
+| `explore` | 只读 | 快座 — `deepseek` / `deepseek-v4-flash` |
+| `hephaestus` | worker | 强座 — `deepseek-official` / `deepseek-v4-pro` |
+| `oracle` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
+| `librarian` | 只读 | 快座 — `deepseek` / `deepseek-v4-flash` |
+| `plan-consultant` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
+| `plan-reviewer` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
+| `atlas` | orchestrator | 强座 — `deepseek-official` / `deepseek-v4-pro` |
+| `multimodal-looker` | allowlist（`read`、`read_image`） | 视觉座 — `deepseek-official` / `deepseek-v4-flash-vision-exp` |
+| `sisyphus-junior` | worker | 快座 — `deepseek` / `deepseek-v4-flash` |
+| `prometheus` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
+
+> ⚠️ **名册完整 ≠ 完整的 OMO 编排面**（风险 R-8，见 docs/plans/phase2-dev/phase2-plan.md §6）。具体分三件事：11-agent 名册完整
+> **≠** `/ulw-*` 命令面（Phase 4）**≠** Team Mode 的成员语义（Phase 5）。本仓库今日不对后两者作任何宣称。
 
 - **一行命令**（推荐）：
 
@@ -51,6 +68,43 @@ OMO 的 Agent Team 模式正是对这一判断的回应：与其押注一个"全
   复制即用 prompt 发给任意 DSH 会话即可。
 
 完整指南（选项、适配、卸载——含"选项到底改了啥"的白话说明）：[中文](./docs/install-concerto_zh-CN.md) / [English](./docs/install-concerto.md)。
+
+> 📌 **installer 通道**：上面的安装途径仍下发 **1+1 preset**（v0.2 冻结归档
+> [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)），**不是** 11-agent
+> 名册。完整名册随**未来 release** 提供；是否/何时经该通道下发，属 Phase 7 的发布节奏决策（计划书 §4.8）。
+
+### 名册路由与 env 覆盖表
+
+**单一事实源**：[`patches/omo-dsh/omo-agents/src/roster.ts`](./patches/omo-dsh/omo-agents/src/roster.ts)
+（下表逐行复制自其 `ROSTER`）——数据表镜像见
+[`docs/plans/phase2-dev/phase2-roster.md`](./docs/plans/phase2-dev/phase2-roster.md) §1。每个默认值都可用
+env 对逐 agent 覆盖，因此模型链留在配置里，而不在代码里。
+
+| # | Agent | 类 | `maxDepth` | 席位 | 默认 `provider` / `model` | env 覆盖对 |
+|---|---|---|---|---|---|---|
+| 1 | `sisyphus`（指挥——只持路由，不是委派工具） | — | — | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL` |
+| 2 | `explore` | 只读 | 2 | 快座 | `deepseek` / `deepseek-v4-flash` | `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL` |
+| 3 | `hephaestus` | worker | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_HEPHAESTUS_PROVIDER` / `OMO_HEPHAESTUS_MODEL` |
+| 4 | `oracle` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_ORACLE_PROVIDER` / `OMO_ORACLE_MODEL` |
+| 5 | `librarian` | 只读 | 2 | 快座 | `deepseek` / `deepseek-v4-flash` | `OMO_LIBRARIAN_PROVIDER` / `OMO_LIBRARIAN_MODEL` |
+| 6 | `plan-consultant` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_CONSULTANT_PROVIDER` / `OMO_PLAN_CONSULTANT_MODEL` |
+| 7 | `plan-reviewer` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_REVIEWER_PROVIDER` / `OMO_PLAN_REVIEWER_MODEL` |
+| 8 | `atlas` | orchestrator | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_ATLAS_PROVIDER` / `OMO_ATLAS_MODEL` |
+| 9 | `multimodal-looker` | allowlist | 2 | 视觉座 | `deepseek-official` / `deepseek-v4-flash-vision-exp` | `OMO_MULTIMODAL_LOOKER_PROVIDER` / `OMO_MULTIMODAL_LOOKER_MODEL` |
+| 10 | `sisyphus-junior` | worker | 2 | 快座 | `deepseek` / `deepseek-v4-flash` | `OMO_SISYPHUS_JUNIOR_PROVIDER` / `OMO_SISYPHUS_JUNIOR_MODEL` |
+| 11 | `prometheus` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_PROMETHEUS_PROVIDER` / `OMO_PROMETHEUS_MODEL` |
+
+- **硬预检（AC-5）**：指挥路由与 `explore` 路由必须**不同**。两者相同会在 apply 时**响亮致命报错**，
+  不是警告——"不赌单一模型"只有在指挥与它的检索子级分处两条路由时才算兑现。
+- **两条非阻断席位警告**（仅 boot 日志；每条都在说"查这个部署的配置"，从不是"启动失败"）：
+  ① 11 行解析到**同一条**路由；② **全部 10 个委派目标**落在**同一席位**（单席位集中提示）。
+- **provider 注册警告（非阻断）**：路由的 provider 未注册时（典型是没有 `llm-pi-ai` settings 段的部署，
+  快座因此未注册）boot 打印 `route provider not registered: <provider> (agents: …)`。该检查是
+  **settled** 的，不是同步读——settings 驱动的 adapter 在一个插件 `apply()` **之后**才注册，裸的
+  apply 时刻直读会误报。刻意的后果：缺 provider 在 **boot** 可见，而不是等到快座子级被委派时才首次发现。
+- **每个委派行 `maxDepth: 2`** 是**被调用行**的上限（dsh 读 `config.maxDepth` → `request.maxDepth` →
+  `resolveChildDepth`），因此委派链最深 2 层（指挥 0 → `atlas` 1 → worker 2）、depth-3 结构性不可能；
+  逐类 deny 名单仍是嵌套委派的主防。
 
 ## 当前状态
 

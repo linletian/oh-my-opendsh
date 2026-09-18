@@ -81,6 +81,50 @@ coverage table is [`docs/plans/phase1-dev/phase1-license-attribution.md`](docs/p
 
 **Totals:** 23 `verbatim` + 3 `已修改` + 1 `包外复制` + 2 `本项目新增` = **29 files**.
 
+### Phase 2 persona semantic ports
+
+The Concerto Mode agent personas are **not vendored code and not a copy**: each one is an
+independent markdown rewrite of OMO prompt *content* — **semantic translation only**, no
+TypeScript code copied. They extend decision D15's per-file disclosure discipline to derived
+non-vendor content (plan §4.9). Every upstream path below is pinned to OMO tag `v4.19.4`
+(commit `b072d279110bdda2c6ac2525d0d24dc54d16148a`), and each derived file carries its own
+HTML-comment attribution header naming the same sources with line spans; those headers, not
+this table, are the per-file authority.
+
+#### Phase 2 additions (10 derived files)
+
+| # | Derived file under `patches/omo-dsh/omo-agents/system-sections/` | Upstream source file(s) at `v4.19.4` (all under `packages/`) | Disposition |
+|---|---|---|---|
+| 1 | `hephaestus-persona.md` | `omo-opencode/src/agents/hephaestus/agent.ts` (role identity, `hephaestusPromptMetadata`, L1 permission table); `.../hephaestus/gpt.ts` (generic-layer autonomy contract); `.../hephaestus/gpt-5-4.ts`, `gpt-5-5.ts`, `gpt-5-6.ts` (shared goal-not-recipe framing, Manual-QA gate, stop rules — model-specific tuning deliberately discarded, plan R-3) | semantic translation only |
+| 2 | `oracle-persona.md` | `omo-opencode/src/agents/oracle.ts` (`ORACLE_PROMPT_METADATA`, `ORACLE_DEFAULT_PROMPT`, `ORACLE_GPT_PROMPT`, `ORACLE_GPT_5_5_PROMPT`, read-only restriction list) | semantic translation only |
+| 3 | `librarian-persona.md` | `omo-opencode/src/agents/librarian.ts` (`LIBRARIAN_PROMPT_METADATA` + prompt body). Context7 / MCP tool references dropped (MCP is Phase 6) | semantic translation only |
+| 4 | `plan-consultant-persona.md` | `omo-opencode/src/agents/metis.ts` (`metisPromptMetadata`, `METIS_SYSTEM_PROMPT`, read-only restriction list); `utils/src/migration/agent-names.ts` (the upstream `plan-consultant` → `metis` rename mapping). Not ported: `METIS_K2_7_SYSTEM_PROMPT`, the embedded Anti-Duplication section | semantic translation only |
+| 5 | `plan-reviewer-persona.md` | `omo-opencode/src/agents/momus.ts` (`momusPromptMetadata`, `MOMUS_DEFAULT_PROMPT`, `MOMUS_GPT_PROMPT`, source docstring, read-only restriction list). Not ported: `momus-gpt-5-6.ts`. NOTE: unlike metis, upstream `agent-names.ts` carries **no** momus rename entry — this rename is project-anchored | semantic translation only |
+| 6 | `atlas-persona.md` | `omo-opencode/src/agents/atlas/agent.ts` (`atlasPromptMetadata`, dynamic-prompt assembly, model-variant routing table, agent config); `.../atlas/prompt-section-builder.ts`; `.../atlas/index.ts`; `prompts-core/prompts/atlas/default.md` (orchestrator prompt body); `prompts-core/src/atlas-prompts.ts`; `shared-skills/skills/start-work/SKILL.md` (the "NEVER THE IMPLEMENTER" absolute-rule phrase) | semantic translation only |
+| 7 | `multimodal-looker-persona.md` | `omo-opencode/src/agents/multimodal-looker.ts` (`MULTIMODAL_LOOKER_PROMPT_METADATA`, `createMultimodalLookerAgent` and its single-tool read-only allowlist, mode declaration, agent description, prompt body); `omo-opencode/src/shared/permission-compat.ts` (allowlist expansion). Invocation model inverted: the caller supplies paths, `read` + `read_image` replace upstream's `look_at` attachment | semantic translation only |
+| 8 | `sisyphus-junior-persona.md` | `omo-opencode/src/agents/sisyphus-junior/agent.ts` (docstring, `BLOCKED_TOOLS`, `SISYPHUS_JUNIOR_DEFAULTS`, variant selector, permission merge, agent description); `.../sisyphus-junior/default.ts` (the default prompt, sole porting source); `omo-opencode/src/agents/dynamic-agent-policy-sections.ts` (anti-duplication source, re-exported through `dynamic-agent-prompt-builder.ts`); `.../sisyphus-junior/AGENTS.md`. Not ported: the eight model-variant prompt files; upstream's forced `call_omo_agent` grant; the category-router semantics | semantic translation only |
+| 9 | `prometheus-persona.md` | `prompts-core/prompts/prometheus/default.md`; `prompts-core/src/prometheus-prompts.ts`; `omo-opencode/src/agents/prometheus/system-prompt.ts` (`PROMETHEUS_PERMISSION`, `PROMETHEUS_SYSTEM_PROMPT`, `getPrometheusPrompt`); `.../prometheus/index.ts`; `omo-opencode/src/plugin-handlers/prometheus-agent-config-builder.ts`; `omo-opencode/src/hooks/prometheus-md-only/path-policy.ts`, `.../prometheus-md-only/hook.ts`, `.../prometheus-md-only/constants.ts`; `shared-skills/skills/ulw-plan/SKILL.md`; `.../ulw-plan/references/intent-clear.md`, `.../intent-unclear.md` | semantic translation only |
+| 10 | `delegation-roster.md` (the sisyphus prompt's new 3rd section, of 5) | `omo-opencode/src/agents/dynamic-agent-core-sections.ts` (`buildKeyTriggersSection`, `buildToolSelectionTable` with its FREE→CHEAP→EXPENSIVE cost order, `buildDelegationTable`); `omo-opencode/src/agents/types.ts` (`AgentPromptMetadata` shape); the `*_PROMPT_METADATA` constants in `explore.ts`, `oracle.ts`, `librarian.ts`, `metis.ts`, `momus.ts`, `multimodal-looker.ts`, `hephaestus/agent.ts`, `atlas/agent.ts`. Four rows are derived rather than transcribed (see the file header) | semantic translation only |
+
+#### Pre-existing OMO-derived content (backfilled context, plan §4.9)
+
+Listed here so the OMO-derived-content inventory is complete; these predate Phase 2 and their
+own attribution headers are unchanged.
+
+| # | Derived file under `patches/omo-dsh/omo-agents/system-sections/` | Upstream source file(s) at `v4.19.4` (all under `packages/`) | Disposition |
+|---|---|---|---|
+| 11 | `explore-persona.md` | `omo-opencode/src/agents/explore.ts` (role, read-only constraints, reporting discipline); `omo-opencode/src/tools/call-omo-agent/constants.ts` (selection rationale); OMO `DEEP_CATEGORY_PROMPT_APPEND` semantics per feasibility report §13.5.1 | semantic translation only |
+| 12 | `hard-blocks.md` | `omo-opencode/src/agents/dynamic-agent-policy-sections.ts:7-20` | semantic translation only |
+| 13 | `anti-patterns.md` | `omo-opencode/src/agents/dynamic-agent-policy-sections.ts:22-37` | semantic translation only |
+
+> Deliberately **not** listed: `delegation-discipline.md` and `role.md` carry
+> `Source: original (oh-my-opendsh task T7 spec, this repo)` headers — they are this project's
+> own content, not OMO-derived.
+
+**Counts:** Phase 2 derived files listed = **10** (9 personas + `delegation-roster.md`);
+pre-existing OMO-derived files backfilled = **3**; OMO-derived markdown files inventoried in
+total = **13**. No existing entry above this section was modified (additions only).
+
 ## oh-my-pi
 
 - **Author:** can1357

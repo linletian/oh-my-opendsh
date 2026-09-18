@@ -1,8 +1,12 @@
 // explore-prompt.ts — T10 builder for the omo-explore subagent persona (FR-4).
-// Assembles the explore persona from its markdown source in the fixed section
-// order [explorePersona] — one section today, but the order is pinned so a
-// future section slots in without an ordering debate; no hardcoded prompt
-// strings here, the markdown file is the only source of prompt text.
+// As of P2-T4 this module is a THIN WRAPPER over persona-prompts.ts, the
+// roster-driven general persona builder: the section order, the trim and the
+// two structural guards live there, and this file keeps only the explore id,
+// the explore section key, and its exact public API. index.ts and
+// concerto-preset.ts import this module unchanged (P2-T4 acceptance); the
+// zero-drift proof is that buildExploreSystemPrompt() is byte-identical to its
+// pre-refactor output, pinned by the checked-in snapshot
+// tests/omo-agents/__snapshots__/explore-system-prompt.md.
 //
 // ARCHITECTURE DECISION (investigated, then chosen; citations verified
 // read-only against the rc.7 source checkout, dsh 0.1.0-rc.6 runtime):
@@ -42,20 +46,26 @@
 // `deployment:persona-prefix` section (child-agent.ts:209-214) → rendered by
 // dsh-system-prompt's renderPrompt (core/system-prompt/src/index.ts:212-217),
 // which interpolates strict `{{variable}}` references and THROWS on unknown
-// ones — hence the `{{` rejection below, same hazard as the T8 sisyphus
-// persona. Companion fields are other todos': `agentOptions` from
-// resolveModelRoutes().explore (T14, already resolved), write-denying
-// `toolFilter` (T12), depth cap (T13).
+// ones — hence the `{{` rejection (guard a in persona-prompts.ts), same hazard
+// as the T8 sisyphus persona. Companion fields are other todos':
+// `agentOptions` from resolveModelRoutes().explore (T14, already resolved),
+// write-denying `toolFilter` (T12), depth cap (T13).
 //
 // COMPOSITION WITH T16 (FR-6): the hard-blocks injection listener owns the
 // Hard Blocks + Anti-Patterns sections at RUNTIME for every sub-agent
 // (agent.session.header.origin === 'subagent'), so this BASE persona must NOT
-// carry them — the builder rejects both headings structurally, making
-// duplication a build-time failure rather than a silent double-injection.
+// carry them — guard b in persona-prompts.ts rejects both headings
+// structurally, making duplication a build-time failure rather than a silent
+// double-injection.
 import { SYSTEM_SECTIONS_DIR, loadSectionFile } from './system-sections.ts'
+import { buildAgentPersonaFromText, personaFileFor } from './persona-prompts.ts'
 
-/** The persona's markdown file inside the T7 sections directory. */
-export const EXPLORE_PERSONA_FILE = 'explore-persona.md'
+/**
+ * The persona's markdown file inside the T7 sections directory. Derived from
+ * the roster (the single file map), so this constant and the general builder
+ * can never disagree about where the explore persona lives.
+ */
+export const EXPLORE_PERSONA_FILE = personaFileFor('explore')
 
 export interface ExploreSections {
   explorePersona: string
@@ -78,34 +88,13 @@ export function loadExploreSections(dir: string = SYSTEM_SECTIONS_DIR): ExploreS
 
 /**
  * Assembles the omo-explore system prompt: the section(s), trimmed, blank-line
- * joined. Two structural guards, both load-bearing at the dsh layer:
- *  1. no `{{` sequences — the persona lands in a system-prompt section, and
- *     dsh renderPrompt throws on unknown prompt variables;
- *  2. no Hard Blocks / Anti-Patterns headings — T16's runtime injection owns
- *     those two sections for every sub-agent; a base-persona copy would
- *     double-deliver them (FR-6 composition boundary).
+ * joined. The trim and the two structural guards (`{{`; Hard Blocks /
+ * Anti-Patterns) are persona-prompts.ts's `buildAgentPersonaFromText` — one
+ * copy for every persona, so the explore path cannot drift from the other 9
+ * agents' assembly.
  */
 export function buildExploreSystemPrompt(
   sections: ExploreSections = loadExploreSections(),
 ): string {
-  const prompt = EXPLORE_SECTION_ORDER.map((key) => sections[key].trimEnd()).join('\n\n')
-  if (prompt.includes('{{')) {
-    throw new Error(
-      'omo-explore persona contains a "{{" sequence: dsh renderPrompt '
-      + 'would throw on the unknown prompt variable when the child agent '
-      + 'renders its persona section — remove the sequence from '
-      + `system-sections/${EXPLORE_PERSONA_FILE}`,
-    )
-  }
-  for (const heading of ['## Hard Blocks', '## Anti-Patterns'] as const) {
-    if (prompt.includes(heading)) {
-      throw new Error(
-        `omo-explore persona contains a "${heading}" section: the T16 `
-        + 'hard-blocks injection listener delivers that section at runtime '
-        + 'for every sub-agent — the base persona must not duplicate it '
-        + `(remove it from system-sections/${EXPLORE_PERSONA_FILE})`,
-      )
-    }
-  }
-  return prompt
+  return buildAgentPersonaFromText('explore', sections.explorePersona)
 }

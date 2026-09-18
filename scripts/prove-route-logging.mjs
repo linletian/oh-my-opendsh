@@ -13,11 +13,21 @@
 //   dsh-subagent-spawn-in-process (the explore row's provider).
 //
 // The model boundary is a scripted MockAdapter (dsh's own test pattern:
-// packages/core/agent-loop/tests/mock-adapter.ts) registered on OUR TWO REAL
-// ROUTE NAMES from src/model-routes.ts (P-8.6 type-stripping, the single
-// source of truth) — deepseek-official for the sisyphus parent, deepseek for
-// the explore child — so no live model or API key is involved, while every
-// module between the delegation call and the bytes on disk is dsh's own.
+// packages/core/agent-loop/tests/mock-adapter.ts) registered on OUR REAL ROUTE
+// NAMES from src/model-routes.ts (P-8.6 type-stripping, the single source of
+// truth) — deepseek-official for the sisyphus parent, deepseek for the explore
+// child — so no live model or API key is involved, while every module between
+// the delegation call and the bytes on disk is dsh's own.
+//
+// P2-T20 EXTENSION: the proof drives TWO roster children, not just explore —
+// explore (the T15 case) plus one more delegation entry chosen FROM roster.ts
+// (the first non-explore row whose resolved route differs from BOTH the
+// conductor's and explore's, so the logged child route is meaningfully
+// distinct; first non-explore row as a fallback). A second child means the
+// adapters are planned per provider route (the conductor's turn + every child
+// riding that provider) and the boundary assertion compares the dispatch count
+// of each resolved route instead of the old fixed "one request per adapter".
+// The descriptor + request/header route records are asserted per child.
 //
 // What is asserted (all citations rc.7 source ≡ rc.6 installed lib):
 //   * CHILD, declared route: the continuable start snapshots the RESOLVED
@@ -62,9 +72,12 @@
 // pre-turn descriptor record applies.
 //
 // Modes:
-//   (default | --expect logged)    full real-stack drive; both routes must be
-//                                  found in the real JSONL artifacts, distinct,
-//                                  and matching the adapter-boundary dispatch.
+//   (default | --expect logged)    full real-stack drive; the conductor route
+//                                  plus EVERY driven roster child's route must
+//                                  be found in the real JSONL artifacts
+//                                  (descriptor + request/header), the conductor
+//                                  and explore routes must differ (AC-5), and
+//                                  each dispatch must match its adapter.
 //   --expect unlogged              verdict-logic QA: fabricated route-less logs
 //                                  MUST select 'self-listener-needed' (and a
 //                                  fabricated complete log MUST select 'logged').
@@ -193,8 +206,35 @@ const SpawnProvider = await imp('@deepseek-ai/dsh-subagent-spawn-in-process/lib/
 // The route values come from the plugin's own config module — the single
 // source of truth (same Node type-stripping the probe uses, P-8.6).
 const { resolveModelRoutes } = await import(new URL('../patches/omo-dsh/omo-agents/src/model-routes.ts', import.meta.url).href)
+// P2-T20: the second child is chosen from the roster, never hardcoded.
+const { DELEGATION_ENTRIES } = await import(new URL('../patches/omo-dsh/omo-agents/src/roster.ts', import.meta.url).href)
 const routes = resolveModelRoutes()
+const sameRoutePair = (a, b) => a.provider === b.provider && a.model === b.model
+const exploreEntry = DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')
+if (exploreEntry === undefined) {
+  console.error("T15-PROOF FAIL: roster.ts declares no delegation entry with id 'explore'")
+  process.exit(1)
+}
+// Prefer a non-explore row on a route DISTINCT from BOTH the conductor's and
+// explore's, so the logged child route is meaningfully different from every
+// existing record; fall back to any non-explore row if the roster ever
+// collapses seats.
+const secondEntry = DELEGATION_ENTRIES.find(
+  (entry) => entry.id !== 'explore'
+    && !sameRoutePair(routes[entry.id], routes.sisyphus)
+    && !sameRoutePair(routes[entry.id], routes.explore),
+) ?? DELEGATION_ENTRIES.find((entry) => entry.id !== 'explore')
+if (secondEntry === undefined) {
+  console.error('T15-PROOF FAIL: roster.ts declares no delegation entry other than explore')
+  process.exit(1)
+}
+/** The two roster children this proof drives: explore (T15) + one P2-T20 row. */
+const children = [
+  { id: 'explore', label: 't15 explore route probe', text: 't15 child route probe', route: routes.explore },
+  { id: secondEntry.id, label: `t20 ${secondEntry.id} route probe`, text: `t20 ${secondEntry.id} child route probe`, route: routes[secondEntry.id] },
+]
 console.log(`T15-PROOF routes under test: sisyphus=${routes.sisyphus.provider}/${routes.sisyphus.model} explore=${routes.explore.provider}/${routes.explore.model}`)
+console.log(`T20-PROOF second roster child: ${secondEntry.id} (${secondEntry.class}) → ${children[1].route.provider}/${children[1].route.model}`)
 
 // Scripted adapter on each REAL route name (dsh's own MockAdapter pattern —
 // packages/core/agent-loop/tests/mock-adapter.ts — reduced to the one shape
@@ -227,8 +267,19 @@ class MockAdapter extends LlmAdapter {
     }
   }
 }
-const parentAdapter = new MockAdapter([textResponse('parent turn done')])
-const childAdapter = new MockAdapter([textResponse('explore turn done')])
+// ONE adapter per provider, scripted with exactly as many turns as that
+// provider serves: the conductor's own turn plus every roster child whose
+// resolved route rides the same provider (P2-T20 generalized the original
+// fixed 1-turn parent/child pair). Dispatching more or fewer turns than
+// planned is itself an assertion failure below.
+const dispatchPlan = new Map()
+for (const pair of [routes.sisyphus, ...children.map((child) => child.route)]) {
+  dispatchPlan.set(pair.provider, (dispatchPlan.get(pair.provider) ?? 0) + 1)
+}
+const adapters = new Map()
+for (const [provider, turns] of dispatchPlan) {
+  adapters.set(provider, new MockAdapter(Array.from({ length: turns }, () => textResponse(`${provider} turn`))))
+}
 
 // The full real stack, in dsh's own test-mount order (continuation.spec.ts
 // setupWith): the five testkit services, then persistence, loop, subagents.
@@ -246,8 +297,7 @@ const persistenceFiber = await ctx.plugin(JsonlSessionPersistence, { root, compr
 await ctx.plugin(AgentLoop, { agents: [] })
 await ctx.plugin(SubagentRuntime)
 await ctx.plugin(SpawnProvider, { providerName: 'spawn' })
-ctx.llm.registerAdapter([routes.sisyphus.provider], parentAdapter)
-ctx.llm.registerAdapter([routes.explore.provider], childAdapter)
+for (const [provider, adapter] of adapters) ctx.llm.registerAdapter([provider], adapter)
 
 const problems = []
 
@@ -272,29 +322,36 @@ ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
   return { kind: 'reject' }
 })
 
-// The REAL delegation call our explore row makes: continuable start on the
-// spawn provider with the row's agentOptions override (T11's binding).
-const started = await ctx.subagents.startContinuable({
-  provider: 'spawn',
-  label: 't15 explore route probe',
-  request: {
-    prompt: [{ type: 'text', text: 't15 child route probe' }],
-    parent,
-    agentOptions: { provider: routes.explore.provider, model: routes.explore.model },
-  },
-  signal: new AbortController().signal,
-})
-console.log(`T15-PROOF continuable child started: childId=${started.childId}`)
+// The REAL delegation calls our roster rows make: continuable starts on the
+// spawn provider with each row's agentOptions override (T11's binding). P2-T20
+// drives BOTH roster children — explore (T15) and the second named row — so the
+// descriptor + request/header route record is proven for a non-explore child
+// too, not just the explore special case.
+const startedChildren = []
+for (const child of children) {
+  const started = await ctx.subagents.startContinuable({
+    provider: 'spawn',
+    label: child.label,
+    request: {
+      prompt: [{ type: 'text', text: child.text }],
+      parent,
+      agentOptions: { provider: child.route.provider, model: child.route.model },
+    },
+    signal: new AbortController().signal,
+  })
+  console.log(`T15-PROOF continuable child started: ${child.id} childId=${started.childId}`)
+  startedChildren.push({ ...child, childId: started.childId })
 
-// Wait for the child's initial turn to settle and its Activation to release
-// (dsh's waitNoActivation pattern) — all local, mock streams instantly.
-const deadline = Date.now() + 10_000
-while (ctx.agents.get(started.childId) !== undefined) {
-  if (Date.now() > deadline) {
-    console.error('T15-PROOF FAIL: child activation did not release within 10s')
-    process.exit(1)
+  // Wait for the child's initial turn to settle and its Activation to release
+  // (dsh's waitNoActivation pattern) — all local, mock streams instantly.
+  const deadline = Date.now() + 10_000
+  while (ctx.agents.get(started.childId) !== undefined) {
+    if (Date.now() > deadline) {
+      console.error(`T15-PROOF FAIL: ${child.id} child activation did not release within 10s`)
+      process.exit(1)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10))
   }
-  await new Promise((resolve) => setTimeout(resolve, 10))
 }
 
 // Flush the write-behind batcher deterministically: disposing the persistence
@@ -325,47 +382,70 @@ function readSessionLogs(dir, out = []) {
 const logs = new Map()
 for (const found of readSessionLogs(root)) logs.set(found.header.id, found)
 const parentLog = logs.get('t15-parent')
-const childLog = logs.get(String(started.childId))
 if (parentLog === undefined) problems.push('parent session.jsonl not found under the persistence root')
-if (childLog === undefined) problems.push(`child session.jsonl (${started.childId}) not found under the persistence root`)
+for (const child of startedChildren) {
+  child.log = logs.get(String(child.childId))
+  if (child.log === undefined) {
+    problems.push(`${child.id} child session.jsonl (${child.childId}) not found under the persistence root`)
+  }
+}
 
 let verdict
 if (problems.length === 0) {
   console.log(`T15-PROOF parent log: ${parentLog.path}`)
-  console.log(`T15-PROOF child log:  ${childLog.path}`)
-  console.log(`T15-PROOF child header line: ${JSON.stringify(childLog.header)}`)
-  if (childLog.header.origin !== 'subagent') problems.push(`child header origin = ${JSON.stringify(childLog.header.origin)} (want "subagent")`)
-  if (childLog.header.parentSession !== 't15-parent') problems.push(`child header parentSession = ${JSON.stringify(childLog.header.parentSession)} (want "t15-parent")`)
 
-  // Child: declared route in the durable descriptor (pre-turn record).
-  const descriptorLine = childLog.lines.find((line) => line.includes('"subagent/descriptor"'))
-  const descriptor = childLog.events.find((event) => event.type === 'subagent/descriptor')
-  if (descriptorLine === undefined || descriptor === undefined) {
-    problems.push('child log has no subagent/descriptor event')
-  } else {
-    console.log(`T15-PROOF child descriptor JSONL line (verbatim): ${descriptorLine}`)
-    const d = descriptor.data
-    // The emitted version must equal the runtime's OWN declared schema version
-    // (SUBAGENT_DESCRIPTOR_VERSION: 2 on rc.6/rc.7, 3 on 0.1.2 — the 0.1.2 v3
-    // bump). Stronger than a literal: it pins writer/constant agreement and is
-    // never an open-ended range.
-    if (d.version !== SUBAGENT_DESCRIPTOR_VERSION) {
-      problems.push(`descriptor version = ${d.version} (want ${SUBAGENT_DESCRIPTOR_VERSION}, this runtime's SUBAGENT_DESCRIPTOR_VERSION)`)
+  // Every roster child, explore included: the durable `subagent/descriptor`
+  // (declared route, pre-turn) AND its own `request/header` (executed route)
+  // must carry THAT child's resolved roster route (P2-T20 generalized the
+  // T15 explore record to a second named row).
+  const childHeaders = new Map()
+  for (const child of startedChildren) {
+    const childLog = child.log
+    const want = `${child.route.provider}/${child.route.model}`
+    console.log(`T15-PROOF child log (${child.id}): ${childLog.path}`)
+    console.log(`T15-PROOF child header line (${child.id}): ${JSON.stringify(childLog.header)}`)
+    if (childLog.header.origin !== 'subagent') {
+      problems.push(`${child.id} header origin = ${JSON.stringify(childLog.header.origin)} (want "subagent")`)
     }
-    if (d.mode !== 'continuable') problems.push(`descriptor mode = ${JSON.stringify(d.mode)} (want "continuable")`)
-    if (d.provider !== 'spawn') problems.push(`descriptor provider = ${JSON.stringify(d.provider)} (want "spawn")`)
-    if (d.agentProvider !== routes.explore.provider) problems.push(`descriptor agentProvider = ${JSON.stringify(d.agentProvider)} (want "${routes.explore.provider}")`)
-    if (d.agentModel !== routes.explore.model) problems.push(`descriptor agentModel = ${JSON.stringify(d.agentModel)} (want "${routes.explore.model}")`)
-  }
+    if (childLog.header.parentSession !== 't15-parent') {
+      problems.push(`${child.id} header parentSession = ${JSON.stringify(childLog.header.parentSession)} (want "t15-parent")`)
+    }
 
-  // Child: executed route in its own request/header; must equal the declared.
-  const childHeader = lastRequestHeaderRoute(childLog.events)
-  if (childHeader === undefined) {
-    problems.push('child log has no request/header event')
-  } else {
-    console.log(`T15-PROOF child request/header route: ${childHeader.provider}/${childHeader.model}`)
-    if (childHeader.provider !== routes.explore.provider || childHeader.model !== routes.explore.model) {
-      problems.push(`child request/header route = ${childHeader.provider}/${childHeader.model} (want "${routes.explore.provider}/${routes.explore.model}")`)
+    // Child: declared route in the durable descriptor (pre-turn record).
+    const descriptorLine = childLog.lines.find((line) => line.includes('"subagent/descriptor"'))
+    const descriptor = childLog.events.find((event) => event.type === 'subagent/descriptor')
+    if (descriptorLine === undefined || descriptor === undefined) {
+      problems.push(`${child.id} log has no subagent/descriptor event`)
+    } else {
+      console.log(`T15-PROOF child descriptor JSONL line (${child.id}, verbatim): ${descriptorLine}`)
+      const d = descriptor.data
+      // The emitted version must equal the runtime's OWN declared schema version
+      // (SUBAGENT_DESCRIPTOR_VERSION: 2 on rc.6/rc.7, 3 on 0.1.2 — the 0.1.2 v3
+      // bump). Stronger than a literal: it pins writer/constant agreement and is
+      // never an open-ended range.
+      if (d.version !== SUBAGENT_DESCRIPTOR_VERSION) {
+        problems.push(`${child.id} descriptor version = ${d.version} (want ${SUBAGENT_DESCRIPTOR_VERSION}, this runtime's SUBAGENT_DESCRIPTOR_VERSION)`)
+      }
+      if (d.mode !== 'continuable') problems.push(`${child.id} descriptor mode = ${JSON.stringify(d.mode)} (want "continuable")`)
+      if (d.provider !== 'spawn') problems.push(`${child.id} descriptor provider = ${JSON.stringify(d.provider)} (want "spawn")`)
+      if (d.agentProvider !== child.route.provider) {
+        problems.push(`${child.id} descriptor agentProvider = ${JSON.stringify(d.agentProvider)} (want "${child.route.provider}")`)
+      }
+      if (d.agentModel !== child.route.model) {
+        problems.push(`${child.id} descriptor agentModel = ${JSON.stringify(d.agentModel)} (want "${child.route.model}")`)
+      }
+    }
+
+    // Child: executed route in its own request/header; must equal the declared.
+    const childHeader = lastRequestHeaderRoute(childLog.events)
+    if (childHeader === undefined) {
+      problems.push(`${child.id} log has no request/header event`)
+    } else {
+      childHeaders.set(child.id, childHeader)
+      console.log(`T15-PROOF child request/header route (${child.id}): ${childHeader.provider}/${childHeader.model}`)
+      if (childHeader.provider !== child.route.provider || childHeader.model !== child.route.model) {
+        problems.push(`${child.id} request/header route = ${childHeader.provider}/${childHeader.model} (want "${want}")`)
+      }
     }
   }
 
@@ -380,25 +460,39 @@ if (problems.length === 0) {
     }
   }
 
-  // Adapter boundary: the loop dispatched each turn on the resolved route.
-  if (parentAdapter.requests.length !== 1) {
-    problems.push(`parent adapter saw ${parentAdapter.requests.length} requests (want exactly 1)`)
-  } else if (parentAdapter.requests[0].provider !== routes.sisyphus.provider || parentAdapter.requests[0].model !== routes.sisyphus.model) {
-    problems.push(`parent adapter dispatch = ${parentAdapter.requests[0].provider}/${parentAdapter.requests[0].model} (want the sisyphus route)`)
+  // Adapter boundary: the loop dispatched each planned turn on the resolved
+  // route — one conductor turn plus one turn per roster child, counted per
+  // provider route (P2-T20 replaced the fixed "parent adapter saw exactly 1").
+  const expectedCounts = new Map()
+  for (const pair of [routes.sisyphus, ...children.map((child) => child.route)]) {
+    const key = `${pair.provider}/${pair.model}`
+    expectedCounts.set(key, (expectedCounts.get(key) ?? 0) + 1)
   }
-  if (childAdapter.requests.length !== 1) {
-    problems.push(`child adapter saw ${childAdapter.requests.length} requests (want exactly 1)`)
-  } else if (childAdapter.requests[0].provider !== routes.explore.provider || childAdapter.requests[0].model !== routes.explore.model) {
-    problems.push(`child adapter dispatch = ${childAdapter.requests[0].provider}/${childAdapter.requests[0].model} (want the explore route)`)
+  const observedCounts = new Map()
+  for (const adapter of adapters.values()) {
+    for (const request of adapter.requests) {
+      const key = `${request.provider}/${request.model}`
+      observedCounts.set(key, (observedCounts.get(key) ?? 0) + 1)
+    }
+  }
+  for (const [key, want] of expectedCounts) {
+    const got = observedCounts.get(key) ?? 0
+    if (got !== want) problems.push(`adapter boundary: route ${key} dispatched ${got} time(s) (want ${want})`)
+    else console.log(`T15-PROOF adapter boundary: ${key} dispatched ${got}×`)
+  }
+  for (const [key, got] of observedCounts) {
+    if (!expectedCounts.has(key)) problems.push(`adapter boundary: unexpected route ${key} dispatched ${got} time(s)`)
   }
 
-  // AC-5: the two observed routes must be DIFFERENT.
-  if (childHeader !== undefined && parentHeader !== undefined
-    && childHeader.provider === parentHeader.provider && childHeader.model === parentHeader.model) {
+  // AC-5: the conductor's observed route must differ from the T15 explore
+  // child's (the two-agent dual-model core the T15 verdict rests on).
+  const exploreHeader = childHeaders.get('explore')
+  if (exploreHeader !== undefined && parentHeader !== undefined
+    && exploreHeader.provider === parentHeader.provider && exploreHeader.model === parentHeader.model) {
     problems.push(`AC-5 violated: parent and child observed on the SAME route ${parentHeader.provider}/${parentHeader.model}`)
   }
 
-  verdict = routeLogVerdict({ childEvents: childLog.events, parentEvents: parentLog.events })
+  verdict = routeLogVerdict({ childEvents: startedChildren[0].log.events, parentEvents: parentLog.events })
   console.log(`T15-PROOF verdict inputs: child route via ${verdict.child?.via ?? 'MISSING'} (${verdict.child?.provider ?? '?'}/${verdict.child?.model ?? '?'}), parent route via ${verdict.parent?.via ?? 'MISSING'} (${verdict.parent?.provider ?? '?'}/${verdict.parent?.model ?? '?'})`)
   if (verdict.verdict !== 'logged') problems.push(`routeLogVerdict selected '${verdict.verdict}' on the real logs (want 'logged')`)
   if (verdict.child?.via !== 'subagent/descriptor') problems.push(`child route must come from the descriptor (strongest pre-turn record), got via=${verdict.child?.via ?? 'MISSING'}`)
@@ -409,4 +503,7 @@ if (problems.length > 0) {
   process.exit(1)
 }
 console.log(`P-7 verdict: ${verdict.verdict}`)
-console.log('T15-PROOF PASS: the installed dsh session JSONL records BOTH agents\' RESOLVED routes — the continuable child\'s declared route in `subagent/descriptor` (data.agentProvider/data.agentModel, resolved request-wins over parent at continuation.ts:413-414 ≡ lib/index.js:779-780) AND each agent\'s executed route in `request/header` (data.header.config.provider/model, agent-loop/src/agent.ts:466 ≡ dsh-agent-loop/lib/index.js:710-716); parent and child observed on two DIFFERENT routes (AC-5), and the dispatch reached the adapter boundary on those exact routes — no listener code needed')
+console.log(`T15-PROOF PASS: the installed dsh session JSONL records BOTH agents' RESOLVED routes — the continuable child's declared route in \`subagent/descriptor\` (data.agentProvider/data.agentModel, resolved request-wins over parent at continuation.ts:413-414 ≡ lib/index.js:779-780) AND each agent's executed route in \`request/header\` (data.header.config.provider/model, agent-loop/src/agent.ts:466 ≡ dsh-agent-loop/lib/index.js:710-716); parent and child observed on two DIFFERENT routes (AC-5), and the dispatch reached the adapter boundary on those exact routes — no listener code needed`)
+
+// P2-T20 — the generalization record, one line per roster child driven.
+console.log(`T20-PROOF PASS: route logging holds for the non-explore roster child '${secondEntry.id}' too — descriptor ${children[1].route.provider}/${children[1].route.model} + its own request/header, plus the adapter-boundary dispatch count per resolved route (${children.length} roster children driven: ${children.map((child) => child.id).join(', ')})`)

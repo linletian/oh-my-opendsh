@@ -18,21 +18,46 @@
 // system-prompt.ts). preset.yml is still copied verbatim. Rendering is a
 // pure function of the markdown sections, so idempotence is unchanged.
 //
-// T11: the same sentinel discipline binds the omo-explore dsh-tool-subagent
-// instance (form A static config; row documented in the template). Two more
-// sentinels are rendered at apply() time: the explore persona text (from
-// buildExploreSystemPrompt, T10) and the explore agentOptions route (from
-// resolveModelRoutes, T14 — env-overridable, so it MUST be resolved here
-// rather than pasted into YAML). Both renderers keep the T8 exactly-once
-// sentinel guard, and route values are emitted as JSON-quoted YAML scalars
-// so an env override can never break the composition's YAML.
+// T11: the same sentinel discipline bound the first omo-explore
+// dsh-tool-subagent instance (form A static config; row documented in the
+// template) — its persona text (buildExploreSystemPrompt, T10) plus its
+// agentOptions route (resolveModelRoutes, T14 — env-overridable, so it MUST be
+// resolved here rather than pasted into YAML).
+//
+// P2-T15 (plan §4.4): that explore-only renderer generalizes to the FULL
+// 11-agent roster. ONE roster-driven pipeline (`renderAgentSentinels`) walks
+// `DELEGATION_ENTRIES` (roster.ts is the single source, in roster order) and
+// renders three sentinel families per row:
+//   persona      __OMO_<ID>_PERSONA__        ← buildAgentPersona(id)
+//   agentOptions __OMO_<ID>_AGENT_OPTIONS__  ← resolveModelRoutes()[id]
+//   deny         __OMO_<ID>_DENY__           ← denyToolNamesFor(roster row)
+// The deny family exists only for the class rows that own a filter: the six
+// read-only rows and the two worker rows (8 sentinels); atlas (orchestrator)
+// deliberately carries NO toolFilter key, and multimodal-looker's
+// `allow: [read, read_image]` is a short static YAML list with no sentinel
+// (plan §4.4). The T8 conductor sentinel is still rendered by system-prompt.ts
+// — it is a `prefix:` value, not a delegation-row key. Sentinel census: 1 + 10
+// + 10 + 8 = 29.
+//
+// WHY A SENTINEL PER ROW RATHER THAN ONE SHARED STRING (plan §4.4 "deny 列表的
+// 哨兵渲染"): `replaceSentinelOnce` refuses a sentinel that occurs zero or
+// more-than-one times, and that guard is the R-7 protection against a
+// forgotten or doubled render. A single shared deny sentinel across ten rows
+// would trip its own guard; a statically pasted deny list would make adding an
+// agent an eleven-line YAML edit. Per-row-unique sentinels keep both
+// properties. Every route value and every deny name is emitted as a
+// JSON.stringify-quoted scalar (`"deepseek"`) — a JSON string is a valid YAML
+// double-quoted scalar under the loader's JSON_SCHEMA dialect, so an env
+// override or a future hyphenated tool name can never inject YAML.
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildSisyphusSystemPrompt, renderPersonaIntoComposition } from './system-prompt.ts'
-import { buildExploreSystemPrompt } from './explore-prompt.ts'
-import { resolveModelRoutes, type ModelRoute } from './model-routes.ts'
+import { buildAgentPersona } from './persona-prompts.ts'
+import { DELEGATION_ENTRIES, denyToolNamesFor } from './roster.ts'
+import type { AgentId } from './roster.ts'
+import { resolveModelRoutes, type ModelRoute, type ModelRoutes } from './model-routes.ts'
 
 /** The preset's roster id, which is also its directory name. */
 export const CONCERTO_PRESET_ID = 'concerto'
@@ -73,12 +98,46 @@ export type ConcertoSyncOutcome =
   | 'refreshed' // target content diverged (rewritten) or stale extra entries were removed
   | 'unchanged' // target content already matches the template; no write
 
-/** Persona sentinel of the T11 explore tool-subagent row (see the template). */
-export const EXPLORE_PERSONA_SENTINEL = '__OMO_EXPLORE_PERSONA__'
+/** The three sentinel families a roster delegation row can carry. */
+export type AgentSentinelKind = 'PERSONA' | 'AGENT_OPTIONS' | 'DENY'
 
-/** agentOptions sentinel of the T11 explore tool-subagent row. */
-export const EXPLORE_AGENT_OPTIONS_SENTINEL = '__OMO_EXPLORE_AGENT_OPTIONS__'
+/**
+ * The sentinel name for one (`id`, family) pair, e.g.
+ * `__OMO_PLAN_CONSULTANT_PERSONA__`. Uppercasing the id and folding hyphens to
+ * underscores is the SAME convention roster.ts uses for the
+ * `OMO_<AGENT>_{PROVIDER,MODEL}` env pairs, so the YAML sentinel, the env
+ * override and the log marker all spell one agent the same way. Exported
+ * because scripts/verify-concerto-static.mjs derives its c10 expectations from
+ * this naming rather than restating the literal format (P2-T15).
+ */
+export function agentSentinelName(id: string, kind: AgentSentinelKind): string {
+  return `__OMO_${id.toUpperCase().replaceAll('-', '_')}_${kind}__`
+}
 
+/** Persona sentinel of the explore tool-subagent row (kept for compatibility). */
+export const EXPLORE_PERSONA_SENTINEL = agentSentinelName('explore', 'PERSONA')
+
+/** agentOptions sentinel of the explore tool-subagent row (kept for compatibility). */
+export const EXPLORE_AGENT_OPTIONS_SENTINEL = agentSentinelName('explore', 'AGENT_OPTIONS')
+
+/**
+ * Content indent of every delegation row's config values. The row itself sits
+ * at 4 spaces inside the `delegation` group's config list, its `config:` keys
+ * at 8, so a block scalar's content lines take 10 — the T8 renderer's rule
+ * (6 spaces under the persona row's `prefix:`) with this row's depth.
+ */
+const AGENT_ROW_CONTENT_INDENT = '          '
+
+/** Any surviving sentinel after a full render (the sync residue check). */
+const SENTINEL_PATTERN = /__OMO_[A-Z0-9_]+__/g
+
+/**
+ * The guard shared by every sentinel replacement: the template must carry the
+ * exact sentinel string exactly once. Zero occurrences means the template and
+ * this renderer disagree about a row (a dropped row, a renamed sentinel);
+ * two or more means the sentinel stopped being row-addressed. Both are loud
+ * apply-time failures (R-7) instead of a half-rendered composition.
+ */
 function replaceSentinelOnce(template: string, sentinel: string, replacement: string): string {
   const occurrences = template.split(sentinel).length - 1
   if (occurrences !== 1) {
@@ -91,41 +150,129 @@ function replaceSentinelOnce(template: string, sentinel: string, replacement: st
 }
 
 /**
- * Renders the explore persona sentinel into a `|-` block scalar under the
- * explore row's `persona:` key. That key sits at 8-space indent (the row is
- * nested in the delegation group's config list), so content lines take 10 —
- * the T8 renderer's rule with the row's indent. Empty prompt lines stay
- * truly empty; everything else is preserved byte-for-byte.
+ * Renders one roster agent's persona sentinel into a `|-` block scalar under
+ * that row's `persona:` key. Empty prompt lines stay truly empty; everything
+ * else is preserved byte-for-byte behind the row's 10-space indent.
  */
-export function renderExplorePersonaIntoComposition(template: string, persona: string): string {
+export function renderAgentPersonaIntoComposition(
+  template: string,
+  id: string,
+  persona: string,
+): string {
   const block = persona
     .split('\n')
-    .map((line) => (line.length > 0 ? `          ${line}` : ''))
+    .map((line) => (line.length > 0 ? `${AGENT_ROW_CONTENT_INDENT}${line}` : ''))
     .join('\n')
   return replaceSentinelOnce(
     template,
-    `persona: ${EXPLORE_PERSONA_SENTINEL}`,
+    `persona: ${agentSentinelName(id, 'PERSONA')}`,
     `persona: |-\n${block}`,
   )
 }
 
 /**
- * Renders the agentOptions sentinel into the two-key mapping the schema
- * expects (`provider` / `model`; `maxTokens` intentionally omitted — the
- * child-loop default applies). Values are JSON.stringify-quoted: a JSON
- * string is a valid YAML double-quoted scalar under the loader's
- * JSON_SCHEMA dialect, so env-supplied route values cannot inject YAML.
+ * Renders one roster agent's agentOptions sentinel into the two-key mapping the
+ * schema expects (`provider` / `model`; `maxTokens` intentionally omitted — the
+ * child-loop default applies). Values are JSON.stringify-quoted: a JSON string
+ * is a valid YAML double-quoted scalar under the loader's JSON_SCHEMA dialect,
+ * so env-supplied route values cannot inject YAML.
  */
-export function renderExploreAgentOptionsIntoComposition(template: string, route: ModelRoute): string {
+export function renderAgentOptionsIntoComposition(
+  template: string,
+  id: string,
+  route: ModelRoute,
+): string {
   const mapping = `agentOptions:\n`
-    + `          provider: ${JSON.stringify(route.provider)}\n`
-    + `          model: ${JSON.stringify(route.model)}`
+    + `${AGENT_ROW_CONTENT_INDENT}provider: ${JSON.stringify(route.provider)}\n`
+    + `${AGENT_ROW_CONTENT_INDENT}model: ${JSON.stringify(route.model)}`
   return replaceSentinelOnce(
     template,
-    `agentOptions: ${EXPLORE_AGENT_OPTIONS_SENTINEL}`,
+    `agentOptions: ${agentSentinelName(id, 'AGENT_OPTIONS')}`,
     mapping,
   )
 }
+
+/**
+ * Renders one row's deny sentinel into a YAML flow sequence. Each name is
+ * JSON.stringify-quoted for the same injection-safety reason as the route
+ * values. An empty list is rejected outright: `deny: []` is both meaningless
+ * (deny nothing) and a schema-level throw downstream, so it must never be the
+ * silent result of a roster change (R-7).
+ */
+export function renderAgentDenyIntoComposition(
+  template: string,
+  id: string,
+  denyNames: readonly string[],
+): string {
+  if (denyNames.length === 0) {
+    throw new Error(
+      `concerto renderer: roster row '${id}' resolved an EMPTY deny list — a filter that `
+      + 'denies nothing is never intended; fix denyToolNamesFor in roster.ts',
+    )
+  }
+  const sequence = `[${denyNames.map((name) => JSON.stringify(name)).join(', ')}]`
+  return replaceSentinelOnce(
+    template,
+    `deny: ${agentSentinelName(id, 'DENY')}`,
+    `deny: ${sequence}`,
+  )
+}
+
+/** Thin explore-named wrappers over the roster-driven renderers (T11 API). */
+export function renderExplorePersonaIntoComposition(template: string, persona: string): string {
+  return renderAgentPersonaIntoComposition(template, 'explore', persona)
+}
+
+export function renderExploreAgentOptionsIntoComposition(template: string, route: ModelRoute): string {
+  return renderAgentOptionsIntoComposition(template, 'explore', route)
+}
+
+/**
+ * Test-injection surface of the roster pipeline. Both maps are optional and
+ * PARTIAL: an unset id falls back to the single source (buildAgentPersona(id),
+ * resolveModelRoutes()[id]), so a hermetic test can stub one row while the
+ * others still render from reality.
+ */
+export interface AgentSentinelInputs {
+  readonly personas?: Partial<Record<string, string>>
+  readonly routes?: Partial<Record<string, ModelRoute>>
+}
+
+/**
+ * The ONE roster-driven pipeline: for every delegation entry, in roster order,
+ * replaces the row's persona, agentOptions and (when the class owns a filter)
+ * deny sentinels. Ids come from roster.ts, so the template, the roster and the
+ * rendered composition cannot drift apart silently: a template row missing a
+ * sentinel fails the exactly-once guard, and an extra sentinel survives to the
+ * sync's residue check.
+ */
+export function renderAgentSentinels(
+  template: string,
+  inputs: AgentSentinelInputs = {},
+): string {
+  let resolvedRoutes: ModelRoutes | undefined
+  let rendered = template
+  for (const entry of DELEGATION_ENTRIES) {
+    const persona = inputs.personas?.[entry.id] ?? buildAgentPersona(entry.id)
+    rendered = renderAgentPersonaIntoComposition(rendered, entry.id, persona)
+
+    const route = inputs.routes?.[entry.id]
+      // `RosterEntry.id` widens to string; every DELEGATION_ENTRIES row is a
+      // roster id, so the index is a localized assertion (roster.ts owns the
+      // union — cf. its DELEGATION_TOOL_NAMES derivation).
+      ?? (resolvedRoutes ??= resolveModelRoutes())[entry.id as AgentId]
+    rendered = renderAgentOptionsIntoComposition(rendered, entry.id, route)
+
+    const denyNames = denyToolNamesFor(entry)
+    if (denyNames !== undefined) {
+      rendered = renderAgentDenyIntoComposition(rendered, entry.id, denyNames)
+    }
+  }
+  return rendered
+}
+
+/** Test/consumer overrides for `syncConcertoPreset` (see AgentSentinelInputs). */
+export type ConcertoRenderInputs = AgentSentinelInputs
 
 /**
  * Writes the template into `targetDir`, idempotently: content-identical
@@ -139,36 +286,43 @@ export function renderExploreAgentOptionsIntoComposition(template: string, route
  * older sync may have loosened it), and the removal of a stale entry counts
  * as a change: the outcome is `refreshed`, not `unchanged`.
  *
- * `personaPrompt` is rendered into the persona sentinel of the template's
- * agent.cordis.yml (T8); the default builds it from the shipped markdown
- * sections, and tests inject their own to stay hermetic. T11 adds
- * `explorePersona` / `exploreRoute`, rendered into the explore tool-subagent
- * row's sentinels; the defaults build from the same single sources
- * (explore-prompt.ts, model-routes.ts) the rest of the plugin uses, so
- * index.ts needs no new wiring.
+ * `personaPrompt` is rendered into the conductor persona sentinel of the
+ * template's agent.cordis.yml (T8); the default builds it from the shipped
+ * markdown sections. `inputs` carries the P2-T15 per-agent overrides; their
+ * defaults build from the same single sources the rest of the plugin uses
+ * (persona-prompts.ts, model-routes.ts, roster.ts), so index.ts needs no new
+ * wiring. Tests inject both to stay hermetic and sandboxed.
+ *
+ * @throws {Error} a sentinel did not occur exactly once, a deny list resolved
+ *   empty, or any `__OMO_*__` marker survived the full render (residue check).
  */
 export function syncConcertoPreset(
   targetDir: string,
   templateDir: string = CONCERTO_TEMPLATE_DIR,
   personaPrompt: string = buildSisyphusSystemPrompt(),
-  explorePersona: string = buildExploreSystemPrompt(),
-  exploreRoute: ModelRoute = resolveModelRoutes().explore,
+  inputs: ConcertoRenderInputs = {},
 ): ConcertoSyncOutcome {
   const expected = new Map<string, string>()
   for (const file of CONCERTO_PRESET_FILES) {
     const template = readFileSync(join(templateDir, file), 'utf8')
-    expected.set(
-      file,
-      file === 'agent.cordis.yml'
-        ? renderExploreAgentOptionsIntoComposition(
-          renderExplorePersonaIntoComposition(
-            renderPersonaIntoComposition(template, personaPrompt),
-            explorePersona,
-          ),
-          exploreRoute,
-        )
-        : template,
+    if (file !== 'agent.cordis.yml') {
+      expected.set(file, template)
+      continue
+    }
+    const rendered = renderAgentSentinels(
+      renderPersonaIntoComposition(template, personaPrompt),
+      inputs,
     )
+    const residue = rendered.match(SENTINEL_PATTERN)
+    if (residue !== null) {
+      throw new Error(
+        `concerto template rendered with surviving sentinel residue: `
+        + `${[...new Set(residue)].join(', ')} — every __OMO_*__ marker must be `
+        + 'consumed by the roster pipeline (a template row without a roster entry, '
+        + 'or a roster row without a template sentinel)',
+      )
+    }
+    expected.set(file, rendered)
   }
   const existed = existsSync(targetDir)
   let identical = existed
