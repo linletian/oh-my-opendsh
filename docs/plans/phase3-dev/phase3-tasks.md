@@ -40,12 +40,12 @@
 
 ## WP-1 插件骨架（计划书 §4.1）
 
-### [ ] P3-T2 — `omo-hooks` 包骨架 + `manifest.ts` 单一事实源
+### [x] P3-T2 — `omo-hooks` 包骨架 + `manifest.ts` 单一事实源
 
 - **产出**：`patches/omo-dsh/omo-hooks/`（`package.json` `@oh-my-opendsh/omo-hooks` / `tsconfig.host.json` / `src/index.ts` 空 apply / `src/manifest.ts`）。
 - **做法**：布局镜像 omo-agents（host-only、Node 24 type-stripping、`.ts` 扩展 load-bearing 注释）；`manifest.ts` 按计划书 §4.1 声明条目形状（`id` / 上游源路径逐文件 / 目标事件 / 模式 A–F / 效果摘要 / e2e 场景名 / 状态），先放 P0 两条目占位；派生函数（按事件分组、按状态过滤）供 boot marker 与一致性测试消费。
 - **判定**：✅ `pnpm typecheck` 绿；manifest 条目形状单测（空字段 throw、模式枚举合法、事件名在六模式集合内）。
-- **证据**：（待填）
+- **证据**：2026-09-19 完成（编码 sub-agent deepseek-flash：1 首轮 + 2 修复轮）。产出：package.json 11 行 / tsconfig.host.json 30 行 / src/index.ts 71 行 / src/manifest.ts 648 行（15 条目——P3-T1 实测后扩自"P0 两条目占位"，覆盖基线 §1 全部移植模块 + validateManifest 9 检查 + hooksByEvent/hooksByStatus 派生）/ tests/omo-hooks/manifest.test.ts 25 用例 / 根 package.json 增 typecheck:hooks 并接入 typecheck:libs 链。**双评审**：Kimi 轮1 REJECT（1 MAJOR：H-16 upstreamTestFiles 漏登 tool-output-truncator.test.ts 且注释误称"无测试"——仲裁属实）+ mcode 轮1 APPROVE → 修复轮1（M-1 + 2 处注释失真）→ Kimi 轮2 APPROVE（4 项非阻塞 NIT——仲裁全部采纳）+ mcode 轮2 APPROVE → 修复轮2 → **Kimi 轮3 APPROVE + mcode 轮3 APPROVE**（"无 P0/P1/P2 级别实质缺陷"）。门：typecheck 0、typecheck:hooks 0、vitest tests/omo-hooks 25/25（首轮 MAJOR 位点已入变异敏感网）、全量 vitest 458。**编码 agent 对任务书的质疑（仲裁记录）**：① H-16 的 shared/ 支撑文件记账口径 → 留 T14 裁定（import 闭包 7 实现文件已注记）；② e2e 场景名体例 → 采纳统一派生，改名时按单向同步纪律先改覆盖清单；③ status 词汇表中英映射 → 留 T20 一致性门定义。
 - **依赖**：P3-T1。**量级**：3 小时。
 
 ### [ ] P3-T3 — 挂载 + boot marker 接线

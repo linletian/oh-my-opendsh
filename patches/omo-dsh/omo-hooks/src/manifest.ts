@@ -1,0 +1,686 @@
+// manifest.ts — Phase 3 SINGLE source of truth for the 15-hook port roster
+// (docs/plans/phase3-dev/phase3-plan.md §4.1; task P3-T2; data table
+// docs/plans/phase3-dev/phase3-hooks.md §1 移植组).
+//
+// WHY THIS FILE EXISTS (plan §4.1). The hook knowledge — which upstream module
+// is ported, which files carry its semantics, which DSH event it lands on,
+// which listener pattern (§4.2 A–F) it is, what effect it produces, which e2e
+// scenario proves it, whether it is done yet — is declared ONCE here. Before
+// this file every consumer would restate a slice of it: the T3 registration
+// loop needs the id+event pairs, the T3 boot marker needs the ids, the T19
+// static gate compares the manifest against the real `src/hooks/*.ts` file
+// set, T20's coverage-list consistency test compares it against
+// phase3-hooks.md §1, and the e2e suite reads the scenario names. This is the
+// roster.ts precedent (patches/omo-dsh/omo-agents/src/roster.ts): one authored
+// table, every consumer derives.
+//
+// DATA PROVENANCE — P3-T1 MEASURED, NOT PLANNED. Every `upstreamFiles` and
+// `upstreamTestFiles` row below was produced by P3-T1's read-only survey of the
+// frozen baseline tag, with the same command family recorded in the task
+// book:
+//
+//   git -C <omo> ls-tree -r --name-only v4.19.4 \
+//     packages/omo-opencode/src/hooks/<module>/        # directory modules
+//   git -C <omo> ls-tree -r --name-only v4.19.4 \
+//     packages/omo-opencode/src/hooks/<module>.ts      # single-file modules
+//
+// (baseline anchor commit b072d279110bdda2c6ac2525d0d24dc54d16148a; PRE-1).
+// `*.test.ts` files go to `upstreamTestFiles` — they are the R-3 unit-test
+// seeds — and `AGENTS.md` is excluded from both lists (N-03: that file
+// disagrees with the code in several places). Among the 15 port modules exactly
+// ONE upstream directory ships an `AGENTS.md`: H-03's
+// `todo-continuation-enforcer/` (34 ls-tree entries = 17 实现 + 16 测试 +
+// 1 AGENTS.md, so its "33 文件" count already excludes the doc); H-01 (6 files)
+// and H-32 (20 files) contain none, so no row count in this table needs an
+// AGENTS.md correction. Reproduce the audit with
+//   git -C <omo> ls-tree -r --name-only v4.19.4 packages/omo-opencode/src/hooks/ \
+//     | grep -E 'hooks/[^/]+/AGENTS\.md$'
+// → 12 hits repo-wide, H-03 the only one inside the port group.
+//
+// ONE-WAY SYNC DISCIPLINE. phase3-hooks.md §1 is the human-readable coverage
+// baseline and this file is the machine-readable one; they carry the SAME
+// facts. The 15 rows are 1:1 with the coverage baseline's H-01…H-32 port group
+// (each row's comment names its baseline line), and the consistency test
+// (P3-T20, phase3-plan.md §4.7 L1(③)) asserts the two agree. When a port
+// lands, the EDIT ORDER IS: phase3-hooks.md (the doc is the auditable record)
+// → this manifest (status/e2eScenario) → the listener code. Never the reverse:
+// a manifest edited alone would make the doc-derived gate pass over a doc that
+// no longer matches reality, which is exactly the roster drift the plan §4.1
+// single-source rule exists to prevent.
+//
+// MODE/EVENT SEMANTICS. `mode` is the plan §4.2 A–F listener pattern and
+// `event` is the DSH registration surface. They are one authored pair, not two
+// independent facts: A → agent/pre-step, B → tools/pre-execute, C/D →
+// tools/post-execute, E → agent/turn-stopping, F → session/event or
+// agent/status. The B+D rows (H-24/H-26, below) are the one place a row covers
+// TWO surfaces: the row's `event` is the PRIMARY decision surface (the B half
+// on tools/pre-execute), `mode` records the primacy, and `summary` spells the D
+// half out. Consuming code must therefore read `summary` when it needs the
+// full surface set — this field pair is a label, never a complete event map
+// (see hooksByEvent's note).
+//
+// TEMPLATE-LITERAL TYPES ARE LOAD-BEARING, NOT DECORATION. `HookMode` /
+// `HookEvent` are derived from the runtime arrays below with
+// `(typeof X)[number]`, the same "data first, type derived" trick as
+// roster.ts's `AgentId`. A literal that is not in the array — a typo'd event,
+// an accidental mode 'G' — becomes a compile error in this file's rows, before
+// any runtime assertion is reached; the runtime sets remain the single list
+// validateManifest checks (which is why the NEGATIVE tests mutate a widened
+// structural shape instead of these narrowed rows — see the header of
+// tests/omo-hooks/manifest.test.ts).
+//
+// NO SEPARATE TYPES MODULE. The row interface needs `HookEvent`/`HookMode`,
+// which are derived from the arrays in THIS file, while the arrays' `satisfies`
+// clause needs the interface — mutually referential. Declaring the interface
+// after the arrays keeps that a single-file, single-pass dependency; a separate
+// `manifest-types.ts` would either re-spell the unions (two lists that can
+// drift) or create an import cycle.
+
+/** The six-event DSH face of Phase 3 (plan §4.2 event column, P3-T1 verified). */
+export const MANIFEST_EVENTS = [
+  'agent/pre-step',
+  'tools/pre-execute',
+  'tools/post-execute',
+  'agent/turn-stopping',
+  'session/event',
+  'agent/status',
+] as const
+
+/** The plan §4.2 A–F listener patterns. */
+export const MANIFEST_MODES = ['A', 'B', 'C', 'D', 'E', 'F'] as const
+
+/** Every `event` a manifest row may declare. */
+export type HookEvent = (typeof MANIFEST_EVENTS)[number]
+
+/** Every `mode` a manifest row may declare. */
+export type HookMode = (typeof MANIFEST_MODES)[number]
+
+/**
+ * The set form of MANIFEST_EVENTS, exported because the object form is what
+ * `validateManifest` needs and re-deriving it at every call site would let two
+ * spellings of "the legal events" drift apart (P2-T17 sentinel-list precedent).
+ */
+export const manifestEventSet: ReadonlySet<string> = new Set<string>(MANIFEST_EVENTS)
+
+/** The set form of MANIFEST_MODES (see manifestEventSet). */
+export const manifestModeSet: ReadonlySet<string> = new Set<string>(MANIFEST_MODES)
+
+/**
+ * `status` is an open string on purpose. Today it is always 'pending' — no
+ * port has landed yet (phase3-hooks.md §5: 已移植 0/15) — but P3-T4…T17 flip
+ * individual rows one at a time, and phase3-plan.md §4.8 words the flipped
+ * value as 已移植（场景 xxx）: the coverage-list status embeds the row's e2e
+ * scenario name, so the vocabulary is not a fixed two-value set that a closed
+ * union could spell. The T20 consistency test pins the actual vocabulary
+ * against the coverage list instead.
+ */
+export type HookManifestStatus = string
+
+/**
+ * One row of the port roster (plan §4.1). Field-by-field reasoning lives in
+ * this file's header and in each row's comment; the interface is exported so
+ * the row table and the test fixtures share ONE shape.
+ */
+export interface HookManifestEntry {
+  /** kebab-case listener module id == `src/hooks/<id>.ts` basename (the v5 naming anchor where it applies). */
+  readonly id: string
+  /** Upstream tag-relative source files carrying this hook's semantics (no tests, no AGENTS.md). */
+  readonly upstreamFiles: readonly string[]
+  /** Upstream tag-relative test files — the R-3 unit-test seeds; [] when upstream has none. */
+  readonly upstreamTestFiles: readonly string[]
+  /** The DSH event the listener registers on (primary decision surface for B+D rows). */
+  readonly event: HookEvent
+  /** The plan §4.2 A–F listener pattern. */
+  readonly mode: HookMode
+  /** One-sentence effect summary (phase3-hooks.md §1 语义摘要 column). */
+  readonly summary: string
+  /** The planned mock-LLM e2e scenario name (phase3-plan.md §4.7 门 3 row). */
+  readonly e2eScenario: string
+  /** Port state; 'pending' until the listener+unit test+e2e land. */
+  readonly status: HookManifestStatus
+}
+
+/**
+ * The P3-T1 port count (phase3-hooks.md §5: 移植组 = 15). Named and exported so
+ * the expectation is stated ONCE and `validateManifest` can reject a dropped or
+ * duplicated row without a magic number in the middle of the checks — the
+ * "15 rows really exist" guard is this constant (check 5) plus the uniqueness
+ * check.
+ */
+export const EXPECTED_HOOK_COUNT = 15
+
+/**
+ * The 15-row port roster, in ROADMAP priority order (P0 文件护栏 → P1 todo/goal
+ * 执行器 → P3 会话通知 → P4 其余 → P5 ulw-execute) — the same order as
+ * phase3-hooks.md §1, so the T3 boot-marker log is deterministic and the
+ * coverage-list diff is a line-by-line read.
+ *
+ * WIDENED, NOT `as const`, ON PURPOSE. roster.ts exports the narrowed literal
+ * tuple because its consumers branch on optional keys; here every row declares
+ * every field, and the consumer that matters (validateManifest) MUST accept
+ * malformed rows to reject them — a literal-typed array would make the
+ * "empty id" / "illegal mode" negative tests unwritable. The shape is still
+ * checked at authoring time by the satisfies clause, and the ids are still
+ * literal-typed where they are read (`HOOK_IDS` below).
+ */
+const MANIFEST_ROWS = [
+  // H-01 — phase3-hooks.md §1 P0 行（上游 module = write-existing-file-guard/）.
+  // 上游目录 6 文件 = 4 实现 + 2 测试；`index.ts` 是 hook 组装入口，
+  // `tool-execute-before-handler.ts` 承载"写前必须读过"的判定主体，
+  // `session-read-permissions.ts` 承载 session 级读过集合。
+  // 行为差异（基线 H-01 已记录故此处摘要必须沿用）：上游在拒绝/放行时剥离
+  // `overwrite` 参数（输入改写），而 DSH 的 tools/pre-execute 参数是
+  // deepFreeze 的（p3t1-dsh-mechanisms Q-1）——差异在 T4/T6 的 e2e 断言与
+  // 覆盖清单只记录不复制。
+  {
+    id: 'write-existing-file-guard',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/write-existing-file-guard/hook.ts',
+      'packages/omo-opencode/src/hooks/write-existing-file-guard/index.ts',
+      'packages/omo-opencode/src/hooks/write-existing-file-guard/session-read-permissions.ts',
+      'packages/omo-opencode/src/hooks/write-existing-file-guard/tool-execute-before-handler.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/write-existing-file-guard/index.test.ts',
+      'packages/omo-opencode/src/hooks/write-existing-file-guard/lazy-canonical-path-init.test.ts',
+    ],
+    event: 'tools/pre-execute',
+    mode: 'B',
+    summary:
+      '覆写已存在文件前须先读过（session 读过集合 + deny 决策权威拒绝）；DSH 禁参数改写故不剥离 overwrite',
+    e2eScenario: 'write-guard-denied',
+    status: 'pending',
+  },
+  // H-02 — phase3-hooks.md §1 P0 行（单文件模块）。
+  // ⚠️ 上游语义是**劝导非阻断**（`output.message = WARNING_MESSAGE`），而
+  // DSH 的 pre-execute 无 advisory 形态（P3-T1 更正，计划书 §4.2 模式 C 行），
+  // 故 event 落 tools/post-execute、以 accept+additionalContexts 把 warning
+  // 送进下一请求——命令照常执行，这正是上游"不阻断"语义的等价落地。
+  {
+    id: 'bash-file-read-guard',
+    upstreamFiles: ['packages/omo-opencode/src/hooks/bash-file-read-guard.ts'],
+    upstreamTestFiles: [],
+    event: 'tools/post-execute',
+    mode: 'C',
+    summary:
+      '简单 cat/head/tail 读文件 → 劝导改用 read 工具；命令照执行，warning 经 additionalContexts 进下一请求',
+    e2eScenario: 'bash-read-guard-warned',
+    status: 'pending',
+  },
+  // H-03 — phase3-hooks.md §1 P1 行。上游 33 文件 = 17 实现 + 16 测试（另
+  // AGENTS.md 不计）。模式 E 是 P3-T1 更正后的口径：turn-stopping listener 的
+  // **返回值被 driver 丢弃**，续行 = `agent.steer(createUserMessage(...))`
+  // 写入 inbox 的副作用（dsh-hooks-claude-code 先例
+  // lib/index.js:292-307），不是投票。todo 状态源 = DSH 原生 ctx.todo（U-4）。
+  {
+    id: 'todo-continuation-enforcer',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/abort-detection.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/compaction-guard.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/constants.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/continuation-injection.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/countdown.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/handler.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/idle-event.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/index.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/message-directory.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/non-idle-events.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/pending-question-detection.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/resolve-message-info.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/session-state.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/stagnation-detection.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/todo.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/token-limit-detection.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/types.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/compaction-guard.regression.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/continuation-injection-agent-name.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/continuation-injection-agent-resolution.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/continuation-injection.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/dispose.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/handler.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/idle-event.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/non-idle-events.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/opencode-overload-continuation.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/parent-wake-race.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/pending-question-detection.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/resolve-message-info.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/session-state.regression.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/session-state.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/stagnation-detection.test.ts',
+      'packages/omo-opencode/src/hooks/todo-continuation-enforcer/todo-continuation-enforcer.test.ts',
+    ],
+    event: 'agent/turn-stopping',
+    mode: 'E',
+    summary:
+      'todo 未清且回合将停 → agent.steer 注入续行上下文（副作用非投票），todo 状态源 = ctx.todo；R-8：与 dsh-goal-round-driver 的关系实施期记录',
+    e2eScenario: 'todo-continuation-enforced',
+    status: 'pending',
+  },
+  // H-07 — phase3-hooks.md §1 P1 行（原 P0 草案的 task_* 族模块已 §2 S-32 跳过，
+  // 本行是与 todo 执行器同批的 D 模式模块）。上游单文件、无测试文件。
+  // 前置（U-7）：若 dsh-tool-subagent 已有空结果等价提示，按 DoD-d 改判跳过。
+  {
+    id: 'empty-task-response-detector',
+    upstreamFiles: ['packages/omo-opencode/src/hooks/empty-task-response-detector.ts'],
+    upstreamTestFiles: [],
+    event: 'tools/post-execute',
+    mode: 'D',
+    summary:
+      '空任务响应检测 → 纠正性工具结果（上游原地改写 output.output；DSH 走 accept{content}/block{feedback}）；前置 U-7 核实 DSH 是否已原生覆盖',
+    e2eScenario: 'empty-task-response-corrected',
+    status: 'pending',
+  },
+  // H-10 — phase3-hooks.md §1 P3 行。这是**文件族**而非目录模块：上游把这 16 个
+  // 实现文件平铺在 hooks/ 顶层（ls-tree 实测 21 文件 = 16 实现 + 5 测试），故
+  // upstreamFiles 用 `session-notification*.ts` 前缀枚举，而非某个目录。
+  // 基线 N-04 的 helper `session-todo-status.ts` 语义并入本模块实施，但它不是
+  // session-notification 前缀文件，故不在本行文件表内（记账见覆盖清单 §3）。
+  // 后端口径（草案更正 C-3/C-12）：上游 = darwin / linux(notify-send) / win32
+  // 三个后端，无 log 后端；Linux 为 CI 可验载体，Windows 不移植（D9）。
+  {
+    id: 'session-notification',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/session-notification-content.ts',
+      'packages/omo-opencode/src/hooks/session-notification-event-properties.ts',
+      'packages/omo-opencode/src/hooks/session-notification-formatting.ts',
+      'packages/omo-opencode/src/hooks/session-notification-init.ts',
+      'packages/omo-opencode/src/hooks/session-notification-linux.ts',
+      'packages/omo-opencode/src/hooks/session-notification-log.ts',
+      'packages/omo-opencode/src/hooks/session-notification-macos.ts',
+      'packages/omo-opencode/src/hooks/session-notification-platform.ts',
+      'packages/omo-opencode/src/hooks/session-notification-runner.ts',
+      'packages/omo-opencode/src/hooks/session-notification-scheduler.ts',
+      'packages/omo-opencode/src/hooks/session-notification-send.ts',
+      'packages/omo-opencode/src/hooks/session-notification-sender.ts',
+      'packages/omo-opencode/src/hooks/session-notification-sound.ts',
+      'packages/omo-opencode/src/hooks/session-notification-utils.ts',
+      'packages/omo-opencode/src/hooks/session-notification-windows.ts',
+      'packages/omo-opencode/src/hooks/session-notification.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/session-notification-content.test.ts',
+      'packages/omo-opencode/src/hooks/session-notification-desktop-sidecar.test.ts',
+      'packages/omo-opencode/src/hooks/session-notification-input-needed.test.ts',
+      'packages/omo-opencode/src/hooks/session-notification-sender.test.ts',
+      'packages/omo-opencode/src/hooks/session-notification.test.ts',
+    ],
+    // 主事件面 = session/event（turn/end + reason.kind 判完成/错误）；idle 侧
+    // 走 agent/status(status==='idle')。一行只能记一个 event，故记主面，idle
+    // 面在 summary 里点名（同 B+D 行的记录纪律）。
+    event: 'session/event',
+    mode: 'F',
+    summary:
+      '会话完成/错误的用户通知（turn/end + reason.kind；无 session.idle/session.error 类型——idle = agent/status）；后端 Linux notify-send（CI）/ macOS（L4），Windows 不移植',
+    e2eScenario: 'session-notification-log',
+    status: 'pending',
+  },
+  // H-11 — phase3-hooks.md §1 P3 行。前置（U-8 之外的实施期项）：ctx.jobs 事件面
+  // 核实（计划书 §6 开放问题，T12）；等价面未定型时按 DoD-d 记录降级。
+  {
+    id: 'background-notification',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/background-notification/hook.ts',
+      'packages/omo-opencode/src/hooks/background-notification/index.ts',
+      'packages/omo-opencode/src/hooks/background-notification/types.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/background-notification/hook.test.ts',
+    ],
+    event: 'session/event',
+    mode: 'F',
+    summary:
+      '后台任务完成通知；前置：ctx.jobs 事件面核实（T12），无对应面则按 DoD-d 记降级',
+    e2eScenario: 'background-notification-logged',
+    status: 'pending',
+  },
+  // H-14 — phase3-hooks.md §1 P4 行（批 A 首项：58 行零状态）。前置：DSH edit
+  // 工具错误文案逐字核实（正则能否命中），T14 实施期答。
+  {
+    id: 'edit-error-recovery',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/edit-error-recovery/hook.ts',
+      'packages/omo-opencode/src/hooks/edit-error-recovery/index.ts',
+    ],
+    upstreamTestFiles: ['packages/omo-opencode/src/hooks/edit-error-recovery/index.test.ts'],
+    event: 'tools/post-execute',
+    mode: 'D',
+    summary:
+      'edit 输出命中错误串表 → 尾部追加回读提醒（58 行零状态）；前置：DSH edit 工具错误文案逐字核实',
+    e2eScenario: 'edit-error-recovery-reminder',
+    status: 'pending',
+  },
+  // H-15 — phase3-hooks.md §1 P4 行（批 A）。含幂等哨兵 + 19 项排除表。
+  {
+    id: 'json-error-recovery',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/json-error-recovery/hook.ts',
+      'packages/omo-opencode/src/hooks/json-error-recovery/index.ts',
+    ],
+    upstreamTestFiles: ['packages/omo-opencode/src/hooks/json-error-recovery/index.test.ts'],
+    event: 'tools/post-execute',
+    mode: 'D',
+    summary:
+      '非排除工具输出命中 JSON 错误正则 → 追加提醒（含幂等哨兵 + 19 项排除表）；前置同 H-14',
+    e2eScenario: 'json-error-recovery-reminder',
+    status: 'pending',
+  },
+  // H-16 — phase3-hooks.md §1 P4 行（批 A 末项）。单文件模块，但 hooks/ 顶层
+  // 有 1 实现 + 1 测试且测试与实现同行：`tool-output-truncator.ts` +
+  // `tool-output-truncator.test.ts`（后者即本行 upstreamTestFiles）。
+  // ⚠️ 记账更正（P3-T2 实测）。可重跑证据（<omo> = 上游只读检出，PRE-5）：
+  //   git -C <omo> ls-tree -r --name-only v4.19.4 \
+  //     packages/omo-opencode/src/hooks/ | grep tool-output-truncator
+  //     # → 恰 2 条：tool-output-truncator.ts + tool-output-truncator.test.ts
+  //   git -C <omo> show v4.19.4:packages/omo-opencode/src/hooks/tool-output-truncator.ts
+  //     # → 唯一 value import = `../shared/dynamic-truncator`
+  //   git -C <omo> grep -n 'from "\./' v4.19.4 -- \
+  //     packages/omo-opencode/src/shared/dynamic-truncator.ts \
+  //     packages/omo-opencode/src/shared/dynamic-truncator-types.ts \
+  //     packages/omo-opencode/src/shared/token-limit-truncator.ts \
+  //     packages/omo-opencode/src/shared/context-window-usage.ts \
+  //     packages/omo-opencode/src/shared/context-limit-resolver.ts \
+  //     packages/omo-opencode/src/shared/logger.ts \
+  //     packages/omo-opencode/src/shared/normalize-sdk-response.ts \
+  //     packages/omo-opencode/src/shared/plugin-identity.ts
+  //     # → 逐边核实下面的闭包
+  // 覆盖基线 H-16 行写"1 + 4 shared 支撑文件"（§N-01 同），但实测：
+  // （a）hooks/ 侧只有 1 个实现文件，其测试亦在 hooks/ 顶层（故登入
+  // upstreamTestFiles）；
+  // （b）它 value-import 的 dynamic-truncator 一族住在
+  // `packages/omo-opencode/src/shared/`，**不在 hooks/**，也不属于
+  // hooks/shared/（后者 ls-tree 恰 11 文件，无 truncator）；该族在 shared/ 侧的
+  // import 闭包（value + type，不含 `@oh-my-opencode/*` 外部包）共 **8 个文件**：
+  //   dynamic-truncator.ts → context-limit-resolver.ts / context-window-usage.ts
+  //     / dynamic-truncator-types.ts / token-limit-truncator.ts
+  //   context-window-usage.ts → logger.ts / normalize-sdk-response.ts
+  //   logger.ts → plugin-identity.ts（经 logger 链到达的第 8 个）
+  //   （context-limit-resolver.ts 是 `@oh-my-opencode/model-core` 的纯 re-export
+  //   垫片、无自有实现：去掉垫片则是 7 实现 + 1 垫片。）
+  // 另有 2 个 shared/ 测试文件（dynamic-truncator.test.ts /
+  // dynamic-truncator-behavior.test.ts），不计入实现闭包。全传递闭包若把
+  // tool-output-truncator.ts 的 type-only `../config/schema` 子树也算上则是另一
+  // 数量级（47 路径），故"支撑文件 = N"依赖口径。本表按任务书的
+  // "ls-tree hooks/<模块>" 口径只记 hooks/ 侧 2 文件（1 实现 + 1 测试），
+  // shared/ 侧闭包的口径与最终计数以 T14 裁定为准，与覆盖清单修订一并落地。
+  {
+    id: 'tool-output-truncator',
+    upstreamFiles: ['packages/omo-opencode/src/hooks/tool-output-truncator.ts'],
+    upstreamTestFiles: ['packages/omo-opencode/src/hooks/tool-output-truncator.test.ts'],
+    event: 'tools/post-execute',
+    mode: 'D',
+    summary:
+      '超长工具输出按 min(剩余上下文×0.5, 工具阈值) 截断；前置：DSH 剩余 token 暴露面核实，无暴露面则退化固定阈值并记差异',
+    e2eScenario: 'tool-output-truncated',
+    status: 'pending',
+  },
+  // H-21 — phase3-hooks.md §1 P4 行（批 B）。上游 8 文件 = 6 实现 + 2 测试。
+  // 与 dsh-agent-instructions 无重叠：其候选名 = AGENTS.md/CLAUDE.md，不含
+  // README（覆盖基线 H-21 已核）。
+  {
+    id: 'directory-readme-injector',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/directory-readme-injector/constants.ts',
+      'packages/omo-opencode/src/hooks/directory-readme-injector/finder.ts',
+      'packages/omo-opencode/src/hooks/directory-readme-injector/hook.ts',
+      'packages/omo-opencode/src/hooks/directory-readme-injector/index.ts',
+      'packages/omo-opencode/src/hooks/directory-readme-injector/injector.ts',
+      'packages/omo-opencode/src/hooks/directory-readme-injector/storage.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/directory-readme-injector/finder.catch-fallbacks.test.ts',
+      'packages/omo-opencode/src/hooks/directory-readme-injector/injector.test.ts',
+    ],
+    event: 'tools/post-execute',
+    mode: 'D',
+    summary:
+      '读文件后把所在目录链 README 注入工具输出（上游 tool.execute.after 追加）；与 dsh-agent-instructions 无重叠（其候选名不含 README）',
+    e2eScenario: 'directory-readme-injected',
+    status: 'pending',
+  },
+  // H-22 — phase3-hooks.md §1 P4 行（批 B）。注入文本 apply 时一次构建
+  // （计划书 §4.2 纪律④）。
+  {
+    id: 'agent-usage-reminder',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/agent-usage-reminder/constants.ts',
+      'packages/omo-opencode/src/hooks/agent-usage-reminder/hook.ts',
+      'packages/omo-opencode/src/hooks/agent-usage-reminder/index.ts',
+      'packages/omo-opencode/src/hooks/agent-usage-reminder/storage.ts',
+      'packages/omo-opencode/src/hooks/agent-usage-reminder/types.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/agent-usage-reminder/index.test.ts',
+      'packages/omo-opencode/src/hooks/agent-usage-reminder/storage.test.ts',
+    ],
+    event: 'tools/post-execute',
+    mode: 'D',
+    summary:
+      '工具结果尾部追加 agent 使用提醒（上游 output.output += REMINDER_MESSAGE）',
+    e2eScenario: 'agent-usage-reminder-appended',
+    status: 'pending',
+  },
+  // H-23 — phase3-hooks.md §1 P4 行（批 B）。前置（实施期答）：是否依赖 OMO
+  // task 工具族语义，若是则按 DoD-d 改判跳过并记录（覆盖基线 H-23）。
+  {
+    id: 'task-resume-info',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/task-resume-info/hook.ts',
+      'packages/omo-opencode/src/hooks/task-resume-info/index.ts',
+    ],
+    upstreamTestFiles: ['packages/omo-opencode/src/hooks/task-resume-info/index.test.ts'],
+    event: 'tools/post-execute',
+    mode: 'D',
+    summary:
+      '工具结果追加任务恢复信息；前置：是否依赖 OMO task 工具族语义，若是则改判跳过（DoD-d）',
+    e2eScenario: 'task-resume-info-appended',
+    status: 'pending',
+  },
+  // H-24 — phase3-hooks.md §1 P4 行（批 C）。**B + D 组合行**：event/mode 记主
+  // 决策面（B 落 tools/pre-execute，deny reason 携带最终 URL 指引），D 段
+  // （结果附加）在 summary 点名——两段共享 pre/post 配对，用 exec.callId /
+  // exec.token 原生关联（计划书 §4.2 纪律⑤，不建裸 Map）。
+  {
+    id: 'webfetch-redirect-guard',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/webfetch-redirect-guard/constants.ts',
+      'packages/omo-opencode/src/hooks/webfetch-redirect-guard/hook.ts',
+      'packages/omo-opencode/src/hooks/webfetch-redirect-guard/index.ts',
+      'packages/omo-opencode/src/hooks/webfetch-redirect-guard/redirect-resolution.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/webfetch-redirect-guard/index.test.ts',
+    ],
+    event: 'tools/pre-execute',
+    mode: 'B',
+    summary:
+      'webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引）+ D 段结果附加（含 D）；pre/post 配对用 exec.callId/exec.token',
+    e2eScenario: 'webfetch-redirect-denied',
+    status: 'pending',
+  },
+  // H-26 — phase3-hooks.md §1 P4 行（批 C）。**B + D 组合行**（同 H-24 记录纪律）：
+  // B 段 deny 非 .md 写（上游 hook.ts:40-62 可 1:1），D 段劝导因注入警告段在 DSH
+  // 无附言缝而改落 post-execute 附加。
+  {
+    id: 'prometheus-md-only',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/prometheus-md-only/agent-matcher.ts',
+      'packages/omo-opencode/src/hooks/prometheus-md-only/agent-resolution.ts',
+      'packages/omo-opencode/src/hooks/prometheus-md-only/constants.ts',
+      'packages/omo-opencode/src/hooks/prometheus-md-only/hook.ts',
+      'packages/omo-opencode/src/hooks/prometheus-md-only/index.ts',
+      'packages/omo-opencode/src/hooks/prometheus-md-only/path-policy.ts',
+    ],
+    upstreamTestFiles: ['packages/omo-opencode/src/hooks/prometheus-md-only/index.test.ts'],
+    event: 'tools/pre-execute',
+    mode: 'B',
+    summary:
+      'prometheus 仅可写 .md：B 段 deny 非 .md 写（hook.ts:40-62 可 1:1）+ D 段劝导落 post-execute 附加（含 D）',
+    e2eScenario: 'prometheus-md-only-denied',
+    status: 'pending',
+  },
+  // H-32 — phase3-hooks.md §1 P5 行。上游目录 20 文件 = **13 实现 + 7 测试**
+  // （实测；覆盖基线 H-32 与计划书 §4.3 的"20 文件"含 AGENTS.md 之外无其他
+  // 遗漏——13+7=20 恰好闭合，故此处**不需要**质疑计数，仅登记"20"的构成）。
+  // 命名锚点：id 用 v5 名 `ulw-execute`（ROADMAP §2 规则 6），upstreamFiles 仍是
+  // v4.19.4 的 `hooks/start-work/` 路径。模式 A/E：激活检测在 agent/pre-step
+  // （A 段），Phase 4 命令模板 marker（`<session-context>` + "You are starting
+  // an Atlas work session."）到期对接（R-10）；依赖 boulder-state 的部分
+  // （session-plan-affinity 等）为登记在案的跳过段；脚手架/notepad 存储面用
+  // ctx.jobs；`/ulw-execute` 命令引用一律不写（Phase 4）。
+  {
+    id: 'ulw-execute',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/start-work/context-info-builder.ts',
+      'packages/omo-opencode/src/hooks/start-work/context-info-formatters.ts',
+      'packages/omo-opencode/src/hooks/start-work/explicit-plan-context.ts',
+      'packages/omo-opencode/src/hooks/start-work/index.ts',
+      'packages/omo-opencode/src/hooks/start-work/notepad-scaffold.ts',
+      'packages/omo-opencode/src/hooks/start-work/parse-user-request.ts',
+      'packages/omo-opencode/src/hooks/start-work/plan-discovery-context.ts',
+      'packages/omo-opencode/src/hooks/start-work/plan-selection.ts',
+      'packages/omo-opencode/src/hooks/start-work/session-plan-affinity.ts',
+      'packages/omo-opencode/src/hooks/start-work/start-work-hook.ts',
+      'packages/omo-opencode/src/hooks/start-work/work-initializer.ts',
+      'packages/omo-opencode/src/hooks/start-work/worktree-block.ts',
+      'packages/omo-opencode/src/hooks/start-work/worktree-detector.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/start-work/context-info-builder.test.ts',
+      'packages/omo-opencode/src/hooks/start-work/index.test.ts',
+      'packages/omo-opencode/src/hooks/start-work/notepad-scaffold.test.ts',
+      'packages/omo-opencode/src/hooks/start-work/parse-user-request.test.ts',
+      'packages/omo-opencode/src/hooks/start-work/session-plan-affinity.test.ts',
+      'packages/omo-opencode/src/hooks/start-work/start-work-hook.test.ts',
+      'packages/omo-opencode/src/hooks/start-work/worktree-detector.test.ts',
+    ],
+    event: 'agent/pre-step',
+    mode: 'A',
+    summary:
+      '工作计划意图/显式委派 → 激活 atlas 并构建计划上下文/脚手架（A 段 pre-step + E 段 turn-stopping 补充 + ctx.jobs 存储面）；boulder-state 依赖段登记跳过',
+    e2eScenario: 'ulw-execute-plan-intent',
+    status: 'pending',
+  },
+] as const satisfies readonly HookManifestEntry[]
+
+/**
+ * The 15-row port roster as `readonly HookManifestEntry[]`, in priority order.
+ * Widened for the same reason roster.ts widens ROSTER: `as const` is kept on
+ * the authored table for literal id inference above, while consumers get the
+ * declared shape.
+ */
+export const HOOK_MANIFEST: readonly HookManifestEntry[] = MANIFEST_ROWS
+
+/**
+ * The 15 port ids, in roster order, derived from the rows above (so a typo in
+ * an `id` cannot silently widen the list). The T3 boot marker logs exactly
+ * these, in this order.
+ */
+export const HOOK_IDS: readonly string[] = MANIFEST_ROWS.map((entry) => entry.id)
+
+/**
+ * Validates one roster (plan §4.1 / P3-T2 判定). Throws on the FIRST problem
+ * instead of collecting a list: every failure mode here is an authoring error
+ * whose message names the offending row, and a throw is what makes the T3
+ * `apply()` call a loud-but-non-fatal boot line rather than a silent pass.
+ *
+ * Checks, in order per row (so a row with several problems reports its
+ * structural one first):
+ *   1. `id` non-empty, `upstreamFiles` non-empty, `summary` non-empty,
+ *      `e2eScenario` non-empty;
+ *   2. `event` ∈ MANIFEST_EVENTS, `mode` ∈ MANIFEST_MODES;
+ *   3. no `upstreamFiles` entry ending in `.test.ts` (tests belong in
+ *      `upstreamTestFiles`, which is the R-3 seed column) and none named
+ *      `AGENTS.md` (N-03: not a hook source);
+ *   4. `id` unique across the roster;
+ *   5. the row count equals EXPECTED_HOOK_COUNT — the "15 rows really exist"
+ *      assertion; without it a silently truncated table would validate.
+ *
+ * The AGENTS.md check matches on the path BASENAME, not a suffix substring, so
+ * a hypothetical `.../AGENTS.md.ts` source is still legal.
+ */
+export function validateManifest(entries: readonly HookManifestEntry[]): void {
+  if (entries.length !== EXPECTED_HOOK_COUNT) {
+    throw new Error(
+      `manifest: expected ${EXPECTED_HOOK_COUNT} hook entries, got ${entries.length}`,
+    )
+  }
+  const seen = new Set<string>()
+  for (const entry of entries) {
+    if (entry.id === '') {
+      throw new Error('manifest: entry with empty id')
+    }
+    if (seen.has(entry.id)) {
+      throw new Error(`manifest: duplicate hook id '${entry.id}'`)
+    }
+    seen.add(entry.id)
+    if (entry.upstreamFiles.length === 0) {
+      throw new Error(`manifest: hook '${entry.id}' declares no upstreamFiles`)
+    }
+    if (entry.summary === '') {
+      throw new Error(`manifest: hook '${entry.id}' declares an empty summary`)
+    }
+    if (entry.e2eScenario === '') {
+      throw new Error(`manifest: hook '${entry.id}' declares an empty e2eScenario`)
+    }
+    if (!manifestModeSet.has(entry.mode)) {
+      throw new Error(`manifest: hook '${entry.id}' declares illegal mode '${entry.mode}'`)
+    }
+    if (!manifestEventSet.has(entry.event)) {
+      throw new Error(`manifest: hook '${entry.id}' declares illegal event '${entry.event}'`)
+    }
+    for (const file of entry.upstreamFiles) {
+      if (file.endsWith('.test.ts')) {
+        throw new Error(
+          `manifest: hook '${entry.id}' lists test file '${file}' in upstreamFiles`
+          + ' — tests belong in upstreamTestFiles',
+        )
+      }
+      if (file.split('/').at(-1) === 'AGENTS.md') {
+        throw new Error(
+          `manifest: hook '${entry.id}' lists AGENTS.md in upstreamFiles`
+          + ' — upstream documentation is not a hook source (N-03)',
+        )
+      }
+    }
+  }
+}
+
+/**
+ * Groups a roster by target event — the T3 registration loop's input (one
+ * listener batch per event) and the T3 static gate's expected boot-marker set.
+ *
+ * NOTE FOR THE T3 CONSUMER: this is a keyed-by-PRIMARY-event view. The B+D rows
+ * (webfetch-redirect-guard, prometheus-md-only) also touch tools/post-execute
+ * and session-notification also observes agent/status; a registration loop that
+ * reads ONLY this map would register those halves nowhere. Derive the full
+ * surface set from the listener implementations (or extend the rows with an
+ * explicit secondary-event field) when T3 wires the loop — the map itself is
+ * exact for what it claims: `entry.event` grouped, insertion order preserved.
+ */
+export function hooksByEvent(entries: readonly HookManifestEntry[]): Map<string, HookManifestEntry[]> {
+  const grouped = new Map<string, HookManifestEntry[]>()
+  for (const entry of entries) {
+    const bucket = grouped.get(entry.event)
+    if (bucket === undefined) {
+      grouped.set(entry.event, [entry])
+    } else {
+      bucket.push(entry)
+    }
+  }
+  return grouped
+}
+
+/**
+ * The rows in a given status, in roster order — the T3/T19/T20 progress view
+ * ("what is still 'pending'?"). An empty `status` matches nothing rather than
+ * everything: a caller passing an unset variable must not be told the whole
+ * roster is in that state.
+ */
+export function hooksByStatus(
+  entries: readonly HookManifestEntry[],
+  status: HookManifestStatus,
+): readonly HookManifestEntry[] {
+  return entries.filter((entry) => entry.status === status)
+}

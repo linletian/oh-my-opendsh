@@ -20,6 +20,8 @@ importers:
 
   patches/omo-dsh/omo-agents: {}
 
+  patches/omo-dsh/omo-hooks: {}
+
   patches/omo-dsh/vendor/hashline-core:
     dependencies:
       diff:
