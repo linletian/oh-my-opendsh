@@ -14,6 +14,8 @@
 // (PLUGIN_DIRS) and `pluginLoaded` asserts BOTH load markers. The seven
 // scenarios themselves are unchanged — the hooks plugin registers no listener
 // yet (empty implementation registry), so it only adds its summary boot marker.
+// (P3-T6 amended that last clause: omo-hooks now registers its FIRST listener
+// and the chain carries EIGHT scenarios — see the C-mode pilot section below.)
 //
 // SEMANTIC SOURCE (read-only reference; fresh implementation, no code copied):
 //   oh-my-openagent/packages/omo-senpi/scripts/qa/drive.mjs:66-89 — mkdtemp
@@ -250,6 +252,70 @@
 // SCENARIOS chain (previously it was withheld and reachable only through
 // DSH_E2E_ONLY); the F1 deny lists remain the primary nested-delegation guard
 // and the depth gate is defense-in-depth behind them.
+//
+// ── P3-T6: bash-read-guard-warned — THE C-MODE PILOT (plan §4.2 模式 C) ──
+// P3-T5 landed omo-hooks' FIRST listener (H-02): OMO's bash file-read advisory
+// as ONE `tools/post-execute` waterfall listener returning
+// `{kind:'accept', additionalContexts:[<user message>]}`. The upstream hook was
+// an ADVISORY, not a block (`output.message = WARNING_MESSAGE`; the command
+// still ran) and DSH's pre-execute has no advisory channel, so the semantic
+// landing is post-execute + additionalContexts. This scenario is the e2e
+// template every later 劝导演出型 hook copies, and it asserts the whole chain
+// against RUNTIME-OBSERVED carriers (no "理论应在" field):
+//
+//   语义. One assistant message carries THREE tool calls (the mock's
+//   `tool_calls` primitive), so the batch is a single step:
+//     (1) bash `cat <fixture>`               → the trigger;
+//     (2) bash `cat <fixture> | grep <词>`    → 对照① (a pipeline is NOT a
+//         "simple file read": the transcribed `[^\s|&;]+` class refuses it);
+//     (3) read {file_path: <fixture>}         → 对照② (a different tool).
+//   The conductor then sends ONE summary text (request #2). Fixture =
+//   <sandbox>/project/notes.txt with two distinct content markers, so each
+//   call's result is separately provable: `cat` returns both lines, the
+//   pipeline returns ONLY its grep-target line (byte-level proof the pipeline
+//   really ran), `read` returns the line-numbered text.
+//
+//   ⚠️ 劝导注入的实际观测载体 (measured, one kept sandbox; seq = real layout).
+//   The advisory is durable on TWO event types, both carrying the SAME message
+//   id — this is why the "exactly once" count is scoped PER EVENT TYPE, never
+//   a raw text count over the file:
+//     * seq 17 `agent/inbox/spliced` data.target "next-step",
+//       data.inserted[0] = {id:<uuid>, role:"user", content:[{type:"text",
+//       text:<WARNING_MESSAGE>}], source:{kind:"plugin", plugin:"omo-hooks",
+//       form:"notice"}} — the ACCEPT itself (dsh-agent-loop/lib/index.js:578
+//       acceptContext → inbox.splice → append :206). It lands BETWEEN the
+//       trigger's tool/result and the batch's remaining tool/calls, because
+//       runGroup commits results in model order.
+//     * seq 25 `user/message` with the identical id/role/content/source — the
+//       same message CLAIMED at the next step boundary and appended to history
+//       (:1028), i.e. the carrier the next request is built from. seq 23 is the
+//       follow-up `agent/inbox/spliced` (target next-step, inserted []) that
+//       removes the claimed entry.
+//   The message reaches the model: sisyphus request #2's recorded body
+//   contains the advisory text verbatim.
+//
+//   断言面 (analyzeBashReadGuardWarned, all in verdict.assertions per AC-7):
+//     (a) bashTriggerExecutedWithFixtureBytes — the trigger's tool/result is
+//         present, isError !== true, and carries the fixture bytes (劝导非阻断);
+//     (b) advisoryInjectedIntoSessionLog — a `user/message` whose content text
+//         contains the advisory VERBATIM and whose source is the
+//         {kind:'plugin', plugin:'omo-hooks', form:'notice'} triple (the text
+//         and plugin name are imported from the shipped listener module, never
+//         re-typed here);
+//     (c) pipedCatRanWithoutAdvisory — 对照①;
+//     (d) readToolRanWithoutAdvisory     — 对照②;
+//     (e) advisoryInjectedExactlyOnce    — exactly ONE carrier of each type;
+//         plus advisoryReachedNextModelRequest, mockSawBothSteps, turnCompleted,
+//         and the usual plugin/provider/session-log givens.
+//   (c)/(d) each combine "the call really ran, non-error, with its OWN bytes"
+//   with the shared count === 1, so a second injection fails them too — the
+//   negative is never a vacuous "nothing happened".
+//
+//   变异 QA (hermetic, runAnalysisSelfTest; the real runtime layout is the
+//   fabricated GOOD fixture): a log with NO advisory injection FAILs on
+//   advisoryInjectedIntoSessionLog; a DUPLICATED injection FAILs on
+//   advisoryInjectedExactlyOnce; an isError trigger result FAILs on
+//   bashTriggerExecutedWithFixtureBytes.
 
 // ── LLM WIRING (sandbox $DSH_HOME/settings.yaml only; nothing touches the
 // host). Both adapters are pointed at the mock with a dummy key:
@@ -291,13 +357,14 @@
 // HOST_VOLATILE_SETTINGS_KEYS idea at path granularity).
 //
 // Usage:
-//   node tests/e2e/drive.mjs               run ALL 7 scenarios (hello + demo +
+//   node tests/e2e/drive.mjs               run ALL 8 scenarios (hello + demo +
 //                                          the two AC-6 negatives + the P2-T18
 //                                          roster parade + the P2-T19 read-only
 //                                          representative + the P2-T19
 //                                          positive nested chain, ENABLED
-//                                          2026-09-13 by D-2026-09-13-01), print
-//                                          verdict JSON
+//                                          2026-09-13 by D-2026-09-13-01 +
+//                                          the P3-T6 bash-read advisory pilot),
+//                                          print verdict JSON
 //   node tests/e2e/drive.mjs --self-test   run the analysis logic against
 //                                          fabricated logs only (no spawn)
 // Env:
@@ -373,6 +440,15 @@ const { resolveModelRoutes } = await import(
 // all ten" claim both have to be the roster's own list, never a restatement.
 const { CONDUCTOR_ID, DELEGATION_ENTRIES, DELEGATION_TOOL_NAMES } = await import(
   new URL('../../patches/omo-dsh/omo-agents/src/roster.ts', import.meta.url).href
+)
+// P3-T6: the bash-read advisory under test, read from the SHIPPED listener
+// module — the same type-stripping single-source discipline as
+// model-routes.ts/roster.ts above. The e2e must assert the text the listener
+// really emits, never a second hand-copied literal that could drift from it
+// (the H-02 unit test pins that literal against upstream; this scenario pins
+// that the literal really reaches the model).
+const { WARNING_MESSAGE: BASH_GUARD_ADVISORY_TEXT, BASH_FILE_READ_GUARD_PLUGIN } = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/bash-file-read-guard.ts', import.meta.url).href
 )
 
 const INSTALL_TIMEOUT_MS = Number(process.env.DSH_E2E_INSTALL_TIMEOUT_MS ?? 300_000)
@@ -751,6 +827,76 @@ function atlasNestedDelegationScript(sandbox) {
     explore: [
       { type: 'tool_call', name: 'read', arguments: { file_path: readmePath } },
       { type: 'text', text: ATLAS_GRANDCHILD_NOTE },
+    ],
+  }
+}
+
+// ── P3-T6 bash-read-guard-warned scenario (模式 C e2e 打样; see header) ────────
+// H-02's listener is an ADVISORY, not a block: `cat <file>` executes UNCHANGED
+// and the warning rides `additionalContexts` into the model's NEXT request
+// (dsh-agent-loop/lib/index.js:578 acceptContext → next-step inbox). This is
+// the C-mode pilot every later 劝导演出型 hook copies, so the script drives the
+// FULL delivery chain AND both negative boundaries the transcribed upstream
+// regexes exist for, in ONE assistant message (the mock's `tool_calls`
+// primitive — exactly what "the model fired three calls in one step" looks
+// like on the wire):
+//   1. bash `cat <fixture>`            → MUST warn (the trigger);
+//   2. bash `cat <fixture> | grep <词>` → control ①: a pipeline is NOT a
+//      "simple file read" (`[^\s|&;]+` refuses it), so NO second advisory;
+//   3. read {file_path: <fixture>}      → control ②: a different tool, NO advisory.
+// Requests: (step 1) the batch → (step 2) the final summary text.
+const BASH_GUARD_PROMPT =
+  'e2e bash-read-guard-warned: read the notes fixture with cat, then also try the piped cat and the read tool, and summarize'
+const BASH_GUARD_FIXTURE_NAME = 'notes.txt'
+// Two distinct content markers so each call's result is separately provable:
+// the trigger's `cat` returns BOTH lines; the pipeline's grep must return ONLY
+// the grep-target line (which is what makes "the pipeline really ran" a
+// byte-level claim rather than "a call was attempted").
+const BASH_GUARD_FIXTURE_FIRST_LINE = 'omo-dsh bash-file-read-guard fixture line one 4c1e9a'
+const BASH_GUARD_FIXTURE_GREP_LINE = 'guard grep target line 8f2b7d'
+const BASH_GUARD_FIXTURE_CONTENT =
+  `${BASH_GUARD_FIXTURE_FIRST_LINE}\n${BASH_GUARD_FIXTURE_GREP_LINE}\n`
+const BASH_GUARD_FIXTURE_SENTINEL = '4c1e9a'
+// ONE whitespace-free token: the control must be a REAL pipeline (`grep` over
+// cat's stdout), and `grep two words` would be read as pattern+filename.
+const BASH_GUARD_GREP_WORD = '8f2b7d'
+// The conductor's final step (proves the turn really closed after the batch).
+const BASH_GUARD_SUMMARY =
+  'MOCK-BASH-GUARD-SUMMARY-6d2e8f: the cat result came back and the advisory arrived'
+
+/**
+ * bash-read-guard-warned script. ONE assistant message carries all three tool
+ * calls — the trigger plus BOTH controls in the SAME step, so "exactly one
+ * advisory" is a statement about a single batch in which three calls really
+ * executed (the tightest form of the negative: the pipeline and the read call
+ * cannot have been skipped, and still produced no injection).
+ * `description` is part of the real bash parameter schema (dsh-tool-bash
+ * lib/index.js:268 `required: true`), so the script supplies it like any model
+ * would. Absolute fixture path: the transcribed regex demands a
+ * whitespace/pipe/semicolon-free argument, and mkdtemp sandbox paths have none.
+ */
+function bashReadGuardScript(sandbox) {
+  const fixturePath = join(sandbox.project, BASH_GUARD_FIXTURE_NAME)
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'bash',
+            arguments: { command: `cat ${fixturePath}`, description: 'Read the notes fixture with cat' },
+          },
+          {
+            name: 'bash',
+            arguments: {
+              command: `cat ${fixturePath} | grep ${BASH_GUARD_GREP_WORD}`,
+              description: 'Read the notes fixture through a pipeline',
+            },
+          },
+          { name: 'read', arguments: { file_path: fixturePath } },
+        ],
+      },
+      { type: 'text', text: BASH_GUARD_SUMMARY },
     ],
   }
 }
@@ -2338,6 +2484,202 @@ export function analyzeAtlasNestedDelegation(
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
 }
 
+// ── P3-T6 bash-read-guard-warned analysis (模式 C e2e 打样) ───────────────────
+
+/**
+ * The text of a message's content: a plain string, or the joined `text` blocks
+ * of the content array (the shape a `user/message` event's data carries — the
+ * advisory message itself uses `[{type:'text', text}]`).
+ */
+function messageContentText(message) {
+  const content = message?.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('\n')
+}
+
+/**
+ * A `tool/call` event's parsed arguments. The persisted field is the wire
+ * JSON string the adapter produced (fabricated fixtures use the same shape);
+ * an already-parsed object is accepted so the helper stays usable either way.
+ * Returns undefined when the field is absent or unparseable — the call then
+ * simply cannot be matched, which is a FAIL for the check that needed it.
+ */
+function toolCallArguments(event) {
+  const raw = event?.data?.arguments
+  if (typeof raw === 'object' && raw !== null) return raw
+  if (typeof raw !== 'string') return undefined
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Every durable carrier of the advisory text in a session log, by event type —
+ * the two the DSH loop really produces for an `additionalContexts` entry:
+ *   * `agent/inbox/spliced` with target `next-step`: the ACCEPT itself
+ *     (dsh-agent-loop/lib/index.js:578 acceptContext → inbox.splice →
+ *     session.append("agent/inbox/spliced"), lib/index.js:206);
+ *   * `user/message`: the same message CLAIMED at the next step boundary and
+ *     appended to the history (lib/index.js:1028), i.e. the carrier the model's
+ *     next request is actually built from.
+ * Both are collected so the "exactly once" check is not blind to a double
+ * ACCEPT that only one of the two projections would show.
+ */
+function bashGuardAdvisoryCarriers(events, advisoryText) {
+  const userMessages = []
+  const nextStepInsertions = []
+  for (const event of events) {
+    if (event.type === 'user/message' && messageContentText(event.data).includes(advisoryText)) {
+      userMessages.push(event)
+    }
+    if (event.type === 'agent/inbox/spliced' && event.data?.target === 'next-step') {
+      for (const message of event.data?.inserted ?? []) {
+        if (messageContentText(message).includes(advisoryText)) {
+          nextStepInsertions.push({ event, message })
+        }
+      }
+    }
+  }
+  return { userMessages, nextStepInsertions }
+}
+
+/** True when a message carries the advisory's producer triple verbatim. */
+function isBashGuardAdvisorySource(message) {
+  return message?.source?.kind === 'plugin'
+    && message.source.plugin === BASH_FILE_READ_GUARD_PLUGIN
+    && message.source.form === 'notice'
+}
+
+/**
+ * The bash-read-guard-warned assertions (plan §4.7 gate 3, C-mode pilot).
+ * The listener is an ADVISORY: the `cat` result must be a NORMAL result (never
+ * isError) and the warning must travel as an `additionalContexts` user message
+ * to the NEXT request. Three calls run in ONE assistant message — the trigger
+ * plus both negative boundaries — so "exactly one advisory" is a statement
+ * about a batch in which all three really executed:
+ *   (a) the trigger's result is present, non-error, and carries the fixture
+ *       bytes (劝导非阻断: the command was NOT blocked or rewritten);
+ *   (b) a `user/message` carrier with source {kind:'plugin',
+ *       plugin:'omo-hooks', form:'notice'} is durably in the session log;
+ *   (c) 对照① the piped `cat` ran (its grep-filtered output proves the
+ *       pipeline) and added NO second advisory;
+ *   (d) 对照② the `read` tool ran and added NO advisory;
+ *   (e) the advisory was injected EXACTLY once on BOTH carriers (the
+ *       double-trigger / idempotence-drift guard).
+ * `fixturePath` is the absolute sandbox path the script pointed the calls at
+ * (analysisInput) — the commands are matched by exactly-parsed arguments, so
+ * the pipeline command can never be mistaken for the trigger.
+ */
+export function analyzeBashReadGuardWarned(
+  { log, requests, providersJson, bootLog, fixturePath },
+  routes,
+) {
+  const events = log?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const results = toolResultParts(events)
+  const calls = events.filter((event) => event.type === 'tool/call')
+  const findCall = (name, expectedArguments) => calls.find((event) => {
+    if (event.data?.name !== name) return false
+    const args = toolCallArguments(event)
+    if (args === undefined) return false
+    return Object.entries(expectedArguments).every(([key, value]) => args[key] === value)
+  })
+  const resultFor = (call) => (call === undefined
+    ? undefined
+    : results.find((part) => part.callId === call.data?.callId))
+  const triggerCall = findCall('bash', { command: `cat ${fixturePath}` })
+  const pipelineCall = findCall('bash', {
+    command: `cat ${fixturePath} | grep ${BASH_GUARD_GREP_WORD}`,
+  })
+  const readCall = findCall('read', { file_path: fixturePath })
+  const triggerResult = resultFor(triggerCall)
+  const pipelineResult = resultFor(pipelineCall)
+  const readResult = resultFor(readCall)
+  const carriers = bashGuardAdvisoryCarriers(events, BASH_GUARD_ADVISORY_TEXT)
+  const injectionCount = carriers.userMessages.length
+  // The advisory's real consumption point: a LATER request to the model must
+  // carry the text (the mock records the wire body).
+  const advisoryReachedNextModelRequest = sisyphusRequests.some(
+    (request, index) => index > 0
+      && JSON.stringify(request.body ?? {}).includes(BASH_GUARD_ADVISORY_TEXT),
+  )
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+    // (a) the trigger executed for real, non-error, and returned the bytes.
+    bashTriggerExecutedWithFixtureBytes:
+      triggerCall !== undefined
+      && triggerResult !== undefined
+      && triggerResult.isError !== true
+      && triggerResult.text.includes(BASH_GUARD_FIXTURE_SENTINEL),
+    // (b) the advisory is durably in the log as a plugin-sourced user message.
+    advisoryInjectedIntoSessionLog:
+      carriers.userMessages.length > 0
+      && carriers.userMessages.every((event) => isBashGuardAdvisorySource(event.data)),
+    // The mechanism fact (P3-T1): additionalContexts enter the NEXT request.
+    advisoryReachedNextModelRequest,
+    // (c) 对照①: the pipeline RAN (grep-filtered output, first line absent)
+    // and the batch still produced only the one advisory.
+    pipedCatRanWithoutAdvisory:
+      pipelineResult !== undefined
+      && pipelineResult.isError !== true
+      && pipelineResult.text.includes(BASH_GUARD_FIXTURE_GREP_LINE)
+      && !pipelineResult.text.includes(BASH_GUARD_FIXTURE_FIRST_LINE)
+      && injectionCount === 1,
+    // (d) 对照②: the read tool RAN (both lines, line-numbered text) with no
+    // advisory of its own.
+    readToolRanWithoutAdvisory:
+      readResult !== undefined
+      && readResult.isError !== true
+      && readResult.text.includes(BASH_GUARD_FIXTURE_FIRST_LINE)
+      && readResult.text.includes(BASH_GUARD_FIXTURE_GREP_LINE)
+      && injectionCount === 1,
+    // (e) exactly ONE injection on BOTH durable carriers.
+    advisoryInjectedExactlyOnce:
+      injectionCount === 1 && carriers.nextStepInsertions.length === 1,
+    // Closure + the "next request" premise: the batch step and the summary
+    // step both reached the mock, and the turn ended normally.
+    mockSawBothSteps: sisyphusRequests.length === 2,
+    turnCompleted: events.some(
+      (event) =>
+        event.type === 'turn/end'
+        && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+    ),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    fixturePath: fixturePath ?? null,
+    advisoryText: BASH_GUARD_ADVISORY_TEXT,
+    advisoryUserMessageCarriers: carriers.userMessages.map((event) => ({
+      seq: event.seq,
+      source: event.data?.source ?? null,
+      text: messageContentText(event.data),
+    })),
+    advisoryNextStepInsertions: carriers.nextStepInsertions.map(({ event, message }) => ({
+      seq: event.seq,
+      target: event.data?.target ?? null,
+      source: message?.source ?? null,
+    })),
+    toolResults: results.map((part) => ({
+      callId: part.callId,
+      isError: part.isError,
+      text: part.text,
+    })),
+    mockRequestCount: sisyphusRequests.length,
+    mockSecondRequestBodyHasAdvisory: advisoryReachedNextModelRequest,
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
 // ── --self-test: the analysis must earn its PASS (report §14.4.5) ────────────
 
 function fabricatedGoodLog(routes) {
@@ -3059,6 +3401,113 @@ function fabricatedAtlasNestedInput(baseRoutes) {
   }
 }
 
+// ── fabricated P3-T6 bash-read-guard-warned input (模式 C，must earn its PASS) ──
+// The fabricated log mirrors the REAL runtime layout the scenario was pinned
+// against (observed in a kept sandbox; see the header's T6 section): the
+// advisory appears TWICE on the durable surface — once as the accepted splice
+// into the next-step inbox and once as the claimed `user/message` — which is
+// why the "exactly once" count is scoped per EVENT TYPE, never a raw byte
+// count over the whole file.
+
+const FABRICATED_BASH_GUARD_FIXTURE_PATH = '/fabricated/project/notes.txt'
+
+/** The advisory message exactly as the listener mints it (source triple). */
+function fabricatedBashGuardAdvisoryMessage(id) {
+  return {
+    id,
+    role: 'user',
+    content: [{ type: 'text', text: BASH_GUARD_ADVISORY_TEXT }],
+    source: { kind: 'plugin', plugin: BASH_FILE_READ_GUARD_PLUGIN, form: 'notice' },
+  }
+}
+
+function fabricatedBashGuardLog(routes) {
+  const catCommand = `cat ${FABRICATED_BASH_GUARD_FIXTURE_PATH}`
+  const pipelineCommand = `cat ${FABRICATED_BASH_GUARD_FIXTURE_PATH} | grep ${BASH_GUARD_GREP_WORD}`
+  const resultEvent = (seq, callId, text) => ({
+    seq,
+    type: 'tool/result',
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        role: 'user',
+        content: [{ type: 'tool-result', toolCallId: callId, content: [{ type: 'text', text }], isError: false }],
+      },
+    },
+  })
+  return {
+    path: '/fabricated/bash-guard/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: BASH_GUARD_PROMPT }] } },
+      {
+        seq: 2,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'initial' },
+      },
+      {
+        seq: 3,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: 'mock-llm-tool-1-0', name: 'bash', arguments: JSON.stringify({ command: catCommand, description: 'Read the notes fixture with cat' }) },
+      },
+      {
+        seq: 4,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: 'mock-llm-tool-1-1', name: 'bash', arguments: JSON.stringify({ command: pipelineCommand, description: 'Read the notes fixture through a pipeline' }) },
+      },
+      {
+        seq: 5,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: 'mock-llm-tool-1-2', name: 'read', arguments: JSON.stringify({ file_path: FABRICATED_BASH_GUARD_FIXTURE_PATH }) },
+      },
+      resultEvent(6, 'mock-llm-tool-1-0', BASH_GUARD_FIXTURE_CONTENT),
+      resultEvent(7, 'mock-llm-tool-1-1', `${BASH_GUARD_FIXTURE_GREP_LINE}\n`),
+      resultEvent(8, 'mock-llm-tool-1-2', `1→${BASH_GUARD_FIXTURE_FIRST_LINE}\n2→${BASH_GUARD_FIXTURE_GREP_LINE}\n`),
+      {
+        seq: 9,
+        type: 'agent/inbox/spliced',
+        data: { target: 'next-step', start: 0, inserted: [fabricatedBashGuardAdvisoryMessage('fabricated-advisory-1')] },
+      },
+      {
+        seq: 10,
+        type: 'user/message',
+        data: fabricatedBashGuardAdvisoryMessage('fabricated-advisory-1'),
+      },
+      {
+        seq: 11,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'continue' },
+      },
+      { seq: 12, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: BASH_GUARD_SUMMARY }] } } },
+      { seq: 13, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedBashGuardInput(routes) {
+  return {
+    log: fabricatedBashGuardLog(routes),
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 10 },
+      {
+        role: 'sisyphus',
+        body: {
+          model: routes.sisyphus.model,
+          messages: [
+            { role: 'system', content: 'MOCKROLE=sisyphus' },
+            { role: 'user', content: BASH_GUARD_ADVISORY_TEXT },
+          ],
+        },
+        receivedAt: 20,
+      },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+    fixturePath: FABRICATED_BASH_GUARD_FIXTURE_PATH,
+  }
+}
+
 /**
  * P2-T18 MOCKROLE landing self-test (hermetic, no spawn). Renders the REAL
  * concerto template through the REAL renderers (concerto-preset.ts
@@ -3563,6 +4012,100 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P3-T6 bash-read-guard-warned self-test: the fabricated good input (the
+  // REAL runtime layout) must PASS; a log with NO advisory injection must FAIL
+  // on the injection check, and a DUPLICATED injection must FAIL on the
+  // exactly-once count — the two mutations the C-mode pilot exists to catch.
+  const goodBashGuard = analyzeBashReadGuardWarned(fabricatedBashGuardInput(routes), routes)
+  if (goodBashGuard.result !== 'PASS') {
+    problems.push(`fabricated GOOD bash-read-guard-warned must PASS, got FAIL on: ${goodBashGuard.failed.join(', ')}`)
+  }
+  const bashGuardDefectCases = [
+    ['no advisory injection in the session log', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => event.type !== 'user/message'
+          || !messageContentText(event.data).includes(BASH_GUARD_ADVISORY_TEXT),
+      ).filter(
+        (event) => event.type !== 'agent/inbox/spliced'
+          || event.data?.target !== 'next-step',
+      )
+      input.requests = input.requests.map((request) =>
+        request.receivedAt === 20
+          ? { ...request, body: { model: request.body.model, messages: [{ role: 'user', content: 'no advisory' }] } }
+          : request)
+    }, 'advisoryInjectedIntoSessionLog'],
+    ['the advisory was injected twice (double trigger / idempotence drift)', (input) => {
+      const events = input.log.events
+      const spliceIndex = events.findIndex((event) => event.type === 'agent/inbox/spliced')
+      const messageIndex = events.findIndex(
+        (event) => event.type === 'user/message'
+          && messageContentText(event.data).includes(BASH_GUARD_ADVISORY_TEXT),
+      )
+      events.splice(spliceIndex + 1, 0, {
+        ...events[spliceIndex],
+        seq: 9.1,
+        data: {
+          ...events[spliceIndex].data,
+          inserted: [fabricatedBashGuardAdvisoryMessage('fabricated-advisory-2')],
+        },
+      })
+      events.splice(messageIndex + 2, 0, {
+        ...events[messageIndex],
+        seq: 10.1,
+        data: fabricatedBashGuardAdvisoryMessage('fabricated-advisory-2'),
+      })
+    }, 'advisoryInjectedExactlyOnce'],
+    // The advisory must really be a NON-blocking outcome: the TRIGGER's own
+    // tool/result carrying isError is the exact failure mode a "guard" that
+    // BLOCKED the command would produce (the check requires `isError !== true`
+    // AND the fixture bytes on the result of the `cat <fixture>` call).
+    //
+    // SURGICAL, by construction: the rewrite is addressed by the trigger call's
+    // OWN toolCallId (resolved from the log's `bash cat <fixture>` tool/call —
+    // the same identity the analyzer uses), so ONLY that one tool-result part
+    // is touched. A predicate over result TEXT cannot be surgical here: the
+    // fixture sentinel also occurs in the `read` result's line-numbered text,
+    // and rewriting that part (or stamping the trigger's callId onto it) deletes
+    // the read result and makes readToolRanWithoutAdvisory fail as collateral —
+    // i.e. the "defect" would no longer be the single named failure it claims.
+    ['the trigger result came back as an error (isError: true)', (input) => {
+      const triggerCall = input.log.events.find(
+        (event) => event.type === 'tool/call'
+          && event.data?.name === 'bash'
+          && toolCallArguments(event)?.command === `cat ${input.fixturePath}`,
+      )
+      const triggerCallId = triggerCall?.data?.callId
+      if (triggerCallId === undefined) return
+      input.log.events = input.log.events.map((event) => {
+        if (event.type !== 'tool/result') return event
+        const parts = event.data?.message?.content
+        if (!Array.isArray(parts) || !parts.some((part) => part.toolCallId === triggerCallId)) {
+          return event
+        }
+        return {
+          ...event,
+          data: {
+            ...event.data,
+            message: {
+              ...event.data.message,
+              content: parts.map((part) => (part.toolCallId === triggerCallId
+                ? { ...part, isError: true }
+                : part)),
+            },
+          },
+        }
+      })
+    }, 'bashTriggerExecutedWithFixtureBytes'],
+  ]
+  for (const [label, mutate, expectedCheck] of bashGuardDefectCases) {
+    const input = fabricatedBashGuardInput(routes)
+    mutate(input)
+    const verdict = analyzeBashReadGuardWarned(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated bash-read-guard-warned defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
@@ -3595,6 +4138,25 @@ const SCENARIOS = [
     },
     script: demoScript,
     analyze: analyzeDemo,
+  },
+  {
+    // P3-T6 (plan §4.2 mode C pilot; task book WP-2): the FIRST omo-hooks
+    // listener proves its whole delivery chain in one real run — `cat <file>`
+    // executes unchanged, the advisory rides additionalContexts into the next
+    // request, and the two negative boundaries (piped `cat`, `read` tool)
+    // really run without a second injection. Every later 劝导演出型 hook copies
+    // this scenario's shape.
+    name: 'bash-read-guard-warned',
+    prompt: BASH_GUARD_PROMPT,
+    roles: ['sisyphus'],
+    seed: (sandbox) => {
+      writeFileSync(join(sandbox.project, BASH_GUARD_FIXTURE_NAME), BASH_GUARD_FIXTURE_CONTENT)
+    },
+    script: bashReadGuardScript,
+    analysisInput: (sandbox) => ({
+      fixturePath: join(sandbox.project, BASH_GUARD_FIXTURE_NAME),
+    }),
+    analyze: analyzeBashReadGuardWarned,
   },
   {
     // AC-6a (T20): the explore child hallucinates a write; the T12 deny
@@ -3857,7 +4419,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

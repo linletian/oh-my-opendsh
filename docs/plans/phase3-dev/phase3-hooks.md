@@ -16,7 +16,7 @@
 
 | # | 模块（hooks/ 下路径） | 形态 | 模式 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
-| H-02 | `bash-file-read-guard.ts` | 单文件 | C（= post-execute `accept` + `additionalContexts`） | 简单 `cat/head/tail` 读文件 → 劝导改用 read 工具。DSH pre-execute 无 advisory 形态 → 落 post-execute：命令照执行，warning 经 `additionalContexts` 进下一请求（模型劝导语义等价） | ✅ 待移植 |
+| H-02 | `bash-file-read-guard.ts` | 单文件 | C（= post-execute `accept` + `additionalContexts`） | 简单 `cat/head/tail` 读文件 → 劝导改用 read 工具。DSH pre-execute 无 advisory 形态 → 落 post-execute：命令照执行，warning 经 `additionalContexts` 进下一请求（模型劝导语义等价） | ✅ **已移植**（场景 `bash-read-guard-warned`，P3-T5 listener + P3-T6 e2e，commit 3e6903d+） |
 
 ### P1 todo/goal 执行器（WP-3；`goal/` 本体跳过见 §2 S-01）
 

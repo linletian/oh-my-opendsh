@@ -74,12 +74,12 @@
 - **证据**：2026-09-19 完成（deepseek-flash，1 首轮 + 1 修复轮）。产出：src/hooks/bash-file-read-guard.ts（首个真实 listener——三条 FILE_READ_PATTERNS 与判定函数**逐字移植**上游，劝导文案语义移植：删 hash anchors 半句并注记理由（DSH read 无 hashline 锚、Phase 6 决策）；C 模式落 tools/post-execute `{kind:'accept', additionalContexts:[UserMessage]}`，UserMessage 形态镜像 hard-blocks 先例；负例含裸 cat/多操作数/管道/重定向/带选项）+ 13 新单测（omo-hooks 计 58）+ HOOK_REGISTRARS 首项填入 + manifest 14 条目（H-01 剔除，残留仅合理注记）+ 变异敏感网同步（EXPECTED_HOOK_COUNT 15→14、EXPECTED_SUMMARY_LINE pre-execute 3→2、注册项 0→1 现实）。bash 工具名实测：`dsh-tool-bash/lib/index.js:260` 与 `dsh-tool-bash-persistent/lib/index.js:330` 均 `name: "bash"`。**双评审**：Kimi 轮1 **APPROVE**（3 MINOR 注释级）+ mcode 轮1 **1 项 P2**（probe 只断摘要行未断 registered 行——HOOK_REGISTRARS 漂回空对象时 probe 不红的锚点缺口，仲裁采纳）→ 修复轮（probe 追加 registered 行硬断言、期望串从 boot-markers.ts 同源派生 + 负例注释对齐；反跑验证新断言非真空）→ **Kimi 轮2 APPROVE + mcode 轮2 APPROVE**。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 58/58、probe 实跑 exit 0。**仲裁记录**：① 编码 agent 顺手同步 3 处脚本注释 15→14 → 接受（与剔除一致的注释级）；② Kimi 问"C 模式短路效应"（触发时不调 next()，后续 post-execute listener 对该次调用被跳过）→ 登记设计注记：T7+ D 模式 hook 均不作用于成功 cat 结果，碰撞面为零，无需链式合并；③ H-02 的 manifest status 待 T6 e2e 后翻转（纪律保持）。
 - **依赖**：P3-T3。**量级**：3 小时。
 
-### [ ] P3-T6 — e2e：文件护栏场景（C 模式 e2e 打样）
+### [x] P3-T6 — e2e：文件护栏场景（C 模式 e2e 打样）
 
 - **产出**：`tests/e2e/` 新增 `bash-read-guard-warned` 场景（C 模式 e2e 打样，后续批次复用其夹具；~~write-guard-denied~~ 随 H-01 取消，B 模式 e2e 打样移至 T16）。
 - **做法**：mock 剧本（tool_calls 通道，P2-T18）让 agent 发 `cat <file>` bash → 断言：命令真实执行（结果在场）+ session log 下一请求含劝导 additionalContexts 注入（劝导语义）；对照组：`cat file | grep x` 不触发、`read` 工具调用不触发。
 - **判定**：✅ 门 3 绿；verdict JSON 含场景断言明细（含对照组）。
-- **证据**：（待填）
+- **证据**：2026-09-19 完成（deepseek-flash，1 首轮 + 1 修复轮）。产出：drive.mjs +534/-4——bash-read-guard-warned 场景（三连发 tool_calls batch：cat 触发 + cat|grep 对照 + read 对照）+ analyzeBashReadGuardWarned（**11 断言**：触发执行 isError 非 true 且 fixture 字节在场、劝导注入恰好 1 次、双对照无注入、bonus seq 叙事）+ 变异 QA 3 条目（no-advisory-injection / advisory-injected-twice / trigger-result-isError 各具名 FAIL）。**观测载体实测定锚**：劝导注入经 `agent/inbox/spliced` 事件可见（seq 17 splice、seq 25 user/message——分析器按事件类型+文本+source 三元组匹配，不硬编码 seq，版本漂移告警有意保留）。**双评审**：Kimi 轮1 **APPROVE**（2 MINOR；独立真跑逐字复现 seq 叙事）+ mcode 轮1 **1 项 P2**（变异 QA 的 isError 突变谓词过度匹配——sentinel 误命中 read 结果且硬编码 callId 覆盖 → 对照连带失败；Kimi 复核证实机理）→ 修复轮（按触发器 callId 定位 + 保留原 toolCallId；实证变异后**恰仅** bashTriggerExecutedWithFixtureBytes 具名失败）→ **Kimi 轮2 APPROVE + mcode 轮2 APPROVE**（轮2 Kimi 误执行 git checkout 回滚但凭字节级副本还原——仲裁独立复核：12 处场景引用在场、self-test 全绿，完整性无损）。门：仲裁独立复跑 ci-local **8/8 绿**、self-test OK（8 场景 fabricated good logs + 全部 defect 各具名 FAIL）、pnpm test:e2e 8/8 场景 PASS（新场景 11/11 断言、realDshUntouched=true）。**夹具注记**：shell 词必须单 token（grep 词含空格曾致 exit 2）；三连发 batch 形态供 T14+ D 模式批次复用（适用性逐批确认）。**仲裁决定**：manifest 的 H-02 status 翻转（'pending'→'ported'）并入 T7 范围随评审落地（T20 将定义词汇表一致性门）。
 - **依赖**：P3-T5。**量级**：3 小时。
 
 ---
