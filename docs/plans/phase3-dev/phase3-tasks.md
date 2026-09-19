@@ -6,7 +6,7 @@
 >
 > **状态**：📋 **1/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
-> **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。
+> **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
 > **编号**：`P3-T<n>`（Phase 3 - Task n）。工作包归属见计划书 §7。
 
@@ -58,31 +58,27 @@
 
 ---
 
-## WP-2 P0 文件护栏（计划书 §4.3；B/C 模式打样）
+## WP-2 P0 文件护栏（计划书 §4.3；C 模式打样——B 打样移至 T16）
 
-### [ ] P3-T4 — 移植 `write-existing-file-guard`（B 模式打样）
+### ~~P3-T4~~ — 取消（2026-09-19 WP-2 开工仲裁：H-01 改判跳过 DSH 原生覆盖且为超集）
 
-- **产出**：`src/hooks/write-existing-file-guard.ts`（含署名头：上游 5 文件逐列）+ 单测。
-- **做法**：按 P3-T1 核实的决策词汇表实现权威拒绝（覆写未读文件 → deny 决策）；session 级读过集合的状态形态按 T1 结论（`session/event` 观察 read 成功 / listener 闭包 WeakMap——择一并注释理由）；上游测试用例移植为单测种子（R-3）；listener 体 try/catch 自包 + throw 时 fail-open/closed 按 T1 语义显式选择（R-9）。
-- **判定**：✅ 单测覆盖：未读拒写 / 读后可写 / 新文件可写 / 非 write 工具不受影响 / listener 异常不击穿管线；`pnpm vitest run` 绿。
+- **取消理由**：`dsh-fs-observation-policy` 已在 base composition 挂载（dsh-base/cordis.patch.yml:257-258）并被 dsh-tool-fs 经 `fs/write-intent`/`fs/edit-intent` 消费（lib:650/:801）——原生实现"覆写未读文件拒绝"（`createIfAbsent` no-clobber）+ 版本 CAS 过期检测 `FS_STALE_VERSION`（OMO 无等价，严格更强）+ 缺失读取授权 guarded-create + session keyed WeakMap。OMO 残余语义均无移植价值：一次性票据（弱于 CAS）、`.omo/**` 豁免（OMO 专属路径）、`overwrite` 参数剥离（OMO write 工具参数，DSH 无）。证据：dsh-fs-observation-policy/README.md + lib/index.js:50-68。ROADMAP 关键约束（DSH 原生覆盖 → 不翻译）与 P0 防护目标（"防止覆写未读事故"）同时满足——目标已由原生交付。覆盖基线 H-01 → S-46。
+
+### [ ] P3-T5 — 移植 `bash-file-read-guard`（C 模式打样）+ manifest 剔除 H-01
+
+- **产出**：`src/hooks/bash-file-read-guard.ts`（署名头：上游 `bash-file-read-guard.ts` 逐字标注 + "语义移植"声明）+ 单测；`src/manifest.ts` 剔除 H-01 条目（14 条目）并同步全部变异敏感网。
+- **做法**：① 上游语义 = 劝导非阻断；DSH 落点 = `tools/post-execute` 返回 `{kind:'accept', additionalContexts:[劝导 UserMessage]}`（P3-T1 模式 C 更正：pre-execute 无 advisory 形态）；正则三模式（cat/head/tail 简单读取）逐字复核上游后移植（`git show v4.19.4:packages/omo-opencode/src/hooks/bash-file-read-guard.ts`）；管道/重定向/带选项变体的边界用例与上游对齐；注册函数填入 HOOK_REGISTRARS（T3 扩展点）；listener 体自包 try/catch、异常时 `return next()`（纪律②——post-execute throw 会吃掉整次成功结果，R-9）。② manifest 剔除 H-01（write-existing-file-guard 改判 S-46，DSH 原生覆盖）——同步：条目数 15→14、manifest.test.ts 硬编码 id 集合与计数、registration.test.ts 的 EXPECTED_SUMMARY_LINE 事件计数（pre-execute 3→2）、其他引用 H-01 的断言/注释。
+- **判定**：✅ 单测覆盖上游全部模式 + 负例（`cat file | grep` 不触发、`cat -n` 不触发——以上游正则逐字复核为准）+ additionalContexts 内容契约 + 非 bash 工具不受影响 + listener 异常吞没且结果不变；`pnpm typecheck` 与 `pnpm vitest run` 全绿。
 - **证据**：（待填）
-- **依赖**：P3-T3。**量级**：4 小时。
+- **依赖**：P3-T3。**量级**：3 小时。
 
-### [ ] P3-T5 — 移植 `bash-file-read-guard`（C 模式打样）
+### [ ] P3-T6 — e2e：文件护栏场景（C 模式 e2e 打样）
 
-- **产出**：`src/hooks/bash-file-read-guard.ts`（署名头）+ 单测。
-- **做法**：上游语义 = 劝导非阻断（`output.message` 附加 warning）；按 T1 核实的"放行但附加"决策形态实现；正则三模式（cat/head/tail 简单读取）逐字复核后移植；管道/重定向/带选项变体的边界用例与上游对齐。
-- **判定**：✅ 单测覆盖上游全部模式 + 负例（`cat file | grep` 不触发、`cat -n` 不触发——以 T1 对上游正则的逐字复核为准）；vitest 绿。
+- **产出**：`tests/e2e/` 新增 `bash-read-guard-warned` 场景（C 模式 e2e 打样，后续批次复用其夹具；~~write-guard-denied~~ 随 H-01 取消，B 模式 e2e 打样移至 T16）。
+- **做法**：mock 剧本（tool_calls 通道，P2-T18）让 agent 发 `cat <file>` bash → 断言：命令真实执行（结果在场）+ session log 下一请求含劝导 additionalContexts 注入（劝导语义）；对照组：`cat file | grep x` 不触发、`read` 工具调用不触发。
+- **判定**：✅ 门 3 绿；verdict JSON 含场景断言明细（含对照组）。
 - **证据**：（待填）
-- **依赖**：P3-T3。**量级**：2 小时。
-
-### [ ] P3-T6 — e2e：文件护栏双场景
-
-- **产出**：`tests/e2e/` 新增 `write-guard-denied` 与 `bash-read-guard-warned` 场景（B/C 模式的 e2e 打样，后续批次复用其夹具）。
-- **做法**：mock 剧本（tool_calls 通道，P2-T18）让 agent ① 对已存在但未读的文件发 write → 断言 deny 决策 + 文件未变 + session log 含护栏效果；对照组：读后 write 放行；② 发 `cat <file>` bash → 断言 warning 附加 + 命令仍执行（劝导语义）。
-- **判定**：✅ 门 3 绿；verdict JSON 含双场景断言明细（含对照组）。
-- **证据**：（待填）
-- **依赖**：P3-T4 + P3-T5。**量级**：4 小时。
+- **依赖**：P3-T5。**量级**：3 小时。
 
 ---
 
@@ -159,10 +155,10 @@
 ### [ ] P3-T16 — 批 C：B/D 门类（2 模块）
 
 - **产出**：`src/hooks/`：`webfetch-redirect-guard.ts`（B + D）+ `prometheus-md-only.ts`（B + D）+ 单测 + e2e。
-- **做法**：B 段复用 T4 打样的 deny 决策形态；`webfetch-redirect-guard` 的 deny reason 携带最终 URL 指引（覆盖基线 H-24）；`prometheus-md-only` 的 B 段（非 .md 写 deny，上游 hook.ts:40-62 可 1:1）+ D 段劝导（注入警告段无附言缝 → post-execute 附加，H-26）；pre/post 状态配对用 `exec.callId`/`exec.token` 原生关联（纪律⑤）。
+- **做法**：**B 模式在本批打样**（原 T4 打样随 H-01 改判取消）；`webfetch-redirect-guard` 的 deny reason 携带最终 URL 指引（覆盖基线 H-24）；`prometheus-md-only` 的 B 段（非 .md 写 deny，上游 hook.ts:40-62 可 1:1）+ D 段劝导（注入警告段无附言缝 → post-execute 附加，H-26）；pre/post 状态配对用 `exec.callId`/`exec.token` 原生关联（纪律⑤）。
 - **判定**：✅ 每模块单测 + e2e（deny 生效 + 对照放行）；门 2/3 绿。
 - **证据**：（待填）
-- **依赖**：P3-T4（B 打样）+ P3-T6。**量级**：4 小时。
+- **依赖**：P3-T6（模式夹具）。**量级**：4 小时。
 
 ### [ ] P3-T17 — ulw-execute（start-work hook 语义，H-32）
 

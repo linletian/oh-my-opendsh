@@ -16,7 +16,6 @@
 
 | # | 模块（hooks/ 下路径） | 形态 | 模式 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
-| H-01 | `write-existing-file-guard/`（**6 文件**） | 目录 | B | 覆写已存在文件前须先读过（session 读过集合 + `{kind:'deny',reason}` 权威拒绝）。**已知行为差异**：上游剥离 `overwrite` 参数（输入改写），DSH pre-execute 禁输入改写 → 差异须在 e2e 断言与清单理由列记录 | ✅ 待移植 |
 | H-02 | `bash-file-read-guard.ts` | 单文件 | C（= post-execute `accept` + `additionalContexts`） | 简单 `cat/head/tail` 读文件 → 劝导改用 read 工具。DSH pre-execute 无 advisory 形态 → 落 post-execute：命令照执行，warning 经 `additionalContexts` 进下一请求（模型劝导语义等价） | ✅ 待移植 |
 
 ### P1 todo/goal 执行器（WP-3；`goal/` 本体跳过见 §2 S-01）
@@ -108,6 +107,7 @@
 | S-43 | `unstable-agent-babysitter/`（原 H-30） | deferred | 依赖 OMO background-agent 运行时面（`backgroundManager.getTasksByParentSession`）；DSH 等价面（ctx.jobs/subagent 生命周期）随 Phase 5 定型后重议 |
 | S-44 | `fsync-skip-warning/`（原 H-31） | 跳过（平台耦合） | 生产者仅 2 个 opencode TUI 调用点，无 OMO 行为语义 |
 | S-45 | `todo-description-override` 占位 | — | （并入 S-31，此行不占用——保持编号连续性的说明行） |
+| S-46 | `write-existing-file-guard/`（6 文件，原 H-01） | 跳过（DSH 原生覆盖且为超集） | **2026-09-19 WP-2 开工仲裁**：`dsh-fs-observation-policy` 已在 base composition 挂载（dsh-base/cordis.patch.yml:257-258）并被 dsh-tool-fs 经 `fs/write-intent`/`fs/edit-intent` 消费（lib:650/:801）——原生实现"覆写未读文件拒绝"（`createIfAbsent` no-clobber）+ **版本 CAS 过期检测 `FS_STALE_VERSION`**（OMO 无等价，严格更强）+ 缺失读取授权 guarded-create + session  keyed WeakMap；OMO 残余语义均无移植价值：一次性票据（弱于 CAS）、`.omo/**` 豁免（OMO 专属路径）、`overwrite` 参数剥离（OMO write 工具参数，DSH 无）。证据：dsh-fs-observation-policy/README.md（"write creates new files but refuses to overwrite an existing file that the session has not read… FS_STALE_VERSION"）+ lib/index.js:50-68。P0 防护目标已由原生交付，移植 = 以更弱模型复制原生门（原则一禁止）。B 模式打样移至 T16（H-24/H-26） |
 
 ## 3. 非 hook 条目（不进移植计数，附注）
 
@@ -130,8 +130,8 @@
 
 | 状态 | 计数 | 口径 |
 |---|---|---|
-| 移植组（§1） | **15**（P0=2 · P1=2 · P3=2 · P4=8 · P5=1；P2 组整组跳过） | P3-T1 实测 |
-| 已移植（listener+单测+e2e） | 0 / 15 | 逐任务翻转 |
-| 跳过 / deferred / 排除（§2） | **46**（S-01…S-44 去占位行 + S-28/29/30 补登） | 每行终态理由齐备 |
+| 移植组（§1） | **14**（P0=1 · P1=2 · P3=2 · P4=8 · P5=1；P2 组整组跳过） | 2026-09-19 仲裁：H-01 改判跳过（DSH 原生超集，S-46） |
+| 已移植（listener+单测+e2e） | 0 / 14 | 逐任务翻转 |
+| 跳过 / deferred / 排除（§2） | **47**（S-01…S-46 去占位行） | 每行终态理由齐备 |
 | 非 hook（§3） | 4 类条目 | 不计入 |
 | 全树覆盖 | 101 / 101 条目 | 退出标准 b 的完整性硬判定 ✅ |

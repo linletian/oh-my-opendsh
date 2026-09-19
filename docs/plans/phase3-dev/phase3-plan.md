@@ -11,6 +11,7 @@
 > **修订记录**：
 >
 > - **2026-09-19 P3-T1 调研回填与仲裁**（证据：`.omo/evidence/p3t1-*.md` 5 份，关键机制引用经仲裁抽核属实）——① §4.2 模式 C/E 机制更正（pre-execute 无 advisory 形态 → C 落 post-execute `accept+additionalContexts`；turn-stopping 非投票 → E = `agent.steer()` 副作用）；② 移植组 32 → **15**（17 模块移出：无 DSH 接缝/无病/依赖未移植子系统跳过 12、helper 并入 1、deferred 4）；**WP-4（compaction 辅助）整组取消**（H-08/H-09 均 DSH 原生覆盖）；③ §4.4 跳过表扩为 46 行（含补登 S-28 rules-injector / S-29 runtime-fallback / S-30 read-image-resizer 三行——对账裁定草案漏列 118 文件）；④ §4.5 ulw-execute 口径更正（20:0 划分，激活 marker 随 Phase 4）；⑤ §4.6 comment-checker 裁定 deferred；⑥ §6 R-2/R-4/R-9 口径按实测修正；⑦ §7 估算 12.5 → ~8.5 人日。全部更正按 DoD-d 落文档，覆盖基线 §4 待核清单全部闭环。
+> - **2026-09-19 WP-2 开工仲裁（H-01 改判）**：`write-existing-file-guard` 经 R-8 DSH 原生优先检查改判 **跳过（DSH 原生覆盖且为超集）**——`dsh-fs-observation-policy` 已在 base composition 挂载（dsh-base:257-258）并实现"覆写未读拒绝"+ 版本 CAS 过期检测（`FS_STALE_VERSION`，OMO 无等价、严格更强）；OMO 残余（一次性票据/`.omo` 豁免/overwrite 剥离）均无移植价值。证据：dsh-fs-observation-policy README + lib:50-68。移植组 15 → **14**，P3-T4 取消，B 模式打样移至 T16（H-24/H-26），WP-2 缩为 bash-file-read-guard + e2e（C 打样）。
 
 ---
 
@@ -92,7 +93,7 @@ hook 模块约 25+ 个移植目标，若散进 omo-agents 会把该插件从"名
 
 | 组 | 模块（v4.19.4 路径，hooks/ 下） | 模式 | 为何此序 |
 |---|---|---|---|
-| **P0 文件护栏** | `write-existing-file-guard/`（6 文件）、`bash-file-read-guard.ts` | B + C | ROADMAP 第一优先；直接防止"覆写未读文件"这类高代价 agent 事故；B/C 两模式的打样组 |
+| **P0 文件护栏** | `bash-file-read-guard.ts`（`write-existing-file-guard/` 经 WP-2 开工仲裁改判跳过——DSH 原生超集，见修订记录） | C | ROADMAP 第一优先；P0 的"覆写未读"防护目标已由 dsh-fs-observation-policy 原生交付；本组交付劝导护栏 + C 模式打样 |
 | **P1 todo/goal 执行器** | `todo-continuation-enforcer/`、`empty-task-response-detector.ts` | E + D | todo 纪律是协奏执行质量的骨干；`goal/`（16 文件）按关键约束**不移植**（dsh-goal 原生）；E 模式打样组 |
 | **P2 compaction 辅助** | ~~`compaction-context-injector/`、`compaction-todo-preserver/`~~ | — | **P3-T1 裁定：整组跳过（DSH 原生覆盖）**——todo/write 非表面事件压缩不丢、无 per-session 配置漂移、无对应注入接缝（覆盖基线 §1 P2 组）。WP-4 取消，e2e 不承担该组 |
 | **P3 会话通知** | `session-notification-*`（21 文件，后端 = darwin/linux/win32）、`background-notification/` | F | 用户可观测性；**Linux 后端（notify-send）为 CI 可验载体**（草案"log 后端"系自拟，上游无），macOS 后端 L4 手工验证，Windows 后端不移植（D9） |
@@ -213,7 +214,7 @@ ROADMAP §4 Phase 3 给出 2 条退出标准，逐条落到可执行证据：
 |---|---|---|---|
 | **WP-0 调研核对** | v4.19.4 全量 hook 清单 + DSH 事件面逐件核实（Q-1…Q-6）→ 覆盖基线转实测 | P3-T1 | ✅ 已完成（1 天） |
 | **WP-1 插件骨架** | omo-hooks 包 + manifest.ts + 挂载（cordis.yml/cold-start/doctor-lite/probe marker） | P3-T2 … P3-T3 | ~1 天 |
-| **WP-2 P0 文件护栏** | write-existing-file-guard + bash-file-read-guard 移植 + 单测 + e2e（B/C 模式打样） | P3-T4 … P3-T6 | ~1.5 天 |
+| **WP-2 P0 文件护栏** | bash-file-read-guard 移植 + manifest 剔除 H-01 + 单测 + e2e（C 模式打样；B 打样移至 WP-6 批 C） | P3-T5 … P3-T6（P3-T4 取消——H-01 改判 DSH 原生跳过） | ~1 天 |
 | **WP-3 P1 todo 执行器** | todo-continuation-enforcer + empty-task-response-detector + 单测 + e2e（E 模式打样） | P3-T7、P3-T9（P3-T8 取消——3 模块实测移出） | ~1 天 |
 | ~~WP-4 P2 compaction 辅助~~ | **取消**——两模块均判 DSH 原生跳过（P3-T1 裁定，覆盖基线 §1 P2 组） | ~~P3-T10 … P3-T11~~ | 0 |
 | **WP-5 P3 会话通知** | session-notification（调度器 + Linux 后端 CI 载体 + macOS 后端 L4）+ background-notification + e2e | P3-T12 … P3-T13 | ~1.5 天 |
