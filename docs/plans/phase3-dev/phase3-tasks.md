@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **7/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：📋 **8/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
@@ -118,12 +118,12 @@
 
 ## WP-5 P3 会话通知（计划书 §4.3；R-4 平台收窄）
 
-### [ ] P3-T12 — 移植 `session-notification` + `background-notification`
+### [x] P3-T12 — 移植 `session-notification` + `background-notification`
 
 - **产出**：`src/hooks/session-notification.ts`（调度器 + 平台抽象 + **Linux 后端 notify-send（CI 可验载体）**；macOS 后端代码移植、L4 手工验证；Windows 后端不移植 = D9）+ `src/hooks/background-notification.ts` + 单测。
 - **做法**：事件源 = P3-T1 实测（完成/错误 = `session/event` 的 `turn/end` + `reason.kind`，注意 `max-tokens` reason 的精度陷阱；idle = `agent/status(status==='idle')`）；调度语义（去抖/完成判定/错误通知）按上游逐文件复核（21 文件 = 16 实现 + 5 测试）；**H-05 helper 语义（`hasIncompleteTodos`/`hasPendingSessionWork` 谓词）并入本模块**（N-04）；`background-notification` 前置：`ctx.jobs` 事件面核实；平台抽象层声明后端接口，Linux 后端 CI 可验，macOS 后端仅 L4（R-4）；跨事件状态以 `ctx.effect` 承载（纪律⑤）。
 - **判定**：✅ 单测覆盖调度逻辑 + 两谓词 + Linux 后端命令构造；平台后端抽象注入可替换；vitest 绿。
-- **证据**：（待填）
+- **证据**：2026-09-19 完成（deepseek-flash，1 轮过）。产出：session-notification.ts（调度状态机：grace period / version bump / executing 三道闸门 + turn/end reason.kind 完成/错误判定 + max-tokens 精度陷阱处理 + H-05 两谓词并入（上游 session-todo-status.ts:17 的 2-status 谓词语义，数据源 todos 投影 stateOf）+ NotifierBackend 抽象 + **Linux notify-send / macOS osascript 命令构造逐字对照上游 -linux.ts/-macos.ts** + 稳定 log 锚点行）+ background-notification.ts（**ctx.jobs 事件面前置闭环**：push 事件面 + pull 降级查询双路径，standby 与去重；降级路径"list() 无 caller 只见 unowned"覆盖收窄诚实注记）+ 74 新单测（omo-hooks 计 185）。**有意收窄（逐项注记）**：声音四后端不移植（上游默认 playSound:false）；detectExternalNotificationPlugin 不移植（DSH 无 opencode 插件目录）；session 标题/末条消息正文收窄为静态文案 + todo 计数（Session 不暴露标题、回读消息 = 事件路径读盘违纪律④——判定经评审确认成立）。**双评审**：Kimi 轮1 **APPROVE**（3 NIT + 3 质疑）+ mcode 轮1 **APPROVE**（"未发现可报告的缺陷"，逐行复核调度状态机/谓词差异/AppleScript 转义/平台分流/push-pull 双路径）。**仲裁（Kimi 质疑）**：① macOS **osascript 单层即满足 L4 口径**（cmux/terminal-notifier 非系统内置 + `__CFBundleIdentifier` 为 opencode.app 专属，移植反失真）；② question/permission 提示通知**不立项补移植**（DSH 原生审批/ask_user_question UI 已覆盖该语义，原则一）；③ 每顶层会话都通知 = **有意适配**（DSH 多会话模型，去抖按 session）。NIT×3 与 T9 的 NIT×3 一并并入 T13。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 185/185。**编码 agent 注记**：probe 已自动覆盖 5 行 registered marker；T19 纳入静态门 c 组。
 - **依赖**：P3-T3。**量级**：5 小时。
 
 ### [ ] P3-T13 — e2e：通知场景

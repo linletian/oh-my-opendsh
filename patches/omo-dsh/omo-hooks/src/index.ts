@@ -22,18 +22,18 @@
 // topology already reserved patches/omo-dsh/omo-hooks/.
 //
 // P3-T2 delivered the package shape + manifest.ts; P3-T3 mounts it; P3-T5 landed
-// the first implementation; P3-T7 (this revision) lands the P1 todo/goal
-// executor pair. apply() validates the manifest, logs the summary boot marker,
-// and runs the per-hook registration loop; the loop's implementation registry
-// (HOOK_REGISTRARS) now carries three entries — 'bash-file-read-guard' (the
-// C-mode pilot), 'todo-continuation-enforcer' (E mode) and
-// 'empty-task-response-detector' (D mode) — so exactly three `registered` lines
-// are logged after the summary. The remaining 11 rows are filled one task at a
-// time — the next REGISTRAR entries arrive at T12 (session-notification +
-// background-notification) and T14+ (the WP-6 batches) — while the E/D
-// executor pair landed here still owes its e2e at **T9** (scenario
-// `todo-continuation-enforced`, tests/e2e/drive.mjs); nothing else in this file
-// changes when a row lands.
+// the first implementation; P3-T7 landed the P1 todo/goal executor pair; P3-T12
+// (this revision) lands the P3 session-notification family. apply() validates the
+// manifest, logs the summary boot marker, and runs the per-hook registration
+// loop; the loop's implementation registry (HOOK_REGISTRARS) now carries FIVE
+// entries — 'bash-file-read-guard' (the C-mode pilot), 'todo-continuation-enforcer'
+// (E mode), 'empty-task-response-detector' (D mode), 'session-notification' (F
+// mode, the completion/error observer + the platform backend abstraction) and
+// 'background-notification' (F mode, the `ctx.jobs.onJobDone` observer that
+// REUSES session-notification's NotifierBackend) — so exactly five `registered`
+// lines are logged after the summary. The remaining 9 rows are filled one task at
+// a time by the WP-6 batches (T14+); nothing else in this file changes when a row
+// lands.
 //
 // Note the roster is 14 entries, not 15: P3-T5's other half is the WP-2
 // arbitration that REMOVED H-01 (write-existing-file-guard) from the port group
@@ -52,9 +52,15 @@
 //       from the plugin's own modules, so it cannot drift).
 //   * `[omo-hooks] hook <id> registered on <event>`
 //     — one line per hook whose registrar is implemented AND returned cleanly.
-//       Three such lines today ('bash-file-read-guard',
-//       'todo-continuation-enforcer', 'empty-task-response-detector'); T12+
-//       add the rest.
+//       Five such lines today ('bash-file-read-guard',
+//       'todo-continuation-enforcer', 'empty-task-response-detector',
+//       'session-notification', 'background-notification'); T14+ add the rest.
+//       NOTE (P3-T12): the event in this line is the manifest's PRIMARY event,
+//       which for 'background-notification' is `session/event` — and that row's
+//       registrar DOES register it (its push half additionally subscribes to
+//       `ctx.jobs.onJobDone`, which is a service subscription, not one of the six
+//       manifest events; see that file's header). The marker therefore stays a
+//       true statement about the row's primary surface.
 //   * `[omo-hooks] hook <id> FAILED: <describeError>`
 //     — loud-but-non-fatal: the failing hook is named and the loop continues
 //       (P2-T16 precedent — one broken hook never suppresses the others).
@@ -102,6 +108,8 @@ import {
 import { registerBashFileReadGuard } from './hooks/bash-file-read-guard.ts'
 import { registerTodoContinuationEnforcer } from './hooks/todo-continuation-enforcer.ts'
 import { registerEmptyTaskResponseDetector } from './hooks/empty-task-response-detector.ts'
+import { registerSessionNotification } from './hooks/session-notification.ts'
+import { registerBackgroundNotification } from './hooks/background-notification.ts'
 
 export const name = 'omo-hooks'
 
@@ -138,7 +146,10 @@ export interface HooksRegistrationContext {
    * Cordis's optional service lookup (`Context#get(name)`), used by the hooks
    * that must read a DSH service rather than only observe events — the E-mode
    * `todo-continuation-enforcer` reads the `todos` session projection (U-4) and
-   * consults the OPTIONAL `goals` service (R-8). Declared optional on purpose:
+   * consults the OPTIONAL `goals` service (R-8); the F-mode notification pair
+   * reads the same projection (`session-notification`, the H-05 predicates) and
+   * the OPTIONAL `jobs` service (`background-notification`, the `onJobDone`
+   * push surface). Declared optional on purpose:
    * a context without it, a deployment without the service, and a service
    * without the key all mean "capability absent", which every such hook treats
    * as a skip — never a boot or turn failure (plan §4.2). Declaring it required
@@ -179,7 +190,18 @@ export type HookRegistrar = (
  *   'empty-task-response-detector': registerEmptyTaskResponseDetector
  *     (hooks/empty-task-response-detector.ts) — the D-mode result rewrite.
  * All three use the same preferred channel and return nothing.
- * TODO(P3-T12+): add one entry per remaining ported hook, the same way —
+ * P3-T12 added TWO MORE — the F-mode notification pair, and they are the first
+ * entries to exercise the RETURNED-DISPOSER channel of discipline ①:
+ *   'session-notification': registerSessionNotification
+ *     (hooks/session-notification.ts) — registers on its primary manifest event
+ *     (`session/event`) AND the auxiliary `agent/status` through `ctx.on`, and
+ *     returns a disposer that cancels any armed notification timer.
+ *   'background-notification': registerBackgroundNotification
+ *     (hooks/background-notification.ts) — registers on its primary manifest
+ *     event unconditionally, and additionally subscribes to the `ctx.jobs`
+ *     service (`onJobDone`, a service subscription rather than one of the six
+ *     manifest events); the subscription's own disposer is what it returns.
+ * TODO(P3-T14+): add one entry per remaining ported hook, the same way —
  *   'edit-error-recovery': registerEditErrorRecovery, ...
  * one task per hook, keeping disciplines ①–④ above. Nothing else in this file
  * needs to change when a row lands.
@@ -188,6 +210,8 @@ export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'bash-file-read-guard': registerBashFileReadGuard,
   'todo-continuation-enforcer': registerTodoContinuationEnforcer,
   'empty-task-response-detector': registerEmptyTaskResponseDetector,
+  'session-notification': registerSessionNotification,
+  'background-notification': registerBackgroundNotification,
 }
 
 /**

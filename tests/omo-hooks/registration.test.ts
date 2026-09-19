@@ -313,10 +313,13 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     vi.restoreAllMocks()
   })
 
-  it('① mounts with the real registry: summary + the three registered listeners', () => {
-    // P3-T7 filled the registry with three real entries (the C-mode pilot plus
-    // the E/D executor pair), so a real boot logs the summary line AND three
-    // `registered` lines, and wires three listeners in roster order.
+  it('① mounts with the real registry: summary + the five registered listeners', () => {
+    // P3-T12 filled the registry with two more real entries (the F-mode
+    // notification pair), so a real boot logs the summary line AND five
+    // `registered` lines, and wires the listeners in roster order.
+    // 'session-notification' registers TWO surfaces (its primary manifest event
+    // plus the auxiliary `agent/status`), which is why the onCalls list below is
+    // longer than the registered-line list.
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const { ctx, onCalls } = fakeContext()
     apply(ctx)
@@ -325,21 +328,27 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook bash-file-read-guard registered on tools/post-execute',
       '[omo-hooks] hook todo-continuation-enforcer registered on agent/turn-stopping',
       '[omo-hooks] hook empty-task-response-detector registered on tools/post-execute',
+      '[omo-hooks] hook session-notification registered on session/event',
+      '[omo-hooks] hook background-notification registered on session/event',
     ])
     expect(onCalls.map((call) => call.event)).toEqual([
       'tools/post-execute',
       'agent/turn-stopping',
       'tools/post-execute',
+      'session/event',
+      'agent/status',
+      'session/event',
     ])
   })
 
   it('② drives a replacement registrar through ctx.on (the registry is the extension point)', () => {
     // apply() has no injection seam on purpose (it is the one-argument cordis
     // entry point), so this test saves/restores a real registry entry around the
-    // call instead of leaking a permanent fake into sibling tests. The other two
-    // real entries stay in place, so the expected log carries all three
-    // registered lines in roster order (bash-file-read-guard is row 1,
-    // todo-continuation-enforcer row 2, empty-task-response-detector row 3).
+    // call instead of leaking a permanent fake into sibling tests. The other four
+    // real entries stay in place, so the expected log carries all five registered
+    // lines in roster order (bash-file-read-guard is row 1,
+    // todo-continuation-enforcer row 2, empty-task-response-detector row 3,
+    // session-notification row 4, background-notification row 5).
     const id = 'todo-continuation-enforcer'
     expect(HOOK_IDS).toContain(id)
     const previous = HOOK_REGISTRARS[id]
@@ -358,12 +367,17 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       'tools/post-execute',
       'agent/turn-stopping',
       'tools/post-execute',
+      'session/event',
+      'agent/status',
+      'session/event',
     ])
     expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
       EXPECTED_SUMMARY_LINE,
       '[omo-hooks] hook bash-file-read-guard registered on tools/post-execute',
       '[omo-hooks] hook todo-continuation-enforcer registered on agent/turn-stopping',
       '[omo-hooks] hook empty-task-response-detector registered on tools/post-execute',
+      '[omo-hooks] hook session-notification registered on session/event',
+      '[omo-hooks] hook background-notification registered on session/event',
     ])
   })
 
