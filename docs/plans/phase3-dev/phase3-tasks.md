@@ -4,7 +4,9 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **0/21 完成**（计划已立项，待实施）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）。
+> **状态**：📋 **1/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+>
+> **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。
 >
 > **编号**：`P3-T<n>`（Phase 3 - Task n）。工作包归属见计划书 §7。
 
@@ -12,17 +14,17 @@
 
 | # | 条件 | 判定 | 复核结果 |
 |---|---|---|---|
-| PRE-1 | 上游 OMO v4.19.4 可取到源码 | `git -C <omo> rev-parse v4.19.4^{commit}` 返回 `b072d279110bdda2c6ac2525d0d24dc54d16148a` | ☐ |
-| PRE-2 | v5.0.0 正式版**未**发布 → tag 选择闭合为 v4.19.4（D14 规则 3） | `npm view oh-my-openagent dist-tags --json` 的 `latest` 仍为 `4.19.4` | ☐ |
-| PRE-3 | 基线绿：`scripts/ci-local.sh` 8 门全绿 | 退出 0；记录基线（门 2 测试数、门 3 场景数、门 5 `checked`、门 6 断言数） | ☐ |
-| PRE-4 | installed dsh = pin 的 0.1.5-rc.1 | `dsh --version`；doctor-lite 基线 PASS | ☐ |
-| PRE-5 | 本地 OMO 检出只读可用 | `git -C ~/GithubRepo/oh-my-openagent ls-tree v4.19.4 packages/omo-opencode/src/hooks/` 非空；全程只用 `git show/ls-tree`，工作树不动 | ☐ |
+| PRE-1 | 上游 OMO v4.19.4 可取到源码 | `git -C <omo> rev-parse v4.19.4^{commit}` 返回 `b072d279110bdda2c6ac2525d0d24dc54d16148a` | ✅ 2026-09-19 实测：返回值与锚点逐字一致 |
+| PRE-2 | v5.0.0 正式版**未**发布 → tag 选择闭合为 v4.19.4（D14 规则 3） | `npm view oh-my-openagent dist-tags --json` 的 `latest` 仍为 `4.19.4` | ✅ 2026-09-19 实测：`latest=4.19.4`（`beta=5.0.0-beta.78`，非正式版） |
+| PRE-3 | 基线绿：`scripts/ci-local.sh` 8 门全绿 | 退出 0；记录基线（门 2 测试数、门 3 场景数、门 5 `checked`、门 6 断言数） | ✅ 2026-09-19 实测：8/8 门 PASS 退出 0；门 2 = **433 单测**；门 3 = **7 场景**；门 5 `checked=52`；门 6 = 19/19；门 8 = 3/3 proofs |
+| PRE-4 | installed dsh = pin 的 0.1.5-rc.1 | `dsh --version`；doctor-lite 基线 PASS | ✅ 2026-09-19 实测：`0.1.5-rc.1`；基线 8 门绿含门 4 doctor-lite |
+| PRE-5 | 本地 OMO 检出只读可用 | `git -C ~/GithubRepo/oh-my-openagent ls-tree v4.19.4 packages/omo-opencode/src/hooks/` 非空；全程只用 `git show/ls-tree`，工作树不动 | ✅ 2026-09-19 实测：ls-tree 返回完整 hooks/ 树（101 条目）；调研全程只读（R2 报告注记：检出的 2 个 ` M` 文件系 2026-08-17 既存 CRLF 漂移，非本次所为） |
 
 ---
 
 ## WP-0 调研核对（计划书 §3/§4.3/§4.4/§4.6，覆盖基线 §4）
 
-### [ ] P3-T1 — 全量 hook 清单 + DSH 事件面逐件复核
+### [x] P3-T1 — 全量 hook 清单 + DSH 事件面逐件复核
 
 - **产出**：回填后的 [hook 清单与覆盖基线](./phase3-hooks.md)（§4 待核清单 A/B/C 三组全部 🔍 转 ✅ 或更正）。
 - **做法**：
@@ -31,7 +33,7 @@
   3. **逐模块语义**（C 组）：移植组 32 模块逐个 `git show v4.19.4:<path>` 读实现，复核基线的"语义摘要/模式"列；上游有测试文件的登记其用例数（R-3 单测种子）；start-work 20 文件按"hook 语义 / 命令面胶水"逐文件划分（计划书 §4.5）。
   4. **warn-only 降级判定**：若 ① 证实 deny 决策形态不存在，P0 护栏降级 C 模式（warning）——**显式记入基线与踩坑**（R-2 的语义降级纪律）。
 - **判定**：✅ 基线 §4 A/B/C 三组全部闭环；移植组模块数从草案转实测（估算按此修正，计划书 §7 回填）；证据进 `.omo/evidence/`。
-- **证据**：（待填）
+- **证据**：2026-09-19 完成（5 个并行调研 sub-agent：deepseek-flash；R1/R3 首轮攒写丢失后按"骨架先行 + 增量回填"纪律重试成功——此教训记入委托 prompt 纪律）。① **A 组**：全树对账 = 101 条目/745 文件，清单漏列 3 目录/118 文件（`runtime-fallback` 59 / `rules-injector` 41 / `read-image-resizer` 18）已补登 S-28/29/30，8 处计数更正、S-05 理由更正；证据 `p3t1-tree-reconciliation.md`（裁定：修好后清单完整）。② **B 组**：Q-1 pre = allow/deny/ask（**无 advisory 形态**、参数 deepFreeze 禁改写）/ post = accept×2/block + additionalContexts / throw 全 fail-closed（限该次调用/该回合）；Q-2 turn-stopping = `agent.steer()` 副作用非投票（dsh-hooks-claude-code:292-307 先例）；Q-3 compaction 无 cordis 事件 + todo/write 非表面事件；Q-4 事件名映射（无 session.idle/error）；Q-5/Q-6 AGENTS.md 注入 DSH 原生覆盖、comment-checker core vendor 拿不到能力；证据 `p3t1-dsh-mechanisms.md`（含自检复核记录），仲裁抽核 6 处承重引用全部属实（PreToolDecision 联合 :419-427、deny 物化 :3127、turn-stopping :967、steer :792-794、todo/write :28、PostToolDecision :432-443）。③ **C 组**：移植组全部模块逐文件复核，模式更正 11 处；start-work 划分 = **20:0 全 Phase 3 侧**（命令面在 hooks/ 之外）；跳过组抽核 7 项（S-26/27 改判 DSH 原生等）；证据 `p3t1-upstream-p0-p3.md`（15 处草案更正 + 8 不确定项）/ `p3t1-upstream-p4ab.md` / `p3t1-upstream-p4cd.md`（17 处更正）/ `p3t1-startwork-split.md` / `p3t1-skip-verification.md`。④ **warn-only 降级判定**：deny 形态存在，**不触发降级**；但模式 C 机制前提被推翻（pre-execute 无 advisory）→ C 改落 post-execute `accept+additionalContexts`，已写进计划书 §4.2（DoD-d）。⑤ **仲裁修正回填**：移植组 32→15、WP-4 取消、P3-T8/T18 取消、WP-6 重排为 T14…T17；计划书/覆盖基线/本任务书同步更正。
 - **依赖**：PRE-1…PRE-5。**量级**：1 天。
 
 ---
@@ -88,19 +90,15 @@
 
 ### [ ] P3-T7 — 移植 `todo-continuation-enforcer` + `empty-task-response-detector`
 
-- **产出**：`src/hooks/todo-continuation-enforcer.ts`（E 模式打样）+ `src/hooks/empty-task-response-detector.ts`（A 模式）+ 单测。
-- **做法**：E 模式按 T1 核实的 `agent/turn-stopping` 投票协议实现"todo 未清 → 续行票"；**R-8 检查**：与 dsh-goal-round-driver 续行语义的关系逐字记录（重叠处以 DSH 原生为主、本 hook 收窄为补充）；todo 状态数据源 = `ctx.todo`（DSH 原生，关键约束——不读 OMO 存储形态）。
-- **判定**：✅ 单测覆盖：todo 未清投票续行 / 已清不投票 / 多 listener 合成（T1 协议）/ 空响应注入纠正；vitest 绿。
+- **产出**：`src/hooks/todo-continuation-enforcer.ts`（E 模式打样）+ `src/hooks/empty-task-response-detector.ts`（D 模式）+ 单测。
+- **做法**：E 模式按 P3-T1 实测实现——"todo 未清"判定后 `agent.steer(createUserMessage(...))` 写入 inbox（`dsh-hooks-claude-code/lib/index.js:292-307` 先例；**返回值无效，必须 steer**）；todo 状态数据源 = `ctx.todo`（DSH 原生，关键约束——其读 API 形状实施时先核，U-4）；**R-8 检查**：与 dsh-goal-round-driver 续行语义的关系逐字记录（重叠处以 DSH 原生为主、本 hook 收窄为补充）；`empty-task-response-detector` 移植**前置**：核实 dsh-tool-subagent 是否已有空结果等价提示（U-7），若有则按 DoD-d 改判跳过并记录。
+- **判定**：✅ 单测覆盖：todo 未清 steer 续行 / 已清不 steer / 不 steer 时回合自然关闭（对照）/ 空响应结果纠正；vitest 绿。
 - **证据**：（待填）
 - **依赖**：P3-T3。**量级**：4 小时。
 
-### [ ] P3-T8 — 移植 `todo-description-override` + `session-todo-status` + `task-reminder`
+### ~~P3-T8~~ — 取消（P3-T1 仲裁）
 
-- **产出**：三个 `src/hooks/*.ts`（D / F / A 模式）+ 单测。
-- **做法**：`todo-description-override`（D）：改写 todo 工具输出的触发条件与新文本按上游 4 文件逐字复核；`session-todo-status`（F）：`session/event` 观察 + 状态聚合（H-10 通知调度的数据源，WP-5 复用）；`task-reminder`（A）：注入文本 apply 时一次构建（模式纪律）。
-- **判定**：✅ 三模块单测各覆盖 T1 登记的上游用例；vitest 绿。
-- **证据**：（待填）
-- **依赖**：P3-T3。**量级**：4 小时。
+- **取消理由**：原三模块全部移出移植组——`todo-description-override` 实测为 opencode `tool.definition` hook（DSH 无该事件，S-31）；`session-todo-status` 实测为 helper（语义并入 H-10 session-notification，N-04）；`task-reminder` 上游 dead code 且依赖 OMO `task_*` 工具族（S-32）。证据：`.omo/evidence/p3t1-upstream-p0-p3.md` C-7/C-8/C-9。
 
 ### [ ] P3-T9 — e2e：todo 执行器场景
 
@@ -112,23 +110,11 @@
 
 ---
 
-## WP-4 P2 compaction 辅助（计划书 §4.3）
+## ~~WP-4 P2 compaction 辅助~~ —— 整组取消（P3-T1 仲裁）
 
-### [ ] P3-T10 — 移植 `compaction-context-injector` + `compaction-todo-preserver`
+> **取消理由**：`compaction-context-injector`（DSH 语义不适用：无 per-session 配置漂移、无注入接缝）与 `compaction-todo-preserver`（DSH 原生覆盖：`todo/write` 为非表面 log-only 事件，压缩不 shadow）均判跳过（DSH 原生）。证据：`.omo/evidence/p3t1-dsh-mechanisms.md` Q-3.3/Q-3.4、覆盖基线 §1 P2 组。
 
-- **产出**：两个 `src/hooks/*.ts` + 单测。
-- **做法**：挂点 = T1 对 `ctx.compaction` 可挂事件的结论（Q-3）；与 DSH 原生压缩**协作**而非取代（不碰 dsh-compaction 的触发/摘要逻辑，只做 OMO 语义的上下文保全）；若无对应事件，收窄为 session/event 观察 + 注入并记录语义降级。
-- **判定**：✅ 单测覆盖两模块核心路径 + 降级路径（如触发）；vitest 绿。
-- **证据**：（待填）
-- **依赖**：P3-T3。**量级**：3 小时。
-
-### [ ] P3-T11 — e2e：compaction 辅助场景
-
-- **产出**：`tests/e2e/` 新增 compaction 保全场景。
-- **做法**：剧本构造长会话触发压缩（沙箱压缩阈值按 T1 结论构造）→ 断言保全内容在压缩后上下文在场；触发不可构造时降级为 listener 级证明并记理由（诚实降级，非跳过）。
-- **判定**：✅ 门 3 绿（或降级证明 + 记录）。
-- **证据**：（待填）
-- **依赖**：P3-T10。**量级**：3 小时。
+### ~~P3-T10 / P3-T11~~ — 取消（理由同上）
 
 ---
 
@@ -136,11 +122,11 @@
 
 ### [ ] P3-T12 — 移植 `session-notification` + `background-notification`
 
-- **产出**：`src/hooks/session-notification.ts`（调度器 + 平台抽象 + **log 后端**；macOS 后端按 L4 计划，Windows 后端不移植 = D9）+ `src/hooks/background-notification.ts` + 单测。
-- **做法**：事件源 = T1/Q-4 结论（`session/event` 类型清单）；调度语义（去抖/完成判定/错误通知）按上游逐文件复核；平台抽象层声明后端接口，log 后端 CI 可验，macOS 后端代码移植但仅 L4 手工验证（R-4）；数据源复用 H-05 状态聚合（如适用）。
-- **判定**：✅ 单测覆盖调度逻辑与 log 后端；平台后端的抽象注入可替换；vitest 绿。
+- **产出**：`src/hooks/session-notification.ts`（调度器 + 平台抽象 + **Linux 后端 notify-send（CI 可验载体）**；macOS 后端代码移植、L4 手工验证；Windows 后端不移植 = D9）+ `src/hooks/background-notification.ts` + 单测。
+- **做法**：事件源 = P3-T1 实测（完成/错误 = `session/event` 的 `turn/end` + `reason.kind`，注意 `max-tokens` reason 的精度陷阱；idle = `agent/status(status==='idle')`）；调度语义（去抖/完成判定/错误通知）按上游逐文件复核（21 文件 = 16 实现 + 5 测试）；**H-05 helper 语义（`hasIncompleteTodos`/`hasPendingSessionWork` 谓词）并入本模块**（N-04）；`background-notification` 前置：`ctx.jobs` 事件面核实；平台抽象层声明后端接口，Linux 后端 CI 可验，macOS 后端仅 L4（R-4）；跨事件状态以 `ctx.effect` 承载（纪律⑤）。
+- **判定**：✅ 单测覆盖调度逻辑 + 两谓词 + Linux 后端命令构造；平台后端抽象注入可替换；vitest 绿。
 - **证据**：（待填）
-- **依赖**：P3-T3 + P3-T8（H-05）。**量级**：5 小时。
+- **依赖**：P3-T3。**量级**：5 小时。
 
 ### [ ] P3-T13 — e2e：通知场景
 
@@ -152,47 +138,41 @@
 
 ---
 
-## WP-6 P4/P5 其余模块 + ulw-execute（计划书 §4.3/§4.5；按模式聚批）
+## WP-6 P4/P5 其余模块 + ulw-execute（计划书 §4.3/§4.5；P3-T1 实测重排：9 模块 = 8 P4 + H-32）
 
-### [ ] P3-T14 — 批 A：D 模式 validator/recovery（4 模块）
+### [ ] P3-T14 — 批 A：D 模式 error-recovery + truncator（3 模块）
 
-- **产出**：`src/hooks/`：`tool-pair-validator.ts`、`plan-format-validator.ts`、`edit-error-recovery.ts`、`json-error-recovery.ts` + 单测 + e2e。
-- **做法**：四模块共享 D 模式脚手架（T6 打样的 post-execute 夹具）；`tool-pair-validator`（8 文件）的配对规则表逐字复核上游；上游测试用例移植为单测种子。
-- **判定**：✅ 每模块单测 + e2e 各 ≥1 场景（违规触发 + 对照放行）；门 2/3 绿。
+- **产出**：`src/hooks/`：`edit-error-recovery.ts`、`json-error-recovery.ts`、`tool-output-truncator.ts` + 单测 + e2e。
+- **做法**：按 R3 批内排序（edit-error-recovery 58 行零状态 → json-error-recovery → truncator）；**前置**：① DSH `edit`/`write` 工具错误文案逐字核实（错误串表与 19 项排除表能否命中——实施期项）；② truncator 的"剩余 token"输入面核实（dsh-compaction-basic token meter 的暴露面；无暴露面则退化为固定阈值并记差异）；三模块共享 T6 打样的 post-execute 夹具；上游测试用例移植为单测种子（R-3：edit 9 / json 12 / truncator 7+16）。
+- **判定**：✅ 每模块单测 + e2e 各 ≥1 场景（触发 + 对照不触发）；门 2/3 绿。
 - **证据**：（待填）
 - **依赖**：P3-T6（模式夹具）。**量级**：5 小时。
 
-### [ ] P3-T15 — 批 B：D 模式 truncator/checker + E stop-guard（4 模块）
+### [ ] P3-T15 — 批 B：D 模式注入/提醒类（3 模块）
 
-- **产出**：`src/hooks/`：`tool-output-truncator.ts`、`question-label-truncator.ts`、`comment-checker.ts`、`stop-continuation-guard.ts` + 单测 + e2e。
-- **做法**：`comment-checker` 按 T1/Q-5 裁定（纯 listener / vendor `comment-checker-core` 例外——例外则 Phase 1 全套合规随行）；`stop-continuation-guard` 为 Phase 4 stop-continuation 命令的 listener 半（命令面引用不写）。
-- **判定**：✅ 同 T14 口径；若 vendor 例外，`verify-licenses` 与 NOTICES 同步绿。
-- **证据**：（待填）
-- **依赖**：P3-T6。**量级**：5 小时。
-
-### [ ] P3-T16 — 批 C：A 注入类 + F 观察类（7 模块）
-
-- **产出**：`src/hooks/`：`monitor-status-injector.ts`、`directory-readme-injector.ts`、`agent-usage-reminder.ts`、`task-resume-info.ts`、`sisyphus-junior-notepad.ts`、`unstable-agent-babysitter.ts`、`fsync-skip-warning.ts`（T1 若判平台耦合则移跳过组，本批 -1）+ 单测 + e2e。
-- **做法**：A 类注入文本 apply 时一次构建；`monitor-status-injector` 经 `agent/status` 观察 → 注入（模式内组合，注释说明）；`sisyphus-junior-notepad` 的存储面用 `ctx.jobs`（§1.2 映射，DSH 原生）。
+- **产出**：`src/hooks/`：`directory-readme-injector.ts`、`agent-usage-reminder.ts`、`task-resume-info.ts` + 单测 + e2e。
+- **做法**：`directory-readme-injector`（8 文件）注意与 dsh-agent-instructions 的边界（其候选名 = AGENTS.md/CLAUDE.md，不含 README，无重叠——覆盖基线 H-21）；`task-resume-info` **前置**：复核是否依赖 OMO task 工具族语义，若是则按 DoD-d 改判跳过并记录（覆盖基线 H-23）；注入文本类静态内容 apply 时一次构建（纪律④）。
 - **判定**：✅ 每模块单测 + e2e；门 2/3 绿。
 - **证据**：（待填）
-- **依赖**：P3-T6。**量级**：6 小时。
+- **依赖**：P3-T6。**量级**：4 小时。
 
-### [ ] P3-T17 — 批 D：B/C 门类 + atlas（5 模块）
+### [ ] P3-T16 — 批 C：B/D 门类（2 模块）
 
-- **产出**：`src/hooks/`：`webfetch-redirect-guard.ts`、`prometheus-md-only.ts`（T1 复议结论若维持不镜像则移跳过组并记理由）、`notepad-write-guard.ts`、`tasks-todowrite-disabler.ts`、`atlas.ts` + 单测 + e2e。
-- **做法**：B/C 决策形态复用 T4/T5 打样；`atlas` 的 hook 语义按 T1 逐文件定性（与 Phase 2 atlas persona/委派的边界：hook 层不重复 persona 职责）。
-- **判定**：✅ 每模块单测 + e2e；门 2/3 绿。
+- **产出**：`src/hooks/`：`webfetch-redirect-guard.ts`（B + D）+ `prometheus-md-only.ts`（B + D）+ 单测 + e2e。
+- **做法**：B 段复用 T4 打样的 deny 决策形态；`webfetch-redirect-guard` 的 deny reason 携带最终 URL 指引（覆盖基线 H-24）；`prometheus-md-only` 的 B 段（非 .md 写 deny，上游 hook.ts:40-62 可 1:1）+ D 段劝导（注入警告段无附言缝 → post-execute 附加，H-26）；pre/post 状态配对用 `exec.callId`/`exec.token` 原生关联（纪律⑤）。
+- **判定**：✅ 每模块单测 + e2e（deny 生效 + 对照放行）；门 2/3 绿。
 - **证据**：（待填）
-- **依赖**：P3-T6。**量级**：5 小时。
+- **依赖**：P3-T4（B 打样）+ P3-T6。**量级**：4 小时。
 
-### [ ] P3-T18 — ulw-execute（start-work hook 语义，H-32）
+### [ ] P3-T17 — ulw-execute（start-work hook 语义，H-32）
 
 - **产出**：`src/hooks/ulw-execute.ts`（+ 必要的 `ulw-execute/` 子模块）+ 单测 + e2e。
-- **做法**：严格按 T1 的"hook 语义 / 命令面胶水"划分移植（计划书 §4.5）；命名锚点全用 `ulw-execute`；激活目标 = atlas（Phase 2 已就位）；脚手架/notepad 存储面用 `ctx.jobs`；`/ulw-execute` 命令引用一律不写（Phase 4）。
+- **做法**：按 P3-T1 的 20:0 划分移植（命令面在 hooks/ 之外，天然 Phase 4）；命名锚点全用 `ulw-execute`；激活目标 = atlas（Phase 2 已就位）；**激活信号以 DSH 原生形态定义**（指挥显式委派/工作计划意图 pre-step 检测）——上游命令模板 marker（`<session-context>` + "You are starting an Atlas work session."）随 Phase 4 模板交付，届时对接（R-10，常量出处 `features/builtin-commands/templates/start-work.ts`）；依赖 boulder-state 的部分（session-plan-affinity 等）记跳过段；脚手架/notepad 存储面用 `ctx.jobs`；`/ulw-execute` 命令引用一律不写（Phase 4）。
 - **判定**：✅ 单测覆盖激活检测 + 上下文构建核心路径；e2e 场景展示"工作计划意图 → atlas 激活语义"；门 2/3 绿。
 - **证据**：（待填）
-- **依赖**：P3-T14…T17（模式全打样后）+ P3-T1（划分）。**量级**：6 小时。
+- **依赖**：P3-T14…T16（模式全打样后）+ P3-T1（划分）。**量级**：6 小时。
+
+### ~~P3-T18~~ — 取消（P3-T1 仲裁：WP-6 批次由 5 缩为 4，本任务被 T14…T17 吸收）
 
 ---
 
@@ -204,7 +184,7 @@
 - **做法**：c 组新断言：cordis.yml 恰好 2 个 insert 行、omo-hooks 每 `src/hooks/*.ts` 含署名头（上游源标注）、manifest ↔ hooks 文件集合一致、c01–c10 零改动；probe 断言全量 `[omo-hooks] hook … registered` 行 + 汇总行；prove 脚本对 write-guard 做"deny 决策真实生效 + listener 抛错工具不死"的 session 级证明（R-9，prove-explore-toolfilter.mjs 先例）。
 - **判定**：✅ 门 4/6/8 绿；新断言逐条列出对比（只加严）。
 - **证据**：（待填）
-- **依赖**：P3-T18（全 hook 就位）。**量级**：4 小时。
+- **依赖**：P3-T17（全 hook 就位）。**量级**：4 小时。
 
 ---
 
