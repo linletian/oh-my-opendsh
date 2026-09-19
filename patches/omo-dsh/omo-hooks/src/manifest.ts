@@ -1,4 +1,4 @@
-// manifest.ts — Phase 3 SINGLE source of truth for the 15-hook port roster
+// manifest.ts — Phase 3 SINGLE source of truth for the 14-hook port roster
 // (docs/plans/phase3-dev/phase3-plan.md §4.1; task P3-T2; data table
 // docs/plans/phase3-dev/phase3-hooks.md §1 移植组).
 //
@@ -27,19 +27,29 @@
 // (baseline anchor commit b072d279110bdda2c6ac2525d0d24dc54d16148a; PRE-1).
 // `*.test.ts` files go to `upstreamTestFiles` — they are the R-3 unit-test
 // seeds — and `AGENTS.md` is excluded from both lists (N-03: that file
-// disagrees with the code in several places). Among the 15 port modules exactly
+// disagrees with the code in several places). Among the 14 port modules exactly
 // ONE upstream directory ships an `AGENTS.md`: H-03's
 // `todo-continuation-enforcer/` (34 ls-tree entries = 17 实现 + 16 测试 +
-// 1 AGENTS.md, so its "33 文件" count already excludes the doc); H-01 (6 files)
-// and H-32 (20 files) contain none, so no row count in this table needs an
-// AGENTS.md correction. Reproduce the audit with
+// 1 AGENTS.md, so its "33 文件" count already excludes the doc); H-32 (20 files)
+// contains none, so no row count in this table needs an AGENTS.md correction.
+// Reproduce the audit with
 //   git -C <omo> ls-tree -r --name-only v4.19.4 packages/omo-opencode/src/hooks/ \
 //     | grep -E 'hooks/[^/]+/AGENTS\.md$'
 // → 12 hits repo-wide, H-03 the only one inside the port group.
 //
+// H-01 REMOVED (P3-T5 / WP-2 开工仲裁, plan revision 2026-09-19). The
+// `write-existing-file-guard/` row (H-01, formerly the first P0 row and the
+// reason P3-T4 existed) is NOT in this roster: `dsh-fs-observation-policy` is
+// mounted in the base composition (dsh-base:257-258) and already implements
+// "refuse to overwrite an unread file" plus version CAS staleness detection
+// (`FS_STALE_VERSION`, which OMO has no equivalent of — strictly stronger).
+// OMO's residue (one-shot tickets, `.omo` exemption, overwrite stripping) has
+// no port value. The port group is therefore 14, not 15, and the plan's B-mode
+// pilot moved to T16.
+//
 // ONE-WAY SYNC DISCIPLINE. phase3-hooks.md §1 is the human-readable coverage
 // baseline and this file is the machine-readable one; they carry the SAME
-// facts. The 15 rows are 1:1 with the coverage baseline's H-01…H-32 port group
+// facts. The 14 rows are 1:1 with the coverage baseline's H-02…H-32 port group
 // (each row's comment names its baseline line), and the consistency test
 // (P3-T20, phase3-plan.md §4.7 L1(③)) asserts the two agree. When a port
 // lands, the EDIT ORDER IS: phase3-hooks.md (the doc is the auditable record)
@@ -106,13 +116,15 @@ export const manifestEventSet: ReadonlySet<string> = new Set<string>(MANIFEST_EV
 export const manifestModeSet: ReadonlySet<string> = new Set<string>(MANIFEST_MODES)
 
 /**
- * `status` is an open string on purpose. Today it is always 'pending' — no
- * port has landed yet (phase3-hooks.md §5: 已移植 0/15) — but P3-T4…T17 flip
- * individual rows one at a time, and phase3-plan.md §4.8 words the flipped
- * value as 已移植（场景 xxx）: the coverage-list status embeds the row's e2e
- * scenario name, so the vocabulary is not a fixed two-value set that a closed
- * union could spell. The T20 consistency test pins the actual vocabulary
- * against the coverage list instead.
+ * `status` is an open string on purpose. Today it is still always 'pending'
+ * (phase3-hooks.md §5: 已移植 0/14) even though P3-T5 landed the first listener
+ * — a row flips only when listener + unit test + e2e have ALL landed (H-02's
+ * e2e is P3-T6), and the edit order below is doc-first, with docs/ out of scope
+ * for the port tasks. P3-T5…T17 flip individual rows one at a time, and
+ * phase3-plan.md §4.8 words the flipped value as 已移植（场景 xxx）: the
+ * coverage-list status embeds the row's e2e scenario name, so the vocabulary is
+ * not a fixed two-value set that a closed union could spell. The T20 consistency
+ * test pins the actual vocabulary against the coverage list instead.
  */
 export type HookManifestStatus = string
 
@@ -141,16 +153,17 @@ export interface HookManifestEntry {
 }
 
 /**
- * The P3-T1 port count (phase3-hooks.md §5: 移植组 = 15). Named and exported so
- * the expectation is stated ONCE and `validateManifest` can reject a dropped or
- * duplicated row without a magic number in the middle of the checks — the
- * "15 rows really exist" guard is this constant (check 5) plus the uniqueness
+ * The P3-T5 port count (phase3-hooks.md §5: 移植组 = 14 — the P3-T1 "15" minus
+ * H-01, which the WP-2 arbitration moved to DSH-native skip). Named and exported
+ * so the expectation is stated ONCE and `validateManifest` can reject a dropped
+ * or duplicated row without a magic number in the middle of the checks — the
+ * "14 rows really exist" guard is this constant (check 5) plus the uniqueness
  * check.
  */
-export const EXPECTED_HOOK_COUNT = 15
+export const EXPECTED_HOOK_COUNT = 14
 
 /**
- * The 15-row port roster, in ROADMAP priority order (P0 文件护栏 → P1 todo/goal
+ * The 14-row port roster, in ROADMAP priority order (P0 文件护栏 → P1 todo/goal
  * 执行器 → P3 会话通知 → P4 其余 → P5 ulw-execute) — the same order as
  * phase3-hooks.md §1, so the T3 boot-marker log is deterministic and the
  * coverage-list diff is a line-by-line read.
@@ -164,34 +177,9 @@ export const EXPECTED_HOOK_COUNT = 15
  * literal-typed where they are read (`HOOK_IDS` below).
  */
 const MANIFEST_ROWS = [
-  // H-01 — phase3-hooks.md §1 P0 行（上游 module = write-existing-file-guard/）.
-  // 上游目录 6 文件 = 4 实现 + 2 测试；`index.ts` 是 hook 组装入口，
-  // `tool-execute-before-handler.ts` 承载"写前必须读过"的判定主体，
-  // `session-read-permissions.ts` 承载 session 级读过集合。
-  // 行为差异（基线 H-01 已记录故此处摘要必须沿用）：上游在拒绝/放行时剥离
-  // `overwrite` 参数（输入改写），而 DSH 的 tools/pre-execute 参数是
-  // deepFreeze 的（p3t1-dsh-mechanisms Q-1）——差异在 T4/T6 的 e2e 断言与
-  // 覆盖清单只记录不复制。
-  {
-    id: 'write-existing-file-guard',
-    upstreamFiles: [
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/hook.ts',
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/index.ts',
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/session-read-permissions.ts',
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/tool-execute-before-handler.ts',
-    ],
-    upstreamTestFiles: [
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/index.test.ts',
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/lazy-canonical-path-init.test.ts',
-    ],
-    event: 'tools/pre-execute',
-    mode: 'B',
-    summary:
-      '覆写已存在文件前须先读过（session 读过集合 + deny 决策权威拒绝）；DSH 禁参数改写故不剥离 overwrite',
-    e2eScenario: 'write-guard-denied',
-    status: 'pending',
-  },
-  // H-02 — phase3-hooks.md §1 P0 行（单文件模块）。
+  // H-02 — phase3-hooks.md §1 P0 行（单文件模块）。这是剔除 H-01 后的首行
+  // （H-01/`write-existing-file-guard` 经 WP-2 仲裁改判 DSH 原生跳过，见本文件
+  // 头部 "H-01 REMOVED" 段）。
   // ⚠️ 上游语义是**劝导非阻断**（`output.message = WARNING_MESSAGE`），而
   // DSH 的 pre-execute 无 advisory 形态（P3-T1 更正，计划书 §4.2 模式 C 行），
   // 故 event 落 tools/post-execute、以 accept+additionalContexts 把 warning
@@ -565,7 +553,7 @@ const MANIFEST_ROWS = [
 ] as const satisfies readonly HookManifestEntry[]
 
 /**
- * The 15-row port roster as `readonly HookManifestEntry[]`, in priority order.
+ * The 14-row port roster as `readonly HookManifestEntry[]`, in priority order.
  * Widened for the same reason roster.ts widens ROSTER: `as const` is kept on
  * the authored table for literal id inference above, while consumers get the
  * declared shape.
@@ -573,7 +561,7 @@ const MANIFEST_ROWS = [
 export const HOOK_MANIFEST: readonly HookManifestEntry[] = MANIFEST_ROWS
 
 /**
- * The 15 port ids, in roster order, derived from the rows above (so a typo in
+ * The 14 port ids, in roster order, derived from the rows above (so a typo in
  * an `id` cannot silently widen the list). The T3 boot marker logs exactly
  * these, in this order.
  */
@@ -594,7 +582,7 @@ export const HOOK_IDS: readonly string[] = MANIFEST_ROWS.map((entry) => entry.id
  *      `upstreamTestFiles`, which is the R-3 seed column) and none named
  *      `AGENTS.md` (N-03: not a hook source);
  *   4. `id` unique across the roster;
- *   5. the row count equals EXPECTED_HOOK_COUNT — the "15 rows really exist"
+ *   5. the row count equals EXPECTED_HOOK_COUNT — the "14 rows really exist"
  *      assertion; without it a silently truncated table would validate.
  *
  * The AGENTS.md check matches on the path BASENAME, not a suffix substring, so

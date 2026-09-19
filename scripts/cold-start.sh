@@ -137,8 +137,9 @@ boot_exit=$?
 
 # Positive signal: our plugins actually loaded (T6 dropped the "(no-op)"
 # suffix — the plugin now performs concerto preset registration). P3-T3 adds the
-# hooks half: `[omo-hooks] loaded: manifest 15 entries (…)` is the summary boot
-# marker emitted after validateManifest accepted the roster.
+# hooks half: `[omo-hooks] loaded: manifest 14 entries (…)` is the summary boot
+# marker emitted after validateManifest accepted the roster (14 since P3-T5
+# removed H-01; P3-T5 also made it emit one `registered` line).
 grep -q "\[omo-agents\] loaded" "$BOOT_LOG" \
   || fail "plugin load marker missing from boot log (plugin never mounted?)"
 grep -q "\[omo-hooks\] loaded" "$BOOT_LOG" \

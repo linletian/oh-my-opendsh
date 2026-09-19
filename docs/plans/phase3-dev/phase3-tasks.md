@@ -66,10 +66,12 @@
 
 ### [ ] P3-T5 — 移植 `bash-file-read-guard`（C 模式打样）+ manifest 剔除 H-01
 
+### [x] P3-T5 — 移植 `bash-file-read-guard`（C 模式打样）+ manifest 剔除 H-01
+
 - **产出**：`src/hooks/bash-file-read-guard.ts`（署名头：上游 `bash-file-read-guard.ts` 逐字标注 + "语义移植"声明）+ 单测；`src/manifest.ts` 剔除 H-01 条目（14 条目）并同步全部变异敏感网。
 - **做法**：① 上游语义 = 劝导非阻断；DSH 落点 = `tools/post-execute` 返回 `{kind:'accept', additionalContexts:[劝导 UserMessage]}`（P3-T1 模式 C 更正：pre-execute 无 advisory 形态）；正则三模式（cat/head/tail 简单读取）逐字复核上游后移植（`git show v4.19.4:packages/omo-opencode/src/hooks/bash-file-read-guard.ts`）；管道/重定向/带选项变体的边界用例与上游对齐；注册函数填入 HOOK_REGISTRARS（T3 扩展点）；listener 体自包 try/catch、异常时 `return next()`（纪律②——post-execute throw 会吃掉整次成功结果，R-9）。② manifest 剔除 H-01（write-existing-file-guard 改判 S-46，DSH 原生覆盖）——同步：条目数 15→14、manifest.test.ts 硬编码 id 集合与计数、registration.test.ts 的 EXPECTED_SUMMARY_LINE 事件计数（pre-execute 3→2）、其他引用 H-01 的断言/注释。
 - **判定**：✅ 单测覆盖上游全部模式 + 负例（`cat file | grep` 不触发、`cat -n` 不触发——以上游正则逐字复核为准）+ additionalContexts 内容契约 + 非 bash 工具不受影响 + listener 异常吞没且结果不变；`pnpm typecheck` 与 `pnpm vitest run` 全绿。
-- **证据**：（待填）
+- **证据**：2026-09-19 完成（deepseek-flash，1 首轮 + 1 修复轮）。产出：src/hooks/bash-file-read-guard.ts（首个真实 listener——三条 FILE_READ_PATTERNS 与判定函数**逐字移植**上游，劝导文案语义移植：删 hash anchors 半句并注记理由（DSH read 无 hashline 锚、Phase 6 决策）；C 模式落 tools/post-execute `{kind:'accept', additionalContexts:[UserMessage]}`，UserMessage 形态镜像 hard-blocks 先例；负例含裸 cat/多操作数/管道/重定向/带选项）+ 13 新单测（omo-hooks 计 58）+ HOOK_REGISTRARS 首项填入 + manifest 14 条目（H-01 剔除，残留仅合理注记）+ 变异敏感网同步（EXPECTED_HOOK_COUNT 15→14、EXPECTED_SUMMARY_LINE pre-execute 3→2、注册项 0→1 现实）。bash 工具名实测：`dsh-tool-bash/lib/index.js:260` 与 `dsh-tool-bash-persistent/lib/index.js:330` 均 `name: "bash"`。**双评审**：Kimi 轮1 **APPROVE**（3 MINOR 注释级）+ mcode 轮1 **1 项 P2**（probe 只断摘要行未断 registered 行——HOOK_REGISTRARS 漂回空对象时 probe 不红的锚点缺口，仲裁采纳）→ 修复轮（probe 追加 registered 行硬断言、期望串从 boot-markers.ts 同源派生 + 负例注释对齐；反跑验证新断言非真空）→ **Kimi 轮2 APPROVE + mcode 轮2 APPROVE**。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 58/58、probe 实跑 exit 0。**仲裁记录**：① 编码 agent 顺手同步 3 处脚本注释 15→14 → 接受（与剔除一致的注释级）；② Kimi 问"C 模式短路效应"（触发时不调 next()，后续 post-execute listener 对该次调用被跳过）→ 登记设计注记：T7+ D 模式 hook 均不作用于成功 cat 结果，碰撞面为零，无需链式合并；③ H-02 的 manifest status 待 T6 e2e 后翻转（纪律保持）。
 - **依赖**：P3-T3。**量级**：3 小时。
 
 ### [ ] P3-T6 — e2e：文件护栏场景（C 模式 e2e 打样）

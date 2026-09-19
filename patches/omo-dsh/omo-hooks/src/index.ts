@@ -21,28 +21,33 @@
 // would turn a roster plugin into a junk drawer. The feasibility report §4.4
 // topology already reserved patches/omo-dsh/omo-hooks/.
 //
-// P3-T2 delivered the package shape + manifest.ts; P3-T3 (this revision) MOUNTS
-// it. apply() now validates the manifest, logs the summary boot marker, and runs
-// the per-hook registration loop. The loop's implementation registry
-// (HOOK_REGISTRARS) is deliberately EMPTY: no hook has been ported yet
-// (phase3-hooks.md §5: 已移植 0/15), and the two hooks that will land first
-// (P3-T4/T5) define the shape. An empty registry is honest — the plugin mounts,
-// the summary line proves it, and no `registered` line is logged because no
-// listener exists. T4+ fill the registry one entry at a time; nothing else in
-// this file changes at that point.
+// P3-T2 delivered the package shape + manifest.ts; P3-T3 mounts it; P3-T5 (this
+// revision) lands the FIRST implementation. apply() validates the manifest, logs
+// the summary boot marker, and runs the per-hook registration loop; the loop's
+// implementation registry (HOOK_REGISTRARS) now carries its first entry —
+// 'bash-file-read-guard', the C-mode pilot (hooks/bash-file-read-guard.ts) — so
+// exactly one `registered` line is logged after the summary. The remaining 13
+// rows are filled one task at a time (next extension point: T7); nothing else in
+// this file changes when a row lands.
+//
+// Note the roster is 14 entries, not 15: P3-T5's other half is the WP-2
+// arbitration that REMOVED H-01 (write-existing-file-guard) from the port group
+// — dsh-fs-observation-policy already covers "overwrite an unread file" natively
+// and strictly more (manifest.ts header; plan revision 2026-09-19).
 //
 // BOOT-MARKER CONTRACT (probe / cold-start assertion anchors; the pure
 // formatters live in boot-markers.ts, whose header carries the full grammar —
 // KEEP THESE FORMATS STABLE and extend the probe, never the format):
-//   * `[omo-hooks] loaded: manifest 15 entries (pre-step=<n>, pre-execute=<n>,
+//   * `[omo-hooks] loaded: manifest 14 entries (pre-step=<n>, pre-execute=<n>,
 //      post-execute=<n>, turn-stopping=<n>, session/event=<n>, status=<n>)`
 //     — ONE line per boot, AFTER validateManifest accepted the roster. Every
 //       count is DERIVED from HOOK_MANIFEST (boot-markers.ts), never hard-coded.
 //       cold-start.sh and scripts/concerto-mode-probe.sh grep the
-//       `[omo-hooks] loaded` prefix.
+//       `[omo-hooks] loaded` prefix (the probe derives the full expected line
+//       from the plugin's own modules, so it cannot drift).
 //   * `[omo-hooks] hook <id> registered on <event>`
 //     — one line per hook whose registrar is implemented AND returned cleanly.
-//       Empty set today (registry empty); the loop that emits it is in place.
+//       One such line today ('bash-file-read-guard'); T7+ add the rest.
 //   * `[omo-hooks] hook <id> FAILED: <describeError>`
 //     — loud-but-non-fatal: the failing hook is named and the loop continues
 //       (P2-T16 precedent — one broken hook never suppresses the others).
@@ -87,6 +92,7 @@ import {
   formatLoadedSummaryLine,
   formatManifestValidationFailedLine,
 } from './boot-markers.ts'
+import { registerBashFileReadGuard } from './hooks/bash-file-read-guard.ts'
 
 export const name = 'omo-hooks'
 
@@ -138,17 +144,23 @@ export type HookRegistrar = (
 ) => HookDisposer | void
 
 /**
- * The implementation registry — the ONE extension point T4+ fill. Keys are
- * manifest ids, so a row's implementation and its declared event/scenario stay
- * joined by the manifest (a test asserts every key is a real manifest id).
+ * The implementation registry — the ONE extension point each port task fills.
+ * Keys are manifest ids, so a row's implementation and its declared
+ * event/scenario stay joined by the manifest (a test asserts every key is a
+ * real manifest id).
  *
- * EMPTY ON PURPOSE in P3-T3: no hook has been ported (phase3-hooks.md §5,
- * 已移植 0/15). TODO(P3-T4+): add one entry per ported hook, e.g.
- *   'write-existing-file-guard': (ctx, entry) => { ctx.on(entry.event, listener) },
- * one hook per task, keeping disciplines ①–④ above. Nothing else in this file
+ * ONE ENTRY as of P3-T5 — the C-mode pilot:
+ *   'bash-file-read-guard': registerBashFileReadGuard (hooks/bash-file-read-guard.ts),
+ * which wires its listener through `ctx.on` and returns nothing (the preferred
+ * channel — cordis scopes it to this fiber, so the loop has no disposer to
+ * forward). TODO(P3-T7+): add one entry per ported hook, the same way —
+ *   'todo-continuation-enforcer': registerTodoContinuationEnforcer, ...
+ * one task per hook, keeping disciplines ①–④ above. Nothing else in this file
  * needs to change when a row lands.
  */
-export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {}
+export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
+  'bash-file-read-guard': registerBashFileReadGuard,
+}
 
 /**
  * The registration loop, exported so its loud-but-non-fatal behaviour is

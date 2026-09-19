@@ -4,7 +4,7 @@
 // WHY EVERY EXPECTATION BELOW IS HARD-CODED. The point of this suite is
 // mutation sensitivity: a test that derives its expectation from manifest.ts
 // agrees with ANY drift in manifest.ts and is therefore worthless. So the
-// expected id set, the hard-coded spot-checked rows and the 15-count are transcribed
+// expected id set, the hard-coded spot-checked rows and the 14-count are transcribed
 // by hand from the coverage baseline, exactly like tests/omo-agents/roster.test.ts
 // transcribes phase2-roster.md §1 总表. If a row changes, THIS file must be
 // edited in the same commit — that is the intended friction (the plan §4.1
@@ -29,11 +29,12 @@ import {
 
 /**
  * phase3-hooks.md §1 移植组 ids, in priority order, transcribed by hand
- * (H-01, H-02, H-03, H-07, H-10, H-11, H-14, H-15, H-16, H-21, H-22, H-23,
- * H-24, H-26, H-32 → their v5-named listener ids).
+ * (H-02, H-03, H-07, H-10, H-11, H-14, H-15, H-16, H-21, H-22, H-23,
+ * H-24, H-26, H-32 → their v5-named listener ids). H-01
+ * (`write-existing-file-guard`) is deliberately ABSENT: WP-2/P3-T5 moved it to
+ * the DSH-native skip list (dsh-fs-observation-policy covers it), 15 → 14.
  */
 const EXPECTED_IDS: readonly string[] = [
-  'write-existing-file-guard',
   'bash-file-read-guard',
   'todo-continuation-enforcer',
   'empty-task-response-detector',
@@ -111,21 +112,22 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
   it('① accepts the real HOOK_MANIFEST as currently authored', () => {
     // Non-vacuous by construction, not by this line: validateManifest's first
     // check is the EXPECTED_HOOK_COUNT equality (manifest.ts check 5), so an
-    // empty table throws "expected 15 hook entries, got 0" rather than passing
+    // empty table throws "expected 14 hook entries, got 0" rather than passing
     // a bare call. The explicit length assertion below documents that intent
     // for the reader.
     expect(HOOK_MANIFEST.length).toBeGreaterThan(0)
     expect(() => validateManifest(HOOK_MANIFEST)).not.toThrow()
   })
 
-  it('⑥ declares exactly 15 entries — the P3-T1 port-group count', () => {
-    // Pins phase3-hooks.md §5 (移植组 = 15). Without the non-empty assertion a
-    // dropped collection (suite never ran) would look like a green.
-    expect(HOOK_MANIFEST.length).toBe(15)
+  it('⑥ declares exactly 14 entries — the P3-T5 port-group count (15 minus H-01)', () => {
+    // Pins phase3-hooks.md §5 after the WP-2 arbitration removed H-01. Without
+    // the non-empty assertion a dropped collection (suite never ran) would look
+    // like a green.
+    expect(HOOK_MANIFEST.length).toBe(14)
     expect(HOOK_MANIFEST.length).toBe(EXPECTED_HOOK_COUNT)
   })
 
-  it('③ ids equal the hard-coded 15-id list, in priority order', () => {
+  it('③ ids equal the hard-coded 14-id list, in priority order', () => {
     expect(HOOK_IDS).toEqual([...EXPECTED_IDS])
     expect([...new Set(HOOK_IDS)].length).toBe(EXPECTED_IDS.length)
   })
@@ -148,30 +150,36 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     expect([...manifestModeSet]).toEqual([...MANIFEST_MODES])
   })
 
-  it('every row starts pending — 0/15 ported at P3-T2 (coverage baseline §5)', () => {
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending').length).toBe(15)
+  it('every row starts pending — 0/14 ported at P3-T5 (code landed, e2e not yet)', () => {
+    expect(hooksByStatus(HOOK_MANIFEST, 'pending').length).toBe(14)
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').length).toBe(0)
   })
 })
 
 describe('P3-T2 HOOK_MANIFEST — spot checks (hard-coded against phase3-hooks.md)', () => {
-  it('④ write-existing-file-guard is the B half on tools/pre-execute', () => {
-    const entry = HOOK_MANIFEST.find((row) => row.id === 'write-existing-file-guard')
+  it('④ the removed H-01 row really is gone (no write-existing-file-guard)', () => {
+    // WP-2/P3-T5: dsh-fs-observation-policy covers the write-before-read guard
+    // natively (and adds version CAS staleness detection), so the row must NOT
+    // reappear without a plan-level reversal.
+    expect(HOOK_MANIFEST.some((row) => row.id === 'write-existing-file-guard')).toBe(false)
+    expect(HOOK_IDS).not.toContain('write-existing-file-guard')
+    expect(HOOK_MANIFEST.some(
+      (row) => row.upstreamFiles.some((file) => file.includes('write-existing-file-guard')),
+    )).toBe(false)
+  })
+
+  it('④ bash-file-read-guard is the C half on tools/post-execute (the new first row)', () => {
+    const entry = HOOK_MANIFEST.find((row) => row.id === 'bash-file-read-guard')
     expect(entry).toBeDefined()
-    expect(entry?.mode).toBe('B')
-    expect(entry?.event).toBe('tools/pre-execute')
+    expect(entry?.mode).toBe('C')
+    expect(entry?.event).toBe('tools/post-execute')
     expect(entry?.upstreamFiles).toEqual([
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/hook.ts',
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/index.ts',
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/session-read-permissions.ts',
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/tool-execute-before-handler.ts',
+      'packages/omo-opencode/src/hooks/bash-file-read-guard.ts',
     ])
-    expect(entry?.upstreamTestFiles).toEqual([
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/index.test.ts',
-      'packages/omo-opencode/src/hooks/write-existing-file-guard/lazy-canonical-path-init.test.ts',
-    ])
-    expect(entry?.e2eScenario).toBe('write-guard-denied')
+    expect(entry?.upstreamTestFiles).toEqual([])
+    expect(entry?.e2eScenario).toBe('bash-read-guard-warned')
     expect(entry?.status).toBe('pending')
+    expect(HOOK_IDS[0]).toBe('bash-file-read-guard')
   })
 
   it('④ session-notification is the F family, 16 implementation files, no AGENTS.md', () => {
@@ -316,7 +324,7 @@ describe('P3-T2 validateManifest — rejection branches', () => {
   it('⑤ throws when the roster is short (a dropped row is not a valid roster)', () => {
     const rows = legalRows(EXPECTED_HOOK_COUNT)
     rows.pop()
-    expect(rejectionMessage(rows)).toContain('expected 15 hook entries, got 14')
+    expect(rejectionMessage(rows)).toContain('expected 14 hook entries, got 13')
   })
 })
 
@@ -343,7 +351,6 @@ describe('P3-T2 derived helpers', () => {
     // and tools/pre-execute carry exactly the rows named here.
     expect(grouped.get('agent/pre-step')?.map((row) => row.id)).toEqual(['ulw-execute'])
     expect(grouped.get('tools/pre-execute')?.map((row) => row.id)).toEqual([
-      'write-existing-file-guard',
       'webfetch-redirect-guard',
       'prometheus-md-only',
     ])

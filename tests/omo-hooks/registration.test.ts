@@ -38,11 +38,14 @@ import {
 
 /**
  * The exact summary line a real boot logs, transcribed from the manifest by
- * hand (15 rows: 1 pre-step, 3 pre-execute, 8 post-execute, 1 turn-stopping,
- * 2 session/event, 0 status, in SUMMARY_EVENT_FIELDS order).
+ * hand (14 rows: 1 pre-step, 2 pre-execute, 8 post-execute, 1 turn-stopping,
+ * 2 session/event, 0 status, in SUMMARY_EVENT_FIELDS order). It is 14, not 15,
+ * because P3-T5 removed the H-01 write-existing-file-guard row (WP-2
+ * arbitration: dsh-fs-observation-policy covers it natively), which is also why
+ * pre-execute moved 3 → 2.
  */
 const EXPECTED_SUMMARY_LINE =
-  '[omo-hooks] loaded: manifest 15 entries (pre-step=1, pre-execute=3, '
+  '[omo-hooks] loaded: manifest 14 entries (pre-step=1, pre-execute=2, '
   + 'post-execute=8, turn-stopping=1, session/event=2, status=0)'
 
 /** One recorded `ctx.on` call — the loop-wiring observable. */
@@ -138,7 +141,7 @@ describe('P3-T3 boot markers — format contract', () => {
 
   it('② derives every count from the roster it is handed, never from a literal', () => {
     // A 4-row synthetic roster with a deliberately non-uniform distribution:
-    // the counts must follow the INPUT, which a hard-coded 15-row string cannot.
+    // the counts must follow the INPUT, which a hard-coded 14-row string cannot.
     const synthetic = [
       rowFixture('agent/pre-step', 1),
       rowFixture('tools/post-execute', 2),
@@ -181,24 +184,24 @@ describe('P3-T3 boot markers — format contract', () => {
   })
 
   it('⑤ pins the registered / FAILED / validation-FAILED forms', () => {
-    expect(formatHookRegisteredLine('write-existing-file-guard', 'tools/pre-execute')).toBe(
-      '[omo-hooks] hook write-existing-file-guard registered on tools/pre-execute',
+    expect(formatHookRegisteredLine('bash-file-read-guard', 'tools/post-execute')).toBe(
+      '[omo-hooks] hook bash-file-read-guard registered on tools/post-execute',
     )
-    expect(formatHookFailedLine('write-existing-file-guard', new Error('boom'))).toBe(
-      '[omo-hooks] hook write-existing-file-guard FAILED: Error: boom',
+    expect(formatHookFailedLine('bash-file-read-guard', new Error('boom'))).toBe(
+      '[omo-hooks] hook bash-file-read-guard FAILED: Error: boom',
     )
     expect(formatHookFailedLine('x', 'plain string')).toBe(
       '[omo-hooks] hook x FAILED: plain string',
     )
-    expect(formatManifestValidationFailedLine(new Error('manifest: expected 15'))).toBe(
-      '[omo-hooks] manifest validation FAILED: Error: manifest: expected 15',
+    expect(formatManifestValidationFailedLine(new Error('manifest: expected 14'))).toBe(
+      '[omo-hooks] manifest validation FAILED: Error: manifest: expected 14',
     )
     expect(describeError(new TypeError('t'))).toBe('TypeError: t')
   })
 })
 
 describe('P3-T3 registration loop — loud-but-non-fatal', () => {
-  it('① with the real empty registry logs the summary line and registers nothing', () => {
+  it('① with an empty registry logs the summary line and registers nothing', () => {
     const { ctx, onCalls } = fakeContext()
     const lines = collectLines(ctx, HOOK_MANIFEST, {})
     expect(lines).toEqual([EXPECTED_SUMMARY_LINE])
@@ -208,37 +211,38 @@ describe('P3-T3 registration loop — loud-but-non-fatal', () => {
   it('② registers an implemented hook on its manifest event and logs one line', () => {
     const { ctx, onCalls } = fakeContext()
     const lines = collectLines(ctx, HOOK_MANIFEST, {
-      'write-existing-file-guard': (c, entry) => {
-        c.on(entry.event, () => 'deny')
-      },
-    })
-    expect(lines).toEqual([
-      EXPECTED_SUMMARY_LINE,
-      '[omo-hooks] hook write-existing-file-guard registered on tools/pre-execute',
-    ])
-    expect(onCalls).toHaveLength(1)
-    expect(onCalls[0].event).toBe('tools/pre-execute')
-  })
-
-  it('③ a throwing registrar logs FAILED and the remaining hooks still register', () => {
-    const { ctx, onCalls } = fakeContext()
-    // The throwing hook is FIRST in roster order (write-existing-file-guard),
-    // so a loop that aborted on the throw could not reach bash-file-read-guard.
-    const lines = collectLines(ctx, HOOK_MANIFEST, {
-      'write-existing-file-guard': () => {
-        throw new Error('registration exploded')
-      },
       'bash-file-read-guard': (c, entry) => {
-        c.on(entry.event, () => 'warn')
+        c.on(entry.event, () => 'advisory')
       },
     })
     expect(lines).toEqual([
       EXPECTED_SUMMARY_LINE,
-      '[omo-hooks] hook write-existing-file-guard FAILED: Error: registration exploded',
       '[omo-hooks] hook bash-file-read-guard registered on tools/post-execute',
     ])
     expect(onCalls).toHaveLength(1)
     expect(onCalls[0].event).toBe('tools/post-execute')
+  })
+
+  it('③ a throwing registrar logs FAILED and the remaining hooks still register', () => {
+    const { ctx, onCalls } = fakeContext()
+    // The throwing hook is FIRST in roster order (bash-file-read-guard is the
+    // P0 row now that H-01 is gone), so a loop that aborted on the throw could
+    // not reach the second implemented hook.
+    const lines = collectLines(ctx, HOOK_MANIFEST, {
+      'bash-file-read-guard': () => {
+        throw new Error('registration exploded')
+      },
+      'todo-continuation-enforcer': (c, entry) => {
+        c.on(entry.event, () => 'steer')
+      },
+    })
+    expect(lines).toEqual([
+      EXPECTED_SUMMARY_LINE,
+      '[omo-hooks] hook bash-file-read-guard FAILED: Error: registration exploded',
+      '[omo-hooks] hook todo-continuation-enforcer registered on agent/turn-stopping',
+    ])
+    expect(onCalls).toHaveLength(1)
+    expect(onCalls[0].event).toBe('agent/turn-stopping')
   })
 
   it('④ never runs a registrar for an id outside the manifest', () => {
@@ -258,7 +262,7 @@ describe('P3-T3 registration loop — loud-but-non-fatal', () => {
     const { ctx, effectCalls, stopFiber } = fakeContext()
     const dispose = vi.fn()
     collectLines(ctx, HOOK_MANIFEST, {
-      'write-existing-file-guard': () => dispose,
+      'bash-file-read-guard': () => dispose,
     })
     // cordis really did run the execute callback (that is HOW it collects) …
     expect(effectCalls).toHaveLength(1)
@@ -273,15 +277,15 @@ describe('P3-T3 registration loop — loud-but-non-fatal', () => {
   it('⑥ a registrar that wires ctx.on (the preferred channel) is not forwarded to ctx.effect', () => {
     const { ctx, onCalls, effectCalls, stopFiber } = fakeContext()
     collectLines(ctx, HOOK_MANIFEST, {
-      'write-existing-file-guard': (c, entry) => {
+      'bash-file-read-guard': (c, entry) => {
         // The preferred channel: cordis scopes `on` to the registering fiber
         // itself, so the registrar returns nothing. The loop must not invent an
         // effect (an execute callback) for it — that would be double wiring.
-        c.on(entry.event, () => 'deny')
+        c.on(entry.event, () => 'advisory')
       },
     })
     expect(onCalls).toHaveLength(1)
-    expect(onCalls[0].event).toBe('tools/pre-execute')
+    expect(onCalls[0].event).toBe('tools/post-execute')
     expect(effectCalls).toEqual([])
     // Nothing was collected, so a fiber stop has nothing to run here.
     expect(() => stopFiber()).not.toThrow()
@@ -297,7 +301,7 @@ describe('P3-T3 registration loop — loud-but-non-fatal', () => {
     })
     expect(lines).toHaveLength(1)
     expect(lines[0]).toContain('[omo-hooks] manifest validation FAILED: ')
-    expect(lines[0]).toContain('expected 15 hook entries, got 1')
+    expect(lines[0]).toContain('expected 14 hook entries, got 1')
     // No summary line: a count from an untrusted roster must not read as a mount.
     expect(lines.some((line) => line.startsWith('[omo-hooks] loaded'))).toBe(false)
     expect(onCalls).toEqual([])
@@ -309,38 +313,49 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     vi.restoreAllMocks()
   })
 
-  it('① mounts with the current (empty) registry: one summary line, no listener', () => {
+  it('① mounts with the real registry: summary + the one registered listener', () => {
+    // P3-T5 filled the registry with its first real entry, so a real boot now
+    // logs the summary line AND one `registered` line, and wires one listener.
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const { ctx, onCalls } = fakeContext()
     apply(ctx)
-    expect(logSpy.mock.calls.map((call) => call[0])).toEqual([EXPECTED_SUMMARY_LINE])
-    expect(onCalls).toEqual([])
+    expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
+      EXPECTED_SUMMARY_LINE,
+      '[omo-hooks] hook bash-file-read-guard registered on tools/post-execute',
+    ])
+    expect(onCalls).toHaveLength(1)
+    expect(onCalls[0].event).toBe('tools/post-execute')
   })
 
-  it('② drives the real registry through ctx.on (the registry is the extension point)', () => {
+  it('② drives a newly added pending registrar through ctx.on (the registry is the extension point)', () => {
     // apply() has no injection seam on purpose (it is the one-argument cordis
-    // entry point), so this test saves/restores the real registry entry around
-    // the call instead of leaking a permanent fake into sibling tests. T4 adds
-    // such an entry for real; the restore keeps this test independent of it.
-    const id = 'write-existing-file-guard'
+    // entry point), so this test saves/restores a real registry entry around the
+    // call instead of leaking a permanent fake into sibling tests. The real
+    // bash-file-read-guard entry stays in place, so the expected log carries
+    // BOTH registered lines in roster order (bash-file-read-guard is row 1,
+    // todo-continuation-enforcer is row 2 now that H-01 is gone).
+    const id = 'todo-continuation-enforcer'
     expect(HOOK_IDS).toContain(id)
     const previous = HOOK_REGISTRARS[id]
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const { ctx, onCalls } = fakeContext()
     try {
       HOOK_REGISTRARS[id] = (c, entry) => {
-        c.on(entry.event, () => 'deny')
+        c.on(entry.event, () => 'steer')
       }
       apply(ctx)
     } finally {
       if (previous === undefined) delete HOOK_REGISTRARS[id]
       else HOOK_REGISTRARS[id] = previous
     }
-    expect(onCalls).toHaveLength(1)
-    expect(onCalls[0].event).toBe('tools/pre-execute')
+    expect(onCalls.map((call) => call.event)).toEqual([
+      'tools/post-execute',
+      'agent/turn-stopping',
+    ])
     expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
       EXPECTED_SUMMARY_LINE,
-      '[omo-hooks] hook write-existing-file-guard registered on tools/pre-execute',
+      '[omo-hooks] hook bash-file-read-guard registered on tools/post-execute',
+      '[omo-hooks] hook todo-continuation-enforcer registered on agent/turn-stopping',
     ])
   })
 

@@ -343,7 +343,7 @@ const CONCERTO_PRESET_ID = 'concerto'
 
 /**
  * The load markers BOTH mounted plugins log at boot (P3-T3): omo-agents' plain
- * `loaded` line and omo-hooks' summary marker (`[omo-hooks] loaded: manifest 15
+ * `loaded` line and omo-hooks' summary marker (`[omo-hooks] loaded: manifest 14
  * entries (…)` — the prefix is what boot_log.includes matches). A boot missing
  * either one means the corresponding cordis.yml insert row did not mount.
  */
