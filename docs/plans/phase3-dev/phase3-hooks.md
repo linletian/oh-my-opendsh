@@ -22,8 +22,8 @@
 
 | # | 模块 | 形态 | 模式 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
-| H-03 | `todo-continuation-enforcer/` | 目录 | E（=`agent.steer()` 副作用） | todo 未清时回合将停 → steer 注入续行上下文。todo 状态源 = **session todos 投影（dsh-tool-todo `stateOf`；U-4 实测：DSH 无 `ctx.todo` 服务，ROADMAP 原文的 `ctx.todo` 即指该原生投影）**。**R-8 复核点**：与 dsh-goal-round-driver 续行语义的关系实施期逐字记录 | ✅ 待移植 |
-| H-07 | `empty-task-response-detector.ts` | 单文件 | D | 空任务响应检测 → 替换/追加纠正性工具结果（上游 `tool.execute.after` 原地改写 `output.output`）。**前置（实施期答）**：dsh-tool-subagent 是否已有空结果等价提示（U-7），若有则改判跳过 | ✅ 待移植 |
+| H-03 | `todo-continuation-enforcer/` | 目录 | E（=`agent.steer()` 副作用） | todo 未清时回合将停 → steer 注入续行上下文。todo 状态源 = **session todos 投影（dsh-tool-todo `stateOf`；U-4 实测：DSH 无 `ctx.todo` 服务，ROADMAP 原文的 `ctx.todo` 即指该原生投影）**。R-8 已闭环（goal-round-driver 互补，goals 活跃跳过） | ✅ **已移植**（场景 `todo-continuation-enforced`，P3-T7 listener + P3-T9 e2e，commit 42f57db+；熔断 = 进展复员 cap 5） |
+| H-07 | `empty-task-response-detector.ts` | 单文件 | D | 空任务响应检测 → 替换/追加纠正性工具结果（上游 `tool.execute.after` 原地改写 `output.output`）。U-7 已闭环（无原生等价纠正） | ⏳ listener 已移植（P3-T7 单测绿，commit 42f57db）；**e2e 待 T14**（仲裁并入） |
 
 ### P2 compaction 辅助 —— **整组跳过（DSH 原生覆盖）**
 
@@ -131,7 +131,7 @@
 | 状态 | 计数 | 口径 |
 |---|---|---|
 | 移植组（§1） | **14**（P0=1 · P1=2 · P3=2 · P4=8 · P5=1；P2 组整组跳过） | 2026-09-19 仲裁：H-01 改判跳过（DSH 原生超集，S-46） |
-| 已移植（listener+单测+e2e） | 0 / 14 | 逐任务翻转 |
+| 已移植（listener+单测+e2e） | 2 / 14（H-02/H-03；H-07 待 e2e） | 逐任务翻转 |
 | 跳过 / deferred / 排除（§2） | **47**（S-01…S-46 去占位行） | 每行终态理由齐备 |
 | 非 hook（§3） | 4 类条目 | 不计入 |
 | 全树覆盖 | 101 / 101 条目 | 退出标准 b 的完整性硬判定 ✅ |

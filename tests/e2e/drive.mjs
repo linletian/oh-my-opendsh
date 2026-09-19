@@ -316,6 +316,98 @@
 //   advisoryInjectedIntoSessionLog; a DUPLICATED injection FAILs on
 //   advisoryInjectedExactlyOnce; an isError trigger result FAILs on
 //   bashTriggerExecutedWithFixtureBytes.
+//
+// ── P3-T9: todo-continuation-enforced — THE E-MODE PILOT (plan §4.2 模式 E) ──
+// P3-T7 landed omo-hooks' E-mode listener (H-03): OMO's todo continuation
+// discipline as ONE `agent/turn-stopping` serial listener whose ONLY effect is
+// the side effect `agent.steer(<continuation user message>)` — a listener's
+// return value on that event is DISCARDED by the driver
+// (dsh-agent-loop/lib/index.js:966-976: `turnEnds && inbox.nextStep.length === 0`
+// → `dispatch.serial("agent/turn-stopping", …)` → re-check → `break` only when
+// the inbox is STILL empty). This scenario is the template every later
+// executor-group hook copies, and it asserts the chain against
+// RUNTIME-OBSERVED carriers only:
+//
+//   剧本 (MOCKROLE=sisyphus, ONE session, TWO prompts = TWO turns):
+//     turn 1 — 续行链 (must steer):
+//       mock #1  tool_call `todo_write` {1 completed + 1 in_progress}  → todo/write
+//       mock #2  text 收尾 (no tool calls → stepEnd completed → 回合将停)
+//                ⇒ the listener MUST `agent.steer(...)`; the steered message is
+//                  spliced into `next-step`, claimed at the next boundary, and
+//                  the SAME turn runs one more step (no turn/end yet);
+//       mock #3  tool_call `todo_write` {both completed} — the steer request's
+//                body carries the continuation text verbatim;
+//       mock #4  text final summary → 回合真实结束 (turn/end completed).
+//     turn 2 — 对照 (must NOT steer): a SECOND `session.prompt` on the same
+//       session. step 1 writes an all-completed list (non-vacuous: the todos
+//       projection is NOT empty, so the skip is 'all-complete', never
+//       'projection-absent'), step 2 is the control wrap-up text, and the
+//       boundary must stay silent: no steer carrier, no extra step, turn/end
+//       immediately after the wrap-up.
+//
+//   ⚠️ 续行注入的实际观测载体 (measured; seq = real layout of one kept sandbox,
+//   session-34d8c546…/session.v3.jsonl). `agent.steer(msg)` is
+//   `send(msg, 'next-step', true)` → `inbox.splice('next-step', Infinity, 0,
+//   [msg])` (dsh-agent-loop/lib/index.js:792-794, :196-208), i.e. the *same*
+//   two durable carriers the T6 advisory used, with the E-mode producer triple
+//   instead of the advisory's, and — unlike the advisory — at the TURN
+//   BOUNDARY (nothing step-shaped between them):
+//     * seq 22 `agent/inbox/spliced` data.target "next-step", start 0,
+//       data.inserted[0] = {id:<uuid>, role:"user", content:[{type:"text",
+//       text:<CONTINUATION>}], source:{kind:"plugin", plugin:"omo-hooks",
+//       form:"instructions"}} — the ACCEPT itself;
+//     * seq 23 `agent/inbox/spliced` target "next-step", removedCount 1,
+//       inserted [] — the same message CLAIMED (removal recorded);
+//     * seq 25 `user/message` with the identical id/role/content/source — the
+//       message appended to history, i.e. the carrier request #3 is built from.
+//   The measured turn shape around it: todo/write seq 16 (1 incomplete) →
+//   step/end 21 → steer splice 22 → step/start 24 → user/message 25 →
+//   todo/write 28 (0 incomplete) → turn/end 34 (turn 1, completed). The 对照
+//   turn is turn/start 36 … todo/write 42 (0 incomplete) → turn/end 48 (turn 2)
+//   with NO continuation carrier anywhere after seq 34.
+//   `form: 'instructions'` (not the advisory's 'notice') is the listener's own
+//   declaration and is asserted verbatim — it is what distinguishes "context
+//   that instructs the model" from "here is what happened".
+//
+//   断言面 (analyzeTodoContinuationEnforced, all in verdict.assertions per AC-7):
+//     (a) continuationSteerCarrierSourceIsOmoHooks — BOTH durable carriers
+//         exist and every one carries source {kind:'plugin', plugin:'omo-hooks',
+//         form:'instructions'};
+//     (b) continuationSteerTextIsVerbatimListenerText — each carrier's text
+//         equals `buildContinuationText(<the first todo/write snapshot>)`,
+//         assembled by the SHIPPED listener module (imported, never re-typed);
+//     (b2) continuationSteerInjectedExactlyOnce — one steer per carrier, the
+//         claimed message carrying the ACCEPTED message's own id (the
+//         double-steer / idempotence-drift guard);
+//     (c) continuationSteerReachedNextModelRequest — the mock's THIRD recorded
+//         request body carries that exact text AND the wrap-up text, so the
+//         continuation was consumed by the step immediately after the boundary;
+//     (d) continuationSteerOpenedAnotherStepBeforeTurnEnd — the 事件序 chain:
+//         wrap-up < steer splice < claimed user/message < second todo/write <
+//         first turn/end, with NO turn/end before the todo advance and the
+//         closing turn/end reason.kind === 'completed' (the 回合未结束 claim);
+//     (e) todoProgressObservedInSecondWrite — the two todo/write snapshots
+//         differ exactly by the incomplete→completed promotion (same content
+//         set, no regression, first has ≥1 incomplete, second has 0);
+//     (f) 对照: controlTurnRanAfterContinuationTurn +
+//         controlTodoWasWrittenAllCompleted (a SECOND turn really ran and its
+//         todo snapshot was non-empty and all-completed) +
+//         controlNoSteerWhenAllCompleted (zero continuation carriers after the
+//         first turn/end, and no step-shaping event between the control wrap-up
+//         and the second turn/end — 「若 steer 出现则 FAIL」的活断言);
+//         plus mockSawExpectedRequestCounts (exactly 6 sisyphus requests).
+//
+//   变异 QA (hermetic, runAnalysisSelfTest; the real runtime layout is the
+//   fabricated GOOD fixture): a log with NO steer injection FAILs on
+//   continuationSteerCarrierSourceIsOmoHooks; a steer whose carrier text is not
+//   the listener's assembled text FAILs on
+//   continuationSteerTextIsVerbatimListenerText; a DUPLICATED steer FAILs on
+//   continuationSteerInjectedExactlyOnce; a log where the steer is spliced but
+//   the turn ends anyway WITHOUT the todo advance FAILs on the event-order
+//   check continuationSteerOpenedAnotherStepBeforeTurnEnd; a control turn that
+//   DOES steer FAILs on controlNoSteerWhenAllCompleted; and a control turn that
+//   never ran (or ran with an empty list) FAILs on
+//   controlTurnRanAfterContinuationTurn / controlTodoWasWrittenAllCompleted.
 
 // ── LLM WIRING (sandbox $DSH_HOME/settings.yaml only; nothing touches the
 // host). Both adapters are pointed at the mock with a dummy key:
@@ -357,13 +449,14 @@
 // HOST_VOLATILE_SETTINGS_KEYS idea at path granularity).
 //
 // Usage:
-//   node tests/e2e/drive.mjs               run ALL 8 scenarios (hello + demo +
+//   node tests/e2e/drive.mjs               run ALL 9 scenarios (hello + demo +
 //                                          the two AC-6 negatives + the P2-T18
 //                                          roster parade + the P2-T19 read-only
 //                                          representative + the P2-T19
 //                                          positive nested chain, ENABLED
 //                                          2026-09-13 by D-2026-09-13-01 +
-//                                          the P3-T6 bash-read advisory pilot),
+//                                          the P3-T6 bash-read advisory pilot +
+//                                          the P3-T9 todo-continuation pilot),
 //                                          print verdict JSON
 //   node tests/e2e/drive.mjs --self-test   run the analysis logic against
 //                                          fabricated logs only (no spawn)
@@ -449,6 +542,22 @@ const { CONDUCTOR_ID, DELEGATION_ENTRIES, DELEGATION_TOOL_NAMES } = await import
 // that the literal really reaches the model).
 const { WARNING_MESSAGE: BASH_GUARD_ADVISORY_TEXT, BASH_FILE_READ_GUARD_PLUGIN } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/bash-file-read-guard.ts', import.meta.url).href
+)
+// P3-T9: the E-mode continuation directive under test, read from the SHIPPED
+// listener module — the SAME single-source discipline as the T6 advisory above.
+// `buildContinuationText` is imported rather than re-assembled by hand because
+// the injected text is not a static constant: it appends the per-boundary
+// `[Status: …]` line and the remaining-task list from the LIVE todo snapshot,
+// and only the module that mints it can say what "verbatim" means. The unit
+// suite pins the literal against upstream; this scenario pins that the literal
+// really reaches the model.
+const {
+  CONTINUATION_DIRECTIVE: TODO_CONTINUATION_DIRECTIVE,
+  TODO_CONTINUATION_ENFORCER_PLUGIN,
+  buildContinuationText: buildTodoContinuationText,
+  getIncompleteCount: getTodoIncompleteCount,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/todo-continuation-enforcer.ts', import.meta.url).href
 )
 
 const INSTALL_TIMEOUT_MS = Number(process.env.DSH_E2E_INSTALL_TIMEOUT_MS ?? 300_000)
@@ -901,6 +1010,83 @@ function bashReadGuardScript(sandbox) {
   }
 }
 
+// ── P3-T9 todo-continuation-enforced scenario (模式 E e2e 打样; see header) ───
+// H-03's listener steers a turn that is about to stop while the `todos`
+// projection still has incomplete work. The script drives the FULL chain plus
+// the live 对照 in ONE session / TWO turns (see the header's T9 section):
+//   turn 1 (续行): todo_write {1 completed + 1 in_progress} → 收尾文本 (回合将停)
+//     ⇒ steer → todo_write {both completed} → 最终总结 → turn/end;
+//   turn 2 (对照): todo_write {all completed} → 控制收尾文本 → 无 steer → turn/end.
+// The status vocabulary is dsh-tool-todo's OWN three-member union
+// (`'pending' | 'in_progress' | 'completed'`, lib/types/types.d.ts:24) and the
+// tool name is the registered `todo_write` (lib/index.js:96) — never guessed.
+const TODO_CONTINUATION_PROMPT =
+  'e2e todo-continuation-enforced: track the two launch tasks in the todo list and report when they are done'
+// The two fixture tasks. Both strings are load-bearing: the injected
+// continuation text renders the incomplete one as `- [<status>] <content>`, so
+// renaming a task changes the verbatim text the analysis expects.
+const TODO_TASK_SETTLED = 'e2e launch task: settle the release checklist 0x51a7'
+const TODO_TASK_OPEN = 'e2e launch task: write the release summary 0xc0de'
+// Turn 1's 收尾 step: a text-only assistant message, i.e. the exact shape that
+// makes the loop classify the step `completed` and reach the turn boundary.
+const SISYPHUS_TODO_WRAPUP =
+  'MOCK-TODO-WRAPUP-3b7d1e: the checklist is done, wrapping up here'
+// Turn 1's final summary (after the steered todo_write advanced the list).
+const SISYPHUS_TODO_SUMMARY =
+  'MOCK-TODO-SUMMARY-9f4a2c: the tracked tasks are all complete now'
+// Turn 2's (对照) own prompt + wrap-up: the boundary must stay silent.
+const TODO_CONTROL_PROMPT =
+  'e2e todo-continuation-enforced (control): report the already-finished checklist'
+const SISYPHUS_TODO_CONTROL_WRAPUP =
+  'MOCK-TODO-CONTROL-WRAPUP-7e2c58: the checklist was already complete, nothing left to continue'
+
+/**
+ * todo-continuation-enforced script. SIX steps on the ONE role the scenario
+ * drives (MOCKROLE=sisyphus): the first four are turn 1 (the continuation
+ * chain), the last two turn 2 (the 对照). Every `todo_write` sends the COMPLETE
+ * list (the tool's contract: "The COMPLETE task list, replacing any previous
+ * list"), which is why the second write repeats the settled task.
+ */
+function todoContinuationScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'todo_write',
+        arguments: {
+          todos: [
+            { content: TODO_TASK_SETTLED, status: 'completed' },
+            { content: TODO_TASK_OPEN, status: 'in_progress' },
+          ],
+        },
+      },
+      { type: 'text', text: SISYPHUS_TODO_WRAPUP },
+      {
+        type: 'tool_call',
+        name: 'todo_write',
+        arguments: {
+          todos: [
+            { content: TODO_TASK_SETTLED, status: 'completed' },
+            { content: TODO_TASK_OPEN, status: 'completed' },
+          ],
+        },
+      },
+      { type: 'text', text: SISYPHUS_TODO_SUMMARY },
+      {
+        // 对照 turn: a NON-EMPTY todo list whose every item is already
+        // completed — so the boundary's skip is 'all-complete', not the weaker
+        // (and vacuous) 'no-todos'/projection-absent path.
+        type: 'tool_call',
+        name: 'todo_write',
+        arguments: {
+          todos: [{ content: TODO_TASK_SETTLED, status: 'completed' }],
+        },
+      },
+      { type: 'text', text: SISYPHUS_TODO_CONTROL_WRAPUP },
+    ],
+  }
+}
+
 // §14.5: path-based volatile allowlist (see header). Symlinks are skipped by
 // the walk (Dirent.isFile() is false for them).
 const VOLATILE_PREFIXES = ['sessions/', 'storages/']
@@ -1345,16 +1531,21 @@ function sleep(ms) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms))
 }
 
-/** Poll the sandbox sessions dir until the session's log shows a turn/end. */
-async function awaitTurnEnd(sandbox, sessionId) {
+/**
+ * Poll the sandbox sessions dir until the session's log shows `expectedTurns`
+ * turn/end events (P3-T9 generalized the original single-turn wait: its 对照
+ * turn is a SECOND prompt on the SAME session, so the driver must wait for turn
+ * 2's boundary rather than return at turn 1's).
+ */
+async function awaitTurnEnd(sandbox, sessionId, expectedTurns = 1) {
   const deadline = Date.now() + SCENARIO_TIMEOUT_MS
   let found
   while (Date.now() < deadline) {
     const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
     found = logs.find((log) => String(log.header.id) === String(sessionId))
     if (found !== undefined) {
-      const ended = found.events.some((event) => event.type === 'turn/end')
-      if (ended) return found
+      const ended = found.events.filter((event) => event.type === 'turn/end').length
+      if (ended >= expectedTurns) return found
     }
     await sleep(250)
   }
@@ -2520,27 +2711,32 @@ function toolCallArguments(event) {
 }
 
 /**
- * Every durable carrier of the advisory text in a session log, by event type —
- * the two the DSH loop really produces for an `additionalContexts` entry:
+ * Every durable carrier of ONE plugin-injected message text in a session log,
+ * by event type — the two the DSH loop really produces for an
+ * `additionalContexts` entry AND for an `agent.steer` (both go through
+ * `inbox.splice('next-step', …)`):
  *   * `agent/inbox/spliced` with target `next-step`: the ACCEPT itself
- *     (dsh-agent-loop/lib/index.js:578 acceptContext → inbox.splice →
- *     session.append("agent/inbox/spliced"), lib/index.js:206);
+ *     (dsh-agent-loop/lib/index.js:578 acceptContext / :792-794 steer →
+ *     inbox.splice → session.append("agent/inbox/spliced"), lib/index.js:206);
  *   * `user/message`: the same message CLAIMED at the next step boundary and
  *     appended to the history (lib/index.js:1028), i.e. the carrier the model's
  *     next request is actually built from.
  * Both are collected so the "exactly once" check is not blind to a double
  * ACCEPT that only one of the two projections would show.
+ *
+ * Shared by the P3-T6 advisory and the P3-T9 continuation directive (the two
+ * differ only in the injected text and the producer's `source.form`).
  */
-function bashGuardAdvisoryCarriers(events, advisoryText) {
+function pluginInjectedMessageCarriers(events, injectedText) {
   const userMessages = []
   const nextStepInsertions = []
   for (const event of events) {
-    if (event.type === 'user/message' && messageContentText(event.data).includes(advisoryText)) {
+    if (event.type === 'user/message' && messageContentText(event.data).includes(injectedText)) {
       userMessages.push(event)
     }
     if (event.type === 'agent/inbox/spliced' && event.data?.target === 'next-step') {
       for (const message of event.data?.inserted ?? []) {
-        if (messageContentText(message).includes(advisoryText)) {
+        if (messageContentText(message).includes(injectedText)) {
           nextStepInsertions.push({ event, message })
         }
       }
@@ -2554,6 +2750,20 @@ function isBashGuardAdvisorySource(message) {
   return message?.source?.kind === 'plugin'
     && message.source.plugin === BASH_FILE_READ_GUARD_PLUGIN
     && message.source.form === 'notice'
+}
+
+/**
+ * True when a message carries the todo continuation's producer triple verbatim:
+ * {kind:'plugin', plugin:'omo-hooks', form:'instructions'}. Both halves are
+ * imported/measured — the plugin name from the shipped listener module, the
+ * form from its own `buildContinuationMessage` declaration (the C-mode advisory
+ * uses 'notice'; conflating the two would make the E-mode pilot unable to tell
+ * a continuation directive from an advisory).
+ */
+function isTodoContinuationSource(message) {
+  return message?.source?.kind === 'plugin'
+    && message.source.plugin === TODO_CONTINUATION_ENFORCER_PLUGIN
+    && message.source.form === 'instructions'
 }
 
 /**
@@ -2601,7 +2811,7 @@ export function analyzeBashReadGuardWarned(
   const triggerResult = resultFor(triggerCall)
   const pipelineResult = resultFor(pipelineCall)
   const readResult = resultFor(readCall)
-  const carriers = bashGuardAdvisoryCarriers(events, BASH_GUARD_ADVISORY_TEXT)
+  const carriers = pluginInjectedMessageCarriers(events, BASH_GUARD_ADVISORY_TEXT)
   const injectionCount = carriers.userMessages.length
   // The advisory's real consumption point: a LATER request to the model must
   // carry the text (the mock records the wire body).
@@ -2676,6 +2886,271 @@ export function analyzeBashReadGuardWarned(
     })),
     mockRequestCount: sisyphusRequests.length,
     mockSecondRequestBodyHasAdvisory: advisoryReachedNextModelRequest,
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
+// ── P3-T9 todo-continuation-enforced analysis (模式 E e2e 打样) ───────────────
+
+/**
+ * Whether a recorded mock request carried `text` in one of its message bodies.
+ *
+ * Deliberately NOT `JSON.stringify(body).includes(text)`: the continuation
+ * directive is MULTI-LINE, and a JSON-serialized body escapes every newline to
+ * `\n`, so a raw multi-line needle can never match its own serialized form
+ * (an all-newline difference that would report "the model never saw it" while
+ * looking straight at it). The message text is therefore extracted with the
+ * same shape rules as `messageContentText` before the comparison.
+ */
+function requestMessagesContain(request, text) {
+  const messages = request?.body?.messages
+  if (!Array.isArray(messages)) return false
+  return messages.some((message) => messageContentText(message).includes(text))
+}
+
+/**
+ * Every `todo/write` whole-list snapshot in a session log, in log order.
+ */
+function todoWriteSnapshots(events) {
+  return events.filter((event) => event.type === 'todo/write')
+}
+
+/** One `todo/write` event's todos array — the complete replacement list, or []. */
+function todoSnapshotOf(event) {
+  const todos = event?.data?.todos
+  return Array.isArray(todos) ? todos : []
+}
+
+/**
+ * The incomplete subset of a snapshot, using the SHIPPED listener's predicate
+ * (`NON_INCOMPLETE_STATUSES` semantics) rather than a re-typed status compare:
+ * on DSH's three-member union a `status !== 'completed'` filter is equivalent,
+ * but importing the module keeps the analysis and the listener from drifting
+ * when either side changes.
+ */
+function incompleteTodoCount(todos) {
+  return getTodoIncompleteCount(todos)
+}
+
+/** `turn/end`'s reason, both shapes the installed runtime has used. */
+function turnEndReasonKind(event) {
+  return event?.data?.reason?.kind ?? event?.data?.reason
+}
+
+/**
+ * The todo-continuation-enforced assertions (plan §4.2 mode E pilot; see the
+ * header's T9 section). ONE session, TWO turns:
+ *   turn 1 — the continuation chain: the boundary after the 收尾 step MUST
+ *     steer, the steered message MUST be claimed by the next step of the SAME
+ *     turn, the todo list MUST be advanced to all-completed in that step, and
+ *     only THEN may turn/end (reason completed) appear;
+ *   turn 2 — the 对照: a non-empty, all-completed todo list at a stopping
+ *     boundary MUST NOT steer, and turn/end MUST follow the wrap-up directly.
+ *
+ * Every text the assertions compare against is derived at analysis time: the
+ * continuation text is `buildContinuationText(<observed first snapshot>)` from
+ * the shipped listener module, so "verbatim" means "the listener's own text for
+ * the list the boundary actually saw" rather than a copy pasted into the test.
+ * `requests` is the mock's recorded request channel (arrival order).
+ */
+export function analyzeTodoContinuationEnforced({ log, requests, providersJson, bootLog }, routes) {
+  const events = log?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const requestBodyHas = (request, text) => requestMessagesContain(request, text)
+
+  // The two todo snapshots of turn 1 and the 对照 turn's own snapshot.
+  const snapshots = todoWriteSnapshots(events)
+  const firstSnapshot = snapshots[0]
+  const secondSnapshot = snapshots[1]
+  const controlSnapshot = snapshots[2]
+  const firstTodos = todoSnapshotOf(firstSnapshot)
+  const secondTodos = todoSnapshotOf(secondSnapshot)
+  const controlTodos = todoSnapshotOf(controlSnapshot)
+
+  // The text the listener must have minted at the turn-1 boundary: assembled by
+  // the listener module from the list the boundary saw (the first write; the
+  // second write only happens INSIDE the continuation step).
+  const expectedContinuationText = buildTodoContinuationText(firstTodos)
+
+  const carriers = pluginInjectedMessageCarriers(events, TODO_CONTINUATION_DIRECTIVE)
+  const steerSplices = carriers.nextStepInsertions
+  const steerClaims = carriers.userMessages
+  const steerSplice = steerSplices[0]?.event
+  const steerClaim = steerClaims[0]
+
+  // The 收尾 step's text-only assistant message (the step that stops the turn).
+  const wrapup = events.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(SISYPHUS_TODO_WRAPUP),
+  )
+  const turnEnds = events.filter((event) => event.type === 'turn/end')
+  const firstTurnEnd = turnEnds[0]
+  const secondTurnEnd = turnEnds[1]
+  const continuationSummary = events.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(SISYPHUS_TODO_SUMMARY),
+  )
+
+  // (c) The steer's consumption point on the WIRE: it must ride the request of
+  // the step right after the 收尾 step (index 2 of the sisyphus channel: #0 the
+  // todo_write step, #1 the 收尾 step, #2 the continuation step).
+  const steerRequestIndex = sisyphusRequests.findIndex((request) =>
+    requestBodyHas(request, expectedContinuationText))
+  const continuationStepRequest = steerRequestIndex < 0 ? undefined : sisyphusRequests[steerRequestIndex]
+
+  // (d) The 事件序 claim: the turn did NOT end at the 收尾 boundary. The steer
+  // splice came after it, the claim after that, the todo advance after that,
+  // and no turn/end exists before the advance.
+  const noTurnEndBeforeAdvance = secondSnapshot !== undefined
+    && !events.some((event) => event.type === 'turn/end' && event.seq < secondSnapshot.seq)
+  const continuationSteerOpenedAnotherStepBeforeTurnEnd =
+    wrapup !== undefined
+    && steerSplice !== undefined
+    && steerClaim !== undefined
+    && secondSnapshot !== undefined
+    && firstTurnEnd !== undefined
+    && noTurnEndBeforeAdvance
+    && wrapup.seq < steerSplice.seq
+    && steerSplice.seq < steerClaim.seq
+    && steerClaim.seq < secondSnapshot.seq
+    && secondSnapshot.seq < firstTurnEnd.seq
+    && continuationSummary !== undefined
+    && turnEndReasonKind(firstTurnEnd) === 'completed'
+
+  // (e) The per-item diff between the two turn-1 snapshots: the SAME tasks, no
+  // regression, the incomplete one promoted to completed.
+  const diff = firstTodos.map((todo) => {
+    const after = secondTodos.find((candidate) => candidate?.content === todo?.content)
+    return {
+      content: todo?.content ?? null,
+      before: todo?.status ?? null,
+      after: after?.status ?? null,
+    }
+  })
+  const sameContentSet =
+    firstTodos.length > 0
+    && firstTodos.length === secondTodos.length
+    && secondTodos.every((todo) => firstTodos.some((candidate) => candidate?.content === todo?.content))
+  const progressedByPromotion =
+    incompleteTodoCount(firstTodos) > 0
+    && incompleteTodoCount(secondTodos) === 0
+    // A previously settled task must not be un-settled by the continuation step.
+    && diff.every((entry) => entry.before !== 'completed' || entry.after === 'completed')
+
+  // (f) 对照 scoping: everything after turn 1's turn/end is the control turn.
+  const controlEvents = firstTurnEnd === undefined
+    ? []
+    : events.filter((event) => event.seq > firstTurnEnd.seq)
+  const controlWrapup = controlEvents.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(SISYPHUS_TODO_CONTROL_WRAPUP),
+  )
+  const controlCarriers = pluginInjectedMessageCarriers(controlEvents, TODO_CONTINUATION_DIRECTIVE)
+  const controlInjectionCount = controlCarriers.userMessages.length
+    + controlCarriers.nextStepInsertions.length
+  // "turn/end 紧随": nothing step-shaping may sit between the 对照 wrap-up and
+  // turn 2's turn/end — no injected message, no extra model step, no todo write.
+  const STEP_SHAPING_EVENTS = new Set([
+    'user/message',
+    'assistant/message',
+    'tool/call',
+    'tool/result',
+    'todo/write',
+    'request/header',
+    'agent/inbox/spliced',
+  ])
+  const controlTail = controlWrapup === undefined || secondTurnEnd === undefined
+    ? []
+    : controlEvents.filter(
+        (event) => event.seq > controlWrapup.seq && event.seq < secondTurnEnd.seq,
+      )
+  const controlTurnEndedWithoutExtraStep = controlWrapup !== undefined
+    && secondTurnEnd !== undefined
+    && controlTail.every((event) => !STEP_SHAPING_EVENTS.has(event.type))
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+    // (a) BOTH durable carriers exist and carry the E-mode producer triple.
+    continuationSteerCarrierSourceIsOmoHooks:
+      steerClaims.length >= 1
+      && steerSplices.length >= 1
+      && steerClaims.every((event) => isTodoContinuationSource(event.data))
+      && steerSplices.every(({ message }) => isTodoContinuationSource(message)),
+    // (b) ... with the listener's OWN assembled text, byte for byte, including
+    // the `[Status: …]` tail and the remaining-task list.
+    continuationSteerTextIsVerbatimListenerText:
+      steerClaims.length >= 1
+      && steerSplices.length >= 1
+      && steerClaims.every((event) => messageContentText(event.data) === expectedContinuationText)
+      && steerSplices.every(({ message }) => messageContentText(message) === expectedContinuationText),
+    // (c) the continuation reached the model, in the step right after the 收尾
+    // step (the channel index is exact: 2), and that request still carried the
+    // 收尾 text — so it is provably the step that followed the boundary.
+    continuationSteerReachedNextModelRequest:
+      steerRequestIndex === 2
+      && continuationStepRequest !== undefined
+      && requestBodyHas(continuationStepRequest, SISYPHUS_TODO_WRAPUP),
+    // Exactly ONE steer on EACH durable carrier (the double-steer /
+    // idempotence-drift guard, the E-mode mirror of the C-mode pilot's
+    // advisoryInjectedExactlyOnce).
+    continuationSteerInjectedExactlyOnce:
+      steerClaims.length === 1
+      && steerSplices.length === 1
+      && steerClaim?.data?.id !== undefined
+      && steerClaim.data.id === steerSplices[0]?.message?.id,
+    // (d) the 事件序 chain (the 回合未结束 claim).
+    continuationSteerOpenedAnotherStepBeforeTurnEnd,
+    // (e) the todo list really moved, in exactly the expected direction.
+    todoProgressObservedInSecondWrite: sameContentSet && progressedByPromotion,
+    // (f) 对照: a second turn ran on the same session and really closed.
+    controlTurnRanAfterContinuationTurn:
+      firstTurnEnd !== undefined
+      && secondTurnEnd !== undefined
+      && turnEndReasonKind(secondTurnEnd) === 'completed'
+      && controlWrapup !== undefined,
+    // ... with a NON-empty, all-completed snapshot at its boundary (so the skip
+    // under test is 'all-complete', not the vacuous 'projection-absent').
+    controlTodoWasWrittenAllCompleted:
+      controlSnapshot !== undefined
+      && controlTodos.length > 0
+      && incompleteTodoCount(controlTodos) === 0,
+    // ... and NO steer: zero continuation carriers after turn 1 ended, and no
+    // step-shaping event between the 对照 wrap-up and turn 2's turn/end.
+    controlNoSteerWhenAllCompleted:
+      controlInjectionCount === 0 && controlTurnEndedWithoutExtraStep,
+    // Exact request accounting: 4 steps in turn 1 + 2 steps in turn 2.
+    mockSawExpectedRequestCounts: sisyphusRequests.length === 6,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    // The observed carriers, verbatim (the evidence the assertions read).
+    continuationDirective: TODO_CONTINUATION_DIRECTIVE,
+    expectedContinuationText,
+    continuationSteerUserMessageCarriers: steerClaims.map((event) => ({
+      seq: event.seq,
+      source: event.data?.source ?? null,
+      text: messageContentText(event.data),
+    })),
+    continuationSteerNextStepInsertions: steerSplices.map(({ event, message }) => ({
+      seq: event.seq,
+      target: event.data?.target ?? null,
+      insertedId: message?.id ?? null,
+      source: message?.source ?? null,
+    })),
+    // The todo diffs (turn 1 pair + the control snapshot).
+    todoWriteSnapshots: snapshots.map((event) => ({
+      seq: event.seq,
+      todos: todoSnapshotOf(event),
+      incomplete: incompleteTodoCount(todoSnapshotOf(event)),
+    })),
+    todoDiff: diff,
+    continuationStepRequestIndex: steerRequestIndex,
+    turnEndReasons: turnEnds.map((event) => ({ seq: event.seq, turn: event.data?.turn ?? null, kind: turnEndReasonKind(event) ?? null })),
+    controlTailEventTypes: controlTail.map((event) => event.type),
+    controlContinuationInjectionCount: controlInjectionCount,
+    mockRequestCount: sisyphusRequests.length,
+    mockRequestModels: [...new Set(sisyphusRequests.map((request) => request.body?.model))],
   }
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
 }
@@ -3508,6 +3983,178 @@ function fabricatedBashGuardInput(routes) {
   }
 }
 
+// ── fabricated P3-T9 todo-continuation-enforced input (模式 E，must earn its PASS) ─
+// The fabricated log mirrors the REAL runtime layout the scenario was pinned
+// against (observed in a kept sandbox; see the header's T9 section): per step
+// the order is assistant/message → tool/call → todo/write → tool/result →
+// step/end (the tool's session event lands while the call is in flight), the
+// steer is durable on TWO `agent/inbox/spliced` events plus the claimed
+// `user/message` (all three with the SAME message id and the E-mode producer
+// triple), the boundary after the 收尾 step produces no turn/end, and the 对照
+// turn is a second turn/start on the same session whose boundary stays silent.
+// Seq numbers are COMPACT (the real log pads them with session/title, runtime
+// context and system/message events); the ORDER is the real one.
+
+/** The turn-1 snapshots the mock scripts (verbatim from todoContinuationScript). */
+const FABRICATED_TODO_FIRST_SNAPSHOT = [
+  { content: TODO_TASK_SETTLED, status: 'completed' },
+  { content: TODO_TASK_OPEN, status: 'in_progress' },
+]
+const FABRICATED_TODO_SECOND_SNAPSHOT = [
+  { content: TODO_TASK_SETTLED, status: 'completed' },
+  { content: TODO_TASK_OPEN, status: 'completed' },
+]
+const FABRICATED_TODO_CONTROL_SNAPSHOT = [{ content: TODO_TASK_SETTLED, status: 'completed' }]
+/** The listener's own text for the FIRST snapshot — assembled, never re-typed. */
+const FABRICATED_TODO_STEER_TEXT = buildTodoContinuationText(FABRICATED_TODO_FIRST_SNAPSHOT)
+
+/** The steered message exactly as the listener mints it (source triple + form). */
+function fabricatedTodoSteerMessage(id, text = FABRICATED_TODO_STEER_TEXT) {
+  return {
+    id,
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: { kind: 'plugin', plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
+  }
+}
+
+/** One plain `user/message` event (the queued prompt / the claimed steer). */
+function fabricatedUserMessage(seq, message) {
+  return { seq, type: 'user/message', data: message }
+}
+
+/**
+ * The fabricated todo-continuation log: turn 1 (steer chain) + turn 2 (对照).
+ * `turn`/`step` fields ride the step-shaped events exactly like the real log;
+ * `todo/write` events carry ONLY `{todos}` (dsh-tool-todo appends no turn/step).
+ */
+function fabricatedTodoContinuationLog(routes) {
+  const todoCall = (seq, callId) => ({
+    seq,
+    type: 'tool/call',
+    data: {
+      turn: 1,
+      step: 1,
+      callId,
+      name: 'todo_write',
+      arguments: JSON.stringify({ todos: FABRICATED_TODO_FIRST_SNAPSHOT }),
+    },
+  })
+  const todoResult = (seq, callId) => ({
+    seq,
+    type: 'tool/result',
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        source: { kind: 'tool', callId },
+        content: [{
+          type: 'tool-result',
+          toolCallId: callId,
+          content: [{ type: 'text', text: 'Updated todo list: 0 pending, 1 in progress, 1 completed.' }],
+          isError: false,
+        }],
+      },
+    },
+  })
+  const assistant = (seq, turn, step, content) => ({
+    seq,
+    type: 'assistant/message',
+    data: { turn, step, message: { role: 'assistant', content } },
+  })
+  const todoCall1 = { type: 'tool-call', id: 'mock-llm-tool-1', name: 'todo_write', arguments: JSON.stringify({ todos: FABRICATED_TODO_FIRST_SNAPSHOT }) }
+  const todoCall3 = { type: 'tool-call', id: 'mock-llm-tool-3', name: 'todo_write', arguments: JSON.stringify({ todos: FABRICATED_TODO_SECOND_SNAPSHOT }) }
+  const todoCall5 = { type: 'tool-call', id: 'mock-llm-tool-5', name: 'todo_write', arguments: JSON.stringify({ todos: FABRICATED_TODO_CONTROL_SNAPSHOT }) }
+  const steerMessage = fabricatedTodoSteerMessage('fabricated-todo-steer-1')
+  return {
+    path: '/fabricated/todo-continuation/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      fabricatedUserMessage(1, { role: 'user', content: [{ type: 'text', text: TODO_CONTINUATION_PROMPT }] }),
+      {
+        seq: 2,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'initial' },
+      },
+      // ── turn 1, step 1: write the two-task list. The event order per step is
+      // the REAL one (kept sandbox): assistant/message → tool/call →
+      // todo/write → tool/result → step/end — the tool appends its session
+      // event while the call is still in flight, i.e. BEFORE the result is
+      // committed. ──
+      assistant(3, 1, 1, [todoCall1]),
+      todoCall(4, 'mock-llm-tool-1'),
+      { seq: 5, type: 'todo/write', data: { todos: FABRICATED_TODO_FIRST_SNAPSHOT } },
+      todoResult(6, 'mock-llm-tool-1'),
+      { seq: 7, type: 'step/end', data: { turn: 1, step: 1 } },
+      // ── turn 1, step 2: the 收尾 text (the step that stops the turn) ──
+      { seq: 8, type: 'step/start', data: { turn: 1, step: 2 } },
+      assistant(9, 1, 2, [{ type: 'text', text: SISYPHUS_TODO_WRAPUP }]),
+      { seq: 10, type: 'step/end', data: { turn: 1, step: 2 } },
+      // ── the boundary: the listener's steer (accept carrier), then the
+      // claim's own removal splice (`inserted: []`) — the real pair ──
+      { seq: 11, type: 'agent/inbox/spliced', data: { target: 'next-step', start: 0, inserted: [steerMessage] } },
+      { seq: 12, type: 'agent/inbox/spliced', data: { target: 'next-step', start: 0, removedCount: 1, inserted: [] } },
+      // ── turn 1, step 3: the continuation step (claim + todo advance) ──
+      { seq: 13, type: 'step/start', data: { turn: 1, step: 3 } },
+      fabricatedUserMessage(14, steerMessage),
+      assistant(15, 1, 3, [todoCall3]),
+      { seq: 16, type: 'tool/call', data: { turn: 1, step: 3, callId: 'mock-llm-tool-3', name: 'todo_write', arguments: JSON.stringify({ todos: FABRICATED_TODO_SECOND_SNAPSHOT }) } },
+      { seq: 17, type: 'todo/write', data: { todos: FABRICATED_TODO_SECOND_SNAPSHOT } },
+      { seq: 18, type: 'tool/result', data: { turn: 1, step: 3, message: { source: { kind: 'tool', callId: 'mock-llm-tool-3' }, content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-3', content: [{ type: 'text', text: 'Updated todo list: 0 pending, 0 in progress, 2 completed.' }], isError: false }] } } },
+      { seq: 19, type: 'step/end', data: { turn: 1, step: 3 } },
+      // ── turn 1, step 4: the final summary, then the REAL turn/end ──
+      { seq: 20, type: 'step/start', data: { turn: 1, step: 4 } },
+      assistant(21, 1, 4, [{ type: 'text', text: SISYPHUS_TODO_SUMMARY }]),
+      { seq: 22, type: 'step/end', data: { turn: 1, step: 4 } },
+      { seq: 23, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      // ── turn 2 (对照): a second prompt, an all-completed list, NO steer ──
+      {
+        seq: 24,
+        type: 'agent/inbox/spliced',
+        data: {
+          target: 'next-turn',
+          start: 0,
+          inserted: [{ id: 'fabricated-control-prompt', role: 'user', content: [{ type: 'text', text: TODO_CONTROL_PROMPT }], source: { kind: 'user', rpcId: 'fabricated-rpc' } }],
+        },
+      },
+      { seq: 25, type: 'turn/start', data: { turn: 2 } },
+      { seq: 26, type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, removedCount: 1, inserted: [] } },
+      fabricatedUserMessage(27, { role: 'user', content: [{ type: 'text', text: TODO_CONTROL_PROMPT }] }),
+      { seq: 28, type: 'step/start', data: { turn: 2, step: 1 } },
+      assistant(29, 2, 1, [todoCall5]),
+      { seq: 30, type: 'tool/call', data: { turn: 2, step: 1, callId: 'mock-llm-tool-5', name: 'todo_write', arguments: JSON.stringify({ todos: FABRICATED_TODO_CONTROL_SNAPSHOT }) } },
+      { seq: 31, type: 'todo/write', data: { todos: FABRICATED_TODO_CONTROL_SNAPSHOT } },
+      { seq: 32, type: 'tool/result', data: { turn: 2, step: 1, message: { source: { kind: 'tool', callId: 'mock-llm-tool-5' }, content: [{ type: 'tool-result', toolCallId: 'mock-llm-tool-5', content: [{ type: 'text', text: 'Updated todo list: 0 pending, 0 in progress, 1 completed.' }], isError: false }] } } },
+      { seq: 33, type: 'step/end', data: { turn: 2, step: 1 } },
+      { seq: 34, type: 'step/start', data: { turn: 2, step: 2 } },
+      assistant(35, 2, 2, [{ type: 'text', text: SISYPHUS_TODO_CONTROL_WRAPUP }]),
+      { seq: 36, type: 'step/end', data: { turn: 2, step: 2 } },
+      { seq: 37, type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedTodoContinuationInput(routes) {
+  const model = routes.sisyphus.model
+  const messages = (text) => [
+    { role: 'system', content: 'MOCKROLE=sisyphus' },
+    { role: 'user', content: text },
+  ]
+  return {
+    log: fabricatedTodoContinuationLog(routes),
+    requests: [
+      { role: 'sisyphus', body: { model, messages: messages(TODO_CONTINUATION_PROMPT) }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model, messages: messages(SISYPHUS_TODO_WRAPUP) }, receivedAt: 20 },
+      { role: 'sisyphus', body: { model, messages: messages(`${SISYPHUS_TODO_WRAPUP}\n${FABRICATED_TODO_STEER_TEXT}`) }, receivedAt: 30 },
+      { role: 'sisyphus', body: { model, messages: messages(SISYPHUS_TODO_SUMMARY) }, receivedAt: 40 },
+      { role: 'sisyphus', body: { model, messages: messages(TODO_CONTROL_PROMPT) }, receivedAt: 50 },
+      { role: 'sisyphus', body: { model, messages: messages(SISYPHUS_TODO_CONTROL_WRAPUP) }, receivedAt: 60 },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+  }
+}
+
 /**
  * P2-T18 MOCKROLE landing self-test (hermetic, no spawn). Renders the REAL
  * concerto template through the REAL renderers (concerto-preset.ts
@@ -4106,6 +4753,127 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P3-T9 todo-continuation-enforced self-test: the fabricated good input
+  // (the REAL runtime layout: steer splice + claim + todo advance + turn/end,
+  // then a silent 对照 turn) must PASS; every fabricated defect must fail on its
+  // OWN named check — including the two the E-mode pilot exists to catch: a log
+  // with NO steer, and a log where the boundary steered but the turn ended
+  // anyway without the todo advance (the 事件序 break).
+  const goodTodoContinuation = analyzeTodoContinuationEnforced(
+    fabricatedTodoContinuationInput(routes),
+    routes,
+  )
+  if (goodTodoContinuation.result !== 'PASS') {
+    problems.push(`fabricated GOOD todo-continuation-enforced must PASS, got FAIL on: ${goodTodoContinuation.failed.join(', ')}`)
+  }
+  const todoContinuationDefectCases = [
+    ['no continuation steer in the session log', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => event.type !== 'user/message'
+          || !messageContentText(event.data).includes(TODO_CONTINUATION_DIRECTIVE),
+      ).filter(
+        (event) => event.type !== 'agent/inbox/spliced'
+          || !(event.data?.inserted ?? []).some(
+            (message) => messageContentText(message).includes(TODO_CONTINUATION_DIRECTIVE),
+          ),
+      )
+      input.requests = input.requests.map((request) =>
+        request.receivedAt === 30
+          ? { ...request, body: { model: request.body.model, messages: [{ role: 'user', content: 'no continuation' }] } }
+          : request)
+    }, 'continuationSteerCarrierSourceIsOmoHooks'],
+    ['the injected text is not the listener assembled text (stale/drifted directive)', (input) => {
+      // `TodoLike` shape intact, wording changed: the carrier is still a
+      // plugin-sourced continuation message, but no longer VERBATIM — the
+      // check that must catch it is the text-equality one, not the source one.
+      input.log.events = input.log.events.map((event) => {
+        if (event.type === 'agent/inbox/spliced' && Array.isArray(event.data?.inserted) && event.data.inserted.length > 0) {
+          return { ...event, data: { ...event.data, inserted: [fabricatedTodoSteerMessage('fabricated-todo-steer-1', TODO_CONTINUATION_DIRECTIVE)] } }
+        }
+        if (event.type === 'user/message' && messageContentText(event.data).includes(TODO_CONTINUATION_DIRECTIVE)) {
+          return { ...event, data: fabricatedTodoSteerMessage('fabricated-todo-steer-1', TODO_CONTINUATION_DIRECTIVE) }
+        }
+        return event
+      })
+      input.requests = input.requests.map((request) =>
+        request.receivedAt === 30
+          ? { ...request, body: { model: request.body.model, messages: [{ role: 'user', content: TODO_CONTINUATION_DIRECTIVE }] } }
+          : request)
+    }, 'continuationSteerTextIsVerbatimListenerText'],
+    // THE event-order defect (the task book's second required mutation): the
+    // boundary steered, but the turn ended right after the 收尾 step and the
+    // todo list was never advanced — exactly what a driver that ignores the
+    // steer (or a listener whose steer lands after the boundary commits) would
+    // produce. Both the order check and the progress check name it.
+    ['steer spliced but the turn ended without the todo advance', (input) => {
+      input.log.events = input.log.events.map((event) => {
+        if (event.type === 'turn/end' && event.data?.turn === 1) {
+          return { ...event, seq: 10.5 } // the turn really ended at the boundary
+        }
+        if (event.type === 'todo/write' && event.seq === 17) {
+          return {
+            ...event,
+            data: {
+              todos: [
+                { content: TODO_TASK_SETTLED, status: 'completed' },
+                { content: TODO_TASK_OPEN, status: 'in_progress' }, // never advanced
+              ],
+            },
+          }
+        }
+        return event
+      })
+    }, 'continuationSteerOpenedAnotherStepBeforeTurnEnd'],
+    // The 对照 is a LIVE negative assertion: if a control turn whose todo list
+    // is already all-completed nevertheless steers, the scenario must FAIL.
+    ['the control turn steered although its todos were all completed', (input) => {
+      const controlWrapup = input.log.events.find(
+        (event) => event.type === 'assistant/message'
+          && eventText(event).includes(SISYPHUS_TODO_CONTROL_WRAPUP),
+      )
+      input.log.events.push({
+        seq: controlWrapup.seq + 0.5,
+        type: 'agent/inbox/spliced',
+        data: {
+          target: 'next-step',
+          start: 0,
+          inserted: [fabricatedTodoSteerMessage('fabricated-todo-steer-2')],
+        },
+      })
+    }, 'controlNoSteerWhenAllCompleted'],
+    ['the steer was injected twice (double trigger / idempotence drift)', (input) => {
+      const events = input.log.events
+      const messageIndex = events.findIndex(
+        (event) => event.type === 'user/message'
+          && messageContentText(event.data).includes(TODO_CONTINUATION_DIRECTIVE),
+      )
+      events.splice(messageIndex + 1, 0, fabricatedUserMessage(
+        14.5,
+        fabricatedTodoSteerMessage('fabricated-todo-steer-2'),
+      ))
+    }, 'continuationSteerInjectedExactlyOnce'],
+    ['the control turn never ran (no second prompt turn)', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'turn/end' && event.data?.turn === 2),
+      )
+      input.requests = input.requests.slice(0, 4)
+    }, 'controlTurnRanAfterContinuationTurn'],
+    ['the control list was empty, so the boundary skip was vacuous', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'todo/write' && event.seq === 31
+          ? { ...event, data: { todos: [] } }
+          : event)
+    }, 'controlTodoWasWrittenAllCompleted'],
+  ]
+  for (const [label, mutate, expectedCheck] of todoContinuationDefectCases) {
+    const input = fabricatedTodoContinuationInput(routes)
+    mutate(input)
+    const verdict = analyzeTodoContinuationEnforced(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated todo-continuation-enforced defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
@@ -4157,6 +4925,21 @@ const SCENARIOS = [
       fixturePath: join(sandbox.project, BASH_GUARD_FIXTURE_NAME),
     }),
     analyze: analyzeBashReadGuardWarned,
+  },
+  {
+    // P3-T9 (plan §4.2 mode E pilot; task book WP-3): the FIRST executor-type
+    // omo-hooks listener proves its whole chain in one real run — a turn that
+    // is about to stop with todos still open MUST be steered into another step
+    // of the SAME turn, that step MUST advance the list to all-completed, and
+    // only then may the turn end. The 对照 is a SECOND turn on the same session
+    // whose todo list is already all-completed: the boundary must stay silent.
+    // Every later executor-group hook copies this scenario's shape.
+    name: 'todo-continuation-enforced',
+    prompt: TODO_CONTINUATION_PROMPT,
+    followupPrompts: [TODO_CONTROL_PROMPT],
+    roles: ['sisyphus'],
+    script: todoContinuationScript,
+    analyze: analyzeTodoContinuationEnforced,
   },
   {
     // AC-6a (T20): the explore child hallucinates a write; the T12 deny
@@ -4280,13 +5063,23 @@ async function runScenario(def, baseRoutes) {
       agentPreset: CONCERTO_PRESET_ID,
     })
     console.error(`drive: [${def.name}] session created ${created.sessionId} (preset ${created.agentPreset ?? '?'})`)
-    await sessionPrompt(boot, {
-      sessionId: created.sessionId,
-      mode: 'queue',
-      content: [{ type: 'text', text: def.prompt }],
-    })
-    console.error(`drive: [${def.name}] prompt accepted; awaiting turn/end on the session JSONL`)
-    const log = await awaitTurnEnd(sandbox, created.sessionId)
+    // P3-T9: a scenario may drive MORE than one turn on the same session (its
+    // 对照 turn is a second prompt) — each prompt is awaited on its OWN
+    // turn/end, so a later turn's arrival can never satisfy an earlier wait.
+    const prompts = [def.prompt, ...(def.followupPrompts ?? [])]
+    let log
+    for (const [index, prompt] of prompts.entries()) {
+      await sessionPrompt(boot, {
+        sessionId: created.sessionId,
+        mode: 'queue',
+        content: [{ type: 'text', text: prompt }],
+      })
+      console.error(
+        `drive: [${def.name}] prompt ${index + 1}/${prompts.length} accepted; `
+        + 'awaiting its turn/end on the session JSONL',
+      )
+      log = await awaitTurnEnd(sandbox, created.sessionId, index + 1)
+    }
     const logPath = log?.path
 
     await stopDsh(child)
@@ -4419,7 +5212,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

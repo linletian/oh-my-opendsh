@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **6/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：📋 **7/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
@@ -98,12 +98,12 @@
 
 - **取消理由**：原三模块全部移出移植组——`todo-description-override` 实测为 opencode `tool.definition` hook（DSH 无该事件，S-31）；`session-todo-status` 实测为 helper（语义并入 H-10 session-notification，N-04）；`task-reminder` 上游 dead code 且依赖 OMO `task_*` 工具族（S-32）。证据：`.omo/evidence/p3t1-upstream-p0-p3.md` C-7/C-8/C-9。
 
-### [ ] P3-T9 — e2e：todo 执行器场景
+### [x] P3-T9 — e2e：todo 执行器场景
 
 - **产出**：`tests/e2e/` 新增 `todo-continuation-enforced` 场景（E 模式 e2e 打样）。
 - **做法**：剧本构造"todo 未清但回合将停"→ 断言续行发生、todo 被推进至清、回合随后真实停止；对照组：todo 已清时无续行票。
 - **判定**：✅ 门 3 绿；verdict JSON 含续行链断言。
-- **证据**：（待填）
+- **证据**：2026-09-19 完成（deepseek-flash，1 轮过）。产出：drive.mjs +815/-22——四步剧本（建 todo（1 completed + 1 in_progress）→ 收尾文本 → steer 后推进至全 completed → 总结）+ analyzeTodoContinuationEnforced（steer 注入文案逐字 + 事件序：收尾处无 turn/end → todo 推进 → 才有 turn/end completed + todo/write 内容差 + 对照段"无 steer"活断言四元组：输入非空+全 completed+零注入+零额外步）+ 变异 QA（无 steer / steer 后无推进仍 turn/end 各具名 FAIL）+ requestMessagesContain helper（按 message content 取文本——规避行文本 includes 的 JSON 转义 \n 风险；T6 未顺手改，最小改动纪律）。**双评审**：Kimi 轮1 **APPROVE**（3 NIT：OK 行补列 double-steer、收窄用例 2 变异分支、controlSnapshot 限定 controlEvents——仲裁决定并入 T13 同文件落地）+ mcode 轮1 **APPROVE**（"未发现需要处理的问题"）。门：仲裁独立复跑 ci-local **8/8 绿**、self-test OK（9 场景 fabricated good logs + 全部 defect 各具名 FAIL）、test:e2e 9/9。**仲裁决定（范围缺口）**：H-07（empty-task-response-detector）的 e2e 不在本任务产出内（任务书原文只列 todo-continuation 场景）——其 listener 单测已绿，**e2e 并入 T14**（同 D 模式批，退出标准 a 的覆盖缺口在该任务补齐）。**编码 agent 注记**：① 进展复员熔断 cap 5 的 e2e 成本高（6 个连续无进展边界），保持单测覆盖；② R-8 goals 让位无 e2e（需 armed goal），单测覆盖；③ skipAgents 放宽注记与 T7 一致。
 - **依赖**：P3-T7（~~P3-T8~~ 已取消）。**量级**：3 小时。
 
 ---
@@ -138,7 +138,7 @@
 
 ## WP-6 P4/P5 其余模块 + ulw-execute（计划书 §4.3/§4.5；P3-T1 实测重排：9 模块 = 8 P4 + H-32）
 
-### [ ] P3-T14 — 批 A：D 模式 error-recovery + truncator（3 模块）
+### [ ] P3-T14 — 批 A：D 模式 error-recovery + truncator（3 模块 + H-07 e2e 并入）
 
 - **产出**：`src/hooks/`：`edit-error-recovery.ts`、`json-error-recovery.ts`、`tool-output-truncator.ts` + 单测 + e2e。
 - **做法**：按 R3 批内排序（edit-error-recovery 58 行零状态 → json-error-recovery → truncator）；**前置**：① DSH `edit`/`write` 工具错误文案逐字核实（错误串表与 19 项排除表能否命中——实施期项）；② truncator 的"剩余 token"输入面核实（dsh-compaction-basic token meter 的暴露面；无暴露面则退化为固定阈值并记差异）；三模块共享 T6 打样的 post-execute 夹具；上游测试用例移植为单测种子（R-3：edit 9 / json 12 / truncator 7+16）。
