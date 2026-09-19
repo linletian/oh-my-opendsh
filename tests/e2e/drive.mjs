@@ -9,6 +9,12 @@
 //   {result:"PASS"|"FAIL", scenarios:[...]}
 // (report §14.4.5 — CI parses stdout; all diagnostics go to stderr).
 //
+// P3-T3: the root cordis.yml now inserts TWO plugin rows (omo-agents +
+// omo-hooks), so stage 0 installs BOTH packages into the sandbox profile
+// (PLUGIN_DIRS) and `pluginLoaded` asserts BOTH load markers. The seven
+// scenarios themselves are unchanged — the hooks plugin registers no listener
+// yet (empty implementation registry), so it only adds its summary boot marker.
+//
 // SEMANTIC SOURCE (read-only reference; fresh implementation, no code copied):
 //   oh-my-openagent/packages/omo-senpi/scripts/qa/drive.mjs:66-89 — mkdtemp
 //     sandbox {project, agent, xdg, home} + env override pattern.
@@ -325,9 +331,34 @@ import { startMockLlmServer } from './mock-llm-server.mjs'
 import { pathToFileURL } from 'node:url'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+// The concerto/roster package — also the source of the template this driver
+// renders for its own composition checks below.
 const PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents')
+// P3-T3: the root cordis.yml inserts one row per package, so a sandbox profile
+// must carry BOTH before it can boot the overlay at all.
+const HOOKS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks')
+const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR]
 const PROFILE = 'web'
 const CONCERTO_PRESET_ID = 'concerto'
+
+/**
+ * The load markers BOTH mounted plugins log at boot (P3-T3): omo-agents' plain
+ * `loaded` line and omo-hooks' summary marker (`[omo-hooks] loaded: manifest 15
+ * entries (…)` — the prefix is what boot_log.includes matches). A boot missing
+ * either one means the corresponding cordis.yml insert row did not mount.
+ */
+const LOADED_MARKERS = ['[omo-agents] loaded', '[omo-hooks] loaded']
+
+/** `pluginLoaded` for every analysis: both plugin rows really mounted. */
+function pluginsLoaded(bootLog) {
+  return LOADED_MARKERS.every((marker) => bootLog.includes(marker))
+}
+
+/**
+ * The boot-log text the `--self-test` fixtures feed the analyses that assert
+ * `pluginLoaded` (a real boot carries both markers).
+ */
+const FABRICATED_BOOT_LOG = LOADED_MARKERS.join('\n')
 
 // The T14 routes are the single source of truth (P-8.6 type-stripping, the
 // same import scripts/prove-route-logging.mjs uses).
@@ -994,16 +1025,25 @@ async function sessionPrompt(boot, request) {
 // ── dsh process management (cold-start.sh discipline) ───────────────────────
 
 function installPlugin(sandbox, env) {
-  const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', PLUGIN_DIR], {
-    cwd: REPO_ROOT,
-    env,
-    encoding: 'utf8',
-    timeout: INSTALL_TIMEOUT_MS,
-  })
-  writeFileSync(join(sandbox.root, 'plugin-add.log'), `${add.stdout ?? ''}\n${add.stderr ?? ''}`)
-  if (add.status !== 0) {
-    throw new Error(`dsh plugin add exited ${add.status} (see plugin-add.log in the sandbox)`)
+  // P3-T3: one `plugin add` per cordis.yml insert row — a profile that carries
+  // only omo-agents would fail to resolve the omo-hooks row at boot.
+  let addLog = ''
+  for (const pluginDir of PLUGIN_DIRS) {
+    const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', pluginDir], {
+      cwd: REPO_ROOT,
+      env,
+      encoding: 'utf8',
+      timeout: INSTALL_TIMEOUT_MS,
+    })
+    addLog += `$ dsh plugin --profile ${PROFILE} add ${pluginDir}\n${add.stdout ?? ''}\n${add.stderr ?? ''}\n`
+    if (add.status !== 0) {
+      writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
+      throw new Error(
+        `dsh plugin add ${pluginDir} exited ${add.status} (see plugin-add.log in the sandbox)`,
+      )
+    }
   }
+  writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
 }
 
 /**
@@ -1391,7 +1431,7 @@ export function analyzeHello({ log, requests, providersJson, bootLog }, routes) 
   const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
   const route = requestHeaderRoute(events)
   const checks = {
-    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    pluginLoaded: pluginsLoaded(bootLog),
     // The probe-proven pattern (scripts/concerto-mode-probe.sh): provider and
     // active:true inside the same JSON object.
     sisyphusProviderActive: new RegExp(
@@ -1480,7 +1520,7 @@ export function analyzeDemo({ log, childLog, requests, providersJson, bootLog },
   )
 
   const checks = {
-    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    pluginLoaded: pluginsLoaded(bootLog),
     sisyphusProviderActive: new RegExp(
       `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
     ).test(providersJson),
@@ -1609,7 +1649,7 @@ function negativeScenarioGivens({ log, childLog, requests, providersJson, bootLo
       && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
   )
   const givens = {
-    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    pluginLoaded: pluginsLoaded(bootLog),
     sisyphusProviderActive: new RegExp(
       `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
     ).test(providersJson),
@@ -1863,7 +1903,7 @@ export function analyzeRosterParade(
     .map((detail) => detail.agent)
 
   const checks = {
-    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    pluginLoaded: pluginsLoaded(bootLog),
     // (b) Wiring proof for every distinct route provider this scenario seats.
     everyRouteProviderActive: distinctRouteProviders.every((provider) =>
       new RegExp(`"provider":"${provider}"[^}]*"active":true`).test(providersJson),
@@ -1995,7 +2035,7 @@ function oneDelegationChildGivens(
       && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
   )
   const givens = {
-    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    pluginLoaded: pluginsLoaded(bootLog),
     sisyphusProviderActive: new RegExp(
       `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
     ).test(providersJson),
@@ -2187,7 +2227,7 @@ export function analyzeAtlasNestedDelegation(
   ])]
 
   const checks = {
-    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    pluginLoaded: pluginsLoaded(bootLog),
     everyRouteProviderActive: routeProviders.every((provider) =>
       new RegExp(`"provider":"${provider}"[^}]*"active":true`).test(providersJson),
     ),
@@ -2438,7 +2478,7 @@ function fabricatedGoodDemoInput(routes) {
     childLog: fabricatedGoodDemoChildLog(routes),
     requests: fabricatedDemoRequests(routes),
     providersJson: fabricatedProvidersJson(routes),
-    bootLog: '[omo-agents] loaded',
+    bootLog: FABRICATED_BOOT_LOG,
   }
 }
 
@@ -2541,7 +2581,7 @@ function fabricatedGoodWriteInput(routes) {
     ),
     requests: fabricatedDemoRequests(routes),
     providersJson: fabricatedProvidersJson(routes),
-    bootLog: '[omo-agents] loaded',
+    bootLog: FABRICATED_BOOT_LOG,
     writeTargetPath: FABRICATED_WRITE_TARGET,
   }
 }
@@ -2566,7 +2606,7 @@ function fabricatedGoodNestedInput(routes) {
     allLogs: [log, childLog],
     requests: fabricatedDemoRequests(routes),
     providersJson: fabricatedProvidersJson(routes),
-    bootLog: '[omo-agents] loaded',
+    bootLog: FABRICATED_BOOT_LOG,
   }
 }
 
@@ -2734,7 +2774,7 @@ function fabricatedParadeInput(baseRoutes) {
       ],
       requests: fabricatedParadeRequests(routes),
       providersJson: fabricatedParadeProvidersJson(routes),
-      bootLog: '[omo-agents] loaded',
+      bootLog: FABRICATED_BOOT_LOG,
       markerLanding: [CONDUCTOR_ID, ...PARADE_AGENTS].map((role) => ({ role, ok: true })),
     },
     routes,
@@ -2845,7 +2885,7 @@ function fabricatedPlanReviewerInput(baseRoutes) {
       ),
       requests: fabricatedSingleChildRequests(routes, 'plan-reviewer', PLAN_REVIEWER_WRITE_NOTE),
       providersJson: fabricatedAllProvidersJson(routes),
-      bootLog: '[omo-agents] loaded',
+      bootLog: FABRICATED_BOOT_LOG,
       writeTargetPath: FABRICATED_PLAN_REVIEWER_WRITE_TARGET,
     },
     routes,
@@ -3013,7 +3053,7 @@ function fabricatedAtlasNestedInput(baseRoutes) {
       allLogs: [parentLog, atlasLog, grandchildLog],
       requests: fabricatedAtlasNestedRequests(routes),
       providersJson: fabricatedAllProvidersJson(routes),
-      bootLog: '[omo-agents] loaded',
+      bootLog: FABRICATED_BOOT_LOG,
     },
     routes,
   }
@@ -3123,7 +3163,7 @@ async function runAnalysisSelfTest(routes) {
       log: fabricatedGoodLog(routes),
       requests: [{ role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 0 }],
       providersJson: fabricatedProvidersJson(routes),
-      bootLog: '[omo-agents] loaded',
+      bootLog: FABRICATED_BOOT_LOG,
     },
     routes,
   )
@@ -3153,7 +3193,7 @@ async function runAnalysisSelfTest(routes) {
       log: fabricatedGoodLog(routes),
       requests: [{ role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 0 }],
       providersJson: fabricatedProvidersJson(routes),
-      bootLog: '[omo-agents] loaded',
+      bootLog: FABRICATED_BOOT_LOG,
     }
     mutate(input)
     const verdict = analyzeHello(input, routes)

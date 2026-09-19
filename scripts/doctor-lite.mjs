@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// scripts/doctor-lite.mjs — T21 (PRD §8 L3): a 4-check environment gate for the
+// scripts/doctor-lite.mjs — T21 (PRD §8 L3): a 5-check environment gate for the
 // oh-my-opendsh MVP. Reference pattern: OMO doctor (feasibility report §14.6,
 // docs/feasibility-report_zh-CN.md:1522-1557) — every check returns
 // { status: "pass"|"fail"|"warn"|"skip", message, issues[] }, `skip` is a
@@ -7,7 +7,7 @@
 // reason, never faked into pass/fail), `--json` emits a single machine-readable
 // object, and any fail exits 1 — so doctor-lite doubles as a CI gate.
 //
-// The four checks (PRD §8 L3):
+// The five checks (PRD §8 L3; 2b added by P3-T3):
 //   1. dsh-version     `dsh --version` exists and is the pinned 0.1.x
 //                      (decision D7) — fail if missing or outside 0.1.x,
 //                      surfacing the found version.
@@ -16,6 +16,13 @@
 //                      uses the `- insert:` row form (T4's P-8 findings: a
 //                      plain `- id:` row silently skips, so rows without
 //                      `insert:` downgrade the check to WARN).
+//   2b. cordis-plugins cordis.yml inserts EXACTLY the plugin rows P3-T3 names
+//                      (EXPECTED_INSERT_ROW_IDS: omo-agents then omo-hooks, in
+//                      mount order) — the fact every sandbox boot site installs
+//                      a package for. A dropped / renamed / reordered / extra
+//                      plugin row fails here instead of surfacing as a plugin
+//                      that silently never mounted. Skipped when check 2 could
+//                      not produce a parsed row list (cascade honesty).
 //   3. llm-adapters    both LLM adapter rows visible in the composed config —
 //                      `dsh --profile web --dump-config --patch <cordis>`,
 //                      the same cheap observable cold-start.sh Stage A uses
@@ -46,9 +53,9 @@
 //                      → skip with reason, not fail.
 //
 // Zero npm dependencies of its own: the only external modules are read-only
-// imports from the installed dsh (checks 2 and 4). No boot anywhere: checks
-// 1-2 are instant, check 3 is a --dump-config composition (seconds), check 4
-// is a schema run — total budget < 60s.
+// imports from the installed dsh (checks 2, 2b and 4). No boot anywhere: checks
+// 1-2b are instant (2b re-reads the same tiny file), check 3 is a --dump-config
+// composition (seconds), check 4 is a schema run — total budget < 60s.
 //
 // Usage:
 //   node scripts/doctor-lite.mjs            human output, one line per check
@@ -65,7 +72,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import {
   analyzePatchEntries,
+  collectInsertRowIds,
   delegationRowContractProblems,
+  EXPECTED_INSERT_ROW_IDS,
   expectedDelegationRowContract,
   findRowsById,
   isPinnedDshVersion,
@@ -279,6 +288,75 @@ async function checkCordis(cordisPath) {
     'cordis',
     'pass',
     `cordis.yml parses: ${rows.length} insert-form patch entr${rows.length === 1 ? 'y' : 'ies'} (no silent-skip rows)`,
+  )
+}
+
+// ── check 2b: cordis.yml mounts exactly the two plugin rows (P3-T3) ─────────
+
+/**
+ * P3-T3's mount assertion: the patch overlay must insert exactly the two plugin
+ * rows EXPECTED_INSERT_ROW_IDS names, in mount order. A NEW check rather than
+ * more conditions inside check 2: check 2 owns the P-8 parse question ("does
+ * every top-level row use the insert form"), while this one owns "which plugins
+ * are mounted" — the fact every sandbox boot site (scripts/cold-start.sh,
+ * tests/e2e/drive.mjs, scripts/concerto-mode-probe.sh, scripts/smoke-real.mjs)
+ * has to install a package for. A row dropped from the overlay, renamed,
+ * reordered or joined by a third plugin without its install site fails here
+ * instead of surfacing as a plugin that silently never mounted.
+ *
+ * Cascades honestly: check 2 owns the missing-file / unparseable-file report
+ * (this check re-parses the same file only to read the ids), so it skips with
+ * the reason when check 2 could not produce a parsed row list. check 1's
+ * missing-dsh case cascades for the same reason check 3 does — the YAML dialect
+ * parser is imported from the installed dsh.
+ */
+async function checkCordisPlugins(cordisPath, check1, check2) {
+  if (check1.status === 'fail' && check1.meta?.dshMissing === true) {
+    return check(
+      'cordis-plugins',
+      'skip',
+      'dsh unavailable — cascaded from check 1 (the YAML dialect parser comes from the installed dsh)',
+      ['check 1 already reports the missing dsh; fix that first'],
+    )
+  }
+  if (check2.status === 'fail' || check2.status === 'skip') {
+    return check(
+      'cordis-plugins',
+      'skip',
+      `cordis.yml plugin rows not readable — cascaded from check 2 (${check2.status})`,
+      [check2.message],
+    )
+  }
+  let rows
+  try {
+    rows = await loadYamlDialect(cordisPath)
+  } catch (error) {
+    return check(
+      'cordis-plugins',
+      'skip',
+      `cordis.yml could not be re-parsed for the plugin rows — cascaded from check 2 (${error.code ?? error.message})`,
+      [check2.message],
+    )
+  }
+  const observed = collectInsertRowIds(rows)
+  const expected = [...EXPECTED_INSERT_ROW_IDS]
+  const matches = observed.length === expected.length
+    && observed.every((id, index) => id === expected[index])
+  if (!matches) {
+    return check(
+      'cordis-plugins',
+      'fail',
+      `cordis.yml inserts ${observed.length} plugin row${observed.length === 1 ? '' : 's'} [${observed.join(', ')}] — expected exactly ${expected.length} in mount order [${expected.join(', ')}]`,
+      [
+        'the root overlay mounts @oh-my-opendsh/omo-agents then @oh-my-opendsh/omo-hooks (P3-T3); '
+        + 'each row needs its own `dsh plugin --profile web add <dir>` at every sandbox boot site',
+      ],
+    )
+  }
+  return check(
+    'cordis-plugins',
+    'pass',
+    `cordis.yml inserts exactly the ${expected.length} plugin rows in mount order: ${expected.join(' + ')}`,
   )
 }
 
@@ -673,17 +751,20 @@ async function checkSubagentConfig(check1) {
 }
 
 /**
- * Runs the four checks in order (3 and 4 depend on 1's cascade state).
- * Returns { checks: [{name, status, message, issues}], pass } where `pass`
- * is false iff any check reported FAIL. Never throws: unexpected errors are
- * folded into a final fail check so the doctor never crashes unhandled.
+ * Runs the five checks in order (3 and 4 depend on 1's cascade state; 2b reads
+ * the same file 2 parsed). Returns { checks: [{name, status, message, issues}],
+ * pass } where `pass` is false iff any check reported FAIL. Never throws:
+ * unexpected errors are folded into a final fail check so the doctor never
+ * crashes unhandled.
  */
 export async function runDoctor(cordisPath) {
   const results = []
   try {
     const c1 = await checkDshVersion()
     results.push(c1)
-    results.push(await checkCordis(cordisPath))
+    const c2 = await checkCordis(cordisPath)
+    results.push(c2)
+    results.push(await checkCordisPlugins(cordisPath, c1, c2))
     results.push(await checkLlmAdapters(cordisPath, c1))
     results.push(await checkSubagentConfig(c1))
   } catch (error) {
@@ -721,10 +802,10 @@ function parseArgs(argv) {
     else if (arg === '--cordis') cordisPath = argv[++i]
     else if (arg === '-h' || arg === '--help') {
       console.log(
-        'doctor-lite: 4-check environment gate (PRD §8 L3)\n'
+        'doctor-lite: 5-check environment gate (PRD §8 L3)\n'
         + 'usage: node scripts/doctor-lite.mjs [--json] [--cordis <path>]\n'
         + '       OMO_DOCTOR_CORDIS_PATH=<path> overrides the cordis.yml location (env form)\n'
-        + 'checks: dsh-version, cordis, llm-adapters, subagent-config — exit 1 iff any FAIL',
+        + 'checks: dsh-version, cordis, cordis-plugins, llm-adapters, subagent-config — exit 1 iff any FAIL',
       )
       process.exit(0)
     }

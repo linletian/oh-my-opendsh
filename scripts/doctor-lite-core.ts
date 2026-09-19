@@ -23,6 +23,17 @@ export const LLM_ADAPTER_ROWS = [
 ]
 
 /**
+ * The plugin rows the repo-root cordis.yml must insert, in mount order (P3-T3).
+ * Named and exported so the expectation is stated ONCE: every sandbox boot site
+ * (scripts/cold-start.sh, tests/e2e/drive.mjs, scripts/concerto-mode-probe.sh,
+ * scripts/smoke-real.mjs) installs one package per row, and doctor-lite's
+ * `cordis-plugins` check compares the parsed patch file against this list (a row
+ * dropped from the overlay — or a third one added without its install site —
+ * fails the gate instead of surfacing as a plugin that never mounted).
+ */
+export const EXPECTED_INSERT_ROW_IDS = ['omo-agents', 'omo-hooks'] as const
+
+/**
  * Parses a `dsh --version` line. Accepts optional leading whitespace and a
  * leading `v`; the prerelease suffix (`0.1.5-rc.1`) is ignored for the pin
  * (D7 pins the minor). Returns { major, minor, patch } or null when the
@@ -86,6 +97,29 @@ export function analyzePatchEntries(rows: unknown[]): PatchEntryAnalysis {
     issues.push(`${label} (${id}) lacks insert: — a plain row only overrides an existing row and is silently skipped (P-8)`)
   }
   return { insertForm, nonMapping, issues }
+}
+
+/**
+ * Collects the `id` of every row inside the top-level `insert:` lists, in patch
+ * order (P3-T3's `cordis-plugins` check). `analyzePatchEntries` answers "is
+ * every row in the insert FORM" (P-8); this answers "WHICH plugin rows are
+ * mounted", which is the fact the install sites depend on. Non-mapping entries
+ * and inserted rows without a string id contribute nothing — the caller
+ * compares the whole observed list against {@link EXPECTED_INSERT_ROW_IDS}, so
+ * an anonymous row shows up as a missing id rather than passing silently.
+ */
+export function collectInsertRowIds(rows: unknown[]): string[] {
+  const ids: string[] = []
+  for (const row of rows) {
+    if (!isMappingRow(row)) continue
+    const insert = row.insert
+    if (!Array.isArray(insert)) continue
+    for (const inserted of insert) {
+      if (!isMappingRow(inserted)) continue
+      if (typeof inserted.id === 'string' && inserted.id.length > 0) ids.push(inserted.id)
+    }
+  }
+  return ids
 }
 
 /**

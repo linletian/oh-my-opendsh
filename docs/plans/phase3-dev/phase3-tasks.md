@@ -48,12 +48,12 @@
 - **证据**：2026-09-19 完成（编码 sub-agent deepseek-flash：1 首轮 + 2 修复轮）。产出：package.json 11 行 / tsconfig.host.json 30 行 / src/index.ts 71 行 / src/manifest.ts 648 行（15 条目——P3-T1 实测后扩自"P0 两条目占位"，覆盖基线 §1 全部移植模块 + validateManifest 9 检查 + hooksByEvent/hooksByStatus 派生）/ tests/omo-hooks/manifest.test.ts 25 用例 / 根 package.json 增 typecheck:hooks 并接入 typecheck:libs 链。**双评审**：Kimi 轮1 REJECT（1 MAJOR：H-16 upstreamTestFiles 漏登 tool-output-truncator.test.ts 且注释误称"无测试"——仲裁属实）+ mcode 轮1 APPROVE → 修复轮1（M-1 + 2 处注释失真）→ Kimi 轮2 APPROVE（4 项非阻塞 NIT——仲裁全部采纳）+ mcode 轮2 APPROVE → 修复轮2 → **Kimi 轮3 APPROVE + mcode 轮3 APPROVE**（"无 P0/P1/P2 级别实质缺陷"）。门：typecheck 0、typecheck:hooks 0、vitest tests/omo-hooks 25/25（首轮 MAJOR 位点已入变异敏感网）、全量 vitest 458。**编码 agent 对任务书的质疑（仲裁记录）**：① H-16 的 shared/ 支撑文件记账口径 → 留 T14 裁定（import 闭包 7 实现文件已注记）；② e2e 场景名体例 → 采纳统一派生，改名时按单向同步纪律先改覆盖清单；③ status 词汇表中英映射 → 留 T20 一致性门定义。
 - **依赖**：P3-T1。**量级**：3 小时。
 
-### [ ] P3-T3 — 挂载 + boot marker 接线
+### [x] P3-T3 — 挂载 + boot marker 接线
 
 - **产出**：根 `cordis.yml` 第二个 `- insert:` 行（`id: omo-hooks`）；`src/index.ts` 的 apply 注册循环 + boot marker（`[omo-hooks] hook <id> registered on <event>` 逐行 + 汇总行）；cold-start / doctor-lite / probe 的 omo-hooks 接线。
-- **做法**：P-8 schema 纪律（insert 形态、`name` 从 profile 解析、`dsh plugin --profile add`）；loud-but-non-fatal（单 hook 注册失败不拖垮其余，P2-T16 先例）；marker 格式稳定（probe 断言锚点）；doctor-lite 增双 insert 行断言；probe 增 boot marker 断言（占位期 = P0 两条目）。
+- **做法**：P-8 schema 纪律（insert 形态、`name` 从 profile 解析、`dsh plugin --profile add`）；loud-but-non-fatal（单 hook 注册失败不拖垮其余，P2-T16 先例）；marker 格式稳定（probe 断言锚点）；doctor-lite 增双 insert 行断言；probe 增 boot marker 断言（~~占位期 = P0 两条目~~ **仲裁修正（2026-09-19）**：占位期口径过时——P3-T1 后 manifest 已满 15 条目，改为"实现注册表 HOOK_REGISTRARS 为空 + 汇总行计数从 manifest 派生"，T4+ 逐 hook 填入注册表）。
 - **判定**：✅ `scripts/cold-start.sh` 绿且日志含 omo-hooks marker；门 4/8 绿；`--dump-config` 含 omo-hooks 行。
-- **证据**：（待填）
+- **证据**：2026-09-19 完成（deepseek-flash，1 首轮 + 1 修复轮）。产出：cordis.yml 双 insert 行（头部注释更新为双包挂载纪律）+ src/boot-markers.ts（纯函数：汇总行/registered/FAILED/manifest-validation-FAILED 四形态，计数派生自 manifest 1/3/8/1/2/0）+ index.ts apply（validateManifest → 汇总行 → HOOK_REGISTRARS 循环 per-hook try/catch）+ registration.test.ts 20 用例 + cordis-inserts.test.ts + cold-start.sh 双安装双断言 + doctor-lite 新增 check 2b（恰好 2 insert 行且 id 集合 == {omo-agents, omo-hooks}）+ drive.mjs 双插件安装 + probe/smoke-real 同步。**双评审**：Kimi 轮1 **REJECT（1 MAJOR：ctx.effect 转发 disposer 语义反转——\`ctx.effect(() => { disposer() })\` 注册时立即拆除且返回 undefined 致 Fiber stop 无 disposal）** + mcode 轮1 APPROVE（漏掉该潜伏缺陷——HOOK_REGISTRARS 为空故运行时不触发，双评审互补价值兑现）→ 仲裁核实 cordis _execute :1134-1142（execute **返回值**被 collect 为 disposal），Kimi finding 成立 → 修复轮（\`ctx.effect(() => disposer)\` + fake ctx 改建模真实 cordis + 断言更正 + 变异验证：回退错误形态新用例如期 FAIL）→ **Kimi 轮2 APPROVE + mcode 轮2 APPROVE**。门：仲裁独立复跑 ci-local **8/8 绿**、vitest tests/omo-hooks 45/45、cold-start 双 loaded marker。**编码 agent 注记**：事件计数 15=1/3/8/1/2/0 的变异敏感网——T4–T17 调整条目 event 须同 commit 更新 EXPECTED_SUMMARY_LINE。
 - **依赖**：P3-T2。**量级**：3 小时。
 
 ---

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # scripts/cold-start.sh — sandboxed dsh cold-start smoke for the omo-agents
-# plugin (AC-1). Creates a throwaway sandbox with HOME / XDG_CONFIG_HOME /
-# DSH_HOME / DSH_AGENTS_HOME redirected into it (the developer's real ~/.dsh
-# and ~/.config are never touched), installs the plugin into a fresh web
-# profile, boots `dsh --profile web --patch ./cordis.yml`, waits for the
-# readiness line, terminates with SIGTERM, and greps the captured log for
-# plugin load errors. Exits 0 only if every check is clean.
+# plugin (AC-1) and, since P3-T3, the omo-hooks plugin too. Creates a throwaway
+# sandbox with HOME / XDG_CONFIG_HOME / DSH_HOME / DSH_AGENTS_HOME redirected
+# into it (the developer's real ~/.dsh and ~/.config are never touched),
+# installs BOTH packages into a fresh web profile (the root cordis.yml inserts
+# one row per package — see its header), boots `dsh --profile web --patch
+# ./cordis.yml`, waits for the readiness line, terminates with SIGTERM, and
+# greps the captured log for the two load markers
+# (`[omo-agents] loaded` / `[omo-hooks] loaded`) and for plugin load errors.
+# Exits 0 only if every check is clean.
 #
 # Learned flags (P-8): `--profile <name>` is required; `--patch` is a ROOT
 # flag and must precede app flags (e.g. `--port`) — once the app's own flags
@@ -49,12 +52,18 @@ echo "cold-start: sandbox: $SANDBOX"
 echo "cold-start: dsh binary: $(command -v dsh)"
 dsh --version || fail "dsh --version failed"
 
-# Stage 0: fresh profile + install the plugin into it (forwards to pnpm in
-# the sandbox profile dir; writes stay inside the sandbox).
+# Stage 0: fresh profile + install BOTH plugins into it (forwards to pnpm in
+# the sandbox profile dir; writes stay inside the sandbox). Two `plugin add`
+# calls since P3-T3: the cordis.yml overlay carries one insert row per package,
+# so a profile with only one of them cannot compose the other.
 echo "cold-start: installing @oh-my-opendsh/omo-agents into sandbox profile '$PROFILE'"
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-agents" >"$ADD_LOG" 2>&1 \
-  || fail "dsh plugin add failed (see $ADD_LOG)"
+  || fail "dsh plugin add (omo-agents) failed (see $ADD_LOG)"
+echo "cold-start: installing @oh-my-opendsh/omo-hooks into sandbox profile '$PROFILE'"
+timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
+  "$REPO_ROOT/patches/omo-dsh/omo-hooks" >>"$ADD_LOG" 2>&1 \
+  || fail "dsh plugin add (omo-hooks) failed (see $ADD_LOG)"
 
 # Stage A: composition check (no boot). --dump-config prints the composed
 # tree and surfaces unmatched-patch warnings on stderr.
@@ -63,6 +72,10 @@ dsh --profile "$PROFILE" --dump-config --patch ./cordis.yml >"$DUMP_OUT" 2>"$DUM
   || fail "--dump-config failed: $(cat "$DUMP_ERR")"
 grep -q "name: '@oh-my-opendsh/omo-agents'" "$DUMP_OUT" \
   || fail "composed tree does not contain the omo-agents row (patch silently skipped?)"
+# P3-T3: the second insert row must compose too — the hooks plugin's listeners
+# are only mounted when this row resolves from the profile directory.
+grep -q "name: '@oh-my-opendsh/omo-hooks'" "$DUMP_OUT" \
+  || fail "composed tree does not contain the omo-hooks row (patch silently skipped?)"
 # T14: both built-in LLM adapters our dual routing depends on (Q-3) must be
 # part of the composed tree — the composition-level half of the adapter gate
 # (the runtime-registration half lives in scripts/concerto-mode-probe.sh).
@@ -122,10 +135,14 @@ wait "$DSH_PID"
 boot_exit=$?
 [[ "$boot_exit" == "0" ]] || fail "dsh exited $boot_exit after SIGTERM (expected 0)"
 
-# Positive signal: our plugin actually loaded (T6 dropped the "(no-op)"
-# suffix — the plugin now performs concerto preset registration).
+# Positive signal: our plugins actually loaded (T6 dropped the "(no-op)"
+# suffix — the plugin now performs concerto preset registration). P3-T3 adds the
+# hooks half: `[omo-hooks] loaded: manifest 15 entries (…)` is the summary boot
+# marker emitted after validateManifest accepted the roster.
 grep -q "\[omo-agents\] loaded" "$BOOT_LOG" \
   || fail "plugin load marker missing from boot log (plugin never mounted?)"
+grep -q "\[omo-hooks\] loaded" "$BOOT_LOG" \
+  || fail "omo-hooks load marker missing from boot log (hooks plugin never mounted?)"
 
 # Negative signal: no plugin load errors anywhere in the log.
 # NB: the generic words error/fatal/failed are scoped to plugin context

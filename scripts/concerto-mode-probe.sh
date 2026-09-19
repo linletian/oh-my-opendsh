@@ -12,6 +12,15 @@
 # Assertions per boot:
 #   plugin side — `[omo-agents] loaded`, `concerto preset <outcome>`, the
 #                 roster line listing `concerto:user`, and no FAILED line.
+#   P3-T3 hooks — the SECOND cordis.yml insert row's mount observable:
+#                 `[omo-hooks] loaded: manifest 15 entries (…)`. The expected
+#                 text is DERIVED below from the plugin's own manifest.ts +
+#                 boot-markers.ts (never a retyped literal), so the probe
+#                 asserts the booted plugin used the same roster and formatter
+#                 as this source tree, and a drift in either module fails here.
+#                 Per-hook `registered` lines are absent BY DESIGN today: the
+#                 implementation registry is empty until P3-T4+ (P3-T19 extends
+#                 this block to the full registered set).
 #   T8 persona  — the `omo-sisyphus system prompt assembled` boot marker, and
 #                 the MATERIALIZED $DSH_HOME preset's agent.cordis.yml: the
 #                 sentinel is gone and the persona block scalar carries the
@@ -162,11 +171,17 @@ echo "concerto-probe: sandbox: $SANDBOX"
 echo "concerto-probe: dsh binary: $(command -v dsh)"
 dsh --version || fail "dsh --version failed"
 
-# Stage 0: fresh profile + install the plugin into it.
+# Stage 0: fresh profile + install BOTH plugins into it (one per cordis.yml
+# insert row — P3-T3 mounted omo-hooks as the second row, so a profile carrying
+# only omo-agents could not compose the overlay).
 echo "concerto-probe: installing @oh-my-opendsh/omo-agents into sandbox profile '$PROFILE'"
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-agents" >"$ADD_LOG" 2>&1 \
-  || fail "dsh plugin add failed (see $ADD_LOG)"
+  || fail "dsh plugin add (omo-agents) failed (see $ADD_LOG)"
+echo "concerto-probe: installing @oh-my-opendsh/omo-hooks into sandbox profile '$PROFILE'"
+timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
+  "$REPO_ROOT/patches/omo-dsh/omo-hooks" >>"$ADD_LOG" 2>&1 \
+  || fail "dsh plugin add (omo-hooks) failed (see $ADD_LOG)"
 
 # T14 (FR-5, P-2; AC-5 config half): resolve the two route pairs from the
 # plugin's own config module — the single source of truth (Node 24
@@ -274,6 +289,23 @@ UNIFORM_MAXDEPTH="$(printf '%s\n' "$DELEGATION_MAXDEPTHS" | cut -d= -f2- | sort 
 [[ "$(count_lines "$UNIFORM_MAXDEPTH")" == "1" ]] \
   || fail "roster maxDepth is NOT uniform across the delegation rows: $UNIFORM_MAXDEPTH"
 echo "concerto-probe: P2-T20 roster: $ROSTER_SIZE routes, $DELEGATION_COUNT delegation rows, $DISTINCT_PROVIDER_COUNT distinct providers ($(printf '%s' "$ROUTE_PROVIDERS" | paste -sd' ' -)), uniform maxDepth=$UNIFORM_MAXDEPTH"
+
+# P3-T3: the omo-hooks mount marker's expected text, derived from the plugin's
+# OWN manifest.ts + boot-markers.ts (Node 24 type-stripping, the same
+# single-source discipline as the route resolution above). The probe therefore
+# never restates the manifest counts: a drift in either module — or a booted
+# plugin whose roster disagrees with this tree — fails the grep below.
+EXPECTED_HOOKS_SUMMARY="$(node --input-type=module -e "
+  Promise.all([
+    import('./patches/omo-dsh/omo-hooks/src/manifest.ts'),
+    import('./patches/omo-dsh/omo-hooks/src/boot-markers.ts'),
+  ]).then(([manifest, markers]) => {
+    console.log(markers.formatLoadedSummaryLine(manifest.HOOK_MANIFEST))
+  })
+")" || fail "omo-hooks manifest/boot-markers module resolution failed: $EXPECTED_HOOKS_SUMMARY"
+[[ -n "$EXPECTED_HOOKS_SUMMARY" ]] \
+  || fail "could not derive the omo-hooks summary marker from manifest.ts + boot-markers.ts"
+echo "concerto-probe: P3-T3 hooks marker: $EXPECTED_HOOKS_SUMMARY"
 
 # P2-T15 (plan §4.4 deny-sentinel rendering): the explore row's deny is no
 # longer the inline F1 triple. It is the ROSTER-COMPUTED list — write/edit plus
@@ -647,6 +679,19 @@ boot_once() {
   # Plugin-side assertions.
   grep -q "\[omo-agents\] loaded" "$boot_log" \
     || fail "[$label] plugin load marker missing (plugin never mounted?)"
+  # P3-T3: the second cordis.yml insert row mounted and its ONE summary marker
+  # matches the source-derived text exactly (-F: the marker carries regex
+  # metacharacters). No per-hook `registered` line is expected yet — the
+  # implementation registry is empty until P3-T4+ — but a FAILED line is a real
+  # registration/validation failure and must never ride along silently.
+  grep -qF "$EXPECTED_HOOKS_SUMMARY" "$boot_log" \
+    || fail "[$label] omo-hooks summary marker missing or drifted (want: $EXPECTED_HOOKS_SUMMARY)"
+  if grep -q '\[omo-hooks\] manifest validation FAILED' "$boot_log"; then
+    fail "[$label] omo-hooks rejected its own manifest at boot — see FAILED line above"
+  fi
+  if grep -q '\[omo-hooks\] hook .* FAILED' "$boot_log"; then
+    fail "[$label] an omo-hooks registration FAILED at boot — see FAILED line above"
+  fi
   if grep -q "\[omo-agents\] concerto .* FAILED" "$boot_log"; then
     fail "[$label] registration threw — see FAILED line above"
   fi
@@ -936,5 +981,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and the materialized-composition grep both derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row materialized toolName/deny/allow/maxDepth greps generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH); idempotent re-boot confirmed"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and the materialized-composition grep both derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row materialized toolName/deny/allow/maxDepth greps generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker matching the plugin's own manifest.ts + boot-markers.ts (P3-T3)"
 exit 0
