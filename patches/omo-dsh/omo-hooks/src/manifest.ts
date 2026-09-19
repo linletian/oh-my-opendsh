@@ -116,15 +116,15 @@ export const manifestEventSet: ReadonlySet<string> = new Set<string>(MANIFEST_EV
 export const manifestModeSet: ReadonlySet<string> = new Set<string>(MANIFEST_MODES)
 
 /**
- * `status` is an open string on purpose. Today it is still always 'pending'
- * (phase3-hooks.md §5: 已移植 0/14) even though P3-T5 landed the first listener
- * — a row flips only when listener + unit test + e2e have ALL landed (H-02's
- * e2e is P3-T6), and the edit order below is doc-first, with docs/ out of scope
- * for the port tasks. P3-T5…T17 flip individual rows one at a time, and
- * phase3-plan.md §4.8 words the flipped value as 已移植（场景 xxx）: the
- * coverage-list status embeds the row's e2e scenario name, so the vocabulary is
- * not a fixed two-value set that a closed union could spell. The T20 consistency
- * test pins the actual vocabulary against the coverage list instead.
+ * `status` is an open string on purpose. Rows started flipping at P3-T7: H-02
+ * (`bash-file-read-guard`) is now 'ported' because listener + unit test + e2e
+ * have ALL landed (its e2e scenario is `bash-read-guard-warned`); the other 13
+ * rows are still 'pending'. The edit order is doc-first — phase3-hooks.md
+ * already read ✅ 已移植 for H-02 before this row moved — with docs/ out of scope
+ * for the port tasks. A closed union could not spell the coverage list's
+ * vocabulary: phase3-plan.md §4.8 words a flipped row as 已移植（场景 xxx）, so
+ * the coverage-list status embeds the row's e2e scenario name. The T20
+ * consistency test pins the actual vocabulary against the coverage list instead.
  */
 export type HookManifestStatus = string
 
@@ -193,13 +193,28 @@ const MANIFEST_ROWS = [
     summary:
       '简单 cat/head/tail 读文件 → 劝导改用 read 工具；命令照执行，warning 经 additionalContexts 进下一请求',
     e2eScenario: 'bash-read-guard-warned',
-    status: 'pending',
+    // P3-T7: flipped 'pending' → 'ported' on the WP-2 仲裁 ruling that the T6
+    // e2e (scenario `bash-read-guard-warned`, landing in tests/e2e/drive.mjs)
+    // passed — listener + unit test + e2e have all landed, which is the row-flip
+    // condition the status-type comment states. The human-readable half is
+    // already AHEAD of this row (phase3-hooks.md §1 H-02 reads ✅ 已移植（场景
+    // bash-read-guard-warned，P3-T5 listener + P3-T6 e2e，commit 3e6903d+）), so
+    // the doc → manifest edit order holds.
+    status: 'ported',
   },
   // H-03 — phase3-hooks.md §1 P1 行。上游 33 文件 = 17 实现 + 16 测试（另
   // AGENTS.md 不计）。模式 E 是 P3-T1 更正后的口径：turn-stopping listener 的
   // **返回值被 driver 丢弃**，续行 = `agent.steer(createUserMessage(...))`
   // 写入 inbox 的副作用（dsh-hooks-claude-code 先例
-  // lib/index.js:292-307），不是投票。todo 状态源 = DSH 原生 ctx.todo（U-4）。
+  // lib/index.js:292-307），不是投票。
+  // U-4 实测（P3-T7）：DSH **无 ctx.todo 服务**——`dsh-tool-todo` 是「工具 +
+  // session projection」，原生读面 = `ctx.sessionProjections.stateOf(session,
+  // 'todos')`（dsh-tool-todo/lib/types/index.d.ts:26-31；返回 TodoItem[] | null
+  // | undefined）。R-8 实测（P3-T7）：`dsh-goal-round-driver` 只在「active 且
+  // armed 的 goal」存在时续行，触发面是 agent/status(idle)+goal/changed+pre-step
+  // 围栏（**不监听 turn-stopping**），且以**开新回合**续行——与「todo 未清 →
+  // 同一回合 steer」互补不重叠；本 hook 在有活跃 armed goal 时让位（可选
+  // ctx.get('goals')，缺席不报错）。
   {
     id: 'todo-continuation-enforcer',
     upstreamFiles: [
@@ -248,7 +263,20 @@ const MANIFEST_ROWS = [
   },
   // H-07 — phase3-hooks.md §1 P1 行（原 P0 草案的 task_* 族模块已 §2 S-32 跳过，
   // 本行是与 todo 执行器同批的 D 模式模块）。上游单文件、无测试文件。
-  // 前置（U-7）：若 dsh-tool-subagent 已有空结果等价提示，按 DoD-d 改判跳过。
+  // U-7 实测（P3-T7，前置**通过** → 按原计划实施，不改判跳过）：
+  //   * `dsh-subagent` 的 `AssistantOutputFold.collect()` 在子代理既无非空
+  //     assistant 消息、也无累积流文本时返回 `undefined`；
+  //   * `dsh-tool-subagent` 对前台结果 render 为
+  //     `outputValueText(value.output)`（lib/index.js:484-487），空 output 渲染出
+  //     **空文本**——无警告、无注释、无诊断。
+  //   ⇒ DSH 无原生等价纠正。收窄两点（记入 listener 头部）：非 `completed` 停止
+  //     原因已由 `stopReasonError`（lib/index.js:286-296）物化为 isError（故本
+  //     listener 跳过 isError 结果）；末句 "not waiting" 在 DSH 同样成立，改为
+  //     可执行指令。
+  // 委派工具名集合 = roster.ts `DELEGATION_TOOL_NAMES` 的 10 个（手抄 + 漂移
+  // 守测，因计划书 §4.1 禁止 omo-agents ↔ omo-hooks 互相 import）外加**钉死
+  // 基础组合**实际挂载的 `subagent`/`subagent_fork`（dsh-base/cordis.patch.yml
+  // :349-365）——后者是登记在案的超集，见 listener 头部与报告。
   {
     id: 'empty-task-response-detector',
     upstreamFiles: ['packages/omo-opencode/src/hooks/empty-task-response-detector.ts'],
@@ -256,7 +284,7 @@ const MANIFEST_ROWS = [
     event: 'tools/post-execute',
     mode: 'D',
     summary:
-      '空任务响应检测 → 纠正性工具结果（上游原地改写 output.output；DSH 走 accept{content}/block{feedback}）；前置 U-7 核实 DSH 是否已原生覆盖',
+      '空任务响应检测 → 纠正性工具结果（上游原地改写 output.output；DSH 走 accept{content} 替换渲染内容）；U-7 实测无原生覆盖，前置通过',
     e2eScenario: 'empty-task-response-corrected',
     status: 'pending',
   },

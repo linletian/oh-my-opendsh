@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **1/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：📋 **6/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
@@ -86,12 +86,12 @@
 
 ## WP-3 P1 todo/goal 执行器（计划书 §4.3；E/D 模式打样）
 
-### [ ] P3-T7 — 移植 `todo-continuation-enforcer` + `empty-task-response-detector`
+### [x] P3-T7 — 移植 `todo-continuation-enforcer` + `empty-task-response-detector`
 
 - **产出**：`src/hooks/todo-continuation-enforcer.ts`（E 模式打样）+ `src/hooks/empty-task-response-detector.ts`（D 模式）+ 单测。
 - **做法**：E 模式按 P3-T1 实测实现——"todo 未清"判定后 `agent.steer(createUserMessage(...))` 写入 inbox（`dsh-hooks-claude-code/lib/index.js:292-307` 先例；**返回值无效，必须 steer**）；todo 状态数据源 = `ctx.todo`（DSH 原生，关键约束——其读 API 形状实施时先核，U-4）；**R-8 检查**：与 dsh-goal-round-driver 续行语义的关系逐字记录（重叠处以 DSH 原生为主、本 hook 收窄为补充）；`empty-task-response-detector` 移植**前置**：核实 dsh-tool-subagent 是否已有空结果等价提示（U-7），若有则按 DoD-d 改判跳过并记录。
 - **判定**：✅ 单测覆盖：todo 未清 steer 续行 / 已清不 steer / 不 steer 时回合自然关闭（对照）/ 空响应结果纠正；vitest 绿。
-- **证据**：（待填）
+- **证据**：2026-09-19 完成（deepseek-flash，1 首轮 + 1 修复轮）。**U-4 闭环（DoD-d 更正）**：DSH **无 `ctx.todo` 服务**——todo 读面 = session todos 投影（dsh-tool-todo `stateOf`，index.d.ts:26-31 逐字、`TodoItem.status` 三态 types.d.ts:24；ROADMAP 的 `ctx.todo` 即指该原生投影，任务书/覆盖基线已同步更正）。**U-7 闭环**：dsh-subagent(:286-296 stopReasonError、:484-487 render) 与 dsh-tool-subagent 无空结果等价纠正 → 前置通过，hook 移植成立。**R-8 闭环**：goal-round-driver 续行触发面（:123-124 谓词逐字 + 四触发面）与本 hook 互补（goal 轮驱动 vs todo 提醒），goals 活跃时经 ctx.get 可选通道跳过 steer、缺席安全。**E 模式实现**：turn-stopping listener 只 steer 不返回；过滤条件（status 非 completed 且非 cancelled）与上游 constants.ts 逐字；续行文案语义移植（constants.ts:7-14）；不移植清单 10 项逐条注记（toast/abort-detection/marker/compaction-guard/pending-question 等——对照 p3t1-upstream-p0-p3 §3）。**D 模式实现**：空结果判定与上游逐字对照；委派工具名集合 = roster.ts DELEGATION_TOOL_NAMES；决策形态 content 替换（注释理由）。**仲裁裁定（Q2）**：熔断器改**进展复员**（原"连续 5 次 steer 永久静默"会误杀长 todo 列表——改为未完成数减少即计数归零，连续 5 次无进展才静默，回归上游 MAX_CONSECUTIVE_FAILURES 的"连续失败"本义；单测 4 类：进展归零/无进展静默/静默后新进展恢复/不回归）。**仲裁记录（Q1）**：上游 skipAgents 按身份排除——本移植有意放宽为"全员可 steer + 熔断 5 兜底"（DSH 无 per-agent hook 配置面，只读子代理留 todo 噪音有界，L4 后再议收窄），已注记。**双评审**：Kimi 轮1 APPROVE（F1-F6 均 MINOR/NIT——F5 变体名属实已修、F6 经复核不成立）+ mcode 轮1 APPROVE → 修复轮（进展复员 + F5 + TODO 锚点 + F1-F3 注释）→ **Kimi 轮2 APPROVE** + mcode 轮2 遇 MiniMax Token Plan 5h 窗口限额（2067）→ **按半小时周期重试（规则④）第 1 次即恢复**：**mcode 轮2 APPROVE（"未发现需要报告的问题"）**。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 111/111（todo 36 + empty 17 + 既有 58；全量 541）。**修复轮发现并已回填的 DoD-d 冲突**：任务书 P3-T7 行与覆盖基线 H-03 残留的"todo 状态源 = ctx.todo"与 U-4 实测矛盾 → 已更正（本条即证据）。**编码 agent 注记**：熔断 log 行（cap 5）未入 probe 断言——T19 可加。
 - **依赖**：P3-T3。**量级**：4 小时。
 
 ### ~~P3-T8~~ — 取消（P3-T1 仲裁）
@@ -104,7 +104,7 @@
 - **做法**：剧本构造"todo 未清但回合将停"→ 断言续行发生、todo 被推进至清、回合随后真实停止；对照组：todo 已清时无续行票。
 - **判定**：✅ 门 3 绿；verdict JSON 含续行链断言。
 - **证据**：（待填）
-- **依赖**：P3-T7 + P3-T8。**量级**：3 小时。
+- **依赖**：P3-T7（~~P3-T8~~ 已取消）。**量级**：3 小时。
 
 ---
 

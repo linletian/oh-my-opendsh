@@ -21,14 +21,19 @@
 // would turn a roster plugin into a junk drawer. The feasibility report §4.4
 // topology already reserved patches/omo-dsh/omo-hooks/.
 //
-// P3-T2 delivered the package shape + manifest.ts; P3-T3 mounts it; P3-T5 (this
-// revision) lands the FIRST implementation. apply() validates the manifest, logs
-// the summary boot marker, and runs the per-hook registration loop; the loop's
-// implementation registry (HOOK_REGISTRARS) now carries its first entry —
-// 'bash-file-read-guard', the C-mode pilot (hooks/bash-file-read-guard.ts) — so
-// exactly one `registered` line is logged after the summary. The remaining 13
-// rows are filled one task at a time (next extension point: T7); nothing else in
-// this file changes when a row lands.
+// P3-T2 delivered the package shape + manifest.ts; P3-T3 mounts it; P3-T5 landed
+// the first implementation; P3-T7 (this revision) lands the P1 todo/goal
+// executor pair. apply() validates the manifest, logs the summary boot marker,
+// and runs the per-hook registration loop; the loop's implementation registry
+// (HOOK_REGISTRARS) now carries three entries — 'bash-file-read-guard' (the
+// C-mode pilot), 'todo-continuation-enforcer' (E mode) and
+// 'empty-task-response-detector' (D mode) — so exactly three `registered` lines
+// are logged after the summary. The remaining 11 rows are filled one task at a
+// time — the next REGISTRAR entries arrive at T12 (session-notification +
+// background-notification) and T14+ (the WP-6 batches) — while the E/D
+// executor pair landed here still owes its e2e at **T9** (scenario
+// `todo-continuation-enforced`, tests/e2e/drive.mjs); nothing else in this file
+// changes when a row lands.
 //
 // Note the roster is 14 entries, not 15: P3-T5's other half is the WP-2
 // arbitration that REMOVED H-01 (write-existing-file-guard) from the port group
@@ -47,7 +52,9 @@
 //       from the plugin's own modules, so it cannot drift).
 //   * `[omo-hooks] hook <id> registered on <event>`
 //     — one line per hook whose registrar is implemented AND returned cleanly.
-//       One such line today ('bash-file-read-guard'); T7+ add the rest.
+//       Three such lines today ('bash-file-read-guard',
+//       'todo-continuation-enforcer', 'empty-task-response-detector'); T12+
+//       add the rest.
 //   * `[omo-hooks] hook <id> FAILED: <describeError>`
 //     — loud-but-non-fatal: the failing hook is named and the loop continues
 //       (P2-T16 precedent — one broken hook never suppresses the others).
@@ -93,6 +100,8 @@ import {
   formatManifestValidationFailedLine,
 } from './boot-markers.ts'
 import { registerBashFileReadGuard } from './hooks/bash-file-read-guard.ts'
+import { registerTodoContinuationEnforcer } from './hooks/todo-continuation-enforcer.ts'
+import { registerEmptyTaskResponseDetector } from './hooks/empty-task-response-detector.ts'
 
 export const name = 'omo-hooks'
 
@@ -125,6 +134,17 @@ export type HookDisposer = () => void
 export interface HooksRegistrationContext {
   on(event: string, listener: (...args: readonly unknown[]) => unknown): unknown
   effect?(execute: () => HookDisposer | void): unknown
+  /**
+   * Cordis's optional service lookup (`Context#get(name)`), used by the hooks
+   * that must read a DSH service rather than only observe events — the E-mode
+   * `todo-continuation-enforcer` reads the `todos` session projection (U-4) and
+   * consults the OPTIONAL `goals` service (R-8). Declared optional on purpose:
+   * a context without it, a deployment without the service, and a service
+   * without the key all mean "capability absent", which every such hook treats
+   * as a skip — never a boot or turn failure (plan §4.2). Declaring it required
+   * would make every existing fake in the unit suite illegal for no benefit.
+   */
+  get?(name: string): unknown
 }
 
 /**
@@ -149,17 +169,25 @@ export type HookRegistrar = (
  * event/scenario stay joined by the manifest (a test asserts every key is a
  * real manifest id).
  *
- * ONE ENTRY as of P3-T5 — the C-mode pilot:
+ * THREE ENTRIES as of P3-T7 — the C-mode pilot plus the E/D executor pair:
  *   'bash-file-read-guard': registerBashFileReadGuard (hooks/bash-file-read-guard.ts),
- * which wires its listener through `ctx.on` and returns nothing (the preferred
- * channel — cordis scopes it to this fiber, so the loop has no disposer to
- * forward). TODO(P3-T7+): add one entry per ported hook, the same way —
- *   'todo-continuation-enforcer': registerTodoContinuationEnforcer, ...
+ *     the C-mode pilot, which wires its listener through `ctx.on` and returns
+ *     nothing (the preferred channel — cordis scopes it to this fiber).
+ *   'todo-continuation-enforcer': registerTodoContinuationEnforcer
+ *     (hooks/todo-continuation-enforcer.ts) — the E-mode steering listener plus
+ *     its per-session circuit breaker (fiber-scoped WeakMap).
+ *   'empty-task-response-detector': registerEmptyTaskResponseDetector
+ *     (hooks/empty-task-response-detector.ts) — the D-mode result rewrite.
+ * All three use the same preferred channel and return nothing.
+ * TODO(P3-T12+): add one entry per remaining ported hook, the same way —
+ *   'edit-error-recovery': registerEditErrorRecovery, ...
  * one task per hook, keeping disciplines ①–④ above. Nothing else in this file
  * needs to change when a row lands.
  */
 export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'bash-file-read-guard': registerBashFileReadGuard,
+  'todo-continuation-enforcer': registerTodoContinuationEnforcer,
+  'empty-task-response-detector': registerEmptyTaskResponseDetector,
 }
 
 /**

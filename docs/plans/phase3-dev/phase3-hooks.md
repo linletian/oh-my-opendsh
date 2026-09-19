@@ -22,7 +22,7 @@
 
 | # | 模块 | 形态 | 模式 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
-| H-03 | `todo-continuation-enforcer/` | 目录 | E（=`agent.steer()` 副作用） | todo 未清时回合将停 → steer 注入续行上下文。todo 状态源 = `ctx.todo`（DSH 原生）。**R-8 复核点**：与 dsh-goal-round-driver 续行语义的关系实施期逐字记录 | ✅ 待移植 |
+| H-03 | `todo-continuation-enforcer/` | 目录 | E（=`agent.steer()` 副作用） | todo 未清时回合将停 → steer 注入续行上下文。todo 状态源 = **session todos 投影（dsh-tool-todo `stateOf`；U-4 实测：DSH 无 `ctx.todo` 服务，ROADMAP 原文的 `ctx.todo` 即指该原生投影）**。**R-8 复核点**：与 dsh-goal-round-driver 续行语义的关系实施期逐字记录 | ✅ 待移植 |
 | H-07 | `empty-task-response-detector.ts` | 单文件 | D | 空任务响应检测 → 替换/追加纠正性工具结果（上游 `tool.execute.after` 原地改写 `output.output`）。**前置（实施期答）**：dsh-tool-subagent 是否已有空结果等价提示（U-7），若有则改判跳过 | ✅ 待移植 |
 
 ### P2 compaction 辅助 —— **整组跳过（DSH 原生覆盖）**

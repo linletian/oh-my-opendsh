@@ -150,9 +150,14 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     expect([...manifestModeSet]).toEqual([...MANIFEST_MODES])
   })
 
-  it('every row starts pending — 0/14 ported at P3-T5 (code landed, e2e not yet)', () => {
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending').length).toBe(14)
-    expect(hooksByStatus(HOOK_MANIFEST, 'ported').length).toBe(0)
+  it('exactly one row is ported as of P3-T7 (H-02; the other 13 still pending)', () => {
+    // P3-T7 flipped H-02 after the WP-2 仲裁 accepted the T6 e2e (scenario
+    // `bash-read-guard-warned`). The hard-coded split is the point: a second row
+    // silently flipping would let a not-yet-e2e-proven hook look shipped.
+    expect(hooksByStatus(HOOK_MANIFEST, 'pending').length).toBe(13)
+    expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
+      'bash-file-read-guard',
+    ])
   })
 })
 
@@ -178,7 +183,8 @@ describe('P3-T2 HOOK_MANIFEST — spot checks (hard-coded against phase3-hooks.m
     ])
     expect(entry?.upstreamTestFiles).toEqual([])
     expect(entry?.e2eScenario).toBe('bash-read-guard-warned')
-    expect(entry?.status).toBe('pending')
+    // Flipped by P3-T7: listener + unit test + T6 e2e all landed.
+    expect(entry?.status).toBe('ported')
     expect(HOOK_IDS[0]).toBe('bash-file-read-guard')
   })
 
@@ -377,8 +383,14 @@ describe('P3-T2 derived helpers', () => {
 
   it('⑤ hooksByStatus filters by status and matches nothing for an empty status', () => {
     const pending = hooksByStatus(HOOK_MANIFEST, 'pending')
-    expect(pending.map((row) => row.id)).toEqual([...EXPECTED_IDS])
-    expect(hooksByStatus(HOOK_MANIFEST, 'ported')).toEqual([])
+    // P3-T7 flipped H-02, so the pending list is the id list minus exactly that
+    // row — a hard-coded difference, not a length, so a wrong row cannot pass.
+    expect(pending.map((row) => row.id)).toEqual(
+      EXPECTED_IDS.filter((id) => id !== 'bash-file-read-guard'),
+    )
+    expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
+      'bash-file-read-guard',
+    ])
     expect(hooksByStatus(HOOK_MANIFEST, '')).toEqual([])
     expect(hooksByStatus([], 'pending')).toEqual([])
   })
