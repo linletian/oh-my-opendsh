@@ -56,6 +56,101 @@
 // observer; it is NOT used here (it "carries no delivery meaning and marks
 // nothing reported", which is the wrong shape for a one-shot notification).
 //
+// ═══════════ WHY `ctx.get('jobs')` IS `undefined` AT apply() (P3-T13) ═══════
+// The first revision of this registrar read the service ONCE, synchronously, at
+// apply() time:
+//
+//     const jobs = readJobsService(ctx)          // ctx.get('jobs')
+//     ...
+//     if (!listener.hasPushSurface() || jobs === undefined) return
+//
+// Measured on a real boot (e2e bonus.observedDefect, 2026-09-20): that read
+// returned `undefined`, so the push subscription was NEVER made and the
+// degraded pull path had no `jobs` face either — H-11 produced zero runtime
+// output. The cause is CORDIS'S STRICT SERVICE READ, not a wrong service name
+// and not an isolation scope:
+//
+//   1. `ctx.get(name)` is `ReflectService#get(name, strict = true)`, whose
+//      strict arm only returns an implementation whose PROVIDING FIBER IS
+//      CURRENTLY ACTIVE — verbatim, `cordis/lib/index.js:754-771`:
+//
+//          /**
+//          * Read a service from the store without the inject requirement.
+//          *
+//          * @param name — the service name.
+//          * @param strict — when `true`, only return implementations whose providing
+//          * fiber is currently active.
+//          * @returns the service value, or `undefined` when not (yet) provided.
+//          */
+//          get(name, strict = true) {
+//              return getTraceable(this.ctx, this._getImpl(name, strict)?.value);
+//          }
+//          _getImpl(name, strict = true) {
+//              const key = this.ctx[symbols.isolate][name];
+//              const impl = key && this.store[key];
+//              if (!impl) return;
+//              if (strict && impl.fiber.state !== 2) return;
+//              return impl;
+//          }
+//
+//      (`state === 2` is Fiber's ACTIVE state, `_getState()` at `:1287-1292`.)
+//   2. The loader creates EVERY row of one compose step CONCURRENTLY, because
+//      the profile's whole patch stack reaches ONE `root.update(data)` call and
+//      an entry list is built with `Promise.allSettled` — verbatim,
+//      `cordis-plugin-loader/lib/index.js:97`:
+//
+//          const outcomes = await Promise.allSettled(config.map((options) => this.create(options)));
+//
+//      fed by `dsh-app-boot/lib/index.js:144-145`:
+//
+//          const data = this.applyPatches(this.data, config.patches);
+//          await this.root.update(data);
+//
+//      The `jobs` row (`@deepseek-ai/dsh-jobs-local`, dsh-base
+//      cordis.patch.yml:81-82) and this plugin's overlay row are therefore
+//      created in the SAME batch, and whichever import/constructor wins the
+//      race decides whether the jobs provider fiber is already state 2 when
+//      this apply() runs. Reproduced hermetically: two `ctx.plugin(...)` calls
+//      issued back to back (the loader's own shape) make
+//      `ctx.get('jobs') === undefined` inside the second apply, while a
+//      sequential `await` order returns the service.
+//   3. It is NOT the service name — `jobs` is the name every native consumer
+//      uses (`dsh-tool-jobs/lib/index.js:200,206`, `dsh-tool-bash/lib/index.js:405`,
+//      `dsh-api-session-controller/lib/index.js:1017`) — and NOT an isolation
+//      scope: these rows carry no `isolate:` option (the loader's
+//      `loader/patch-context` hook only re-points a name when the entry
+//      declares one), and `ctx.get` resolves through the ROOT isolate map
+//      (`ReflectService#ctx` is the root context) regardless of the caller.
+//
+// THE FIX IS THE DEFERRED FORM, not a hard dependency. `Context#inject(deps,
+// cb)` — verbatim, `cordis/lib/index.js:1592-1605`:
+//
+//     /**
+//     * Start a callback once the requested dependencies are available.
+//     * ...
+//     */
+//     inject(inject, callback) {
+//         return this.plugin({ inject, apply: callback, name: callback.name });
+//     }
+//
+// starts an injected CHILD fiber that stays inactive until every named service
+// is available, then runs the callback (immediately when the service is already
+// present), and disposes that child with the registering fiber — the child's
+// disposer is an effect of the parent (`this.dispose = parent.fiber.effect(...)`,
+// `cordis/lib/index.js:1074-1075`), so the subscription is fiber-reversible.
+// It is exactly the shape the shipped session controller already uses for this
+// same service, verbatim `dsh-api-session-controller/lib/index.js:1017-1018`:
+//
+//     ctx.inject(["jobs"], (jobsCtx) => {
+//         jobsCtx.jobs.onJobsChanged((owner) => {
+//
+// It is deliberately NOT `inject: ['jobs']` on the whole plugin: that would
+// gate every hook in the roster behind one optional service and turn "jobs is
+// late" into "the whole guardrail layer never mounts". The registrar therefore
+// keeps registering its primary manifest event synchronously, arms the deferred
+// child for the push surface, and — when the service never appears — logs one
+// loud NOTE line and keeps the degraded pull path (see the LOG ANCHOR CONTRACT).
+//
 // A second, deliberately weaker surface also exists and becomes the DEGRADED
 // path when the push subscription is unavailable: `list(caller?: Agent)` —
 // verbatim, `dsh-jobs/lib/types/index.d.ts:57-63`:
@@ -159,11 +254,18 @@
 //   * `[omo-hooks] background-notification FAILED: <what>: <describeError>`
 //     — a swallowed failure (backend rejection, subscription failure). Kept out
 //       of the boot markers' `hook <id> FAILED` form on purpose.
+//   * `[omo-hooks] background-notification NOTE: <what>`
+//     — the deferred-acquisition record, and the loud-but-non-fatal line for a
+//       deployment whose `jobs` service never appears (the pull path keeps
+//       running). DELIBERATELY NOT the anchor prefix: the anchor grammar is
+//       `background-notification: <status> <label>`, so a note written with the
+//       anchor prefix would be counted as a notification by every probe/e2e
+//       that counts anchors (the e2e's exactly-once assertion included).
 //
 // The `.ts` extension is load-bearing: Node 24 type-stripping (P-8.6) does no
 // specifier resolution, and there is no bundler to rewrite it.
 import type { HookManifestEntry } from '../manifest.ts'
-import type { HookRegistrar, HooksRegistrationContext } from '../index.ts'
+import type { HookDisposer, HookRegistrar, HooksRegistrationContext } from '../index.ts'
 import { describeError } from '../boot-markers.ts'
 import {
   DEFAULT_SESSION_NOTIFICATION_CONFIG,
@@ -188,6 +290,14 @@ export const BACKGROUND_LOG_PREFIX = '[omo-hooks] background-notification: '
 /** The swallowed-failure log prefix (never the boot-marker form). */
 export const BACKGROUND_FAILURE_PREFIX = '[omo-hooks] background-notification FAILED: '
 
+/**
+ * The deferred-acquisition NOTE prefix. Distinct from {@link BACKGROUND_LOG_PREFIX}
+ * on purpose — see the header's LOG ANCHOR CONTRACT: a note written with the
+ * anchor prefix would satisfy every `background-notification: <status> <label>`
+ * probe as if a notification had been dispatched.
+ */
+export const BACKGROUND_NOTE_PREFIX = '[omo-hooks] background-notification NOTE: '
+
 /** The three terminal `JobStatus` members (types.d.ts:14). */
 export const TERMINAL_JOB_STATUSES: readonly string[] = ['completed', 'killed', 'failed']
 
@@ -199,6 +309,11 @@ export function formatBackgroundNotificationLine(status: string, label: string):
 /** Builds the swallowed-failure line. */
 export function formatBackgroundNotificationFailureLine(what: string, err: unknown): string {
   return `${BACKGROUND_FAILURE_PREFIX}${what}: ${describeError(err)}`
+}
+
+/** Builds the deferred-acquisition note line. */
+export function formatBackgroundNotificationNoteLine(what: string): string {
+  return `${BACKGROUND_NOTE_PREFIX}${what}`
 }
 
 // --- The `ctx.jobs` face (structural, minimal) -------------------------------
@@ -298,16 +413,32 @@ export interface BackgroundNotificationDeps {
 }
 
 /**
- * The observation surface. Both methods are always present so the registrar can
- * wire them unconditionally; {@link hasPushSurface} decides which one does work.
+ * The observation surface. Both observer methods are always present so the
+ * registrar can wire them unconditionally; `hasPushSurface` decides which one
+ * does work, and the two `attach`/`setPush` mutators let the DEFERRED
+ * acquisition adopt a service that was not there at construction time (see the
+ * header's WHY section).
  */
 export interface BackgroundNotificationListener {
   /** The `ctx.jobs.onJobDone` callback (push path). */
   onJobDone(snapshot: unknown, owner: unknown): void
   /** The `session/event` observer (pull path; inert while the push path is live). */
   onSessionEvent(session: unknown, event: unknown): void
-  /** Whether `jobs.onJobDone` was available when this listener was built. */
+  /** Whether `jobs.onJobDone` is the live observation channel right now. */
   hasPushSurface(): boolean
+  /**
+   * Adopts the `jobs` face discovered after construction (deferred acquisition).
+   * This is the DEGRADED pull path's read face only — the push channel is
+   * decided by {@link setPushSurfaceLive}, because a face that HAS `onJobDone`
+   * is not live until the subscription really succeeded.
+   */
+  attachJobsSurface(jobs: JobsSurface | undefined): void
+  /**
+   * Records whether the push subscription is live. `true` makes the pull path
+   * stand down (one settlement must not produce two notifications); `false`
+   * (subscription failed, or its disposer ran) lets the pull path work again.
+   */
+  setPushSurfaceLive(live: boolean): void
 }
 
 /** Reads `event.type === 'turn/end'`-ness of a session event, defensively. */
@@ -319,12 +450,14 @@ function isTurnEndEvent(event: unknown): boolean {
 /**
  * Builds the observer pair.
  *
- * `hasPush` is decided ONCE, at construction, from the injected service: when the
- * push subscription is available the pull path stands down (`onSessionEvent`
- * returns immediately), because both would otherwise notify for the same
- * settlement. The pull path is therefore a genuine FALLBACK, not dead code — it
- * is what a deployment without `ctx.jobs.onJobDone` gets, and the unit suite
- * exercises both branches.
+ * `jobs`/`hasPush` are closure state seeded from the injected service and
+ * updated by {@link BackgroundNotificationListener.attachJobsSurface} /
+ * {@link BackgroundNotificationListener.setPushSurfaceLive} when the deferred
+ * acquisition adopts a later-arriving service. While the push subscription is
+ * live the pull path stands down (`onSessionEvent` returns immediately),
+ * because both would otherwise notify for the same settlement. The pull path is
+ * therefore a genuine FALLBACK, not dead code — it is what a deployment without
+ * `ctx.jobs.onJobDone` gets, and the unit suite exercises both branches.
  *
  * `notifiedJobIds` is the pull path's essential dedup: the registry keeps settled
  * jobs in `list()`, so without it every later `turn/end` would re-announce the
@@ -335,7 +468,13 @@ export function createBackgroundNotificationListener(
   deps: BackgroundNotificationDeps,
 ): BackgroundNotificationListener {
   const baseTitle = deps.baseTitle ?? DEFAULT_SESSION_NOTIFICATION_CONFIG.baseTitle
-  const hasPush = typeof deps.jobs?.onJobDone === 'function'
+  // Mutable by design: the service may arrive AFTER construction (the deferred
+  // `ctx.inject(['jobs'])` path — see the header's WHY section), so both the
+  // read face and the push-live verdict are closure state, not frozen inputs.
+  // The constructor still reads them eagerly, which keeps the direct-construction
+  // callers (and the unit suite's path-1/path-2 harnesses) unchanged.
+  let jobs = deps.jobs
+  let hasPush = typeof deps.jobs?.onJobDone === 'function'
   const notifiedJobIds = new Set<string>()
 
   function reportFailure(what: string, err: unknown): void {
@@ -376,6 +515,14 @@ export function createBackgroundNotificationListener(
   return {
     hasPushSurface: () => hasPush,
 
+    attachJobsSurface: (surface) => {
+      jobs = surface
+    },
+
+    setPushSurfaceLive: (live) => {
+      hasPush = live
+    },
+
     onJobDone: (snapshot, _owner) => {
       try {
         const job = toJobSnapshot(snapshot)
@@ -402,11 +549,11 @@ export function createBackgroundNotificationListener(
         // `_session` is unused by construction — see the header's PREREQUISITE
         // ANSWER: the `Session` object carries no agent reference, which is why
         // this path can only call `list()` without a caller.
-        const list = deps.jobs?.list
+        const list = jobs?.list
         if (typeof list !== 'function') return
         // No caller: see the header's PREREQUISITE ANSWER — an unowned-jobs-only
         // view is the best this vantage has.
-        const snapshots = list.call(deps.jobs)
+        const snapshots = list.call(jobs)
         if (!Array.isArray(snapshots)) return
         for (const raw of snapshots) {
           const job = toJobSnapshot(raw)
@@ -422,7 +569,16 @@ export function createBackgroundNotificationListener(
   }
 }
 
-/** Reads `ctx.get('jobs')` defensively (absent service ⇒ pull path with nothing). */
+/**
+ * Reads `ctx.get('jobs')` defensively (absent service ⇒ pull path with nothing).
+ *
+ * ⚠️ `undefined` here means "the service is not ACTIVE **right now**", not "the
+ * deployment has no jobs service": cordis's `ctx.get(name)` defaults to a
+ * STRICT read that hides an implementation whose providing fiber is not yet in
+ * state 2 (verbatim `cordis/lib/index.js:754-771`; the header's WHY section
+ * records the full root cause). The registrar therefore uses this only as the
+ * immediate fast path and arms `ctx.inject(['jobs'])` for the real acquisition.
+ */
 export function readJobsService(ctx: { get?(name: string): unknown }): JobsSurface | undefined {
   if (typeof ctx.get !== 'function') return undefined
   const jobs = ctx.get('jobs')
@@ -432,49 +588,190 @@ export function readJobsService(ctx: { get?(name: string): unknown }): JobsSurfa
 // --- The registrar -----------------------------------------------------------
 
 /**
+ * The deferred-acquisition note texts (single-sourced so the unit suite and the
+ * e2e probe pin the same strings). Never the anchor form; see the header's LOG
+ * ANCHOR CONTRACT.
+ */
+export const BACKGROUND_NOTE_DEFERRED =
+  'jobs service not active at apply; ctx.inject(["jobs"]) armed '
+  + '(degraded pull path active until it appears)'
+export const BACKGROUND_NOTE_SUBSCRIBED =
+  'jobs service observed; ctx.jobs.onJobDone subscribed (push path live)'
+export const BACKGROUND_NOTE_PULL_ONLY =
+  'jobs service observed without onJobDone; degraded pull path only'
+export const BACKGROUND_NOTE_ABSENT =
+  'jobs service never appeared; no push subscription (degraded pull path only)'
+
+/** What one discovered `jobs` face yielded (the registrar's log decision). */
+type JobsAdoption =
+  | { readonly kind: 'push'; readonly disposer: HookDisposer | undefined }
+  | { readonly kind: 'pull-only' }
+  | { readonly kind: 'failed' }
+
+/**
  * Registers the observers:
  *   1. the manifest's declared primary event (`session/event`) — ALWAYS, through
  *      `ctx.on`, so the row's primary surface is genuinely observed and the boot
  *      marker's `registered on session/event` line is true (index.ts discipline
  *      ④ + the probe's source-derived expectation);
- *   2. `ctx.jobs.onJobDone` — the PUSH surface, when the service exposes it. The
- *      subscription's disposer is returned, and the loop registers it with
- *      `ctx.effect` so fiber stop/update unsubscribes (index.ts discipline ①).
+ *   2. `ctx.jobs.onJobDone` — the PUSH surface, acquired through the IMMEDIATE
+ *      strict read when the service is already active, and otherwise through
+ *      `ctx.inject(['jobs'], cb)`, which starts the callback as soon as the
+ *      service appears (immediately when it is already provided, and again after
+ *      a reload). The subscription's disposer is returned for the immediate path
+ *      (the loop registers it with `ctx.effect`), and RETURNED FROM the inject
+ *      callback for the deferred path — cordis collects an injected callback's
+ *      return value as the injected child fiber's disposal, and that child is
+ *      itself an effect of this fiber (`cordis/lib/index.js:1074-1075`), so both
+ *      paths are fiber-reversible (index.ts discipline ①). The WHY section in
+ *      the header records the concurrency root cause this exists for.
  *
  * A subscription that throws is a loud-but-non-fatal log line, never a
  * registration failure: the probe fails a boot on `[omo-hooks] hook .* FAILED`,
  * and a background-notification service hiccup must not fail the whole plugin's
- * mount.
+ * mount. A `jobs` service that never appears is the same class of outcome, one
+ * step milder: ONE NOTE line ({@link BACKGROUND_NOTE_ABSENT} /
+ * {@link BACKGROUND_NOTE_DEFERRED}) and the degraded pull path keeps working.
+ *
+ * NOTHING here waits synchronously for `jobs` at apply() time, and the plugin's
+ * own `inject` stays empty: a hard `inject: ['jobs']` would gate every other
+ * hook in the roster behind this one optional service.
+ *
+ * WHY NO `jobs.attachController()` (the task book's "可选" half): a controller
+ * is the authority that lets `jobs.start` admit an owner at all — verbatim
+ * `dsh-jobs-local/lib/index.js:132`:
+ *
+ *     if (!this.servesOwner(spec.owner)) throw new Error("background jobs
+ *     unavailable: no job controller serves this agent (load
+ *     @deepseek-ai/dsh-tool-jobs in its composition)");
+ *
+ * i.e. attaching one is a CLAIM TO COLLECT AND STOP work, and a global one makes
+ * `servesOwner` (`dsh-jobs-local/lib/index.js:279-282`) true for every owner. This
+ * port only OBSERVES settlements — it never reads or cancels a job — so
+ * attaching a controller would both overstate its authority and mask a
+ * composition that deliberately mounted no collector. The real composition
+ * already has one (`dsh-tool-jobs/lib/index.js:200`
+ * `ctx.jobs.attachController("tool-jobs")`, mounted globally by dsh-base), so
+ * `onJobDone` is all this port needs.
  */
 export const registerBackgroundNotification: HookRegistrar = (
   ctx: HooksRegistrationContext,
   entry: HookManifestEntry,
 ) => {
-  const jobs = readJobsService(ctx)
   const listener = createBackgroundNotificationListener({
     backend: createPlatformNotifierBackend({
       runtimePlatform: process.platform,
       run: runCommandViaExecFile,
     }),
-    jobs,
+    jobs: undefined,
     log: (line) => console.log(line),
     logFailure: (line) => console.warn(line),
   })
+
+  /** The stable NOTE sink (never the anchor/failure prefixes). */
+  const note = (what: string): void => {
+    try {
+      console.log(formatBackgroundNotificationNoteLine(what))
+    } catch {
+      // Diagnostics are not worth breaking a mount (discipline ②).
+    }
+  }
+
+  /**
+   * Adopts one discovered `jobs` face: registers the pull read face, then the
+   * push subscription when the face exposes one. The outcome tells the caller
+   * which NOTE line is true (and carries the subscription's fiber-scoped
+   * disposer for the immediate path).
+   */
+  const adoptJobs = (jobs: JobsSurface): JobsAdoption => {
+    listener.attachJobsSurface(jobs)
+    const onJobDone = jobs.onJobDone
+    if (typeof onJobDone !== 'function') {
+      // A jobs face without `onJobDone` still serves the degraded pull path.
+      listener.setPushSurfaceLive(false)
+      return { kind: 'pull-only' }
+    }
+    try {
+      const disposer = onJobDone.call(jobs, (snapshot, owner) => {
+        listener.onJobDone(snapshot, owner)
+      })
+      listener.setPushSurfaceLive(true)
+      const wrapped = () => {
+        // The subscription is gone: let the pull path take over again before
+        // running the service's own unregister (never the other way around, so
+        // a throwing disposer cannot leave the push verdict stuck on `live`).
+        listener.setPushSurfaceLive(false)
+        if (typeof disposer === 'function') (disposer as () => void)()
+      }
+      return { kind: 'push', disposer: wrapped }
+    } catch (err) {
+      listener.setPushSurfaceLive(false)
+      try {
+        console.warn(formatBackgroundNotificationFailureLine('jobs.onJobDone subscribe failed', err))
+      } catch {
+        // Nothing left to report with; the plugin still boots.
+      }
+      return { kind: 'failed' }
+    }
+  }
+
   ctx.on(entry.event, (session, event) => listener.onSessionEvent(session, event))
-  if (!listener.hasPushSurface() || jobs === undefined) return
-  const onJobDone = jobs.onJobDone
-  if (typeof onJobDone !== 'function') return
+
+  // Fast path: the service is already active (e.g. a unit harness, or a boot
+  // whose jobs row really did win the race). One acquisition, no inject child.
+  const immediate = readJobsService(ctx)
+  if (typeof immediate?.onJobDone === 'function') {
+    const adoption = adoptJobs(immediate)
+    return adoption.kind === 'push' ? adoption.disposer : undefined
+  }
+
+  if (typeof ctx.inject !== 'function') {
+    // A context without `inject` (structural fakes, or a minimal host) can only
+    // see what is already there — and this branch is only reached when that is
+    // NOT a push-capable face (the fast path above already took that case).
+    if (immediate === undefined) note(BACKGROUND_NOTE_ABSENT)
+    else if (adoptJobs(immediate).kind === 'pull-only') note(BACKGROUND_NOTE_PULL_ONLY)
+    return
+  }
+
+  // The real deployment path: the loader creates this row concurrently with the
+  // jobs row, so the service is usually NOT active yet. `ctx.inject` starts the
+  // callback when it appears (see the header's WHY section). The flag records a
+  // callback that ran DURING the arm (a service that appeared between the strict
+  // read and this call): its own NOTE is the truthful one, and a stale
+  // "not active at apply" line must not follow it.
+  let injectCallbackRan = false
   try {
-    const disposer = onJobDone.call(jobs, (snapshot, owner) => {
-      listener.onJobDone(snapshot, owner)
+    ctx.inject(['jobs'], (injected) => {
+      injectCallbackRan = true
+      const jobs = isObject(injected.jobs) ? (injected.jobs as JobsSurface) : readJobsService(injected)
+      if (jobs === undefined) {
+        note(BACKGROUND_NOTE_ABSENT)
+        return
+      }
+      const adoption = adoptJobs(jobs)
+      if (adoption.kind === 'push') note(BACKGROUND_NOTE_SUBSCRIBED)
+      else if (adoption.kind === 'pull-only') note(BACKGROUND_NOTE_PULL_ONLY)
+      // `failed` already logged its own FAILED line inside adoptJobs.
+      // Returned, never called: cordis collects this as the injected fiber's
+      // disposal (header: DEFERRED FORM).
+      return adoption.kind === 'push' ? adoption.disposer : undefined
     })
-    return typeof disposer === 'function' ? (disposer as () => void) : undefined
   } catch (err) {
     try {
-      console.warn(formatBackgroundNotificationFailureLine('jobs.onJobDone subscribe failed', err))
+      console.warn(formatBackgroundNotificationFailureLine('ctx.inject(["jobs"]) failed', err))
     } catch {
-      // Nothing left to report with; the plugin still boots.
+      // The plugin still boots and the pull path is still registered.
     }
     return
   }
+  // `BACKGROUND_NOTE_DEFERRED`'s text claims the service was "not active at
+  // apply", which is true ONLY when the strict read above came up empty AND the
+  // injected callback has not already run: an already-active pull-only face (the
+  // callback runs immediately for it) is described by its own PULL_ONLY note,
+  // and a face that appears during the arm is described by SUBSCRIBED. Emitting
+  // the deferred line after either would both misstate the state and reverse the
+  // real order (NOTE text/order aligned with the code).
+  if (immediate === undefined && !injectCallbackRan) note(BACKGROUND_NOTE_DEFERRED)
+  return
 }

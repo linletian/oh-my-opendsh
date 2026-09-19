@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **8/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：📋 **9/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
@@ -126,12 +126,12 @@
 - **证据**：2026-09-19 完成（deepseek-flash，1 轮过）。产出：session-notification.ts（调度状态机：grace period / version bump / executing 三道闸门 + turn/end reason.kind 完成/错误判定 + max-tokens 精度陷阱处理 + H-05 两谓词并入（上游 session-todo-status.ts:17 的 2-status 谓词语义，数据源 todos 投影 stateOf）+ NotifierBackend 抽象 + **Linux notify-send / macOS osascript 命令构造逐字对照上游 -linux.ts/-macos.ts** + 稳定 log 锚点行）+ background-notification.ts（**ctx.jobs 事件面前置闭环**：push 事件面 + pull 降级查询双路径，standby 与去重；降级路径"list() 无 caller 只见 unowned"覆盖收窄诚实注记）+ 74 新单测（omo-hooks 计 185）。**有意收窄（逐项注记）**：声音四后端不移植（上游默认 playSound:false）；detectExternalNotificationPlugin 不移植（DSH 无 opencode 插件目录）；session 标题/末条消息正文收窄为静态文案 + todo 计数（Session 不暴露标题、回读消息 = 事件路径读盘违纪律④——判定经评审确认成立）。**双评审**：Kimi 轮1 **APPROVE**（3 NIT + 3 质疑）+ mcode 轮1 **APPROVE**（"未发现可报告的缺陷"，逐行复核调度状态机/谓词差异/AppleScript 转义/平台分流/push-pull 双路径）。**仲裁（Kimi 质疑）**：① macOS **osascript 单层即满足 L4 口径**（cmux/terminal-notifier 非系统内置 + `__CFBundleIdentifier` 为 opencode.app 专属，移植反失真）；② question/permission 提示通知**不立项补移植**（DSH 原生审批/ask_user_question UI 已覆盖该语义，原则一）；③ 每顶层会话都通知 = **有意适配**（DSH 多会话模型，去抖按 session）。NIT×3 与 T9 的 NIT×3 一并并入 T13。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 185/185。**编码 agent 注记**：probe 已自动覆盖 5 行 registered marker；T19 纳入静态门 c 组。
 - **依赖**：P3-T3。**量级**：5 小时。
 
-### [ ] P3-T13 — e2e：通知场景
+### [x] P3-T13 — e2e：通知场景
 
 - **产出**：`tests/e2e/` 新增 `session-notification-log` 场景。
 - **做法**：剧本跑完一轮含完成/错误的会话 → 断言 log 后端产出通知记录（标题/正文语义与上游契约对齐）；后台通知场景复用 drive 的后台任务机制（如无则记降级）。
 - **判定**：✅ 门 3 绿。
-- **证据**：（待填）
+- **证据**：2026-09-19 完成（deepseek-flash，1 首轮 + 2 修复轮）。产出：**两场景**——① `session-notification-log`（12 断言：锚点行 [omo-hooks] session-notification: idle oh-my-opendsh 恰好一次、载体 = boot-log console.log、notify-send 命令尝试可观测、失败吞没、无产出快回合对照、真桌面环境下真实推出 1 条通知）；② `background-notification-log`（13 断言：run_in_background 委派 explore → 子会话真实运行 + 原生 settlement 送达 + **[omo-hooks] background-notification: completed explore 锚点恰好一次**）。**重大缺陷发现与修复（e2e 驱动）**：首轮实测发现 H-11 运行时零产出——apply 时 `ctx.get('jobs')` 为 undefined（cordis 作用域/时序）→ push 订阅从未发生；编码方先诚实落"观测缺陷态"断言 + tripwire，仲裁决定本周期修复：根因考证后改 **ctx.inject(['jobs'], cb) 延迟获取**（omo-agents T16 SETTLED 先例；拒绝整插件 inject 硬等待连坐），jobs 缺席 loud-but-non-fatal + pull 降级；场景翻正向断言（bonus 实测 DEFERRED→SUBSCRIBED 顺序）；另定位到 **continuable 后台委派不建 job**（dsh-tool-subagent 行为），场景经 enableOneShotBackgroundExplore 沙箱局部编辑产出 job（漂移守卫 loud throw，realDshUntouched 未破）。**T9/T12 NIT×6 收尾**：OK 行补 double-steer、变异 +2（重复 splice/id 断链）、controlSnapshot 从 controlEvents 派生、通知两文件注释失真修复。**双评审**：Kimi 轮1 **REJECT**（1 MAJOR：manifest H-11 e2eScenario 与落地场景实名不一致——单一事实源同步纪律，仲裁属实；3 MINOR：NIT 修复自引入的计数/清单失真、e2e 注释 P3-T12→P3-T13；3 NIT）+ mcode 轮1 APPROVE → 修复轮（F1-F7 逐项）→ **Kimi 轮2 APPROVE**（复跑双场景 12/12 与 13/13、omo-hooks 197、全量 630 绿）+ mcode 轮2 超时 → 加长重试遇 MiniMax Token Plan 限额（2067）→ **半小时周期重试第 6 次恢复**（规则④，窗口约 5h 后滑动恢复）：**mcode 轮2 APPROVE**（"修复运行时缺陷实现正确、单元/e2e 双层覆盖完整，630 单测 + e2e 自检全过"）。门：仲裁独立复跑 ci-local **8/8 绿**、self-test OK（11 场景 + 10 背景缺陷各具名 FAIL）、test:e2e 11/11。**仲裁记录**：① error 通知路径只单测覆盖（e2e error 剧本成本高）——可接受降级，编码方已注记 HONEST SCOPE；② enableOneShotBackgroundExplore 的 loud-throw 漂移守卫 = 上游 DSH 行为变化时的有意报警。
 - **依赖**：P3-T12。**量级**：3 小时。
 
 ---

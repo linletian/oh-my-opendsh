@@ -15,7 +15,7 @@
 // scenarios themselves are unchanged — the hooks plugin registers no listener
 // yet (empty implementation registry), so it only adds its summary boot marker.
 // (P3-T6 amended that last clause: omo-hooks now registers its FIRST listener
-// and the chain carries EIGHT scenarios — see the C-mode pilot section below.)
+// and the chain carries ELEVEN scenarios — see the C-mode pilot section below.)
 //
 // SEMANTIC SOURCE (read-only reference; fresh implementation, no code copied):
 //   oh-my-openagent/packages/omo-senpi/scripts/qa/drive.mjs:66-89 — mkdtemp
@@ -559,6 +559,36 @@ const {
 } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/todo-continuation-enforcer.ts', import.meta.url).href
 )
+// P3-T12: the notification anchor under test, read from the SHIPPED listener
+// module — the SAME single-source discipline as the T6 advisory and the T9
+// directive above. The anchor line's prefix and the notification title are
+// module constants (`NOTIFICATION_LOG_PREFIX` + the default config's
+// `baseTitle`), so "verbatim" means "the listener's own strings", never a copy
+// pasted into the driver. The unit suite pins them against upstream; this
+// scenario pins that a real turn really produces the line.
+const {
+  NOTIFICATION_LOG_PREFIX: SESSION_NOTIFICATION_LOG_PREFIX,
+  NOTIFICATION_FAILURE_PREFIX: SESSION_NOTIFICATION_FAILURE_PREFIX,
+  DEFAULT_SESSION_NOTIFICATION_CONFIG: SESSION_NOTIFICATION_DEFAULT_CONFIG,
+  NOTIFY_SEND_COMMAND,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/session-notification.ts', import.meta.url).href
+)
+const SESSION_NOTIFICATION_BASE_TITLE = SESSION_NOTIFICATION_DEFAULT_CONFIG.baseTitle
+// P3-T12 sibling: the background-notification anchor, same single-source rule.
+// That module's anchor is `[omo-hooks] background-notification: <status> <label>`
+// and `DEFAULT_SESSION_NOTIFICATION_CONFIG` is the shared title source it
+// imports for its content. P3-T13 adds the module's own terminal-status list and
+// its deferred-acquisition NOTE predicate, so the positive anchor assertions and
+// the plugin cannot disagree about what "terminal" or "a note" means.
+const {
+  BACKGROUND_LOG_PREFIX: BACKGROUND_NOTIFICATION_LOG_PREFIX,
+  BACKGROUND_FAILURE_PREFIX: BACKGROUND_NOTIFICATION_FAILURE_PREFIX,
+  BACKGROUND_NOTE_PREFIX: BACKGROUND_NOTIFICATION_NOTE_PREFIX,
+  TERMINAL_JOB_STATUSES: BACKGROUND_NOTIFICATION_TERMINAL_STATUSES,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/background-notification.ts', import.meta.url).href
+)
 
 const INSTALL_TIMEOUT_MS = Number(process.env.DSH_E2E_INSTALL_TIMEOUT_MS ?? 300_000)
 const BOOT_TIMEOUT_MS = Number(process.env.DSH_E2E_BOOT_TIMEOUT_MS ?? 90_000)
@@ -1085,6 +1115,264 @@ function todoContinuationScript() {
       { type: 'text', text: SISYPHUS_TODO_CONTROL_WRAPUP },
     ],
   }
+}
+
+// ── P3-T12 session-notification-log scenario (模式 F；见下方 header) ──────────
+// H-10's listener observes `session/event` turn/end + `agent/status`: a turn
+// that really produced work `completed` ⇒ ONE completion notification (the
+// anchor line), whose OS command is dispatched through the platform backend.
+// The script drives TWO steps on sisyphus: a REAL `bash` call that writes a
+// fixture file (an on-disk artifact — the "实际工作产出" the completion gate
+// reads as `step/end`) and a closing summary step. The prompt is deliberately
+// outcome-shaped rather than command-shaped: the model must still choose the
+// tool, so the tool/result the gate sees is a real execution.
+const SESSION_NOTIFICATION_PROMPT =
+  'e2e session-notification-log: create a file named session-notification-proof.txt containing the text ok, then summarize what you did'
+const NOTIFICATION_FIXTURE_NAME = 'session-notification-proof.txt'
+const NOTIFICATION_FIXTURE_TEXT = 'session-notification-e2e-ok-7c4a1d'
+const SESSION_NOTIFICATION_SUMMARY =
+  'MOCK-SESSION-NOTIFICATION-SUMMARY-4b8e12: the proof file was written and the turn completed'
+// The completion notification's own payload, transcribed from the SHIPPED
+// default config above (never a hand-typed copy): the anchor's `<kind>` is the
+// completion kind and its `<title>` is the configured base title.
+const SESSION_NOTIFICATION_COMPLETION_KIND = 'idle'
+const SESSION_NOTIFICATION_EXPECTED_ANCHOR =
+  `${SESSION_NOTIFICATION_LOG_PREFIX}${SESSION_NOTIFICATION_COMPLETION_KIND} ${SESSION_NOTIFICATION_BASE_TITLE}`
+
+/**
+ * session-notification-log script. Step 1 is ONE `bash` call whose command
+ * both writes the fixture (proving real work) and echoes the sentinel (giving
+ * the tool result a byte-level marker); step 2 is the text-only summary that
+ * closes the turn. `description` is part of the real bash parameter schema
+ * (dsh-tool-bash lib/index.js:268 `required: true`).
+ */
+function sessionNotificationScript(sandbox) {
+  const fixturePath = join(sandbox.project, NOTIFICATION_FIXTURE_NAME)
+  const command = `printf '%s\\n' ${NOTIFICATION_FIXTURE_TEXT} > ${fixturePath} && cat ${fixturePath}`
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command,
+          description: 'Write the session-notification proof file and print it back',
+        },
+      },
+      { type: 'text', text: SESSION_NOTIFICATION_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * The T12 scenario's settle hook: the completion notification is armed by
+ * `turn/end` and fires after the listener's idle-confirmation delay
+ * (`idleConfirmationDelay`, 1500ms upstream default), while `awaitTurnEnd`
+ * returns as soon as the turn/end event is durable. Waiting here — BEFORE the
+ * boot log is frozen by `stopDsh` — makes the anchor assertion deterministic
+ * instead of a race against the timer. The absence is NOT fatal: on timeout the
+ * analysis runs anyway and reports `notificationAnchorLoggedOnce: false`, which
+ * is exactly the honest FAIL a missing notification deserves.
+ */
+async function awaitNotificationAnchor(boot, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (boot.log().includes(SESSION_NOTIFICATION_EXPECTED_ANCHOR)) return true
+    await sleep(250)
+  }
+  return boot.log().includes(SESSION_NOTIFICATION_EXPECTED_ANCHOR)
+}
+
+// ── P3-T13 background-notification-log scenario (模式 F) ──────────────────────
+// H-11's listener observes the NATIVE background-job surface, `ctx.jobs`. Two
+// measured facts decide how this driver must construct that observation — the
+// first is the runtime defect P3-T13 fixes, the second is why the construction
+// is what it is.
+//
+// 1. THE DEFECT (fixed here, pinned positively below). The first registrar read
+//    `ctx.get('jobs')` ONCE, synchronously, at apply() time and got `undefined`
+//    on a real boot (`bonus.observedDefect` of the P3-T12 scenario). Root cause,
+//    recorded verbatim in the module header's WHY section:
+//      * `ctx.get(name)` is a STRICT read — it hides any implementation whose
+//        providing fiber is not ACTIVE yet (`cordis/lib/index.js:754-771`,
+//        `if (strict && impl.fiber.state !== 2) return;`);
+//      * the loader creates EVERY row of one compose step concurrently
+//        (`cordis-plugin-loader/lib/index.js:97` `await Promise.allSettled(
+//        config.map((options) => this.create(options)))`, fed by
+//        `dsh-app-boot/lib/index.js:144-145`), so the `jobs` row and this
+//        plugin's overlay row race, and apply() usually loses.
+//    The subscription was therefore never made and H-11 emitted nothing. The
+//    fix is `ctx.inject(['jobs'], cb)` (the deferred form; the shipped
+//    session controller uses it for the same service,
+//    `dsh-api-session-controller/lib/index.js:1017-1018`), NOT a plugin-level
+//    `inject: ['jobs']` hard wait.
+//
+// 2. WHAT A `ctx.jobs` SETTLEMENT ACTUALLY IS. The concerto delegation rows are
+//    `backgroundMode: continuable`, and a continuable child has NO background
+//    job at all — verbatim `dsh-subagent/lib/types/run-settlement.js`: "Only
+//    the one-shot background path uses Jobs; continuable children have no Task,
+//    no per-message result, and no Task cancellation." So a continuable
+//    delegation can never drive `onJobDone`, however the listener is wired:
+//    the P3-T12 reading of this scenario ("a background delegation exists, so
+//    the port should have notified") was wrong twice over. The ONE construction
+//    that really creates a JobRegistry entry is the ONE-SHOT background
+//    delegation (`dsh-tool-subagent/lib/index.js:537-545`:
+//    `jobs.start({kind: "subagent", label: args.description, owner: parent, …})`).
+//    This scenario therefore flips ITS OWN SANDBOX COPY of the materialized
+//    preset's `explore` row to `backgroundMode: one-shot`
+//    (`enableOneShotBackgroundExplore` below, run before the session is
+//    created): the repo template and every other scenario keep `continuable`.
+//    The job label is the delegation's own `description`, which the script pins
+//    to `explore`, so the anchor contract under test is exactly
+//    `[omo-hooks] background-notification: <terminal status> explore`.
+//
+// The scenario drives the read-only `explore` seat: one text step for the child
+// (its role is a separate MOCKROLE lane, so the parent's cursor is unaffected),
+// then the parent's closing summary. The prompt names the background explicitly
+// because the model — not the driver — decides the tool arguments.
+const BACKGROUND_NOTIFICATION_PROMPT =
+  'e2e background-notification-log: start the explore subagent in the background to inspect the workspace, then summarize that you launched it'
+const BACKGROUND_NOTIFICATION_TASK =
+  'e2e background task: report the workspace layout'
+const BACKGROUND_CHILD_REPLY =
+  'MOCK-BACKGROUND-CHILD-5e1d3a: the workspace layout was inspected in the background'
+const BACKGROUND_NOTIFICATION_SUMMARY =
+  'MOCK-BACKGROUND-SUMMARY-8a6f24: the background explore job was launched and the turn completed'
+// The delegated subagent's own label (`dsh-tool-subagent` names the job after
+// the delegation) — the `GET /agent/<id>` persona row id the roster renders.
+const BACKGROUND_NOTIFICATION_EXPECTED_LABEL = 'explore'
+// The POSITIVE-form contract this scenario asserts: the port's own anchor,
+// `<status>` from the listener's three-member terminal list
+// (completed|killed|failed) and the job's label (the delegation `description`).
+const BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR =
+  `${BACKGROUND_NOTIFICATION_LOG_PREFIX}completed ${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}`
+
+/**
+ * The native reporter's own settlement notice for THIS job (dsh-tool-jobs
+ * `fitCompletionNotice`, `lib/index.js:116-124`):
+ *   `background job <id> (<kind>: <label>) finished [status: <status>]. Read its
+ *    output with job_output.`
+ * It is the non-vacuity guard for the positive scenario: the port can only have
+ * observed a settlement that really happened, and DSH's own reporter is an
+ * independent witness of the same one.
+ */
+const BACKGROUND_NATIVE_JOB_NOTICE_RE = new RegExp(
+  `background job \\S+ \\(subagent: ${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}\\) `
+  + 'finished \\[status: (?:completed|killed|failed)\\]',
+)
+
+/** Whether any durable parent event carries the native settlement notice. */
+function nativeJobsNoticeDelivered(events) {
+  return (events ?? []).some(
+    (event) => event.type === 'user/message'
+      && BACKGROUND_NATIVE_JOB_NOTICE_RE.test(messageContentText(event.data)),
+  )
+}
+
+/** The parent session's own log, or undefined while it does not exist yet. */
+function parentSessionLog(sandbox, sessionId) {
+  return findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    .find((candidate) => String(candidate.header.id) === String(sessionId))
+}
+
+/**
+ * Flip THIS scenario's sandbox copy of the materialized preset's `explore`
+ * delegation row from `backgroundMode: continuable` to `one-shot`.
+ *
+ * WHY A FIXTURE EDIT IS REQUIRED (see fact 2 in the section comment): only the
+ * one-shot background path registers a `ctx.jobs` entry, and every shipped
+ * concerto row is `continuable`. The edit is SCENARIO-LOCAL — it rewrites the
+ * materialized composition in the sandbox's own DSH_HOME (the same file
+ * `appendMockRoleMarker` already edits, and the same file the session composes
+ * from), never the repo template, so no other scenario and no shipped artifact
+ * changes. Loud on drift: a template change that moves the row or its
+ * `backgroundMode` line throws here instead of silently turning the scenario
+ * vacuous.
+ */
+function enableOneShotBackgroundExplore(sandbox) {
+  const compositionPath = materializedCompositionPath(sandbox)
+  const text = readFileSync(compositionPath, 'utf8')
+  const lines = text.split('\n')
+  const rowAnchor = `    - id: tool-subagent-${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}`
+  const anchors = lines
+    .map((line, index) => (line === rowAnchor ? index : -1))
+    .filter((index) => index >= 0)
+  if (anchors.length !== 1) {
+    throw new Error(
+      `background-notification scenario: materialized preset must carry `
+      + `\`${rowAnchor}\` exactly once; found ${anchors.length}`,
+    )
+  }
+  const rowIndex = anchors[0]
+  const rowIndent = rowAnchor.length - rowAnchor.trimStart().length
+  let modeIndex = -1
+  for (let index = rowIndex + 1; index < lines.length; index++) {
+    const line = lines[index]
+    if (/^\s*- id: /.test(line) && line.length - line.trimStart().length <= rowIndent) break
+    if (line === '        backgroundMode: continuable') {
+      modeIndex = index
+      break
+    }
+  }
+  if (modeIndex < 0) {
+    throw new Error(
+      `background-notification scenario: the materialized `
+      + `'${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}' row carries no `
+      + '`        backgroundMode: continuable` line to flip to one-shot',
+    )
+  }
+  lines[modeIndex] = '        backgroundMode: one-shot'
+  writeFileSync(compositionPath, lines.join('\n'))
+}
+
+/**
+ * background-notification-log script: the parent's step 1 fires ONE delegation
+ * with `run_in_background: true`, step 2 closes the turn with a summary text.
+ * The child role (`explore`) gets its own single text step. The `description`
+ * IS the background job's label (`dsh-tool-subagent` passes `args.description`
+ * to `jobs.start`), so it is pinned to the expected label rather than to prose.
+ */
+function backgroundNotificationScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'explore',
+        arguments: {
+          description: BACKGROUND_NOTIFICATION_EXPECTED_LABEL,
+          prompt: BACKGROUND_NOTIFICATION_TASK,
+          run_in_background: true,
+        },
+      },
+      { type: 'text', text: BACKGROUND_NOTIFICATION_SUMMARY },
+    ],
+    explore: [{ type: 'text', text: BACKGROUND_CHILD_REPLY }],
+  }
+}
+
+/**
+ * The background scenario's settle hook: wait for BOTH observations the
+ * assertions need, INSIDE the observation window and BEFORE `stopDsh` freezes
+ * the boot log / the session JSONL:
+ *   * the port's anchor line (the listener's own delivery), and
+ *   * the native reporter's settlement notice in the parent's durable log
+ *     (proving the job really settled — the notice lands as its own event, so
+ *     the anchor can legitimately precede it by a beat).
+ * The return value is informational only: a timeout lets the analysis run and
+ * report the honest FAIL (a missing anchor or a missing settlement), never a
+ * driver crash.
+ */
+async function awaitBackgroundNotificationSettlement(boot, sandbox, sessionId, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs
+  let anchorReady = false
+  let noticeReady = false
+  while (Date.now() < deadline) {
+    anchorReady = notificationLinesOf(boot.log(), BACKGROUND_NOTIFICATION_LOG_PREFIX).length > 0
+    noticeReady = nativeJobsNoticeDelivered(parentSessionLog(sandbox, sessionId)?.events)
+    if (anchorReady && noticeReady) return true
+    await sleep(250)
+  }
+  return anchorReady && noticeReady
 }
 
 // §14.5: path-based volatile allowlist (see header). Symlinks are skipped by
@@ -2962,10 +3250,8 @@ export function analyzeTodoContinuationEnforced({ log, requests, providersJson, 
   const snapshots = todoWriteSnapshots(events)
   const firstSnapshot = snapshots[0]
   const secondSnapshot = snapshots[1]
-  const controlSnapshot = snapshots[2]
   const firstTodos = todoSnapshotOf(firstSnapshot)
   const secondTodos = todoSnapshotOf(secondSnapshot)
-  const controlTodos = todoSnapshotOf(controlSnapshot)
 
   // The text the listener must have minted at the turn-1 boundary: assembled by
   // the listener module from the list the boundary saw (the first write; the
@@ -3039,6 +3325,14 @@ export function analyzeTodoContinuationEnforced({ log, requests, providersJson, 
   const controlEvents = firstTurnEnd === undefined
     ? []
     : events.filter((event) => event.seq > firstTurnEnd.seq)
+  // The control snapshot is DERIVED from controlEvents, never from a third
+  // positional `snapshots[2]`: a log with an extra `todo/write` inside turn 1
+  // (a mutation fixture, or a runtime that writes an intermediate list) would
+  // otherwise shift the index and silently compare the WRONG list — the
+  // scoping that makes `controlTodoWasWrittenAllCompleted` a statement about
+  // the control turn. Same source of truth as the carrier search below.
+  const controlSnapshot = todoWriteSnapshots(controlEvents)[0]
+  const controlTodos = todoSnapshotOf(controlSnapshot)
   const controlWrapup = controlEvents.find(
     (event) => event.type === 'assistant/message' && eventText(event).includes(SISYPHUS_TODO_CONTROL_WRAPUP),
   )
@@ -3151,6 +3445,359 @@ export function analyzeTodoContinuationEnforced({ log, requests, providersJson, 
     controlContinuationInjectionCount: controlInjectionCount,
     mockRequestCount: sisyphusRequests.length,
     mockRequestModels: [...new Set(sisyphusRequests.map((request) => request.body?.model))],
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
+// ── P3-T12 notification-delivery analysis (模式 F) ────────────────────────────
+//
+// The SHARED assertion core for the two P3-T12 notification listeners. Both
+// ports have the same delivery shape — a trigger fact observed by the listener,
+// ONE stable anchor line logged immediately BEFORE the OS command is
+// dispatched — so the carrier rule, the exactly-once count and the swallowed
+// failure probe are asserted by ONE code path, parameterized by the anchor the
+// scenario under test owns.
+//
+// THE LOG ANCHOR CARRIER (measured, then pinned): both registrars log through
+// `console.log` (see the two `register*` functions), i.e. to the dsh process's
+// stdout/stderr — NOT to the session JSONL (the listeners forbid disk reads on
+// the event path, discipline ③, so they cannot append a session event). The
+// driver's `bootDsh` accumulates every stdout and stderr chunk into the boot
+// log, so in THIS harness each anchor's carrier is the boot log. The session
+// JSONL is still asserted for the BUSINESS facts (work really happened, the
+// turn really completed); no anchor is asserted there, on purpose.
+//
+// The assertions:
+//   (a) the trigger really happened — a real `bash` call whose non-error result
+//       carries the fixture bytes with the file it wrote really on disk (the
+//       session scenario), or a subagent delegation that really started a
+//       background job (the background scenario);
+//   (b) the parent turn carried `reason.kind === 'completed'` (the state the
+//       session scheduler's completion gate reads);
+//   (c) EXACTLY ONE anchor line, byte-for-byte, with the listener's own
+//       `<kind>`/`<status>` and title/label. Exactly one is the "同一会话同一
+//       turn/end 不产生重复通知" state-machine claim: the completion arms ONE
+//       timer, and the auxiliary `agent/status` idle that follows is absorbed
+//       by the pending/notified guards (session); the job registry delivers a
+//       settlement once and the notified-id set absorbs a repeat (background);
+//   (d) the backend command was really CONSTRUCTED AND DISPATCHED: the anchor
+//       is logged by the listener immediately BEFORE `backend.notify(...)`, and
+//       the production backend is `execFile(NOTIFY_SEND_COMMAND, [title,
+//       body])`; the OS command itself is unobservable, so the swallowed
+//       `… FAILED: …` line is the probe that the spawn was attempted on a box
+//       where notify-send cannot run. Both shapes (silent success / swallowed
+//       failure) pass; the assertion that must NOT regress is "the failure
+//       never escapes the listener".
+const SESSION_NOTIFICATION_ANCHOR_RE =
+  /\[omo-hooks\] session-notification: (idle|error) (.+)/g
+/** The swallowed-failure probe: exact prefix, any `<what>` / `<error>` text. */
+const SESSION_NOTIFICATION_SWALLOW_RE =
+  /\[omo-hooks\] session-notification FAILED: /g
+const BACKGROUND_NOTIFICATION_ANCHOR_RE =
+  /\[omo-hooks\] background-notification: (\S+) (.+)/g
+/** The sibling module's swallowed-failure probe. */
+const BACKGROUND_NOTIFICATION_SWALLOW_RE =
+  /\[omo-hooks\] background-notification FAILED: /g
+
+function countMatches(text, re) {
+  return [...text.matchAll(new RegExp(re.source, re.flags))].length
+}
+
+/** Every line of a log that starts with one anchor prefix, trimmed. */
+function notificationLinesOf(text, prefix) {
+  return (text ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(prefix))
+}
+
+/** The scenario-owned half of the shared assertion core. */
+/**
+ * The shared half of both notification analyses. `topLevelSession` is false
+ * only for the background scenario's own fixture, whose subject is a delegated
+ * job rather than the top-level session.
+ */
+function notificationDeliveryExpectations(spec) {
+  return {
+    pluginLoaded: pluginsLoaded(spec.bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${spec.routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(spec.providersJson),
+    sessionLogFound: spec.log !== undefined,
+    // (b) the turn closed the way the completion gate requires.
+    turnCompleted: (spec.log?.events ?? []).some(
+      (event) => event.type === 'turn/end' && turnEndReasonKind(event) === 'completed',
+    ),
+    // The batch closed normally. The background scenario cannot pin the EXACT
+    // count: DSH's native reporter may already have opened the parent's wake-up
+    // turn by the time this analysis runs (the settlement lands inside the
+    // settle window), so the parent's step count is 2 or 3 depending on that
+    // race — the honest assertion is "at least the two scripted steps".
+    ...(spec.topLevelSession === false
+      ? { mockSawAtLeastTwoSteps: spec.sisyphusRequests.length >= 2 }
+      : { mockSawBothSteps: spec.sisyphusRequests.length === 2 }),
+    ...(spec.topLevelSession === false
+      ? {}
+      : {
+          // The session-under-test really is the TOP-LEVEL one (so no anchor
+          // can be a delegated child's), and the subagent filter left no extra
+          // line: a child session's completion would add a second anchor. The
+          // depth field is the producer-written header fact (`delegationDepth:
+          // 0` for a top-level session — dsh-subagent writes `parent + 1` for
+          // children), so `<= 0` is the correct top-level test, not
+          // `=== undefined`.
+          onlyTheTopLevelSessionNotified:
+            spec.log?.header?.origin !== 'subagent'
+            && (spec.log?.header?.delegationDepth ?? 0) <= 0
+            && spec.sessionAnchorCount === 1,
+        }),
+  }
+}
+
+/**
+ * The `session-notification-log` assertions.
+ * `fixturePath`/`fixtureText` are the sandbox artifacts the script wrote.
+ */
+export function analyzeSessionNotificationLog(
+  { log, requests, providersJson, bootLog, fixturePath, fixtureText, expectedAnchor },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const bashCall = events.find((event) => event.data?.name === 'bash')
+  const bashResult = bashCall === undefined
+    ? undefined
+    : results.find((part) => part.callId === bashCall.data?.callId)
+
+  const anchor = expectedAnchor ?? SESSION_NOTIFICATION_EXPECTED_ANCHOR
+  const anchorCount = countMatches(bootLog ?? '', SESSION_NOTIFICATION_ANCHOR_RE)
+  const anchorLineCount = (bootLog ?? '')
+    .split('\n')
+    .filter((line) => line.trim() === anchor).length
+  const swallowedFailureCount = countMatches(bootLog ?? '', SESSION_NOTIFICATION_SWALLOW_RE)
+
+  const checks = {
+    ...notificationDeliveryExpectations({
+      log,
+      routes,
+      providersJson,
+      bootLog,
+      sisyphusRequests: requests.filter((request) => request.role === 'sisyphus'),
+      sessionAnchorCount: anchorCount,
+    }),
+    // (a) the work the completion gate must have seen: a real bash call, a
+    // non-error result carrying the fixture bytes, and the file on disk.
+    bashCallRanAndProducedFixtureBytes:
+      bashCall !== undefined
+      && bashResult !== undefined
+      && bashResult.isError !== true
+      && bashResult.text.includes(fixtureText),
+    proofFileLandedOnDisk:
+      typeof fixturePath === 'string' && existsSync(fixturePath),
+    // (c) EXACTLY ONE anchor, on the measured carrier (the boot log), and it is
+    // the listener's OWN line for this completion.
+    notificationAnchorLoggedOnce: anchorCount === 1,
+    notificationAnchorIsTheShippedLine:
+      anchorLineCount === 1
+      && anchor.startsWith(SESSION_NOTIFICATION_LOG_PREFIX),
+    // (d) the dispatch surface was live (a backend exists on this platform) and
+    // the command attempt was observable: success ⇒ no failure line; failure ⇒
+    // a swallowed `FAILED:` line, never an exception (discipline ②). The
+    // `<= 1` bound is the exactly-once claim extended to the failure channel:
+    // a second failure line would mean the dispatch ran twice.
+    notificationBackendDispatchObserved:
+      anchorCount === 1 && swallowedFailureCount <= 1,
+    notificationFailureSwallowedNotThrown: swallowedFailureCount <= 1,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    // The observed carrier, verbatim (the evidence the anchor assertions read).
+    anchorCarrier: 'boot-log (dsh process stdout/stderr via console.log in the registrar)',
+    expectedAnchorLine: anchor,
+    notificationLines: notificationLinesOf(bootLog, SESSION_NOTIFICATION_LOG_PREFIX),
+    notificationAnchorCount: anchorCount,
+    notificationFailureLineCount: swallowedFailureCount,
+    notificationFailureLines: notificationLinesOf(bootLog, SESSION_NOTIFICATION_FAILURE_PREFIX),
+    notifySendCommand: NOTIFY_SEND_COMMAND,
+    fixturePath: fixturePath ?? null,
+    bashCallId: bashCall?.data?.callId ?? null,
+    bashResultText: bashResult?.text ?? null,
+    turnEndReasons: (log?.events ?? [])
+      .filter((event) => event.type === 'turn/end')
+      .map((event) => ({ seq: event.seq, kind: turnEndReasonKind(event) ?? null })),
+    mockRequestCount: requests.filter((request) => request.role === 'sisyphus').length,
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
+/**
+ * The `background-notification-log` assertions — the POSITIVE form (P3-T13
+ * flipped this from the P3-T12 OBSERVED-DEFECT form after the deferred
+ * `ctx.inject(['jobs'])` subscription fix).
+ *
+ * THE CONSTRUCTION IS REAL, and (P3-T13) it is now the ONE that creates a real
+ * `ctx.jobs` entry: the scenario flips its sandbox copy of the `explore` row to
+ * `backgroundMode: one-shot` before the session composes, so ONE conductor step
+ * that calls `explore` with `run_in_background: true` goes through
+ * `dsh-tool-subagent`'s one-shot background path
+ * (`jobs.start({kind:'subagent', label: args.description, owner: parent, …})`,
+ * `lib/index.js:537-545`). The call returns immediately, the parent turn closes
+ * `completed`, the child session really runs and settles, and the listener's
+ * `onJobDone` subscription turns that settlement into the anchor line. DSH's OWN
+ * reporter (`dsh-tool-jobs`, `lib/index.js:206-224`) independently delivers the
+ * same settlement as a model-visible notice — that is the non-vacuity witness
+ * this analysis asserts as `nativeSettlementNoticeDelivered`.
+ *
+ * WHY `continuable` COULD NOT BE USED (the P3-T12 scenario's construction): a
+ * continuable child has no background job at all — verbatim
+ * `dsh-subagent/lib/types/run-settlement.js`: "Only the one-shot background path
+ * uses Jobs; continuable children have no Task, no per-message result, and no
+ * Task cancellation." Every shipped concerto row is `continuable`, so the
+ * delegation this scenario drives had to be re-pointed at the one-shot path
+ * (`enableOneShotBackgroundExplore`; see the scenario section's fact 2).
+ *
+ * THE ASSERTIONS (the POSITIVE form this scenario was flipped to in P3-T13; the
+ * fix is `ctx.inject(['jobs'])` in the registrar — see the module header's WHY
+ * section for the root cause):
+ *   (a) a background job really was started — a `tool/call` whose parsed
+ *       arguments asked for the background, with a real callId;
+ *   (b) the delegated child really ran (its own session log with the
+ *       producer-written subagent header);
+ *   (c) DSH's native reporter delivered the settlement notice for THAT job, so
+ *       the anchor below cannot describe a job that never settled;
+ *   (d) the port's anchor line appeared EXACTLY ONCE, byte-for-byte, with a
+ *       TERMINAL status (the listener's own three-member list) and THIS job's
+ *       label. Exactly once is the "同一 settlement 不产生重复通知" claim: the
+ *       registry delivers a settlement once and the listener's notified-id set
+ *       absorbs a repeat;
+ *   (e) no false positive: exactly one anchor on the channel and zero swallowed
+ *       `… FAILED: …` lines (a second anchor OR a failure line fails this);
+ *   (f) the sibling session-notification listener did not double-announce (the
+ *       top-level turn's completion is its only anchor).
+ *
+ * The three canonical ways this can break — no anchor at all (the P3-T13
+ * defect), an anchor emitted twice, and an anchor whose status/label drifted —
+ * are MUTATION-TESTED in the self-test, each failing on its own named check.
+ */
+export function analyzeBackgroundNotificationLog(
+  { log, childLog, allLogs, requests, providersJson, bootLog },
+  routes,
+) {
+  const events = log?.events ?? []
+  const childEvents = childLog?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const delegatingCall = events.find((event) => {
+    if (event.type !== 'tool/call') return false
+    const args = toolCallArguments(event)
+    return args?.run_in_background === true
+  })
+  const delegatingArgs = delegatingCall === undefined ? undefined : toolCallArguments(delegatingCall)
+
+  // The anchor facts, each read from a fresh regex (the module-level one carries
+  // /g and is shared): the PARSED status/label pairs, and the byte-for-byte
+  // count of the expected line.
+  const anchorMatches = [
+    ...(bootLog ?? '').matchAll(new RegExp(BACKGROUND_NOTIFICATION_ANCHOR_RE.source, 'g')),
+  ]
+  const anchorStatuses = anchorMatches.map((match) => match[1])
+  const anchorLabels = anchorMatches.map((match) => match[2].trim())
+  const anchorCount = anchorMatches.length
+  const anchorLineCount = (bootLog ?? '')
+    .split('\n')
+    .filter((line) => line.trim() === BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR).length
+  const anchorLines = notificationLinesOf(bootLog, BACKGROUND_NOTIFICATION_LOG_PREFIX)
+  const swallowedFailureCount = countMatches(bootLog ?? '', BACKGROUND_NOTIFICATION_SWALLOW_RE)
+  const sessionAnchorCount = countMatches(bootLog ?? '', SESSION_NOTIFICATION_ANCHOR_RE)
+  // The settlement really DID happen (the child ran and closed, and DSH's own
+  // reporter delivered its notice for this job), so a missing anchor below is
+  // "the port stayed silent", never "no job was involved".
+  const nativeSettlementNoticeDelivered = nativeJobsNoticeDelivered(events)
+
+  const checks = {
+    ...notificationDeliveryExpectations({
+      log,
+      routes,
+      providersJson,
+      bootLog,
+      sisyphusRequests,
+      topLevelSession: false,
+    }),
+    // (a) a background job really was started: a `tool/call` whose parsed
+    // arguments asked for the background, with a real callId.
+    backgroundJobDelegationObserved:
+      delegatingCall !== undefined
+      && delegatingArgs?.run_in_background === true
+      && typeof delegatingCall.data?.callId === 'string',
+    // ... and the delegated child really ran (its own session log with the
+    // producer-written subagent header), so a settlement was a real event.
+    delegatedChildSessionRan:
+      childLog !== undefined
+      && childLog.header?.origin === 'subagent'
+      && childEvents.length > 0,
+    // ... and DSH's native reporter delivered the settlement to the parent, so
+    // the listener had a real settlement to observe.
+    nativeSettlementNoticeDelivered,
+    // (d) the anchor line appeared EXACTLY ONCE, byte-for-byte. This is the
+    // primary positive claim of the fix (P3-T13): the deferred
+    // `ctx.inject(['jobs'])` subscription really reaches `onJobDone`.
+    backgroundNotificationAnchorLoggedOnce: anchorLineCount === 1,
+    // ... with a TERMINAL status, from the listener's OWN list (the task book's
+    // completed|killed|failed: a killed or failed job still notifies).
+    backgroundNotificationAnchorTerminalStatus:
+      anchorCount === 1
+      && BACKGROUND_NOTIFICATION_TERMINAL_STATUSES.includes(anchorStatuses[0]),
+    // ... and with THIS job's label (the delegation's `description`, which the
+    // one-shot background path passes to `jobs.start` verbatim).
+    backgroundNotificationAnchorLabelExpected:
+      anchorCount === 1 && anchorLabels[0] === BACKGROUND_NOTIFICATION_EXPECTED_LABEL,
+    // (e) no false positive: exactly one anchor on the channel and no swallowed
+    // failure line. A second anchor (the double-notification failure mode) and a
+    // `… FAILED: …` line both fail this check.
+    noBackgroundNotificationFalsePositive:
+      anchorCount === 1 && swallowedFailureCount === 0,
+    // (f) The session-notification listener must not DOUBLE-announce. The claim
+    // is deliberately `<= 1`, not `=== 1`: this scenario's parent is woken by
+    // the job's own settlement notice (`dsh-tool-jobs` `owner.followup`), which
+    // makes the agent busy and CANCELS the sibling listener's pending idle
+    // confirmation — measured (`sessionNotificationAnchorCount: 0`, the wake-up
+    // `turn/start` lands ~immediately after turn 1's `turn/end`). Zero is
+    // therefore a legitimate shape here; two is the double-announce failure mode
+    // this check exists for (and the mutation QA drives exactly that). The
+    // `=== 1` claim belongs to the scenario that owns that listener,
+    // 'session-notification-log'.
+    sessionNotificationDidNotDoubleAnnounce: sessionAnchorCount <= 1,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    anchorCarrier: 'boot-log (dsh process stdout/stderr via console.log in the registrar)',
+    expectedAnchorLine: BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR,
+    notificationLines: anchorLines,
+    notificationAnchorCount: anchorCount,
+    notificationAnchorLineCount: anchorLineCount,
+    notificationAnchorStatuses: anchorStatuses,
+    notificationAnchorLabels: anchorLabels,
+    notificationFailureLineCount: swallowedFailureCount,
+    notificationFailureLines: notificationLinesOf(bootLog, BACKGROUND_NOTIFICATION_FAILURE_PREFIX),
+    // The deferred-acquisition evidence: which NOTE lines a real boot carries is
+    // informative (the strict `ctx.get` usually loses the loader race, so the
+    // deferred path is the one exercised), but it is NOT asserted — both
+    // acquisition paths are correct and which one runs is a race outcome.
+    notificationNoteLines: notificationLinesOf(bootLog, BACKGROUND_NOTIFICATION_NOTE_PREFIX),
+    sessionNotificationAnchorCount: sessionAnchorCount,
+    delegatingToolName: delegatingCall?.data?.name ?? null,
+    delegatingArguments: delegatingArgs ?? null,
+    // P3-T13: recorded so a reader can tell WHY this scenario edits its own
+    // sandbox preset (the shipped row is continuable; only the one-shot
+    // background path registers a ctx.jobs entry).
+    delegationBackgroundMode: 'one-shot (scenario-local preset edit)',
+    jobLabelSource: "the delegation `description` (dsh-tool-subagent jobs.start label)",
+    delegatedChildSessions: (allLogs ?? [])
+      .filter((candidate) => candidate.header?.origin === 'subagent')
+      .map((candidate) => candidate.path),
+    turnEndReasons: events
+      .filter((event) => event.type === 'turn/end')
+      .map((event) => ({ seq: event.seq, kind: turnEndReasonKind(event) ?? null })),
+    mockRequestCount: sisyphusRequests.length,
   }
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
 }
@@ -4156,6 +4803,217 @@ function fabricatedTodoContinuationInput(routes) {
 }
 
 /**
+ * The fabricated session-notification-log input (the REAL runtime layout,
+ * compact seqs): one `bash` call that writes the proof fixture, its non-error
+ * result carrying the fixture bytes, the closing summary step, and a completed
+ * turn/end. The anchor line rides the BOOT LOG (the measured carrier), and the
+ * fixture path is a file that really exists (this very driver — the hermetic
+ * stand-in for the on-disk artifact the real scenario writes into its sandbox).
+ * The fixture text is the mock server's own filename, so the fabricated
+ * tool/result "carries the fixture bytes" without inventing a second fixture.
+ */
+const FABRICATED_NOTIFICATION_FIXTURE_TEXT = 'mock-llm-server.mjs'
+const FABRICATED_NOTIFICATION_FIXTURE_PATH = fileURLToPath(import.meta.url)
+const FABRICATED_NOTIFICATION_ANCHOR = SESSION_NOTIFICATION_EXPECTED_ANCHOR
+const FABRICATED_NOTIFICATION_COMMAND =
+  `printf '%s\\n' ${FABRICATED_NOTIFICATION_FIXTURE_TEXT} > ${FABRICATED_NOTIFICATION_FIXTURE_PATH} && cat ${FABRICATED_NOTIFICATION_FIXTURE_PATH}`
+
+function fabricatedSessionNotificationBootLog(anchorLines = 1) {
+  return [
+    FABRICATED_BOOT_LOG,
+    '[omo-hooks] hook session-notification registered on session/event',
+    ...Array.from({ length: anchorLines }, () => FABRICATED_NOTIFICATION_ANCHOR),
+  ].join('\n')
+}
+
+function fabricatedSessionNotificationLog(routes) {
+  const callId = 'mock-llm-tool-1'
+  const argumentsText = JSON.stringify({ command: FABRICATED_NOTIFICATION_COMMAND, description: 'Write the proof file' })
+  return {
+    path: '/fabricated/session-notification/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      fabricatedUserMessage(1, { role: 'user', content: [{ type: 'text', text: SESSION_NOTIFICATION_PROMPT }] }),
+      {
+        seq: 2,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'initial' },
+      },
+      {
+        seq: 3,
+        type: 'assistant/message',
+        data: { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'tool-call', id: callId, name: 'bash', arguments: argumentsText }] } },
+      },
+      { seq: 4, type: 'tool/call', data: { turn: 1, step: 1, callId, name: 'bash', arguments: argumentsText } },
+      {
+        seq: 5,
+        type: 'tool/result',
+        data: {
+          turn: 1,
+          step: 1,
+          message: {
+            source: { kind: 'tool', callId },
+            content: [{
+              type: 'tool-result',
+              toolCallId: callId,
+              content: [{ type: 'text', text: `${FABRICATED_NOTIFICATION_FIXTURE_TEXT}\n` }],
+              isError: false,
+            }],
+          },
+        },
+      },
+      { seq: 6, type: 'step/end', data: { turn: 1, step: 1 } },
+      { seq: 7, type: 'step/start', data: { turn: 1, step: 2 } },
+      { seq: 8, type: 'assistant/message', data: { turn: 1, step: 2, message: { role: 'assistant', content: [{ type: 'text', text: SESSION_NOTIFICATION_SUMMARY }] } } },
+      { seq: 9, type: 'step/end', data: { turn: 1, step: 2 } },
+      { seq: 10, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedSessionNotificationInput(routes, anchorLines = 1) {
+  const model = routes.sisyphus.model
+  const message = (text) => [
+    { role: 'system', content: 'MOCKROLE=sisyphus' },
+    { role: 'user', content: text },
+  ]
+  return {
+    log: fabricatedSessionNotificationLog(routes),
+    requests: [
+      { role: 'sisyphus', body: { model, messages: message(SESSION_NOTIFICATION_PROMPT) }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model, messages: message(SESSION_NOTIFICATION_SUMMARY) }, receivedAt: 20 },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: fabricatedSessionNotificationBootLog(anchorLines),
+    fixturePath: FABRICATED_NOTIFICATION_FIXTURE_PATH,
+    fixtureText: FABRICATED_NOTIFICATION_FIXTURE_TEXT,
+    expectedAnchor: FABRICATED_NOTIFICATION_ANCHOR,
+  }
+}
+
+/**
+ * The fabricated background-notification-log input (P3-T13, the POSITIVE form):
+ * ONE delegating step with `run_in_background: true` (the observable one-shot
+ * job construction), the parent's summary step, the child session log that
+ * really ran, DSH's native job notice for that settlement, and the port's OWN
+ * anchor on the boot-log carrier. The self-test mutates each of those facts to
+ * pin the assertion that must catch it.
+ */
+function fabricatedBackgroundNotificationLog(routes) {
+  const callId = 'mock-llm-tool-1'
+  const argumentsText = JSON.stringify({
+    description: BACKGROUND_NOTIFICATION_EXPECTED_LABEL,
+    prompt: BACKGROUND_NOTIFICATION_TASK,
+    run_in_background: true,
+  })
+  return {
+    path: '/fabricated/background-notification/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID, delegationDepth: 0 },
+    events: [
+      fabricatedUserMessage(1, { role: 'user', content: [{ type: 'text', text: BACKGROUND_NOTIFICATION_PROMPT }] }),
+      {
+        seq: 2,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.sisyphus.provider, model: routes.sisyphus.model } }, reason: 'initial' },
+      },
+      {
+        seq: 3,
+        type: 'assistant/message',
+        data: { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'tool-call', id: callId, name: 'explore', arguments: argumentsText }] } },
+      },
+      { seq: 4, type: 'tool/call', data: { turn: 1, step: 1, callId, name: 'explore', arguments: argumentsText } },
+      {
+        seq: 5,
+        type: 'tool/result',
+        data: {
+          turn: 1,
+          step: 1,
+          message: {
+            source: { kind: 'tool', callId },
+            content: [{ type: 'tool-result', toolCallId: callId, content: [{ type: 'text', text: 'started background subagent job subagent-1' }], isError: false }],
+          },
+        },
+      },
+      { seq: 6, type: 'step/end', data: { turn: 1, step: 1 } },
+      { seq: 7, type: 'step/start', data: { turn: 1, step: 2 } },
+      { seq: 8, type: 'assistant/message', data: { turn: 1, step: 2, message: { role: 'assistant', content: [{ type: 'text', text: BACKGROUND_NOTIFICATION_SUMMARY }] } } },
+      { seq: 9, type: 'step/end', data: { turn: 1, step: 2 } },
+      { seq: 10, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      // DSH's OWN reporter delivers the settlement notice into the parent once
+      // the background job settles — the independent witness that the port's
+      // anchor describes a real settlement (this is the one-shot background
+      // path's wording, `dsh-tool-jobs/lib/index.js:116-132`).
+      fabricatedUserMessage(11, {
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: `background job subagent-1 (subagent: ${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}) finished [status: completed]. Read its output with job_output.`,
+        }],
+      }),
+      { seq: 12, type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedBackgroundNotificationChildLog(routes) {
+  return {
+    path: '/fabricated/background-notification/explore/session.jsonl',
+    header: {
+      type: 'session',
+      id: FABRICATED_CHILD_ID,
+      origin: 'subagent',
+      parentSession: FABRICATED_PARENT_ID,
+      delegationDepth: 1,
+    },
+    events: [
+      {
+        seq: 2,
+        type: 'request/header',
+        data: { header: { config: { provider: routes.explore.provider, model: routes.explore.model } }, reason: 'initial' },
+      },
+      { seq: 3, type: 'assistant/message', data: { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: BACKGROUND_CHILD_REPLY }] } } },
+      { seq: 4, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedBackgroundNotificationInput(routes) {
+  const model = routes.sisyphus.model
+  const message = (text) => [
+    { role: 'system', content: 'MOCKROLE=sisyphus' },
+    { role: 'user', content: text },
+  ]
+  const parentLog = fabricatedBackgroundNotificationLog(routes)
+  const childLog = fabricatedBackgroundNotificationChildLog(routes)
+  return {
+    log: parentLog,
+    childLog,
+    allLogs: [parentLog, childLog],
+    requests: [
+      { role: 'sisyphus', body: { model, messages: message(BACKGROUND_NOTIFICATION_PROMPT) }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model, messages: message(BACKGROUND_NOTIFICATION_SUMMARY) }, receivedAt: 20 },
+      { role: 'explore', body: { model: routes.explore.model, messages: [{ role: 'user', content: BACKGROUND_NOTIFICATION_TASK }] }, receivedAt: 30 },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      '[omo-hooks] hook background-notification registered on session/event',
+      // The deferred-acquisition NOTE a real boot carries (the loader race
+      // usually loses the strict read) — present here so the fixture exercises
+      // the same log shape, and counted by nothing.
+      `${BACKGROUND_NOTIFICATION_NOTE_PREFIX}jobs service not active at apply; ctx.inject(["jobs"]) armed (degraded pull path active until it appears)`,
+      `${BACKGROUND_NOTIFICATION_NOTE_PREFIX}jobs service observed; ctx.jobs.onJobDone subscribed (push path live)`,
+      BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR,
+      // NOTE: NO session-notification anchor here. The measured shape of this
+      // scenario is zero on that channel: the parent is woken by the job's own
+      // settlement notice before the sibling listener's idle confirmation can
+      // fire (see the analysis's check (f)). The double-announce mutation below
+      // adds the two that must fail it.
+    ].join('\n'),
+  }
+}
+
+/**
  * P2-T18 MOCKROLE landing self-test (hermetic, no spawn). Renders the REAL
  * concerto template through the REAL renderers (concerto-preset.ts
  * renderAgentSentinels + system-prompt.ts renderPersonaIntoComposition),
@@ -4852,6 +5710,39 @@ async function runAnalysisSelfTest(routes) {
         fabricatedTodoSteerMessage('fabricated-todo-steer-2'),
       ))
     }, 'continuationSteerInjectedExactlyOnce'],
+    // The IDEMPOTENCE HALF of the exactly-once guard, named by its own mutation:
+    // the ACCEPT splice itself is duplicated (a second `next-step` insertion of
+    // the SAME message id, which is exactly what a listener that re-fires the
+    // steer without the idempotence guard would append). The claim carrier is
+    // untouched, so `continuationSteerInjectedExactlyOnce` is the only check
+    // that can see it — this is the half the 收尾 sequence's `inserted: []`
+    // removal splice keeps invisible to a claim-only count.
+    ['the steer splice was inserted twice (idempotence drift, claim untouched)', (input) => {
+      const events = input.log.events
+      const spliceIndex = events.findIndex(
+        (event) => event.type === 'agent/inbox/spliced'
+          && (event.data?.inserted ?? []).some(
+            (message) => messageContentText(message).includes(TODO_CONTINUATION_DIRECTIVE),
+          ),
+      )
+      events.splice(spliceIndex + 1, 0, {
+        ...events[spliceIndex],
+        seq: events[spliceIndex].seq + 0.1,
+      })
+    }, 'continuationSteerInjectedExactlyOnce'],
+    // The CLAIM/ACCEPT IDENTITY HALF: the claimed `user/message` and the
+    // accepted splice carry DIFFERENT message ids (the same drift class as the
+    // double splice, but a listener that mints a fresh id per dispatch while
+    // the inbox keeps the first insert produces exactly this). Text, source
+    // and counts all still match, so only the id-equality conjunct of
+    // `continuationSteerInjectedExactlyOnce` can catch it.
+    ['the claimed steer carries a different message id than the splice (claim/accept link broken)', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'user/message'
+          && messageContentText(event.data).includes(TODO_CONTINUATION_DIRECTIVE)
+          ? { ...event, data: { ...event.data, id: 'fabricated-todo-steer-claimed' } }
+          : event)
+    }, 'continuationSteerInjectedExactlyOnce'],
     ['the control turn never ran (no second prompt turn)', (input) => {
       input.log.events = input.log.events.filter(
         (event) => !(event.type === 'turn/end' && event.data?.turn === 2),
@@ -4874,6 +5765,147 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P3-T12 session-notification-log self-test: the fabricated good input
+  // (the REAL runtime layout + the anchor on the measured carrier) must PASS;
+  // each fabricated defect must fail on its OWN named check — including the two
+  // the F-mode pilot exists to catch: a log with NO notification anchor, and a
+  // log with the anchor DUPLICATED (the double-notification count).
+  const goodSessionNotification = analyzeSessionNotificationLog(
+    fabricatedSessionNotificationInput(routes),
+    routes,
+  )
+  if (goodSessionNotification.result !== 'PASS') {
+    problems.push(`fabricated GOOD session-notification-log must PASS, got FAIL on: ${goodSessionNotification.failed.join(', ')}`)
+  }
+  const sessionNotificationDefectCases = [
+    ['no notification anchor on the carrier (the completion never notified)', (input) => {
+      input.bootLog = fabricatedSessionNotificationBootLog(0)
+    }, 'notificationAnchorLoggedOnce'],
+    ['the notification anchor was emitted twice (double notification)', (input) => {
+      input.bootLog = fabricatedSessionNotificationBootLog(2)
+    }, 'notificationAnchorLoggedOnce'],
+    // The business half: without the real work, the "turn produced work" claim
+    // and the completion claim must each name themselves (the scheduler's own
+    // gates read exactly these two facts).
+    ['the bash call never produced a tool result carrying the fixture bytes', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'tool/result')
+    }, 'bashCallRanAndProducedFixtureBytes'],
+    ['the proof file never landed on disk', (input) => {
+      input.fixturePath = '/fabricated/no/such/session-notification-proof.txt'
+    }, 'proofFileLandedOnDisk'],
+    ['the turn never reached a completed turn/end', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'turn/end'
+          ? { ...event, data: { turn: 1, reason: { kind: 'max-tokens' } } }
+          : event)
+    }, 'turnCompleted'],
+    // The anchor was emitted for a line that is NOT the listener's own shipped
+    // form (a drifted prefix/title must not satisfy the check).
+    ['the anchor line drifted from the shipped prefix/title', (input) => {
+      input.bootLog = input.bootLog.replace(SESSION_NOTIFICATION_LOG_PREFIX, '[omo-hooks] session-notify: ')
+    }, 'notificationAnchorLoggedOnce'],
+    // The subagent filter: a log whose header marks it a delegated child must
+    // not be counted as the notified top-level session.
+    ['the session under test is a delegated child', (input) => {
+      input.log.header = { ...input.log.header, origin: 'subagent', delegationDepth: 1 }
+    }, 'onlyTheTopLevelSessionNotified'],
+    ['the mock saw an unexpected number of steps', (input) => {
+      input.requests = input.requests.slice(0, 1)
+    }, 'mockSawBothSteps'],
+  ]
+  for (const [label, mutate, expectedCheck] of sessionNotificationDefectCases) {
+    const input = fabricatedSessionNotificationInput(routes)
+    mutate(input)
+    const verdict = analyzeSessionNotificationLog(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated session-notification-log defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  // ── P3-T13 background-notification-log self-test: the fabricated good input
+  // (the real one-shot job construction + the port's own anchor + DSH's native
+  // settlement notice) must PASS; every fabricated defect must fail on its OWN
+  // named check — including the three this scenario exists for: the P3-T13
+  // defect (no anchor at all), a double notification for one settlement, and an
+  // anchor whose status/label drifted.
+  const goodBackgroundNotification = analyzeBackgroundNotificationLog(
+    fabricatedBackgroundNotificationInput(routes),
+    routes,
+  )
+  if (goodBackgroundNotification.result !== 'PASS') {
+    problems.push(`fabricated GOOD background-notification-log must PASS, got FAIL on: ${goodBackgroundNotification.failed.join(', ')}`)
+  }
+  const backgroundNotificationDefectCases = [
+    // THE P3-T13 DEFECT ITSELF: the runtime produced no anchor (the strict
+    // `ctx.get('jobs')` at apply time meant the subscription never happened).
+    ['the background anchor never appeared (the P3-T13 subscription defect)', (input) => {
+      input.bootLog = input.bootLog.split('\n')
+        .filter((line) => line.trim() !== BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR)
+        .join('\n')
+    }, 'backgroundNotificationAnchorLoggedOnce'],
+    // The double-notification failure mode: two anchors for ONE settlement.
+    ['the background anchor was emitted twice (double notification for one settlement)', (input) => {
+      input.bootLog += `\n${BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR}`
+    }, 'backgroundNotificationAnchorLoggedOnce'],
+    // A non-terminal status must not satisfy the positive claim (a `running`
+    // job has not settled; only completed|killed|failed may notify).
+    ['the anchor reports a non-terminal status', (input) => {
+      input.bootLog = input.bootLog.replace(
+        BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR,
+        `${BACKGROUND_NOTIFICATION_LOG_PREFIX}running ${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}`,
+      )
+    }, 'backgroundNotificationAnchorTerminalStatus'],
+    // ... and neither may another job's label.
+    ['the anchor reports another job\'s label', (input) => {
+      input.bootLog = input.bootLog.replace(
+        BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR,
+        `${BACKGROUND_NOTIFICATION_LOG_PREFIX}completed librarian`,
+      )
+    }, 'backgroundNotificationAnchorLabelExpected'],
+    // A drifted anchor line (a renamed prefix) must not count as the port's own
+    // shipped contract.
+    ['the anchor line drifted from the shipped prefix', (input) => {
+      input.bootLog = input.bootLog.replace(
+        BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR,
+        `[omo-hooks] background-notify: completed ${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}`,
+      )
+    }, 'backgroundNotificationAnchorLoggedOnce'],
+    ['the delegation did not run in the background', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/call'
+          ? { ...event, data: { ...event.data, arguments: JSON.stringify({ description: BACKGROUND_NOTIFICATION_EXPECTED_LABEL, prompt: BACKGROUND_NOTIFICATION_TASK }) } }
+          : event)
+    }, 'backgroundJobDelegationObserved'],
+    ['the delegated child session never ran', (input) => {
+      input.childLog = undefined
+      input.allLogs = [input.log]
+    }, 'delegatedChildSessionRan'],
+    ['DSH never delivered the settlement notice to the parent', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'user/message'
+          && messageContentText(event.data).includes('finished [status:')),
+      )
+    }, 'nativeSettlementNoticeDelivered'],
+    // The exactly-once claim on the SESSION channel: a DOUBLE announcement there
+    // (the sibling listener's own failure mode) must FAIL even though this
+    // scenario's measured count is zero — the check is "never more than one",
+    // and two anchors is exactly what a double announce looks like.
+    ['the session-notification listener announced the top-level turn twice', (input) => {
+      input.bootLog += `\n${SESSION_NOTIFICATION_EXPECTED_ANCHOR}\n${SESSION_NOTIFICATION_EXPECTED_ANCHOR}`
+    }, 'sessionNotificationDidNotDoubleAnnounce'],
+    ['the background listener swallowed a failure line', (input) => {
+      input.bootLog += `\n${BACKGROUND_NOTIFICATION_FAILURE_PREFIX}notification dispatch failed: Error: boom`
+    }, 'noBackgroundNotificationFalsePositive'],
+  ]
+  for (const [label, mutate, expectedCheck] of backgroundNotificationDefectCases) {
+    const input = fabricatedBackgroundNotificationInput(routes)
+    mutate(input)
+    const verdict = analyzeBackgroundNotificationLog(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated background-notification-log defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
@@ -4887,7 +5919,12 @@ async function runAnalysisSelfTest(routes) {
 // resolveModelRoutes the spawned dsh runs, so settings/agentOptions and the
 // assertions share one source); `seed` runs before the mock starts (fixtures
 // the script points at); `script(sandbox)` builds the mock script (absolute
-// fixture paths need the sandbox).
+// fixture paths need the sandbox); `augmentMaterialized(sandbox)` (P3-T13) runs
+// AFTER boot and BEFORE the session is created, for a scenario that must adjust
+// the sandbox-owned materialized preset the session composes from
+// ('background-notification-log' flips one delegation row to the one-shot
+// background mode); `settle(boot, sandbox, sessionId)` runs after the last
+// turn/end and before `stopDsh` freezes the observations.
 
 const SCENARIOS = [
   {
@@ -4940,6 +5977,70 @@ const SCENARIOS = [
     roles: ['sisyphus'],
     script: todoContinuationScript,
     analyze: analyzeTodoContinuationEnforced,
+  },
+  {
+    // P3-T12 (plan §4.2 pattern F; task book WP-5): the session-notification
+    // listener proves its delivery chain in one real run — a turn that really
+    // produced work (a bash call that wrote a file) closes `completed`, the
+    // scheduler arms the idle-confirmation timer, and exactly ONE anchor line
+    // `[omo-hooks] session-notification: idle <baseTitle>` lands on the
+    // measured carrier (the dsh process log — see the analysis header) with the
+    // OS command attempted through the platform backend.
+    //
+    // HONEST SCOPE (three recorded limits, none of them silent):
+    //   1. NO live no-work CONTROL. The listener is registered by the PLUGIN at
+    //      process start, so there is no per-scenario switch to turn it off for
+    //      a second session; a "second, work-less turn produces no new anchor"
+    //      assertion cannot be isolated when both turns share one process.
+    //      Asserting "the anchor count is 1 while turn 1 produced work and turn
+    //      2 did not" would in fact be a claim about scheduling ORDER, not
+    //      about the gate. The gate (`hasWorked`) is therefore covered where it
+    //      is deterministic: session-notification.test.ts cases ② and ③ (a
+    //      completed turn with no step/end, and a bare idle status, both arm
+    //      NOTHING). 记降级.
+    //   2. The ERROR notification is not driven here either: `turn/end`
+    //      reason.kind === 'error' needs a failing loop, which the mock LLM
+    //      cannot produce deterministically (a mock transport error surfaces as
+    //      a driver error, not a `turn/end error`). Unit case ④ covers it.
+    //   3. background-notification got its OWN scenario in P3-T13, asserting the
+    //      POSITIVE delivery chain there (see 'background-notification-log' below)
+    //      instead of being covered only by
+    //      tests/omo-hooks/background-notification.test.ts.
+    name: 'session-notification-log',
+    prompt: SESSION_NOTIFICATION_PROMPT,
+    roles: ['sisyphus'],
+    script: sessionNotificationScript,
+    settle: (boot) => awaitNotificationAnchor(boot),
+    analysisInput: (sandbox) => ({
+      fixturePath: join(sandbox.project, NOTIFICATION_FIXTURE_NAME),
+      fixtureText: NOTIFICATION_FIXTURE_TEXT,
+      expectedAnchor: SESSION_NOTIFICATION_EXPECTED_ANCHOR,
+    }),
+    analyze: analyzeSessionNotificationLog,
+  },
+  {
+    // P3-T13 (plan §4.2 pattern F; task book WP-5): the background-notification
+    // listener's chain, driven through the ONE observable `ctx.jobs`
+    // construction this harness has — a `run_in_background: true` delegation
+    // from the conductor, on a ONE-SHOT background row (the shipped concerto
+    // rows are `continuable`, and a continuable child has no background job at
+    // all; see the scenario section's fact 2 and
+    // `enableOneShotBackgroundExplore`). The parent turn closes immediately, the
+    // child settles later, and the port's deferred `ctx.inject(['jobs'])`
+    // subscription turns that settlement into the anchor line
+    // `[omo-hooks] background-notification: <terminal status> explore` —
+    // EXACTLY ONCE. The job is deliberately never read or waited for: a read
+    // marks `reported` and the port would correctly stay silent, which is a
+    // DIFFERENT path (the sibling suite covers the reported gate in unit tests).
+    name: 'background-notification-log',
+    prompt: BACKGROUND_NOTIFICATION_PROMPT,
+    roles: ['sisyphus', BACKGROUND_NOTIFICATION_EXPECTED_LABEL],
+    script: backgroundNotificationScript,
+    // The scenario-local preset edit that makes a real JobRegistry entry
+    // possible (runs after boot, before the session composes its tools).
+    augmentMaterialized: enableOneShotBackgroundExplore,
+    settle: (boot, sandbox, sessionId) => awaitBackgroundNotificationSettlement(boot, sandbox, sessionId),
+    analyze: analyzeBackgroundNotificationLog,
   },
   {
     // AC-6a (T20): the explore child hallucinates a write; the T12 deny
@@ -5053,6 +6154,12 @@ async function runScenario(def, baseRoutes) {
     // parade gates on it, and every scenario carries the raw detail.
     for (const role of def.roles) appendMockRoleMarker(sandbox, role)
     const markerLanding = def.roles.map((role) => verifyMockRoleMarkerLanding(sandbox, role))
+    // P3-T13: a scenario may additionally edit the SANDBOX-OWNED materialized
+    // preset before the session composes its tools (the MOCKROLE markers above
+    // already prove the file is read at session composition, not at boot). Used
+    // by the background scenario to reach the one-shot background job path the
+    // shipped `continuable` rows cannot produce; loud on drift (it throws).
+    def.augmentMaterialized?.(sandbox)
 
     // Wiring proof for BOTH adapters (transport-adaptive; same contract).
     const providers = await listProvidersJoined(boot)
@@ -5081,6 +6188,14 @@ async function runScenario(def, baseRoutes) {
       log = await awaitTurnEnd(sandbox, created.sessionId, index + 1)
     }
     const logPath = log?.path
+
+    // P3-T12: a scenario may need to observe work that happens AFTER its last
+    // turn/end (the notification's idle-confirmation delay, a timer-armed
+    // side effect, or a background job settling). `settle` runs BEFORE
+    // `stopDsh` freezes the boot log, so the observation window is a
+    // scenario-owned decision rather than a race; it receives the sandbox and
+    // the session id so it can watch the durable session JSONL too (P3-T13).
+    await def.settle?.(boot, sandbox, created.sessionId)
 
     await stopDsh(child)
     child = undefined
@@ -5212,7 +6327,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

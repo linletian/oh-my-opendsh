@@ -154,7 +154,48 @@ export interface HooksRegistrationContext {
    * without the key all mean "capability absent", which every such hook treats
    * as a skip — never a boot or turn failure (plan §4.2). Declaring it required
    * would make every existing fake in the unit suite illegal for no benefit.
+   *
+   * ⚠️ `get` is a STRICT read: cordis returns `undefined` for a service whose
+   * providing fiber is not ACTIVE yet, which is exactly the state of a service
+   * row the loader is still creating CONCURRENTLY with this plugin (verbatim
+   * `cordis/lib/index.js:754-771`; the full root cause is recorded in
+   * hooks/background-notification.ts's WHY section). A hook that must observe a
+   * service rather than sample it once therefore uses {@link inject} below.
    */
+  get?(name: string): unknown
+  /**
+   * Cordis's DEFERRED dependency form (`Context#inject(deps, callback)`,
+   * verbatim `cordis/lib/index.js:1592-1605`): "start a callback once the
+   * requested dependencies are available". The callback runs as its own child
+   * fiber — immediately when every named service is already active, and again
+   * (after the old child unloads) when one is replaced — receives the injected
+   * context, and may RETURN a disposer, which cordis collects as that child
+   * fiber's disposal. That child is itself an effect of the registering fiber
+   * (`cordis/lib/index.js:1074-1075`), so everything the callback registers is
+   * disposed with this plugin (discipline ①).
+   *
+   * Declared optional for the same reason as `get`: a structural fake without
+   * it must stay legal, and a hook that cannot defer simply keeps its
+   * synchronous behaviour. It exists for hooks whose service is created in the
+   * SAME loader batch as this plugin (P3-T13: `background-notification`'s
+   * `jobs` — see that module's WHY section), and it is deliberately NOT the
+   * plugin-level `inject: ['jobs']` form: that would gate every hook in the
+   * roster behind one optional service.
+   */
+  inject?(deps: readonly string[], callback: (injected: HooksInjectedContext) => unknown): unknown
+}
+
+/**
+ * The context an {@link HooksRegistrationContext.inject} callback receives: a
+ * context whose named dependencies are available. Cordis exposes each injected
+ * service as a property (the shipped session controller reads `jobsCtx.jobs`,
+ * `dsh-api-session-controller/lib/index.js:1017-1018`), so the index signature
+ * is `unknown` and every consumer narrows structurally — the same discipline as
+ * `HooksRegistrationContext.get`.
+ */
+export interface HooksInjectedContext {
+  readonly [name: string]: unknown
+  /** The same strict lookup, available inside the injected context. */
   get?(name: string): unknown
 }
 
@@ -200,7 +241,14 @@ export type HookRegistrar = (
  *     (hooks/background-notification.ts) — registers on its primary manifest
  *     event unconditionally, and additionally subscribes to the `ctx.jobs`
  *     service (`onJobDone`, a service subscription rather than one of the six
- *     manifest events); the subscription's own disposer is what it returns.
+ *     manifest events). Since P3-T13 that subscription is acquired through
+ *     `ctx.inject(['jobs'], …)` (the {@link HooksRegistrationContext.inject}
+ *     deferred form) rather than a synchronous `ctx.get` sample: the loader
+ *     creates this row concurrently with the `jobs` provider row, so the strict
+ *     read is usually empty at apply() time — the root cause and its verbatim
+ *     citations are in that module's header. It returns a disposer only on the
+ *     immediate path; the deferred path hands the subscription's disposer back
+ *     through the injected child fiber, which cordis disposes with this fiber.
  * TODO(P3-T14+): add one entry per remaining ported hook, the same way —
  *   'edit-error-recovery': registerEditErrorRecovery, ...
  * one task per hook, keeping disciplines ①–④ above. Nothing else in this file

@@ -348,7 +348,7 @@ const MANIFEST_ROWS = [
     mode: 'F',
     summary:
       '后台任务完成通知；前置：ctx.jobs 事件面核实（T12），无对应面则按 DoD-d 记降级',
-    e2eScenario: 'background-notification-logged',
+    e2eScenario: 'background-notification-log',
     status: 'pending',
   },
   // H-14 — phase3-hooks.md §1 P4 行（批 A 首项：58 行零状态）。前置：DSH edit

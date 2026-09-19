@@ -320,6 +320,13 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     // 'session-notification' registers TWO surfaces (its primary manifest event
     // plus the auxiliary `agent/status`), which is why the onCalls list below is
     // longer than the registered-line list.
+    //
+    // P3-T13: 'background-notification' now ALSO emits one NOTE line, because
+    // this fake context has neither an active `jobs` service nor `ctx.inject`
+    // (a minimal host), and that hook records the degraded capability loudly
+    // instead of silently doing nothing. The line is transcribed here by hand
+    // for the same reason as every other line in this file: a formatter-derived
+    // expectation would agree with its own drift.
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const { ctx, onCalls } = fakeContext()
     apply(ctx)
@@ -329,6 +336,7 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook todo-continuation-enforcer registered on agent/turn-stopping',
       '[omo-hooks] hook empty-task-response-detector registered on tools/post-execute',
       '[omo-hooks] hook session-notification registered on session/event',
+      '[omo-hooks] background-notification NOTE: jobs service never appeared; no push subscription (degraded pull path only)',
       '[omo-hooks] hook background-notification registered on session/event',
     ])
     expect(onCalls.map((call) => call.event)).toEqual([
@@ -377,6 +385,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook todo-continuation-enforcer registered on agent/turn-stopping',
       '[omo-hooks] hook empty-task-response-detector registered on tools/post-execute',
       '[omo-hooks] hook session-notification registered on session/event',
+      // P3-T13: the same degraded-capability NOTE as test ① (this fake context
+      // has no jobs service and no `ctx.inject`).
+      '[omo-hooks] background-notification NOTE: jobs service never appeared; no push subscription (degraded pull path only)',
       '[omo-hooks] hook background-notification registered on session/event',
     ])
   })

@@ -624,9 +624,13 @@ describe('P3-T12 session-notification — H-05 predicates (upstream session-todo
     expect(isPendingTodo({ status: 'completed' })).toBe(false)
     expect(isPendingTodo({ status: 'cancelled' })).toBe(false)
     // DSH's TodoItem union has no blocked/deleted member, but upstream's `!==`
-    // chain would treat both as pending — so this port does too (the header
-    // records why the three extra upstream statuses are not added: they are
-    // currently inert, and adding them would be a silent semantic change).
+    // chain would treat BOTH as pending — so this port does too, and the
+    // behavioural consequence is that a blocked/deleted item keeps the
+    // completion notification suppressed, exactly as upstream would. The two
+    // extra statuses are the ONLY divergence from the E-mode module's 4-status
+    // predicate (the header records why they are not added here: they are
+    // unreachable on this union, and adding them would be a silent semantic
+    // change to this port).
     expect(isPendingTodo({ status: 'blocked' })).toBe(true)
     expect(isPendingTodo({ status: 'deleted' })).toBe(true)
   })

@@ -208,6 +208,19 @@ describe('P3-T2 HOOK_MANIFEST — spot checks (hard-coded against phase3-hooks.m
     expect(entry?.e2eScenario).toBe('session-notification-log')
   })
 
+  it('④ background-notification is the F sibling, pinned to its landed e2e scenario', () => {
+    // F1 (P3-T13 review): the H-11 row declared `background-notification-logged`
+    // while the landed scenario is `background-notification-log`. The pin below
+    // is the hand-transcribed expectation that makes that drift loud — the same
+    // shape as the session-notification row above. The scenario name itself is
+    // the SCENARIOS row in tests/e2e/drive.mjs.
+    const entry = HOOK_MANIFEST.find((row) => row.id === 'background-notification')
+    expect(entry).toBeDefined()
+    expect(entry?.mode).toBe('F')
+    expect(entry?.event).toBe('session/event')
+    expect(entry?.e2eScenario).toBe('background-notification-log')
+  })
+
   it('④ ulw-execute is the pre-step A row sourced from hooks/start-work/', () => {
     const entry = HOOK_MANIFEST.find((row) => row.id === 'ulw-execute')
     expect(entry).toBeDefined()

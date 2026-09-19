@@ -36,8 +36,8 @@
 
 | # | 模块 | 形态 | 模式 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
-| H-10 | `session-notification-*`（**21 文件 = 16 实现 + 5 测试**） | 文件族 | F | 会话完成/错误的用户通知。事件源：`session/event` 的 `turn/end` + `reason.kind`（无 session.idle/session.error 类型）；idle = `agent/status(status==='idle')`。**后端口径（草案更正 C-3/C-12）**：上游后端 = darwin / **linux（notify-send）** / win32 三个，无 log 后端——移植 = 调度器 + **Linux 后端（CI 可验载体）** + macOS 后端（L4 手工验证）；Windows 后端不移植（D9）。H-05（`session-todo-status.ts`）实测为 helper，语义已并入本模块实施 | ⏳ listener 已移植（P3-T12 单测绿）；**e2e 待 T13** |
-| H-11 | `background-notification/` | 目录 | F | 后台任务完成通知。`ctx.jobs` 事件面前置已闭环（push 事件 + pull 降级双路径，降级覆盖收窄已注记） | ⏳ listener 已移植（P3-T12 单测绿）；**e2e 待 T13** |
+| H-10 | `session-notification-*`（**21 文件 = 16 实现 + 5 测试**） | 文件族 | F | 会话完成/错误的用户通知。事件源：`session/event` 的 `turn/end` + `reason.kind`（无 session.idle/session.error 类型）；idle = `agent/status(status==='idle')`。**后端口径（草案更正 C-3/C-12）**：上游后端 = darwin / **linux（notify-send）** / win32 三个，无 log 后端——移植 = 调度器 + **Linux 后端（CI 可验载体）** + macOS 后端（L4 手工验证）；Windows 后端不移植（D9）。H-05（`session-todo-status.ts`）实测为 helper，语义已并入本模块实施 | ✅ **已移植**（场景 `session-notification-log`，P3-T12 listener + P3-T13 e2e） |
+| H-11 | `background-notification/` | 目录 | F | 后台任务完成通知。`ctx.jobs` 获取 = ctx.inject 延迟订阅（T13 修复运行时缺陷）；continuable 后台委派不建 job（e2e 经 one-shot 沙箱形态覆盖） | ✅ **已移植**（场景 `background-notification-log`，P3-T12 listener + P3-T13 修复 + e2e） |
 
 ### P4 其余在范围模块（WP-6，按 R3 建议批内排序：先小后大）
 
@@ -131,7 +131,7 @@
 | 状态 | 计数 | 口径 |
 |---|---|---|
 | 移植组（§1） | **14**（P0=1 · P1=2 · P3=2 · P4=8 · P5=1；P2 组整组跳过） | 2026-09-19 仲裁：H-01 改判跳过（DSH 原生超集，S-46） |
-| 已移植（listener+单测+e2e） | 2 / 14（H-02/H-03；H-07 待 T14、H-10/H-11 待 T13 e2e） | 逐任务翻转 |
+| 已移植（listener+单测+e2e） | 4 / 14（H-02/H-03/H-10/H-11；H-07 待 T14） | 逐任务翻转 |
 | 跳过 / deferred / 排除（§2） | **47**（S-01…S-46 去占位行） | 每行终态理由齐备 |
 | 非 hook（§3） | 4 类条目 | 不计入 |
 | 全树覆盖 | 101 / 101 条目 | 退出标准 b 的完整性硬判定 ✅ |

@@ -46,8 +46,18 @@
 //                                           core of this task)
 //     session-notification-send.ts        — PARTIAL (the dispatch switch; the win32
 //                                           arm removed by D9)
-//     session-notification-sender.ts      — PORTED (the barrel's re-export surface
-//                                           becomes this module's exports)
+//     session-notification-sender.ts      — FUNCTION-MAPPED, NOT a surface port: the
+//                                           barrel re-exports five names; three are
+//                                           ported HERE (the `Platform` type →
+//                                           `NotificationPlatform`; `detectPlatform` →
+//                                           `detectNotificationPlatform`; the send
+//                                           dispatch switch → the NotifierBackend
+//                                           factories) and the remaining two
+//                                           (`getDefaultSoundPath`,
+//                                           `playSessionNotificationSound`) are not
+//                                           ported at all (sound; see "sound"). No
+//                                           single file "becomes this module's
+//                                           exports"
 //     session-notification-sound.ts       — NOT PORTED (sound; see "sound")
 //     session-notification-utils.ts       — NOT PORTED (createCommandFinder; DSH's
 //                                           execFile resolves through PATH itself —
@@ -188,7 +198,10 @@
 //     hasIncompleteTodos(...)` (the race upstream guards against), then
 //     `notifiedSessions.add` BEFORE `send`, and the `finally` block that clears
 //     executing/pending/scheduledAt and rolls `notified` back when activity
-//     arrived mid-send.
+//     arrived mid-send. The consequence of the post-await re-check: a
+//     completion whose probe is still in flight when activity resumes is
+//     DROPPED, not queued — the new activity's own boundary is what schedules
+//     the next notification.
 //
 // TWO KNOWING REDUCTIONS, recorded (not silent):
 //   1. `maxTrackedSessions` / `cleanupOldSessions` (`:29-61`) and
