@@ -7948,9 +7948,779 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P3-T17 ulw-execute-activated self-test (the T15/T16 mutation QA applied
+  // to the A-mode row): the fabricated GOOD input must PASS, and every named
+  // defect must FAIL on its OWN check.
+  const goodUlw = analyzeUlwExecuteActivated(fabricatedUlwExecuteInput(routes), routes)
+  if (goodUlw.result !== 'PASS') {
+    problems.push(`fabricated GOOD ulw-execute-activated must PASS, got FAIL on: ${goodUlw.failed.join(', ')}`)
+  }
+  const goodUlwNoIntent = analyzeUlwExecuteNoIntent(fabricatedUlwExecuteNoIntentInput(routes), routes)
+  if (goodUlwNoIntent.result !== 'PASS') {
+    problems.push(`fabricated GOOD ulw-execute-no-intent must PASS, got FAIL on: ${goodUlwNoIntent.failed.join(', ')}`)
+  }
+  const ulwNoIntentDefectCases = [
+    ['the no-intent child was injected', (input) => {
+      const child = input.allLogs[1]
+      child.events.splice(1, 0, {
+        seq: 1,
+        type: 'user/message',
+        data: {
+          content: [{ type: 'text', text: FABRICATED_ULW_INJECTED_TEXT }],
+          source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+        },
+      })
+    }, 'noInjectionWithoutWorkIntent'],
+    ['the injection reached the wire even though the log was clean', (input) => {
+      input.requests = input.requests.concat([
+        { role: 'atlas', body: { model: routes.atlas.model, messages: [{ role: 'user', content: FABRICATED_ULW_INJECTED_TEXT }] }, receivedAt: 40 },
+      ])
+    }, 'noInjectionWithoutWorkIntent'],
+    ['the plan selection registered a work session anyway', (input) => {
+      input.bootLog = `${FABRICATED_BOOT_LOG}\n${ULW_EXECUTE_ID_LOG_PREFIX}work session ulw-execute-9 plan=alpha`
+    }, 'noWorkSessionRegistered'],
+    ['the child turn never completed', (input) => {
+      const child = input.allLogs[1]
+      child.events = child.events.filter((event) => event.type !== 'turn/end')
+    }, 'childTurnCompleted'],
+    ['the plan selection ran anyway (a notepad appeared)', (input) => {
+      input.notepadAbsent = false
+    }, 'noPlanSelectionSideEffect'],
+    ['the identity conjunct did not hold (a non-atlas child)', (input) => {
+      const child = input.allLogs[1]
+      child.events = child.events.map((event) =>
+        event.type === 'subagent/descriptor'
+          ? { ...event, data: { ...event.data, persona: 'You are **omo-explore**, a search agent.' } }
+          : event)
+    }, 'atlasPersonaObservable'],
+    ['the recorded task was not the no-intent one', (input) => {
+      const child = input.allLogs[1]
+      child.events = child.events.map((event) =>
+        event.type === 'user/message'
+          ? { ...event, data: { ...event.data, content: [{ type: 'text', text: 'something else' }] } }
+          : event)
+    }, 'workIntentTaskRecorded'],
+  ]
+  for (const [label, mutate, expectedCheck] of ulwNoIntentDefectCases) {
+    const input = fabricatedUlwExecuteNoIntentInput(routes)
+    mutate(input)
+    const verdict = analyzeUlwExecuteNoIntent(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated ulw-execute-no-intent defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  const ulwDefectCases = [
+    ['the injection never reached the atlas child', (input) => {
+      const trigger = input.allLogs[1]
+      trigger.events = trigger.events.filter((event) => event.type !== 'user/message')
+    }, 'injectedContextReachedTheChild'],
+    ['the trigger child lost its atlas persona (the identity surface)', (input) => {
+      const trigger = input.allLogs[1]
+      trigger.events = trigger.events.map((event) =>
+        event.type === 'subagent/descriptor'
+          ? { ...event, data: { ...event.data, persona: 'You are **omo-explore**, a search agent.' } }
+          : event)
+    }, 'atlasPersonaObservable'],
+    ['the injected context was NOT delivered with the plugin source contract', (input) => {
+      const trigger = input.allLogs[1]
+      trigger.events = trigger.events.map((event) =>
+        event.type === 'user/message'
+          ? { ...event, data: { ...event.data, source: { kind: 'plugin', plugin: 'someone-else', form: 'notice' } } }
+          : event)
+    }, 'injectionSourceContract'],
+    ['the injected context never reached the atlas model request', (input) => {
+      input.requests = input.requests.filter(
+        (request) => !JSON.stringify(request.body ?? {}).includes(E2E_ULW_CONTEXT_MARKER))
+    }, 'injectionReachedTheModel'],
+    ['the sibling explore child was injected (identity gate broken)', (input) => {
+      const sibling = input.allLogs[2]
+      sibling.events.splice(1, 0, {
+        seq: 1,
+        type: 'user/message',
+        data: {
+          content: [{ type: 'text', text: FABRICATED_ULW_INJECTED_TEXT }],
+          source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+        },
+      })
+    }, 'noInjectionForSiblingIdentity'],
+    ['the notepad scaffold never landed', (input) => {
+      input.notepadPresent = []
+    }, 'notepadScaffoldLanded'],
+    ['the notepad footer still points at the removed /start-work command', (input) => {
+      input.notepadLearnings = '# Learnings \u2014 alpha\n\n_Auto-scaffolded by /start-work. Append new entries below - never overwrite._\n'
+    }, 'notepadFooterRewritten'],
+    ['the conductor itself was injected', (input) => {
+      input.log.events = input.log.events.concat([{
+        seq: 7,
+        type: 'user/message',
+        data: {
+          content: [{ type: 'text', text: FABRICATED_ULW_INJECTED_TEXT }],
+          source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+        },
+      }])
+    }, 'conductorNotInjected'],
+    ['the delegation batch never dispatched (no lane traffic)', (input) => {
+      input.requests = input.requests.filter((req) => req.role === 'sisyphus').slice(0, 1)
+    }, 'delegationBatchDispatched'],
+  ]
+  for (const [label, mutate, expectedCheck] of ulwDefectCases) {
+    const input = fabricatedUlwExecuteInput(routes)
+    mutate(input)
+    const verdict = analyzeUlwExecuteActivated(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated ulw-execute-activated defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
+}
+
+// ══ P3-T17 ulw-execute: the A-mode activation scenarios (TWO) ════════════════
+//
+// The activation signal is a CONJUNCTION (identity AND work-plan intent), so it
+// is proven by two scenarios whose ONLY difference is which conjunct fails —
+// each with its OWN mock server, hence its own per-role cursor:
+//
+//   1. `ulw-execute-activated` — ONE turn, ONE batch, TWO continuable
+//      delegations, BOTH carrying work-plan intent:
+//        (a) TRIGGER `atlas` → identity ✓ + intent ✓ → the listener reads the
+//            child's own `omo-atlas` descriptor persona, builds the
+//            plan-discovery/work-context document from the sandbox's
+//            `.omo/plans/alpha.md`, and `agent.inject()`s it;
+//        (b) 对照 `explore` → identity ✗ (intent ✓) → NOTHING is injected.
+//   2. `ulw-execute-no-intent` — ONE turn, ONE continuable `atlas` delegation
+//      with a NON-plan task: identity ✓ + intent ✗ → NOTHING is injected, and
+//      the plan selection (hence the notepad scaffold) never runs.
+//
+// WHY TWO SCENARIOS AND NOT TWO ATLAS CHILDREN IN ONE: the mock server's cursor
+// is PER ROLE (`mock-llm-server.mjs` header: "two concurrent agent loops sharing
+// the same role on one server interleave on the same cursor"). A second atlas
+// child inside the same server would consume the trigger lane's later steps, so
+// "same lane, same script, intent removed" could not be isolated. A separate
+// scenario gets a fresh cursor, which makes scenario 2 exactly that control.
+// (An earlier one-scenario draft with both atlas children passed ONCE and then
+// failed on `noInjectionWithoutWorkIntent` for precisely this reason.)
+//
+// ⚠️ MEASURED CONSTRAINT (the H-26 boundary, reused here): the atlas identity is
+// the child's own durable `subagent/descriptor.persona`, which is persisted ONLY
+// for `mode: 'continuable'` children — hence `run_in_background: true` on every
+// delegation. A foreground atlas delegation carries no persona and the gate
+// stays silent (recorded as a coverage boundary in the listener header).
+//
+// The injected context lands one pre-step AFTER the child's first (the documented
+// `agent.inject()` semantics: "may miss a request whose pre-step already claimed
+// its batch"), which is why the trigger's atlas lane sees TWO mock requests while
+// explore sees ONE — that step count is itself a runtime-observed carrier of the
+// injection (assertion `injectedContextReachedTheChild`).
+
+/** The atlas-lane work-plan intent (must hit WORK_INTENT_MARKERS). */
+const ULW_EXECUTE_ATLAS_TASK =
+  'start work on the plan in .omo/plans: read it and begin execution'
+/**
+ * Scenario 2's task: an ATLAS delegation with NO work-plan intent (the intent
+ * conjunct alone is false; the identity conjunct is true).
+ */
+const ULW_EXECUTE_NO_INTENT_TASK = 'summarize the repository layout in three sentences'
+/** The 对照 explore task: plan-ish words but a NON-atlas identity. */
+const ULW_EXECUTE_EXPLORE_TASK = 'start work on the plan and report what you would do'
+const ULW_EXECUTE_PROMPT =
+  'e2e ulw-execute-activated: delegate the work session to atlas, then summarize'
+const ULW_EXECUTE_NO_INTENT_PROMPT =
+  'e2e ulw-execute-no-intent: delegate a plain summary to atlas'
+const ULW_EXECUTE_CONDUCTOR_SUMMARY =
+  'MOCK-ULW-EXECUTE-SUMMARY-5c31f7: delegated the work session and the control'
+const ULW_EXECUTE_NO_INTENT_CONDUCTOR_SUMMARY =
+  'MOCK-ULW-EXECUTE-NO-INTENT-SUMMARY-6a21d8: delegated the plain summary'
+const ULW_EXECUTE_ATLAS_CHILD_NOTE =
+  'MOCK-ULW-EXECUTE-ATLAS-NOTE-1d90ae: executing the plan'
+/** The trigger child's SECOND step (opened by the injected context). */
+const ULW_EXECUTE_ATLAS_CHILD_SECOND_NOTE =
+  'MOCK-ULW-EXECUTE-ATLAS-NOTE-2-7f4b19: continuing with the injected plan context'
+const ULW_EXECUTE_NO_INTENT_NOTE =
+  'MOCK-ULW-EXECUTE-NO-INTENT-NOTE-8b72c4: summarized the layout'
+const ULW_EXECUTE_EXPLORE_NOTE =
+  'MOCK-ULW-EXECUTE-EXPLORE-NOTE-2f6e05: would read the plan'
+/** The plan the sandbox seeds (ONE incomplete plan → the auto-select branch). */
+const ULW_EXECUTE_PLAN_NAME = 'alpha'
+const ULW_EXECUTE_PLAN_REL = `.omo/plans/${ULW_EXECUTE_PLAN_NAME}.md`
+const ULW_EXECUTE_PLAN_CONTENT =
+  '# Alpha plan\n\n## TODOs\n- [ ] 1. First task\n- [ ] 2. Second task\n'
+/** The injected context's own sentinel (from the REAL renderer, not hand-built). */
+const {
+  AUTO_SELECTED_PLAN_HEADING,
+  PLAN_DISCOVERY_NO_PLANS_HEADING,
+} = await (async () => {
+  const { buildAutoSelectedPlanContextInfoOnly, planProgressFromMarkdown } = await import(
+    new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute/plan-discovery.ts', import.meta.url).href
+  )
+  const text = buildAutoSelectedPlanContextInfoOnly({
+    planPath: `/e2e/${ULW_EXECUTE_PLAN_REL}`,
+    planProgress: planProgressFromMarkdown(ULW_EXECUTE_PLAN_CONTENT),
+    sessionId: 'ses_sentinel',
+    timestamp: 'T',
+    worktreeBlock: '',
+  })
+  return {
+    AUTO_SELECTED_PLAN_HEADING: text.trim().split('\n')[0],
+    PLAN_DISCOVERY_NO_PLANS_HEADING: '## No Plans Found',
+  }
+})()
+const {
+  ULW_EXECUTE_CONTEXT_MARKER: E2E_ULW_CONTEXT_MARKER,
+  ULW_EXECUTE_PLUGIN: E2E_ULW_PLUGIN,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute/constants.ts', import.meta.url).href
+)
+
+/**
+ * Scenario 1's script: ONE batch with the atlas TRIGGER and the explore 对照
+ * (each lane has exactly ONE consumer, so no cursor sharing), then the summary
+ * that closes the conductor's turn.
+ */
+function ulwExecuteActivatedScript(_sandbox) {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'atlas',
+            arguments: {
+              description: 'Run the work session',
+              prompt: ULW_EXECUTE_ATLAS_TASK,
+              run_in_background: true,
+            },
+          },
+          {
+            name: 'explore',
+            arguments: {
+              description: 'Plan-adjacent control',
+              prompt: ULW_EXECUTE_EXPLORE_TASK,
+              run_in_background: true,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: ULW_EXECUTE_CONDUCTOR_SUMMARY },
+    ],
+    atlas: [
+      // Step 1 (the delegation prompt) and step 2 (the INJECTED context claimed
+      // at the next pre-step) — the child needs both lanes' steps, because the
+      // injection opens a second step.
+      { type: 'text', text: ULW_EXECUTE_ATLAS_CHILD_NOTE },
+      { type: 'text', text: ULW_EXECUTE_ATLAS_CHILD_SECOND_NOTE },
+    ],
+    explore: [
+      { type: 'text', text: ULW_EXECUTE_EXPLORE_NOTE },
+    ],
+  }
+}
+
+/**
+ * Scenario 2's script: ONE batch with a single `atlas` delegation whose task
+ * carries NO work-plan intent. Its lane has exactly one consumer, so the single
+ * scripted step is the whole child turn — and because the listener stays silent
+ * there is no second step to serve.
+ */
+function ulwExecuteNoIntentScript(_sandbox) {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'atlas',
+        arguments: {
+          description: 'No-intent atlas delegation',
+          prompt: ULW_EXECUTE_NO_INTENT_TASK,
+          run_in_background: true,
+        },
+      },
+      { type: 'text', text: ULW_EXECUTE_NO_INTENT_CONDUCTOR_SUMMARY },
+    ],
+    atlas: [
+      { type: 'text', text: ULW_EXECUTE_NO_INTENT_NOTE },
+    ],
+  }
+}
+
+/** The real sandbox disk facts this scenario asserts. */
+function ulwExecuteDiskFacts(sandbox) {
+  const notepadDir = join(sandbox.project, '.omo', 'notepads', ULW_EXECUTE_PLAN_NAME)
+  const notepadFiles = ['learnings.md', 'decisions.md', 'issues.md', 'problems.md']
+  const present = notepadFiles.filter((name) => existsSync(join(notepadDir, name)))
+  const learningsPath = join(notepadDir, 'learnings.md')
+  return {
+    planPath: join(sandbox.project, ULW_EXECUTE_PLAN_REL),
+    notepadDir,
+    notepadPresent: present,
+    notepadLearnings: existsSync(learningsPath) ? readFileSync(learningsPath, 'utf8') : undefined,
+  }
+}
+
+/**
+ * Waits until BOTH background children have really run their turns and the
+ * notepad scaffold has landed (the injection's side effect). Returns false on
+ * timeout so the analysis reports the honest FAIL.
+ *
+ * The scenario delegates exactly TWO continuable children — the atlas TRIGGER
+ * (`Run the work session`) and the explore 对照 (`Plan-adjacent control`), see
+ * `ulwExecuteActivatedScript`/`analyzeUlwExecuteActivated`, which already keys on
+ * those same two labels. This helper therefore keys on the children's own durable
+ * `subagent/descriptor.label` rather than on a child COUNT: the previous
+ * `children.length >= 3 && completed.length >= 3` was never reachable (the durable
+ * logs hold exactly these two, re-measured for the P3-T17 review 质疑③: max 2
+ * subagent sessions observed over a full run, final state 2), so it only burned
+ * the whole timeout; and a bare count would also let an unrelated or duplicated
+ * session satisfy the wait for the wrong reason. Each named child must have
+ * completed its turn, and the notepad scaffold must exist.
+ */
+async function awaitUlwExecuteChildren(boot, sandbox, sessionId, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs
+  const notepadLearnings = join(
+    sandbox.project,
+    '.omo',
+    'notepads',
+    ULW_EXECUTE_PLAN_NAME,
+    'learnings.md',
+  )
+  const completedChildWithLabel = (children, label) =>
+    children.some((child) => {
+      const events = child.events ?? []
+      const descriptor = events.find((event) => event.type === 'subagent/descriptor')
+      if (descriptor?.data?.label !== label) return false
+      return events.some(
+        (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+      )
+    })
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const children = logs.filter(
+      (candidate) =>
+        candidate.header.origin === 'subagent'
+        && String(candidate.header.parentSession) === String(sessionId),
+    )
+    if (
+      completedChildWithLabel(children, 'Run the work session')
+      && completedChildWithLabel(children, 'Plan-adjacent control')
+      && existsSync(notepadLearnings)
+    ) {
+      return true
+    }
+    await sleep(250)
+  }
+  return false
+}
+
+/**
+ * Scenario 2's settle hook: wait until the single atlas child has finished its
+ * turn. There is no scaffold to wait for (that is the point of the scenario).
+ */
+async function awaitUlwExecuteNoIntentChild(boot, sandbox, sessionId, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const child = logs.find(
+      (candidate) =>
+        candidate.header.origin === 'subagent'
+        && String(candidate.header.parentSession) === String(sessionId),
+    )
+    const childDone = (child?.events ?? []).some(
+      (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+    )
+    if (child !== undefined && childDone) return true
+    await sleep(250)
+  }
+  return false
+}
+
+/**
+ * The `ulw-execute-activated` assertions (H-32). Every identity fact is read
+ * back OUT of the children's own durable descriptors — the same surface the
+ * listener reads — so "the hook fired for atlas" cannot be a synthetic claim:
+ * without that persona AND the intent text the gate would have stayed silent
+ * and the injection assertions would fail.
+ */
+export function analyzeUlwExecuteActivated(
+  {
+    log,
+    allLogs,
+    requests,
+    providersJson,
+    bootLog,
+    planPath,
+    notepadPresent,
+    notepadLearnings,
+  },
+  routes,
+) {
+  const events = log?.events ?? []
+  const parentId = log?.header?.id
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const atlasRequests = requests.filter((request) => request.role === 'atlas')
+  const exploreRequests = requests.filter((request) => request.role === 'explore')
+
+  // The two children, linked to their delegation by the descriptor label.
+  const childLogs = Array.isArray(allLogs)
+    ? allLogs.filter(
+        (candidate) =>
+          candidate.header?.origin === 'subagent'
+          && String(candidate.header?.parentSession) === String(parentId),
+      )
+    : []
+  const childByLabel = new Map()
+  for (const child of childLogs) {
+    const descriptor = (child.events ?? []).find((event) => event.type === 'subagent/descriptor')
+    const label = descriptor?.data?.label
+    if (typeof label === 'string') childByLabel.set(label, child)
+  }
+  const triggerChild = childByLabel.get('Run the work session')
+  const exploreControlChild = childByLabel.get('Plan-adjacent control')
+
+  const childPersona = (child) => {
+    const descriptor = (child?.events ?? []).find((event) => event.type === 'subagent/descriptor')
+    const persona = descriptor?.data?.persona
+    return typeof persona === 'string' ? persona : undefined
+  }
+  const injectedInto = (child) =>
+    (child?.events ?? []).filter(
+      (event) =>
+        event.type === 'user/message'
+        && (event.data?.content ?? []).some(
+          (block) =>
+            typeof block?.text === 'string' && block.text.includes(E2E_ULW_CONTEXT_MARKER),
+        ),
+    )
+  const triggerInjected = injectedInto(triggerChild)
+  const exploreControlInjected = injectedInto(exploreControlChild)
+  const triggerText = triggerInjected
+    .flatMap((event) => (event.data?.content ?? []).map((block) => block?.text ?? ''))
+    .join('\n')
+  const triggerSource = triggerInjected[0]?.data?.source
+  const triggerRequestHasInjection = atlasRequests.some((request) =>
+    JSON.stringify(request.body ?? {}).includes(E2E_ULW_CONTEXT_MARKER))
+
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // The ONE batch really held both delegations, and each lane really ran.
+    delegationBatchDispatched:
+      sisyphusRequests.length >= 2 && atlasRequests.length >= 2 && exploreRequests.length >= 1,
+    twoChildrenObserved: childLogs.length >= 2,
+    // IDENTITY: the trigger child is the atlas row (its own durable persona),
+    // and the 对照 child is NOT.
+    atlasPersonaObservable:
+      typeof childPersona(triggerChild) === 'string'
+      && childPersona(triggerChild).includes('omo-atlas'),
+    exploreControlHasNoAtlasPersona:
+      childPersona(exploreControlChild) !== undefined
+      && !childPersona(exploreControlChild).includes('omo-atlas'),
+    // TRIGGER: the injected context landed in the atlas child's own durable log,
+    // carries the marker + the plugin source contract, names the sandbox plan,
+    // and reached that child's model request.
+    injectedContextReachedTheChild:
+      triggerInjected.length === 1
+      && triggerText.includes(`${AUTO_SELECTED_PLAN_HEADING}`)
+      && triggerText.includes(`**Path**: ${planPath}`)
+      && triggerText.includes('**Plan**: alpha'),
+    injectionSourceContract:
+      triggerSource?.kind === 'plugin'
+      && triggerSource?.plugin === E2E_ULW_PLUGIN
+      && triggerSource?.form === 'instructions',
+    injectionReachedTheModel: triggerRequestHasInjection,
+    // The atlas lane really took a SECOND step (the injection's step boundary).
+    atlasLaneTookASecondStep: atlasRequests.length >= 2,
+    // 对照: a NON-atlas identity with plan-ish words → nothing injected.
+    noInjectionForSiblingIdentity: exploreControlInjected.length === 0,
+    // The scaffold side effect of the plan selection landed in the sandbox.
+    notepadScaffoldLanded: notepadPresent.length === 4,
+    notepadFooterRewritten:
+      typeof notepadLearnings === 'string'
+      && notepadLearnings.includes('Auto-scaffolded by ulw-execute')
+      && !notepadLearnings.includes('/start-work'),
+    // The conductor's own pre-steps carry NO injection (not a delegation).
+    conductorNotInjected:
+      !events.some(
+        (event) =>
+          event.type === 'user/message'
+          && (event.data?.content ?? []).some(
+            (block) =>
+              typeof block?.text === 'string' && block.text.includes(E2E_ULW_CONTEXT_MARKER),
+          ),
+      ),
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      childCount: childLogs.length,
+      triggerInjectionCount: triggerInjected.length,
+      exploreControlInjectionCount: exploreControlInjected.length,
+      atlasRequestCount: atlasRequests.length,
+      exploreRequestCount: exploreRequests.length,
+      notepadPresent,
+      triggerInjectionTail: triggerText.slice(-240),
+    },
+  }
+}
+
+/** The listener's own log-line prefix (its skip/registration diagnostics). */
+const ULW_EXECUTE_ID_LOG_PREFIX = '[omo-hooks] ulw-execute: '
+
+/**
+ * Scenario 2's assertions (`ulw-execute-no-intent`): the identity conjunct is
+ * TRUE (an atlas child, asserted from its own descriptor) and the intent
+ * conjunct is FALSE, so the listener must stay silent — no injected message in
+ * the child, no second step, and no plan selection (hence no notepad).
+ */
+export function analyzeUlwExecuteNoIntent(
+  { log, allLogs, requests, providersJson, bootLog, planFilePath, notepadAbsent, planFileExists },
+  routes,
+) {
+  const events = log?.events ?? []
+  const parentId = log?.header?.id
+  const atlasRequests = requests.filter((request) => request.role === 'atlas')
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const childLogs = Array.isArray(allLogs)
+    ? allLogs.filter(
+        (candidate) =>
+          candidate.header?.origin === 'subagent'
+          && String(candidate.header?.parentSession) === String(parentId),
+      )
+    : []
+  const child = childLogs[0]
+  const descriptor = (child?.events ?? []).find((event) => event.type === 'subagent/descriptor')
+  const persona = typeof descriptor?.data?.persona === 'string' ? descriptor.data.persona : undefined
+  const markerCarriers = (child?.events ?? []).filter(
+    (event) =>
+      event.type === 'user/message'
+      && (event.data?.content ?? []).some(
+        (block) => typeof block?.text === 'string' && block.text.includes(E2E_ULW_CONTEXT_MARKER),
+      ),
+  )
+  const injectedReached = atlasRequests.some((request) =>
+    JSON.stringify(request.body ?? {}).includes(E2E_ULW_CONTEXT_MARKER))
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    oneChildObserved: childLogs.length >= 1,
+    // The identity conjunct really held — otherwise this control would be
+    // vacuous (a silent listener for an unknown session proves nothing).
+    atlasPersonaObservable: persona !== undefined && persona.includes('omo-atlas'),
+    // The delegation's own task text really is the NO-INTENT one (the control
+    // would be vacuous if the recorded task happened to be the trigger's).
+    workIntentTaskRecorded: (child?.events ?? [])
+      .filter((event) => event.type === 'user/message')
+      .flatMap((event) => (event.data?.content ?? []).map((block) => block?.text ?? ''))
+      .join('\n')
+      .includes(ULW_EXECUTE_NO_INTENT_TASK),
+    // THE ASSERTION: no injection, in the log or on the wire.
+    noInjectionWithoutWorkIntent: markerCarriers.length === 0 && !injectedReached,
+    // No work-session job was registered for this session (the scaffold/job
+    // half of the plan selection never ran). The listener's own diagnostic line
+    // is absent AND the boot log carries no `work session` registration.
+    // NOTE: the raw atlas LANE request count is NOT usable as a "one step" proof
+    // — the harness issues a separate title call, and the child legitimately
+    // takes a second step when `omo-agents`' hard-blocks injection is delivered.
+    // The injection carrier assertions above are the load-bearing ones.
+    noWorkSessionRegistered:
+      !String(bootLog ?? '').includes(`${ULW_EXECUTE_ID_LOG_PREFIX}work session`)
+      && String(bootLog ?? '').includes(`${ULW_EXECUTE_ID_LOG_PREFIX}skipped: no-work-intent`),
+    childTurnCompleted:
+      (child?.events ?? []).some(
+        (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+      ),
+    noPlanSelectionSideEffect: notepadAbsent === true,
+    planFileUntouched: planFileExists === true,
+    mockSawTheDelegation: sisyphusRequests.length >= 2,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      childCount: childLogs.length,
+      markerCarrierCount: markerCarriers.length,
+      atlasRequestCount: atlasRequests.length,
+      childNoteRecorded: (child?.events ?? []).some(
+        (event) =>
+          event.type === 'assistant/message'
+          && JSON.stringify(event.data ?? {}).includes(ULW_EXECUTE_NO_INTENT_NOTE),
+      ),
+    },
+  }
+}
+
+/** The real sandbox disk facts scenario 2 asserts. */
+function ulwExecuteNoIntentDiskFacts(sandbox) {
+  const planFilePath = join(sandbox.project, ULW_EXECUTE_PLAN_REL)
+  return {
+    planFilePath,
+    planFileExists: existsSync(planFilePath),
+    notepadAbsent: !existsSync(join(sandbox.project, '.omo', 'notepads', ULW_EXECUTE_PLAN_NAME)),
+  }
+}
+
+/** One fabricated GOOD `ulw-execute-activated` input (mutation QA target). */
+const FABRICATED_ULW_PROJECT = '/fabricated/project'
+const FABRICATED_ULW_PLAN_PATH = `${FABRICATED_ULW_PROJECT}/.omo/plans/alpha.md`
+const FABRICATED_ULW_TRIGGER_ID = 'session-fabricated-ulw-trigger'
+const FABRICATED_ULW_EXPLORE_CONTROL_ID = 'session-fabricated-ulw-explore-control'
+const FABRICATED_ULW_NO_INTENT_ID = 'session-fabricated-ulw-no-intent'
+const FABRICATED_ULW_INJECTED_TEXT = `\n\n---\n${E2E_ULW_CONTEXT_MARKER}\n${AUTO_SELECTED_PLAN_HEADING}
+**Plan**: alpha
+**Path**: ${FABRICATED_ULW_PLAN_PATH}
+**Progress**: 0/2 tasks
+**Session ID**: ${FABRICATED_ULW_TRIGGER_ID}
+**Started**: 2026-05-11T00:00:00.000Z
+
+boulder.json has been created. Read the plan and begin execution.`
+
+function fabricatedUlwChildLog(id, label, persona, note, taskText, injectedText) {
+  const events = [
+    {
+      seq: 0,
+      type: 'subagent/descriptor',
+      data: { version: 3, mode: 'continuable', provider: 'spawn', label, persona },
+    },
+    // The child's OWN initial task message (the delegation prompt), exactly the
+    // carrier the listener reads for its work-intent gate.
+    {
+      seq: 1,
+      type: 'user/message',
+      data: { content: [{ type: 'text', text: taskText }], source: { kind: 'user' } },
+    },
+  ]
+  if (injectedText !== undefined) {
+    // The injection carrier: the `source` triple is what `injectionSourceContract`
+    // reads; the real runtime records it on the user message.
+    events.push({
+      seq: 2,
+      type: 'user/message',
+      data: {
+        content: [{ type: 'text', text: injectedText }],
+        source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+      },
+    })
+  }
+  events.push(
+    { seq: 3, type: 'step/start', data: { turn: 1, step: 1 } },
+    {
+      seq: 4,
+      type: 'assistant/message',
+      data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: note }] } },
+    },
+    { seq: 5, type: 'step/end', data: { turn: 1, step: 1 } },
+    { seq: 6, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+  )
+  return {
+    path: `/fabricated/${id}/session.jsonl`,
+    header: {
+      type: 'session',
+      id,
+      origin: 'subagent',
+      parentSession: FABRICATED_PARENT_ID,
+      delegationDepth: 1,
+    },
+    events,
+  }
+}
+
+function fabricatedUlwExecuteInput(routes) {
+  const triggerChild = fabricatedUlwChildLog(
+    FABRICATED_ULW_TRIGGER_ID,
+    'Run the work session',
+    'You are **omo-atlas**, the master orchestrator.',
+    ULW_EXECUTE_ATLAS_CHILD_NOTE,
+    ULW_EXECUTE_ATLAS_TASK,
+    FABRICATED_ULW_INJECTED_TEXT,
+  )
+  const exploreControlChild = fabricatedUlwChildLog(
+    FABRICATED_ULW_EXPLORE_CONTROL_ID,
+    'Plan-adjacent control',
+    'You are **omo-explore**, a search agent.',
+    ULW_EXECUTE_EXPLORE_NOTE,
+    ULW_EXECUTE_EXPLORE_TASK,
+    undefined,
+  )
+  const log = {
+    path: '/fabricated/ulw-execute/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: ULW_EXECUTE_PROMPT }] } },
+      fabricatedToolResultEvent(2, 'mock-llm-tool-1-0', `started subagent ${FABRICATED_ULW_TRIGGER_ID}`),
+      fabricatedToolResultEvent(3, 'mock-llm-tool-1-1', `started subagent ${FABRICATED_ULW_EXPLORE_CONTROL_ID}`),
+      { seq: 4, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: ULW_EXECUTE_CONDUCTOR_SUMMARY }] } } },
+      { seq: 5, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+  const request = (role, model, messages, receivedAt) => ({ role, body: { model, messages }, receivedAt })
+  return {
+    log,
+    allLogs: [log, triggerChild, exploreControlChild],
+    requests: [
+      request('sisyphus', routes.sisyphus.model, [{ role: 'system', content: 'MOCKROLE=sisyphus' }], 10),
+      request('atlas', routes.atlas.model, [{ role: 'system', content: 'MOCKROLE=atlas' }], 20),
+      request('explore', routes.explore.model, [{ role: 'system', content: 'MOCKROLE=explore' }], 30),
+      request('atlas', routes.atlas.model, [
+        { role: 'system', content: 'MOCKROLE=atlas' },
+        { role: 'user', content: FABRICATED_ULW_INJECTED_TEXT },
+      ], 40),
+      request('sisyphus', routes.sisyphus.model, [
+        { role: 'system', content: 'MOCKROLE=sisyphus' },
+        { role: 'user', content: `tool result: ${ULW_EXECUTE_ATLAS_CHILD_NOTE}` },
+      ], 50),
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+    planPath: FABRICATED_ULW_PLAN_PATH,
+    notepadPresent: ['learnings.md', 'decisions.md', 'issues.md', 'problems.md'],
+    notepadLearnings: '# Learnings \u2014 alpha\n\n_Auto-scaffolded by ulw-execute. Append new entries below - never overwrite._\n\n---\n',
+  }
+}
+
+/**
+ * One fabricated GOOD `ulw-execute-no-intent` input. The identity surface is a
+ * real atlas persona; the ONLY thing missing is the work-plan intent, so every
+ * "no injection" assertion is earned by the intent gate alone.
+ */
+function fabricatedUlwExecuteNoIntentInput(routes) {
+  const child = fabricatedUlwChildLog(
+    FABRICATED_ULW_NO_INTENT_ID,
+    'No-intent atlas delegation',
+    'You are **omo-atlas**, the master orchestrator.',
+    ULW_EXECUTE_NO_INTENT_NOTE,
+    ULW_EXECUTE_NO_INTENT_TASK,
+    undefined,
+  )
+  const log = {
+    path: '/fabricated/ulw-execute-no-intent/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: ULW_EXECUTE_NO_INTENT_PROMPT }] } },
+      fabricatedToolResultEvent(2, 'mock-llm-tool-1', `started subagent ${FABRICATED_ULW_NO_INTENT_ID}`),
+      { seq: 3, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: ULW_EXECUTE_NO_INTENT_CONDUCTOR_SUMMARY }] } } },
+      { seq: 4, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+  return {
+    log,
+    allLogs: [log, child],
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 10 },
+      { role: 'atlas', body: { model: routes.atlas.model }, receivedAt: 20 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 30 },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: `${FABRICATED_BOOT_LOG}\n${ULW_EXECUTE_ID_LOG_PREFIX}skipped: no-work-intent`,
+    planFilePath: FABRICATED_ULW_PLAN_PATH,
+    planFileExists: true,
+    notepadAbsent: true,
+  }
 }
 
 // ── scenario definitions ─────────────────────────────────────────────────────
@@ -8888,6 +9658,44 @@ const SCENARIOS = [
     analyze: analyzePrometheusMdOnlyDenied,
   },
   {
+    // P3-T17 (H-32; plan §4.2 模式 A + §4.5): the ulw-execute activation. The
+    // conductor delegates TWO continuable children: `atlas` WITH work-plan intent
+    // (the trigger) and `explore` WITH plan-ish words (the different-identity
+    // 对照). The same-identity / no-intent 对照 is scenario 2
+    // (`ulw-execute-no-intent`), not a third child here — an earlier one-scenario
+    // draft tried both atlas children in one batch and failed on the mock's
+    // per-role cursor (see the P3-T17 section header). Both are continuable
+    // because the identity surface (`descriptor.persona`) only exists on
+    // continuable children (the H-26 measured boundary).
+    name: 'ulw-execute-activated',
+    prompt: ULW_EXECUTE_PROMPT,
+    roles: ['sisyphus', 'atlas', 'explore'],
+    seed: (sandbox) => {
+      mkdirSync(join(sandbox.project, '.omo', 'plans'), { recursive: true })
+      writeFileSync(join(sandbox.project, ULW_EXECUTE_PLAN_REL), ULW_EXECUTE_PLAN_CONTENT)
+    },
+    script: ulwExecuteActivatedScript,
+    settle: (boot, sandbox, sessionId) => awaitUlwExecuteChildren(boot, sandbox, sessionId),
+    analysisInput: (sandbox) => ulwExecuteDiskFacts(sandbox),
+    analyze: analyzeUlwExecuteActivated,
+  },
+  {
+    // P3-T17 (H-32): the INTENT conjunct's negative control. Same identity
+    // (atlas), no work-plan intent → silence. A separate scenario because the
+    // mock cursor is per role (see the P3-T17 section header).
+    name: 'ulw-execute-no-intent',
+    prompt: ULW_EXECUTE_NO_INTENT_PROMPT,
+    roles: ['sisyphus', 'atlas'],
+    seed: (sandbox) => {
+      mkdirSync(join(sandbox.project, '.omo', 'plans'), { recursive: true })
+      writeFileSync(join(sandbox.project, ULW_EXECUTE_PLAN_REL), ULW_EXECUTE_PLAN_CONTENT)
+    },
+    script: ulwExecuteNoIntentScript,
+    settle: (boot, sandbox, sessionId) => awaitUlwExecuteNoIntentChild(boot, sandbox, sessionId),
+    analysisInput: (sandbox) => ulwExecuteNoIntentDiskFacts(sandbox),
+    analyze: analyzeUlwExecuteNoIntent,
+  },
+  {
     // AC-6a (T20): the explore child hallucinates a write; the T12 deny
     // rejects it verbatim and no bytes land on disk.
     name: 'explore-write-denied',
@@ -9180,7 +9988,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-redirect-denied + prometheus-md-only-denied fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: no-deny-on-the-redirecting-call, deny-names-a-different-final-url, denied-non-redirecting-control, control-never-reached-the-provider, guard-spoke-twice, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-redirect-denied + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: no-deny-on-the-redirecting-call, deny-names-a-different-final-url, denied-non-redirecting-control, control-never-reached-the-provider, guard-spoke-twice, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

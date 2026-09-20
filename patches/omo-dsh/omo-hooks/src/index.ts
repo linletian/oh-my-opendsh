@@ -24,21 +24,23 @@
 // P3-T2 delivered the package shape + manifest.ts; P3-T3 mounts it; P3-T5 landed
 // the first implementation; P3-T7 landed the P1 todo/goal executor pair; P3-T12
 // landed the P3 session-notification family; P3-T14 landed the WP-6 批 A D-mode
-// trio; P3-T15 landed the 批 B injection/reminder trio; P3-T16 (this revision)
-// lands the 批 C **B-mode pair**. apply() validates the manifest, logs the
-// summary boot marker, and runs the per-hook registration loop; the loop's
-// implementation registry (HOOK_REGISTRARS) now carries THIRTEEN entries —
-// 'bash-file-read-guard' (the C-mode pilot), 'todo-continuation-enforcer'
-// (E mode), 'empty-task-response-detector' (D mode), 'session-notification'
-// (F mode, the completion/error observer + the platform backend abstraction),
-// 'background-notification' (F mode, the `ctx.jobs.onJobDone` observer that
-// REUSES session-notification's NotifierBackend), the P3-T14 D-mode trio
-// 'edit-error-recovery' / 'json-error-recovery' / 'tool-output-truncator', the
-// P3-T15 批 B trio 'directory-readme-injector' / 'agent-usage-reminder' /
-// 'task-resume-info', and the P3-T16 批 C B+D pair 'webfetch-redirect-guard' /
-// 'prometheus-md-only' — so exactly thirteen `registered` lines are logged after
-// the summary. The remaining 1 row (H-32 'ulw-execute') is filled by T17;
-// nothing else in this file changes when a row lands.
+// trio; P3-T15 landed the 批 B injection/reminder trio; P3-T16 landed the 批 C
+// **B-mode pair**; P3-T17 (this revision) lands the LAST row, H-32
+// **'ulw-execute'** (the start-work hook semantics: activation detection, plan
+// discovery, work-context construction and the notepad/jobs scaffold). apply()
+// validates the manifest, logs the summary boot marker, and runs the per-hook
+// registration loop; the loop's implementation registry (HOOK_REGISTRARS) now
+// carries **FOURTEEN** entries — 'bash-file-read-guard' (the C-mode pilot),
+// 'todo-continuation-enforcer' (E mode), 'empty-task-response-detector' (D
+// mode), 'session-notification' (F mode, the completion/error observer + the
+// platform backend abstraction), 'background-notification' (F mode, the
+// `ctx.jobs.onJobDone` observer that REUSES session-notification's
+// NotifierBackend), the P3-T14 D-mode trio 'edit-error-recovery' /
+// 'json-error-recovery' / 'tool-output-truncator', the P3-T15 批 B trio
+// 'directory-readme-injector' / 'agent-usage-reminder' / 'task-resume-info', the
+// P3-T16 批 C B+D pair 'webfetch-redirect-guard' / 'prometheus-md-only', and the
+// P3-T17 A-mode row 'ulw-execute' — so exactly fourteen `registered` lines are
+// logged after the summary and the roster has no unimplemented row left.
 //
 // Note the roster is 14 entries, not 15: P3-T5's other half is the WP-2
 // arbitration that REMOVED H-01 (write-existing-file-guard) from the port group
@@ -57,13 +59,13 @@
 //       from the plugin's own modules, so it cannot drift).
 //   * `[omo-hooks] hook <id> registered on <event>`
 //     — one line per hook whose registrar is implemented AND returned cleanly.
-//       THIRTEEN such lines today ('bash-file-read-guard',
+//       FOURTEEN such lines today ('bash-file-read-guard',
 //       'todo-continuation-enforcer', 'empty-task-response-detector',
 //       'session-notification', 'background-notification',
 //       'edit-error-recovery', 'json-error-recovery',
 //       'tool-output-truncator', 'directory-readme-injector',
 //       'agent-usage-reminder', 'task-resume-info',
-//       'webfetch-redirect-guard', 'prometheus-md-only'); T17 adds the last one.
+//       'webfetch-redirect-guard', 'prometheus-md-only', 'ulw-execute').
 //       NOTE (P3-T12): the event in this line is the manifest's PRIMARY event,
 //       which for 'background-notification' is `session/event` — and that row's
 //       registrar DOES register it (its push half additionally subscribes to
@@ -127,6 +129,7 @@ import { registerAgentUsageReminder } from './hooks/agent-usage-reminder.ts'
 import { registerTaskResumeInfo } from './hooks/task-resume-info.ts'
 import { registerWebfetchRedirectGuard } from './hooks/webfetch-redirect-guard.ts'
 import { registerPrometheusMdOnly } from './hooks/prometheus-md-only.ts'
+import { registerUlwExecute } from './hooks/ulw-execute.ts'
 
 export const name = 'omo-hooks'
 
@@ -414,9 +417,29 @@ export type HookRegistrar = (
  *     rows register there, and their tool gates (`web_fetch` vs
  *     `write`/`edit`) are disjoint.
  *
- * TODO(P3-T17): add H-32 `ulw-execute`, the same way — one entry here plus the
- *   registrar import above, keeping disciplines ①–④. Nothing else in this file
- *   needs to change when a row lands.
+ * P3-T17 added the LAST entry — H-32 `ulw-execute`, the roster's only A-mode
+ * (pre-step) row and its first with an **injected** effect rather than a
+ * decision/append:
+ *   'ulw-execute': registerUlwExecute (hooks/ulw-execute.ts) — ONE `agent/pre-step`
+ *     waterfall listener that detects "the conductor explicitly delegated atlas
+ *     WITH work-plan intent" (identity = the child's own `descriptor.persona`
+ *     `omo-atlas` anchor, exactly the H-26 surface; intent = the child's task
+ *     text hitting WORK_INTENT_MARKERS) and, on first activation, `agent.inject()`s
+ *     the plan-discovery/work-context document plus registers a `ctx.jobs`
+ *     work-session job and writes the notepad scaffold. Its `jobs` acquisition is
+ *     the SECOND `ctx.inject(['jobs'], …)` user in this roster (the P3-T13
+ *     'background-notification' precedent); when the service never appears the
+ *     hook logs one NOTE line and degrades to the scaffold alone
+ *     (loud-but-non-fatal).
+ *     COMPOSITION NOTE: this is the roster's ONLY listener on `agent/pre-step`,
+ *     and it is NOT in the `tools/*` waterflows at all — so it has no ordered
+ *     pair with any other row. The other pre-step listener in the deployment is
+ *     `omo-agents`' hard-blocks injection, which the two plugins do not share
+ *     (plan §4.1: no cross-plugin imports, and this listener never inspects the
+ *     other's messages — it only reads `payload.messages` for the task text and
+ *     always `return next()`). FILTER NOTE: it short-circuits on "no descriptor"
+ *     (a non-delegated session), so on the conductor's own pre-steps it does one
+ *     in-memory `ownEvents()` scan and delegates — the same read H-26 performs.
  */
 export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'bash-file-read-guard': registerBashFileReadGuard,
@@ -432,6 +455,7 @@ export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'task-resume-info': registerTaskResumeInfo,
   'webfetch-redirect-guard': registerWebfetchRedirectGuard,
   'prometheus-md-only': registerPrometheusMdOnly,
+  'ulw-execute': registerUlwExecute,
 }
 
 /**

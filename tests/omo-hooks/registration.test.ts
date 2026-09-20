@@ -321,11 +321,13 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     vi.restoreAllMocks()
   })
 
-  it('① mounts with the real registry: summary + the thirteen registered listeners', () => {
+  it('① mounts with the real registry: summary + the fourteen registered listeners', () => {
     // P3-T12 filled the registry with the F-mode notification pair, P3-T14 with
-    // the 批 A D-mode trio, P3-T15 with the 批 B trio and P3-T16 with the 批 C
-    // B+D pair, so a real boot logs the summary line AND thirteen `registered`
-    // lines, and wires the listeners in roster order.
+    // the 批 A D-mode trio, P3-T15 with the 批 B trio, P3-T16 with the 批 C
+    // B+D pair and P3-T17 with the LAST row (H-32 `ulw-execute`, the roster's
+    // only A-mode pre-step listener), so a real boot logs the summary line AND
+    // **fourteen** `registered` lines, and wires the listeners in roster order —
+    // every manifest row now has an implementation.
     // 'session-notification' registers TWO surfaces (its primary manifest event
     // plus the auxiliary `agent/status`), which is why the onCalls list below is
     // longer than the registered-line list.
@@ -333,9 +335,10 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     // P3-T13: 'background-notification' now ALSO emits one NOTE line, because
     // this fake context has neither an active `jobs` service nor `ctx.inject`
     // (a minimal host), and that hook records the degraded capability loudly
-    // instead of silently doing nothing. The line is transcribed here by hand
-    // for the same reason as every other line in this file: a formatter-derived
-    // expectation would agree with its own drift.
+    // instead of silently doing nothing. P3-T17's 'ulw-execute' does the SAME
+    // for its own `jobs` need (the P3-T13 precedent, one line each). Both lines
+    // are transcribed here by hand for the same reason as every other line in
+    // this file: a formatter-derived expectation would agree with its own drift.
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const { ctx, onCalls } = fakeContext()
     apply(ctx)
@@ -355,6 +358,8 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook task-resume-info registered on tools/post-execute',
       '[omo-hooks] hook webfetch-redirect-guard registered on tools/pre-execute',
       '[omo-hooks] hook prometheus-md-only registered on tools/pre-execute',
+      '[omo-hooks] ulw-execute NOTE: jobs service never appeared; work-session registration degraded to the notepad scaffold only',
+      '[omo-hooks] hook ulw-execute registered on agent/pre-step',
     ])
     expect(onCalls.map((call) => call.event)).toEqual([
       'tools/post-execute',
@@ -386,6 +391,10 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       // session/disposed reset for its identity cache.
       'tools/pre-execute',
       'tools/post-execute',
+      'session/disposed',
+      // P3-T17: 'ulw-execute' is the roster's ONLY agent/pre-step row (pattern A)
+      // plus the session/disposed guard-cleanup fallback (index discipline ⑤).
+      'agent/pre-step',
       'session/disposed',
     ])
   })
@@ -437,6 +446,10 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       'tools/pre-execute',
       'tools/post-execute',
       'session/disposed',
+      // P3-T17: 'ulw-execute' — its primary `agent/pre-step` plus the
+      // session/disposed cleanup fallback.
+      'agent/pre-step',
+      'session/disposed',
     ])
     expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
       EXPECTED_SUMMARY_LINE,
@@ -456,6 +469,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook task-resume-info registered on tools/post-execute',
       '[omo-hooks] hook webfetch-redirect-guard registered on tools/pre-execute',
       '[omo-hooks] hook prometheus-md-only registered on tools/pre-execute',
+      // P3-T17: the same degraded-capability NOTE for the new row.
+      '[omo-hooks] ulw-execute NOTE: jobs service never appeared; work-session registration degraded to the notepad scaffold only',
+      '[omo-hooks] hook ulw-execute registered on agent/pre-step',
     ])
   })
 

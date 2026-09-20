@@ -125,9 +125,10 @@ export const manifestModeSet: ReadonlySet<string> = new Set<string>(MANIFEST_MOD
  * `status` is an open string on purpose. Rows started flipping at P3-T7: H-02
  * (`bash-file-read-guard`) is now 'ported' because listener + unit test + e2e
  * have ALL landed (its e2e scenario is `bash-read-guard-warned`); after P3-T14
- * (the D-mode trio H-14/H-15/H-16), P3-T15 (the 批 B trio H-21/H-22/H-23) and
- * P3-T16 (the B-mode pair H-24/H-26) TEN rows read 'ported' and FOUR are still
- * 'pending' (H-03, H-10, H-11, H-32). The edit order is doc-first —
+ * (the D-mode trio H-14/H-15/H-16), P3-T15 (the 批 B trio H-21/H-22/H-23),
+ * P3-T16 (the B-mode pair H-24/H-26) and P3-T17 (H-32 `ulw-execute`) **ALL 14
+ * rows read 'ported'** — the roster is complete (H-03/H-10/H-11 flipped at the
+ * same time as their listeners, see their rows). The edit order is doc-first —
  * phase3-hooks.md reads ✅ 已移植 for a row before this row moves — with docs/
  * out of scope for the port tasks. A closed union could not spell the coverage
  * list's vocabulary: phase3-plan.md §4.8 words a flipped row as 已移植（场景 xxx）,
@@ -267,7 +268,13 @@ const MANIFEST_ROWS = [
     summary:
       'todo 未清且回合将停 → agent.steer 注入续行上下文（副作用非投票），todo 状态源 = ctx.todo；R-8：与 dsh-goal-round-driver 的关系实施期记录',
     e2eScenario: 'todo-continuation-enforced',
-    status: 'pending',
+    // P3-T17: flipped 'pending' → 'ported'. The listener landed at P3-T7 and its
+    // e2e scenario (`todo-continuation-enforced`) at P3-T9; P3-T9's task book
+    // named the scenario but not the row flip, so the flip was recorded as an
+    // open item in the P3-T9/T14 reports. Closing it here so the roster carries
+    // no row whose status disagrees with a landed listener (the P3-T20
+    // consistency test's premise).
+    status: 'ported',
   },
   // H-07 — phase3-hooks.md §1 P1 行（原 P0 草案的 task_* 族模块已 §2 S-32 跳过，
   // 本行是与 todo 执行器同批的 D 模式模块）。上游单文件、无测试文件。
@@ -343,7 +350,11 @@ const MANIFEST_ROWS = [
     summary:
       '会话完成/错误的用户通知（turn/end + reason.kind；无 session.idle/session.error 类型——idle = agent/status）；后端 Linux notify-send（CI）/ macOS（L4），Windows 不移植',
     e2eScenario: 'session-notification-log',
-    status: 'pending',
+    // P3-T17: flipped 'pending' → 'ported'. Listener + unit test + the
+    // `session-notification-log` scenario all landed at P3-T12; the flip was an
+    // open bookkeeping item recorded in that report (see H-03 above for why
+    // P3-T17 closes these).
+    status: 'ported',
   },
   // H-11 — phase3-hooks.md §1 P3 行。前置（U-8 之外的实施期项）：ctx.jobs 事件面
   // 核实（计划书 §6 开放问题，T12）；等价面未定型时按 DoD-d 记录降级。
@@ -362,7 +373,11 @@ const MANIFEST_ROWS = [
     summary:
       '后台任务完成通知；前置：ctx.jobs 事件面核实（T12），无对应面则按 DoD-d 记降级',
     e2eScenario: 'background-notification-log',
-    status: 'pending',
+    // P3-T17: flipped 'pending' → 'ported'. Listener + unit test + the
+    // `background-notification-log` scenario landed at P3-T12 (the P3-T13 fix
+    // landed the `ctx.inject(['jobs'], …)` deferred acquisition); the flip was
+    // an open bookkeeping item recorded in the T12/T13 reports.
+    status: 'ported',
   },
   // H-14 — phase3-hooks.md §1 P4 行（批 A 首项：58 行零状态）。前置（T14 实施期
   // 逐字核实，**已闭合**）：DSH edit 工具错误文案 = `old_string and new_string
@@ -746,8 +761,39 @@ const MANIFEST_ROWS = [
     mode: 'A',
     summary:
       '工作计划意图/显式委派 → 激活 atlas 并构建计划上下文/脚手架（A 段 pre-step + E 段 turn-stopping 补充 + ctx.jobs 存储面）；boulder-state 依赖段登记跳过',
-    e2eScenario: 'ulw-execute-plan-intent',
-    status: 'pending',
+    e2eScenario: 'ulw-execute-activated',
+    // P3-T17: flipped 'pending' → 'ported' (listener + unit test + the
+    // `ulw-execute-activated` scenario in tests/e2e/drive.mjs all landed). 实测要点
+    // 记在 listener 头部（hooks/ulw-execute.ts）与本行注释：
+    // ① **激活信号 = DSH 原生形态**（计划书 §4.5 更正口径）：上游只认命令模板
+    //    marker（`<session-context>` + "You are starting an Atlas work session."），
+    //    两个 marker 都是 Phase 4 模板产物；Phase 3 于是定义为「指挥显式委派
+    //    atlas + 任务含工作计划意图」的 pre-step 检测。身份面 = 子会话
+    //    descriptor.persona 的 `omo-atlas` 锚点（T16 先例；⚠️ 同 H-26 的实测边界：
+    //    只有 `run_in_background: true`（continuable）的委派会持久 persona，
+    //    前台 one-shot 委派不可识别、静默）；意图面 = WORK_INTENT_MARKERS 表
+    //    （含 Phase 4 模板 marker 语义 + 上游模板措辞 + `ultrawork|ulw`）。
+    // ② **R-10 常量同步**：TEMPLATE_HEADER_MARKER / TEMPLATE_SESSION_CONTEXT_OPEN
+    //    / ULW_EXECUTE_CONTEXT_MARKER 三常量是 Phase 4 的接口契约（constants.ts
+    //    登记），单测逐字钉死作漂移哨兵。
+    // ③ **跳过段（逐条，见 listener 头部 S-1/S-2/S-3）**：session-plan-affinity
+    //    （opencode SDK `session.messages` 无 DSH 等价面 → preferredPlanPath 恒
+    //    null，判定树走「自动选中唯一未完成计划 / 多计划询问」主干）；
+    //    worktree-detector（git worktree 探测 → `--worktree` 校验改「非空即接受」，
+    //    worktree-block 文案照搬）；index.test.ts 的集成组（输入是命令模板形状，
+    //    Phase 4）。
+    // ④ **脚手架/存储面 = ctx.jobs**：选中计划后注册一个 `kind: 'ulw-execute'`
+    //    job（label 承载计划名 + output 承载 notepad 落地事实），notepad 四文件
+    //    `wx` 幂等脚手架逐字保留；jobs 经 `ctx.inject(['jobs'], …)` 延迟获取
+    //    （P3-T13 先例），**缺席 loud-but-non-fatal**（一行 NOTE + 脚手架照常）。
+    // ⑤ 计划清单（`.omo/plans/*.md` 的 checkbox 进度）是唯一真实读盘输入：按
+    //    会话 cwd 记忆化（每个工作区根首次现形读一次），pre-step 热路径不再触盘。
+    // ⑥ **E 段（turn-stopping 续行）不在本行落地**：上游 start-work 本身没有
+    //    turn-stopping 面——本行 summary 里的「E 段」是**目录级**标注（P3-T1
+    //    的 A/E 记法），真正的续行机在 H-25 `atlas/`（60 文件，Phase 5 deferred）。
+    //    T17 的实现只有 A 段（激活检测 + 注入 + 脚手架）；本行的 mode 记为 'A'，
+    //    与实现的唯一事件面（agent/pre-step）一致。
+    status: 'ported',
   },
 ] as const satisfies readonly HookManifestEntry[]
 

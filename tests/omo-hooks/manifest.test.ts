@@ -150,25 +150,28 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     expect([...manifestModeSet]).toEqual([...MANIFEST_MODES])
   })
 
-  it('exactly ten rows are ported after P3-T16 (H-02, H-07, H-14, H-15, H-16, H-21, H-22, H-23, H-24, H-26)', () => {
+  it('all fourteen rows are ported after P3-T17 (the roster is complete)', () => {
     // P3-T7 flipped H-02 after the WP-2 仲裁 accepted the T6 e2e (scenario
     // `bash-read-guard-warned`); P3-T14 flipped the D-mode group — H-07 (the
     // e2e the P3-T9 arbitration moved into T14) plus 批 A's H-14/H-15/H-16;
     // P3-T15 flipped 批 B's H-21/H-22/H-23; P3-T16 flipped 批 C's B+D pair
-    // H-24/H-26 (each with listener + unit test + the scenario its row names).
-    // The hard-coded split is the point: a row silently flipping would let a
-    // not-yet-e2e-proven hook look shipped.
+    // H-24/H-26 (each with listener + unit test + the scenario its row names);
+    // P3-T17 flipped H-32, the last row. The roster now has NO 'pending' row.
     //
-    // The F pair (H-10/H-11) is deliberately NOT in this list even though
-    // P3-T12/P3-T13 landed its listeners, unit tests and e2e scenarios — the
-    // row-flip is another task's bookkeeping and is recorded in the T14 report
-    // as an open item rather than performed silently here. P3-T15 re-confirmed
-    // that open item and did NOT flip them either (it is outside this task's
-    // DoD; the report records it again).
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending').length).toBe(4)
+    // The F pair (H-03/H-10/H-11) is now INCLUDED: their listeners, unit tests
+    // and e2e scenarios landed at P3-T7/P3-T9 and P3-T12/P3-T13, but those tasks'
+    // DoD left the row flips open (recorded as open items in their reports).
+    // P3-T17 closes them because a roster whose statuses disagree with four
+    // landed listeners is exactly the drift the T20 consistency test exists to
+    // catch. The hard-coded id list is the point: a row silently flipping would
+    // let a not-yet-e2e-proven hook look shipped.
+    expect(hooksByStatus(HOOK_MANIFEST, 'pending')).toEqual([])
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
+      'todo-continuation-enforcer',
       'empty-task-response-detector',
+      'session-notification',
+      'background-notification',
       'edit-error-recovery',
       'json-error-recovery',
       'tool-output-truncator',
@@ -177,6 +180,7 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
       'task-resume-info',
       'webfetch-redirect-guard',
       'prometheus-md-only',
+      'ulw-execute',
     ])
   })
 })
@@ -254,7 +258,7 @@ describe('P3-T2 HOOK_MANIFEST — spot checks (hard-coded against phase3-hooks.m
       (file) => file.startsWith('packages/omo-opencode/src/hooks/start-work/'),
     )).toBe(true)
     expect(entry?.upstreamFiles.some((file) => file.includes('/start-work/index.test.ts'))).toBe(false)
-    expect(entry?.e2eScenario).toBe('ulw-execute-plan-intent')
+    expect(entry?.e2eScenario).toBe('ulw-execute-activated')
   })
 
   it('④ tool-output-truncator is the single-file hooks/ row with its co-located test', () => {
@@ -415,12 +419,15 @@ describe('P3-T2 derived helpers', () => {
   })
 
   it('⑤ hooksByStatus filters by status and matches nothing for an empty status', () => {
-    // P3-T7 flipped H-02, P3-T14 the D-mode group, P3-T15 批 B and P3-T16 批 C,
-    // so the pending list is the id list minus exactly those ten rows — a
-    // hard-coded difference, not a length, so a wrong row cannot pass.
+    // P3-T7 flipped H-02, P3-T14 the D-mode group, P3-T15 批 B, P3-T16 批 C and
+    // P3-T17 the last row (H-32), so EVERY row is 'ported' and the pending list
+    // is empty — a hard-coded fact, not a length, so a wrong row cannot pass.
     const ported = new Set([
       'bash-file-read-guard',
+      'todo-continuation-enforcer',
       'empty-task-response-detector',
+      'session-notification',
+      'background-notification',
       'edit-error-recovery',
       'json-error-recovery',
       'tool-output-truncator',
@@ -429,14 +436,17 @@ describe('P3-T2 derived helpers', () => {
       'task-resume-info',
       'webfetch-redirect-guard',
       'prometheus-md-only',
+      'ulw-execute',
     ])
-    const pending = hooksByStatus(HOOK_MANIFEST, 'pending')
-    expect(pending.map((row) => row.id)).toEqual(
-      EXPECTED_IDS.filter((id) => !ported.has(id)),
-    )
+    // Every manifest id is in the ported set: the roster has no 'pending' row.
+    expect(EXPECTED_IDS.filter((id) => !ported.has(id))).toEqual([])
+    expect(hooksByStatus(HOOK_MANIFEST, 'pending').map((row) => row.id)).toEqual([])
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
+      'todo-continuation-enforcer',
       'empty-task-response-detector',
+      'session-notification',
+      'background-notification',
       'edit-error-recovery',
       'json-error-recovery',
       'tool-output-truncator',
@@ -445,6 +455,7 @@ describe('P3-T2 derived helpers', () => {
       'task-resume-info',
       'webfetch-redirect-guard',
       'prometheus-md-only',
+      'ulw-execute',
     ])
     expect(hooksByStatus(HOOK_MANIFEST, '')).toEqual([])
     expect(hooksByStatus([], 'pending')).toEqual([])
