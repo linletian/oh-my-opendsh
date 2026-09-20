@@ -49,8 +49,8 @@
 | H-21 | `directory-readme-injector/`（**8 文件**） | 目录 | D | 读文件后把所在目录链 README 注入工具输出。与 dsh-agent-instructions 无重叠（lib:17-18 候选名不含 README）；读 README.md 自身 ×2 注入的上游后果保留登记；compaction/prune 不重新武装 = 已知组合语义 | ✅ **已移植**（P3-T15 listener+单测+e2e） |
 | H-22 | `agent-usage-reminder/` | 目录 | D | 工具结果尾部追加 agent 使用提醒（REMINDER_MESSAGE 按 DSH 名册现实改写） | ✅ **已移植**（P3-T15 listener+单测+e2e） |
 | H-23 | `task-resume-info/` | 目录 | D | 工具结果追加任务恢复信息。前置闭环：可独立成立、不依赖 OMO task 系统；foreground 不产提示的登记假设已注记 | ✅ **已移植**（P3-T15 listener+单测+e2e） |
-| H-24 | `webfetch-redirect-guard/`（**5 文件**） | 目录 | B + D | webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引）+ D 段结果附加。pre/post 状态配对用 `exec.callId`/`exec.token` 原生关联（不建裸 Map，纪律见下） | ✅ 待移植 |
-| H-26 | `prometheus-md-only/` | 目录 | B + D | prometheus 仅可写 .md：B 段 deny 非 .md 写（1:1 可移植，hook.ts:40-62）+ D 段劝导（注入警告段 DSH 无附言缝，改 post-execute 附加）。Phase 2"有意不镜像"是 persona/permission 层的决策，本模块在 hook listener 层补齐，层不冲突 | ✅ 待移植 |
+| H-24 | `webfetch-redirect-guard/`（**5 文件**） | 目录 | B + D | webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引）+ D 段（被 row-10 agent-usage-reminder 抢占 = ACCEPTED 登记）。预解析 GET 绕过 DSH resolvePublicAddresses 公网策略 = upstream parity 已评审接受 | ✅ **已移植**（场景 `webfetch-redirect-denied`，P3-T16 listener+单测+e2e，B 模式打样） |
+| H-26 | `prometheus-md-only/` | 目录 | B + D | prometheus 仅可写 .md：B 段 deny 非 .md 写（hook.ts:40-62 1:1）+ D 段劝导落 post-execute（注入警告段无附言缝）。foreground one-shot 委派身份缺口已注记（标识面收窄）。Phase 2"有意不镜像"是 persona/permission 层的决策，本模块在 hook listener 层补齐，层不冲突 | ✅ **已移植**（P3-T16 listener+单测+e2e 门场景） |
 
 ### P5 ulw-execute（= start-work hook 语义，WP-6 尾部）
 
@@ -131,7 +131,7 @@
 | 状态 | 计数 | 口径 |
 |---|---|---|
 | 移植组（§1） | **14**（P0=1 · P1=2 · P3=2 · P4=8 · P5=1；P2 组整组跳过） | 2026-09-19 仲裁：H-01 改判跳过（DSH 原生超集，S-46） |
-| 已移植（listener+单测+e2e） | 9 / 14（+H-21/H-22/H-23；余 H-24/H-26/H-32） | 逐任务翻转 |
+| 已移植（listener+单测+e2e） | 11 / 14（余 H-32 ulw-execute） | 逐任务翻转 |
 | 跳过 / deferred / 排除（§2） | **47**（S-01…S-46 去占位行） | 每行终态理由齐备 |
 | 非 hook（§3） | 4 类条目 | 不计入 |
 | 全树覆盖 | 101 / 101 条目 | 退出标准 b 的完整性硬判定 ✅ |

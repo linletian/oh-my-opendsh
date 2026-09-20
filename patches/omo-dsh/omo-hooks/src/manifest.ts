@@ -62,12 +62,18 @@
 // `event` is the DSH registration surface. They are one authored pair, not two
 // independent facts: A → agent/pre-step, B → tools/pre-execute, C/D →
 // tools/post-execute, E → agent/turn-stopping, F → session/event or
-// agent/status. The B+D rows (H-24/H-26, below) are the one place a row covers
-// TWO surfaces: the row's `event` is the PRIMARY decision surface (the B half
-// on tools/pre-execute), `mode` records the primacy, and `summary` spells the D
-// half out. Consuming code must therefore read `summary` when it needs the
-// full surface set — this field pair is a label, never a complete event map
-// (see hooksByEvent's note).
+// agent/status. A row's `event` is its PRIMARY decision surface, NOT its
+// complete one: the B+D rows (H-24/H-26) additionally own a `tools/post-execute`
+// half, H-21 `directory-readme-injector` owns `session/event` + `session/disposed`
+// as well, H-22 `agent-usage-reminder` owns `session/disposed`, H-10
+// `session-notification` also observes `agent/status`, and H-11
+// `background-notification` additionally subscribes to the `ctx.jobs` service
+// (which is not one of the six manifest events at all). Consuming code must
+// therefore read `summary` (and the implementation) when it needs the full
+// surface set — this field pair is a label, never a complete event map (see
+// hooksByEvent's note). Registered as a correction at P3-T16: the original T2
+// wording called the B+D rows "the one place a row covers TWO surfaces", which
+// was already false when H-21/H-22 landed at P3-T15.
 //
 // TEMPLATE-LITERAL TYPES ARE LOAD-BEARING, NOT DECORATION. `HookMode` /
 // `HookEvent` are derived from the runtime arrays below with
@@ -118,12 +124,14 @@ export const manifestModeSet: ReadonlySet<string> = new Set<string>(MANIFEST_MOD
 /**
  * `status` is an open string on purpose. Rows started flipping at P3-T7: H-02
  * (`bash-file-read-guard`) is now 'ported' because listener + unit test + e2e
- * have ALL landed (its e2e scenario is `bash-read-guard-warned`); the other 13
- * rows are still 'pending'. The edit order is doc-first — phase3-hooks.md
- * already read ✅ 已移植 for H-02 before this row moved — with docs/ out of scope
- * for the port tasks. A closed union could not spell the coverage list's
- * vocabulary: phase3-plan.md §4.8 words a flipped row as 已移植（场景 xxx）, so
- * the coverage-list status embeds the row's e2e scenario name. The T20
+ * have ALL landed (its e2e scenario is `bash-read-guard-warned`); after P3-T14
+ * (the D-mode trio H-14/H-15/H-16), P3-T15 (the 批 B trio H-21/H-22/H-23) and
+ * P3-T16 (the B-mode pair H-24/H-26) TEN rows read 'ported' and FOUR are still
+ * 'pending' (H-03, H-10, H-11, H-32). The edit order is doc-first —
+ * phase3-hooks.md reads ✅ 已移植 for a row before this row moves — with docs/
+ * out of scope for the port tasks. A closed union could not spell the coverage
+ * list's vocabulary: phase3-plan.md §4.8 words a flipped row as 已移植（场景 xxx）,
+ * so the coverage-list status embeds the row's e2e scenario name. The T20
  * consistency test pins the actual vocabulary against the coverage list instead.
  */
 export type HookManifestStatus = string
@@ -597,8 +605,28 @@ const MANIFEST_ROWS = [
   },
   // H-24 — phase3-hooks.md §1 P4 行（批 C）。**B + D 组合行**：event/mode 记主
   // 决策面（B 落 tools/pre-execute，deny reason 携带最终 URL 指引），D 段
-  // （结果附加）在 summary 点名——两段共享 pre/post 配对，用 exec.callId /
-  // exec.token 原生关联（计划书 §4.2 纪律⑤，不建裸 Map）。
+  // （结果改写）在 summary 点名——两段共享 pre/post 配对，用 exec 对象（原生携带
+  // callId/token）承载的 WeakMap 关联（计划书 §4.2 纪律⑤，不建裸 Map）。
+  // P3-T16 实测要点（记在 listener 头部）：
+  // ① **B 模式打样**：上游 before 半用 `fetch(redirect:'manual')` 真预解析后
+  //    `replaceToolArgs` 改写 URL；DSH pre-execute **禁参数改写**（types:414-418
+  //    "Input rewriting is excluded because arguments are already logged and
+  //    presented" + 参数深冻结），故降级为「deny + reason 携带最终 URL」（P3-T1 §8
+  //    建议形态，覆盖基线 H-24 记录在案）；deny 经 dsh-tools:3127-3140 物化为
+  //    `Error: <reason>` 的 isError 结果。
+  // ② 工具名实测 = `web_fetch`（dsh-tool-web/lib/index.js:737 defineTool），上游
+  //    `webfetch` 作为第二匹配名保留。
+  // ③ 预解析语义逐字照搬 redirect-resolution.ts（状态集 301/302/303/307/308、
+  //    MAX=10、相对 Location 解析、超限 → exceeded）；`exec.signal` 与
+  //    AbortSignal.timeout 合并，响应体每跳 best-effort cancel。
+  // ④ D 段：上游 after 半的两条规则 → 本调用被自己 deny 的走配对跳过（那已是最终
+  //    文案），其余 `isError` 且命中（上游 2 条 + DSH 原生 2 条实测）重定向封锁文案
+  //    的结果改写为同一规范化文案；DSH 侧上限从错误串里**实测**（`exceeded the
+  //    maximum of N redirects`）而非硬编码。
+  // ⑤ R-8 原生覆盖面已实测并登记：DSH 原生**跟随同源重定向**（默认 5 跳，返回
+  //    value.url），跨源封锁/超限封锁的文案清晰但**从不给出最终 URL**——后者正是
+  //    本移植的残余价值。安全偏差（预解析请求不经 DSH 的 public-address 策略）已
+  //    在 listener 头部与 T16 报告中登记。
   {
     id: 'webfetch-redirect-guard',
     upstreamFiles: [
@@ -613,13 +641,52 @@ const MANIFEST_ROWS = [
     event: 'tools/pre-execute',
     mode: 'B',
     summary:
-      'webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引）+ D 段结果附加（含 D）；pre/post 配对用 exec.callId/exec.token',
+      'webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引，覆盖 H-24 的形态降级）+ D 段结果改写（含 D）；pre/post 配对用 exec 对象承载的 WeakMap（callId/token 原生字段）',
     e2eScenario: 'webfetch-redirect-denied',
-    status: 'pending',
+    // P3-T16: flipped 'pending' → 'ported' (listener + unit test + the
+    // `webfetch-redirect-denied` scenario all landed).
+    status: 'ported',
   },
   // H-26 — phase3-hooks.md §1 P4 行（批 C）。**B + D 组合行**（同 H-24 记录纪律）：
   // B 段 deny 非 .md 写（上游 hook.ts:40-62 可 1:1），D 段劝导因注入警告段在 DSH
-  // 无附言缝而改落 post-execute 附加。
+  // 无附言缝而改落 post-execute 追加。
+  // P3-T16 实测要点（记在 listener 头部）：
+  // ① **身份面核实结论**：exec.agent **没有** roster 座位标识——Agent 只暴露
+  //    id/options/session/inbox/status/ctx（id 在基接口 dsh-agent types:11-13，
+  //    其余五员在 runtime-types:139-149 的 declaration merge），
+  //    session.header 只到 cwd/parentSession/origin/delegationDepth/agentPreset
+  //    （dsh-session types:58-95），且子会话 agentPreset 与父相同
+  //    （dsh-subagent:502-513 childSessionMeta）；委派工具名（座位名）不落任何持久面，
+  //    descriptor 唯一的自由字段 label 是模型自填的 description。能力探针也不判别
+  //    （prometheus 属 read-only 类，deny 与其他 5 个 read-only 行完全相同，
+  //    roster.ts:361 denyToolNamesFor）。
+  // ② **可用且可判别的面** = 子会话自有的持久 `subagent/descriptor` 事件里的
+  //    `persona`（descriptor v3，"Per-child persona that shadows the deployment
+  //    persona on resume"，dsh-subagent:1656-1666）：它就是该委派行的 persona 文本，
+  //    而每份 system-sections/<id>-persona.md 恰好自称一次 `omo-<id>`——故
+  //    `omo-prometheus` 是逐行唯一锚点（单测对真实 persona 文件集做漂移守测）。
+  //    读取面 = session.ownEvents()（**内存**，非读盘），descriptor 在子会话创建窗口
+  //    内（首个请求之前）落地，故首个 write/edit 即已可见。
+  //    ⚠️ **实测边界（T16 e2e 双向读回）**：该字段只在 `mode:'continuable'` 的子会话
+  //    上存在（background 委派 → startContinuable，descriptor 实测键 =
+  //    version/mode/provider/label/agentProvider/agentModel/agentReasoningEffort/
+  //    persona）；前台委派走 SubagentRuntime.start，descriptor 逐字构造为
+  //    `{mode:'one-shot', provider, label}`（dsh-subagent:3150-3154），one-shot schema
+  //    **无 persona 字段**（实测键 = version/mode/provider/label）。故**前台 prometheus
+  //    委派不可识别、本门静默**（降级为"不触发"，绝不"对所有人触发"）——已登记为覆盖
+  //    边界与仲裁项（备选：systemPrompt.assemble 读 persona 段 / 向运行时请求持久字段），
+  //    详见 listener 头部与 T16 报告。
+  // ③ B 段路径裁决 isAllowedFile 逐字照搬 path-policy.ts:14-39（resolve/relative/
+  //    isAbsolute + `(^|[/\\])\.omo([/\\]|$)` 段正则 + 扩展名）；参数名以 DSH 实测
+  //    `file_path` 起头（dsh-tool-fs:600/:745），上游 filePath/path/file 兜底。
+  // ④ 上游第 2 段（task 工具 prompt 前置 PLANNING_CONSULT_WARNING）**不可移植**并
+  //    已登记：其效果读者是**被委派子会话**，而 DSH 无 pre-execute 参数改写缝，
+  //    post-execute 的 additionalContexts 只会送给父会话的下一请求（读者错位）；且在
+  //    钉死组合里 prometheus 的委派工具本就被 deny，结构性不可达。
+  // ⑤ 与 Phase 2 的关系：Phase 2「有意不镜像」是 persona/permission 层决策
+  //    （persona ③ 段 + read-only 类 toolFilter deny），本 hook 在 listener 层补齐，
+  //    层不冲突；roster 维持 deny 时本门不可达（纯纵深防御），e2e 以**沙盒内**预设
+  //    编辑放开该行的 toolFilter 来证明监听器本身（P3-T13 先例）。
   {
     id: 'prometheus-md-only',
     upstreamFiles: [
@@ -634,9 +701,11 @@ const MANIFEST_ROWS = [
     event: 'tools/pre-execute',
     mode: 'B',
     summary:
-      'prometheus 仅可写 .md：B 段 deny 非 .md 写（hook.ts:40-62 可 1:1）+ D 段劝导落 post-execute 附加（含 D）',
+      'prometheus 仅可写 .omo/*.md：B 段 deny 非 .md 写（hook.ts:40-62 可 1:1，身份面 = 子会话 descriptor.persona 的 omo-prometheus 锚点）+ D 段劝导落 post-execute 追加（含 D）',
     e2eScenario: 'prometheus-md-only-denied',
-    status: 'pending',
+    // P3-T16: flipped 'pending' → 'ported' (listener + unit test + the
+    // `prometheus-md-only-denied` scenario all landed).
+    status: 'ported',
   },
   // H-32 — phase3-hooks.md §1 P5 行。上游目录 20 文件 = **13 实现 + 7 测试**
   // （实测；覆盖基线 H-32 与计划书 §4.3 的"20 文件"含 AGENTS.md 之外无其他
@@ -769,12 +838,16 @@ export function validateManifest(entries: readonly HookManifestEntry[]): void {
  * Groups a roster by target event — the T3 registration loop's input (one
  * listener batch per event) and the T3 static gate's expected boot-marker set.
  *
- * NOTE FOR THE T3 CONSUMER: this is a keyed-by-PRIMARY-event view. The B+D rows
- * (webfetch-redirect-guard, prometheus-md-only) also touch tools/post-execute
- * and session-notification also observes agent/status; a registration loop that
- * reads ONLY this map would register those halves nowhere. Derive the full
- * surface set from the listener implementations (or extend the rows with an
- * explicit secondary-event field) when T3 wires the loop — the map itself is
+ * NOTE FOR THE T3 CONSUMER: this is a keyed-by-PRIMARY-event view — NOT the
+ * full surface set. The B+D rows (webfetch-redirect-guard, prometheus-md-only)
+ * also touch tools/post-execute; directory-readme-injector also registers
+ * session/event and session/disposed; agent-usage-reminder also registers
+ * session/disposed; session-notification also observes agent/status; and
+ * background-notification additionally subscribes to the `ctx.jobs` service,
+ * which is not one of the six manifest events. A registration loop that reads
+ * ONLY this map would register every one of those halves nowhere. Derive the
+ * full surface set from the listener implementations (or extend the rows with
+ * an explicit secondary-event field) when T3 wires the loop — the map itself is
  * exact for what it claims: `entry.event` grouped, insertion order preserved.
  */
 export function hooksByEvent(entries: readonly HookManifestEntry[]): Map<string, HookManifestEntry[]> {

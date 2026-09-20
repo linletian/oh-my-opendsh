@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **11/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：📋 **12/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
@@ -154,12 +154,12 @@
 - **证据**：2026-09-20 完成（deepseek-flash，1 首轮 + 1 清扫轮）。产出：三模块移植——① directory-readme-injector（finder 目录链上溯/去重/缓存失效语义 + injector 结果追加；README 不在 dsh-agent-instructions 候选名的无重叠论证 lib:17-18；读 README.md 自身 ×2 注入的上游后果保留并登记；L1 磁盘持久化未移植注记）；② agent-usage-reminder（触发条件 hook.ts:125-128 对照 + REMINDER_MESSAGE 的 DSH 名册现实改写）；③ task-resume-info（**前置闭环：可独立成立、不实质依赖 OMO task 系统**——foreground 不产提示依赖"dispose 后无可续 id"的登记假设已注记）+ e2e 三场景 + json-error-recovery.ts:40 行号修正（T14 NIT：:423→:449，核 dsh-tools:440-455 实际）+ 单测 omo-hooks 计 338（+3 e2eScenario 钉测）。**双评审**：Kimi 轮1 **APPROVE**（3 MINOR + 5 NIT + 3 质疑）+ mcode 轮1 **APPROVE** → 清扫轮（容忍断言改精确 + conductor-ran-only-the-batch 新 defect、MINOR-3 短路组合语义登记、NIT×5 排版、仲裁注记 3 条）→ **Kimi 轮2 APPROVE**（1 新 MINOR：组合注记 "exactly one" 过度断言/缺 detector(3)→reminder(10) 对登记 + 1 新 NIT 真空注记措辞——注释级，仲裁并入 T16 同族）+ mcode 轮2 遇 MiniMax Token Plan 限额（2067）→ **半小时周期重试第 6 次恢复**（规则④）：**mcode 轮2 APPROVE**（"No reportable issues"）。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 338、self-test OK。**仲裁（Kimi 质疑）**：① compaction/prune 不重新武装 = 已知组合语义（下次 read 时再注入，影响有界，不追加 prune 触发）已注记；② foreground 登记假设已注记（DSH 行为变化时重估）；③ 门 5 checked 52→53 归因核实 = **T2 新增 omo-hooks workspace importer**（本仓自有包 MIT OR SUL-1.0，pass:true violations:[]——DoD-e 计数变化有对应条目，T21 核对表按此口径记录）。**编码 agent 注记**：orchestrator 门对 sisyphus-junior/hephaestus 更窄已登记；session/disposed、compaction/end、background kind 仅单测覆盖（L2）。
 - **依赖**：P3-T6。**量级**：4 小时。
 
-### [ ] P3-T16 — 批 C：B/D 门类（2 模块）
+### [x] P3-T16 — 批 C：B/D 门类（2 模块）
 
 - **产出**：`src/hooks/`：`webfetch-redirect-guard.ts`（B + D）+ `prometheus-md-only.ts`（B + D）+ 单测 + e2e。
 - **做法**：**B 模式在本批打样**（原 T4 打样随 H-01 改判取消）；`webfetch-redirect-guard` 的 deny reason 携带最终 URL 指引（覆盖基线 H-24）；`prometheus-md-only` 的 B 段（非 .md 写 deny，上游 hook.ts:40-62 可 1:1）+ D 段劝导（注入警告段无附言缝 → post-execute 附加，H-26）；pre/post 状态配对用 `exec.callId`/`exec.token` 原生关联（纪律⑤）。
 - **判定**：✅ 每模块单测 + e2e（deny 生效 + 对照放行）；门 2/3 绿。
-- **证据**：（待填）
+- **证据**：2026-09-20 完成（deepseek-flash，1 首轮 + 1 清扫轮；证据 `.omo/evidence/p3t16-batch-c.md`）。产出：① webfetch-redirect-guard（B 段：命中重定向规则 → 显式 {kind:'deny', reason}（reason 携带最终 URL 指引；**deny 物化语义 dsh-tools:3127-3140 实证**）+ D 段结果附加（**被 row-10 agent-usage-reminder 抢占——ACCEPTED 登记**：reminder 不 gate isError 且 append 保留原生错误文本，只丢规范化，B 段不受影响、pairing WeakMap 随 exec 回收无泄漏——评审复跑实证）；DSH web 工具名与 exec.callId/token 原生配对核实；② prometheus-md-only（B 段非 .md 写 deny 1:1 + D 段劝导落 post-execute；**foreground one-shot 委派身份缺口**注记：所选标识面与 systemPrompt.assemble 备选的权衡已登记）+ e2e `webfetch-redirect-denied`（deny isError + reason 文案 + 对照放行；loopback SSRF 策略下对照断言形态诚实注记）+ prometheus 门场景（MOCKROLE prometheus lane；非 .md deny + .md 放行对照；**settle 观测窗口竞态修正**——bothTurnsCompleted，连跑 3 次全绿）+ 两新场景 27 断言全 true（评审复跑实证）+ 单测 omo-hooks 计 395。**双评审**：Kimi 轮1 **APPROVE**（5 MINOR + 4 NIT，建议 MINOR-1/2 必修；三质疑评审上可接受）+ mcode 轮1 **APPROVE**（语义/判定路径/pre-post pairing/preset 替换/e2e 事件 ID 抽样验证无缺陷）→ 清扫轮（MINOR-1 exceeded 路径 reason 去「Error: 」前缀 + 单测 errorPrefix:false 钉死、MINOR-2 组合注记行号/前提、MINOR-3/4/5 + NIT×4 + 候备两条；评审全文由编码方从会话记录定位）→ **Kimi 轮2 APPROVE**（残留 1 MINOR：组合注记「工具门真空」登记词失真 + 2 NIT：VERBATIM 常量名实不符/证据计数笔误——注释级，仲裁并入 T20 收口）+ mcode 轮2（限额重试第 5 次恢复）返回 1 项 [P2]：覆盖基线 H-26 行状态漏同步（仲裁的 python 替换静默未命中——已直接修复）→ 复核轮（再遇限额，重试第 1 次恢复）**APPROVE**（"未发现可报告的问题…三处记录对齐"）。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 828、self-test OK、doctor-lite 5/0、concerto static 19/19、proofs 3/3（评审复跑实证）。**仲裁记录（编码方 9 项质疑）**：① 预解析 GET 绕过 resolvePublicAddresses 公网策略 = upstream parity 接受（评审认可；SSRF 面注记）；② prometheus 前台身份缺口 = 当前所选标识面接受，备选留注记；③ D 段抢占 = ACCEPTED 登记准确；④ 同源重定向由「原生跟随」变「deny 一次」= 上游语义如实移植；⑤ Chrome UA 保留 = 决策项接受；⑥ e2e 对照受 loopback SSRF 限制的断言形态 = 诚实接受；⑦ docs 两行翻牌 = 由本任务书/覆盖基线回填（本条即）；⑧ checked=53 归因同 T15 已核；⑨ 预解析每调用额外开销（最坏 30s）注记。**遗留**：L1 D 段仅单测+被抢占；L2 前台身份缺口；exceeded 路径无 e2e 兜底（单测钉死）。
 - **依赖**：P3-T6（模式夹具）。**量级**：4 小时。
 
 ### [ ] P3-T17 — ulw-execute（start-work hook 语义，H-32）

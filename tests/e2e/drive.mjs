@@ -491,6 +491,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createServer } from 'node:http'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7798,6 +7799,155 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P3-T16 批 C B-mode self-test: ONE fabricated GOOD input per scenario must
+  // PASS, and every named defect must FAIL on its OWN check (the T15 mutation
+  // QA, applied to the B/D pair).
+  const goodWebfetch = analyzeWebfetchRedirectDenied(fabricatedWebfetchRedirectInput(routes), routes)
+  if (goodWebfetch.result !== 'PASS') {
+    problems.push(`fabricated GOOD webfetch-redirect-denied must PASS, got FAIL on: ${goodWebfetch.failed.join(', ')}`)
+  }
+  const webfetchDefectCases = [
+    ['the redirecting call was not denied at all', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
+          ? fabricatedToolResultEvent(event.seq, 'mock-llm-tool-1-0', WEBFETCH_GUARD_PLAIN_BODY)
+          : event)
+    }, 'redirectDenyMaterialized'],
+    ['the deny reason names a DIFFERENT final URL than the fixture', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-0',
+            `Error: ${WEBFETCH_REDIRECT_GUARD_MARKER}: "${FABRICATED_WEBFETCH_REDIRECT_URL}" follows `
+              + '1 redirect to "http://127.0.0.1:9/somewhere-else".',
+            true,
+          )
+          : event)
+    }, 'denyNamesTheFinalUrl'],
+    ['the non-redirecting control was denied too', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-1',
+            `Error: ${WEBFETCH_REDIRECT_GUARD_MARKER}: denied`,
+            true,
+          )
+          : event)
+    }, 'controlNotDenied'],
+    ['the control never reached the native address policy', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
+          ? fabricatedToolResultEvent(event.seq, 'mock-llm-tool-1-1', 'Error: connection refused', true)
+          : event)
+    }, 'controlReachedTheNativeAddressPolicy'],
+    ['the guard spoke twice (a duplicated deny carrier)', (input) => {
+      input.log.events = input.log.events.concat([
+        fabricatedToolResultEvent(
+          8,
+          'mock-llm-tool-1-0',
+          `Error: ${WEBFETCH_REDIRECT_GUARD_MARKER}: duplicated`,
+          true,
+        ),
+      ])
+    }, 'guardSpokeExactlyOnce'],
+    ['the batch was the conductor\'s only step (summary vanished below the floor)', (input) => {
+      let kept = 0
+      input.requests = input.requests.filter((request) => {
+        if (request.role !== 'sisyphus') return true
+        kept += 1
+        return kept <= 1
+      })
+    }, 'mockSawTheBatchAndTheSummary'],
+  ]
+  for (const [label, mutate, expectedCheck] of webfetchDefectCases) {
+    const input = fabricatedWebfetchRedirectInput(routes)
+    mutate(input)
+    const verdict = analyzeWebfetchRedirectDenied(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated webfetch-redirect-denied defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  const goodPrometheus = analyzePrometheusMdOnlyDenied(fabricatedPrometheusMdOnlyInput(routes), routes)
+  if (goodPrometheus.result !== 'PASS') {
+    problems.push(`fabricated GOOD prometheus-md-only-denied must PASS, got FAIL on: ${goodPrometheus.failed.join(', ')}`)
+  }
+  const prometheusDefectCases = [
+    ['the non-.md write was allowed through', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-child-tool-1')
+          ? fabricatedToolResultEvent(event.seq, 'mock-llm-child-tool-1', `wrote ${input.denyTargetPath}`)
+          : event)
+    }, 'nonMdWriteDeniedByTheGate'],
+    ['the refused file landed on disk anyway', (input) => {
+      input.denyTargetAbsent = false
+    }, 'deniedTargetNeverLanded'],
+    ['the plan write got no workflow reminder', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-child-tool-2-0')
+          ? fabricatedToolResultEvent(event.seq, 'mock-llm-child-tool-2-0', `wrote ${input.plansPath}`)
+          : event)
+    }, 'workflowReminderAppended'],
+    ['the reminder landed on the non-plans .omo write too', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-child-tool-2-1')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-child-tool-2-1',
+            `wrote ${input.draftsPath}${PROMETHEUS_WORKFLOW_REMINDER}`,
+          )
+          : event)
+    }, 'draftsWriteAllowedWithoutReminder'],
+    ['the conductor\'s own write was gated too', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-2')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-2',
+            `Error: [${PROMETHEUS_MD_ONLY_HOOK_NAME}] Prometheus is a planning agent.`,
+            true,
+          )
+          : event)
+    }, 'conductorWriteNotAffected'],
+    ['the child descriptor carried no prometheus persona (the identity surface)', (input) => {
+      input.childLog.events = input.childLog.events.map((event) =>
+        event.type === 'subagent/descriptor'
+          ? { ...event, data: { ...event.data, persona: 'You are **omo-explore**, a search agent.' } }
+          : event)
+    }, 'prometheusPersonaObservable'],
+    ['the plan bytes never landed on disk', (input) => {
+      input.plansLandedOnDisk = false
+    }, 'plansWriteAllowed'],
+    ['the gate spoke twice (a duplicated deny carrier)', (input) => {
+      input.childLog.events = input.childLog.events.concat([
+        fabricatedToolResultEvent(
+          9,
+          'mock-llm-child-tool-1',
+          `Error: [${PROMETHEUS_MD_ONLY_HOOK_NAME}] duplicated`,
+          true,
+        ),
+      ])
+    }, 'gateSpokeExactlyOnce'],
+  ]
+  for (const [label, mutate, expectedCheck] of prometheusDefectCases) {
+    const input = fabricatedPrometheusMdOnlyInput(routes)
+    mutate(input)
+    const verdict = analyzePrometheusMdOnlyDenied(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated prometheus-md-only-denied defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
@@ -7817,6 +7967,664 @@ async function runAnalysisSelfTest(routes) {
 // ('background-notification-log' flips one delegation row to the one-shot
 // background mode); `settle(boot, sandbox, sessionId)` runs after the last
 // turn/end and before `stopDsh` freezes the observations.
+//
+// ── P3-T16: THE 批 C B-MODE PAIR (plan §4.2 模式 B pilot + D) ─────────────────
+// Two scenarios, each with a TRIGGER and a live 对照, asserted against
+// RUNTIME-OBSERVED carriers only.
+//
+//   1. `webfetch-redirect-denied` (H-24). The B-mode pilot: the conductor fires
+//      TWO `web_fetch` calls in ONE batch —
+//        (a) the TRIGGER points at a loopback HTTP fixture that answers 302 →
+//            `/final`; the listener's own pre-resolution (a plain `fetch`,
+//            exactly like upstream's) follows the hop and DENIES the call with
+//            the final URL in the reason, which dsh materializes as an
+//            `Error: <reason>` isError result;
+//        (b) the CONTROL points at the same fixture's `/plain` route (200, no
+//            Location) so the pre-resolution resolves to the SAME url and the
+//            listener delegates (`next()`).
+//      MEASURED CONSTRAINT ON THE CONTROL'S DOWNSTREAM FATE (recorded, not
+//      hidden): dsh's own web provider refuses ANY non-public destination
+//      (`URL hostname "127.0.0.1" resolves to a non-public IP address`,
+//      dsh-web-fetch-http/lib/index.js:55-79), so a hermetic loopback control
+//      can never fetch successfully. The control assertion is therefore the
+//      discriminating pair "the guard did NOT deny it, and the call really
+//      reached the native provider": its result carries the native non-public
+//      address error and NOT the guard marker. That proves the pass-through
+//      without depending on outbound internet.
+//
+//   2. `prometheus-md-only-denied` (H-26). The identity/deny scenario:
+//      the conductor delegates to the `prometheus` roster row (the child is a
+//      real delegation with a real `subagent/descriptor`), the child issues
+//      FOUR writes across two batches, and the conductor writes one file
+//      itself:
+//        (a) CHILD, non-`.md` outside `.omo`  → B deny (the trigger);
+//        (b) CHILD, `.omo/plans/plan.md`       → allowed, and the post-execute
+//            D half appends the workflow reminder (the second trigger);
+//        (c) CHILD, `.omo/drafts/note.md`      → allowed, NO reminder (`.omo`
+//            but not `plans/`);
+//        (d) CONDUCTOR, a non-`.md` file       → allowed: the 对照 proving the
+//            identity gate is prometheus-only (the conductor is not a
+//            delegation child and has no descriptor).
+//      REACHABILITY (the P3-T13 precedent, recorded in the scenario comment):
+//      the shipped prometheus row is `class: 'read-only'`, so its
+//      `toolFilter.deny` hides `write`/`edit` from the child entirely
+//      (roster.ts denyToolNamesFor) and the gate would be structurally
+//      unreachable. This scenario therefore lifts ONLY that row's `toolFilter`
+//      in ITS OWN SANDBOX COPY of the materialized preset
+//      (`enablePrometheusWriteTools` below) — the repo template and every other
+//      scenario keep the shipped filter. The child's own `persona` (the
+//      identity surface the listener reads) is untouched.
+//
+// THE DISK FACTS are computed in `analysisInput` (the `bigFixtureChars`
+// precedent) rather than inside `analyze`, so the hermetic self-test can supply
+// them as plain booleans while the real run reads the real sandbox.
+const {
+  WEBFETCH_REDIRECT_GUARD_MARKER,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/webfetch-redirect-guard.ts', import.meta.url).href
+)
+const {
+  HOOK_NAME: PROMETHEUS_MD_ONLY_HOOK_NAME,
+  PROMETHEUS_WORKFLOW_REMINDER,
+  buildPrometheusDenyReason,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/prometheus-md-only.ts', import.meta.url).href
+)
+
+const WEBFETCH_GUARD_REDIRECT_PATH = '/redirect-me'
+const WEBFETCH_GUARD_FINAL_PATH = '/final'
+const WEBFETCH_GUARD_PLAIN_PATH = '/plain'
+const WEBFETCH_GUARD_PLAIN_BODY = 'MOCK-WEBFETCH-PLAIN-BODY-1f4a7c'
+const WEBFETCH_GUARD_PROMPT =
+  'e2e webfetch-redirect-denied: fetch both URLs in one batch, then summarize what came back'
+const WEBFETCH_GUARD_SUMMARY =
+  'MOCK-WEBFETCH-GUARD-SUMMARY-2c8e31: one fetch was refused with its final URL and the other was allowed through'
+
+/**
+ * The loopback redirect fixture. Three routes:
+ *   `/redirect-me` → 302 to `/final`   (the trigger)
+ *   `/final`       → 200 plain text    (never fetched by the tool: the call is
+ *                                       denied before dispatch; the guard's
+ *                                       pre-resolution stops at the first
+ *                                       non-redirect status, i.e. here)
+ *   `/plain`       → 200 plain text    (the control)
+ * Ephemeral port (listen 0), closed by runScenario's `finally`.
+ */
+async function startWebfetchRedirectFixture() {
+  const server = createServer((request, response) => {
+    const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
+    if (path === WEBFETCH_GUARD_REDIRECT_PATH) {
+      response.writeHead(302, {
+        location: WEBFETCH_GUARD_FINAL_PATH,
+        'content-type': 'text/plain',
+      })
+      response.end()
+      return
+    }
+    if (path === WEBFETCH_GUARD_FINAL_PATH || path === WEBFETCH_GUARD_PLAIN_PATH) {
+      response.writeHead(200, { 'content-type': 'text/plain' })
+      response.end(WEBFETCH_GUARD_PLAIN_BODY)
+      return
+    }
+    response.writeHead(404, { 'content-type': 'text/plain' })
+    response.end('not found')
+  })
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const { port } = server.address()
+  return {
+    port,
+    redirectUrl: `http://127.0.0.1:${port}${WEBFETCH_GUARD_REDIRECT_PATH}`,
+    finalUrl: `http://127.0.0.1:${port}${WEBFETCH_GUARD_FINAL_PATH}`,
+    plainUrl: `http://127.0.0.1:${port}${WEBFETCH_GUARD_PLAIN_PATH}`,
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+  }
+}
+
+/** The webfetch scenario's ONE batch: the trigger and the control. */
+function webfetchRedirectScript(_sandbox, redirect) {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          { name: 'web_fetch', arguments: { url: redirect.redirectUrl } },
+          { name: 'web_fetch', arguments: { url: redirect.plainUrl } },
+        ],
+      },
+      { type: 'text', text: WEBFETCH_GUARD_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * The `webfetch-redirect-denied` assertions (H-24). The trigger's own truth is
+ * the fixture's real redirect: the final URL asserted below is the one the
+ * FIXTURE's Location header names, and the reason text is the listener's
+ * materialized deny.
+ */
+export function analyzeWebfetchRedirectDenied(
+  { log, requests, providersJson, bootLog, redirectUrl, finalUrl, plainUrl },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const triggerCall = findToolCall(events, 'web_fetch', (args) => args.url === redirectUrl)
+  const controlCall = findToolCall(events, 'web_fetch', (args) => args.url === plainUrl)
+  const triggerResult = toolResultForCall(results, triggerCall)
+  const controlResult = toolResultForCall(results, controlCall)
+  const triggerText = triggerResult?.text ?? ''
+  const controlText = controlResult?.text ?? ''
+  const guardCarriers = results.filter((part) => part.text.includes(WEBFETCH_REDIRECT_GUARD_MARKER))
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // Both calls really ran in the model's own batch (the trigger is not a
+    // synthetic construction: its arguments name the fixture URL).
+    webFetchBatchDispatched: triggerCall !== undefined && controlCall !== undefined,
+    // (a) TRIGGER: the deny decision materialized as dsh does it — an isError
+    // result whose text is `Error: <reason>` and whose reason carries the
+    // guard's marker, the hop count and the FIXTURE's final URL.
+    redirectDenyMaterialized:
+      triggerResult?.isError === true
+      && triggerText.startsWith('Error: ')
+      && triggerText.includes(WEBFETCH_REDIRECT_GUARD_MARKER),
+    denyNamesTheFinalUrl: triggerText.includes(finalUrl),
+    denyReportsTheHopCount: triggerText.includes('follows 1 redirect to'),
+    denyCarriesNoDoubleErrorPrefix: !triggerText.startsWith('Error: Error: '),
+    // (b) 对照: the guard did NOT deny the non-redirecting URL, and the call
+    // really reached the native provider (its own non-public-address refusal).
+    controlNotDenied:
+      controlResult !== undefined
+      && controlResult.isError === true
+      && !controlText.includes(WEBFETCH_REDIRECT_GUARD_MARKER),
+    controlReachedTheNativeAddressPolicy: controlText.includes('non-public IP address'),
+    guardSpokeExactlyOnce: guardCarriers.length === 1,
+    mockSawTheBatchAndTheSummary: sisyphusRequests.length >= 2,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      redirectUrl: redirectUrl ?? null,
+      finalUrl: finalUrl ?? null,
+      plainUrl: plainUrl ?? null,
+      triggerText,
+      controlText,
+      guardCarrierCount: guardCarriers.length,
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
+const PROMETHEUS_MD_ONLY_PROMPT =
+  'e2e prometheus-md-only-denied: delegate the plan to prometheus, then write your own notes file, then summarize'
+const PROMETHEUS_MD_ONLY_TASK = 'Write the plan file and the drafts note, and try the workspace file.'
+const PROMETHEUS_MD_ONLY_CHILD_SUMMARY =
+  'MOCK-PROMETHEUS-CHILD-SUMMARY-77c1a0: attempted the three writes and reported'
+const PROMETHEUS_MD_ONLY_SUMMARY =
+  'MOCK-PROMETHEUS-MD-ONLY-SUMMARY-4b9f2e: the child was refused the workspace file and allowed the plan'
+// The four paths, relative to the sandbox project (the child's cwd is the
+// parent's project directory — childSessionMeta copies the parent header).
+const PROMETHEUS_DENY_TARGET_REL = 'workspace-open.txt'
+const PROMETHEUS_PLANS_DIR = '.omo/plans'
+const PROMETHEUS_PLANS_REL = '.omo/plans/plan.md'
+const PROMETHEUS_DRAFTS_DIR = '.omo/drafts'
+const PROMETHEUS_DRAFTS_REL = '.omo/drafts/note.md'
+const PROMETHEUS_CONDUCTOR_REL = 'conductor-notes.txt'
+const PROMETHEUS_PLANS_CONTENT = '# plan\nMOCK-PROMETHEUS-PLAN-BODY-3e7d51\n'
+const PROMETHEUS_DRAFTS_CONTENT = '# note\nMOCK-PROMETHEUS-DRAFT-BODY-9a02bf\n'
+const PROMETHEUS_CONDUCTOR_CONTENT = 'MOCK-CONDUCTOR-NOTES-BODY-6d1c48\n'
+
+/**
+ * Lift THIS scenario's sandbox copy of the materialized preset's prometheus
+ * row's `toolFilter`. WHY A FIXTURE EDIT IS REQUIRED: the row is
+ * `class: 'read-only'`, whose rendered `deny` list hides `write`/`edit` from
+ * the child, so the listener under test would never see a write call. The edit
+ * is SCENARIO-LOCAL (the sandbox's own DSH_HOME, the same file
+ * `appendMockRoleMarker` edits) and touches NOTHING else: the persona, the
+ * route and `maxDepth` stay as shipped, which is what keeps the identity gate
+ * meaningful. Loud on drift: a template change that moves the row or its
+ * `toolFilter`/`deny` lines throws here instead of silently turning the
+ * scenario vacuous.
+ */
+function enablePrometheusWriteTools(sandbox) {
+  const compositionPath = materializedCompositionPath(sandbox)
+  const lines = readFileSync(compositionPath, 'utf8').split('\n')
+  const rowAnchor = '    - id: tool-subagent-prometheus'
+  const anchors = lines
+    .map((line, index) => (line === rowAnchor ? index : -1))
+    .filter((index) => index >= 0)
+  if (anchors.length !== 1) {
+    throw new Error(
+      `prometheus-md-only scenario: materialized preset must carry `
+      + `\`${rowAnchor}\` exactly once; found ${anchors.length}`,
+    )
+  }
+  const rowIndex = anchors[0]
+  const rowIndent = rowAnchor.length - rowAnchor.trimStart().length
+  let filterIndex = -1
+  for (let index = rowIndex + 1; index < lines.length; index++) {
+    const line = lines[index]
+    if (/^\s*- id: /.test(line) && line.length - line.trimStart().length <= rowIndent) break
+    if (line === '        toolFilter:') {
+      filterIndex = index
+      break
+    }
+  }
+  if (filterIndex < 0 || !lines[filterIndex + 1]?.startsWith('          deny: ')) {
+    throw new Error(
+      'prometheus-md-only scenario: the materialized prometheus row carries no '
+      + '`        toolFilter:` + `          deny: […]` pair to lift',
+    )
+  }
+  lines.splice(filterIndex, 2)
+  writeFileSync(compositionPath, lines.join('\n'))
+}
+
+/**
+ * The prometheus scenario's script. The conductor delegates to `prometheus`
+ * BACKGROUND (`continuable`, so the child's per-child persona is durably recorded
+ * in its descriptor — the gate's identity input — and the child's work is durable
+ * before the conductor's own write step), then writes its OWN non-`.md` file,
+ * then summarizes. The child runs TWO batches: the denied workspace write alone,
+ * then the two allowed `.omo` writes (so the deny and the reminder are observed
+ * on separate steps).
+ */
+function prometheusMdOnlyScript(sandbox) {
+  const project = sandbox.project
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'prometheus',
+        arguments: {
+          description: 'Draft the plan',
+          prompt: PROMETHEUS_MD_ONLY_TASK,
+          // BACKGROUND (`continuable`) ON PURPOSE — see the section header's
+          // identity-surface fact: only the continuable descriptor persists the
+          // per-child persona, which IS the gate's identity input.
+          run_in_background: true,
+        },
+      },
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'write',
+            arguments: {
+              file_path: join(project, PROMETHEUS_CONDUCTOR_REL),
+              content: PROMETHEUS_CONDUCTOR_CONTENT,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: PROMETHEUS_MD_ONLY_SUMMARY },
+    ],
+    prometheus: [
+      {
+        type: 'tool_call',
+        name: 'write',
+        arguments: {
+          file_path: join(project, PROMETHEUS_DENY_TARGET_REL),
+          content: 'this must never land\n',
+        },
+      },
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'write',
+            arguments: {
+              file_path: join(project, PROMETHEUS_PLANS_REL),
+              content: PROMETHEUS_PLANS_CONTENT,
+            },
+          },
+          {
+            name: 'write',
+            arguments: {
+              file_path: join(project, PROMETHEUS_DRAFTS_REL),
+              content: PROMETHEUS_DRAFTS_CONTENT,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: PROMETHEUS_MD_ONLY_CHILD_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * The prometheus scenario's settle hook: the delegation is BACKGROUND, so the
+ * parent's turn can close long before the child's is durable. Wait (inside the
+ * observation window, before `stopDsh`) until the child session really carries
+ * its three write results, BOTH allowed files are on disk, AND the child's own
+ * `turn/end` with `completed` has landed. The turn/end clause is load-bearing:
+ * the write results are durable while the child is still producing its closing
+ * message, and `stopDsh` freezes it there — the first frozen-tree run tripped
+ * exactly that race and reported `bothTurnsCompleted` false. A timeout returns
+ * false and lets the analysis report the honest FAIL (never a crash).
+ */
+async function awaitPrometheusChildCompletion(boot, sandbox, sessionId, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const child = logs.find(
+      (candidate) =>
+        candidate.header.origin === 'subagent'
+        && String(candidate.header.parentSession) === String(sessionId),
+    )
+    const childEvents = child?.events ?? []
+    const written = toolResultParts(childEvents).length >= 3
+    const childTurnCompleted = childEvents.some(
+      (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+    )
+    const plansLand = existsSync(join(sandbox.project, PROMETHEUS_PLANS_REL))
+    const draftsLand = existsSync(join(sandbox.project, PROMETHEUS_DRAFTS_REL))
+    if (written && childTurnCompleted && plansLand && draftsLand) return true
+    await sleep(250)
+  }
+  return false
+}
+
+/** The real sandbox disk facts the prometheus assertions consume. */
+function prometheusDiskFacts(sandbox) {
+  const readIfPresent = (relative) => {
+    const path = join(sandbox.project, relative)
+    return existsSync(path) ? readFileSync(path, 'utf8') : undefined
+  }
+  const plansText = readIfPresent(PROMETHEUS_PLANS_REL)
+  const draftsText = readIfPresent(PROMETHEUS_DRAFTS_REL)
+  const conductorText = readIfPresent(PROMETHEUS_CONDUCTOR_REL)
+  return {
+    denyTargetPath: join(sandbox.project, PROMETHEUS_DENY_TARGET_REL),
+    plansPath: join(sandbox.project, PROMETHEUS_PLANS_REL),
+    draftsPath: join(sandbox.project, PROMETHEUS_DRAFTS_REL),
+    conductorTargetPath: join(sandbox.project, PROMETHEUS_CONDUCTOR_REL),
+    denyTargetAbsent: !existsSync(join(sandbox.project, PROMETHEUS_DENY_TARGET_REL)),
+    plansLandedOnDisk: plansText !== undefined && plansText.includes('MOCK-PROMETHEUS-PLAN-BODY-3e7d51'),
+    draftsLandedOnDisk: draftsText !== undefined && draftsText.includes('MOCK-PROMETHEUS-DRAFT-BODY-9a02bf'),
+    conductorLandedOnDisk:
+      conductorText !== undefined && conductorText.includes('MOCK-CONDUCTOR-NOTES-BODY-6d1c48'),
+  }
+}
+
+/** Whether a child log carries the durable descriptor persona the gate reads. */
+function childDescriptorPersona(childLog) {
+  const descriptor = (childLog?.events ?? []).find((event) => event.type === 'subagent/descriptor')
+  const persona = descriptor?.data?.persona
+  return typeof persona === 'string' ? persona : undefined
+}
+
+/**
+ * The `prometheus-md-only-denied` assertions (H-26). The identity fact is read
+ * back OUT of the child's own durable descriptor — the same surface the
+ * listener reads — so "the hook fired for prometheus" cannot be a synthetic
+ * claim: without that persona the gate would have stayed silent and the deny
+ * assertion would fail.
+ */
+export function analyzePrometheusMdOnlyDenied(
+  {
+    log,
+    childLog,
+    requests,
+    providersJson,
+    bootLog,
+    denyTargetPath,
+    plansPath,
+    draftsPath,
+    conductorTargetPath,
+    denyTargetAbsent,
+    plansLandedOnDisk,
+    draftsLandedOnDisk,
+    conductorLandedOnDisk,
+  },
+  routes,
+) {
+  const events = log?.events ?? []
+  const childEvents = childLog?.events ?? []
+  const results = toolResultParts(events)
+  const childResults = toolResultParts(childEvents)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const prometheusRequests = requests.filter((request) => request.role === 'prometheus')
+  const persona = childDescriptorPersona(childLog)
+  const denyCall = findToolCall(childEvents, 'write', (args) => args.file_path === denyTargetPath)
+  const plansCall = findToolCall(childEvents, 'write', (args) => args.file_path === plansPath)
+  const draftsCall = findToolCall(childEvents, 'write', (args) => args.file_path === draftsPath)
+  const conductorCall = findToolCall(events, 'write', (args) => args.file_path === conductorTargetPath)
+  const denyResult = toolResultForCall(childResults, denyCall)
+  const plansResult = toolResultForCall(childResults, plansCall)
+  const draftsResult = toolResultForCall(childResults, draftsCall)
+  const conductorResult = toolResultForCall(results, conductorCall)
+  const denyText = denyResult?.text ?? ''
+  const plansText = plansResult?.text ?? ''
+  const draftsText = draftsResult?.text ?? ''
+  const conductorText = conductorResult?.text ?? ''
+  const markerResults = childResults.filter((part) => part.text.includes(PROMETHEUS_MD_ONLY_HOOK_NAME))
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // The child really is a delegation session, and its descriptor really
+    // carries the prometheus persona the gate keyed on.
+    childSessionObserved: childLog !== undefined && prometheusRequests.length >= 1,
+    prometheusPersonaObservable:
+      typeof persona === 'string' && persona.includes('omo-prometheus'),
+    // (a) TRIGGER: the non-.md workspace write was refused with the upstream
+    // reason, and no byte landed.
+    nonMdWriteDeniedByTheGate:
+      denyResult?.isError === true
+      && denyText.startsWith('Error: ')
+      && denyText.includes(`[${PROMETHEUS_MD_ONLY_HOOK_NAME}]`)
+      && denyText.includes('File operations restricted to .omo/*.md plan files only')
+      && denyText.includes(`Attempted to modify: ${denyTargetPath}`),
+    deniedTargetNeverLanded: denyTargetAbsent,
+    gateSpokeExactlyOnce: markerResults.length === 1,
+    // (b) TRIGGER: the allowed `.omo/plans/*.md` write succeeded AND the D half
+    // appended the workflow reminder to its result; the bytes are on disk.
+    plansWriteAllowed: plansResult !== undefined && plansResult.isError !== true && plansLandedOnDisk,
+    workflowReminderAppended: plansText.includes(PROMETHEUS_WORKFLOW_REMINDER.trimStart()),
+    // (c) 对照: `.omo` but NOT `plans/` → allowed and reminder-free.
+    draftsWriteAllowedWithoutReminder:
+      draftsResult !== undefined
+      && draftsResult.isError !== true
+      && draftsLandedOnDisk
+      && !draftsText.includes('PROMETHEUS MANDATORY WORKFLOW REMINDER'),
+    // (d) 对照: the CONDUCTOR's own non-.md write is untouched by the gate.
+    conductorWriteNotAffected:
+      conductorResult !== undefined
+      && conductorResult.isError !== true
+      && conductorLandedOnDisk
+      && !conductorText.includes(PROMETHEUS_MD_ONLY_HOOK_NAME),
+    mockSawBothLanes: sisyphusRequests.length >= 2 && prometheusRequests.length >= 2,
+    bothTurnsCompleted:
+      turnCompleted(events)
+      && childEvents.some(
+        (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+      ),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      personaCarriesPrometheusAnchor: typeof persona === 'string' && persona.includes('omo-prometheus'),
+      denyText,
+      plansTextTail: plansText.slice(-200),
+      draftsTextTail: draftsText.slice(-200),
+      conductorText,
+      promptChildRequestCount: prometheusRequests.length,
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
+// ── fabricated P3-T16 批 C B-mode inputs (must earn their PASS) ──────────────
+// One GOOD fixture per scenario, mirroring the real runtime layout the scenario
+// produces, plus the named defect mutations the self-test applies. The disk
+// facts the prometheus scenario asserts are computed in `analysisInput` for the
+// real run, so here they are plain booleans the mutations can flip.
+
+const FABRICATED_WEBFETCH_FINAL_URL = 'http://127.0.0.1:9/final'
+const FABRICATED_WEBFETCH_REDIRECT_URL = 'http://127.0.0.1:9/redirect-me'
+const FABRICATED_WEBFETCH_PLAIN_URL = 'http://127.0.0.1:9/plain'
+const FABRICATED_WEBFETCH_CONTROL_TEXT =
+  'Error: URL hostname "127.0.0.1" resolves to a non-public IP address'
+
+function fabricatedWebfetchRedirectInput(routes) {
+  const redirectCallId = 'mock-llm-tool-1-0'
+  const plainCallId = 'mock-llm-tool-1-1'
+  const denyReason = `${WEBFETCH_REDIRECT_GUARD_MARKER}: "${FABRICATED_WEBFETCH_REDIRECT_URL}" `
+    + `follows 1 redirect to "${FABRICATED_WEBFETCH_FINAL_URL}". This harness cannot rewrite `
+    + `tool arguments, so re-issue web_fetch with the final URL "${FABRICATED_WEBFETCH_FINAL_URL}" directly.`
+  const log = {
+    path: '/fabricated/webfetch-redirect/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: WEBFETCH_GUARD_PROMPT }] } },
+      fabricatedToolCallEvent(2, redirectCallId, 'web_fetch', { url: FABRICATED_WEBFETCH_REDIRECT_URL }),
+      fabricatedToolCallEvent(3, plainCallId, 'web_fetch', { url: FABRICATED_WEBFETCH_PLAIN_URL }),
+      fabricatedToolResultEvent(4, redirectCallId, `Error: ${denyReason}`, true),
+      fabricatedToolResultEvent(5, plainCallId, FABRICATED_WEBFETCH_CONTROL_TEXT, true),
+      { seq: 6, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: WEBFETCH_GUARD_SUMMARY }] } } },
+      { seq: 7, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+  return {
+    log,
+    allLogs: [log],
+    requests: fabricatedSisyphusRequests(routes).concat([
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 20 },
+    ]),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+    redirectUrl: FABRICATED_WEBFETCH_REDIRECT_URL,
+    finalUrl: FABRICATED_WEBFETCH_FINAL_URL,
+    plainUrl: FABRICATED_WEBFETCH_PLAIN_URL,
+  }
+}
+
+const FABRICATED_PROMETHEUS_PROJECT = '/fabricated/project'
+const FABRICATED_PROMETHEUS_DENY_TARGET = `${FABRICATED_PROMETHEUS_PROJECT}/${PROMETHEUS_DENY_TARGET_REL}`
+const FABRICATED_PROMETHEUS_PLANS_PATH = `${FABRICATED_PROMETHEUS_PROJECT}/${PROMETHEUS_PLANS_REL}`
+const FABRICATED_PROMETHEUS_DRAFTS_PATH = `${FABRICATED_PROMETHEUS_PROJECT}/${PROMETHEUS_DRAFTS_REL}`
+const FABRICATED_PROMETHEUS_CONDUCTOR_PATH = `${FABRICATED_PROMETHEUS_PROJECT}/${PROMETHEUS_CONDUCTOR_REL}`
+const FABRICATED_PROMETHEUS_CHILD_ID = 'session-fabricated-prometheus-child'
+
+function fabricatedPrometheusMdOnlyChildLog() {
+  return {
+    path: `/fabricated/${FABRICATED_PROMETHEUS_CHILD_ID}/session.jsonl`,
+    header: {
+      type: 'session',
+      id: FABRICATED_PROMETHEUS_CHILD_ID,
+      origin: 'subagent',
+      parentSession: FABRICATED_PARENT_ID,
+      delegationDepth: 1,
+    },
+    events: [
+      {
+        seq: 0,
+        type: 'subagent/descriptor',
+        data: {
+          version: 3,
+          mode: 'continuable',
+          provider: 'spawn',
+          label: 'Draft the plan',
+          persona: 'You are **omo-prometheus**, a planning consultant.',
+        },
+      },
+      fabricatedToolCallEvent(1, 'mock-llm-child-tool-1', 'write', {
+        file_path: FABRICATED_PROMETHEUS_DENY_TARGET,
+        content: 'this must never land\n',
+      }),
+      fabricatedToolResultEvent(
+        2,
+        'mock-llm-child-tool-1',
+        `Error: ${buildPrometheusDenyReason(FABRICATED_PROMETHEUS_DENY_TARGET)}`,
+        true,
+      ),
+      fabricatedToolCallEvent(3, 'mock-llm-child-tool-2-0', 'write', {
+        file_path: FABRICATED_PROMETHEUS_PLANS_PATH,
+        content: PROMETHEUS_PLANS_CONTENT,
+      }),
+      fabricatedToolCallEvent(4, 'mock-llm-child-tool-2-1', 'write', {
+        file_path: FABRICATED_PROMETHEUS_DRAFTS_PATH,
+        content: PROMETHEUS_DRAFTS_CONTENT,
+      }),
+      fabricatedToolResultEvent(
+        5,
+        'mock-llm-child-tool-2-0',
+        `wrote ${FABRICATED_PROMETHEUS_PLANS_PATH}${PROMETHEUS_WORKFLOW_REMINDER}`,
+      ),
+      fabricatedToolResultEvent(6, 'mock-llm-child-tool-2-1', `wrote ${FABRICATED_PROMETHEUS_DRAFTS_PATH}`),
+      { seq: 7, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: PROMETHEUS_MD_ONLY_CHILD_SUMMARY }] } } },
+      { seq: 8, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedPrometheusMdOnlyInput(routes) {
+  const childLog = fabricatedPrometheusMdOnlyChildLog()
+  const log = {
+    path: '/fabricated/prometheus/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: PROMETHEUS_MD_ONLY_PROMPT }] } },
+      fabricatedToolCallEvent(2, 'mock-llm-tool-1', 'prometheus', {
+        description: 'Draft the plan',
+        prompt: PROMETHEUS_MD_ONLY_TASK,
+        // BACKGROUND (`continuable`) — mirrors the real script AND the child log
+        // below, whose descriptor is `mode: 'continuable'`: the persona only
+        // exists on the continuable descriptor, so a fabricated FOREGROUND call
+        // would describe a delegation this scenario could never identify.
+        run_in_background: true,
+      }),
+      fabricatedToolResultEvent(
+        3,
+        'mock-llm-tool-1',
+        `started subagent ${FABRICATED_PROMETHEUS_CHILD_ID}\n\n${PROMETHEUS_MD_ONLY_CHILD_SUMMARY}`,
+      ),
+      fabricatedToolCallEvent(4, 'mock-llm-tool-2', 'write', {
+        file_path: FABRICATED_PROMETHEUS_CONDUCTOR_PATH,
+        content: PROMETHEUS_CONDUCTOR_CONTENT,
+      }),
+      fabricatedToolResultEvent(5, 'mock-llm-tool-2', `wrote ${FABRICATED_PROMETHEUS_CONDUCTOR_PATH}`),
+      { seq: 6, type: 'assistant/message', data: { turn: 1, step: 3, message: { content: [{ type: 'text', text: PROMETHEUS_MD_ONLY_SUMMARY }] } } },
+      { seq: 7, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+  return {
+    log,
+    childLog,
+    allLogs: [log, childLog],
+    requests: fabricatedSisyphusRequests(routes).concat([
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 20 },
+      { role: 'prometheus', body: { model: routes.sisyphus.model }, receivedAt: 30 },
+      { role: 'prometheus', body: { model: routes.sisyphus.model }, receivedAt: 40 },
+    ]),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+    denyTargetPath: FABRICATED_PROMETHEUS_DENY_TARGET,
+    plansPath: FABRICATED_PROMETHEUS_PLANS_PATH,
+    draftsPath: FABRICATED_PROMETHEUS_DRAFTS_PATH,
+    conductorTargetPath: FABRICATED_PROMETHEUS_CONDUCTOR_PATH,
+    denyTargetAbsent: true,
+    plansLandedOnDisk: true,
+    draftsLandedOnDisk: true,
+    conductorLandedOnDisk: true,
+  }
+}
+
+// P3-T16 adds `setup(sandbox)`: an async hook that runs BEFORE the mock server
+// starts and whose return value rides into `script(sandbox, setup)` and
+// `analysisInput(sandbox, setup)` (and is closed in runScenario's `finally`).
+// The webfetch scenario needs it because its redirect fixture lives on an
+// ephemeral loopback port that only exists once the server is listening, while
+// the mock script's tool arguments must name that exact URL.
 
 const SCENARIOS = [
   {
@@ -8043,6 +8851,43 @@ const SCENARIOS = [
     analyze: analyzeTaskResumeInfoAppended,
   },
   {
+    // P3-T16 (H-24; plan §4.2 模式 B pilot + D): the B-mode deny. ONE batch holds
+    // the trigger (a loopback 302 → `/final`) and the 对照 (a 200 `/plain`), so
+    // the deny decision and the pass-through are observed in the same step. See
+    // the P3-T16 section header for the control's measured downstream fate.
+    name: 'webfetch-redirect-denied',
+    prompt: WEBFETCH_GUARD_PROMPT,
+    roles: ['sisyphus'],
+    setup: () => startWebfetchRedirectFixture(),
+    script: webfetchRedirectScript,
+    analysisInput: (sandbox, redirect) => ({
+      redirectUrl: redirect.redirectUrl,
+      finalUrl: redirect.finalUrl,
+      plainUrl: redirect.plainUrl,
+    }),
+    analyze: analyzeWebfetchRedirectDenied,
+  },
+  {
+    // P3-T16 (H-26; plan §4.2 模式 B + D): the prometheus identity gate. The
+    // child is a REAL delegation (its descriptor persona is the identity
+    // surface), it is given `write` back by a SANDBOX-ONLY preset edit (the
+    // shipped row is read-only), and the scenario asserts the deny, the
+    // `.omo/plans/` reminder and the two 对照 (a non-plans `.omo` write, and the
+    // conductor's own write). See the P3-T16 section header.
+    name: 'prometheus-md-only-denied',
+    prompt: PROMETHEUS_MD_ONLY_PROMPT,
+    roles: ['sisyphus', 'prometheus'],
+    seed: (sandbox) => {
+      mkdirSync(join(sandbox.project, PROMETHEUS_PLANS_DIR), { recursive: true })
+      mkdirSync(join(sandbox.project, PROMETHEUS_DRAFTS_DIR), { recursive: true })
+    },
+    augmentMaterialized: enablePrometheusWriteTools,
+    script: prometheusMdOnlyScript,
+    settle: (boot, sandbox, sessionId) => awaitPrometheusChildCompletion(boot, sandbox, sessionId),
+    analysisInput: (sandbox) => prometheusDiskFacts(sandbox),
+    analyze: analyzePrometheusMdOnlyDenied,
+  },
+  {
     // AC-6a (T20): the explore child hallucinates a write; the T12 deny
     // rejects it verbatim and no bytes land on disk.
     name: 'explore-write-denied',
@@ -8134,7 +8979,14 @@ async function runScenario(def, baseRoutes) {
   // can never disagree about a seat.
   const env = scenarioEnv(sandbox, def.env)
   const routes = def.env === undefined ? baseRoutes : resolveModelRoutes(env)
-  const server = await startMockLlmServer({ script: def.script(sandbox) })
+  // P3-T16 (the webfetch-redirect-denied scenario): a scenario may need a
+  // PROCESS-LOCAL HTTP fixture whose ephemeral PORT exists only after it is
+  // listening, and the mock script's tool arguments must name that URL. `setup`
+  // therefore runs BEFORE the mock server starts and its return value is handed
+  // to `script`/`analysisInput` and closed in the `finally` below. Scenarios
+  // without `setup` are unchanged (the parameter is undefined).
+  const setup = def.setup === undefined ? undefined : await def.setup(sandbox)
+  const server = await startMockLlmServer({ script: def.script(sandbox, setup) })
   let child
   let scenario = { name: def.name, result: 'FAIL', failed: ['driver did not complete'] }
   try {
@@ -8220,7 +9072,7 @@ async function runScenario(def, baseRoutes) {
         providersJson,
         bootLog: boot.log(),
         markerLanding,
-        ...(def.analysisInput?.(sandbox) ?? {}),
+        ...(def.analysisInput?.(sandbox, setup) ?? {}),
       },
       routes,
     )
@@ -8247,6 +9099,7 @@ async function runScenario(def, baseRoutes) {
   } finally {
     if (child !== undefined) await stopDsh(child)
     await server.close()
+    if (typeof setup?.close === 'function') await setup.close()
   }
   return { scenario, sandboxRoot: sandbox.root }
 }
@@ -8327,7 +9180,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-redirect-denied + prometheus-md-only-denied fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: no-deny-on-the-redirecting-call, deny-names-a-different-final-url, denied-non-redirecting-control, control-never-reached-the-provider, guard-spoke-twice, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

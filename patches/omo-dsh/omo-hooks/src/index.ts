@@ -24,20 +24,21 @@
 // P3-T2 delivered the package shape + manifest.ts; P3-T3 mounts it; P3-T5 landed
 // the first implementation; P3-T7 landed the P1 todo/goal executor pair; P3-T12
 // landed the P3 session-notification family; P3-T14 landed the WP-6 批 A D-mode
-// trio; P3-T15 (this revision) lands the 批 B injection/reminder trio. apply()
-// validates the manifest, logs the summary boot marker, and runs the per-hook
-// registration loop; the loop's implementation registry (HOOK_REGISTRARS) now
-// carries ELEVEN entries — 'bash-file-read-guard' (the C-mode pilot),
-// 'todo-continuation-enforcer' (E mode), 'empty-task-response-detector' (D mode),
-// 'session-notification' (F mode, the completion/error observer + the platform
-// backend abstraction), 'background-notification' (F mode, the
-// `ctx.jobs.onJobDone` observer that REUSES session-notification's
-// NotifierBackend), the P3-T14 D-mode trio 'edit-error-recovery' /
-// 'json-error-recovery' / 'tool-output-truncator', and the P3-T15 批 B trio
-// 'directory-readme-injector' / 'agent-usage-reminder' / 'task-resume-info' — so
-// exactly eleven `registered` lines are logged after the summary. The remaining 3
-// rows are filled by the WP-6 batches (T16/T17); nothing else in this file
-// changes when a row lands.
+// trio; P3-T15 landed the 批 B injection/reminder trio; P3-T16 (this revision)
+// lands the 批 C **B-mode pair**. apply() validates the manifest, logs the
+// summary boot marker, and runs the per-hook registration loop; the loop's
+// implementation registry (HOOK_REGISTRARS) now carries THIRTEEN entries —
+// 'bash-file-read-guard' (the C-mode pilot), 'todo-continuation-enforcer'
+// (E mode), 'empty-task-response-detector' (D mode), 'session-notification'
+// (F mode, the completion/error observer + the platform backend abstraction),
+// 'background-notification' (F mode, the `ctx.jobs.onJobDone` observer that
+// REUSES session-notification's NotifierBackend), the P3-T14 D-mode trio
+// 'edit-error-recovery' / 'json-error-recovery' / 'tool-output-truncator', the
+// P3-T15 批 B trio 'directory-readme-injector' / 'agent-usage-reminder' /
+// 'task-resume-info', and the P3-T16 批 C B+D pair 'webfetch-redirect-guard' /
+// 'prometheus-md-only' — so exactly thirteen `registered` lines are logged after
+// the summary. The remaining 1 row (H-32 'ulw-execute') is filled by T17;
+// nothing else in this file changes when a row lands.
 //
 // Note the roster is 14 entries, not 15: P3-T5's other half is the WP-2
 // arbitration that REMOVED H-01 (write-existing-file-guard) from the port group
@@ -56,12 +57,13 @@
 //       from the plugin's own modules, so it cannot drift).
 //   * `[omo-hooks] hook <id> registered on <event>`
 //     — one line per hook whose registrar is implemented AND returned cleanly.
-//       ELEVEN such lines today ('bash-file-read-guard',
+//       THIRTEEN such lines today ('bash-file-read-guard',
 //       'todo-continuation-enforcer', 'empty-task-response-detector',
 //       'session-notification', 'background-notification',
 //       'edit-error-recovery', 'json-error-recovery',
 //       'tool-output-truncator', 'directory-readme-injector',
-//       'agent-usage-reminder', 'task-resume-info'); T16/T17 add the rest.
+//       'agent-usage-reminder', 'task-resume-info',
+//       'webfetch-redirect-guard', 'prometheus-md-only'); T17 adds the last one.
 //       NOTE (P3-T12): the event in this line is the manifest's PRIMARY event,
 //       which for 'background-notification' is `session/event` — and that row's
 //       registrar DOES register it (its push half additionally subscribes to
@@ -123,6 +125,8 @@ import { registerToolOutputTruncator } from './hooks/tool-output-truncator.ts'
 import { registerDirectoryReadmeInjector } from './hooks/directory-readme-injector.ts'
 import { registerAgentUsageReminder } from './hooks/agent-usage-reminder.ts'
 import { registerTaskResumeInfo } from './hooks/task-resume-info.ts'
+import { registerWebfetchRedirectGuard } from './hooks/webfetch-redirect-guard.ts'
+import { registerPrometheusMdOnly } from './hooks/prometheus-md-only.ts'
 
 export const name = 'omo-hooks'
 
@@ -294,16 +298,43 @@ export type HookRegistrar = (
  *   'task-resume-info': registerTaskResumeInfo (hooks/task-resume-info.ts) — the
  *     ONE-surface case: upstream registered one surface too, and the module is
  *     stateless (the 前置 conclusion in its header).
+ * P3-T16 added the LAST TWO — the 批 C B+D pair. Both are the first rows whose
+ * PRIMARY surface is `tools/pre-execute` (mode B), and both additionally own
+ * their D half on `tools/post-execute` (index discipline ④):
+ *   'webfetch-redirect-guard': registerWebfetchRedirectGuard
+ *     (hooks/webfetch-redirect-guard.ts) — the B-mode pilot: pre-resolves a
+ *     `web_fetch` URL's redirect chain and DENIES with the final URL in the
+ *     reason (DSH has no argument-rewrite seam); the D half normalizes a
+ *     redirect-block error result. Its pre/post pairing is a WeakMap keyed by
+ *     the live execution object.
+ *   'prometheus-md-only': registerPrometheusMdOnly (hooks/prometheus-md-only.ts)
+ *     — denies a non-`.omo/*.md` `write`/`edit` from the prometheus child
+ *     (identity from the child's own durable `subagent/descriptor` persona) and
+ *     appends the workflow reminder to an allowed `.omo/plans/*.md` write's
+ *     result; ALSO registers `session/disposed` to reset its identity cache.
  *
- * COMPOSITION-ORDER SEMANTICS — THE WATERFALL IS ORDER-SENSITIVE, AND ONE PAIR
- * SHORT-CIRCUITS (P3-T15 review MINOR-3; arbitrated: REGISTER, do not chain-merge).
- * Every row above registers on `tools/post-execute` through `ctx.on`, so the
- * listeners run in ROSTER ORDER (the order of the keys below / of HOOK_MANIFEST),
- * and cordis' waterfall ends the chain at the first listener that returns WITHOUT
- * calling `next()` (cordis/lib/index.js:317-325: callbacks are shifted in
- * registration order; the decision replaces the result, so the remaining listeners
- * never see it). Exactly one ordered pair therefore carries a composed effect:
- *   'tool-output-truncator' (row 8) → 'agent-usage-reminder' (row 10).
+ * COMPOSITION-ORDER SEMANTICS — THE WATERFALL IS ORDER-SENSITIVE, AND THE
+ * EXAMINED PAIRS ARE REGISTERED ONE BY ONE (P3-T15 review MINOR-3 + the ROUND-2
+ * finding; arbitrated: REGISTER, do not chain-merge). Every row above registers
+ * on `tools/post-execute` through `ctx.on` (except `todo-continuation-enforcer`,
+ * row 2, which registers on `agent/turn-stopping`, and the two notification rows,
+ * which never touch this waterfall), so those listeners run in ROSTER ORDER (the
+ * order of the keys below / of HOOK_MANIFEST), and cordis' waterfall ends the
+ * chain at the first listener that returns WITHOUT calling `next()`
+ * (cordis/lib/index.js:317-325: callbacks are shifted in registration order; the
+ * decision replaces the result, so the remaining listeners never see it).
+ *
+ * Every ordered pair whose two members' TOOL GATES can both admit ONE call has
+ * been examined one by one, and the verdicts are registered below — so "no other
+ * pair matters" is a CHECKED statement rather than an inference from this note's
+ * length (the P3-T16 review asked for exactly that). Of those pairs exactly ONE
+ * carries a composed effect; the rest are named with the reason they cannot.
+ * Pairs with DISJOINT tool gates are vacuums by construction and are not
+ * enumerated (e.g. 'bash-file-read-guard' sees only `bash`, which every other row
+ * excludes; 'directory-readme-injector' sees only `read`; the two notification
+ * rows never touch this waterfall). The post-execute order is rows 1, 3, 6, 7, 8,
+ * 9, 10, 11, 12, 13.
+ *   [COMPOSED] 'tool-output-truncator' (row 8) → 'agent-usage-reminder' (row 10).
  *     TRUNCATABLE_TOOLS = {grep, glob, web_fetch} is a SUBSET of the reminder's
  *     TARGET_TOOLS = {grep, glob, web_fetch, web_search}, and the truncator returns
  *     its accept decision without `next()` when a result is over the adaptive
@@ -317,17 +348,75 @@ export type HookRegistrar = (
  *     pinned implicitly by this key order and explicitly by the registration unit
  *     suite, and no chain-merge (truncator → `next()` → re-bound downstream) is
  *     introduced.
- *   The complementary ordered pair 'empty-task-response-detector' (row 3) →
- *   'task-resume-info' (row 11) was CHECKED and has NO behavioral interaction: the
- *   detector also ends the chain without `next()`, but only when the rendered text
- *   is EMPTY, while every render the resume tip triggers on (`continuable` /
- *   `foreground`) is non-empty by construction. It is recorded as a vacuum here so
- *   the negative result is not mistaken for an unexamined gap.
+ *   [VACUUM] 'empty-task-response-detector' (row 3) → 'task-resume-info' (row 11).
+ *     The detector also ends the chain without `next()`, but only when the rendered
+ *     text is EMPTY, while the resume tip fires only on a `continuable` render,
+ *     which is the runtime-minted `started subagent <id>` line and therefore
+ *     non-empty by construction. (The wording here is deliberately narrower than
+ *     the P3-T15 revision's: the tip's gate recognizes `background` and
+ *     `foreground` too but emits NOTHING for them — see
+ *     hooks/task-resume-info.ts's REGISTERED ASSUMPTION section — so
+ *     `continuable` is the ONLY render this pair could ever contend on.)
+ *   [VACUUM] 'empty-task-response-detector' (row 3) → 'agent-usage-reminder'
+ *     (row 10). Registered because the two rows are the chain's two earliest
+ *     short-circuiting listeners and the review asked for this pair by name. The
+ *     detector's tool gate is the DELEGATION tool-name set
+ *     (empty-task-response-detector.ts {@link ROSTER_DELEGATION_TOOL_NAMES} +
+ *     the two base `subagent` names) while the reminder's TARGET_TOOLS is
+ *     `{grep, glob, web_fetch, web_search}` — DISJOINT sets, so no single call
+ *     can be seen by both. The vacuum is by tool gate, not by text non-emptiness.
+ *   [VACUUM] 'tool-output-truncator' (row 8) → 'webfetch-redirect-guard' D half
+ *     (row 12). `web_fetch` IS in TRUNCATABLE_TOOLS, so an over-limit web_fetch
+ *     result WOULD preempt the guard's normalization — but the guard's D half
+ *     only acts on an ERROR result whose text matches a redirect-block pattern,
+ *     i.e. a short structured message, which the truncator leaves untouched
+ *     (`truncated === false` → it calls `next()`). Bounded and registered.
+ *   [PREEMPTION, ACCEPTED] 'agent-usage-reminder' (row 10) → 'webfetch-redirect-guard'
+ *     D half (row 12). `web_fetch` IS a reminder TARGET_TOOL, and the reminder
+ *     appends to EVERY target-tool result (it does not gate on `isError`) while
+ *     the session is orchestrator-capable, has not delegated and is under
+ *     MAX_REMINDERS. So while those three conditions hold, a `web_fetch` ERROR
+ *     result takes the reminder's accept decision and the guard's D half never
+ *     sees it (the reminder's append is content-preserving, so the native error
+ *     text survives; only the NORMALIZATION is lost). Consequence, recorded
+ *     rather than hidden: on the shipped composition the guard's D half is
+ *     reachable once the reminder has stopped firing (cap reached / a delegation
+ *     happened / a non-delegating agent), and the B half — the half that matters,
+ *     and the one the e2e drives — is on a DIFFERENT waterfall (`tools/pre-execute`)
+ *     and is not affected at all. ACCEPTED as known composition semantics; no
+ *     chain-merge is introduced.
+ *   [PREEMPTION, ACCEPTED — a T14-ERA PAIR, registered here for completeness]
+ *     'edit-error-recovery' (row 6) → 'json-error-recovery' (row 7): both rows can
+ *     admit an `edit` result (row 7's blacklist excludes `web_fetch`/`web_search`/
+ *     `read`/`read_image`/`glob`/`grep`/`bash`/`pwsh`/`todo_write`/the twelve
+ *     delegation names, but NOT `edit` or `write`), and row 6 runs first. An edit
+ *     result that matched BOTH tables would therefore be rewritten by row 6 alone.
+ *     The two tables are worded for different mistakes (edit-string vs JSON parse),
+ *     so a simultaneous match needs a contrived text; the direction is benign
+ *     (both append a reminder) and neither replaces the other's diagnostic.
+ *     ACCEPTED as known composition semantics; no chain-merge.
+ *   [VACUUM] 'empty-task-response-detector' (row 3) → 'json-error-recovery'
+ *     (row 7): the two TOOL gates are DISJOINT outright — row 7's blacklist
+ *     spreads `DELEGATION_TOOL_NAMES` (json-error-recovery.ts:148/:198), which is
+ *     exactly the twelve names row 3 inspects, the two base `subagent`/`subagent_fork`
+ *     tools included (empty-task-response-detector.ts:132/:135-138), so it excludes
+ *     all of them. The vacuum is therefore by tool gate, not by the content gates
+ *     (row 3 requiring an empty render vs row 7 returning early on one).
+ *   [PREEMPTION, ACCEPTED] 'prometheus-md-only' D half (row 13) is downstream of
+ *     BOTH earlier D-mode rewriters for an `edit` result whose text matches their
+ *     tables: 'edit-error-recovery' (row 6, `edit`-only) and 'json-error-recovery'
+ *     (row 7, which excludes `web_fetch`/`web_search`/`read`/… but NOT `edit` or
+ *     `write`). A `write` result can only be preempted by row 7. Direction is
+ *     benign (both appends preserve the reminder-worthy text and keep the result
+ *     an isError where it was one), and the reminder is re-deliverable on the next
+ *     plan write. ACCEPTED; no chain-merge.
+ *   [VACUUM] within `tools/pre-execute` there is no pair at all: only these two
+ *     rows register there, and their tool gates (`web_fetch` vs
+ *     `write`/`edit`) are disjoint.
  *
- * TODO(P3-T16+): add one entry per remaining ported hook, the same way —
- *   'webfetch-redirect-guard': registerWebfetchRedirectGuard, ...
- * one task per hook, keeping disciplines ①–④ above. Nothing else in this file
- * needs to change when a row lands.
+ * TODO(P3-T17): add H-32 `ulw-execute`, the same way — one entry here plus the
+ *   registrar import above, keeping disciplines ①–④. Nothing else in this file
+ *   needs to change when a row lands.
  */
 export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'bash-file-read-guard': registerBashFileReadGuard,
@@ -341,6 +430,8 @@ export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'directory-readme-injector': registerDirectoryReadmeInjector,
   'agent-usage-reminder': registerAgentUsageReminder,
   'task-resume-info': registerTaskResumeInfo,
+  'webfetch-redirect-guard': registerWebfetchRedirectGuard,
+  'prometheus-md-only': registerPrometheusMdOnly,
 }
 
 /**

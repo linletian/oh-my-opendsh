@@ -321,11 +321,11 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     vi.restoreAllMocks()
   })
 
-  it('① mounts with the real registry: summary + the eleven registered listeners', () => {
+  it('① mounts with the real registry: summary + the thirteen registered listeners', () => {
     // P3-T12 filled the registry with the F-mode notification pair, P3-T14 with
-    // the 批 A D-mode trio and P3-T15 with the 批 B trio, so a real boot logs the
-    // summary line AND eleven `registered` lines, and wires the listeners in
-    // roster order.
+    // the 批 A D-mode trio, P3-T15 with the 批 B trio and P3-T16 with the 批 C
+    // B+D pair, so a real boot logs the summary line AND thirteen `registered`
+    // lines, and wires the listeners in roster order.
     // 'session-notification' registers TWO surfaces (its primary manifest event
     // plus the auxiliary `agent/status`), which is why the onCalls list below is
     // longer than the registered-line list.
@@ -353,6 +353,8 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook directory-readme-injector registered on tools/post-execute',
       '[omo-hooks] hook agent-usage-reminder registered on tools/post-execute',
       '[omo-hooks] hook task-resume-info registered on tools/post-execute',
+      '[omo-hooks] hook webfetch-redirect-guard registered on tools/pre-execute',
+      '[omo-hooks] hook prometheus-md-only registered on tools/pre-execute',
     ])
     expect(onCalls.map((call) => call.event)).toEqual([
       'tools/post-execute',
@@ -375,6 +377,16 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       'session/disposed',
       // P3-T15: 'task-resume-info' is the ONE-surface case (upstream too).
       'tools/post-execute',
+      // P3-T16: 'webfetch-redirect-guard' is the B-mode pilot — its PRIMARY
+      // surface is tools/pre-execute (the deny gate) and it ALSO owns the
+      // tools/post-execute D half (index.ts discipline ④).
+      'tools/pre-execute',
+      'tools/post-execute',
+      // P3-T16: 'prometheus-md-only' has the same B+D shape, plus the
+      // session/disposed reset for its identity cache.
+      'tools/pre-execute',
+      'tools/post-execute',
+      'session/disposed',
     ])
   })
 
@@ -382,13 +394,14 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     // apply() has no injection seam on purpose (it is the one-argument cordis
     // entry point), so this test saves/restores a real registry entry around the
     // call instead of leaking a permanent fake into sibling tests. The other
-    // ten real entries stay in place, so the expected log carries all eleven
-    // registered lines in roster order (bash-file-read-guard is row 1,
+    // twelve real entries stay in place, so the expected log carries all
+    // thirteen registered lines in roster order (bash-file-read-guard is row 1,
     // todo-continuation-enforcer row 2, empty-task-response-detector row 3,
     // session-notification row 4, background-notification row 5,
     // edit-error-recovery row 6, json-error-recovery row 7,
     // tool-output-truncator row 8, directory-readme-injector row 9,
-    // agent-usage-reminder row 10, task-resume-info row 11).
+    // agent-usage-reminder row 10, task-resume-info row 11,
+    // webfetch-redirect-guard row 12, prometheus-md-only row 13).
     const id = 'todo-continuation-enforcer'
     expect(HOOK_IDS).toContain(id)
     const previous = HOOK_REGISTRARS[id]
@@ -419,6 +432,11 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       'tools/post-execute',
       'session/disposed',
       'tools/post-execute',
+      'tools/pre-execute',
+      'tools/post-execute',
+      'tools/pre-execute',
+      'tools/post-execute',
+      'session/disposed',
     ])
     expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
       EXPECTED_SUMMARY_LINE,
@@ -436,6 +454,8 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook directory-readme-injector registered on tools/post-execute',
       '[omo-hooks] hook agent-usage-reminder registered on tools/post-execute',
       '[omo-hooks] hook task-resume-info registered on tools/post-execute',
+      '[omo-hooks] hook webfetch-redirect-guard registered on tools/pre-execute',
+      '[omo-hooks] hook prometheus-md-only registered on tools/pre-execute',
     ])
   })
 

@@ -150,13 +150,14 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     expect([...manifestModeSet]).toEqual([...MANIFEST_MODES])
   })
 
-  it('exactly eight rows are ported after P3-T15 (H-02, H-07, H-14, H-15, H-16, H-21, H-22, H-23)', () => {
+  it('exactly ten rows are ported after P3-T16 (H-02, H-07, H-14, H-15, H-16, H-21, H-22, H-23, H-24, H-26)', () => {
     // P3-T7 flipped H-02 after the WP-2 仲裁 accepted the T6 e2e (scenario
     // `bash-read-guard-warned`); P3-T14 flipped the D-mode group — H-07 (the
     // e2e the P3-T9 arbitration moved into T14) plus 批 A's H-14/H-15/H-16;
-    // P3-T15 flipped 批 B's H-21/H-22/H-23 (each with listener + unit test + the
-    // scenario its row names). The hard-coded split is the point: a row silently
-    // flipping would let a not-yet-e2e-proven hook look shipped.
+    // P3-T15 flipped 批 B's H-21/H-22/H-23; P3-T16 flipped 批 C's B+D pair
+    // H-24/H-26 (each with listener + unit test + the scenario its row names).
+    // The hard-coded split is the point: a row silently flipping would let a
+    // not-yet-e2e-proven hook look shipped.
     //
     // The F pair (H-10/H-11) is deliberately NOT in this list even though
     // P3-T12/P3-T13 landed its listeners, unit tests and e2e scenarios — the
@@ -164,7 +165,7 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     // as an open item rather than performed silently here. P3-T15 re-confirmed
     // that open item and did NOT flip them either (it is outside this task's
     // DoD; the report records it again).
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending').length).toBe(6)
+    expect(hooksByStatus(HOOK_MANIFEST, 'pending').length).toBe(4)
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
       'empty-task-response-detector',
@@ -174,6 +175,8 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
       'directory-readme-injector',
       'agent-usage-reminder',
       'task-resume-info',
+      'webfetch-redirect-guard',
+      'prometheus-md-only',
     ])
   })
 })
@@ -412,9 +415,9 @@ describe('P3-T2 derived helpers', () => {
   })
 
   it('⑤ hooksByStatus filters by status and matches nothing for an empty status', () => {
-    // P3-T7 flipped H-02, P3-T14 the D-mode group and P3-T15 批 B, so the pending
-    // list is the id list minus exactly those eight rows — a hard-coded
-    // difference, not a length, so a wrong row cannot pass.
+    // P3-T7 flipped H-02, P3-T14 the D-mode group, P3-T15 批 B and P3-T16 批 C,
+    // so the pending list is the id list minus exactly those ten rows — a
+    // hard-coded difference, not a length, so a wrong row cannot pass.
     const ported = new Set([
       'bash-file-read-guard',
       'empty-task-response-detector',
@@ -424,6 +427,8 @@ describe('P3-T2 derived helpers', () => {
       'directory-readme-injector',
       'agent-usage-reminder',
       'task-resume-info',
+      'webfetch-redirect-guard',
+      'prometheus-md-only',
     ])
     const pending = hooksByStatus(HOOK_MANIFEST, 'pending')
     expect(pending.map((row) => row.id)).toEqual(
@@ -438,6 +443,8 @@ describe('P3-T2 derived helpers', () => {
       'directory-readme-injector',
       'agent-usage-reminder',
       'task-resume-info',
+      'webfetch-redirect-guard',
+      'prometheus-md-only',
     ])
     expect(hooksByStatus(HOOK_MANIFEST, '')).toEqual([])
     expect(hooksByStatus([], 'pending')).toEqual([])
