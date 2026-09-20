@@ -38,7 +38,7 @@
 //      `{}`");
 //   2. the tool's own schema walk then rejects a non-object root:
 //      `checkValue` object branch → `"arguments" must be an object`
-//      (dsh-tools/lib/index.js:423 + diagnosticPath :348-350), thrown as
+//      (dsh-tools/lib/index.js:449 + diagnosticPath :348-350), thrown as
 //      `ToolArgsError` → message `invalid arguments: <violations>`
 //      (dsh-tools/lib/index.js:812-818) → rendered `Error: invalid arguments:
 //      "arguments" must be an object` by `toolErrorResult` (:3490-3502).
@@ -228,9 +228,12 @@ export const UPSTREAM_JSON_ERROR_PATTERNS: readonly RegExp[] = [
  * DSH's own malformed-arguments path:
  *   1. `invalid arguments: "arguments" must be an object`
  *      dsh-agent-loop/lib/index.js:541-547 (raw invalid JSON preserved as text)
- *      × dsh-tools/lib/index.js:423 + :812-818 (a non-object root violation).
+ *      × dsh-tools/lib/index.js:449 + :812-818 (a non-object root violation).
  *   2. `"arguments" must be a lossless JSON object` / `… must be a lossless JSON
  *      value` — dsh-tools/lib/index.js:423/:443, the lossless-value violations.
+ *      (NIT P3-T15: this `:423` is the LOSSLESS-object branch — a DIFFERENT
+ *      string from item 1's non-object branch, which `case "object"` emits at
+ *      `:449`. Each citation now names its own branch.)
  *   3. `tool arguments must be lossless JSON: …` / `tool arguments must be
  *      lossless JSON (call the tool with an arguments object, e.g. `{}`)` —
  *      dsh-tools/lib/index.js:967-969, the `run_code`/PTC binding path.

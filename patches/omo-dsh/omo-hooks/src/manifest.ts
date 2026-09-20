@@ -384,8 +384,9 @@ const MANIFEST_ROWS = [
   // H-15 — phase3-hooks.md §1 P4 行（批 A）。含幂等哨兵 + 19 项排除表。
   // 前置（T14 实施期，**已闭合，结论双半**）：① 上游 8 条正则**全部不命中**
   // DSH 自身参数解析失败文案（DSH 的失败文本是 `invalid arguments: "arguments"
-  // must be an object`，dsh-agent-loop:541-547 保留非法 JSON 原文 + dsh-tools:423
-  // /:812-818 根值类型违例；全文无 "json" 字样），故 live 表 = 上游 8 条（逐字
+  // must be an object`，dsh-agent-loop:541-547 保留非法 JSON 原文 + dsh-tools:449
+  // /:812-818 根值类型违例（NIT P3-T15：:449 是 `case "object"` 的非对象分支，
+  // :423 是 lossless-object 分支，两者不同串）；全文无 "json" 字样），故 live 表 = 上游 8 条（逐字
   // 保留，provider/MCP 原文仍可能出现）+ 3 条 DSH 原生签名；② 19 项排除表按 DSH
   // 工具名空间重建：13 项映射、6 项无对应剔除（映射表与依据记在 listener 头部）。
   {
@@ -514,7 +515,24 @@ const MANIFEST_ROWS = [
     summary:
       '读文件后把所在目录链 README 注入工具输出（上游 tool.execute.after 追加）；与 dsh-agent-instructions 无重叠（其候选名不含 README）',
     e2eScenario: 'directory-readme-injected',
-    status: 'pending',
+    // P3-T15: flipped 'pending' → 'ported' (listener + unit test + the
+    // `directory-readme-injected` scenario all landed). 实测要点记在 listener 头部：
+    // ① 边界（H-21）实证 dsh-agent-instructions/lib/index.js:17-20 候选名 =
+    //    AGENTS.md/CLAUDE.md + AGENTS.local.md/CLAUDE.local.md，无 README，无重叠；
+    // ② D-mode 落点取 accept + content 替换（同批 A 三模块；`+=` 的等价物），
+    //    非 additionalContexts；③ 走链 root = session.header.cwd（上游
+    //    `ctx.directory` 的 DSH 等价物）；④ 去重键 = README 所在**目录**（上游
+    //    injector.ts:48-49 语义，按 finder.ts 逐字复核）；⑤ 截断复用姊妹模块
+    //    tool-output-truncator 的算法（同一上游 shared/dynamic-truncator.ts），
+    //    预算默认 50 000 token / preserveHeaderLines 3；
+    //    ⑥ 生命周期 = session/disposed（上游 session.deleted）+ session/event 的成功
+    //    `compaction/end`（上游 session.compacted）；⑦ 未移植：上游磁盘
+    //    injected-paths 存储（重启后首读会再注入一次，记降级）；⑧ 已仲裁（P3-T15）：
+    //    `compaction/prune`（preset 挂了 tool-result-pruner）是 log-only 计量事件、
+    //    不带 compaction/end，若它剪掉注入文本则目录集合仍武装、同目录下次 read 不再
+    //    注入，待后续某次成功 `compaction/end` 清空集合后恢复——影响有界，接受；
+    //    不追加 prune 触发（详见 listener 头部 KNOWN COMPOSITION SEMANTICS 段）。
+    status: 'ported',
   },
   // H-22 — phase3-hooks.md §1 P4 行（批 B）。注入文本 apply 时一次构建
   // （计划书 §4.2 纪律④）。
@@ -536,7 +554,20 @@ const MANIFEST_ROWS = [
     summary:
       '工具结果尾部追加 agent 使用提醒（上游 output.output += REMINDER_MESSAGE）',
     e2eScenario: 'agent-usage-reminder-appended',
-    status: 'pending',
+    // P3-T15: flipped 'pending' → 'ported'. 实测要点记在 listener 头部：
+    // ① 触发条件逐字对照上游 hook.ts:80-112 的顺序（orchestrator 门 → 委派工具
+    //    置 agentUsed → TARGET_TOOLS 门 → 上限/已用门 → 追加）；MAX_REMINDERS=3；
+    // ② orchestrator 门按 DSH 现实改写为「该 agent scope 是否看得见任一委派工具」
+    //    （tools.get(name, exec.agent)；机制已由 scripts/prove-explore-toolfilter.mjs
+    //    与 tests/omo-agents/roster-toolfilter-mechanism.test.ts:233-235 实证），
+    //    因为 DSH 不落 roster 座位名（子会话 agentPreset 与父相同）；未知能力时
+    //    按上游 unknown-agent 语义放行；③ TARGET_TOOLS 10 项 → DSH 4 项
+    //    (grep/glob/web_fetch/web_search)，AGENT_TOOLS 2 项 → DSH 委派面 12 项；
+    // ④ 提醒文案 5 处改写（OMO `task(...)` 签名 → DSH 名册工具 + description/prompt），
+    //    上游原文逐字保留为 UPSTREAM_REMINDER_MESSAGE 审计；⑤ 状态 = WeakMap keyed
+    //    session 对象（纪律⑤），session/disposed 重置；compaction **不**重置（上游
+    //    测试钉死）；磁盘半未移植（记降级）。
+    status: 'ported',
   },
   // H-23 — phase3-hooks.md §1 P4 行（批 B）。前置（实施期答）：是否依赖 OMO
   // task 工具族语义，若是则按 DoD-d 改判跳过并记录（覆盖基线 H-23）。
@@ -552,7 +583,17 @@ const MANIFEST_ROWS = [
     summary:
       '工具结果追加任务恢复信息；前置：是否依赖 OMO task 工具族语义，若是则改判跳过（DoD-d）',
     e2eScenario: 'task-resume-info-appended',
-    status: 'pending',
+    // P3-T15 前置**已闭合，结论：独立成立 → 移植**（不改判跳过）。逐字证据记在
+    // listener 头部：上游 3 文件全部依赖面 = hook.ts:1 的唯一 import
+    // `extractTaskLink`（纯解析器，task-metadata-contract.ts:115-143，不调用任何
+    // task 工具/存储）+ hook.ts:3 的工具**名**列表 + hook.ts:19-21 的提示串。
+    // 即依赖的是「(a) 返回可续作子会话的工具名 + (b) 如何续作」，DSH 两者皆有：
+    // subagent 值 `{kind:'continuable', subagentId}`（dsh-tool-subagent:440-486）
+    // → `send_message(agent_id=…, message=…)`（dsh-tool-subagent-control:23）。
+    // 另证：上游 `link.backgroundTaskId` 解析后**从未使用**（hook.ts:16
+    // `taskId ?? sessionId`），故 background/foreground 两种 kind 不产提示 = 上游
+    // 自身判断的等价物，非静默收窄。
+    status: 'ported',
   },
   // H-24 — phase3-hooks.md §1 P4 行（批 C）。**B + D 组合行**：event/mode 记主
   // 决策面（B 落 tools/pre-execute，deny reason 携带最终 URL 指引），D 段

@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **10/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：📋 **11/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
@@ -146,12 +146,12 @@
 - **证据**：2026-09-20 完成（deepseek-flash，1 首轮 + 1 修复轮）。产出：三模块移植（edit-error-recovery：错误串表按 **DSH 实际 edit 失败文案**重建（前置①——上游串对 DSH 文案不命中会成死 hook，差异注记）；json-error-recovery：8 正则 + 幂等哨兵 + 19 项排除表的 DSH 工具名空间映射（剔除项注记）；tool-output-truncator：保 3 头行 + 尾注形态对照上游 token-limit-truncator.ts）+ e2e 三模块场景（触发 + 对照）+ `empty-task-response-corrected` 场景（H-07 并入——空白子代理输出实现空结果；DSH 完全空 completion 会转 EMPTY_RESPONSE（dsh-llm-deepseek:1243）不可用的判定已注记）+ 单测 omo-hooks 计 276（truncator 34）。**重大评审发现（MAJOR-1，仲裁独立核实机理）**：truncator 自适应预算首选 `record.projectedTokens`，但 `sessionProjections.stateOf` 返回 **host state**（dsh-session-projection/lib/index.js:127-131，无该字段）——`projectedTokens` 是 dsh-token-meter **wire.view 计算产物**（lib:511-514 `Math.max(0, pressureTokens + surfaceTokens - sampledSurfaceTokens)`）→ 首选分支生产不可达、恒退化 pressureTokens（少估占用、截断不足），且头部/manifest/单测三处同误使现有门结构性不可见。修复：读取面改按 wire.view 公式自算 + **公式等价性钉测**（与 lib:511-514 公式文本一致，上游改公式即红）+ 三处同误修正 + projectedTokens 优先/退化两正向用例；e2e 的 truncator 场景不受影响（mock 路由不宣告容量 → 仍走固定阈值回退，注记诚实）。**双评审**：Kimi 轮1 **REJECT**（MAJOR-1 + MINOR-1 + NIT×2）+ mcode 轮1 超时 → 修复轮 → **Kimi 轮2 APPROVE**（276/276、全量 709/709；1 NIT：json-error-recovery.ts:40 行号引用（:423→:449）——仲裁并入 T15 同族清扫）+ mcode 轮2 遇 MiniMax Token Plan 限额（2067）→ **半小时周期重试第 7 次恢复**（规则④）：**mcode 轮2 APPROVE**（逐项核对闸门序/幂等哨兵/MAJOR-1 读取面/排除表/e2e/三处对位，无 reportable issue；一处排版冗余注记）。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 709。**编码 agent 注记**：① TOOL_OUTPUT_TRUNCATOR_TRUNCATE_ALL 实验开关未接线（registrar 只收 manifest row，模块常量承载与上游默认一致）；② 自适应分支运行时证据缺失（需真实路由宣告容量——e2e 基建增益项）；③ spill-policy 重叠质疑（truncator 与原生 compaction 双层收口）已注记，e2e 实测证实无冲突。
 - **依赖**：P3-T6（模式夹具）。**量级**：5 小时。
 
-### [ ] P3-T15 — 批 B：D 模式注入/提醒类（3 模块）
+### [x] P3-T15 — 批 B：D 模式注入/提醒类（3 模块）
 
 - **产出**：`src/hooks/`：`directory-readme-injector.ts`、`agent-usage-reminder.ts`、`task-resume-info.ts` + 单测 + e2e。
 - **做法**：`directory-readme-injector`（8 文件）注意与 dsh-agent-instructions 的边界（其候选名 = AGENTS.md/CLAUDE.md，不含 README，无重叠——覆盖基线 H-21）；`task-resume-info` **前置**：复核是否依赖 OMO task 工具族语义，若是则按 DoD-d 改判跳过并记录（覆盖基线 H-23）；注入文本类静态内容 apply 时一次构建（纪律④）。
 - **判定**：✅ 每模块单测 + e2e；门 2/3 绿。
-- **证据**：（待填）
+- **证据**：2026-09-20 完成（deepseek-flash，1 首轮 + 1 清扫轮）。产出：三模块移植——① directory-readme-injector（finder 目录链上溯/去重/缓存失效语义 + injector 结果追加；README 不在 dsh-agent-instructions 候选名的无重叠论证 lib:17-18；读 README.md 自身 ×2 注入的上游后果保留并登记；L1 磁盘持久化未移植注记）；② agent-usage-reminder（触发条件 hook.ts:125-128 对照 + REMINDER_MESSAGE 的 DSH 名册现实改写）；③ task-resume-info（**前置闭环：可独立成立、不实质依赖 OMO task 系统**——foreground 不产提示依赖"dispose 后无可续 id"的登记假设已注记）+ e2e 三场景 + json-error-recovery.ts:40 行号修正（T14 NIT：:423→:449，核 dsh-tools:440-455 实际）+ 单测 omo-hooks 计 338（+3 e2eScenario 钉测）。**双评审**：Kimi 轮1 **APPROVE**（3 MINOR + 5 NIT + 3 质疑）+ mcode 轮1 **APPROVE** → 清扫轮（容忍断言改精确 + conductor-ran-only-the-batch 新 defect、MINOR-3 短路组合语义登记、NIT×5 排版、仲裁注记 3 条）→ **Kimi 轮2 APPROVE**（1 新 MINOR：组合注记 "exactly one" 过度断言/缺 detector(3)→reminder(10) 对登记 + 1 新 NIT 真空注记措辞——注释级，仲裁并入 T16 同族）+ mcode 轮2 遇 MiniMax Token Plan 限额（2067）→ **半小时周期重试第 6 次恢复**（规则④）：**mcode 轮2 APPROVE**（"No reportable issues"）。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 338、self-test OK。**仲裁（Kimi 质疑）**：① compaction/prune 不重新武装 = 已知组合语义（下次 read 时再注入，影响有界，不追加 prune 触发）已注记；② foreground 登记假设已注记（DSH 行为变化时重估）；③ 门 5 checked 52→53 归因核实 = **T2 新增 omo-hooks workspace importer**（本仓自有包 MIT OR SUL-1.0，pass:true violations:[]——DoD-e 计数变化有对应条目，T21 核对表按此口径记录）。**编码 agent 注记**：orchestrator 门对 sisyphus-junior/hephaestus 更窄已登记；session/disposed、compaction/end、background kind 仅单测覆盖（L2）。
 - **依赖**：P3-T6。**量级**：4 小时。
 
 ### [ ] P3-T16 — 批 C：B/D 门类（2 模块）

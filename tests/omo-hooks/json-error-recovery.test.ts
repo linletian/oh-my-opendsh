@@ -81,7 +81,7 @@ const UPSTREAM_PATTERNS_TRANSCRIBED: readonly RegExp[] = [
 
 /**
  * DSH's own malformed-arguments failures, as the pinned install renders them
- * (module header 前置②; dsh-agent-loop:541-547 + dsh-tools:423/:812-818/:967-969
+ * (module header 前置②; dsh-agent-loop:541-547 + dsh-tools:449/:812-818/:967-969
  * + toolErrorResult:3490-3502).
  */
 const DSH_JSON_ERROR_TEXTS: readonly string[] = [

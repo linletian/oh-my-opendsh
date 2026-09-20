@@ -23,19 +23,21 @@
 //
 // P3-T2 delivered the package shape + manifest.ts; P3-T3 mounts it; P3-T5 landed
 // the first implementation; P3-T7 landed the P1 todo/goal executor pair; P3-T12
-// landed the P3 session-notification family; P3-T14 (this revision) lands the
-// WP-6 批 A D-mode trio. apply() validates the manifest, logs the summary boot
-// marker, and runs the per-hook registration loop; the loop's implementation
-// registry (HOOK_REGISTRARS) now carries EIGHT entries — 'bash-file-read-guard'
-// (the C-mode pilot), 'todo-continuation-enforcer' (E mode),
-// 'empty-task-response-detector' (D mode), 'session-notification' (F mode, the
-// completion/error observer + the platform backend abstraction),
-// 'background-notification' (F mode, the `ctx.jobs.onJobDone` observer that
-// REUSES session-notification's NotifierBackend), and the P3-T14 D-mode trio
-// 'edit-error-recovery' / 'json-error-recovery' / 'tool-output-truncator' — so
-// exactly eight `registered` lines are logged after the summary. The remaining 6
-// rows are filled one task at a time by the WP-6 batches (T15+); nothing else in
-// this file changes when a row lands.
+// landed the P3 session-notification family; P3-T14 landed the WP-6 批 A D-mode
+// trio; P3-T15 (this revision) lands the 批 B injection/reminder trio. apply()
+// validates the manifest, logs the summary boot marker, and runs the per-hook
+// registration loop; the loop's implementation registry (HOOK_REGISTRARS) now
+// carries ELEVEN entries — 'bash-file-read-guard' (the C-mode pilot),
+// 'todo-continuation-enforcer' (E mode), 'empty-task-response-detector' (D mode),
+// 'session-notification' (F mode, the completion/error observer + the platform
+// backend abstraction), 'background-notification' (F mode, the
+// `ctx.jobs.onJobDone` observer that REUSES session-notification's
+// NotifierBackend), the P3-T14 D-mode trio 'edit-error-recovery' /
+// 'json-error-recovery' / 'tool-output-truncator', and the P3-T15 批 B trio
+// 'directory-readme-injector' / 'agent-usage-reminder' / 'task-resume-info' — so
+// exactly eleven `registered` lines are logged after the summary. The remaining 3
+// rows are filled by the WP-6 batches (T16/T17); nothing else in this file
+// changes when a row lands.
 //
 // Note the roster is 14 entries, not 15: P3-T5's other half is the WP-2
 // arbitration that REMOVED H-01 (write-existing-file-guard) from the port group
@@ -54,11 +56,12 @@
 //       from the plugin's own modules, so it cannot drift).
 //   * `[omo-hooks] hook <id> registered on <event>`
 //     — one line per hook whose registrar is implemented AND returned cleanly.
-//       Eight such lines today ('bash-file-read-guard',
+//       ELEVEN such lines today ('bash-file-read-guard',
 //       'todo-continuation-enforcer', 'empty-task-response-detector',
 //       'session-notification', 'background-notification',
 //       'edit-error-recovery', 'json-error-recovery',
-//       'tool-output-truncator'); T15+ add the rest.
+//       'tool-output-truncator', 'directory-readme-injector',
+//       'agent-usage-reminder', 'task-resume-info'); T16/T17 add the rest.
 //       NOTE (P3-T12): the event in this line is the manifest's PRIMARY event,
 //       which for 'background-notification' is `session/event` — and that row's
 //       registrar DOES register it (its push half additionally subscribes to
@@ -117,6 +120,9 @@ import { registerBackgroundNotification } from './hooks/background-notification.
 import { registerEditErrorRecovery } from './hooks/edit-error-recovery.ts'
 import { registerJsonErrorRecovery } from './hooks/json-error-recovery.ts'
 import { registerToolOutputTruncator } from './hooks/tool-output-truncator.ts'
+import { registerDirectoryReadmeInjector } from './hooks/directory-readme-injector.ts'
+import { registerAgentUsageReminder } from './hooks/agent-usage-reminder.ts'
+import { registerTaskResumeInfo } from './hooks/task-resume-info.ts'
 
 export const name = 'omo-hooks'
 
@@ -256,8 +262,8 @@ export type HookRegistrar = (
  *     citations are in that module's header. It returns a disposer only on the
  *     immediate path; the deferred path hands the subscription's disposer back
  *     through the injected child fiber, which cordis disposes with this fiber.
- * P3-T14 added THREE MORE — the WP-6 批 A D-mode trio, all through the same
- * preferred `ctx.on` channel and all returning nothing:
+ * P3-T14 added THREE MORE — the WP-6 批 A D-mode trio — through the same
+ * preferred `ctx.on` channel and returning nothing:
  *   'edit-error-recovery': registerEditErrorRecovery
  *     (hooks/edit-error-recovery.ts) — appends the read-the-file reminder to an
  *     `edit` result whose text carries one of DSH's real edit-mistake strings.
@@ -270,8 +276,56 @@ export type HookRegistrar = (
  *     result with the min(remaining × 0.5, tool threshold) truncation; its
  *     remaining-token input is the `contextPressure` session projection, looked
  *     up per event (the module header's 前置③).
- * TODO(P3-T15+): add one entry per remaining ported hook, the same way —
- *   'directory-readme-injector': registerDirectoryReadmeInjector, ...
+ * P3-T15 added THREE MORE — the 批 B injection/reminder trio, all through the
+ * same preferred `ctx.on` channel and all returning nothing. Two of them own MORE
+ * than their primary manifest event (index.ts discipline ④ — a multi-surface row
+ * registers its full set from the implementation, and the boot marker keeps
+ * printing the PRIMARY event):
+ *   'directory-readme-injector': registerDirectoryReadmeInjector
+ *     (hooks/directory-readme-injector.ts) — appends the directory-chain READMEs
+ *     to a `read` result; ALSO registers `session/event` (a successful
+ *     `compaction/end` re-arms the per-session directory cache, upstream's
+ *     `session.compacted`) and `session/disposed` (upstream's `session.deleted`).
+ *   'agent-usage-reminder': registerAgentUsageReminder
+ *     (hooks/agent-usage-reminder.ts) — appends the delegation reminder to a
+ *     search/fetch result at most MAX_REMINDERS times; ALSO registers
+ *     `session/disposed` (upstream's `session.deleted` reset). Its orchestrator
+ *     gate reads the `tools` registry per event through `ctx.get`.
+ *   'task-resume-info': registerTaskResumeInfo (hooks/task-resume-info.ts) — the
+ *     ONE-surface case: upstream registered one surface too, and the module is
+ *     stateless (the 前置 conclusion in its header).
+ *
+ * COMPOSITION-ORDER SEMANTICS — THE WATERFALL IS ORDER-SENSITIVE, AND ONE PAIR
+ * SHORT-CIRCUITS (P3-T15 review MINOR-3; arbitrated: REGISTER, do not chain-merge).
+ * Every row above registers on `tools/post-execute` through `ctx.on`, so the
+ * listeners run in ROSTER ORDER (the order of the keys below / of HOOK_MANIFEST),
+ * and cordis' waterfall ends the chain at the first listener that returns WITHOUT
+ * calling `next()` (cordis/lib/index.js:317-325: callbacks are shifted in
+ * registration order; the decision replaces the result, so the remaining listeners
+ * never see it). Exactly one ordered pair therefore carries a composed effect:
+ *   'tool-output-truncator' (row 8) → 'agent-usage-reminder' (row 10).
+ *     TRUNCATABLE_TOOLS = {grep, glob, web_fetch} is a SUBSET of the reminder's
+ *     TARGET_TOOLS = {grep, glob, web_fetch, web_search}, and the truncator returns
+ *     its accept decision without `next()` when a result is over the adaptive
+ *     limit. A truncated grep/glob/web_fetch result is consequently short-circuited
+ *     out of the reminder listener entirely: the reminder is NOT appended AND
+ *     `reminderCount` is NOT incremented for it (upstream registered the two hooks
+ *     as independent appends, so the count can outlive one more result than
+ *     upstream's MAX_REMINDERS would allow). The direction is BENIGN — truncation
+ *     is the more urgent rewrite — and `web_search` is reminder-only, so it is
+ *     unaffected. ACCEPTED as known composition semantics; the registered order is
+ *     pinned implicitly by this key order and explicitly by the registration unit
+ *     suite, and no chain-merge (truncator → `next()` → re-bound downstream) is
+ *     introduced.
+ *   The complementary ordered pair 'empty-task-response-detector' (row 3) →
+ *   'task-resume-info' (row 11) was CHECKED and has NO behavioral interaction: the
+ *   detector also ends the chain without `next()`, but only when the rendered text
+ *   is EMPTY, while every render the resume tip triggers on (`continuable` /
+ *   `foreground`) is non-empty by construction. It is recorded as a vacuum here so
+ *   the negative result is not mistaken for an unexamined gap.
+ *
+ * TODO(P3-T16+): add one entry per remaining ported hook, the same way —
+ *   'webfetch-redirect-guard': registerWebfetchRedirectGuard, ...
  * one task per hook, keeping disciplines ①–④ above. Nothing else in this file
  * needs to change when a row lands.
  */
@@ -284,6 +338,9 @@ export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'edit-error-recovery': registerEditErrorRecovery,
   'json-error-recovery': registerJsonErrorRecovery,
   'tool-output-truncator': registerToolOutputTruncator,
+  'directory-readme-injector': registerDirectoryReadmeInjector,
+  'agent-usage-reminder': registerAgentUsageReminder,
+  'task-resume-info': registerTaskResumeInfo,
 }
 
 /**

@@ -1,6 +1,14 @@
 // P3-T3 — the omo-hooks mount: boot-marker formats + the loud-but-non-fatal
 // registration loop (plan §4.1; task P3-T3).
 //
+// P3-T15 keeps the "hard-coded expectation" discipline below and grows the
+// apply()-level expectation to ELEVEN registered rows of the real registry, with
+// the full listener surface list each registrar wires: the eleven post-execute /
+// turn-stopping / session-event listeners, plus `session-notification`'s
+// auxiliary `agent/status` and the two life-cycle surfaces P3-T15 added
+// ('directory-readme-injector' → `session/event` + `session/disposed`,
+// 'agent-usage-reminder' → `session/disposed`).
+//
 // WHY THE MARKER STRINGS BELOW ARE HARD-CODED. These lines are probe anchors:
 // scripts/cold-start.sh and scripts/concerto-mode-probe.sh grep them out of a
 // real boot log, and P3-T19 extends the probe to the full per-hook set. A test
@@ -313,10 +321,11 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     vi.restoreAllMocks()
   })
 
-  it('① mounts with the real registry: summary + the eight registered listeners', () => {
-    // P3-T12 filled the registry with the F-mode notification pair and P3-T14
-    // with the D-mode trio, so a real boot logs the summary line AND eight
-    // `registered` lines, and wires the listeners in roster order.
+  it('① mounts with the real registry: summary + the eleven registered listeners', () => {
+    // P3-T12 filled the registry with the F-mode notification pair, P3-T14 with
+    // the 批 A D-mode trio and P3-T15 with the 批 B trio, so a real boot logs the
+    // summary line AND eleven `registered` lines, and wires the listeners in
+    // roster order.
     // 'session-notification' registers TWO surfaces (its primary manifest event
     // plus the auxiliary `agent/status`), which is why the onCalls list below is
     // longer than the registered-line list.
@@ -341,6 +350,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook edit-error-recovery registered on tools/post-execute',
       '[omo-hooks] hook json-error-recovery registered on tools/post-execute',
       '[omo-hooks] hook tool-output-truncator registered on tools/post-execute',
+      '[omo-hooks] hook directory-readme-injector registered on tools/post-execute',
+      '[omo-hooks] hook agent-usage-reminder registered on tools/post-execute',
+      '[omo-hooks] hook task-resume-info registered on tools/post-execute',
     ])
     expect(onCalls.map((call) => call.event)).toEqual([
       'tools/post-execute',
@@ -352,6 +364,17 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       'tools/post-execute',
       'tools/post-execute',
       'tools/post-execute',
+      // P3-T15: 'directory-readme-injector' owns its primary event PLUS the two
+      // life-cycle surfaces (upstream's session.deleted / session.compacted).
+      'tools/post-execute',
+      'session/event',
+      'session/disposed',
+      // P3-T15: 'agent-usage-reminder' owns its primary event PLUS the disposed
+      // surface (upstream's session.deleted reset).
+      'tools/post-execute',
+      'session/disposed',
+      // P3-T15: 'task-resume-info' is the ONE-surface case (upstream too).
+      'tools/post-execute',
     ])
   })
 
@@ -359,12 +382,13 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     // apply() has no injection seam on purpose (it is the one-argument cordis
     // entry point), so this test saves/restores a real registry entry around the
     // call instead of leaking a permanent fake into sibling tests. The other
-    // seven real entries stay in place, so the expected log carries all eight
+    // ten real entries stay in place, so the expected log carries all eleven
     // registered lines in roster order (bash-file-read-guard is row 1,
     // todo-continuation-enforcer row 2, empty-task-response-detector row 3,
     // session-notification row 4, background-notification row 5,
     // edit-error-recovery row 6, json-error-recovery row 7,
-    // tool-output-truncator row 8).
+    // tool-output-truncator row 8, directory-readme-injector row 9,
+    // agent-usage-reminder row 10, task-resume-info row 11).
     const id = 'todo-continuation-enforcer'
     expect(HOOK_IDS).toContain(id)
     const previous = HOOK_REGISTRARS[id]
@@ -389,6 +413,12 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       'tools/post-execute',
       'tools/post-execute',
       'tools/post-execute',
+      'tools/post-execute',
+      'session/event',
+      'session/disposed',
+      'tools/post-execute',
+      'session/disposed',
+      'tools/post-execute',
     ])
     expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
       EXPECTED_SUMMARY_LINE,
@@ -403,6 +433,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook edit-error-recovery registered on tools/post-execute',
       '[omo-hooks] hook json-error-recovery registered on tools/post-execute',
       '[omo-hooks] hook tool-output-truncator registered on tools/post-execute',
+      '[omo-hooks] hook directory-readme-injector registered on tools/post-execute',
+      '[omo-hooks] hook agent-usage-reminder registered on tools/post-execute',
+      '[omo-hooks] hook task-resume-info registered on tools/post-execute',
     ])
   })
 

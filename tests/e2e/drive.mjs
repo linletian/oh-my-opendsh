@@ -449,7 +449,7 @@
 // HOST_VOLATILE_SETTINGS_KEYS idea at path granularity).
 //
 // Usage:
-//   node tests/e2e/drive.mjs               run ALL 15 scenarios (hello + demo +
+//   node tests/e2e/drive.mjs               run ALL 18 scenarios (hello + demo +
 //                                          the two AC-6 negatives + the P2-T18
 //                                          roster parade + the P2-T19 read-only
 //                                          representative + the P2-T19
@@ -460,7 +460,11 @@
 //                                          the P3-T12/T13 notification pair +
 //                                          the P3-T14 D-mode set: H-07's
 //                                          empty-task correction and 批 A's
-//                                          three error/truncation listeners),
+//                                          three error/truncation listeners +
+//                                          the P3-T15 批 B injection/reminder
+//                                          trio: H-21's directory README
+//                                          injector, H-22's agent-usage
+//                                          reminder and H-23's task-resume tip),
 //                                          print verdict JSON
 //   node tests/e2e/drive.mjs --self-test   run the analysis logic against
 //                                          fabricated logs only (no spawn)
@@ -623,6 +627,32 @@ const {
   EMPTY_RESPONSE_WARNING,
 } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/empty-task-response-detector.ts', import.meta.url).href
+)
+
+// P3-T15: the 批 B listener texts and lists, read from the SHIPPED modules — the
+// same single-source discipline as the T14 block above. `TARGET_TOOLS` is read so
+// the read control below is proven a NON-target by lookup rather than by hand,
+// and `buildTaskResumeHint` so the task-resume assertion compares against the
+// shipped formatter instead of a second hand-copied literal.
+const {
+  REMINDER_MESSAGE,
+  REMINDER_MESSAGE_MARKER,
+  MAX_REMINDERS: AGENT_USAGE_MAX_REMINDERS,
+  TARGET_TOOLS: AGENT_USAGE_TARGET_TOOLS,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/agent-usage-reminder.ts', import.meta.url).href
+)
+const {
+  README_INJECTION_MARKER,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/directory-readme-injector.ts', import.meta.url).href
+)
+const {
+  DSH_CONTINUABLE_TEXT_PREFIX,
+  TASK_RESUME_CONTINUATION_MARKER,
+  buildTaskResumeHint,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/task-resume-info.ts', import.meta.url).href
 )
 
 const INSTALL_TIMEOUT_MS = Number(process.env.DSH_E2E_INSTALL_TIMEOUT_MS ?? 300_000)
@@ -1533,7 +1563,7 @@ const JSON_RECOVERY_PROMPT =
 const JSON_RECOVERY_MALFORMED_ARGUMENTS = 'not-an-object'
 // The REAL error both calls produce, transcribed from the pinned install
 // (dsh-tools `ToolArgsError` :812-818 + `toolErrorResult` :3490-3502 through the
-// `"arguments" must be an object` violation at :423/:348-350). The analysis
+// `"arguments" must be an object` violation at :449/:348-350). The analysis
 // additionally feeds it to the shipped table's `matchesJsonErrorTable`, so a
 // drift in either direction is loud.
 const JSON_RECOVERY_EXPECTED_ERROR = 'Error: invalid arguments: "arguments" must be an object'
@@ -1674,6 +1704,188 @@ function emptyTaskResponseCorrectedScript() {
     // The blank child: a whitespace-only text step (see the constant's comment).
     explore: [{ type: 'text', text: EMPTY_TASK_BLANK_CHILD_TEXT }],
     oracle: [{ type: 'text', text: EMPTY_TASK_ORACLE_NOTE }],
+  }
+}
+
+// ── P3-T15: THE 批 B INJECTION/REMINDER SET (plan §4.2 模式 D; task book WP-6 批 B) ─
+// Three scenarios, each with a TRIGGER and a live 对照 (the T6/T14 shape),
+// asserted against RUNTIME-OBSERVED carriers only:
+//
+//   1. `directory-readme-injected` (H-21). Step 1 carries TWO real `read` calls:
+//        (a) a file under `<project>/readme-injector/nested/` — its directory
+//            chain holds `<project>/readme-injector/README.md`, so the README's
+//            bytes must be APPENDED to the result (behind the tool's own
+//            `<path>/<type>/<content>` render);
+//        (b) a file under `<project>/plain/` whose chain holds NO README → the
+//            对照: byte-identical to the tool's own render.
+//      Step 2 reads a SECOND file under the same directory → that directory is
+//      already cached, so the result must stay untouched (upstream's
+//      DIRECTORY-keyed de-duplication, which only a real run can prove). Step 3
+//      is the summary text. The walk root is the session's cwd
+//      (`sandbox.project`) — the DSH analog of upstream's `ctx.directory`.
+//
+//   2. `agent-usage-reminder-appended` (H-22). SEVEN sequential steps, because
+//      upstream's semantics ARE a counter: step 1 is a batch of one target tool
+//      (`grep`) plus one NON-target tool (`read` — the same-batch 对照); steps
+//      2-4 are three more greps (reminders #2 and #3, then the cap); step 5 is a
+//      FOREGROUND `explore` delegation (it marks the session used and is itself
+//      untouched); step 6 is a fifth grep, suppressed by `agentUsed`; step 7 is
+//      the summary. The `explore` child runs its OWN grep step, so the
+//      orchestrator gate is exercised on a REAL restricted child scope: a session
+//      that cannot see any delegation tool must not be told to delegate.
+//
+//   3. `task-resume-info-appended` (H-23). Step 1 carries TWO delegations on
+//      DIFFERENT roles, so each child consumes its own mock step cursor:
+//        (a) `explore` with `run_in_background: true` — a CONTINUABLE child, whose
+//            render is `started subagent <id>`; the listener must append the DSH
+//            continuation tip naming THAT id through `send_message(agent_id=…)`;
+//        (b) `oracle` with `run_in_background: false` — a FOREGROUND child whose
+//            render is the child's own answer and carries no id → the 对照: it
+//            must come through byte-identical.
+//      Step 2 is the summary text. Both children answer in ONE text step, so the
+//      continuable child settles while the parent's step 2 is in flight.
+//      DEGRADATION (recorded): the `background`/one-shot JOB kind is NOT reachable
+//      on the shipped composition — every concerto row is `continuable`, P3-T13's
+//      fact 2 — so that kind is covered by the unit suite only.
+const README_INJECTOR_PROMPT =
+  'e2e directory-readme-injected: read both fixture files, then read a second file under the nested directory, then summarize what came back'
+const README_INJECTOR_DIR = 'readme-injector'
+const README_INJECTOR_NESTED = 'nested'
+const README_INJECTOR_TARGET_NAME = 'target.ts'
+const README_INJECTOR_DEDUP_NAME = 'second.ts'
+const README_INJECTOR_PLAIN_DIR = 'plain'
+const README_INJECTOR_PLAIN_NAME = 'control.ts'
+const README_INJECTOR_README_SENTINEL = 'MOCK-README-CONTEXT-c41f8a'
+const README_INJECTOR_README_CONTENT = `# readme-injector fixture\n${README_INJECTOR_README_SENTINEL}\n`
+const README_INJECTOR_TARGET_SENTINEL = 'export const targetSentinel = "b27e10"'
+const README_INJECTOR_TARGET_CONTENT = `${README_INJECTOR_TARGET_SENTINEL}\nexport const neighbour = 2\n`
+const README_INJECTOR_DEDUP_SENTINEL = 'export const secondFileSentinel = "9d4a3c"'
+const README_INJECTOR_DEDUP_CONTENT = `${README_INJECTOR_DEDUP_SENTINEL}\n`
+const README_INJECTOR_PLAIN_SENTINEL = 'export const plainSentinel = "5f0b12"'
+const README_INJECTOR_PLAIN_CONTENT = `${README_INJECTOR_PLAIN_SENTINEL}\nexport const control = true\n`
+const README_INJECTOR_TRUNCATION_NOTE_PREFIX = '[Note: Content was truncated'
+const README_INJECTOR_SUMMARY =
+  'MOCK-README-INJECTOR-SUMMARY-6b1d47: the nested read got the project README and the plain read did not'
+
+/**
+ * directory-readme-injected script: the two-read batch (trigger + 对照), then the
+ * de-duplication read, then the summary.
+ */
+function directoryReadmeInjectedScript(sandbox) {
+  const nestedDir = join(sandbox.project, README_INJECTOR_DIR, README_INJECTOR_NESTED)
+  const plainDir = join(sandbox.project, README_INJECTOR_PLAIN_DIR)
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          { name: 'read', arguments: { file_path: join(nestedDir, README_INJECTOR_TARGET_NAME) } },
+          { name: 'read', arguments: { file_path: join(plainDir, README_INJECTOR_PLAIN_NAME) } },
+        ],
+      },
+      {
+        type: 'tool_call',
+        name: 'read',
+        arguments: { file_path: join(nestedDir, README_INJECTOR_DEDUP_NAME) },
+      },
+      { type: 'text', text: README_INJECTOR_SUMMARY },
+    ],
+  }
+}
+
+const AGENT_USAGE_PROMPT =
+  'e2e agent-usage-reminder-appended: grep the fixture four times with one read alongside the first, delegate to explore, grep once more, then summarize'
+const AGENT_USAGE_FIXTURE_NAME = 'agent-usage-fixture.txt'
+const AGENT_USAGE_PATTERN = 'AGENT-USAGE-3c9d2f'
+const AGENT_USAGE_FIXTURE_CONTENT =
+  `${AGENT_USAGE_PATTERN} line one\n${AGENT_USAGE_PATTERN} line two\n`
+const AGENT_USAGE_CHILD_NOTE =
+  'MOCK-EXPLORE-AGENT-USAGE-NOTE-8a51c3: the explore child grepped once and answered'
+const AGENT_USAGE_SUMMARY =
+  'MOCK-AGENT-USAGE-SUMMARY-4e7b90: three reminders landed on the greps, then the cap and the delegation silenced them'
+
+/**
+ * agent-usage-reminder-appended script. SEVEN sequential conductor steps (the
+ * counter semantics need order, not a batch), plus the child's own grep step.
+ */
+function agentUsageReminderScript(sandbox) {
+  const fixturePath = join(sandbox.project, AGENT_USAGE_FIXTURE_NAME)
+  const grepStep = () => ({
+    type: 'tool_call',
+    name: 'grep',
+    arguments: { pattern: AGENT_USAGE_PATTERN, path: fixturePath },
+  })
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          { name: 'grep', arguments: { pattern: AGENT_USAGE_PATTERN, path: fixturePath } },
+          { name: 'read', arguments: { file_path: fixturePath } },
+        ],
+      },
+      grepStep(),
+      grepStep(),
+      grepStep(),
+      {
+        type: 'tool_call',
+        name: 'explore',
+        arguments: {
+          description: 'Grep the fixture and report',
+          prompt: `Grep ${fixturePath} for ${AGENT_USAGE_PATTERN}, then reply with exactly: ${AGENT_USAGE_CHILD_NOTE}`,
+          run_in_background: false,
+        },
+      },
+      grepStep(),
+      { type: 'text', text: AGENT_USAGE_SUMMARY },
+    ],
+    explore: [
+      { type: 'tool_call', name: 'grep', arguments: { pattern: AGENT_USAGE_PATTERN, path: fixturePath } },
+      { type: 'text', text: AGENT_USAGE_CHILD_NOTE },
+    ],
+  }
+}
+
+const TASK_RESUME_PROMPT =
+  'e2e task-resume-info-appended: delegate to explore in the background and to oracle in the foreground, then summarize what each returned'
+const TASK_RESUME_EXPLORE_CHILD_NOTE = 'MOCK-EXPLORE-TASK-RESUME-NOTE-1f6d84'
+const TASK_RESUME_ORACLE_NOTE =
+  'MOCK-ORACLE-TASK-RESUME-NOTE-7c2e15: the foreground delegation answered with real content'
+const TASK_RESUME_SUMMARY =
+  'MOCK-TASK-RESUME-SUMMARY-9a3b62: the background delegation came back with a continuation tip and the foreground one did not'
+
+/**
+ * task-resume-info-appended script. ONE batch with the continuable trigger and
+ * the foreground 对照 on two DIFFERENT roles (per-role cursors), then the summary.
+ */
+function taskResumeInfoScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'explore',
+            arguments: {
+              description: 'Background exploration of the workspace',
+              prompt: 'Inspect the workspace and report what you find.',
+              run_in_background: true,
+            },
+          },
+          {
+            name: 'oracle',
+            arguments: {
+              description: 'Foreground design question',
+              prompt: 'Answer the design question in one sentence.',
+              run_in_background: false,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: TASK_RESUME_SUMMARY },
+    ],
+    explore: [{ type: 'text', text: TASK_RESUME_EXPLORE_CHILD_NOTE }],
+    oracle: [{ type: 'text', text: TASK_RESUME_ORACLE_NOTE }],
   }
 }
 
@@ -4098,6 +4310,263 @@ export function analyzeEmptyTaskResponseCorrected(
   }
 }
 
+// ── P3-T15 批 B analysis (模式 D；見场景段头的三场景说明) ───────────────────────
+//
+// The three listeners share ONE assertion shape with the T14 set: a REAL call
+// whose result the listener rewrites (trigger) plus a REAL sibling in the same
+// batch that must stay byte-identical (对照). Everything is read off the durable
+// session JSONL (`tool/result` parts by callId) — never off a theoretical field.
+
+/**
+ * The `directory-readme-injected` assertions (H-21). The non-vacuity argument is
+ * the CONTROL read in the SAME batch: its chain has no README, so "the injection
+ * fired" cannot be an artifact of the listener rewriting every read.
+ */
+export function analyzeDirectoryReadmeInjected(
+  { log, requests, providersJson, bootLog, readmePath, targetPath, plainPath, dedupPath },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const targetCall = findToolCall(events, 'read', (args) => args.file_path === targetPath)
+  const plainCall = findToolCall(events, 'read', (args) => args.file_path === plainPath)
+  const dedupCall = findToolCall(events, 'read', (args) => args.file_path === dedupPath)
+  const targetResult = toolResultForCall(results, targetCall)
+  const plainResult = toolResultForCall(results, plainCall)
+  const dedupResult = toolResultForCall(results, dedupCall)
+  const injectedResults = results.filter((part) => part.text.includes(README_INJECTION_MARKER))
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // (a) TRIGGER: the README block names the seeded file's own directory README,
+    // and the README's bytes really landed in the tool result.
+    targetReadCarriesReadme:
+      targetResult !== undefined
+      && targetResult.isError !== true
+      && targetResult.text.includes(`${README_INJECTION_MARKER} ${readmePath}]`)
+      && targetResult.text.includes(README_INJECTOR_README_SENTINEL),
+    // APPEND, not replace: the tool's own render (the file's bytes) survived.
+    targetReadKeptItsOwnBytes:
+      targetResult !== undefined && targetResult.text.includes(README_INJECTOR_TARGET_SENTINEL),
+    // A tiny README is under every budget, so no truncation notice may appear —
+    // this is also the loud signal if the runtime's token budget ever regresses.
+    targetReadUntruncated:
+      targetResult !== undefined
+      && !targetResult.text.includes(README_INJECTOR_TRUNCATION_NOTE_PREFIX),
+    // (b) 对照: the README-less chain leaves the result byte-identical.
+    controlReadUnchanged:
+      plainResult !== undefined
+      && plainResult.isError !== true
+      && plainResult.text.includes(README_INJECTOR_PLAIN_SENTINEL)
+      && !plainResult.text.includes(README_INJECTION_MARKER),
+    // The DIRECTORY-keyed de-duplication, on the real runtime.
+    dedupReadNotInjected:
+      dedupResult !== undefined
+      && dedupResult.text.includes(README_INJECTOR_DEDUP_SENTINEL)
+      && !dedupResult.text.includes(README_INJECTION_MARKER),
+    readmeInjectedExactlyOnce: injectedResults.length === 1,
+    mockSawThreeSteps: sisyphusRequests.length === 3,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      readmePath: readmePath ?? null,
+      targetPath: targetPath ?? null,
+      injectedResultCount: injectedResults.length,
+      toolResults: results.map((part) => ({
+        callId: part.callId,
+        isError: part.isError,
+        textLength: part.text.length,
+        text: part.text.slice(0, 600),
+      })),
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
+/**
+ * The `agent-usage-reminder-appended` assertions (H-22). The counter semantics are
+ * asserted ACROSS the five greps (three reminders, then the cap, then silence
+ * after the delegation), and the orchestrator gate is asserted on the CHILD's own
+ * grep result — a session the preset's toolFilter stripped of every delegation
+ * tool.
+ */
+export function analyzeAgentUsageReminderAppended(
+  { log, allLogs, requests, providersJson, bootLog },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const grepCalls = events.filter(
+    (event) => event.type === 'tool/call' && event.data?.name === 'grep',
+  )
+  const readCall = findToolCall(events, 'read')
+  const delegationCall = findToolCall(events, 'explore')
+  const grepResults = grepCalls.map((call) => toolResultForCall(results, call))
+  const readResult = toolResultForCall(results, readCall)
+  const delegationResult = toolResultForCall(results, delegationCall)
+  const reminderResults = results.filter((part) => part.text.includes(REMINDER_MESSAGE_MARKER))
+  const children = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(log?.header?.id),
+  )
+  const childGrepResults = children
+    .flatMap((candidate) => toolResultParts(candidate.events))
+    .filter((part) => part.text.includes(AGENT_USAGE_PATTERN))
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // The read control really is a NON-target by the shipped list (never by hand).
+    readControlIsNotATargetTool: !AGENT_USAGE_TARGET_TOOLS.includes('read'),
+    // (a) TRIGGER: the FIRST target-tool result ends with the reminder VERBATIM.
+    firstTargetResultCarriesReminder:
+      grepResults.length === 5
+      && grepResults[0] !== undefined
+      && grepResults[0].isError !== true
+      && grepResults[0].text.endsWith(REMINDER_MESSAGE),
+    // The cap: EXACTLY MAX_REMINDERS reminders in the whole parent log…
+    reminderInjectedExactlyMaxRemindersTimes:
+      reminderResults.length === AGENT_USAGE_MAX_REMINDERS,
+    // …and the FOURTH grep (the one past the cap) stayed untouched.
+    capSuppressedTheFourthTargetResult:
+      grepResults[3] !== undefined && !grepResults[3].text.includes(REMINDER_MESSAGE_MARKER),
+    // (b) same-batch 对照: the non-target result is byte-identical.
+    nonTargetControlUnchanged:
+      readResult !== undefined
+      && readResult.isError !== true
+      && readResult.text.includes(AGENT_USAGE_PATTERN)
+      && !readResult.text.includes(REMINDER_MESSAGE_MARKER),
+    // The delegation was untouched (it is not a target tool)…
+    delegationResultUnchanged:
+      delegationResult !== undefined
+      && delegationResult.isError !== true
+      && delegationResult.text.includes(AGENT_USAGE_CHILD_NOTE),
+    // …and it marked the session: the FIFTH grep (after the delegation) is silent.
+    postDelegationTargetResultSuppressed:
+      grepResults[4] !== undefined && !grepResults[4].text.includes(REMINDER_MESSAGE_MARKER),
+    // The orchestrator gate, on the REAL restricted child scope: the child ran the
+    // SAME grep and must NOT have been told to delegate.
+    childTargetResultRan: childGrepResults.length === 1,
+    childTargetResultNotReminded:
+      childGrepResults.length === 1
+      && childGrepResults.every((part) => !part.text.includes(REMINDER_MESSAGE_MARKER)),
+    mockSawSevenSteps: sisyphusRequests.length === 7,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      reminderText: REMINDER_MESSAGE,
+      childSessionCount: children.length,
+      childGrepResults: childGrepResults.map((part) => part.text.slice(0, 300)),
+      toolResults: results.map((part) => ({
+        callId: part.callId,
+        isError: part.isError,
+        textLength: part.text.length,
+        text: part.text.slice(0, 400),
+      })),
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
+/**
+ * The `task-resume-info-appended` assertions (H-23). The trigger's own truth is
+ * the rendered `started subagent <id>` prefix: the asserted id is the one the
+ * runtime really put there, so "the tip names the right child" cannot be a
+ * synthetic artifact.
+ */
+export function analyzeTaskResumeInfoAppended(
+  { log, requests, providersJson, bootLog },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const exploreCall = findToolCall(events, 'explore')
+  const oracleCall = findToolCall(events, 'oracle')
+  const exploreResult = toolResultForCall(results, exploreCall)
+  const oracleResult = toolResultForCall(results, oracleCall)
+  const exploreText = exploreResult?.text ?? ''
+  const continuedId = exploreText.startsWith(DSH_CONTINUABLE_TEXT_PREFIX)
+    ? exploreText.slice(DSH_CONTINUABLE_TEXT_PREFIX.length).split('\n')[0].trim()
+    : undefined
+  const hintResults = results.filter((part) => part.text.includes(TASK_RESUME_CONTINUATION_MARKER))
+  // The ONE batch must really be one assistant message carrying BOTH delegations
+  // (the mock's `tool_calls` primitive), so "the 对照 rode the same step" is
+  // provable rather than assumed.
+  const delegationsRanInOneBatch = events.some((event) => {
+    if (event.type !== 'assistant/message') return false
+    const blocks = (event.data?.message?.content ?? []).filter((block) => block?.type === 'tool-call')
+    const names = blocks.map((block) => block.name)
+    return blocks.length === 2 && names.includes('explore') && names.includes('oracle')
+  })
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // The trigger's own precondition: the runtime really rendered a CONTINUABLE
+    // delegation (the id below is read OUT of those bytes).
+    continuableRenderObserved:
+      exploreResult !== undefined
+      && exploreResult.isError !== true
+      && continuedId !== undefined
+      && continuedId.length > 0,
+    // (a) TRIGGER: the tip is the TAIL and names THAT id through the DSH call.
+    continuableResultCarriesResumeHint:
+      exploreResult !== undefined
+      && continuedId !== undefined
+      && exploreText.endsWith(buildTaskResumeHint(continuedId)),
+    // No OMO signature survives in the durable bytes.
+    hintCarriesNoOmoSignature:
+      exploreText.includes('send_message(agent_id="')
+      && !exploreText.includes('task_id=')
+      && !exploreText.includes('load_skills')
+      && !exploreText.includes('task('),
+    // (b) 对照: the FOREGROUND sibling's result is the child's own answer, verbatim.
+    foregroundControlUnchanged:
+      oracleResult !== undefined
+      && oracleResult.isError !== true
+      && oracleResult.text === TASK_RESUME_ORACLE_NOTE,
+    delegationsRanInOneBatch,
+    hintAppendedExactlyOnce: hintResults.length === 1,
+    // MEASURED (kept sandbox): the conductor's request count here is a RUNTIME
+    // SCHEDULING RACE, not a fixed number. The P3-T15 evidence pass recorded THREE
+    // — steps 1-2 are the delegation batch and the summary; the third is the extra
+    // step the runtime opens when the CONTINUABLE child settles and its notice
+    // reaches the parent (dsh-tool-subagent's "the runtime sends the parent a
+    // notice containing its outcome"), all inside the SAME `completed` turn —
+    // while the review's independent pass measured TWO. The earlier wording read as
+    // a fixed measured value ("THREE, not two") that the review could not
+    // reproduce; it is corrected to the race here. The assertion therefore stays a
+    // FLOOR over the batch+summary pair: an exact count would pin the race, not
+    // this hook. The lost-step shape a floor cannot see is covered by the mutation
+    // QA rather than by a number — see the 'the conductor ran only the batch'
+    // defect in the self-test below, which drives this very name red.
+    mockSawTheDelegationAndTheSummary: sisyphusRequests.length >= 2,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      continuedId: continuedId ?? null,
+      exploreText,
+      oracleText: oracleResult?.text ?? null,
+      hintCount: hintResults.length,
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
 // ── P3-T12 notification-delivery analysis (模式 F) ────────────────────────────
 //
 // The SHARED assertion core for the two P3-T12 notification listeners. Both
@@ -5529,6 +5998,205 @@ function fabricatedEmptyTaskResponseInput(routes) {
   }
 }
 
+// ── fabricated P3-T15 批 B inputs (模式 D，must earn their PASS) ──────────────
+// One GOOD fixture per scenario, mirroring the real runtime layout the scenario
+// produces (tool/call → tool/result by callId, in model order, one turn/end),
+// plus the named defect mutations the self-test applies.
+
+/** The fabricated sandbox paths the README fixture's assertions name. */
+const FABRICATED_README_DIR = '/fabricated/project/readme-injector'
+const FABRICATED_README_README_PATH = `${FABRICATED_README_DIR}/README.md`
+const FABRICATED_README_TARGET_PATH = `${FABRICATED_README_DIR}/nested/${README_INJECTOR_TARGET_NAME}`
+const FABRICATED_README_DEDUP_PATH = `${FABRICATED_README_DIR}/nested/${README_INJECTOR_DEDUP_NAME}`
+const FABRICATED_README_PLAIN_PATH = `/fabricated/project/${README_INJECTOR_PLAIN_DIR}/${README_INJECTOR_PLAIN_NAME}`
+
+/** The tool's own render, as `formatReadOutput` builds it (one text block). */
+function fabricatedReadRender(path, lines) {
+  return `<path>${path}</path>\n<type>file</type>\n<content>\n`
+    + `${lines.map((line, index) => `${index + 1}: ${line}`).join('\n')}\n\n`
+    + `(End of file - total ${lines.length} lines)\n</content>`
+}
+
+/** The README block the listener appends (`\n\n[Project README: <path>]\n<bytes>`). */
+function fabricatedReadmeBlock(readmePath, content) {
+  return `\n\n${README_INJECTION_MARKER} ${readmePath}]\n${content}`
+}
+
+function fabricatedDirectoryReadmeInput(routes) {
+  const parentLog = {
+    path: '/fabricated/directory-readme/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: README_INJECTOR_PROMPT }] } },
+      fabricatedToolCallEvent(2, 'mock-llm-tool-1-0', 'read', { file_path: FABRICATED_README_TARGET_PATH }),
+      fabricatedToolCallEvent(3, 'mock-llm-tool-1-1', 'read', { file_path: FABRICATED_README_PLAIN_PATH }),
+      fabricatedToolResultEvent(
+        4,
+        'mock-llm-tool-1-0',
+        fabricatedReadRender(FABRICATED_README_TARGET_PATH, [
+          README_INJECTOR_TARGET_SENTINEL,
+          'export const neighbour = 2',
+        ]) + fabricatedReadmeBlock(FABRICATED_README_README_PATH, README_INJECTOR_README_CONTENT),
+      ),
+      fabricatedToolResultEvent(
+        5,
+        'mock-llm-tool-1-1',
+        fabricatedReadRender(FABRICATED_README_PLAIN_PATH, [
+          README_INJECTOR_PLAIN_SENTINEL,
+          'export const control = true',
+        ]),
+      ),
+      fabricatedToolCallEvent(6, 'mock-llm-tool-2', 'read', { file_path: FABRICATED_README_DEDUP_PATH }),
+      fabricatedToolResultEvent(
+        7,
+        'mock-llm-tool-2',
+        fabricatedReadRender(FABRICATED_README_DEDUP_PATH, [README_INJECTOR_DEDUP_SENTINEL]),
+      ),
+      { seq: 8, type: 'assistant/message', data: { turn: 1, step: 3, message: { content: [{ type: 'text', text: README_INJECTOR_SUMMARY }] } } },
+      { seq: 9, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+  return {
+    log: parentLog,
+    allLogs: [parentLog],
+    requests: fabricatedSisyphusRequests(routes).concat([
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 20 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 30 },
+    ]),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+    readmePath: FABRICATED_README_README_PATH,
+    targetPath: FABRICATED_README_TARGET_PATH,
+    dedupPath: FABRICATED_README_DEDUP_PATH,
+    plainPath: FABRICATED_README_PLAIN_PATH,
+  }
+}
+
+/** The fabricated child session log: ONE grep call + its result, then the note. */
+function fabricatedAgentUsageChildLog(childId) {
+  return {
+    path: `/fabricated/${childId}/session.jsonl`,
+    header: { type: 'session', id: childId, origin: 'subagent', parentSession: FABRICATED_PARENT_ID },
+    events: [
+      fabricatedToolCallEvent(1, 'mock-llm-child-tool-1', 'grep', { pattern: AGENT_USAGE_PATTERN }),
+      fabricatedToolResultEvent(2, 'mock-llm-child-tool-1', `Found 2 matches\n\n${AGENT_USAGE_FIXTURE_CONTENT}`),
+      { seq: 3, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: AGENT_USAGE_CHILD_NOTE }] } } },
+      { seq: 4, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+const FABRICATED_AGENT_USAGE_FIXTURE_PATH = `/fabricated/project/${AGENT_USAGE_FIXTURE_NAME}`
+const FABRICATED_AGENT_USAGE_CHILD_ID = 'session-fabricated-agent-usage-child'
+
+function fabricatedAgentUsageReminderInput(routes) {
+  const grepText = `Found 2 matches\n\n${AGENT_USAGE_FIXTURE_CONTENT}`
+  const readText = fabricatedReadRender(FABRICATED_AGENT_USAGE_FIXTURE_PATH, [
+    `${AGENT_USAGE_PATTERN} line one`,
+    `${AGENT_USAGE_PATTERN} line two`,
+  ])
+  const childLog = fabricatedAgentUsageChildLog(FABRICATED_AGENT_USAGE_CHILD_ID)
+  const parentLog = {
+    path: '/fabricated/agent-usage/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: AGENT_USAGE_PROMPT }] } },
+      fabricatedToolCallEvent(2, 'mock-llm-tool-1-0', 'grep', { pattern: AGENT_USAGE_PATTERN }),
+      fabricatedToolCallEvent(3, 'mock-llm-tool-1-1', 'read', { file_path: FABRICATED_AGENT_USAGE_FIXTURE_PATH }),
+      fabricatedToolResultEvent(4, 'mock-llm-tool-1-0', `${grepText}${REMINDER_MESSAGE}`),
+      fabricatedToolResultEvent(5, 'mock-llm-tool-1-1', readText),
+      fabricatedToolCallEvent(6, 'mock-llm-tool-2', 'grep', { pattern: AGENT_USAGE_PATTERN }),
+      fabricatedToolResultEvent(7, 'mock-llm-tool-2', `${grepText}${REMINDER_MESSAGE}`),
+      fabricatedToolCallEvent(8, 'mock-llm-tool-3', 'grep', { pattern: AGENT_USAGE_PATTERN }),
+      fabricatedToolResultEvent(9, 'mock-llm-tool-3', `${grepText}${REMINDER_MESSAGE}`),
+      fabricatedToolCallEvent(10, 'mock-llm-tool-4', 'grep', { pattern: AGENT_USAGE_PATTERN }),
+      fabricatedToolResultEvent(11, 'mock-llm-tool-4', grepText),
+      fabricatedToolCallEvent(12, 'mock-llm-tool-5', 'explore', { description: 'Grep the fixture and report' }),
+      fabricatedToolResultEvent(13, 'mock-llm-tool-5', AGENT_USAGE_CHILD_NOTE),
+      fabricatedToolCallEvent(14, 'mock-llm-tool-6', 'grep', { pattern: AGENT_USAGE_PATTERN }),
+      fabricatedToolResultEvent(15, 'mock-llm-tool-6', grepText),
+      { seq: 16, type: 'assistant/message', data: { turn: 1, step: 8, message: { content: [{ type: 'text', text: AGENT_USAGE_SUMMARY }] } } },
+      { seq: 17, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+  return {
+    log: parentLog,
+    allLogs: [parentLog, childLog],
+    requests: fabricatedSisyphusRequests(routes).concat(
+      Array.from({ length: 6 }, (_value, index) => ({
+        role: 'sisyphus',
+        body: { model: routes.sisyphus.model },
+        receivedAt: 20 + index * 10,
+      })),
+    ),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+  }
+}
+
+const FABRICATED_TASK_RESUME_CHILD_ID = 'subagent-fabricated-task-resume'
+
+function fabricatedTaskResumeInfoInput(routes) {
+  const exploreText = `${DSH_CONTINUABLE_TEXT_PREFIX}${FABRICATED_TASK_RESUME_CHILD_ID}`
+  const parentLog = {
+    path: '/fabricated/task-resume/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: TASK_RESUME_PROMPT }] } },
+      // The ONE assistant message carrying both delegation calls (the real log's
+      // batch shape), which `delegationsRanInOneBatch` reads.
+      {
+        seq: 2,
+        type: 'assistant/message',
+        data: {
+          turn: 1,
+          step: 1,
+          message: {
+            content: [
+              { type: 'tool-call', id: 'mock-llm-tool-1-0', name: 'explore', arguments: '{}' },
+              { type: 'tool-call', id: 'mock-llm-tool-1-1', name: 'oracle', arguments: '{}' },
+            ],
+          },
+        },
+      },
+      fabricatedToolCallEvent(3, 'mock-llm-tool-1-0', 'explore', {
+        description: 'Background exploration of the workspace',
+        run_in_background: true,
+      }),
+      fabricatedToolCallEvent(4, 'mock-llm-tool-1-1', 'oracle', {
+        description: 'Foreground design question',
+        run_in_background: false,
+      }),
+      fabricatedToolResultEvent(
+        5,
+        'mock-llm-tool-1-0',
+        `${exploreText}${buildTaskResumeHint(FABRICATED_TASK_RESUME_CHILD_ID)}`,
+      ),
+      fabricatedToolResultEvent(6, 'mock-llm-tool-1-1', TASK_RESUME_ORACLE_NOTE),
+      { seq: 7, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: TASK_RESUME_SUMMARY }] } } },
+      { seq: 8, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+  return {
+    log: parentLog,
+    allLogs: [parentLog],
+    requests: fabricatedSisyphusRequests(routes).concat([
+      // The runtime's conductor count is a SCHEDULING RACE (the kept-sandbox pass
+      // measured three requests — the settled continuable child's notice opens one
+      // more step — the review's independent pass measured two); the GOOD fixture
+      // records the reproducible TWO that satisfy the "≥ 2" floor, and the extra
+      // step stays a runtime detail (the analysis comment above).
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 20 },
+      // The two children are separate mock ROLES, recorded so the timeline stays
+      // complete without inflating the sisyphus count.
+      { role: 'explore', body: { model: routes.sisyphus.model }, receivedAt: 25 },
+      { role: 'oracle', body: { model: routes.sisyphus.model }, receivedAt: 26 },
+    ]),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+  }
+}
+
 // ── fabricated P3-T9 todo-continuation-enforced input (模式 E，must earn its PASS) ─
 // The fabricated log mirrors the REAL runtime layout the scenario was pinned
 // against (observed in a kept sandbox; see the header's T9 section): per step
@@ -6947,6 +7615,189 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P3-T15 批 B self-test: ONE fabricated GOOD input per scenario must PASS,
+  // and every named defect must FAIL on its OWN check (the T14 mutation QA,
+  // applied to the 批 B trio).
+  const goodDirectoryReadme = analyzeDirectoryReadmeInjected(fabricatedDirectoryReadmeInput(routes), routes)
+  if (goodDirectoryReadme.result !== 'PASS') {
+    problems.push(`fabricated GOOD directory-readme-injected must PASS, got FAIL on: ${goodDirectoryReadme.failed.join(', ')}`)
+  }
+  const directoryReadmeDefectCases = [
+    ['the trigger read got no README', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-0',
+            fabricatedReadRender(FABRICATED_README_TARGET_PATH, [
+              README_INJECTOR_TARGET_SENTINEL,
+              'export const neighbour = 2',
+            ]),
+          )
+          : event)
+    }, 'targetReadCarriesReadme'],
+    ['the README was injected into the README-less control too', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-1',
+            fabricatedReadRender(FABRICATED_README_PLAIN_PATH, [
+              README_INJECTOR_PLAIN_SENTINEL,
+              'export const control = true',
+            ]) + fabricatedReadmeBlock(FABRICATED_README_README_PATH, README_INJECTOR_README_CONTENT),
+          )
+          : event)
+    }, 'controlReadUnchanged'],
+    ['the de-duplicated second read was rewritten as well', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-2')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-2',
+            fabricatedReadRender(FABRICATED_README_DEDUP_PATH, [README_INJECTOR_DEDUP_SENTINEL])
+              + fabricatedReadmeBlock(FABRICATED_README_README_PATH, README_INJECTOR_README_CONTENT),
+          )
+          : event)
+    }, 'readmeInjectedExactlyOnce'],
+  ]
+  for (const [label, mutate, expectedCheck] of directoryReadmeDefectCases) {
+    const input = fabricatedDirectoryReadmeInput(routes)
+    mutate(input)
+    const verdict = analyzeDirectoryReadmeInjected(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated directory-readme-injected defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  const goodAgentUsage = analyzeAgentUsageReminderAppended(fabricatedAgentUsageReminderInput(routes), routes)
+  if (goodAgentUsage.result !== 'PASS') {
+    problems.push(`fabricated GOOD agent-usage-reminder-appended must PASS, got FAIL on: ${goodAgentUsage.failed.join(', ')}`)
+  }
+  const agentUsageDefectCases = [
+    ['the first target result got no reminder', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-0',
+            `Found 2 matches\n\n${AGENT_USAGE_FIXTURE_CONTENT}`,
+          )
+          : event)
+    }, 'firstTargetResultCarriesReminder'],
+    ['the reminder was appended to the NON-target read control too', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-1',
+            fabricatedReadRender(FABRICATED_AGENT_USAGE_FIXTURE_PATH, [
+              `${AGENT_USAGE_PATTERN} line one`,
+              `${AGENT_USAGE_PATTERN} line two`,
+            ]) + REMINDER_MESSAGE,
+          )
+          : event)
+    }, 'nonTargetControlUnchanged'],
+    ['the cap was ignored: a fourth reminder landed past MAX_REMINDERS', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-4')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-4',
+            `Found 2 matches\n\n${AGENT_USAGE_FIXTURE_CONTENT}${REMINDER_MESSAGE}`,
+          )
+          : event)
+    }, 'reminderInjectedExactlyMaxRemindersTimes'],
+    ['the child session — a delegation TARGET — was reminded too', (input) => {
+      const childLog = input.allLogs.find(
+        (candidate) => String(candidate.header?.id) === FABRICATED_AGENT_USAGE_CHILD_ID,
+      )
+      childLog.events = childLog.events.map((event) =>
+        event.type === 'tool/result'
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-child-tool-1',
+            `Found 2 matches\n\n${AGENT_USAGE_FIXTURE_CONTENT}${REMINDER_MESSAGE}`,
+          )
+          : event)
+    }, 'childTargetResultNotReminded'],
+  ]
+  for (const [label, mutate, expectedCheck] of agentUsageDefectCases) {
+    const input = fabricatedAgentUsageReminderInput(routes)
+    mutate(input)
+    const verdict = analyzeAgentUsageReminderAppended(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated agent-usage-reminder-appended defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  const goodTaskResume = analyzeTaskResumeInfoAppended(fabricatedTaskResumeInfoInput(routes), routes)
+  if (goodTaskResume.result !== 'PASS') {
+    problems.push(`fabricated GOOD task-resume-info-appended must PASS, got FAIL on: ${goodTaskResume.failed.join(', ')}`)
+  }
+  const taskResumeDefectCases = [
+    ['the continuable result got no continuation tip', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-0',
+            `${DSH_CONTINUABLE_TEXT_PREFIX}${FABRICATED_TASK_RESUME_CHILD_ID}`,
+          )
+          : event)
+    }, 'continuableResultCarriesResumeHint'],
+    ['the tip names a DIFFERENT child id than the render', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-0',
+            `${DSH_CONTINUABLE_TEXT_PREFIX}${FABRICATED_TASK_RESUME_CHILD_ID}`
+              + buildTaskResumeHint('subagent-somewhere-else'),
+          )
+          : event)
+    }, 'continuableResultCarriesResumeHint'],
+    ['the tip was appended to the FOREGROUND control too', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-1',
+            `${TASK_RESUME_ORACLE_NOTE}${buildTaskResumeHint('subagent-somewhere-else')}`,
+          )
+          : event)
+    }, 'foregroundControlUnchanged'],
+    ['the conductor ran only the batch — the summary step vanished below the floor', (input) => {
+      // P3-T15 review MINOR-1/2 (assertion precision): `>= 2` is a deliberate
+      // floor over a racing runtime count, so the mutation QA must prove the
+      // floor is LIVE — dropping back to the single batch step has to go red on
+      // this name instead of hiding under a count nobody exercises.
+      let kept = 0
+      input.requests = input.requests.filter((request) => {
+        if (request.role !== 'sisyphus') return true
+        kept += 1
+        return kept <= 1
+      })
+    }, 'mockSawTheDelegationAndTheSummary'],
+  ]
+  for (const [label, mutate, expectedCheck] of taskResumeDefectCases) {
+    const input = fabricatedTaskResumeInfoInput(routes)
+    mutate(input)
+    const verdict = analyzeTaskResumeInfoAppended(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated task-resume-info-appended defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
@@ -7138,6 +7989,58 @@ const SCENARIOS = [
     roles: ['sisyphus', 'explore', 'oracle'],
     script: emptyTaskResponseCorrectedScript,
     analyze: analyzeEmptyTaskResponseCorrected,
+  },
+  {
+    // P3-T15 (H-21; plan §4.2 模式 D): the directory README of the file you just
+    // read is project context. ONE batch holds the trigger (a README-bearing
+    // chain) and the 对照 (a README-less chain); step 2 re-reads the trigger's
+    // directory to exercise the DIRECTORY-keyed de-duplication on the real
+    // runtime. See the P3-T15 section header.
+    name: 'directory-readme-injected',
+    prompt: README_INJECTOR_PROMPT,
+    roles: ['sisyphus'],
+    seed: (sandbox) => {
+      const injectorDir = join(sandbox.project, README_INJECTOR_DIR)
+      const nestedDir = join(injectorDir, README_INJECTOR_NESTED)
+      const plainDir = join(sandbox.project, README_INJECTOR_PLAIN_DIR)
+      mkdirSync(nestedDir, { recursive: true })
+      mkdirSync(plainDir, { recursive: true })
+      writeFileSync(join(injectorDir, 'README.md'), README_INJECTOR_README_CONTENT)
+      writeFileSync(join(nestedDir, README_INJECTOR_TARGET_NAME), README_INJECTOR_TARGET_CONTENT)
+      writeFileSync(join(nestedDir, README_INJECTOR_DEDUP_NAME), README_INJECTOR_DEDUP_CONTENT)
+      writeFileSync(join(plainDir, README_INJECTOR_PLAIN_NAME), README_INJECTOR_PLAIN_CONTENT)
+    },
+    script: directoryReadmeInjectedScript,
+    analysisInput: (sandbox) => ({
+      readmePath: join(sandbox.project, README_INJECTOR_DIR, 'README.md'),
+      targetPath: join(sandbox.project, README_INJECTOR_DIR, README_INJECTOR_NESTED, README_INJECTOR_TARGET_NAME),
+      dedupPath: join(sandbox.project, README_INJECTOR_DIR, README_INJECTOR_NESTED, README_INJECTOR_DEDUP_NAME),
+      plainPath: join(sandbox.project, README_INJECTOR_PLAIN_DIR, README_INJECTOR_PLAIN_NAME),
+    }),
+    analyze: analyzeDirectoryReadmeInjected,
+  },
+  {
+    // P3-T15 (H-22; plan §4.2 模式 D): the delegation reminder, with the counter
+    // semantics (MAX_REMINDERS, then `agentUsed`) asserted across SEVEN ordered
+    // steps, and the orchestrator gate asserted on the child's own grep result.
+    name: 'agent-usage-reminder-appended',
+    prompt: AGENT_USAGE_PROMPT,
+    roles: ['sisyphus', 'explore'],
+    seed: (sandbox) => {
+      writeFileSync(join(sandbox.project, AGENT_USAGE_FIXTURE_NAME), AGENT_USAGE_FIXTURE_CONTENT)
+    },
+    script: agentUsageReminderScript,
+    analyze: analyzeAgentUsageReminderAppended,
+  },
+  {
+    // P3-T15 (H-23; plan §4.2 模式 D): the continuation tip. The 对照 is the
+    // FOREGROUND sibling in the SAME batch — same tool family, no id in its
+    // render, so the result must come through byte-identical.
+    name: 'task-resume-info-appended',
+    prompt: TASK_RESUME_PROMPT,
+    roles: ['sisyphus', 'explore', 'oracle'],
+    script: taskResumeInfoScript,
+    analyze: analyzeTaskResumeInfoAppended,
   },
   {
     // AC-6a (T20): the explore child hallucinates a write; the T12 deny
@@ -7424,7 +8327,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
