@@ -313,9 +313,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     vi.restoreAllMocks()
   })
 
-  it('① mounts with the real registry: summary + the five registered listeners', () => {
-    // P3-T12 filled the registry with two more real entries (the F-mode
-    // notification pair), so a real boot logs the summary line AND five
+  it('① mounts with the real registry: summary + the eight registered listeners', () => {
+    // P3-T12 filled the registry with the F-mode notification pair and P3-T14
+    // with the D-mode trio, so a real boot logs the summary line AND eight
     // `registered` lines, and wires the listeners in roster order.
     // 'session-notification' registers TWO surfaces (its primary manifest event
     // plus the auxiliary `agent/status`), which is why the onCalls list below is
@@ -338,6 +338,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook session-notification registered on session/event',
       '[omo-hooks] background-notification NOTE: jobs service never appeared; no push subscription (degraded pull path only)',
       '[omo-hooks] hook background-notification registered on session/event',
+      '[omo-hooks] hook edit-error-recovery registered on tools/post-execute',
+      '[omo-hooks] hook json-error-recovery registered on tools/post-execute',
+      '[omo-hooks] hook tool-output-truncator registered on tools/post-execute',
     ])
     expect(onCalls.map((call) => call.event)).toEqual([
       'tools/post-execute',
@@ -346,17 +349,22 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       'session/event',
       'agent/status',
       'session/event',
+      'tools/post-execute',
+      'tools/post-execute',
+      'tools/post-execute',
     ])
   })
 
   it('② drives a replacement registrar through ctx.on (the registry is the extension point)', () => {
     // apply() has no injection seam on purpose (it is the one-argument cordis
     // entry point), so this test saves/restores a real registry entry around the
-    // call instead of leaking a permanent fake into sibling tests. The other four
-    // real entries stay in place, so the expected log carries all five registered
-    // lines in roster order (bash-file-read-guard is row 1,
+    // call instead of leaking a permanent fake into sibling tests. The other
+    // seven real entries stay in place, so the expected log carries all eight
+    // registered lines in roster order (bash-file-read-guard is row 1,
     // todo-continuation-enforcer row 2, empty-task-response-detector row 3,
-    // session-notification row 4, background-notification row 5).
+    // session-notification row 4, background-notification row 5,
+    // edit-error-recovery row 6, json-error-recovery row 7,
+    // tool-output-truncator row 8).
     const id = 'todo-continuation-enforcer'
     expect(HOOK_IDS).toContain(id)
     const previous = HOOK_REGISTRARS[id]
@@ -378,6 +386,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       'session/event',
       'agent/status',
       'session/event',
+      'tools/post-execute',
+      'tools/post-execute',
+      'tools/post-execute',
     ])
     expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
       EXPECTED_SUMMARY_LINE,
@@ -389,6 +400,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       // has no jobs service and no `ctx.inject`).
       '[omo-hooks] background-notification NOTE: jobs service never appeared; no push subscription (degraded pull path only)',
       '[omo-hooks] hook background-notification registered on session/event',
+      '[omo-hooks] hook edit-error-recovery registered on tools/post-execute',
+      '[omo-hooks] hook json-error-recovery registered on tools/post-execute',
+      '[omo-hooks] hook tool-output-truncator registered on tools/post-execute',
     ])
   })
 

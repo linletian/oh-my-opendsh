@@ -23,7 +23,7 @@
 | # | 模块 | 形态 | 模式 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
 | H-03 | `todo-continuation-enforcer/` | 目录 | E（=`agent.steer()` 副作用） | todo 未清时回合将停 → steer 注入续行上下文。todo 状态源 = **session todos 投影（dsh-tool-todo `stateOf`；U-4 实测：DSH 无 `ctx.todo` 服务，ROADMAP 原文的 `ctx.todo` 即指该原生投影）**。R-8 已闭环（goal-round-driver 互补，goals 活跃跳过） | ✅ **已移植**（场景 `todo-continuation-enforced`，P3-T7 listener + P3-T9 e2e，commit 42f57db+；熔断 = 进展复员 cap 5） |
-| H-07 | `empty-task-response-detector.ts` | 单文件 | D | 空任务响应检测 → 替换/追加纠正性工具结果（上游 `tool.execute.after` 原地改写 `output.output`）。U-7 已闭环（无原生等价纠正） | ⏳ listener 已移植（P3-T7 单测绿，commit 42f57db）；**e2e 待 T14**（仲裁并入） |
+| H-07 | `empty-task-response-detector.ts` | 单文件 | D | 空任务响应检测 → 替换/追加纠正性工具结果（上游 `tool.execute.after` 原地改写 `output.output`）。U-7 已闭环（无原生等价纠正） | ✅ **已移植**（场景 `empty-task-response-corrected`，P3-T7 listener + P3-T14 e2e） |
 
 ### P2 compaction 辅助 —— **整组跳过（DSH 原生覆盖）**
 
@@ -43,9 +43,9 @@
 
 | # | 模块 | 形态 | 模式 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
-| H-14 | `edit-error-recovery/`（3 文件） | 目录 | D | edit 输出命中错误串表 → 尾部追加回读提醒（58 行零状态）。**前置**：DSH edit 工具错误文案逐字核实（正则能否命中） | ✅ 待移植 |
-| H-15 | `json-error-recovery/`（3 文件） | 目录 | D | 非排除工具输出命中 JSON 错误正则 → 追加提醒（含幂等哨兵 + 19 项排除表）。前置同 H-14 | ✅ 待移植 |
-| H-16 | `tool-output-truncator.ts`（1 + 4 shared 支撑文件） | 单文件 | D | 超长工具输出按 `min(剩余上下文×0.5, 工具阈值)` 截断。**前置**：DSH 剩余 token/上下文用量暴露面核实（dsh-compaction-basic 有 token meter，暴露面实施期定）；无暴露面则退化为固定阈值并记差异 | ✅ 待移植 |
+| H-14 | `edit-error-recovery/`（3 文件） | 目录 | D | edit 输出命中错误串表 → 尾部追加回读提醒。前置已闭环：错误串表按 **DSH 实际 edit 失败文案**重建（上游串不命中的差异注记） | ✅ **已移植**（P3-T14 listener+单测+e2e） |
+| H-15 | `json-error-recovery/`（3 文件） | 目录 | D | 非排除工具输出命中 JSON 错误正则 → 追加提醒（幂等哨兵 + 19 项排除表的 DSH 工具名空间映射） | ✅ **已移植**（P3-T14 listener+单测+e2e） |
+| H-16 | `tool-output-truncator.ts`（1 + 4 shared 支撑文件） | 单文件 | D | 超长工具输出截断。**读取面（MAJOR-1 修复）**：自适应预算按 token-meter wire.view 公式自算（stateOf 返回 host state 无 projectedTokens，lib:511-514 等价性钉测）；无容量宣告时走固定阈值回退 | ✅ **已移植**（P3-T14 listener+单测+e2e） |
 | H-21 | `directory-readme-injector/`（**8 文件**） | 目录 | D | 读文件后把所在目录链 README 注入工具输出（上游 `tool.execute.after` 追加）。与 dsh-agent-instructions 无重叠（其候选名 = AGENTS.md/CLAUDE.md，不含 README） | ✅ 待移植 |
 | H-22 | `agent-usage-reminder/` | 目录 | D | 工具结果尾部追加 agent 使用提醒（上游 `tool.execute.after` `output.output += REMINDER_MESSAGE`） | ✅ 待移植 |
 | H-23 | `task-resume-info/` | 目录 | D | 工具结果追加任务恢复信息。**前置（实施期答）**：是否依赖 OMO task 工具族语义，若是则改判跳过 | ✅ 待移植 |
@@ -131,7 +131,7 @@
 | 状态 | 计数 | 口径 |
 |---|---|---|
 | 移植组（§1） | **14**（P0=1 · P1=2 · P3=2 · P4=8 · P5=1；P2 组整组跳过） | 2026-09-19 仲裁：H-01 改判跳过（DSH 原生超集，S-46） |
-| 已移植（listener+单测+e2e） | 4 / 14（H-02/H-03/H-10/H-11；H-07 待 T14） | 逐任务翻转 |
+| 已移植（listener+单测+e2e） | 7 / 14（H-02/H-03/H-07/H-10/H-11/H-14/H-15/H-16） | 逐任务翻转 |
 | 跳过 / deferred / 排除（§2） | **47**（S-01…S-46 去占位行） | 每行终态理由齐备 |
 | 非 hook（§3） | 4 类条目 | 不计入 |
 | 全树覆盖 | 101 / 101 条目 | 退出标准 b 的完整性硬判定 ✅ |

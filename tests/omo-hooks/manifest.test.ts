@@ -150,13 +150,24 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     expect([...manifestModeSet]).toEqual([...MANIFEST_MODES])
   })
 
-  it('exactly one row is ported as of P3-T7 (H-02; the other 13 still pending)', () => {
+  it('exactly five rows are ported after P3-T14 (H-02, H-07, H-14, H-15, H-16)', () => {
     // P3-T7 flipped H-02 after the WP-2 仲裁 accepted the T6 e2e (scenario
-    // `bash-read-guard-warned`). The hard-coded split is the point: a second row
-    // silently flipping would let a not-yet-e2e-proven hook look shipped.
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending').length).toBe(13)
+    // `bash-read-guard-warned`); P3-T14 flipped the D-mode group — H-07 (the
+    // e2e the P3-T9 arbitration moved into T14) plus 批 A's H-14/H-15/H-16.
+    // The hard-coded split is the point: a second row silently flipping would
+    // let a not-yet-e2e-proven hook look shipped.
+    //
+    // The F pair (H-10/H-11) is deliberately NOT in this list even though
+    // P3-T12/P3-T13 landed its listeners, unit tests and e2e scenarios — the
+    // row-flip is another task's bookkeeping and is recorded in the T14 report
+    // as an open item rather than performed silently here.
+    expect(hooksByStatus(HOOK_MANIFEST, 'pending').length).toBe(9)
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
+      'empty-task-response-detector',
+      'edit-error-recovery',
+      'json-error-recovery',
+      'tool-output-truncator',
     ])
   })
 })
@@ -395,14 +406,26 @@ describe('P3-T2 derived helpers', () => {
   })
 
   it('⑤ hooksByStatus filters by status and matches nothing for an empty status', () => {
+    // P3-T7 flipped H-02 and P3-T14 flipped the D-mode group, so the pending
+    // list is the id list minus exactly those five rows — a hard-coded
+    // difference, not a length, so a wrong row cannot pass.
+    const ported = new Set([
+      'bash-file-read-guard',
+      'empty-task-response-detector',
+      'edit-error-recovery',
+      'json-error-recovery',
+      'tool-output-truncator',
+    ])
     const pending = hooksByStatus(HOOK_MANIFEST, 'pending')
-    // P3-T7 flipped H-02, so the pending list is the id list minus exactly that
-    // row — a hard-coded difference, not a length, so a wrong row cannot pass.
     expect(pending.map((row) => row.id)).toEqual(
-      EXPECTED_IDS.filter((id) => id !== 'bash-file-read-guard'),
+      EXPECTED_IDS.filter((id) => !ported.has(id)),
     )
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
+      'empty-task-response-detector',
+      'edit-error-recovery',
+      'json-error-recovery',
+      'tool-output-truncator',
     ])
     expect(hooksByStatus(HOOK_MANIFEST, '')).toEqual([])
     expect(hooksByStatus([], 'pending')).toEqual([])

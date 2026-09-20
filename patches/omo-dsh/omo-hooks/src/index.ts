@@ -23,17 +23,19 @@
 //
 // P3-T2 delivered the package shape + manifest.ts; P3-T3 mounts it; P3-T5 landed
 // the first implementation; P3-T7 landed the P1 todo/goal executor pair; P3-T12
-// (this revision) lands the P3 session-notification family. apply() validates the
-// manifest, logs the summary boot marker, and runs the per-hook registration
-// loop; the loop's implementation registry (HOOK_REGISTRARS) now carries FIVE
-// entries — 'bash-file-read-guard' (the C-mode pilot), 'todo-continuation-enforcer'
-// (E mode), 'empty-task-response-detector' (D mode), 'session-notification' (F
-// mode, the completion/error observer + the platform backend abstraction) and
+// landed the P3 session-notification family; P3-T14 (this revision) lands the
+// WP-6 批 A D-mode trio. apply() validates the manifest, logs the summary boot
+// marker, and runs the per-hook registration loop; the loop's implementation
+// registry (HOOK_REGISTRARS) now carries EIGHT entries — 'bash-file-read-guard'
+// (the C-mode pilot), 'todo-continuation-enforcer' (E mode),
+// 'empty-task-response-detector' (D mode), 'session-notification' (F mode, the
+// completion/error observer + the platform backend abstraction),
 // 'background-notification' (F mode, the `ctx.jobs.onJobDone` observer that
-// REUSES session-notification's NotifierBackend) — so exactly five `registered`
-// lines are logged after the summary. The remaining 9 rows are filled one task at
-// a time by the WP-6 batches (T14+); nothing else in this file changes when a row
-// lands.
+// REUSES session-notification's NotifierBackend), and the P3-T14 D-mode trio
+// 'edit-error-recovery' / 'json-error-recovery' / 'tool-output-truncator' — so
+// exactly eight `registered` lines are logged after the summary. The remaining 6
+// rows are filled one task at a time by the WP-6 batches (T15+); nothing else in
+// this file changes when a row lands.
 //
 // Note the roster is 14 entries, not 15: P3-T5's other half is the WP-2
 // arbitration that REMOVED H-01 (write-existing-file-guard) from the port group
@@ -52,9 +54,11 @@
 //       from the plugin's own modules, so it cannot drift).
 //   * `[omo-hooks] hook <id> registered on <event>`
 //     — one line per hook whose registrar is implemented AND returned cleanly.
-//       Five such lines today ('bash-file-read-guard',
+//       Eight such lines today ('bash-file-read-guard',
 //       'todo-continuation-enforcer', 'empty-task-response-detector',
-//       'session-notification', 'background-notification'); T14+ add the rest.
+//       'session-notification', 'background-notification',
+//       'edit-error-recovery', 'json-error-recovery',
+//       'tool-output-truncator'); T15+ add the rest.
 //       NOTE (P3-T12): the event in this line is the manifest's PRIMARY event,
 //       which for 'background-notification' is `session/event` — and that row's
 //       registrar DOES register it (its push half additionally subscribes to
@@ -110,6 +114,9 @@ import { registerTodoContinuationEnforcer } from './hooks/todo-continuation-enfo
 import { registerEmptyTaskResponseDetector } from './hooks/empty-task-response-detector.ts'
 import { registerSessionNotification } from './hooks/session-notification.ts'
 import { registerBackgroundNotification } from './hooks/background-notification.ts'
+import { registerEditErrorRecovery } from './hooks/edit-error-recovery.ts'
+import { registerJsonErrorRecovery } from './hooks/json-error-recovery.ts'
+import { registerToolOutputTruncator } from './hooks/tool-output-truncator.ts'
 
 export const name = 'omo-hooks'
 
@@ -249,8 +256,22 @@ export type HookRegistrar = (
  *     citations are in that module's header. It returns a disposer only on the
  *     immediate path; the deferred path hands the subscription's disposer back
  *     through the injected child fiber, which cordis disposes with this fiber.
- * TODO(P3-T14+): add one entry per remaining ported hook, the same way —
- *   'edit-error-recovery': registerEditErrorRecovery, ...
+ * P3-T14 added THREE MORE — the WP-6 批 A D-mode trio, all through the same
+ * preferred `ctx.on` channel and all returning nothing:
+ *   'edit-error-recovery': registerEditErrorRecovery
+ *     (hooks/edit-error-recovery.ts) — appends the read-the-file reminder to an
+ *     `edit` result whose text carries one of DSH's real edit-mistake strings.
+ *   'json-error-recovery': registerJsonErrorRecovery
+ *     (hooks/json-error-recovery.ts) — appends the malformed-arguments reminder
+ *     to a non-blacklisted tool result matching the (upstream 8 + DSH-native)
+ *     regex table, self-idempotent through its own marker line.
+ *   'tool-output-truncator': registerToolOutputTruncator
+ *     (hooks/tool-output-truncator.ts) — replaces a whitelisted tool's oversized
+ *     result with the min(remaining × 0.5, tool threshold) truncation; its
+ *     remaining-token input is the `contextPressure` session projection, looked
+ *     up per event (the module header's 前置③).
+ * TODO(P3-T15+): add one entry per remaining ported hook, the same way —
+ *   'directory-readme-injector': registerDirectoryReadmeInjector, ...
  * one task per hook, keeping disciplines ①–④ above. Nothing else in this file
  * needs to change when a row lands.
  */
@@ -260,6 +281,9 @@ export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'empty-task-response-detector': registerEmptyTaskResponseDetector,
   'session-notification': registerSessionNotification,
   'background-notification': registerBackgroundNotification,
+  'edit-error-recovery': registerEditErrorRecovery,
+  'json-error-recovery': registerJsonErrorRecovery,
+  'tool-output-truncator': registerToolOutputTruncator,
 }
 
 /**

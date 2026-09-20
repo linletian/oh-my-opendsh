@@ -449,14 +449,18 @@
 // HOST_VOLATILE_SETTINGS_KEYS idea at path granularity).
 //
 // Usage:
-//   node tests/e2e/drive.mjs               run ALL 9 scenarios (hello + demo +
+//   node tests/e2e/drive.mjs               run ALL 15 scenarios (hello + demo +
 //                                          the two AC-6 negatives + the P2-T18
 //                                          roster parade + the P2-T19 read-only
 //                                          representative + the P2-T19
 //                                          positive nested chain, ENABLED
 //                                          2026-09-13 by D-2026-09-13-01 +
 //                                          the P3-T6 bash-read advisory pilot +
-//                                          the P3-T9 todo-continuation pilot),
+//                                          the P3-T9 todo-continuation pilot +
+//                                          the P3-T12/T13 notification pair +
+//                                          the P3-T14 D-mode set: H-07's
+//                                          empty-task correction and 批 A's
+//                                          three error/truncation listeners),
 //                                          print verdict JSON
 //   node tests/e2e/drive.mjs --self-test   run the analysis logic against
 //                                          fabricated logs only (no spawn)
@@ -588,6 +592,37 @@ const {
   TERMINAL_JOB_STATUSES: BACKGROUND_NOTIFICATION_TERMINAL_STATUSES,
 } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/background-notification.ts', import.meta.url).href
+)
+// P3-T14: the three D-mode listener texts and the H-07 corrective text, read
+// from the SHIPPED modules — the SAME single-source discipline as the T6/T9/T12
+// literals above. Each scenario asserts the bytes the listener itself declares
+// (never a second hand-copied literal), and `matchesJsonErrorTable` is imported
+// so the JSON scenario can prove the OBSERVED DSH error text is the very text
+// the live table matches.
+const {
+  EDIT_ERROR_REMINDER,
+  EDIT_ERROR_REMINDER_MARKER,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/edit-error-recovery.ts', import.meta.url).href
+)
+const {
+  JSON_ERROR_REMINDER,
+  JSON_ERROR_REMINDER_MARKER,
+  matchesJsonErrorTable,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/json-error-recovery.ts', import.meta.url).href
+)
+const {
+  TRUNCATABLE_TOOLS: TOOL_OUTPUT_TRUNCATABLE_TOOLS,
+  TOOL_SPECIFIC_MAX_TOKENS: TOOL_OUTPUT_SPECIFIC_MAX_TOKENS,
+  DEFAULT_MAX_TOKENS: TOOL_OUTPUT_DEFAULT_MAX_TOKENS,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/tool-output-truncator.ts', import.meta.url).href
+)
+const {
+  EMPTY_RESPONSE_WARNING,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/empty-task-response-detector.ts', import.meta.url).href
 )
 
 const INSTALL_TIMEOUT_MS = Number(process.env.DSH_E2E_INSTALL_TIMEOUT_MS ?? 300_000)
@@ -1375,10 +1410,276 @@ async function awaitBackgroundNotificationSettlement(boot, sandbox, sessionId, t
   return anchorReady && noticeReady
 }
 
+// ── P3-T14: THE D-MODE SET + H-07 (plan §4.2 模式 D; task book WP-6 批 A) ─────
+// Four scenarios, each with a TRIGGER and a live 对照 in ONE batch (the T6
+// three-calls-in-one-assistant-message shape), asserted against RUNTIME-OBSERVED
+// carriers only:
+//
+//   1. `edit-error-recovery-reminder` (H-14). Step 1 reads the fixture (the
+//      fs-observation policy requires an observation before an edit); step 2 is
+//      ONE assistant message carrying TWO real `edit` calls on that file:
+//        (a) `old_string` = a string that does not exist  → the REAL tool fails
+//            with `Error: old_string was not found in "<path>"`
+//            (dsh-fs-local:685) and the listener must append the reminder;
+//        (b) `old_string` = the fixture's first line        → the REAL tool
+//            succeeds (`The file … has been updated successfully.`) and the
+//            result must stay UNCHANGED.
+//      Step 3 is the summary text. The trigger's own truth is that the CALL ran
+//      on the real filesystem: (b) proves the file bytes were what the model
+//      claimed, so "the reminder fired" cannot be an artifact of a synthetic
+//      error string.
+//
+//   2. `json-error-recovery-reminder` (H-15). Step 1 carries TWO calls whose
+//      ARGUMENTS ARE NOT AN OBJECT — the mock serializes the raw value, the
+//      agent loop preserves a non-object argument (dsh-agent-loop:541-547) and
+//      the tool registry rejects it, so BOTH calls produce the IDENTICAL real
+//      error text `Error: invalid arguments: "arguments" must be an object`:
+//        (a) `write` — NOT on the blacklist → the listener must append;
+//        (b) `read`  — ON the blacklist     → the same text, NO reminder.
+//      The 对照 is therefore byte-identical on the trigger side: the ONLY
+//      difference between the two results is the tool's blacklist membership.
+//
+//   3. `tool-output-truncated` (H-16). Step 1 carries two real `grep` calls:
+//        (a) a pattern hitting 200 × 1800-char lines (≈360 KB of matches, under
+//            the 250-match inline cap so nothing is spilled) → over BOTH the
+//            fixed 50 000-token default and any adaptive
+//            min(remaining × 0.5, 50 000) budget → the listener must replace the
+//            result with the truncated text (header lines kept, tail note);
+//        (b) a pattern hitting two short lines → the control: untouched.
+//      MEASURED two-layer fact (pinned against a kept sandbox): the mock-served
+//      route advertises NO context capacity, so the projection is unusable and
+//      upstream's OWN fixed-threshold fallback is what ran (the adaptive branch
+//      is unit-tested instead); and `dsh-spill-policy` (maxInlineBytes: 50000,
+//      PREPENDED — it calls `next()` and then bounds the chain's output) bounded
+//      the listener's ~200 KB replacement to 50 000 bytes with its own
+//      `(Omitted 149392 bytes. Full formatted result stored at: …)` notice. The
+//      listener's own note `[90 more lines truncated due to context window
+//      limit]` IS durably inside the tool result, which is what makes this
+//      scenario non-vacuous; the final byte bound is spill-policy's, and that
+//      overlap is raised for arbitration in the T14 report, not papered over.
+//
+//   4. `empty-task-response-corrected` (H-07; the arbitration-moved e2e). Step 1
+//      carries TWO foreground delegations on DIFFERENT roster rows so each
+//      child's mock script is deterministic (a same-role pair would race for one
+//      step cursor):
+//        (a) `explore` answers WHITESPACE ONLY — a real, non-error child run
+//            whose rendered output is blank, which is exactly upstream's
+//            `output.output?.trim() ?? ""` empty case;
+//        (b) `oracle` answers a real note — the 对照: the result must NOT be
+//            rewritten.
+//      The correction is asserted VERBATIM against the shipped listener's
+//      `EMPTY_RESPONSE_WARNING`, and the child log proves the pre-rewrite value
+//      (its assistant text trims to nothing).
+//
+// 变异 QA (hermetic, runAnalysisSelfTest): each scenario's fabricated GOOD input
+// mirrors the real layout and PASSes; each named defect below FAILs on its own
+// check (no-reminder, reminder-on-the-control, un-truncated, truncating-the-
+// control, uncorrected-empty-result, corrective-text-on-the-control).
+const EDIT_RECOVERY_PROMPT =
+  'e2e edit-error-recovery-reminder: read the fixture, try an edit with a line that is not there, then edit the first line correctly and summarize'
+const EDIT_RECOVERY_FIXTURE_NAME = 'edit-recovery-fixture.txt'
+const EDIT_RECOVERY_FIXTURE_LINE = 'omo-dsh edit-recovery fixture line 2f7b41'
+const EDIT_RECOVERY_FIXTURE_SENTINEL = '2f7b41'
+const EDIT_RECOVERY_FIXTURE_CONTENT =
+  `${EDIT_RECOVERY_FIXTURE_LINE}\nsecond line, never the edit target 91c0de\n`
+// The absent `old_string`: the trigger of the REAL `FS_EDIT_NOT_FOUND` failure.
+const EDIT_RECOVERY_ABSENT_MARKER = 'omo-dsh-line-that-never-exists-6b24e8'
+const EDIT_RECOVERY_REPLACED_LINE = 'omo-dsh edit-recovery replacement line 5d3a92'
+const EDIT_RECOVERY_SUMMARY =
+  'MOCK-EDIT-RECOVERY-SUMMARY-3e9f17: the failing edit came back with the reminder and the correct edit landed'
+
+/**
+ * edit-error-recovery-reminder script: read → the two-edit batch → summary.
+ * Both `edit` calls address the SAME fixture path, so the analysis can tell them
+ * apart only by their `old_string` (the absent marker vs the real first line) —
+ * which is exactly what it does.
+ */
+function editErrorRecoveryScript(sandbox) {
+  const fixturePath = join(sandbox.project, EDIT_RECOVERY_FIXTURE_NAME)
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'read', arguments: { file_path: fixturePath } },
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'edit',
+            arguments: {
+              file_path: fixturePath,
+              old_string: EDIT_RECOVERY_ABSENT_MARKER,
+              new_string: 'this replacement must never be written',
+            },
+          },
+          {
+            name: 'edit',
+            arguments: {
+              file_path: fixturePath,
+              old_string: EDIT_RECOVERY_FIXTURE_LINE,
+              new_string: EDIT_RECOVERY_REPLACED_LINE,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: EDIT_RECOVERY_SUMMARY },
+    ],
+  }
+}
+
+const JSON_RECOVERY_PROMPT =
+  'e2e json-error-recovery-reminder: call write and read with malformed arguments, then summarize what came back'
+// The raw argument value the mock serializes. It is a JSON STRING, i.e. valid
+// JSON with a non-object root — the shape that reaches the tool registry and
+// fails its schema walk (see the section header's fact 2).
+const JSON_RECOVERY_MALFORMED_ARGUMENTS = 'not-an-object'
+// The REAL error both calls produce, transcribed from the pinned install
+// (dsh-tools `ToolArgsError` :812-818 + `toolErrorResult` :3490-3502 through the
+// `"arguments" must be an object` violation at :423/:348-350). The analysis
+// additionally feeds it to the shipped table's `matchesJsonErrorTable`, so a
+// drift in either direction is loud.
+const JSON_RECOVERY_EXPECTED_ERROR = 'Error: invalid arguments: "arguments" must be an object'
+const JSON_RECOVERY_SUMMARY =
+  'MOCK-JSON-RECOVERY-SUMMARY-7d1b64: both malformed calls failed and only the non-blacklisted one got the reminder'
+
+/**
+ * json-error-recovery-reminder script: ONE batch with the blacklisted/non-
+ * blacklisted pair, then the summary. `write` is NOT on the port's DSH blacklist
+ * and `read` IS (module header mapping table) — that single difference is the
+ * whole 对照.
+ */
+function jsonErrorRecoveryScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          { name: 'write', arguments: JSON_RECOVERY_MALFORMED_ARGUMENTS },
+          { name: 'read', arguments: JSON_RECOVERY_MALFORMED_ARGUMENTS },
+        ],
+      },
+      { type: 'text', text: JSON_RECOVERY_SUMMARY },
+    ],
+  }
+}
+
+const TRUNCATOR_PROMPT =
+  'e2e tool-output-truncated: grep the big fixture and the small fixture, then summarize what came back'
+const TRUNCATOR_BIG_FIXTURE_NAME = 'truncator-big-fixture.txt'
+const TRUNCATOR_SMALL_FIXTURE_NAME = 'truncator-small-fixture.txt'
+// The big fixture: 200 matching lines of exactly 1800 characters each
+// (≈360 KB, ≈90 000 estimated tokens) — deliberately under the grep tool's
+// 250-match inline cap (dsh-tool-fs-search GREP_MAX_MATCHES), so the result is
+// NOT spilled and the truncator is what shrinks it. Each line carries its index,
+// which is how the analysis proves the TAIL was dropped while the head survived.
+const TRUNCATOR_BIG_LINE_COUNT = 200
+const TRUNCATOR_BIG_LINE_CHARS = 1800
+const TRUNCATOR_BIG_PATTERN = 'TRUNC-BIG-8f2b7d'
+const TRUNCATOR_BIG_FIRST_MARKER = `${TRUNCATOR_BIG_PATTERN}-000`
+const TRUNCATOR_BIG_LAST_MARKER = `${TRUNCATOR_BIG_PATTERN}-199`
+const TRUNCATOR_SMALL_PATTERN = 'TRUNC-SMALL-4a1c9e'
+const TRUNCATOR_SMALL_LINES = [
+  `${TRUNCATOR_SMALL_PATTERN} control line one`,
+  `${TRUNCATOR_SMALL_PATTERN} control line two`,
+]
+const TRUNCATOR_SUMMARY =
+  'MOCK-TRUNCATOR-SUMMARY-2c8e5a: the big grep result was cut and the small one came back whole'
+
+/** One 1800-character fixture line, index-tagged so the tail is provable. */
+function truncatorBigLine(index) {
+  const head = `${TRUNCATOR_BIG_PATTERN}-${String(index).padStart(3, '0')}-`
+  return head + 'x'.repeat(TRUNCATOR_BIG_LINE_CHARS - head.length)
+}
+
+/** The big-fixture bytes (200 lines, each exactly TRUNCATOR_BIG_LINE_CHARS). */
+function truncatorBigFixtureText() {
+  return Array.from({ length: TRUNCATOR_BIG_LINE_COUNT }, (_v, index) => truncatorBigLine(index))
+    .join('\n') + '\n'
+}
+
+/**
+ * tool-output-truncated script: the two greps in ONE batch, then the summary.
+ * The paths are absolute sandbox paths (the fixture is seeded per run).
+ */
+function toolOutputTruncatedScript(sandbox) {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'grep',
+            arguments: {
+              pattern: TRUNCATOR_BIG_PATTERN,
+              path: join(sandbox.project, TRUNCATOR_BIG_FIXTURE_NAME),
+            },
+          },
+          {
+            name: 'grep',
+            arguments: {
+              pattern: TRUNCATOR_SMALL_PATTERN,
+              path: join(sandbox.project, TRUNCATOR_SMALL_FIXTURE_NAME),
+            },
+          },
+        ],
+      },
+      { type: 'text', text: TRUNCATOR_SUMMARY },
+    ],
+  }
+}
+
+const EMPTY_TASK_PROMPT =
+  'e2e empty-task-response-corrected: delegate twice — once to explore and once to oracle — then report what each returned'
+// The control child's answer (the oracle row). Asserted verbatim in the parent's
+// tool/result: a non-empty delegation result must NOT be rewritten.
+const EMPTY_TASK_ORACLE_NOTE =
+  'MOCK-ORACLE-NOTE-9b3f52: the oracle row answered this delegation with real content'
+// The empty child's answer: WHITESPACE ONLY. It is a real, non-error completion
+// (the adapter opens a text block for any non-empty delta, and the loop's stop
+// reason stays `completed`), yet the rendered result trims to nothing — exactly
+// upstream's `output.output?.trim() ?? ""` empty case.
+const EMPTY_TASK_BLANK_CHILD_TEXT = '   \n\t '
+const EMPTY_TASK_SUMMARY =
+  'MOCK-EMPTY-TASK-SUMMARY-5a7c31: the blank delegation result came back corrected and the real one did not'
+
+/**
+ * empty-task-response-corrected script. TWO roles, so each child consumes its
+ * OWN step cursor (the T17 per-role cursor semantics) and the blank answer can
+ * never be handed to the control child by a race.
+ */
+function emptyTaskResponseCorrectedScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'explore',
+            arguments: {
+              description: 'Inspect the workspace and report findings',
+              prompt: 'Inspect the workspace and report your findings.',
+              run_in_background: false,
+            },
+          },
+          {
+            name: 'oracle',
+            arguments: {
+              description: 'Answer the design question',
+              prompt: 'Answer the design question in one sentence.',
+              run_in_background: false,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: EMPTY_TASK_SUMMARY },
+    ],
+    // The blank child: a whitespace-only text step (see the constant's comment).
+    explore: [{ type: 'text', text: EMPTY_TASK_BLANK_CHILD_TEXT }],
+    oracle: [{ type: 'text', text: EMPTY_TASK_ORACLE_NOTE }],
+  }
+}
+
 // §14.5: path-based volatile allowlist (see header). Symlinks are skipped by
 // the walk (Dirent.isFile() is false for them).
 const VOLATILE_PREFIXES = ['sessions/', 'storages/']
-
 /** OMO-pattern sandbox: project / dsh home / agents home / xdg / home. */
 function createSandbox() {
   const root = mkdtempSync(join(tmpdir(), 'omo-dsh-e2e-'))
@@ -3449,6 +3750,354 @@ export function analyzeTodoContinuationEnforced({ log, requests, providersJson, 
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
 }
 
+// ── P3-T14 D-mode analysis (模式 D；见场景段头的四场景说明) ───────────────────
+//
+// The four listeners of this task share ONE assertion shape: a REAL tool call
+// whose result text the listener rewrites (trigger) plus a REAL sibling call in
+// the same batch that must stay byte-identical (对照). Everything is read off
+// the durable session JSONL (`tool/result` parts by callId) — never off a
+// theoretical field.
+
+/** The three givens every P3-T14 verdict reports (shared, so no scenario can
+ *  quietly stop asserting the mount while still listing assertions). */
+function dModeGivens({ log, providersJson, bootLog }, routes) {
+  return {
+    pluginLoaded: pluginsLoaded(bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+  }
+}
+
+/**
+ * The first `tool/call` whose tool name matches and whose parsed arguments
+ * satisfy `matches` (absent ⇒ any arguments). Unparseable arguments are simply
+ * not a match — the case the malformed-arguments scenario relies on is handled
+ * by its own name-only lookup.
+ */
+function findToolCall(events, name, matches = () => true) {
+  return events.find((event) => {
+    if (event.type !== 'tool/call') return false
+    if (event.data?.name !== name) return false
+    const args = toolCallArguments(event)
+    if (args === undefined) return false
+    return matches(args)
+  })
+}
+
+/** The `tool/result` part for one `tool/call` event, matched by callId. */
+function toolResultForCall(results, call) {
+  if (call === undefined) return undefined
+  return results.find((part) => part.callId === call.data?.callId)
+}
+
+/** True when the log carries a completed turn boundary (the closure given). */
+function turnCompleted(events) {
+  return events.some(
+    (event) =>
+      event.type === 'turn/end'
+      && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+  )
+}
+
+/**
+ * The truncation tail note in EITHER of upstream's two normal-path wordings
+ * (`[N more lines truncated …]` / `[Content truncated …]`); the character-slice
+ * path's `[Output truncated …]` is deliberately NOT accepted here, because the
+ * fixture is multi-line and would only reach it if the header logic regressed.
+ */
+const TRUNCATION_TAIL_NOTE_RE = /(more lines truncated|Content truncated) due to context window limit/
+
+/**
+ * The `edit-error-recovery-reminder` assertions (H-14). The trigger's own truth
+ * is the two-edit pair on ONE real file: the second call SUCCEEDS, which proves
+ * the first one's `old_string` really was absent (a synthetic error string could
+ * not coexist with a successful sibling edit in the same batch).
+ */
+export function analyzeEditErrorRecoveryReminder(
+  { log, requests, providersJson, bootLog, fixturePath },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const readCall = findToolCall(events, 'read', (args) => args.file_path === fixturePath)
+  const failedEditCall = findToolCall(
+    events,
+    'edit',
+    (args) => args.old_string === EDIT_RECOVERY_ABSENT_MARKER,
+  )
+  const successfulEditCall = findToolCall(
+    events,
+    'edit',
+    (args) => args.old_string === EDIT_RECOVERY_FIXTURE_LINE,
+  )
+  const readResult = toolResultForCall(results, readCall)
+  const failedEditResult = toolResultForCall(results, failedEditCall)
+  const successfulEditResult = toolResultForCall(results, successfulEditCall)
+  const reminderResults = results.filter((part) => part.text.includes(EDIT_ERROR_REMINDER))
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // The observation the edit needed really happened (the policy's precondition).
+    readToolRanWithFixtureBytes:
+      readResult !== undefined
+      && readResult.isError !== true
+      && readResult.text.includes(EDIT_RECOVERY_FIXTURE_SENTINEL),
+    // (a) TRIGGER: the real DSH failure, with the reminder appended VERBATIM at
+    // the tail (`endsWith` is the `+=` contract) and the failure still an error.
+    failedEditResultCarriesReminder:
+      failedEditResult !== undefined
+      && failedEditResult.isError === true
+      && failedEditResult.text.startsWith('Error: old_string was not found')
+      && failedEditResult.text.includes(fixturePath ?? '')
+      && failedEditResult.text.endsWith(EDIT_ERROR_REMINDER),
+    // (b) 对照: the sibling edit SUCCEEDED and its result carries no reminder.
+    successfulEditResultUnchanged:
+      successfulEditResult !== undefined
+      && successfulEditResult.isError !== true
+      && successfulEditResult.text.includes('has been updated successfully')
+      && !successfulEditResult.text.includes(EDIT_ERROR_REMINDER_MARKER),
+    reminderInjectedExactlyOnce: reminderResults.length === 1,
+    mockSawThreeSteps: sisyphusRequests.length === 3,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      fixturePath: fixturePath ?? null,
+      reminderText: EDIT_ERROR_REMINDER,
+      toolResults: results.map((part) => ({
+        callId: part.callId,
+        isError: part.isError,
+        textLength: part.text.length,
+        text: part.text.slice(0, 400),
+      })),
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
+/**
+ * The `json-error-recovery-reminder` assertions (H-15). The 对照 is the
+ * strongest available form: BOTH calls fail with the SAME malformed-arguments
+ * error, and the ONLY difference is the tool name's blacklist membership, so the
+ * excluded result must be byte-identical to the trigger's pre-reminder text.
+ */
+export function analyzeJsonErrorRecoveryReminder(
+  { log, requests, providersJson, bootLog },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const writeCall = findToolCall(events, 'write')
+  const readCall = findToolCall(events, 'read')
+  const writeResult = toolResultForCall(results, writeCall)
+  const readResult = toolResultForCall(results, readCall)
+  const observedErrorTexts = [writeResult?.text, readResult?.text].filter(
+    (text) => typeof text === 'string',
+  )
+  // The trigger's PRE-reminder text, recovered by undoing the listener's own
+  // append (`${text}\n${REMINDER}`) — the 对照 must be byte-identical to it.
+  const triggerOriginalText = typeof writeResult?.text === 'string'
+    && writeResult.text.endsWith(`\n${JSON_ERROR_REMINDER}`)
+    ? writeResult.text.slice(0, -(JSON_ERROR_REMINDER.length + 1))
+    : writeResult?.text
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // Both REAL calls failed on the malformed-arguments path (non-vacuous: the
+    // model's arguments really were not an object).
+    malformedArgumentsFailedBothCalls:
+      writeResult !== undefined
+      && readResult !== undefined
+      && writeResult.isError === true
+      && readResult.isError === true
+      && observedErrorTexts.every((text) => text.startsWith(JSON_RECOVERY_EXPECTED_ERROR)),
+    // The observed text is the very text the shipped table matches — if DSH's
+    // wording or the port's table drifts, one of the two fails loudly.
+    observedErrorTextMatchesLiveTable:
+      observedErrorTexts.length === 2
+      && observedErrorTexts.every((text) => matchesJsonErrorTable(text)),
+    // (a) TRIGGER: `write` is not blacklisted ⇒ reminder appended verbatim.
+    nonExcludedToolGotReminder:
+      writeResult !== undefined
+      && writeResult.text.endsWith(JSON_ERROR_REMINDER),
+    // (b) 对照: `read` IS blacklisted ⇒ the untouched error text, no reminder.
+    excludedToolResultUnchanged:
+      readResult !== undefined
+      && readResult.text === JSON_RECOVERY_EXPECTED_ERROR
+      && !readResult.text.includes(JSON_ERROR_REMINDER_MARKER),
+    // …and the two results differ ONLY by the reminder: the excluded one is
+    // byte-identical to the trigger's pre-reminder text (the strongest 对照 form
+    // this pair of calls can have).
+    controlResultIsByteIdenticalToTriggerOriginal:
+      readResult !== undefined
+      && typeof triggerOriginalText === 'string'
+      && readResult.text === triggerOriginalText,
+    reminderInjectedExactlyOnce:
+      results.filter((part) => part.text.includes(JSON_ERROR_REMINDER_MARKER)).length === 1,
+    mockSawTwoSteps: sisyphusRequests.length === 2,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      expectedErrorText: JSON_RECOVERY_EXPECTED_ERROR,
+      reminderText: JSON_ERROR_REMINDER,
+      toolResults: results.map((part) => ({
+        callId: part.callId,
+        isError: part.isError,
+        textLength: part.text.length,
+      })),
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
+/**
+ * The `tool-output-truncated` assertions (H-16). Both greps run in ONE batch,
+ * so "exactly one truncation" is a statement about a batch in which the control
+ * really returned its own bytes.
+ */
+export function analyzeToolOutputTruncated(
+  { log, requests, providersJson, bootLog, bigFixtureChars },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const bigGrepCall = findToolCall(events, 'grep', (args) => args.pattern === TRUNCATOR_BIG_PATTERN)
+  const smallGrepCall = findToolCall(
+    events,
+    'grep',
+    (args) => args.pattern === TRUNCATOR_SMALL_PATTERN,
+  )
+  const bigResult = toolResultForCall(results, bigGrepCall)
+  const smallResult = toolResultForCall(results, smallGrepCall)
+  const truncatedResults = results.filter((part) => TRUNCATION_TAIL_NOTE_RE.test(part.text))
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // (a) TRIGGER: the big grep really ran and its HEAD survived (the listener
+    // preserves the first three lines).
+    bigGrepRanWithHeadBytes:
+      bigResult !== undefined
+      && bigResult.isError !== true
+      && bigResult.text.includes(`Found ${TRUNCATOR_BIG_LINE_COUNT} matches`)
+      && bigResult.text.includes(TRUNCATOR_BIG_FIRST_MARKER),
+    // …and the TAIL was dropped, the result shrank, and the tail note is there.
+    bigGrepOutputTruncated:
+      bigResult !== undefined
+      && TRUNCATION_TAIL_NOTE_RE.test(bigResult.text)
+      && !bigResult.text.includes(TRUNCATOR_BIG_LAST_MARKER)
+      && typeof bigFixtureChars === 'number'
+      && bigResult.text.length < bigFixtureChars,
+    // (b) 对照: the small grep returned BOTH its lines and no note.
+    smallGrepControlUnchanged:
+      smallResult !== undefined
+      && smallResult.isError !== true
+      && TRUNCATOR_SMALL_LINES.every((line) => smallResult.text.includes(line))
+      && !TRUNCATION_TAIL_NOTE_RE.test(smallResult.text),
+    truncatedExactlyOnce: truncatedResults.length === 1,
+    mockSawTwoSteps: sisyphusRequests.length === 2,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      bigFixtureChars: bigFixtureChars ?? null,
+      bigResultLength: bigResult?.text.length ?? null,
+      smallResultLength: smallResult?.text.length ?? null,
+      truncatableTools: [...TOOL_OUTPUT_TRUNCATABLE_TOOLS],
+      toolMaxTokens: { ...TOOL_OUTPUT_SPECIFIC_MAX_TOKENS },
+      defaultMaxTokens: TOOL_OUTPUT_DEFAULT_MAX_TOKENS,
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
+/**
+ * The `empty-task-response-corrected` assertions (H-07). The trigger's own truth
+ * is the CHILD LOG: the blank child really completed with a whitespace-only
+ * assistant message, so the parent's result was legitimately empty BEFORE the
+ * listener replaced it.
+ */
+export function analyzeEmptyTaskResponseCorrected(
+  { log, allLogs, requests, providersJson, bootLog },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const exploreCall = findToolCall(events, 'explore')
+  const oracleCall = findToolCall(events, 'oracle')
+  const exploreResult = toolResultForCall(results, exploreCall)
+  const oracleResult = toolResultForCall(results, oracleCall)
+  const children = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(log?.header?.id),
+  )
+  const childTexts = children.map((candidate) => {
+    const lastAssistant = [...candidate.events]
+      .reverse()
+      .find((event) => event.type === 'assistant/message')
+    return messageContentText(lastAssistant?.data?.message)
+  })
+  const warningResults = results.filter((part) => part.text.includes(EMPTY_RESPONSE_WARNING))
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // Both delegations really produced a child session (non-vacuous 对照).
+    twoChildrenRan: children.length === 2,
+    // The trigger's precondition, proven on the CHILD side: a whitespace-only
+    // completion (upstream's `.trim() === ""` empty case).
+    blankChildProducedNoVisibleText: childTexts.some((text) => text.trim() === ''),
+    // …and the control child really answered with its own note.
+    controlChildProducedItsNote: childTexts.some((text) => text.includes(EMPTY_TASK_ORACLE_NOTE)),
+    // (a) TRIGGER: the empty delegation result IS the corrective text, verbatim,
+    // and the call stayed a SUCCESS (never turned into an isError).
+    emptyDelegationResultReplacedWithWarning:
+      exploreResult !== undefined
+      && exploreResult.isError !== true
+      && exploreResult.text === EMPTY_RESPONSE_WARNING,
+    // (b) 对照: the non-empty delegation result is byte-identical to the child's
+    // own answer.
+    nonEmptyDelegationResultUntouched:
+      oracleResult !== undefined
+      && oracleResult.isError !== true
+      && oracleResult.text === EMPTY_TASK_ORACLE_NOTE,
+    warningInjectedExactlyOnce: warningResults.length === 1,
+    mockSawTwoSteps: sisyphusRequests.length === 2,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      warningText: EMPTY_RESPONSE_WARNING,
+      childCount: children.length,
+      childAssistantTexts: childTexts,
+      toolResults: results.map((part) => ({
+        callId: part.callId,
+        isError: part.isError,
+        text: part.text,
+      })),
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
 // ── P3-T12 notification-delivery analysis (模式 F) ────────────────────────────
 //
 // The SHARED assertion core for the two P3-T12 notification listeners. Both
@@ -4627,6 +5276,256 @@ function fabricatedBashGuardInput(routes) {
     providersJson: fabricatedProvidersJson(routes),
     bootLog: FABRICATED_BOOT_LOG,
     fixturePath: FABRICATED_BASH_GUARD_FIXTURE_PATH,
+  }
+}
+
+// ── fabricated P3-T14 D-mode inputs (模式 D，must earn their PASS) ─────────────
+// One GOOD fixture per scenario, mirroring the real runtime layout the scenario
+// produces (tool/call → tool/result, in model order, one turn/end), plus the
+// named defect mutations the self-test applies. Each GOOD input must PASS and
+// each mutation must FAIL on its own named check — otherwise the assertion would
+// be vacuous.
+
+/** One `tool/result` event carrying a single tool-result part. */
+function fabricatedToolResultEvent(seq, callId, text, isError = false) {
+  return {
+    seq,
+    type: 'tool/result',
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool-result',
+          toolCallId: callId,
+          content: [{ type: 'text', text }],
+          isError,
+        }],
+      },
+    },
+  }
+}
+
+/** One `tool/call` event with serialized arguments. */
+function fabricatedToolCallEvent(seq, callId, name, args) {
+  return {
+    seq,
+    type: 'tool/call',
+    data: { turn: 1, step: 1, callId, name, arguments: JSON.stringify(args) },
+  }
+}
+
+/** The one-request `sisyphus` header the D-mode fixtures share. */
+function fabricatedSisyphusRequests(routes) {
+  return [{
+    role: 'sisyphus',
+    body: { model: routes.sisyphus.model },
+    receivedAt: 10,
+  }]
+}
+
+// — H-14: edit-error-recovery-reminder ————————————————————————————————————————
+
+const FABRICATED_EDIT_RECOVERY_FIXTURE_PATH = '/fabricated/project/edit-recovery-fixture.txt'
+
+function fabricatedEditErrorRecoveryInput(routes) {
+  const errorText = `Error: old_string was not found in "${FABRICATED_EDIT_RECOVERY_FIXTURE_PATH}"`
+  return {
+    log: {
+      path: '/fabricated/edit-recovery/session.jsonl',
+      header: { type: 'session', id: FABRICATED_PARENT_ID },
+      events: [
+        { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: EDIT_RECOVERY_PROMPT }] } },
+        fabricatedToolCallEvent(2, 'mock-llm-tool-1', 'read', { file_path: FABRICATED_EDIT_RECOVERY_FIXTURE_PATH }),
+        fabricatedToolResultEvent(3, 'mock-llm-tool-1', `1→${EDIT_RECOVERY_FIXTURE_LINE}\n2→second line, never the edit target 91c0de\n`),
+        fabricatedToolCallEvent(4, 'mock-llm-tool-2-0', 'edit', {
+          file_path: FABRICATED_EDIT_RECOVERY_FIXTURE_PATH,
+          old_string: EDIT_RECOVERY_ABSENT_MARKER,
+          new_string: 'this replacement must never be written',
+        }),
+        fabricatedToolCallEvent(5, 'mock-llm-tool-2-1', 'edit', {
+          file_path: FABRICATED_EDIT_RECOVERY_FIXTURE_PATH,
+          old_string: EDIT_RECOVERY_FIXTURE_LINE,
+          new_string: EDIT_RECOVERY_REPLACED_LINE,
+        }),
+        fabricatedToolResultEvent(6, 'mock-llm-tool-2-0', `${errorText}\n${EDIT_ERROR_REMINDER}`, true),
+        fabricatedToolResultEvent(
+          7,
+          'mock-llm-tool-2-1',
+          `The file ${FABRICATED_EDIT_RECOVERY_FIXTURE_PATH} has been updated successfully.`,
+        ),
+        { seq: 8, type: 'assistant/message', data: { turn: 1, step: 3, message: { content: [{ type: 'text', text: EDIT_RECOVERY_SUMMARY }] } } },
+        { seq: 9, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      ],
+    },
+    requests: fabricatedSisyphusRequests(routes).concat([
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 20 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 30 },
+    ]),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+    fixturePath: FABRICATED_EDIT_RECOVERY_FIXTURE_PATH,
+  }
+}
+
+// — H-15: json-error-recovery-reminder ———————————————————————————————————————
+
+function fabricatedJsonErrorRecoveryInput(routes) {
+  return {
+    log: {
+      path: '/fabricated/json-recovery/session.jsonl',
+      header: { type: 'session', id: FABRICATED_PARENT_ID },
+      events: [
+        { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: JSON_RECOVERY_PROMPT }] } },
+        // The REAL wire shape for a non-object argument: the raw string is
+        // preserved and serialized back as a JSON string by the mock.
+        {
+          seq: 2,
+          type: 'tool/call',
+          data: {
+            turn: 1,
+            step: 1,
+            callId: 'mock-llm-tool-1-0',
+            name: 'write',
+            arguments: JSON.stringify(JSON_RECOVERY_MALFORMED_ARGUMENTS),
+          },
+        },
+        {
+          seq: 3,
+          type: 'tool/call',
+          data: {
+            turn: 1,
+            step: 1,
+            callId: 'mock-llm-tool-1-1',
+            name: 'read',
+            arguments: JSON.stringify(JSON_RECOVERY_MALFORMED_ARGUMENTS),
+          },
+        },
+        fabricatedToolResultEvent(4, 'mock-llm-tool-1-0', `${JSON_RECOVERY_EXPECTED_ERROR}\n${JSON_ERROR_REMINDER}`, true),
+        fabricatedToolResultEvent(5, 'mock-llm-tool-1-1', JSON_RECOVERY_EXPECTED_ERROR, true),
+        { seq: 6, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: JSON_RECOVERY_SUMMARY }] } } },
+        { seq: 7, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      ],
+    },
+    requests: fabricatedSisyphusRequests(routes).concat([
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 20 },
+    ]),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+  }
+}
+
+// — H-16: tool-output-truncated ——————————————————————————————————————————————
+
+const FABRICATED_TRUNCATOR_BIG_PATH = '/fabricated/project/truncator-big-fixture.txt'
+const FABRICATED_TRUNCATOR_SMALL_PATH = '/fabricated/project/truncator-small-fixture.txt'
+
+/**
+ * The fabricated big-grep result: 3 header lines + 110 content lines + the tail
+ * note — the shape the fallback (fixed 50k) path really produces, i.e. the head
+ * lines kept and the tail dropped with the count note. `line0` rides the THIRD
+ * header line (the fixture's own layout), so the removed count is the 199
+ * content lines minus the 110 kept ones.
+ */
+function fabricatedTruncatedGrepText() {
+  const kept = Array.from(
+    { length: 110 },
+    (_value, index) => truncatorBigLine(index + 1),
+  )
+  const removed = (TRUNCATOR_BIG_LINE_COUNT - 1) - kept.length
+  return [
+    `Found ${TRUNCATOR_BIG_LINE_COUNT} matches`,
+    '',
+    truncatorBigLine(0),
+    ...kept,
+  ].join('\n') + `\n\n[${removed} more lines truncated due to context window limit]`
+}
+
+function fabricatedToolOutputTruncatedInput(routes) {
+  return {
+    log: {
+      path: '/fabricated/truncator/session.jsonl',
+      header: { type: 'session', id: FABRICATED_PARENT_ID },
+      events: [
+        { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: TRUNCATOR_PROMPT }] } },
+        fabricatedToolCallEvent(2, 'mock-llm-tool-1-0', 'grep', {
+          pattern: TRUNCATOR_BIG_PATTERN,
+          path: FABRICATED_TRUNCATOR_BIG_PATH,
+        }),
+        fabricatedToolCallEvent(3, 'mock-llm-tool-1-1', 'grep', {
+          pattern: TRUNCATOR_SMALL_PATTERN,
+          path: FABRICATED_TRUNCATOR_SMALL_PATH,
+        }),
+        fabricatedToolResultEvent(4, 'mock-llm-tool-1-0', fabricatedTruncatedGrepText()),
+        fabricatedToolResultEvent(
+          5,
+          'mock-llm-tool-1-1',
+          `Found 2 matches\n\n${TRUNCATOR_SMALL_LINES.join('\n')}`,
+        ),
+        { seq: 6, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: TRUNCATOR_SUMMARY }] } } },
+        { seq: 7, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      ],
+    },
+    requests: fabricatedSisyphusRequests(routes).concat([
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 20 },
+    ]),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+    bigFixtureChars: truncatorBigFixtureText().length,
+  }
+}
+
+// — H-07: empty-task-response-corrected ——————————————————————————————————————
+
+const FABRICATED_EMPTY_TASK_EXPLORE_ID = 'session-fabricated-empty-child'
+const FABRICATED_EMPTY_TASK_ORACLE_ID = 'session-fabricated-oracle-child'
+
+/** One fabricated subagent child log with a single assistant message. */
+function fabricatedChildLog(id, text) {
+  return {
+    path: `/fabricated/${id}/session.jsonl`,
+    header: { type: 'session', id, origin: 'subagent', parentSession: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text }] } } },
+      { seq: 2, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedEmptyTaskResponseInput(routes) {
+  const exploreLog = fabricatedChildLog(FABRICATED_EMPTY_TASK_EXPLORE_ID, EMPTY_TASK_BLANK_CHILD_TEXT)
+  const oracleLog = fabricatedChildLog(FABRICATED_EMPTY_TASK_ORACLE_ID, EMPTY_TASK_ORACLE_NOTE)
+  const parentLog = {
+    path: '/fabricated/empty-task/session.jsonl',
+    header: { type: 'session', id: FABRICATED_PARENT_ID },
+    events: [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: EMPTY_TASK_PROMPT }] } },
+      fabricatedToolCallEvent(2, 'mock-llm-tool-1-0', 'explore', {
+        description: 'Inspect the workspace and report findings',
+        prompt: 'Inspect the workspace and report your findings.',
+        run_in_background: false,
+      }),
+      fabricatedToolCallEvent(3, 'mock-llm-tool-1-1', 'oracle', {
+        description: 'Answer the design question',
+        prompt: 'Answer the design question in one sentence.',
+        run_in_background: false,
+      }),
+      fabricatedToolResultEvent(4, 'mock-llm-tool-1-0', EMPTY_RESPONSE_WARNING),
+      fabricatedToolResultEvent(5, 'mock-llm-tool-1-1', EMPTY_TASK_ORACLE_NOTE),
+      { seq: 6, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: EMPTY_TASK_SUMMARY }] } } },
+      { seq: 7, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ],
+  }
+  return {
+    log: parentLog,
+    childLog: exploreLog,
+    allLogs: [parentLog, exploreLog, oracleLog],
+    requests: fabricatedSisyphusRequests(routes).concat([
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 20 },
+    ]),
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
   }
 }
 
@@ -5906,6 +6805,148 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P3-T14 D-mode self-test: ONE fabricated GOOD input per scenario (the real
+  // runtime layout) must PASS, and every named defect must FAIL on its OWN check
+  // — the mutation QA the C/E-mode pilots established, applied to the three
+  // listeners of 批 A plus H-07's correction.
+  const goodEditRecovery = analyzeEditErrorRecoveryReminder(fabricatedEditErrorRecoveryInput(routes), routes)
+  if (goodEditRecovery.result !== 'PASS') {
+    problems.push(`fabricated GOOD edit-error-recovery-reminder must PASS, got FAIL on: ${goodEditRecovery.failed.join(', ')}`)
+  }
+  const editRecoveryDefectCases = [
+    ['the failed edit result carries no reminder', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-2-0')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-2-0',
+            `Error: old_string was not found in "${FABRICATED_EDIT_RECOVERY_FIXTURE_PATH}"`,
+            true,
+          )
+          : event)
+    }, 'failedEditResultCarriesReminder'],
+    ['the reminder was also appended to the SUCCESSFUL sibling edit', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-2-1')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-2-1',
+            `The file ${FABRICATED_EDIT_RECOVERY_FIXTURE_PATH} has been updated successfully.\n${EDIT_ERROR_REMINDER}`,
+          )
+          : event)
+    }, 'successfulEditResultUnchanged'],
+  ]
+  for (const [label, mutate, expectedCheck] of editRecoveryDefectCases) {
+    const input = fabricatedEditErrorRecoveryInput(routes)
+    mutate(input)
+    const verdict = analyzeEditErrorRecoveryReminder(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated edit-error-recovery-reminder defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  const goodJsonRecovery = analyzeJsonErrorRecoveryReminder(fabricatedJsonErrorRecoveryInput(routes), routes)
+  if (goodJsonRecovery.result !== 'PASS') {
+    problems.push(`fabricated GOOD json-error-recovery-reminder must PASS, got FAIL on: ${goodJsonRecovery.failed.join(', ')}`)
+  }
+  const jsonRecoveryDefectCases = [
+    ['the non-blacklisted tool got no reminder', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
+          ? fabricatedToolResultEvent(event.seq, 'mock-llm-tool-1-0', JSON_RECOVERY_EXPECTED_ERROR, true)
+          : event)
+    }, 'nonExcludedToolGotReminder'],
+    ['the BLACKLISTED tool was rewritten too', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-1',
+            `${JSON_RECOVERY_EXPECTED_ERROR}\n${JSON_ERROR_REMINDER}`,
+            true,
+          )
+          : event)
+    }, 'excludedToolResultUnchanged'],
+  ]
+  for (const [label, mutate, expectedCheck] of jsonRecoveryDefectCases) {
+    const input = fabricatedJsonErrorRecoveryInput(routes)
+    mutate(input)
+    const verdict = analyzeJsonErrorRecoveryReminder(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated json-error-recovery-reminder defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  const goodTruncator = analyzeToolOutputTruncated(fabricatedToolOutputTruncatedInput(routes), routes)
+  if (goodTruncator.result !== 'PASS') {
+    problems.push(`fabricated GOOD tool-output-truncated must PASS, got FAIL on: ${goodTruncator.failed.join(', ')}`)
+  }
+  const truncatorDefectCases = [
+    ['the oversized grep result came back whole (no truncation)', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-0',
+            `Found ${TRUNCATOR_BIG_LINE_COUNT} matches\n\n${Array.from({ length: TRUNCATOR_BIG_LINE_COUNT }, (_v, index) => truncatorBigLine(index)).join('\n')}`,
+          )
+          : event)
+    }, 'bigGrepOutputTruncated'],
+    ['the SMALL grep result was truncated as well', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-1',
+            `Found 2 matches\n\n${TRUNCATOR_SMALL_LINES[0]}\n\n[1 more lines truncated due to context window limit]`,
+          )
+          : event)
+    }, 'smallGrepControlUnchanged'],
+  ]
+  for (const [label, mutate, expectedCheck] of truncatorDefectCases) {
+    const input = fabricatedToolOutputTruncatedInput(routes)
+    mutate(input)
+    const verdict = analyzeToolOutputTruncated(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated tool-output-truncated defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  const goodEmptyTask = analyzeEmptyTaskResponseCorrected(fabricatedEmptyTaskResponseInput(routes), routes)
+  if (goodEmptyTask.result !== 'PASS') {
+    problems.push(`fabricated GOOD empty-task-response-corrected must PASS, got FAIL on: ${goodEmptyTask.failed.join(', ')}`)
+  }
+  const emptyTaskDefectCases = [
+    ['the empty delegation result was left uncorrected', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
+          ? fabricatedToolResultEvent(event.seq, 'mock-llm-tool-1-0', EMPTY_TASK_BLANK_CHILD_TEXT)
+          : event)
+    }, 'emptyDelegationResultReplacedWithWarning'],
+    ['the correction was applied to the NON-empty delegation result too', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
+          ? fabricatedToolResultEvent(event.seq, 'mock-llm-tool-1-1', EMPTY_RESPONSE_WARNING)
+          : event)
+    }, 'nonEmptyDelegationResultUntouched'],
+  ]
+  for (const [label, mutate, expectedCheck] of emptyTaskDefectCases) {
+    const input = fabricatedEmptyTaskResponseInput(routes)
+    mutate(input)
+    const verdict = analyzeEmptyTaskResponseCorrected(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated empty-task-response-corrected defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
@@ -6041,6 +7082,62 @@ const SCENARIOS = [
     augmentMaterialized: enableOneShotBackgroundExplore,
     settle: (boot, sandbox, sessionId) => awaitBackgroundNotificationSettlement(boot, sandbox, sessionId),
     analyze: analyzeBackgroundNotificationLog,
+  },
+  {
+    // P3-T14 (plan §4.2 模式 D; task book WP-6 批 A): H-14's listener proves the
+    // whole chain in ONE real batch — a failed `edit` (real FS_EDIT_NOT_FOUND)
+    // comes back with the reminder appended VERBATIM, and the sibling `edit` in
+    // the SAME batch really succeeded and stayed untouched. See the P3-T14
+    // section header for the two-call design and the 对照 semantics.
+    name: 'edit-error-recovery-reminder',
+    prompt: EDIT_RECOVERY_PROMPT,
+    roles: ['sisyphus'],
+    seed: (sandbox) => {
+      writeFileSync(join(sandbox.project, EDIT_RECOVERY_FIXTURE_NAME), EDIT_RECOVERY_FIXTURE_CONTENT)
+    },
+    script: editErrorRecoveryScript,
+    analysisInput: (sandbox) => ({
+      fixturePath: join(sandbox.project, EDIT_RECOVERY_FIXTURE_NAME),
+    }),
+    analyze: analyzeEditErrorRecoveryReminder,
+  },
+  {
+    // P3-T14: H-15's listener on ONE real batch whose two calls fail with the
+    // IDENTICAL DSH malformed-arguments error — the only difference is the tool
+    // name's blacklist membership (`write` in, `read` out).
+    name: 'json-error-recovery-reminder',
+    prompt: JSON_RECOVERY_PROMPT,
+    roles: ['sisyphus'],
+    script: jsonErrorRecoveryScript,
+    analyze: analyzeJsonErrorRecoveryReminder,
+  },
+  {
+    // P3-T14: H-16's listener on ONE real batch of two greps — the big one over
+    // the fixed/adaptive budget (truncated, head kept, tail noted) and the small
+    // one as the untouched control.
+    name: 'tool-output-truncated',
+    prompt: TRUNCATOR_PROMPT,
+    roles: ['sisyphus'],
+    seed: (sandbox) => {
+      writeFileSync(join(sandbox.project, TRUNCATOR_BIG_FIXTURE_NAME), truncatorBigFixtureText())
+      writeFileSync(join(sandbox.project, TRUNCATOR_SMALL_FIXTURE_NAME), `${TRUNCATOR_SMALL_LINES.join('\n')}\n`)
+    },
+    script: toolOutputTruncatedScript,
+    analysisInput: () => ({ bigFixtureChars: truncatorBigFixtureText().length }),
+    analyze: analyzeToolOutputTruncated,
+  },
+  {
+    // P3-T14 (H-07; the e2e the P3-T9 arbitration moved into this task): two
+    // foreground delegations on DIFFERENT roles, so the blank child and the
+    // control child each consume their own mock step cursor. The blank child's
+    // whitespace-only completion is upstream's `.trim() === ""` empty case, and
+    // the parent's result must BE the corrective text verbatim; the oracle
+    // child's real answer must come through untouched.
+    name: 'empty-task-response-corrected',
+    prompt: EMPTY_TASK_PROMPT,
+    roles: ['sisyphus', 'explore', 'oracle'],
+    script: emptyTaskResponseCorrectedScript,
+    analyze: analyzeEmptyTaskResponseCorrected,
   },
   {
     // AC-6a (T20): the explore child hallucinates a write; the T12 deny
@@ -6327,7 +7424,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

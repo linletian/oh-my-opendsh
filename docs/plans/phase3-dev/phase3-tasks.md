@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **9/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：📋 **10/21 完成**（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
@@ -138,12 +138,12 @@
 
 ## WP-6 P4/P5 其余模块 + ulw-execute（计划书 §4.3/§4.5；P3-T1 实测重排：9 模块 = 8 P4 + H-32）
 
-### [ ] P3-T14 — 批 A：D 模式 error-recovery + truncator（3 模块 + H-07 e2e 并入）
+### [x] P3-T14 — 批 A：D 模式 error-recovery + truncator（3 模块 + H-07 e2e 并入）
 
 - **产出**：`src/hooks/`：`edit-error-recovery.ts`、`json-error-recovery.ts`、`tool-output-truncator.ts` + 单测 + e2e。
 - **做法**：按 R3 批内排序（edit-error-recovery 58 行零状态 → json-error-recovery → truncator）；**前置**：① DSH `edit`/`write` 工具错误文案逐字核实（错误串表与 19 项排除表能否命中——实施期项）；② truncator 的"剩余 token"输入面核实（dsh-compaction-basic token meter 的暴露面；无暴露面则退化为固定阈值并记差异）；三模块共享 T6 打样的 post-execute 夹具；上游测试用例移植为单测种子（R-3：edit 9 / json 12 / truncator 7+16）。
 - **判定**：✅ 每模块单测 + e2e 各 ≥1 场景（触发 + 对照不触发）；门 2/3 绿。
-- **证据**：（待填）
+- **证据**：2026-09-20 完成（deepseek-flash，1 首轮 + 1 修复轮）。产出：三模块移植（edit-error-recovery：错误串表按 **DSH 实际 edit 失败文案**重建（前置①——上游串对 DSH 文案不命中会成死 hook，差异注记）；json-error-recovery：8 正则 + 幂等哨兵 + 19 项排除表的 DSH 工具名空间映射（剔除项注记）；tool-output-truncator：保 3 头行 + 尾注形态对照上游 token-limit-truncator.ts）+ e2e 三模块场景（触发 + 对照）+ `empty-task-response-corrected` 场景（H-07 并入——空白子代理输出实现空结果；DSH 完全空 completion 会转 EMPTY_RESPONSE（dsh-llm-deepseek:1243）不可用的判定已注记）+ 单测 omo-hooks 计 276（truncator 34）。**重大评审发现（MAJOR-1，仲裁独立核实机理）**：truncator 自适应预算首选 `record.projectedTokens`，但 `sessionProjections.stateOf` 返回 **host state**（dsh-session-projection/lib/index.js:127-131，无该字段）——`projectedTokens` 是 dsh-token-meter **wire.view 计算产物**（lib:511-514 `Math.max(0, pressureTokens + surfaceTokens - sampledSurfaceTokens)`）→ 首选分支生产不可达、恒退化 pressureTokens（少估占用、截断不足），且头部/manifest/单测三处同误使现有门结构性不可见。修复：读取面改按 wire.view 公式自算 + **公式等价性钉测**（与 lib:511-514 公式文本一致，上游改公式即红）+ 三处同误修正 + projectedTokens 优先/退化两正向用例；e2e 的 truncator 场景不受影响（mock 路由不宣告容量 → 仍走固定阈值回退，注记诚实）。**双评审**：Kimi 轮1 **REJECT**（MAJOR-1 + MINOR-1 + NIT×2）+ mcode 轮1 超时 → 修复轮 → **Kimi 轮2 APPROVE**（276/276、全量 709/709；1 NIT：json-error-recovery.ts:40 行号引用（:423→:449）——仲裁并入 T15 同族清扫）+ mcode 轮2 遇 MiniMax Token Plan 限额（2067）→ **半小时周期重试第 7 次恢复**（规则④）：**mcode 轮2 APPROVE**（逐项核对闸门序/幂等哨兵/MAJOR-1 读取面/排除表/e2e/三处对位，无 reportable issue；一处排版冗余注记）。门：仲裁独立复跑 ci-local **8/8 绿**、typecheck 0、vitest 709。**编码 agent 注记**：① TOOL_OUTPUT_TRUNCATOR_TRUNCATE_ALL 实验开关未接线（registrar 只收 manifest row，模块常量承载与上游默认一致）；② 自适应分支运行时证据缺失（需真实路由宣告容量——e2e 基建增益项）；③ spill-policy 重叠质疑（truncator 与原生 compaction 双层收口）已注记，e2e 实测证实无冲突。
 - **依赖**：P3-T6（模式夹具）。**量级**：5 小时。
 
 ### [ ] P3-T15 — 批 B：D 模式注入/提醒类（3 模块）

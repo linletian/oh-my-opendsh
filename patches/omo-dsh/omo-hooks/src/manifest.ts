@@ -286,7 +286,12 @@ const MANIFEST_ROWS = [
     summary:
       '空任务响应检测 → 纠正性工具结果（上游原地改写 output.output；DSH 走 accept{content} 替换渲染内容）；U-7 实测无原生覆盖，前置通过',
     e2eScenario: 'empty-task-response-corrected',
-    status: 'pending',
+    // P3-T14: flipped 'pending' → 'ported' on the arbitration decision that
+    // moved H-07's e2e into this task (P3-T9's task book named only the todo
+    // scenario; the coverage gap was recorded there and closed here). Listener
+    // (P3-T7) + unit test + the `empty-task-response-corrected` scenario in
+    // tests/e2e/drive.mjs have all landed, which is the row-flip condition.
+    status: 'ported',
   },
   // H-10 — phase3-hooks.md §1 P3 行。这是**文件族**而非目录模块：上游把这 16 个
   // 实现文件平铺在 hooks/ 顶层（ls-tree 实测 21 文件 = 16 实现 + 5 测试），故
@@ -351,8 +356,15 @@ const MANIFEST_ROWS = [
     e2eScenario: 'background-notification-log',
     status: 'pending',
   },
-  // H-14 — phase3-hooks.md §1 P4 行（批 A 首项：58 行零状态）。前置：DSH edit
-  // 工具错误文案逐字核实（正则能否命中），T14 实施期答。
+  // H-14 — phase3-hooks.md §1 P4 行（批 A 首项：58 行零状态）。前置（T14 实施期
+  // 逐字核实，**已闭合**）：DSH edit 工具错误文案 = `old_string and new_string
+  // must differ`（dsh-tool-fs:713）/ `old_string was not found in "<path>"`
+  // （dsh-fs-local:685）/ `old_string matched <N> times in "<path>"; provide a
+  // more specific old_string or set replace_all to true`（dsh-fs-local:686）/
+  // `old_string must be a non-empty string`（dsh-tool-fs:712 与 dsh-fs-local:682）。
+  // 上游三条串（oldString 词汇）在 DSH 结果里**永不出现**，故错误串表按 DSH 实际
+  // 文案重建（上游三条保留为审计参照 UPSTREAM_EDIT_ERROR_PATTERNS）；差异与
+  // DSH-only 第 4 条的来由记在 listener 头部 前置①。
   {
     id: 'edit-error-recovery',
     upstreamFiles: [
@@ -363,11 +375,19 @@ const MANIFEST_ROWS = [
     event: 'tools/post-execute',
     mode: 'D',
     summary:
-      'edit 输出命中错误串表 → 尾部追加回读提醒（58 行零状态）；前置：DSH edit 工具错误文案逐字核实',
+      'edit 输出命中错误串表 → 尾部追加回读提醒（58 行零状态）；前置 T14：DSH 文案逐字核实通过，错误串表按 DSH 文案重建',
     e2eScenario: 'edit-error-recovery-reminder',
-    status: 'pending',
+    // P3-T14: flipped 'pending' → 'ported' (listener + unit test + the
+    // `edit-error-recovery-reminder` scenario all landed).
+    status: 'ported',
   },
   // H-15 — phase3-hooks.md §1 P4 行（批 A）。含幂等哨兵 + 19 项排除表。
+  // 前置（T14 实施期，**已闭合，结论双半**）：① 上游 8 条正则**全部不命中**
+  // DSH 自身参数解析失败文案（DSH 的失败文本是 `invalid arguments: "arguments"
+  // must be an object`，dsh-agent-loop:541-547 保留非法 JSON 原文 + dsh-tools:423
+  // /:812-818 根值类型违例；全文无 "json" 字样），故 live 表 = 上游 8 条（逐字
+  // 保留，provider/MCP 原文仍可能出现）+ 3 条 DSH 原生签名；② 19 项排除表按 DSH
+  // 工具名空间重建：13 项映射、6 项无对应剔除（映射表与依据记在 listener 头部）。
   {
     id: 'json-error-recovery',
     upstreamFiles: [
@@ -378,9 +398,11 @@ const MANIFEST_ROWS = [
     event: 'tools/post-execute',
     mode: 'D',
     summary:
-      '非排除工具输出命中 JSON 错误正则 → 追加提醒（含幂等哨兵 + 19 项排除表）；前置同 H-14',
+      '非排除工具输出命中 JSON 错误正则 → 追加提醒（含幂等哨兵 + 19 项排除表）；前置 T14：上游 8 条不命中 DSH 文案，追加 3 条 DSH 原生签名；排除表按 DSH 工具名映射（13 映射 / 6 剔除）',
     e2eScenario: 'json-error-recovery-reminder',
-    status: 'pending',
+    // P3-T14: flipped 'pending' → 'ported' (listener + unit test + the
+    // `json-error-recovery-reminder` scenario all landed).
+    status: 'ported',
   },
   // H-16 — phase3-hooks.md §1 P4 行（批 A 末项）。单文件模块，但 hooks/ 顶层
   // 有 1 实现 + 1 测试且测试与实现同行：`tool-output-truncator.ts` +
@@ -420,6 +442,41 @@ const MANIFEST_ROWS = [
   // 数量级（47 路径），故"支撑文件 = N"依赖口径。本表按任务书的
   // "ls-tree hooks/<模块>" 口径只记 hooks/ 侧 2 文件（1 实现 + 1 测试），
   // shared/ 侧闭包的口径与最终计数以 T14 裁定为准，与覆盖清单修订一并落地。
+  // 另注（P3-T14 裁定，闭合上一段的"以 T14 裁定为准"）：本行 upstreamFiles/
+  // upstreamTestFiles 维持 "ls-tree hooks/<模块>" 口径 —— 1 实现 + 1 测试；shared/
+  // 侧闭包（dynamic-truncator / dynamic-truncator-types /
+  // token-limit-truncator / context-window-usage + logger/normalize-sdk-response/
+  // context-limit-resolver 垫片/plugin-identity）在 listener 头部逐文件记账，其中
+  // context-window-usage 的 191 行 opencode RPC 层**不移植**（DSH 无对应面）。
+  // 前置（T14 实施期，**已闭合，结论为正向**）：DSH **有**剩余 token 暴露面 ——
+  // `contextPressure` 会话投影的 **client wire view**
+  // （dsh-session-projection `snapshot`:185 / impl index.js:142-156，值经
+  // viewSchema 校验；token-meter 行在钉死基础组合 dsh-base/cordis.patch.yml:317），
+  // 其形状 = dsh-token-meter projection.d.ts:28-46 的
+  // {pressureTokens?, projectedTokens?, contextWindow?}，剩余 =
+  // contextWindow − (projectedTokens ?? pressureTokens)，session 经
+  // `exec.agent.session` 取（dsh-tools types:207-208）。
+  // ⚠️ P3-T14 评审 MAJOR-1（本次修订修复）：**不能**用 `stateOf`
+  // （types:175 / impl index.js:127-132）——它返回 host state
+  // （token-meter contextPressureStateSchema，index.js:397-407：
+  // contextWindow?/pressureTokens?/surfaceTokens/sampledSurfaceTokens?/claim?，
+  // **无 projectedTokens**）；projectedTokens 仅由 wire view 的 view 产出
+  // （index.js:509-516，:514 = Math.max(0, pressureTokens + surfaceTokens −
+  // sampledSurfaceTokens)，且 pressureTokens 与 sampledSurfaceTokens 同在时才有）。
+  // 读 stateOf 会使 projectedTokens 分支生产不可达、自适应预算恒退化为
+  // pressureTokens（系统性少估占用）。故 min(剩余×0.5, 工具阈值) 自适应语义**照搬**，
+  // 读取面固定为 wire view、无 stateOf 回退；上游自己的 `if (!usage)` 固定阈值回退
+  // 保留为投影尚未有 provider usage 时的正常分支（首条工具结果即如此），非降级替代。
+  // 上游 12 项工具白名单映射到 DSH = grep / glob / web_fetch 三项（映射表记在
+  // listener 头部）；truncate_all 实验开关因 DSH registrar 无 config 通道而以模块
+  // 常量承载（默认 false，与上游一致），接线留待后续。
+  // 实测重叠（T14 e2e，须仲裁评估）：钉死基础组合还挂 `dsh-spill-policy`
+  // （maxInlineBytes: 50000，listener prepend，dsh-base/cordis.patch.yml:383-386），
+  // 它对链尾输出再做一次字节上限替换——e2e 里本 listener 的截断结果（含本模块尾注
+  // `[90 more lines truncated due to context window limit]`）确实durable 落地，随后被
+  // spill-policy 收到 50 000 字节并附它自己的 Omitted 提示。即：>50KB 的最终字节上限
+  // 归 spill-policy；本模块仍贡献 token 预算感知（自适应预算低于该字节上限时才是约束
+  // 方）与统一尾注。是否记"部分 DSH 原生覆盖"属仲裁项，见 T14 报告质疑节。
   {
     id: 'tool-output-truncator',
     upstreamFiles: ['packages/omo-opencode/src/hooks/tool-output-truncator.ts'],
@@ -427,9 +484,13 @@ const MANIFEST_ROWS = [
     event: 'tools/post-execute',
     mode: 'D',
     summary:
-      '超长工具输出按 min(剩余上下文×0.5, 工具阈值) 截断；前置：DSH 剩余 token 暴露面核实，无暴露面则退化固定阈值并记差异',
+      '超长工具输出按 min(剩余上下文×0.5, 工具阈值) 截断；前置 T14 正向：剩余量取 contextPressure 投影的 client wire view（sessionProjections.snapshot → values.contextPressure 的 projectedTokens ?? pressureTokens；stateOf 是 host state、无 projectedTokens，不可用），自适应语义照搬（仅投影无 provider usage 时走上游自己的固定阈值回退）',
     e2eScenario: 'tool-output-truncated',
-    status: 'pending',
+    // P3-T14: flipped 'pending' → 'ported' (listener + unit test + the
+    // `tool-output-truncated` scenario all landed). The task book's "H-16 退化
+    // 路径也要标" clause is moot on this runtime — the prerequisite measured
+    // POSITIVE — so the row records the adaptive path rather than a degradation.
+    status: 'ported',
   },
   // H-21 — phase3-hooks.md §1 P4 行（批 B）。上游 8 文件 = 6 实现 + 2 测试。
   // 与 dsh-agent-instructions 无重叠：其候选名 = AGENTS.md/CLAUDE.md，不含
