@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **15/21 完成**（移植组 14/14 闭环；余 T19 门扩展 / T20 署名收口 / T21 退出核对）（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **21/21 全部闭环**（16 完成 + 5 仲裁取消：T4/T8/T10/T11/T18；退出标准核对表全 ✅，2026-09-21）（移植组 14/14 闭环；余 T19 门扩展 / T20 署名收口 / T21 退出核对）（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
@@ -196,12 +196,12 @@
 - **证据**：2026-09-21 完成（编码部分 deepseek-flash 1 首轮 + 1 修复轮；文档部分仲裁亲撰）。**编码部分**：tests/omo-hooks/manifest-coverage-consistency.test.ts（词汇表映射 ported ↔ 已移植成文、manifest 14 条目 ↔ 基线 §1 14 行 id+场景名一致、场景名在 drive.mjs 真实存在、withoutScenario 终态 []、防空断言、变异敏感）+ T16/T17/T19 残留注释清扫（组合注记窄域表述、VERBATIM 常量名实、ulw-execute:550 「任一命中」、c14 注释、TOTAL_PROOFS 注记）。**文档部分（仲裁）**：NOTICES Phase 3 小节（14 行逐文件 listener ↔ 上游源 + 47 跳过组 + truncator shared 闭包 8 实现文件含 plugin-identity.ts；纯插入 0 删改）+ README 双语 Phase 3 状态行（R-7 措辞）+ CHANGELOG Unreleased Phase 3 块（d06 绿）+ 踩坑 **P-25~P-30 双语**（effect 返回值语义/jobs 竞态 inject/stateOf host vs wire view/变异外科手术/空针假绿/next() 出 try——每条带证据行号与可迁移教训）+ 覆盖基线终态（§1 场景名 14 行全补、§1/§2 标题与 §5 统计口径自洽：62 hook 模块 = 14 移植 + 47 跳过/deferred/排除 + 1 helper 并入）。**双评审**：mcode 轮1 [P1]（一致性测试 withoutScenario 硬编码清单与基线现状不符——根因含仲裁回填与编码的**时序交叉**：测试按填充前状态写死 7 行清单，仲裁随后回填场景名使其即时失效；该测试真实捕获了这次交叉，假绿纪律兑现）→ 修复（终态 []）→ Kimi 轮1（完整态）**REJECT**（4 MAJOR：① 一致性测试「并行解析器」叙事与 c14 矛盾；② 防松动对照组实证为空断言；③ NOTICES 计数 13/20 应为 **14/21**；④ 46 vs 47——仲裁深挖对账出**真值 47**（§2 45 行 + §1 P2 组 2 行），Kimi 的 47 引用自我 §5 的旧行、NOTICES 的 46 系另一处误算——三处不一致全部归 47）→ 修复（MAJOR-1/2 编码方按评审处方 + 反向证明；MAJOR-3/4 仲裁修文档）→ Kimi 轮2 **REJECT**（残留 1 MAJOR：§2 标题「实测 47」与 §5 推导矛盾）→ 一词之改（§2 标题改 45 行口径）→ **Kimi 轮3 APPROVE** + mcode 轮2 **APPROVE** + 终态确认（§1 标题 15→14 既有修正同步落地）mcode 轮3 限额 → 半小时重试（规则④）……门：ci-local **8/8 绿**（950 全量 / static 23/23 / docs 8/8 / proofs 5/5）、typecheck 0、vitest omo-hooks 517。**编码 agent 注记**：UPSTREAM_* 前缀语义 = 「上游来源」而非「逐字相同」（说明已补）；persona 守测 toBeGreaterThanOrEqual(10) 改 toBe(10) 的建议留 Phase 4+。
 - **依赖**：P3-T19。**量级**：3 小时。
 
-### [ ] P3-T21 — 退出标准核对 + 全门链复跑 + L4
+### [x] P3-T21 — 退出标准核对 + 全门链复跑 + L4
 
 - **产出**：本文件的"退出标准核对表"逐条填证据；L4 手工冒烟记录（`.omo/evidence/`，gitignored，结论回填本行）。
 - **做法**：① **先提交**：`git add` + commit 全部 Phase 3 产出（含本计划目录——Phase 2 教训：untracked 快照上的退出证据无可复现对应物）；② 按计划书 §5 的 a/b/c/d/e 逐条取证；`scripts/ci-local.sh` 全 8 门复跑；`verify-licenses --json` 的 `checked` 与基线（52）比对（vendor 例外则核对对应条目）；③ L4：真 key 手工 run，真实触发 2–3 个护栏（如故意覆写未读文件）+ macOS 通知后端（若机器可用）。
 - **判定**：✅ 下方核对表全绿。
-- **证据**：（待填）
+- **证据**：2026-09-21 完成（仲裁执行）。① 先提交：全部产出已随 T2…T20 逐任务提交（T20 = 6948f12，含本计划目录；工作树干净）。② a–e 取证见下方核对表（全 ✅）。全门链复跑 = 已提交快照上 `scripts/ci-local.sh` **8/8 门 PASS**（门 2 = 950 测试、门 3 = 13 场景、门 5 checked=53、门 6 = 23/23、门 8 = 5/5 proofs）。③ L4 真 key 手工 run ×3（`scripts/smoke-real.mjs`，证据 `.omo/evidence/smoke-real-2026-09-21T07-44-53-959Z` / `…07-53-21-098Z` / `…08-04-57-307Z`，gitignored）：**run-1**（bash 护栏 + todo 续行）——真实 `cat README.md` → 劝导注入 session JSONL 两次（C 模式语义真实生效）；todo 未清收尾 → `TODO CONTINUATION` steer 注入 → 指挥真实续行并把 pending 项做完才 turn/end（E 模式端到端真实生效）；boot.log 含全部 14 行 registered marker + 汇总行（1/2/8/1/2/0=14）。**run-2/3**（ulw-execute）——run-2 前台委派 atlas：`skipped: not-atlas`（T16 登记的前台身份缺口，正确负例）；run-3 后台委派 + 任务文本含意图 marker：`inventory loaded` → `branch=discovery-no-plans` → **`context injected (135 chars)`** → `already-injected` 幂等 ×2；atlas 子会话 seq 7/22 见 omo-hooks 注入带 marker 文本（**真实模型链路上 H-32 端到端生效**）；run-2 另见 `no-work-intent` 正确负例。macOS 通知后端：本机为 Linux（D9 范围内平台），L4 不可验——其代码路径由单测钉死 + T13 e2e 已证 Linux 后端真实推出。**三处 L4 注记**：① smoke-real 的 AUTO-CHECKS 是 Phase 2 委派面断言（与本阶段护栏正交，run-1/run-3 的 FAIL 项均为委派通道形状类——同 Phase 2 librarian 的裁定先例）；② 真实模型的护栏触发是指挥自主选择驱动的（两次"不委派"即为模型裁量实例），机制正确性已由 mock e2e 逐场景钉死，L4 证明的是真实链路可达性；③ session-notification 的通知行在 smoke 捕获窗口内未观察到（调度器 grace period），T13 e2e 已证其触发与后端命令。
 - **依赖**：P3-T20。**量级**：3 小时。
 
 ---
@@ -210,8 +210,8 @@
 
 | # | 标准（计划书 §5） | 证据 | 结论 |
 |---|---|---|---|
-| a | 每个移植的 hook 有 mock-LLM e2e 展示 DSH 事件 → OMO 语义效果 | （待填：覆盖清单每行"已移植"状态带场景名 + 门 3 全绿 + 对照断言明细） | ☐ |
-| b | hook 覆盖清单文档跟踪"已移植/跳过（含理由）" | （待填：phase3-hooks.md 全模块终态 + manifest↔清单一致性测试绿 + 全树无漏列） | ☐ |
-| c | 全 8 门绿、门扩展只加严 | （待填：ci-local.sh 复跑 + c 组新断言清单对比） | ☐ |
-| d | 文档与实测无冲突 | （待填：P3-T1 回填 + 实施期 DoD-d 更正逐条记录） | ☐ |
-| e | 署名只增不改、`checked` 计数不变（52）或有对应 vendor 条目 | （待填：NOTICES git diff + verify-licenses --json 比对） | ☐ |
+| a | 每个移植的 hook 有 mock-LLM e2e 展示 DSH 事件 → OMO 语义效果 | 覆盖基线 §1 全部 14 行 = 已移植 + 具名场景（`bash-read-guard-warned` / `todo-continuation-enforced` / `empty-task-response-corrected` / `session-notification-log` / `background-notification-log` / `edit-error-recovery-reminder` / `json-error-recovery-reminder` / `tool-output-truncated` / `directory-readme-injected` / `agent-usage-reminder-appended` / `task-resume-info-appended` / `webfetch-redirect-denied` / `prometheus-md-only-denied` / `ulw-execute-activated`+`ulw-execute-no-intent`）；门 3 = 13 场景全绿（commit 6948f12 上复跑），每场景含对照断言；每场景 verdict JSON 含断言明细；L4 真 key 证据（P3-T21 ③） | ✅ |
+| b | hook 覆盖清单文档跟踪"已移植/跳过（含理由）" | phase3-hooks.md：全树 101 条目（62 模块 = 14 移植 + 47 跳过/deferred/排除 + 1 helper 并入）无一漏列、每行终态 + 理由（S-01…S-46 逐行理由、§1 P2 组原地跳过、§3 非 hook 附注）；manifest↔清单一致性测试（manifest-coverage-consistency.test.ts，含 H-99 对照真实咬合 + 反向证明）常绿；c14 静态门钉死 | ✅ |
+| c | 全 8 门绿、门扩展只加严 | `scripts/ci-local.sh` 已提交快照复跑 **8/8 PASS**（exit 0，2026-09-21：门 1 typecheck · 门 2 = 950 测试/42 文件 · 门 3 = 13 e2e 场景 · 门 4 doctor-lite · 门 5 checked=53 · 门 6 = 23/23 · 门 7 = 8/8 · 门 8 = 5/5 proofs）；扩展只加严：c11–c14 新增（c01–c10 零改动）、doctor-lite check 2b（T3）、probe 增 14 行 registered marker 断言（同源派生 + 集合相等）、proofs 3→5（deny 真实生效 + throw fail-closed 两分 + 管线不死） | ✅ |
+| d | 文档与实测无冲突 | P3-T1 全量回填（5 份证据，机制引用仲裁抽核属实）；实施期 DoD-d 更正逐条记录在案：① H-01 改判跳过（DSH 原生超集，WP-2 开工仲裁）；② U-4「无 ctx.todo 服务」更正（读面 = todos 投影 stateOf）；③ 计数对账 46/47 与 13/20→14/21（T20 评审驱动，真值经全量对账确定）；④ WP-4 整组取消（compaction 辅助 DSH 原生）；⑤ 任务取消链（T4/T8/T10/T11/T18）各有仲裁记录 | ✅ |
+| e | 署名只增不改、`checked` 计数不变（52）或有对应 vendor 条目 | `THIRD_PARTY_NOTICES.md` Phase 3 小节 = 纯插入（git diff 0 删除行，既有条目零改动）；`verify-licenses --json`：`pass:true, violations:[], checked:53`——与基线 52 的 +1 归因 = **T2 新增 omo-hooks workspace importer**（本仓自有包 MIT OR SUL-1.0；零新增 npm 依赖、零新 vendor，符合"计数变化有对应条目"的例外口径；T15 仲裁记录） | ✅ |
