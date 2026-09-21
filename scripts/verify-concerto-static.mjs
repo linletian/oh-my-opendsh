@@ -654,7 +654,9 @@ async function run() {
     // 一半；本记录是桥。单向同步纪律（manifest.ts 头部同一口径）：落一个移植时先改
     // phase3-hooks.md（可审计的记录）→ 再改 manifest.ts（status/e2eScenario）→ 再落
     // listener 代码；绝不反向。解析契约：取 `## 1.` 与 `## 2.` 之间、以 `| H-xx |`
-    // 开头且状态列含「已移植」的行（§1 内的跳过组因此天然被排除）；模块列的第一个
+    // 开头的行，拆成单元格后**只对状态列**（第 6 格）做「已移植」判定（§1 内的跳过
+    // 组因此天然被排除；且跳过行的理由里出现「已移植」字样也不会误判——T19 Kimi 轮1
+    // NIT-1 指出的注释/实现精度差已按实现收窄，见下）；模块列的第一个
     // 反引号 code span 归一化为 id——去掉尾部 `.ts` / `/` / `-*`，再过
     // BASELINE_ID_RENAMES 的 v5 改名表（仅 H-32）。解析不产出任何行 = 直接 FAIL
     // （杜绝格式漂移后断言真空）。
@@ -667,7 +669,13 @@ async function run() {
         if (/^## 2\./.test(line)) { inSectionOne = false; continue }
         if (!inSectionOne) continue
         const row = line.match(/^\|\s*(H-\d+)\s*\|(.*)$/)
-        if (row !== null && line.includes('已移植')) portedRows.push({ heading: row[1], cells: row[2] })
+        if (row === null) continue
+        // 单元格切分：heading 匹配吃掉了第 1 格与分隔 `|`，故
+        // cells = [模块, 形态, 模式, 语义摘要, 状态, '']（§1 表格六列固定）。
+        const cells = row[2].split('|').map((cell) => cell.trim())
+        const statusCell = cells[4] ?? ''
+        if (!statusCell.includes('已移植')) continue
+        portedRows.push({ heading: row[1], cells: row[2], statusCell })
       }
       const problems = []
       if (portedRows.length === 0) {

@@ -10,7 +10,7 @@
 >
 > **模式列**：A–F 见计划书 §4.2 分类法（经 P3-T1 机制更正：**C = 劝导落点在 post-execute `accept+additionalContexts`**；**E = `agent.steer()` 副作用续行**，非返回值投票）。
 
-## 1. 移植组（实测 15 模块，按 ROADMAP 优先级）
+## 1. 移植组（实测 14 模块，按 ROADMAP 优先级；含 P2 组原地跳过的 H-08/H-09 两行）
 
 ### P0 文件护栏（WP-2）
 
@@ -43,14 +43,14 @@
 
 | # | 模块 | 形态 | 模式 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
-| H-14 | `edit-error-recovery/`（3 文件） | 目录 | D | edit 输出命中错误串表 → 尾部追加回读提醒。前置已闭环：错误串表按 **DSH 实际 edit 失败文案**重建（上游串不命中的差异注记） | ✅ **已移植**（P3-T14 listener+单测+e2e） |
-| H-15 | `json-error-recovery/`（3 文件） | 目录 | D | 非排除工具输出命中 JSON 错误正则 → 追加提醒（幂等哨兵 + 19 项排除表的 DSH 工具名空间映射） | ✅ **已移植**（P3-T14 listener+单测+e2e） |
-| H-16 | `tool-output-truncator.ts`（1 + 4 shared 支撑文件） | 单文件 | D | 超长工具输出截断。**读取面（MAJOR-1 修复）**：自适应预算按 token-meter wire.view 公式自算（stateOf 返回 host state 无 projectedTokens，lib:511-514 等价性钉测）；无容量宣告时走固定阈值回退 | ✅ **已移植**（P3-T14 listener+单测+e2e） |
-| H-21 | `directory-readme-injector/`（**8 文件**） | 目录 | D | 读文件后把所在目录链 README 注入工具输出。与 dsh-agent-instructions 无重叠（lib:17-18 候选名不含 README）；读 README.md 自身 ×2 注入的上游后果保留登记；compaction/prune 不重新武装 = 已知组合语义 | ✅ **已移植**（P3-T15 listener+单测+e2e） |
-| H-22 | `agent-usage-reminder/` | 目录 | D | 工具结果尾部追加 agent 使用提醒（REMINDER_MESSAGE 按 DSH 名册现实改写） | ✅ **已移植**（P3-T15 listener+单测+e2e） |
-| H-23 | `task-resume-info/` | 目录 | D | 工具结果追加任务恢复信息。前置闭环：可独立成立、不依赖 OMO task 系统；foreground 不产提示的登记假设已注记 | ✅ **已移植**（P3-T15 listener+单测+e2e） |
+| H-14 | `edit-error-recovery/`（3 文件） | 目录 | D | edit 输出命中错误串表 → 尾部追加回读提醒。前置已闭环：错误串表按 **DSH 实际 edit 失败文案**重建（上游串不命中的差异注记） | ✅ **已移植**（场景 `edit-error-recovery-reminder`，P3-T14） |
+| H-15 | `json-error-recovery/`（3 文件） | 目录 | D | 非排除工具输出命中 JSON 错误正则 → 追加提醒（幂等哨兵 + 19 项排除表的 DSH 工具名空间映射） | ✅ **已移植**（场景 `json-error-recovery-reminder`，P3-T14 listener+单测+e2e） |
+| H-16 | `tool-output-truncator.ts`（1 + 4 shared 支撑文件） | 单文件 | D | 超长工具输出截断。**读取面（MAJOR-1 修复）**：自适应预算按 token-meter wire.view 公式自算（stateOf 返回 host state 无 projectedTokens，lib:511-514 等价性钉测）；无容量宣告时走固定阈值回退 | ✅ **已移植**（场景 `tool-output-truncated`，P3-T14） |
+| H-21 | `directory-readme-injector/`（**8 文件**） | 目录 | D | 读文件后把所在目录链 README 注入工具输出。与 dsh-agent-instructions 无重叠（lib:17-18 候选名不含 README）；读 README.md 自身 ×2 注入的上游后果保留登记；compaction/prune 不重新武装 = 已知组合语义 | ✅ **已移植**（场景 `directory-readme-injected`，P3-T15） |
+| H-22 | `agent-usage-reminder/` | 目录 | D | 工具结果尾部追加 agent 使用提醒（REMINDER_MESSAGE 按 DSH 名册现实改写） | ✅ **已移植**（场景 `agent-usage-reminder-appended`，P3-T15） |
+| H-23 | `task-resume-info/` | 目录 | D | 工具结果追加任务恢复信息。前置闭环：可独立成立、不依赖 OMO task 系统；foreground 不产提示的登记假设已注记 | ✅ **已移植**（场景 `task-resume-info-appended`，P3-T15） |
 | H-24 | `webfetch-redirect-guard/`（**5 文件**） | 目录 | B + D | webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引）+ D 段（被 row-10 agent-usage-reminder 抢占 = ACCEPTED 登记）。预解析 GET 绕过 DSH resolvePublicAddresses 公网策略 = upstream parity 已评审接受 | ✅ **已移植**（场景 `webfetch-redirect-denied`，P3-T16 listener+单测+e2e，B 模式打样） |
-| H-26 | `prometheus-md-only/` | 目录 | B + D | prometheus 仅可写 .md：B 段 deny 非 .md 写（hook.ts:40-62 1:1）+ D 段劝导落 post-execute（注入警告段无附言缝）。foreground one-shot 委派身份缺口已注记（标识面收窄）。Phase 2"有意不镜像"是 persona/permission 层的决策，本模块在 hook listener 层补齐，层不冲突 | ✅ **已移植**（P3-T16 listener+单测+e2e 门场景） |
+| H-26 | `prometheus-md-only/` | 目录 | B + D | prometheus 仅可写 .md：B 段 deny 非 .md 写（hook.ts:40-62 1:1）+ D 段劝导落 post-execute（注入警告段无附言缝）。foreground one-shot 委派身份缺口已注记（标识面收窄）。Phase 2"有意不镜像"是 persona/permission 层的决策，本模块在 hook listener 层补齐，层不冲突 | ✅ **已移植**（场景 `prometheus-md-only-denied`，P3-T16 listener+单测+e2e） |
 
 ### P5 ulw-execute（= start-work hook 语义，WP-6 尾部）
 
@@ -58,7 +58,7 @@
 |---|---|---|---|---|---|
 | H-32 | `start-work/`（20 文件）→ **ulw-execute** | 目录 | A/E + `ctx.jobs` | **逐文件划分实测：20:0 全属 Phase 3 侧**（命令面在 hooks/ 之外的 `features/builtin-commands/`，天然 Phase 4）。移植 = 计划发现 / 上下文构建 / 脚手架语义；**收窄①**：激活信号 = DSH 原生形态（指挥显式委派 atlas + 工作计划意图 pre-step 检测）；命令模板 marker 随 Phase 4 对接（R-10 常量已登记）；**收窄②**：依赖 boulder-state 的部分记跳过段（逐条理由）；E 段续行机属 atlas/（S-39 deferred，Phase 5） | ✅ **已移植**（场景 `ulw-execute-activated` + `ulw-execute-no-intent` 对照，P3-T17 listener+单测+e2e） |
 
-## 2. 跳过 / deferred / 排除组（实测 47 模块）
+## 2. 跳过 / deferred / 排除组（本节 45 行；全组 47 = 本节 45 + §1 P2 组原地跳过的 H-08/H-09 两行）
 
 | # | 模块 | 处置 | 理由（P3-T1 实测口径） |
 |---|---|---|---|
@@ -132,6 +132,6 @@
 |---|---|---|
 | 移植组（§1） | **14**（P0=1 · P1=2 · P3=2 · P4=8 · P5=1；P2 组整组跳过） | 2026-09-19 仲裁：H-01 改判跳过（DSH 原生超集，S-46） |
 | 已移植（listener+单测+e2e） | **14 / 14（全部移植组闭环）** | 逐任务翻转 |
-| 跳过 / deferred / 排除（§2） | **47**（S-01…S-46 去占位行） | 每行终态理由齐备 |
+| 跳过 / deferred / 排除 | **47**（§2 的 45 行 S-01…S-46 去占位行 S-45 + §1 P2 组原地跳过的 H-08/H-09 两行） | 每行终态理由齐备 |
 | 非 hook（§3） | 4 类条目 | 不计入 |
 | 全树覆盖 | 101 / 101 条目 | 退出标准 b 的完整性硬判定 ✅ |

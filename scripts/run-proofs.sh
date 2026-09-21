@@ -38,9 +38,21 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# The proof count lives here once: the stage banner and the closing summary both
-# read it, so adding a proof cannot leave the "/3" of a previous era behind.
-TOTAL_PROOFS=5
+# The proof registry. The count is DERIVED from these parallel arrays
+# (`${#PROOF_NAMES[@]}`), never hand-written: the stage banner, the failure line
+# and the closing summary all read the same length, so adding a proof cannot
+# leave the "/3" of a previous era behind, and forgetting to bump a literal
+# cannot print "6/5" (the P3-T19 Kimi round-1 NIT-1). PROOF_COMMANDS is filled in
+# below, once $NM and $RENDERED exist (bash expands the words at assignment
+# time); two parallel arrays rather than one "name<TAB>command" array because
+# each command is a multi-word argv.
+PROOF_NAMES=(
+  "T12 toolFilter enforced"
+  "T13 maxDepth cap enforced"
+  "T15 dual-route logging"
+  "P3-T19 guardrail deny path + R-9 throw semantics"
+  "P3-T19 guardrail C/E mode mechanisms"
+)
 
 if ! command -v dsh >/dev/null 2>&1; then
   echo "run-proofs: FAIL — dsh not on PATH (the proofs mount the INSTALLED dsh's own plugins)" >&2
@@ -71,7 +83,25 @@ node --experimental-strip-types -e "
     .then((m) => { m.syncConcertoPreset(process.argv[1]) })
 " "$RENDERED" || { echo "run-proofs: FAIL — could not render the concerto template" >&2; exit 2; }
 
+# One argv per entry, in PROOF_NAMES order. Unquoted on purpose when expanded
+# below: the entries are AUTHORED here (never user input) and must word-split
+# into argv, which is exactly what a quoted "$cmd" would prevent. No `eval` —
+# that would turn this registry into a shell-injection surface.
+PROOF_COMMANDS=(
+  "node scripts/prove-explore-toolfilter.mjs $NM $RENDERED/agent.cordis.yml --expect denied"
+  "node scripts/prove-explore-maxdepth.mjs $NM $RENDERED/agent.cordis.yml --expect capped"
+  "node scripts/prove-route-logging.mjs $NM"
+  "node scripts/prove-guardrail-deny-path.mjs $NM $RENDERED/agent.cordis.yml"
+  "node scripts/prove-guardrail-modes.mjs $NM"
+)
+TOTAL_PROOFS=${#PROOF_NAMES[@]}
+if [[ "$TOTAL_PROOFS" != "${#PROOF_COMMANDS[@]}" ]]; then
+  echo "run-proofs: FAIL — PROOF_NAMES (${#PROOF_NAMES[@]}) and PROOF_COMMANDS (${#PROOF_COMMANDS[@]}) disagree" >&2
+  exit 2
+fi
+
 STAGE=0
+# Each proof's own exit code governs the gate; the banner is cosmetic.
 run_proof() {
   local name="$1"; shift
   STAGE=$((STAGE + 1))
@@ -88,33 +118,34 @@ run_proof() {
   fi
 }
 
-# T12 + F1: the child-composition path (applyChildComposition → tools.restrict)
-# must exclude write/edit/the delegation tool from the child's model-facing list.
-run_proof "T12 toolFilter enforced" \
-  node scripts/prove-explore-toolfilter.mjs "$NM" "$RENDERED/agent.cordis.yml" --expect denied
+# The proof bodies, in registry order. The WHY of each proof lives here:
+#   * T12 + F1: the child-composition path (applyChildComposition →
+#     tools.restrict) must exclude write/edit/the delegation tool from the child's
+#     model-facing list.
+#   * T13: the real delegation start path must ADMIT a depth-1 parent's call (the
+#     corrected atlas(1) → worker(2) path under target-row maxDepth 2,
+#     D-2026-09-13-01) and reject a depth-2 parent's further attempt on BOTH the
+#     foreground and continuable starts, with the tool still visible at the cap.
+#   * T15 / AC-5: the session JSONL must record BOTH agents' resolved routes.
+#   * P3-T19 / R-9: the Phase 3 B-mode guardrail's DENY is effective at session
+#     level (row toolFilter via the real child-composition path, then the
+#     listener's denial through the real pre-execute waterfall), and a throwing
+#     listener fails only THAT call while the pipeline keeps working.
+#   * P3-T19: the C-mode advisory (additionalContexts) and E-mode steer surfaces of
+#     the guardrail layer, each with its non-trigger controls.
+run_proof "${PROOF_NAMES[0]}" ${PROOF_COMMANDS[0]}
+run_proof "${PROOF_NAMES[1]}" ${PROOF_COMMANDS[1]}
+run_proof "${PROOF_NAMES[2]}" ${PROOF_COMMANDS[2]}
+run_proof "${PROOF_NAMES[3]}" ${PROOF_COMMANDS[3]}
+run_proof "${PROOF_NAMES[4]}" ${PROOF_COMMANDS[4]}
 
-# T13: the real delegation start path must ADMIT a depth-1 parent's call (the
-# corrected atlas(1) → worker(2) path under target-row maxDepth 2,
-# D-2026-09-13-01) and reject a depth-2 parent's further attempt on BOTH the
-# foreground and continuable starts, with the tool still visible at the cap.
-run_proof "T13 maxDepth cap enforced" \
-  node scripts/prove-explore-maxdepth.mjs "$NM" "$RENDERED/agent.cordis.yml" --expect capped
-
-# T15 / AC-5: the session JSONL must record BOTH agents' resolved routes.
-run_proof "T15 dual-route logging" \
-  node scripts/prove-route-logging.mjs "$NM"
-
-# P3-T19 / R-9: the Phase 3 B-mode guardrail's DENY is effective at session
-# level (row toolFilter via the real child-composition path, then the listener's
-# denial through the real pre-execute waterfall), and a throwing listener fails
-# only THAT call while the pipeline keeps working.
-run_proof "P3-T19 guardrail deny path + R-9 throw semantics" \
-  node scripts/prove-guardrail-deny-path.mjs "$NM" "$RENDERED/agent.cordis.yml"
-
-# P3-T19: the C-mode advisory (additionalContexts) and E-mode steer surfaces of
-# the guardrail layer, each with its non-trigger controls.
-run_proof "P3-T19 guardrail C/E mode mechanisms" \
-  node scripts/prove-guardrail-modes.mjs "$NM"
+if [[ "$STAGE" != "$TOTAL_PROOFS" ]]; then
+  echo "run-proofs: FAIL — ran ${STAGE} proofs but the registry declares ${TOTAL_PROOFS}" >&2
+  exit 2
+fi
 
 echo ""
-echo "run-proofs: PASS — ${TOTAL_PROOFS}/${TOTAL_PROOFS} (T12 toolFilter · T13 maxDepth · T15 dual-route logging · P3-T19 guardrail deny path + R-9 · P3-T19 C/E modes) on dsh $(dsh --version)"
+# The roster is derived from PROOF_NAMES too, so this line cannot list a proof the
+# registry does not have (or miss one it does) — the same anti-drift rule as the count.
+PROOF_ROSTER="$(printf '%s · ' "${PROOF_NAMES[@]}")"
+echo "run-proofs: PASS — ${TOTAL_PROOFS}/${TOTAL_PROOFS} (${PROOF_ROSTER% · }) on dsh $(dsh --version)"

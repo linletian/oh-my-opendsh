@@ -66,7 +66,8 @@ export const TEMPLATE_SESSION_CONTEXT_OPEN = '<session-context>'
  * 上游原文是 `"<!-- omo-start-work-context -->"`；命名锚点统一改写为
  * `ulw-execute`。⚠️ 该串是幂等判据：上游 `start-work-hook.ts:224`
  * `if (part.text.includes(CONTEXT_INFO_MARKER))` 用它避免重复注入；DSH 侧
- * 同理由本模块的会话内 WeakSet（见 index.ts）承担，marker 仍写进注入文本，
+ * 同理由本模块的会话内 `WeakMap` 守卫 + marker 审计（见 ../ulw-execute.ts
+ * `hasContextMarkerInSession` 与 `createUlwExecuteListener`）承担，marker 仍写进注入文本，
  * 作为**可 grep 的持久锚点**（e2e / 运维）与未来 Phase 4 模板的对接点。
  */
 export const ULW_EXECUTE_CONTEXT_MARKER = '<!-- omo-ulw-execute-context -->'

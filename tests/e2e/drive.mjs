@@ -8149,10 +8149,7 @@ const ULW_EXECUTE_PLAN_REL = `.omo/plans/${ULW_EXECUTE_PLAN_NAME}.md`
 const ULW_EXECUTE_PLAN_CONTENT =
   '# Alpha plan\n\n## TODOs\n- [ ] 1. First task\n- [ ] 2. Second task\n'
 /** The injected context's own sentinel (from the REAL renderer, not hand-built). */
-const {
-  AUTO_SELECTED_PLAN_HEADING,
-  PLAN_DISCOVERY_NO_PLANS_HEADING,
-} = await (async () => {
+const { AUTO_SELECTED_PLAN_HEADING } = await (async () => {
   const { buildAutoSelectedPlanContextInfoOnly, planProgressFromMarkdown } = await import(
     new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute/plan-discovery.ts', import.meta.url).href
   )
@@ -8163,10 +8160,14 @@ const {
     timestamp: 'T',
     worktreeBlock: '',
   })
-  return {
-    AUTO_SELECTED_PLAN_HEADING: text.trim().split('\n')[0],
-    PLAN_DISCOVERY_NO_PLANS_HEADING: '## No Plans Found',
-  }
+  // P3-T17 round-2 review NIT-b: this IIFE used to ALSO return
+  // `PLAN_DISCOVERY_NO_PLANS_HEADING: '## No Plans Found'` — a dead binding no
+  // analyzer read. Removed rather than asserted: this driver proves the
+  // AUTO-SELECTED branch (the sandbox seeds exactly ONE incomplete plan), so there
+  // is no no-plans render here to compare against, and the `## No Plans Found`
+  // heading already has a documented audit anchor in the module under test
+  // (`buildStaticTextBlocks().noPlansBlock`, ulw-execute/context-builder.ts:81/:98).
+  return { AUTO_SELECTED_PLAN_HEADING: text.trim().split('\n')[0] }
 })()
 const {
   ULW_EXECUTE_CONTEXT_MARKER: E2E_ULW_CONTEXT_MARKER,

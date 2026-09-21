@@ -429,3 +429,61 @@ itself, and its failure mode was a silently wrong artifact rather than a red gat
 | **Status** | 🔧 **Corrected + verified** (2026-09-13, P2-T18; `--self-test` 11/11 landings, `roster-parade` 19/19 assertions, 8/8 local gates green). |
 | **Transferable lesson** | **A string injection whose anchor is a shape rather than an identity must assert its own hit count.** "First match wins" is not a lookup strategy, it is the absence of one: at n=1 it is indistinguishable from correct, and at n=10 it silently writes to the wrong object — producing a *green* test that asserted the wrong subject, which is worse than a red one (the P-21.3 and P-22 lesson again, now in the harness itself). |
 
+## 12. P-25 ~ P-30 (2026-09-19 ~ 09-21, Phase 3 hook ports — six listener-lifecycle and observation-face pitfalls found in the dual-review loops)
+
+> All six were found by the Phase 3 coding/review loops (evidence: per-task evidence blocks in docs/plans/phase3-dev/phase3-tasks.md); every fix landed in its task with mutation/anti-fake-green proof.
+
+### P-25 — cordis `ctx.effect(execute)` collects the execute's RETURN VALUE, it does not run a disposal body
+
+| Item | Content |
+|---|---|
+| **Symptom** | Forwarding a registrar's disposer as `ctx.effect(() => { disposer() })` **disposed the listener at registration time** (the execute body runs synchronously and invokes the disposer on the spot) and returned undefined, so nothing ran at fiber stop — the semantics were exactly inverted. Invisible to the runtime and all 8 gates because the registry was empty (latent defect). |
+| **Evidence** | cordis/lib/index.js:1134-1142 `_execute`: `const effect = runner.execute.call(this); if (typeof effect === "function") return runner.collect(effect);` — only the RETURNED function (or Promise/generator yield) is collected as the disposal. Found as a review MAJOR (P3-T3) by the Kimi seat, verified against source by the arbitrator. |
+| **Fix** | `ctx.effect(() => disposer)` (return, don't call); the fake ctx was re-modelled after the real cordis (collect the return value + expose a simulated fiber-stop), assertions corrected to "not called after apply, called exactly once after stop", plus mutation verification (the reverted buggy form fails the new case as expected). |
+| **Transferable lesson** | **The register/dispose semantics of a lifecycle API must be pinned by runtime evidence** — the semantics a comment claims can be the opposite of reality; a defect hiding behind an empty registry is only caught by mutation verification and source-level review. |
+
+### P-26 — `ctx.get('jobs')` at plugin apply can be undefined (loader concurrency) → acquire services lazily via `ctx.inject(names, cb)`
+
+| Item | Content |
+|---|---|
+| **Symptom** | `background-notification`'s apply read `ctx.get('jobs')` → undefined → the `onJobDone` subscription never happened and the degraded pull path saw no owned jobs — **the hook produced nothing at runtime** while unit tests stayed green (the fake mirrored the wrong assumption); only the e2e's honest observed-defect assertion surfaced it. |
+| **Evidence** | e2e instrumentation: `[omo-hooks] DIAG background-notification: jobsService=undefined`; contrast dsh-tool-jobs/lib/index.js:200/:206 (`ctx.jobs` direct, hard-dependency form) and the omo-agents T16 `ctx.inject(['llm'])` SETTLED precedent (same family as P-23: async registration timing). |
+| **Fix** | Acquire lazily with `ctx.inject(['jobs'], cb)` (fires when the service appears, immediately if present); absence stays loud-but-non-fatal with the pull fallback alive; the scenario flipped from observed-defect to positive anchor assertions (DEFERRED→SUBSCRIBED order measured). Deliberately NOT `inject: ['jobs']` on the whole plugin (the other hooks must not be taken down with it). |
+| **Transferable lesson** | **A direct apply-time read of an optional service is a race**: either subscribe lazily with `inject`, or design for absence — and one **runtime** assertion must prove the subscription actually happened (a unit-test fake mirrors your assumption). |
+
+### P-27 — `sessionProjections.stateOf` returns the host state; wire-view computed fields must be recomputed from the wire.view formula
+
+| Item | Content |
+|---|---|
+| **Symptom** | tool-output-truncator's adaptive budget preferred `record.projectedTokens`, but `stateOf` returns the host state (which lacks that field) → the preferred branch was **unreachable in production** and always degraded to `pressureTokens` (systematically under-pricing occupancy → under-truncating); the header comment, the manifest, and the unit-test fake all shared the same wrong assumption, so the existing gates were structurally blind. |
+| **Evidence** | dsh-session-projection/lib/index.js:127-131 (`stateOf` returns `cell.state` = host state); dsh-token-meter/lib/index.js:511-514 (`projectedTokens` is computed in wire.view as `Math.max(0, pressureTokens + surfaceTokens - sampledSurfaceTokens)`). Found as a review MAJOR-1 (P3-T14) by the Kimi seat, verified verbatim by the arbitrator. |
+| **Fix** | The read face now recomputes per the wire.view formula (degrading only when fields are absent) + a **formula-equivalence pin test** (the pin matches lib:511-514 verbatim, so an upstream formula change turns red) + the three same-wrong sites corrected + positive cases for both the preferred and the degraded path. |
+| **Transferable lesson** | **"Same field name in two projection shapes" is a trap**: the read face must be chosen against the implementation (host state vs wire view), and the fake must model the **real** face — otherwise the unit test proves your own misunderstanding. |
+
+### P-28 — A mutation-QA predicate must locate surgically by identity (callId); a sentinel text also matches sibling tool results in the same fixture
+
+| Item | Content |
+|---|---|
+| **Symptom** | A fabricated defect located its target event via `eventText.includes(SENTINEL)` — the sentinel also appeared inside the read tool's line-numbered text, and the replacement body hardcoded a toolCallId that overwrote the original → the mutation took down the control assertion too (measured: parts 1-0/err, 1-1/ok, 1-0/err — the control vanished, the id duplicated). The self-test stayed green because it only asserted the named check was IN the failed list. |
+| **Evidence** | mcode P2 (P3-T6) + Kimi's re-derivation of the mechanism; post-fix proof that the mutation fails exactly the one named check. |
+| **Fix** | The predicate locates the trigger result by its callId, and the replacement preserves the original toolCallId; the surgical proof output lives in the evidence. |
+| **Transferable lesson** | **A mutation must be surgical**: its purpose is to break exactly one property under test — collateral damage falsifies the attribution of "which assertion guards what" and misleads later triage with a counterfactual failed list. |
+
+### P-29 — A template literal starting with a newline makes `split('\n')[0]` === `''`, and `includes('')` is always true = a structurally fake-green assertion
+
+| Item | Content |
+|---|---|
+| **Symptom** | The prove script's D-half reminder presence assertion took the constant's first line via `split('\n')[0]` — the constant starts with a newline, so the needle was `''` and `text.includes('')` is true for any result: remove the D-half listener entirely and the proof stays green. |
+| **Evidence** | mcode P1 (P3-T19); the fix round's anti-fake-green proof in three states (A fake-green / B red with the D-half disabled / C green again). |
+| **Fix** | The assertion now takes the first **non-empty** line programmatically (`find(line => line.trim().length > 0)`, not a hand-copied literal, so copy drift turns red); the same pattern was swept across both prove scripts. |
+| **Transferable lesson** | **A presence assertion whose needle is empty/vacuously-true proves nothing** — every assertion deserves one "actually remove what it guards" counter-run; fake green is worse than red (the P-21.3/P-24 family again, this time inside a prove script). |
+
+### P-30 — A waterfall listener's `next()` must stay OUTSIDE the try (calling it inside try + again in catch = double invocation + swallowed downstream errors)
+
+| Item | Content |
+|---|---|
+| **Symptom** | ulw-execute's pre-step listener had four `return await delegate()` sites inside the try and one more in the catch — when a DOWNSTREAM listener or the built-in behavior threw, the catch caught the downstream exception and called `next()` a second time (a double waterfall invocation) while swallowing the downstream error. The header comment claimed "next() is always outside the try" — the implementation contradicted it. |
+| **Evidence** | Kimi MAJOR F-1 (P3-T17) + the arbitrator's verbatim verification (:700/:707/:731/:747 inside the try, :751 in the catch); the precedent directory-readme-injector.ts:529-546 (the try wraps only own logic). |
+| **Fix** | Restructured per the precedent (the catch fail-opens with one call, the normal path calls once after the try) + the "next() throws" case gained a **call-count assertion** (exactly once) — the blind spot closed with mutation verification. |
+| **Transferable lesson** | **A fail-open catch may only cover OWN-logic errors**: putting delegate/next inside the try folds downstream errors into your own failure domain — and a self-claimed discipline must be pinned by a test (a call-count assertion), or the claim and the implementation can drift together. |
+

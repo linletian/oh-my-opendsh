@@ -241,9 +241,25 @@ export const PLANNING_CONTEXT_CLOSE = '</planning-context>'
 
 /**
  * Upstream constants.ts:23-44 — the consult warning prepended to a delegated
- * prompt. Kept VERBATIM as the audit constant; NOT delivered by this port (see
- * segment 2 in the header). It is not exported as live text because nothing may
- * reasonably consume it on DSH.
+ * prompt. Kept as the audit constant; NOT delivered by this port (see segment 2
+ * in the header). It is not exported as live text because nothing may reasonably
+ * consume it on DSH.
+ *
+ * ⚠️ THE ONE UPSTREAM TEMPLATE EXPRESSION IS RESOLVED, NOT COPIED. Upstream
+ * writes `${getAgentDisplayName("prometheus")}` (shared/agent-display-names.ts);
+ * the P3-T16 round-2 review caught that the first transcription had substituted
+ * the bare word `Prometheus` while still calling itself VERBATIM. The baseline
+ * table `AGENT_DISPLAY_NAMES.prometheus = "Prometheus - Plan Builder"` is what
+ * the frozen tag actually renders, so that resolved string is what an audit
+ * constant must carry. The two `${PLANNING_CONTEXT_*}` references below stay as
+ * interpolations because those constants ARE transcribed into this module
+ * (above), so the rendering stays exact without restating their text twice.
+ * Reproduce: `git -C <omo> show v4.19.4:packages/omo-opencode/src/shared/agent-display-names.ts`.
+ * The `UPSTREAM_` prefix follows the house audit-constant convention (it marks
+ * the upstream SOURCE this text was taken from, alongside e.g.
+ * {@link UPSTREAM_BLOCKED_TOOLS}); it is not a claim that the literal below is
+ * byte-identical to upstream's source text, which it is not when a template
+ * expression is involved.
  */
 export const UPSTREAM_PLANNING_CONSULT_WARNING = `
 
@@ -251,7 +267,7 @@ export const UPSTREAM_PLANNING_CONSULT_WARNING = `
 
 ${PLANNING_CONTEXT_OPEN}
 
-You are being invoked by Prometheus, a planning agent restricted to .omo/*.md plan files only.
+You are being invoked by Prometheus - Plan Builder, a planning agent restricted to .omo/*.md plan files only.
 
 **CRITICAL CONSTRAINTS:**
 - DO NOT modify any files (no Write, Edit, or any file mutations)
@@ -305,10 +321,27 @@ If you skipped a step, STOP NOW. Go back and complete it.
 
 `
 
-/** Upstream constants.ts:46-89 — the reminder verbatim, for the audit trail. */
+/**
+ * Upstream constants.ts:46-89 — the reminder for the audit trail.
+ *
+ * ⚠️ THE ONE UPSTREAM TEMPLATE EXPRESSION IS RESOLVED, NOT COPIED — the same
+ * correction the round-2 review asked for on the sibling constant above. Upstream
+ * writes `${createSystemDirective(SystemDirectiveTypes.PROMETHEUS_READ_ONLY)}`
+ * (shared/system-directive.ts); the first transcription dropped the line
+ * entirely while still calling itself VERBATIM. The frozen rendering is
+ * `createSystemDirective` = `[SYSTEM DIRECTIVE: OH-MY-OPENCODE - ${type}]` with
+ * `PROMETHEUS_READ_ONLY` = "PROMETHEUS READ-ONLY", i.e. the bracket line below.
+ * The LIVE {@link PROMETHEUS_WORKFLOW_REMINDER} deliberately drops it (an
+ * OMO-internal marker with no DSH registry behind it — see that constant's doc).
+ * Reproduce: `git -C <omo> show v4.19.4:packages/omo-opencode/src/shared/system-directive.ts`.
+ * The `UPSTREAM_` prefix follows the house audit-constant convention (upstream
+ * SOURCE provenance, not a byte-identity claim — see the sibling constant's note).
+ */
 export const UPSTREAM_PROMETHEUS_WORKFLOW_REMINDER = `
 
 ---
+
+[SYSTEM DIRECTIVE: OH-MY-OPENCODE - PROMETHEUS READ-ONLY]
 
 ## PROMETHEUS MANDATORY WORKFLOW REMINDER
 

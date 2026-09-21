@@ -167,8 +167,9 @@
 //      listener 只用缓存；上下文文档由**纯函数**拼装（无 fs、无 clock）。
 //      ⚠️ 唯一的写盘是「选择计划后的 notepad 脚手架」——写，不是读，且与上游同形。
 //   ④ 注册面读 manifest 的 PRIMARY event（`entry.event`），不写第二个字面量。
-//   ⑤ 无模块级可变状态：per-session 幂等守卫是 registrar 闭包里的 `WeakMap` /
-//      `WeakSet`（keyed 会话对象），随 fiber 回收。
+//   ⑤ 无模块级可变状态：per-session 幂等守卫是 registrar 闭包里的 `WeakMap`
+//      （`WeakMap<object, true>`，keyed 会话对象；见 createUlwExecuteListener），
+//      随 fiber 回收。
 //   ⑥ 跨插件不 import：身份面（`omo-atlas` 锚点）与 prometheus-md-only 各自维持
 //      一份最小实现（计划书 §4.1 末条）。
 //
@@ -305,7 +306,7 @@ export interface ActivationInput {
   readonly persona: string | undefined
   /** 该会话本趟收到的任务文本（已从 messages 里抽出并 join）。 */
   readonly taskText: string
-  /** 该会话是否已经注入过一次（registrar 的 WeakSet + 会话内 marker 审计）。 */
+  /** 该会话是否已经注入过一次（registrar 的会话内 `WeakMap` 或会话内 marker 审计，任一命中）。 */
   readonly alreadyInjected: boolean
   /** 由 `buildWorkContextDocument` 算出的上下文文档（可能为空串）。 */
   readonly contextText: string
@@ -545,9 +546,11 @@ function isUserAuthored(message: Record<string, unknown>): boolean {
  * 落点就是**已入队的消息文本**；DSH 的等价物 = 会话日志里已有一条 user 消息
  * 带该 marker。
  *
- * 与 registrar 的 `WeakSet` 的关系：WeakSet 是 O(1) 的**热路径**短路（同一进程内
- * 每个会话最多注入一次）；本审计是**跨重启/冷续**的兜底真源（会话日志持久）。
- * 两者都命中才跳过注入——保守方向（漏注入 ≠ 重复注入）。
+ * 与 registrar 的会话内守卫的关系：`injected`（`WeakMap<object, true>`）是 O(1) 的
+ * **热路径**短路——每个会话在**本进程内**首次注入后打标，keyed 会话对象、随 fiber
+ * 回收；本审计是**跨重启/冷续**的兜底真源（会话日志持久）。注册面把两者接成
+ * **或**：**任一**命中即跳过注入（见 listener 的短路条件与单测两条各自独立触发的
+ * 用例）——保守方向（漏注入 ≠ 重复注入）。
  */
 export function hasContextMarkerInSession(session: unknown): boolean {
   if (!isObject(session)) return false

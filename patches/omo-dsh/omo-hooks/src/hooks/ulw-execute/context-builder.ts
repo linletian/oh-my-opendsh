@@ -33,7 +33,7 @@
 //      于是判定树在 DSH 上通常走「计划发现」这条主干——这正是本阶段要求的
 //      「计划发现 / 上下文构建 / 脚手架语义」。
 //   ② `existingState` 同理：DSH 侧的合法来源只有「本会话此前已注入过一次」
-//      （幂等 marker / 会话内 WeakSet），而不是一个跨会话状态文件。
+//      （幂等 marker / 会话内 `WeakMap` 守卫），而不是一个跨会话状态文件。
 //   ③ 副作用半（`writeBoulderState` / `appendSessionId` / `ensureNotepadScaffold`）
 //      全部经返回值里的 `selectPlan` 字段交给调用方，本文件不做任何 I/O。
 //

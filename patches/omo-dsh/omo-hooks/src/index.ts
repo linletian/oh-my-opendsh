@@ -360,14 +360,24 @@ export type HookRegistrar = (
  *     `foreground` too but emits NOTHING for them — see
  *     hooks/task-resume-info.ts's REGISTERED ASSUMPTION section — so
  *     `continuable` is the ONLY render this pair could ever contend on.)
- *   [VACUUM] 'empty-task-response-detector' (row 3) → 'agent-usage-reminder'
- *     (row 10). Registered because the two rows are the chain's two earliest
- *     short-circuiting listeners and the review asked for this pair by name. The
- *     detector's tool gate is the DELEGATION tool-name set
- *     (empty-task-response-detector.ts {@link ROSTER_DELEGATION_TOOL_NAMES} +
- *     the two base `subagent` names) while the reminder's TARGET_TOOLS is
- *     `{grep, glob, web_fetch, web_search}` — DISJOINT sets, so no single call
- *     can be seen by both. The vacuum is by tool gate, not by text non-emptiness.
+ *   [PREEMPTION, ACCEPTED — NARROW AND BENIGN] 'empty-task-response-detector'
+ *     (row 3) → 'agent-usage-reminder' (row 10). Registered because the two rows
+ *     are the chain's two earliest short-circuiting listeners and the review asked
+ *     for this pair by name. The ROUND-2 review corrected the first wording of
+ *     this entry: the pair is NOT a tool-gate vacuum. The detector's tool gate is
+ *     the DELEGATION tool-name set (empty-task-response-detector.ts
+ *     {@link ROSTER_DELEGATION_TOOL_NAMES} + the two base `subagent` names), and
+ *     the reminder's Gate 2 matches THAT SAME twelve-name set
+ *     (agent-usage-reminder.ts:460-464 against {@link DELEGATION_TOOL_NAMES}) to
+ *     latch `agentUsed`. So a delegation call whose rendered result is EMPTY takes the
+ *     detector's accept decision without `next()`, the reminder never sees it, and
+ *     its `agentUsed` latch is WITHHELD for that session — after which the reminder
+ *     can still fire on up to MAX_REMINDERS later search/fetch results. The
+ *     preemption is narrow (only an empty delegation render) and benign (the
+ *     withheld latch only moves pure advice; no result is lost and no test
+ *     expectation changes — the reminder's own append is content-preserving when
+ *     it DOES fire). ACCEPTED as known composition semantics; no chain-merge is
+ *     introduced.
  *   [VACUUM] 'tool-output-truncator' (row 8) → 'webfetch-redirect-guard' D half
  *     (row 12). `web_fetch` IS in TRUNCATABLE_TOOLS, so an over-limit web_fetch
  *     result WOULD preempt the guard's normalization — but the guard's D half

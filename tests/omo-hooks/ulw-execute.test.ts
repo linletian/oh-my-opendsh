@@ -1552,7 +1552,7 @@ describe('P3-T17 ulw-execute — listener 行为', () => {
     expect(calls()).toBe(1)
   })
 
-  it('⑬ 同一会话第二步不再注入（WeakSet 幂等）', async () => {
+  it('⑬ 同一会话第二步不再注入（会话内 WeakMap 幂等）', async () => {
     const session = atlasSession(testDirectory)
     const listener = createUlwExecuteListener(deps())
     const first = injectingPayload(session, ['start work on the plan'])
