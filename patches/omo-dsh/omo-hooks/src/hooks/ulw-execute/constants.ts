@@ -15,6 +15,9 @@
 //   hooks/start-work/notepad-scaffold.ts:7-32（notepad 文件集与 footer）
 //   features/builtin-commands/templates/start-work.ts:1（Phase 4 模板 marker）
 //
+// 语义移植（非逐字复制）：常量与纯格式化的**值**照搬上游逐字文本，命名锚点
+// （id / 目录名）改写为 v5 名 `ulw-execute`；无上游代码 vendor。
+//
 // 本文件只放**常量与纯格式化**，不含任何 listener 逻辑、不做任何 I/O。
 //
 // The `.ts` extension is load-bearing: Node 24 type-stripping (P-8.6) does no

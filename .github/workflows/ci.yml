@@ -17,7 +17,9 @@
 #   7. node scripts/check-docs-consistency.mjs (version tokens / matrix
 #                                  render / installer pin / CHANGELOG top)
 #   8. scripts/run-proofs.sh      (T12 toolFilter / T13 maxDepth / T15 dual-route
-#                                  logging against the INSTALLED dsh — session-free)
+#                                  logging / P3-T19 guardrail deny path + R-9 /
+#                                  P3-T19 C+E mode mechanisms against the
+#                                  INSTALLED dsh — session-free)
 #
 # dsh install (D7 — pin-minor 0.1.x): the npm package is @deepseek-ai/dsh and
 # the 0.1 line is currently published as prereleases only. A plain `~0.1.0`

@@ -2,6 +2,13 @@
 // listener injects (上游 start-work-hook.ts:167-241 + context-info-builder.ts
 // 的整棵判定树 + context-info-formatters.ts + explicit-plan-context.ts)。
 //
+// Upstream: packages/omo-opencode/src/hooks/start-work/ @ v4.19.4（冻结基线 tag，
+//   commit b072d279110bdda2c6ac2525d0d24dc54d16148a；逐文件处置表见
+//   ../ulw-execute.ts 头部——本文件对应 context-info-builder.ts /
+//   context-info-formatters.ts / explicit-plan-context.ts 三行）。
+//   语义移植（非逐字复制）：判定树与文案半照搬，数据面换为调用方给的内存投影
+//   （BoulderView / PlanInventory），落盘半改走 ctx.jobs（见 live-state.ts）。
+//
 // 上游判定树（context-info-builder.ts:24-104）在本文件里被完整重建为**纯函数**：
 //
 //   buildStartWorkContextInfo(params)

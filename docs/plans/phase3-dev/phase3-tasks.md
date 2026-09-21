@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 3 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每模块的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **13/21 完成**（移植组 14/14 闭环；余 T19 门扩展 / T20 署名收口 / T21 退出核对）（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：📋 **14/21 完成**（移植组 14/14 闭环；余 T19 门扩展 / T20 署名收口 / T21 退出核对）（PRE-1…PRE-5 ✅ 2026-09-19；P3-T1 ✅ 2026-09-19 调研回填与仲裁闭环；WP-4 整组取消、P3-T8/T18 取消——P3-T1 仲裁修正，见各任务行）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：2026-09-19 P3-T1 仲裁——移植组 32→15（WP-4 取消、P3-T8 取消、WP-6 缩为 T14…T17 四批 + ulw-execute），全部更正有 `.omo/evidence/p3t1-*` 证据；计划书 §4/§6/§7 与覆盖基线同步回填。2026-09-19 WP-2 开工仲裁——H-01 改判跳过（DSH 原生超集，S-46），P3-T4 取消，移植组 15→14，B 模式打样移至 T16。
 >
@@ -176,12 +176,12 @@
 
 ## WP-7 门扩展（计划书 §4.7）
 
-### [ ] P3-T19 — 静态门 / doctor-lite / probe / proofs 全量扩展
+### [x] P3-T19 — 静态门 / doctor-lite / probe / proofs 全量扩展
 
 - **产出**：`scripts/verify-concerto-static.mjs` c 组扩展（omo-hooks 断言组，延续 c 编号）+ doctor-lite 双行断言 + `concerto-mode-probe.sh` 全量 boot marker + proofs 护栏证明。
 - **做法**：c 组新断言：cordis.yml 恰好 2 个 insert 行、omo-hooks 每 `src/hooks/*.ts` 含署名头（上游源标注）、manifest ↔ hooks 文件集合一致、c01–c10 零改动；probe 断言全量 `[omo-hooks] hook … registered` 行 + 汇总行；prove 脚本对 write-guard 做"deny 决策真实生效 + listener 抛错工具不死"的 session 级证明（R-9，prove-explore-toolfilter.mjs 先例）。
 - **判定**：✅ 门 4/6/8 绿；新断言逐条列出对比（只加严）。
-- **证据**：（待填）
+- **证据**：2026-09-21 完成（deepseek-flash，1 轮过）。产出：**c11-c14**（c11 双 insert 行——复用 doctor-lite check 2b（T3 已落地，本任务的"doctor-lite 双行断言"产出项实际交付点为 T3，评审注记已登记）；c12 署名头扫描（每实现文件含 Upstream + 语义移植声明）；c13 manifest ↔ hooks 文件集合一致；c14 manifest 14 id ↔ phase3-hooks.md §1 表格解析一致（v5 改名 H-32→ulw-execute 映射）——门 6 断言 **19→23**）+ probe 全量 14 行 registered marker（同源派生机制，集合相等加严生效）+ **2 个新 prove 脚本**：prove-guardrail-deny-path.mjs（B 模式 deny 经真实 applyChildComposition→waterfall 路径生效；stub 工具体逐项声明）+ prove-guardrail-modes.mjs（listener throw 的 fail-closed 语义两分断言：pre-execute throw = final-result 绕过 post-execute、post-execute throw = 成功结果被替换 isError + 管线不死 + C/E 机制证明）——门 8 proofs 计数更新（ci.yml/ci-local.sh 门 8 注释同步）；门 2 = 937、门 3 = 13 场景。**双评审**：Kimi 轮1 **APPROVE**（NIT×2：c14 注释精度、TOTAL_PROOFS 手工计数——非阻塞；变异自证缺位已由评审实测三处变异均红补齐证据）+ mcode 轮1 遇限额（2067）→ 半小时重试恢复后报 1 项 [P1]（prove-guardrail-deny-path.mjs:250-252 D-half reminder 断言空集检查——reminder 以换行开头、split 首元 ''、includes('') 恒真，结构性假绿）→ 修复轮（取首段非空行程序化断言 + 反假绿实证 A/B/C 三态）→ Kimi 轮2 APPROVE + mcode 复核报 1 项 [P3]（:311 失败文案反事实句式——调度顺序下不可能成立，误导排查）→ 修复轮 2（改真实原因文案 + 同类清扫 + p3t19-gates.md §5 补 p1-①c/p3-②c 两行实证）→ **Kimi 轮3 APPROVE** + mcode 确认经三轮限额重试循环（规则④，约 9h 窗口持续拥堵）恢复：**APPROVE**（"11 个改动文件未引入可报告的缺陷：c11–c14 23/23 绿，2 个新 prove 脚本 5/5 绿"）。门：仲裁独立复跑 ci-local **8/8 绿**、verify-concerto-static 23/23、probe 实跑绿、self-test OK。**仲裁记录**：① R-9 行按计划书原文保留（prove 断言两分粒度更细且方向一致——计划书 §6 R-9 补充两句两分表述，本任务书修订记录同步）；② ulw-execute/ 四文件 M 改动经评审核对为 c12 署名头对齐的注释级（无行为变化）。**遗留**：probe 变异自证未做（成本 2 次真 boot，同源派生机制已实跑验证）；L4 冒烟归 T21。
 - **依赖**：P3-T17（全 hook 就位）。**量级**：4 小时。
 
 ---

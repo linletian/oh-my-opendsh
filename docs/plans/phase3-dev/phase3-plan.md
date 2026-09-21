@@ -192,7 +192,7 @@ ROADMAP §4 Phase 3 给出 2 条退出标准，逐条落到可执行证据：
 | **R-6** | **e2e 剧本复杂度**：护栏场景需要 mock 精确发出"违规工具调用"，turn-stopping 场景需要构造"将停未停"回合 | 中 | tool_calls 通道已就绪（P2-T18）；每模式先做一个**模式打样场景**（P0 两护栏即 B/C 模式打样），同组复用 |
 | **R-7** | **范围误读**：产出被理解为"OMO 工作流已可用"（实际命令面/Team Mode 仍缺席） | 低（沟通） | README/CHANGELOG 写明：hook 护栏层 ≠ `/ulw-*` 命令面（Phase 4）≠ Team Mode（Phase 5） |
 | **R-8** | **与 DSH 原生语义重复**：todo-continuation-enforcer 与 dsh-goal-round-driver 的续行语义可能重叠或冲突 | 中 | 每 hook 过"DSH 原生优先"检查（P3-T1 已逐模块记录，14 个模块因此移跳过组）；重叠处以 DSH 原生为主、OMO 语义收窄为补充并记录 |
-| **R-9** | ~~listener 异常击穿管线~~ | ✅ **已闭环**（P3-T1 Q-1.5/Q-2.4）：throw 全部 fail-closed 但**仅限该次调用/该回合**（"冻结全部工具调用"的草案措辞更正）；post-execute throw 会吃掉整次成功结果（有损） | 纪律②（自包 try/catch + 显式决策）为强制；门 8 prove 断言"护栏 listener 抛错时工具调用按预期失败、管线不死" |
+| **R-9** | ~~listener 异常击穿管线~~ | ✅ **已闭环**（P3-T1 Q-1.5/Q-2.4 + P3-T19 prove 实证）：throw 全部 fail-closed 但**仅限该次调用/该回合**（"冻结全部工具调用"的草案措辞更正）；两分粒度（T19 prove-guardrail-modes 钉死）：**pre-execute throw = 该次调用 final-result 且不 dispatch（绕过 post-execute）；post-execute throw = 已 dispatch 的成功结果被替换为 isError（有损）**；turn-stopping(serial) throw = 回合 kind:"error" | 纪律②（自包 try/catch + 显式决策）为强制；门 8 prove 断言"护栏 listener 抛错时工具调用按预期失败、管线不死"（P3-T19 已交付） |
 | **R-10** | **ulw-execute 激活 marker 的常量同步**：DSH 原生激活信号（本阶段自定）与 Phase 4 命令模板 marker（`<session-context>` + "You are starting an Atlas work session."）届时需对接，常量漂移会造成双轨 | 低-中 | Phase 4 对接项显式记覆盖清单 H-32 与任务书；模板常量出处（`features/builtin-commands/templates/start-work.ts`）已登记 |
 
 ### 开放问题（P3-T1 已闭环 5 项；其余转为实施期回答，不阻塞启动）

@@ -14,6 +14,10 @@
 //     → {@link startWorkJob}（`ctx.jobs` 注册面，**存储面替换**）
 //   * storage/path.ts（`getBoulderFilePath`）→ {@link boulderStatePath}
 //
+// 语义移植（非逐字复制）：上列上游文件的判定与文案照搬，交付面是 DSH 的——读盘
+// 只在 apply() 时一次，脚手架写盘与 work 登记（上游 `.omo/boulder.json` →
+// `ctx.jobs`）是事件路径的副作用。
+//
 // ⚠️ **磁盘 vs 事件路径的分工（计划书 §4.2 纪律③）**：本文件的读盘函数**只在
 // apply() 时调用一次**（`readPlanInventory`），事件路径上绝不调用——listener
 // 用的是 apply 时缓存的 `PlanInventory`。相反，{@link scaffoldNotepad} 与

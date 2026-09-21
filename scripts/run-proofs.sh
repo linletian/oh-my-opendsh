@@ -10,6 +10,22 @@
 # `[write, edit, explore]` (2026-09-04, 6203432), and prove-route-logging.mjs had three
 # separate 0.1.5-rc.1 breaks. docs/mvp-pitfalls.md §7 P-20.7.
 #
+# P3-T19 added TWO proofs (stages 4 and 5) for the Phase 3 behaviour-guardrail
+# layer — the plan §4.7 门 8 extension:
+#   * prove-guardrail-deny-path.mjs — the B-mode DENY decision is effective at
+#     session level (the prometheus row's own toolFilter through the real
+#     applyChildComposition → tools.restrict child path, then the listener's
+#     denial through the real pre-execute waterfall + deny materialization),
+#     plus R-9: a throwing listener fails THAT call (pre-execute → isError
+#     final-result, post-execute bypassed; post-execute → lossy isError) while
+#     later calls keep succeeding, and the real guard fails OPEN on its own
+#     identity-read throw;
+#   * prove-guardrail-modes.mjs — the two remaining listener patterns: C mode
+#     (`tools/post-execute` advisory ferried as additionalContexts, with a
+#     non-trigger control) and E mode (`agent/turn-stopping` → the real
+#     agentEvents dispatch → `agent.steer` continuation, with all-complete /
+#     absent-projection / active-armed-goal controls).
+#
 # Zero LLM cost, no network, no boot: each proof builds its own cordis stack
 # (or drives one real child-composition path) in-process and asserts on it.
 # Total budget well under a minute.
@@ -21,6 +37,10 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+
+# The proof count lives here once: the stage banner and the closing summary both
+# read it, so adding a proof cannot leave the "/3" of a previous era behind.
+TOTAL_PROOFS=5
 
 if ! command -v dsh >/dev/null 2>&1; then
   echo "run-proofs: FAIL — dsh not on PATH (the proofs mount the INSTALLED dsh's own plugins)" >&2
@@ -57,13 +77,13 @@ run_proof() {
   STAGE=$((STAGE + 1))
   echo ""
   echo "--------------------------------------------------------------"
-  echo "run-proofs: ${STAGE}/3 — ${name}"
+  echo "run-proofs: ${STAGE}/${TOTAL_PROOFS} — ${name}"
   echo "--------------------------------------------------------------"
   "$@"
   local rc=$?
   if [[ "$rc" != "0" ]]; then
     echo ""
-    echo "run-proofs: FAIL at ${STAGE}/3 (${name}) — exit ${rc}" >&2
+    echo "run-proofs: FAIL at ${STAGE}/${TOTAL_PROOFS} (${name}) — exit ${rc}" >&2
     exit "$rc"
   fi
 }
@@ -84,5 +104,17 @@ run_proof "T13 maxDepth cap enforced" \
 run_proof "T15 dual-route logging" \
   node scripts/prove-route-logging.mjs "$NM"
 
+# P3-T19 / R-9: the Phase 3 B-mode guardrail's DENY is effective at session
+# level (row toolFilter via the real child-composition path, then the listener's
+# denial through the real pre-execute waterfall), and a throwing listener fails
+# only THAT call while the pipeline keeps working.
+run_proof "P3-T19 guardrail deny path + R-9 throw semantics" \
+  node scripts/prove-guardrail-deny-path.mjs "$NM" "$RENDERED/agent.cordis.yml"
+
+# P3-T19: the C-mode advisory (additionalContexts) and E-mode steer surfaces of
+# the guardrail layer, each with its non-trigger controls.
+run_proof "P3-T19 guardrail C/E mode mechanisms" \
+  node scripts/prove-guardrail-modes.mjs "$NM"
+
 echo ""
-echo "run-proofs: PASS — 3/3 (T12 toolFilter · T13 maxDepth · T15 dual-route logging) on dsh $(dsh --version)"
+echo "run-proofs: PASS — ${TOTAL_PROOFS}/${TOTAL_PROOFS} (T12 toolFilter · T13 maxDepth · T15 dual-route logging · P3-T19 guardrail deny path + R-9 · P3-T19 C/E modes) on dsh $(dsh --version)"

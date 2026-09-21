@@ -18,7 +18,9 @@
 #   6. concerto static (AC-6/P-19 hardening of the shipped preset+plugin)
 #   7. docs consistency (version tokens / matrix render / installer pin)
 #   8. session-free proofs (T12 toolFilter / T13 maxDepth / T15 dual-route
-#      logging) — added 2026-09-10 because these were manual-only and rotted;
+#      logging / P3-T19 guardrail deny path + R-9 / P3-T19 C+E mode mechanisms)
+#      — added 2026-09-10 because these were manual-only and rotted; the
+#      P3-T19 pair added 2026-09-20 (plan §4.7 门 8);
 #      see docs/mvp-pitfalls.md §7 P-20.7
 
 set -uo pipefail

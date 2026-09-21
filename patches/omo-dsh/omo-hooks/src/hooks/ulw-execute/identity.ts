@@ -1,5 +1,12 @@
 // ulw-execute/identity.ts — P3-T17: 激活信号的身份面（`omo-atlas` 锚点）。
 //
+// Upstream: packages/omo-opencode/src/hooks/start-work/ @ v4.19.4（冻结基线 tag，
+//   commit b072d279110bdda2c6ac2525d0d24dc54d16148a；逐文件处置表见
+//   ../ulw-execute.ts 头部）。语义移植（非逐字复制）：上游用
+//   `updateSessionAgent(input.sessionID, "atlas")` 把发起会话指派给 atlas，DSH
+//   没有「会话切 agent」，改为识别**已被委派出来的 atlas 子会话**（下段的
+//   descriptor.persona `omo-atlas` 锚点，T16 先例）。
+//
 // 上游：`hooks/start-work/start-work-hook.ts:186-192` 把**发起命令的会话**切换
 // 成 atlas（`updateSessionAgent(input.sessionID, "atlas")` /
 // `output.message["agent"] = resolveRegisteredAgentName("atlas")`）——上游的
