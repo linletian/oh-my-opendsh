@@ -4789,8 +4789,18 @@ export function analyzeSessionNotificationLog(
  *       label. Exactly once is the "同一 settlement 不产生重复通知" claim: the
  *       registry delivers a settlement once and the listener's notified-id set
  *       absorbs a repeat;
- *   (e) no false positive: exactly one anchor on the channel and zero swallowed
- *       `… FAILED: …` lines (a second anchor OR a failure line fails this);
+ *   (e) no false positive: exactly one NON-FAILURE line on the notification
+ *       channel, and it is the well-formed anchor (a second anchor OR any stray
+ *       non-anchor line the listener logged fails this). The swallowed
+ *       `… FAILED: …` line is NOT part of this surface: it is the HOST's
+ *       delivery verdict (`notify-send` exists on a developer desktop and not on
+ *       the CI image — run 36347748836, gate 3, `spawn notify-send ENOENT`), and
+ *       the scenario's contract object is the anchor line, not OS delivery;
+ *   (e2) the backend dispatch was attempted and its failure never escaped the
+ *       listener — the SAME `<= 1` claim the sibling 'session-notification-log'
+ *       scenario makes as `notificationFailureSwallowedNotThrown`, with the
+ *       `notify-send`-absent host explicitly tolerated (see the check's own
+ *       comment);
  *   (f) the sibling session-notification listener did not double-announce (the
  *       top-level turn's completion is its only anchor).
  *
@@ -4825,7 +4835,34 @@ export function analyzeBackgroundNotificationLog(
     .split('\n')
     .filter((line) => line.trim() === BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR).length
   const anchorLines = notificationLinesOf(bootLog, BACKGROUND_NOTIFICATION_LOG_PREFIX)
+  // The swallowed-failure channel: the backend's own report that
+  // `execFile(NOTIFY_SEND_COMMAND, …)` could not be run at all. `countMatches`
+  // keeps the regex-count form the sibling scenario uses; `failureLines` is the
+  // same fact as lines, for the bonus and the environment classification below.
+  const failureLines = notificationLinesOf(bootLog, BACKGROUND_NOTIFICATION_FAILURE_PREFIX)
   const swallowedFailureCount = countMatches(bootLog ?? '', BACKGROUND_NOTIFICATION_SWALLOW_RE)
+  // THE FALSE-POSITIVE SURFACE: the listener's NON-FAILURE notification lines
+  // only. A swallowed `… FAILED: …` line is the HOST's delivery verdict, never a
+  // false announcement — `notify-send` exists on a developer desktop and does not
+  // exist on the CI image (run 36347748836, gate 3:
+  // `[omo-hooks] background-notification FAILED: notification dispatch failed:
+  // Error: spawn notify-send ENOENT`), and this scenario's contract object is the
+  // ANCHOR LINE, not OS delivery. `BACKGROUND_NOTIFICATION_LOG_PREFIX` already
+  // excludes the failure prefix by construction (the anchor needs `': '` where the
+  // failure line carries `' FAILED: '`); the explicit filter keeps the claim true
+  // even if the two prefixes ever converge.
+  const nonFailureNotificationLines = [...anchorLines, ...failureLines].filter(
+    (line) => !line.startsWith(BACKGROUND_NOTIFICATION_FAILURE_PREFIX),
+  )
+  const nonFailureNotificationLineCount = nonFailureNotificationLines.length
+  // The platform axis, recorded (never asserted): which delivery verdict this
+  // host produced. Both shapes PASS — see `notificationFailureSwallowedNotThrown`.
+  const notifySendAbsenceLines = failureLines.filter((line) => /\bENOENT\b/.test(line))
+  const deliveryVerdict = failureLines.length === 0
+    ? `delivered (no failure line: ${NOTIFY_SEND_COMMAND} ran on this host, or succeeded silently)`
+    : notifySendAbsenceLines.length > 0
+      ? `${NOTIFY_SEND_COMMAND} absent on this host (${notifySendAbsenceLines.length}x ENOENT) — tolerated`
+      : `${failureLines.length}x swallowed backend failure (no ENOENT) — tolerated`
   const sessionAnchorCount = countMatches(bootLog ?? '', SESSION_NOTIFICATION_ANCHOR_RE)
   // The settlement really DID happen (the child ran and closed, and DSH's own
   // reporter delivered its notice for this job), so a missing anchor below is
@@ -4869,11 +4906,29 @@ export function analyzeBackgroundNotificationLog(
     // one-shot background path passes to `jobs.start` verbatim).
     backgroundNotificationAnchorLabelExpected:
       anchorCount === 1 && anchorLabels[0] === BACKGROUND_NOTIFICATION_EXPECTED_LABEL,
-    // (e) no false positive: exactly one anchor on the channel and no swallowed
-    // failure line. A second anchor (the double-notification failure mode) and a
-    // `… FAILED: …` line both fail this check.
+    // (e) no false positive: exactly ONE NON-FAILURE line on the notification
+    // channel, and it is the well-formed anchor the listener really owns (the
+    // regex-parsed count is 1). A second anchor (the double-notification failure
+    // mode) and any stray non-anchor line logged on the notification surface both
+    // fail this check. The swallowed backend `FAILED:` line is deliberately NOT
+    // part of this count — a host without `notify-send` reds it for no reason
+    // (the P3-T13 CI defect: run 36347748836, gate 3); it is asserted on its own
+    // axis by `notificationFailureSwallowedNotThrown` directly below.
     noBackgroundNotificationFalsePositive:
-      anchorCount === 1 && swallowedFailureCount === 0,
+      anchorCount === 1 && nonFailureNotificationLineCount === 1,
+    // (e2) THE BACKEND-DISPATCH AXIS, deliberately the SAME claim the sibling
+    // 'session-notification-log' scenario makes (`notificationFailureSwallowedNotThrown`,
+    // the same `<= 1` bound): the dispatch was really attempted, and its failure
+    // never escaped the listener (discipline ②). A host WITHOUT `notify-send` is
+    // EXPLICITLY TOLERATED: the CI image has no `notify-send`, `execFile` reports
+    // `Error: spawn notify-send ENOENT`, and that single swallowed line is the
+    // environment's verdict — not this port's defect. A developer desktop with
+    // `notify-send` reports no failure line at all; a host whose `notify-send`
+    // exists but fails (no DISPLAY / D-Bus) passes on the same bound. BOTH shapes
+    // PASS, and which one ran is recorded in the bonus as `deliveryVerdict`. What
+    // must NOT regress is the swallow: two `FAILED:` lines mean the dispatch ran
+    // twice, which the `<= 1` bound still reds.
+    notificationFailureSwallowedNotThrown: swallowedFailureCount <= 1,
     // (f) The session-notification listener must not DOUBLE-announce. The claim
     // is deliberately `<= 1`, not `=== 1`: this scenario's parent is woken by
     // the job's own settlement notice (`dsh-tool-jobs` `owner.followup`), which
@@ -4895,8 +4950,19 @@ export function analyzeBackgroundNotificationLog(
     notificationAnchorLineCount: anchorLineCount,
     notificationAnchorStatuses: anchorStatuses,
     notificationAnchorLabels: anchorLabels,
+    // The false-positive surface, verbatim: the listener's NON-FAILURE lines (the
+    // anchor(s) only). The `FAILED:` lines are reported separately below, because
+    // they are the host's delivery verdict and not this claim's subject.
+    notificationNonFailureLines: nonFailureNotificationLines,
+    notificationNonFailureLineCount: nonFailureNotificationLineCount,
     notificationFailureLineCount: swallowedFailureCount,
     notificationFailureLines: notificationLinesOf(bootLog, BACKGROUND_NOTIFICATION_FAILURE_PREFIX),
+    // The platform axis this scenario explicitly tolerates (`notify-send` present
+    // on a developer desktop, absent on the CI image). Informative only; both
+    // shapes PASS, on the sibling scenario's identical `<= 1` swallow bound.
+    notifySendCommand: NOTIFY_SEND_COMMAND,
+    notifySendAbsentOnHost: notifySendAbsenceLines.length > 0,
+    deliveryVerdict,
     // The deferred-acquisition evidence: which NOTE lines a real boot carries is
     // informative (the strict `ctx.get` usually loses the loader race, so the
     // deferred path is the one exercised), but it is NOT asserted — both
@@ -7403,6 +7469,21 @@ async function runAnalysisSelfTest(routes) {
   if (goodBackgroundNotification.result !== 'PASS') {
     problems.push(`fabricated GOOD background-notification-log must PASS, got FAIL on: ${goodBackgroundNotification.failed.join(', ')}`)
   }
+  // THE CI REGRESSION CONTROL (run 36347748836, gate 3): the SAME good input on a
+  // host with NO `notify-send` — exactly what the CI image is — must still PASS.
+  // The backend really fails to spawn the command, the listener swallows it as a
+  // single `FAILED:` line (the sibling scenario's `<= 1` bound), and the
+  // false-positive claim reads only the NON-FAILURE surface, so the anchor claim
+  // is untouched by the host's delivery verdict.
+  const ciAbsentNotifySendInput = fabricatedBackgroundNotificationInput(routes)
+  ciAbsentNotifySendInput.bootLog += `\n${BACKGROUND_NOTIFICATION_FAILURE_PREFIX}notification dispatch failed: Error: spawn ${NOTIFY_SEND_COMMAND} ENOENT`
+  const ciAbsentNotifySendVerdict = analyzeBackgroundNotificationLog(ciAbsentNotifySendInput, routes)
+  if (ciAbsentNotifySendVerdict.result !== 'PASS') {
+    problems.push(
+      `fabricated GOOD background-notification-log on a host without ${NOTIFY_SEND_COMMAND} `
+      + `(the CI shape, one swallowed ENOENT) must PASS, got FAIL on: ${ciAbsentNotifySendVerdict.failed.join(', ')}`,
+    )
+  }
   const backgroundNotificationDefectCases = [
     // THE P3-T13 DEFECT ITSELF: the runtime produced no anchor (the strict
     // `ctx.get('jobs')` at apply time meant the subscription never happened).
@@ -7461,9 +7542,30 @@ async function runAnalysisSelfTest(routes) {
     ['the session-notification listener announced the top-level turn twice', (input) => {
       input.bootLog += `\n${SESSION_NOTIFICATION_EXPECTED_ANCHOR}\n${SESSION_NOTIFICATION_EXPECTED_ANCHOR}`
     }, 'sessionNotificationDidNotDoubleAnnounce'],
-    ['the background listener swallowed a failure line', (input) => {
-      input.bootLog += `\n${BACKGROUND_NOTIFICATION_FAILURE_PREFIX}notification dispatch failed: Error: boom`
+    // A swallowed `FAILED:` line must NOT be counted as a false positive (the
+    // P3-T13 CI defect, run 36347748836 gate 3: the CI image has no
+    // `notify-send`, so the backend legitimately reports `spawn notify-send
+    // ENOENT` and the sibling session scenario tolerates the identical line).
+    // The negative controls below are what keep that tolerance from becoming
+    // vacuous: a REAL second NON-FAILURE notification line must still red the
+    // false-positive claim, in BOTH of its shapes — one the anchor regex parses
+    // (a genuine second anchor) and one it does NOT (a stray single-token line the
+    // listener logged under the anchor prefix, so `anchorCount` stays 1 and ONLY
+    // the non-failure surface count can catch it), so the check cannot pass merely
+    // by being the anchor-count check renamed.
+    ['a second non-failure anchor line appeared (a double notification)', (input) => {
+      input.bootLog += `\n${BACKGROUND_NOTIFICATION_LOG_PREFIX}completed ${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}`
     }, 'noBackgroundNotificationFalsePositive'],
+    ['a stray line appeared under the anchor prefix (the anchor regex does not parse it)', (input) => {
+      input.bootLog += `\n${BACKGROUND_NOTIFICATION_LOG_PREFIX}settled`
+    }, 'noBackgroundNotificationFalsePositive'],
+    // ... and the swallowed-failure AXIS itself is still guarded, on the sibling
+    // scenario's own `<= 1` bound: the dispatch running TWICE is a defect, so two
+    // `FAILED:` lines must red it.
+    ['the background listener swallowed the dispatch failure twice (dispatch ran twice)', (input) => {
+      input.bootLog += `\n${BACKGROUND_NOTIFICATION_FAILURE_PREFIX}notification dispatch failed: Error: spawn ${NOTIFY_SEND_COMMAND} ENOENT`
+        + `\n${BACKGROUND_NOTIFICATION_FAILURE_PREFIX}notification dispatch failed: Error: spawn ${NOTIFY_SEND_COMMAND} ENOENT`
+    }, 'notificationFailureSwallowedNotThrown'],
   ]
   for (const [label, mutate, expectedCheck] of backgroundNotificationDefectCases) {
     const input = fabricatedBackgroundNotificationInput(routes)
@@ -10013,7 +10115,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
