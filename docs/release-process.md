@@ -53,6 +53,24 @@ implemented** — it changes what a matrix row attests to, so it is a decision r
 a patch. Until then, treat a red `install dsh` step as an upstream condition: re-run
 before investigating this repo.
 
+**Follow-up, partially landed (2026-09-2x, PR #9).** The floating tree eventually cost us
+more than a retry: upstream's 2026-09-22..24 releases (0.1.5-rc.3 / 0.1.7-rc.*) moved the
+caret ranges off the hoisted placement — a fresh `@0.1.5-rc.1` install now nests
+`@deepseek-ai/dsh-sandbox-local` / `-fs-sandbox` / `-sandbox-windows-acl` under
+`dsh-base/node_modules` instead of `@deepseek-ai/dsh/node_modules/@deepseek-ai/`, so the
+plugin-tree loader cannot resolve the bare specifiers `dsh-base/cordis.patch.yml:206`
+declares: the profile boot dies with `plugin tree failed to load … could not be resolved`
+and all 22 e2e scenarios fail before readiness. Both dsh installs
+(`.github/workflows/ci.yml`, `.github/workflows/compat-probe.yml`) therefore pass
+`--before=2026-09-19T00:00:00Z`, npm's "resolve as if it were this date" cutoff, which
+freezes the **whole** resolved tree — umbrella and transitive — at the last rc.1-era
+resolution (re-verified: 520 packages, sandbox family hoisted, e2e 22/22 green, where the
+floating tree boots 0/22). The date is part
+of the D7 pin now: a `DSH_VERSION` bump to an rc published after the cutoff must move and
+re-verify it, and the weekly compat-probe sentinel is the reminder that upstream has
+moved on. `scripts/compat-probe.sh` deliberately installs a NEW rc **without** a cutoff —
+it probes the new tree; it does not reproduce CI's pinned one.
+
 ### Support window, and what version probing actually measures
 
 **Measured 2026-09-10** with `scripts/compat-probe.sh <version>` (~2 min per version, zero LLM

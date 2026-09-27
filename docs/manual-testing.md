@@ -28,7 +28,8 @@ A 5th run mode, 协奏模式 / **Concerto Mode** (preset id `concerto`, trust us
    dsh --version
    ```
 
-   Install exactly the pinned version, the way CI does: `npm i -g @deepseek-ai/dsh@0.1.5-rc.1`.
+   Install exactly the pinned version, the way CI does: `npm i -g @deepseek-ai/dsh@0.1.5-rc.1 --before=2026-09-19T00:00:00Z`
+   (the `--before` cutoff is load-bearing, not decoration — see the CAUTION below).
 
 3. Repo deps installed (`node_modules` present).
 4. ONE DeepSeek API key covering BOTH routes, available either as:
@@ -39,7 +40,7 @@ A 5th run mode, 协奏模式 / **Concerto Mode** (preset id `concerto`, trust us
 
    or already stored in `~/.dsh/.credentials.yaml` (present on this machine — smoke-real reads it READ-ONLY and injects it into its sandbox).
 
-> **CAUTION:** install the pinned version exactly (`@0.1.5-rc.1`); never substitute another rc. rc-era lesson (P-11.5): a naive `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` pulled rc.8 deps and broke the stack — see P-11.5 for the validated-tree restore recipe.
+> **CAUTION:** install the pinned version exactly (`@0.1.5-rc.1`); never substitute another rc. rc-era lesson (P-11.5): a naive `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` pulled rc.8 deps and broke the stack — see P-11.5 for the validated-tree restore recipe. The same landmine fired again in 2026-09 (PR #9): a fresh `@0.1.5-rc.1` install resolved 0.1.7-rc.* transitives in which `@deepseek-ai/dsh-sandbox-local` (and `-fs-sandbox` / `-sandbox-windows-acl`) is no longer hoisted where the plugin-tree loader resolves bare specifiers, so the composed tree failed to load and every e2e scenario died before readiness. The exact version pin does **not** freeze the transitives; `--before=2026-09-19T00:00:00Z` does. Keep the cutoff until `DSH_VERSION` itself moves — and when it does, re-verify the new cutoff the way [the release process](./release-process.md) describes.
 
 ## L0 — Zero-cost automated smoke
 

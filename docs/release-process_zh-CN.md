@@ -39,6 +39,21 @@ CI 安装 `@deepseek-ai/dsh@<精确 rc>`，但 **dsh 自身的依赖对预发布
 后续项，尚未实施**——它改变的是矩阵行所"作证"的内容，属于决策而非补丁。在那之前，
 `install dsh` 步骤报红请先当作上游状况：**重跑一次**，再考虑排查本仓库。
 
+**后续项，已部分落地（2026-09-2x，PR #9）。** 浮动依赖树的代价最终超过了一次重跑：上游
+2026-09-22..24 的发布（0.1.5-rc.3 / 0.1.7-rc.*）让 caret 范围偏离了原来的提升位置——全新安装
+`@0.1.5-rc.1` 现在把 `@deepseek-ai/dsh-sandbox-local` / `-fs-sandbox` /
+`-sandbox-windows-acl` 嵌进 `dsh-base/node_modules`，而不再提升到
+`@deepseek-ai/dsh/node_modules/@deepseek-ai/`，因此插件树加载器无法解析
+`dsh-base/cordis.patch.yml:206` 声明的裸包名：profile 引导以
+`plugin tree failed to load … could not be resolved` 失败，22 个 e2e 场景全部在 boot 阶段挂掉。
+因此两处 dsh 安装（`.github/workflows/ci.yml`、`.github/workflows/compat-probe.yml`）都加上
+`--before=2026-09-19T00:00:00Z`——npm 的"按该日期解析"截止开关，它冻结的是**整棵**解析树
+（伞包 + 传递依赖），停在 rc.1 时代的最后一次解析（已复验：520 个包，sandbox 系已提升，
+e2e 22/22 全绿，而浮动树 0/22）。该日期如今是 D7 pin 的一部分：把 `DSH_VERSION` 翻到截止日
+之后发布的 rc 时，必须同步移动并复验它；每周的 compat-probe 哨兵就是上游已经前移的提醒。
+`scripts/compat-probe.sh` 则刻意**不带**截止日去安装新 rc——它探测的是新树，不是复现 CI 的
+固定树。
+
 ### 支持窗口，以及"逐版本探测"实际测的是什么
 
 **2026-09-10 实测**，用 `scripts/compat-probe.sh <版本>`（每版本约 2 分钟，零 LLM 成本）。

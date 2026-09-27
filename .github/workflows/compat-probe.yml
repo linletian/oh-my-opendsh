@@ -37,8 +37,16 @@ jobs:
 
       # The sentinel loads .omo/compat.yaml with the installed dsh's js-yaml
       # (the shared read-only dialect loader from scripts/doctor-lite.mjs).
+      # Same D7 caveat as ci.yml: the version pin alone leaves every
+      # caret-ranged transitive floating (upstream 0.1.5-rc.3 / 0.1.7-rc.*,
+      # published 2026-09-22..24), which is how a pinned install silently stops
+      # hoisting the sandbox family the plugin tree needs. `--before` freezes the
+      # whole resolved tree at the last rc.1-era resolution. REVISIT on every dsh
+      # bump (scripts/bump-dsh.sh rewrites the quoted version below): the cutoff
+      # must stay inside the pinned rc's publish window — bump-DATE, not
+      # copy-paste-forever.
       - name: install dsh (parser provider)
-        run: npm install --global "@deepseek-ai/dsh@0.1.5-rc.1"
+        run: npm install --global "@deepseek-ai/dsh@0.1.5-rc.1" --before=2026-09-19T00:00:00Z
 
       - name: detect new upstream versions → open issue
         run: node scripts/check-compat-probes.mjs
