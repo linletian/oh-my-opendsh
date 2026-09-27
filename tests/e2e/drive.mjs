@@ -7799,46 +7799,41 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
-  // ── P3-T16 批 C B-mode self-test: ONE fabricated GOOD input per scenario must
-  // PASS, and every named defect must FAIL on its OWN check (the T15 mutation
-  // QA, applied to the B/D pair).
-  const goodWebfetch = analyzeWebfetchRedirectDenied(fabricatedWebfetchRedirectInput(routes), routes)
+  // ── P3-T16 批 C self-test (the review-F1 re-scope): ONE fabricated GOOD input
+  // per scenario must PASS, and every named defect must FAIL on its OWN check.
+  // The webfetch scenario no longer observes a guard deny — hermetically it
+  // cannot, see the P3-T16 section header — it observes that a private fixture is
+  // never probed and that the native provider owns the refusal.
+  const goodWebfetch = analyzeWebfetchPrivateTargetUnprobed(
+    fabricatedWebfetchPrivateTargetInput(routes),
+    routes,
+  )
   if (goodWebfetch.result !== 'PASS') {
-    problems.push(`fabricated GOOD webfetch-redirect-denied must PASS, got FAIL on: ${goodWebfetch.failed.join(', ')}`)
+    problems.push(`fabricated GOOD webfetch-private-target-unprobed must PASS, got FAIL on: ${goodWebfetch.failed.join(', ')}`)
   }
   const webfetchDefectCases = [
-    ['the redirecting call was not denied at all', (input) => {
+    ['the guard probed the private fixture', (input) => {
+      input.fixtureHits = ['/redirect-me', '/final']
+    }, 'privateFixtureNeverProbed'],
+    ['the trigger never reached the native address policy', (input) => {
       input.log.events = input.log.events.map((event) =>
         event.type === 'tool/result'
           && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
-          ? fabricatedToolResultEvent(event.seq, 'mock-llm-tool-1-0', WEBFETCH_GUARD_PLAIN_BODY)
+          ? fabricatedToolResultEvent(event.seq, 'mock-llm-tool-1-0', 'Error: connection refused', true)
           : event)
-    }, 'redirectDenyMaterialized'],
-    ['the deny reason names a DIFFERENT final URL than the fixture', (input) => {
+    }, 'triggerReachedTheNativeAddressPolicy'],
+    ['the guard marker leaked onto the trigger result', (input) => {
       input.log.events = input.log.events.map((event) =>
         event.type === 'tool/result'
           && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-0')
           ? fabricatedToolResultEvent(
             event.seq,
             'mock-llm-tool-1-0',
-            `Error: ${WEBFETCH_REDIRECT_GUARD_MARKER}: "${FABRICATED_WEBFETCH_REDIRECT_URL}" follows `
-              + '1 redirect to "http://127.0.0.1:9/somewhere-else".',
+            `Error: ${WEBFETCH_REDIRECT_GUARD_MARKER}: refused`,
             true,
           )
           : event)
-    }, 'denyNamesTheFinalUrl'],
-    ['the non-redirecting control was denied too', (input) => {
-      input.log.events = input.log.events.map((event) =>
-        event.type === 'tool/result'
-          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
-          ? fabricatedToolResultEvent(
-            event.seq,
-            'mock-llm-tool-1-1',
-            `Error: ${WEBFETCH_REDIRECT_GUARD_MARKER}: denied`,
-            true,
-          )
-          : event)
-    }, 'controlNotDenied'],
+    }, 'triggerCarriesNoGuardMarker'],
     ['the control never reached the native address policy', (input) => {
       input.log.events = input.log.events.map((event) =>
         event.type === 'tool/result'
@@ -7846,16 +7841,28 @@ async function runAnalysisSelfTest(routes) {
           ? fabricatedToolResultEvent(event.seq, 'mock-llm-tool-1-1', 'Error: connection refused', true)
           : event)
     }, 'controlReachedTheNativeAddressPolicy'],
-    ['the guard spoke twice (a duplicated deny carrier)', (input) => {
+    ['the guard marker leaked onto the control result', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result'
+          && event.data?.message?.content?.some((part) => part.toolCallId === 'mock-llm-tool-1-1')
+          ? fabricatedToolResultEvent(
+            event.seq,
+            'mock-llm-tool-1-1',
+            `Error: ${WEBFETCH_REDIRECT_GUARD_MARKER}: refused`,
+            true,
+          )
+          : event)
+    }, 'controlCarriesNoGuardMarker'],
+    ['the guard spoke somewhere else in the batch', (input) => {
       input.log.events = input.log.events.concat([
         fabricatedToolResultEvent(
           8,
-          'mock-llm-tool-1-0',
-          `Error: ${WEBFETCH_REDIRECT_GUARD_MARKER}: duplicated`,
+          'mock-llm-tool-1-9',
+          `Error: ${WEBFETCH_REDIRECT_GUARD_MARKER}: stray`,
           true,
         ),
       ])
-    }, 'guardSpokeExactlyOnce'],
+    }, 'guardNeverSpoke'],
     ['the batch was the conductor\'s only step (summary vanished below the floor)', (input) => {
       let kept = 0
       input.requests = input.requests.filter((request) => {
@@ -7866,11 +7873,11 @@ async function runAnalysisSelfTest(routes) {
     }, 'mockSawTheBatchAndTheSummary'],
   ]
   for (const [label, mutate, expectedCheck] of webfetchDefectCases) {
-    const input = fabricatedWebfetchRedirectInput(routes)
+    const input = fabricatedWebfetchPrivateTargetInput(routes)
     mutate(input)
-    const verdict = analyzeWebfetchRedirectDenied(input, routes)
+    const verdict = analyzeWebfetchPrivateTargetUnprobed(input, routes)
     if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
-      problems.push(`fabricated webfetch-redirect-denied defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      problems.push(`fabricated webfetch-private-target-unprobed defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
     }
   }
 
@@ -8743,25 +8750,31 @@ function fabricatedUlwExecuteNoIntentInput(routes) {
 // Two scenarios, each with a TRIGGER and a live 对照, asserted against
 // RUNTIME-OBSERVED carriers only.
 //
-//   1. `webfetch-redirect-denied` (H-24). The B-mode pilot: the conductor fires
-//      TWO `web_fetch` calls in ONE batch —
-//        (a) the TRIGGER points at a loopback HTTP fixture that answers 302 →
-//            `/final`; the listener's own pre-resolution (a plain `fetch`,
-//            exactly like upstream's) follows the hop and DENIES the call with
-//            the final URL in the reason, which dsh materializes as an
-//            `Error: <reason>` isError result;
+//   1. `webfetch-private-target-unprobed` (H-24; the PR #9 review F1 re-scope).
+//      The B-mode pilot's ORIGINAL trigger was a loopback 302 chain that the
+//      guard's own pre-resolution followed and denied. Review F1 showed that
+//      pre-resolution was an SSRF: it pointed the host `fetch` at a model-chosen
+//      URL BEFORE DSH's public-address policy ran, and the reviewer reproduced it
+//      against a local 127.0.0.1 server. The guard now validates every hop (the
+//      `resolvePublicAddresses` mirror + the native same-origin rule) BEFORE it
+//      requests it, so a non-public destination is never probed and the B half
+//      fails open. The scenario therefore asserts the NEW, stronger property,
+//      with the same fixture and the same single-batch shape:
+//        (a) the TRIGGER points at the loopback 302 fixture; the guard refuses to
+//            probe it, the native provider refuses the literal address before
+//            connecting, and the model sees the NATIVE error with NO guard marker;
 //        (b) the CONTROL points at the same fixture's `/plain` route (200, no
-//            Location) so the pre-resolution resolves to the SAME url and the
-//            listener delegates (`next()`).
-//      MEASURED CONSTRAINT ON THE CONTROL'S DOWNSTREAM FATE (recorded, not
-//      hidden): dsh's own web provider refuses ANY non-public destination
-//      (`URL hostname "127.0.0.1" resolves to a non-public IP address`,
-//      dsh-web-fetch-http/lib/index.js:55-79), so a hermetic loopback control
-//      can never fetch successfully. The control assertion is therefore the
-//      discriminating pair "the guard did NOT deny it, and the call really
-//      reached the native provider": its result carries the native non-public
-//      address error and NOT the guard marker. That proves the pass-through
-//      without depending on outbound internet.
+//            Location) and behaves IDENTICALLY — the probe is gone for every hop,
+//            redirecting or not;
+//        (c) THE SSRF ASSERTION: the fixture observes ZERO HTTP requests. On the
+//            pre-fix code it answered `/redirect-me` + `/final` (the guard's
+//            manual loop) and `/plain` (the control's single probe).
+//      MEASURED CONSTRAINT, recorded not hidden: the guard's live DENY path now
+//      requires a same-origin PUBLIC redirect chain, which a hermetic mock-LLM
+//      run cannot serve (no outbound internet, and loopback is non-public by
+//      design). That path stays pinned by the unit suite
+//      (tests/omo-hooks/webfetch-redirect-guard.test.ts) and is registered as a
+//      residual on the H-24 row.
 //
 //   2. `prometheus-md-only-denied` (H-26). The identity/deny scenario:
 //      the conductor delegates to the `prometheus` roster row (the child is a
@@ -8807,23 +8820,27 @@ const WEBFETCH_GUARD_FINAL_PATH = '/final'
 const WEBFETCH_GUARD_PLAIN_PATH = '/plain'
 const WEBFETCH_GUARD_PLAIN_BODY = 'MOCK-WEBFETCH-PLAIN-BODY-1f4a7c'
 const WEBFETCH_GUARD_PROMPT =
-  'e2e webfetch-redirect-denied: fetch both URLs in one batch, then summarize what came back'
+  'e2e webfetch-private-target-unprobed: fetch both URLs in one batch, then summarize what came back'
 const WEBFETCH_GUARD_SUMMARY =
-  'MOCK-WEBFETCH-GUARD-SUMMARY-2c8e31: one fetch was refused with its final URL and the other was allowed through'
+  'MOCK-WEBFETCH-GUARD-SUMMARY-2c8e31: both fetches were refused by the provider without the guard speaking'
 
 /**
  * The loopback redirect fixture. Three routes:
- *   `/redirect-me` → 302 to `/final`   (the trigger)
- *   `/final`       → 200 plain text    (never fetched by the tool: the call is
- *                                       denied before dispatch; the guard's
- *                                       pre-resolution stops at the first
- *                                       non-redirect status, i.e. here)
- *   `/plain`       → 200 plain text    (the control)
+ *   `/redirect-me` → 302 to `/final`   (the TRIGGER — private, redirecting)
+ *   `/final`       → 200 plain text    (the redirect target; must NEVER be hit)
+ *   `/plain`       → 200 plain text    (the CONTROL — private, not redirecting)
  * Ephemeral port (listen 0), closed by runScenario's `finally`.
+ *
+ * `hits` records EVERY request the fixture answered. It is the scenario's SSRF
+ * carrier: after review F1 the guard must not probe any of these routes, and the
+ * native provider refuses the literal address before connecting, so the expected
+ * value is the empty array.
  */
 async function startWebfetchRedirectFixture() {
+  const hits = []
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
+    hits.push(path)
     if (path === WEBFETCH_GUARD_REDIRECT_PATH) {
       response.writeHead(302, {
         location: WEBFETCH_GUARD_FINAL_PATH,
@@ -8847,6 +8864,7 @@ async function startWebfetchRedirectFixture() {
   const { port } = server.address()
   return {
     port,
+    hits,
     redirectUrl: `http://127.0.0.1:${port}${WEBFETCH_GUARD_REDIRECT_PATH}`,
     finalUrl: `http://127.0.0.1:${port}${WEBFETCH_GUARD_FINAL_PATH}`,
     plainUrl: `http://127.0.0.1:${port}${WEBFETCH_GUARD_PLAIN_PATH}`,
@@ -8871,13 +8889,13 @@ function webfetchRedirectScript(_sandbox, redirect) {
 }
 
 /**
- * The `webfetch-redirect-denied` assertions (H-24). The trigger's own truth is
- * the fixture's real redirect: the final URL asserted below is the one the
- * FIXTURE's Location header names, and the reason text is the listener's
- * materialized deny.
+ * The `webfetch-private-target-unprobed` assertions (H-24; PR #9 review F1).
+ * The scenario's own truth is the FIXTURE's request log plus the two real
+ * `web_fetch` results the model received: the fixture is a real loopback server,
+ * and the refusal text is the one dsh's native provider really produced.
  */
-export function analyzeWebfetchRedirectDenied(
-  { log, requests, providersJson, bootLog, redirectUrl, finalUrl, plainUrl },
+export function analyzeWebfetchPrivateTargetUnprobed(
+  { log, requests, providersJson, bootLog, redirectUrl, plainUrl, fixtureHits },
   routes,
 ) {
   const events = log?.events ?? []
@@ -8890,29 +8908,31 @@ export function analyzeWebfetchRedirectDenied(
   const triggerText = triggerResult?.text ?? ''
   const controlText = controlResult?.text ?? ''
   const guardCarriers = results.filter((part) => part.text.includes(WEBFETCH_REDIRECT_GUARD_MARKER))
+  const hits = Array.isArray(fixtureHits) ? fixtureHits : []
   const checks = {
     ...dModeGivens({ log, providersJson, bootLog }, routes),
     // Both calls really ran in the model's own batch (the trigger is not a
     // synthetic construction: its arguments name the fixture URL).
     webFetchBatchDispatched: triggerCall !== undefined && controlCall !== undefined,
-    // (a) TRIGGER: the deny decision materialized as dsh does it — an isError
-    // result whose text is `Error: <reason>` and whose reason carries the
-    // guard's marker, the hop count and the FIXTURE's final URL.
-    redirectDenyMaterialized:
-      triggerResult?.isError === true
-      && triggerText.startsWith('Error: ')
-      && triggerText.includes(WEBFETCH_REDIRECT_GUARD_MARKER),
-    denyNamesTheFinalUrl: triggerText.includes(finalUrl),
-    denyReportsTheHopCount: triggerText.includes('follows 1 redirect to'),
-    denyCarriesNoDoubleErrorPrefix: !triggerText.startsWith('Error: Error: '),
-    // (b) 对照: the guard did NOT deny the non-redirecting URL, and the call
-    // really reached the native provider (its own non-public-address refusal).
-    controlNotDenied:
-      controlResult !== undefined
-      && controlResult.isError === true
-      && !controlText.includes(WEBFETCH_REDIRECT_GUARD_MARKER),
-    controlReachedTheNativeAddressPolicy: controlText.includes('non-public IP address'),
-    guardSpokeExactlyOnce: guardCarriers.length === 1,
+    // (c) THE SSRF ASSERTION (F1): the loopback fixture answered NOTHING. The
+    // pre-fix guard's manual loop answered `/redirect-me` + `/final` for the
+    // trigger and `/plain` for the control; today the guard refuses to probe a
+    // non-public destination at all and the native provider refuses the literal
+    // address before connecting.
+    privateFixtureNeverProbed: hits.length === 0,
+    // (a) TRIGGER: the guard did not speak and the refusal the model sees is the
+    // NATIVE provider's address policy (the guard failed open by design).
+    triggerReachedTheNativeAddressPolicy:
+      triggerResult?.isError === true && triggerText.includes('non-public IP address'),
+    triggerCarriesNoGuardMarker: !triggerText.includes(WEBFETCH_REDIRECT_GUARD_MARKER),
+    // (b) CONTROL: the non-redirecting private URL behaves IDENTICALLY — the
+    // probe is gone for every hop, redirecting or not.
+    controlReachedTheNativeAddressPolicy:
+      controlResult?.isError === true && controlText.includes('non-public IP address'),
+    controlCarriesNoGuardMarker: !controlText.includes(WEBFETCH_REDIRECT_GUARD_MARKER),
+    // The guard produced NO carrier at all: a marker here would mean the B half
+    // denied a destination it must never even probe.
+    guardNeverSpoke: guardCarriers.length === 0,
     mockSawTheBatchAndTheSummary: sisyphusRequests.length >= 2,
     turnCompleted: turnCompleted(events),
   }
@@ -8923,8 +8943,8 @@ export function analyzeWebfetchRedirectDenied(
     checks,
     bonus: {
       redirectUrl: redirectUrl ?? null,
-      finalUrl: finalUrl ?? null,
       plainUrl: plainUrl ?? null,
+      fixtureHits: hits,
       triggerText,
       controlText,
       guardCarrierCount: guardCarriers.length,
@@ -9234,33 +9254,34 @@ export function analyzePrometheusMdOnlyDenied(
   }
 }
 
-// ── fabricated P3-T16 批 C B-mode inputs (must earn their PASS) ──────────────
+// ── fabricated P3-T16 批 C inputs (must earn their PASS) ─────────────────────
 // One GOOD fixture per scenario, mirroring the real runtime layout the scenario
 // produces, plus the named defect mutations the self-test applies. The disk
 // facts the prometheus scenario asserts are computed in `analysisInput` for the
 // real run, so here they are plain booleans the mutations can flip.
 
-const FABRICATED_WEBFETCH_FINAL_URL = 'http://127.0.0.1:9/final'
 const FABRICATED_WEBFETCH_REDIRECT_URL = 'http://127.0.0.1:9/redirect-me'
 const FABRICATED_WEBFETCH_PLAIN_URL = 'http://127.0.0.1:9/plain'
-const FABRICATED_WEBFETCH_CONTROL_TEXT =
+/**
+ * The refusal BOTH calls receive: the native provider's own address policy. The
+ * guard never speaks on a private destination (review F1) — it refuses to probe
+ * it and fails open.
+ */
+const FABRICATED_WEBFETCH_NATIVE_REFUSAL =
   'Error: URL hostname "127.0.0.1" resolves to a non-public IP address'
 
-function fabricatedWebfetchRedirectInput(routes) {
+function fabricatedWebfetchPrivateTargetInput(routes) {
   const redirectCallId = 'mock-llm-tool-1-0'
   const plainCallId = 'mock-llm-tool-1-1'
-  const denyReason = `${WEBFETCH_REDIRECT_GUARD_MARKER}: "${FABRICATED_WEBFETCH_REDIRECT_URL}" `
-    + `follows 1 redirect to "${FABRICATED_WEBFETCH_FINAL_URL}". This harness cannot rewrite `
-    + `tool arguments, so re-issue web_fetch with the final URL "${FABRICATED_WEBFETCH_FINAL_URL}" directly.`
   const log = {
-    path: '/fabricated/webfetch-redirect/session.jsonl',
+    path: '/fabricated/webfetch-private-target/session.jsonl',
     header: { type: 'session', id: FABRICATED_PARENT_ID },
     events: [
       { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: WEBFETCH_GUARD_PROMPT }] } },
       fabricatedToolCallEvent(2, redirectCallId, 'web_fetch', { url: FABRICATED_WEBFETCH_REDIRECT_URL }),
       fabricatedToolCallEvent(3, plainCallId, 'web_fetch', { url: FABRICATED_WEBFETCH_PLAIN_URL }),
-      fabricatedToolResultEvent(4, redirectCallId, `Error: ${denyReason}`, true),
-      fabricatedToolResultEvent(5, plainCallId, FABRICATED_WEBFETCH_CONTROL_TEXT, true),
+      fabricatedToolResultEvent(4, redirectCallId, FABRICATED_WEBFETCH_NATIVE_REFUSAL, true),
+      fabricatedToolResultEvent(5, plainCallId, FABRICATED_WEBFETCH_NATIVE_REFUSAL, true),
       { seq: 6, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: WEBFETCH_GUARD_SUMMARY }] } } },
       { seq: 7, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
     ],
@@ -9274,8 +9295,9 @@ function fabricatedWebfetchRedirectInput(routes) {
     providersJson: fabricatedProvidersJson(routes),
     bootLog: FABRICATED_BOOT_LOG,
     redirectUrl: FABRICATED_WEBFETCH_REDIRECT_URL,
-    finalUrl: FABRICATED_WEBFETCH_FINAL_URL,
     plainUrl: FABRICATED_WEBFETCH_PLAIN_URL,
+    // The fixture answered nothing — the GOOD shape.
+    fixtureHits: [],
   }
 }
 
@@ -9622,21 +9644,23 @@ const SCENARIOS = [
     analyze: analyzeTaskResumeInfoAppended,
   },
   {
-    // P3-T16 (H-24; plan §4.2 模式 B pilot + D): the B-mode deny. ONE batch holds
-    // the trigger (a loopback 302 → `/final`) and the 对照 (a 200 `/plain`), so
-    // the deny decision and the pass-through are observed in the same step. See
-    // the P3-T16 section header for the control's measured downstream fate.
-    name: 'webfetch-redirect-denied',
+    // P3-T16 (H-24; plan §4.2 模式 B pilot + D; RE-SCOPED by PR #9 review F1):
+    // the SSRF boundary. ONE batch holds the TRIGGER (a loopback 302 →
+    // `/final`) and the 对照 (a 200 `/plain`); the guard must probe NEITHER, both
+    // calls must reach the native provider's address policy, and the fixture must
+    // observe ZERO requests. See the P3-T16 section header for why the live deny
+    // path can no longer be exercised hermetically.
+    name: 'webfetch-private-target-unprobed',
     prompt: WEBFETCH_GUARD_PROMPT,
     roles: ['sisyphus'],
     setup: () => startWebfetchRedirectFixture(),
     script: webfetchRedirectScript,
     analysisInput: (sandbox, redirect) => ({
       redirectUrl: redirect.redirectUrl,
-      finalUrl: redirect.finalUrl,
       plainUrl: redirect.plainUrl,
+      fixtureHits: redirect.hits,
     }),
-    analyze: analyzeWebfetchRedirectDenied,
+    analyze: analyzeWebfetchPrivateTargetUnprobed,
   },
   {
     // P3-T16 (H-26; plan §4.2 模式 B + D): the prometheus identity gate. The
@@ -9788,7 +9812,7 @@ async function runScenario(def, baseRoutes) {
   // can never disagree about a seat.
   const env = scenarioEnv(sandbox, def.env)
   const routes = def.env === undefined ? baseRoutes : resolveModelRoutes(env)
-  // P3-T16 (the webfetch-redirect-denied scenario): a scenario may need a
+  // P3-T16 (the webfetch-private-target-unprobed scenario): a scenario may need a
   // PROCESS-LOCAL HTTP fixture whose ephemeral PORT exists only after it is
   // listening, and the mock script's tool arguments must name that URL. `setup`
   // therefore runs BEFORE the mock server starts and its return value is handed
@@ -9989,7 +10013,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-redirect-denied + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: no-deny-on-the-redirecting-call, deny-names-a-different-final-url, denied-non-redirecting-control, control-never-reached-the-provider, guard-spoke-twice, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, swallowed-failure-line; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

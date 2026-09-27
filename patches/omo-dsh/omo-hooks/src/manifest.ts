@@ -640,8 +640,12 @@ const MANIFEST_ROWS = [
   //    maximum of N redirects`）而非硬编码。
   // ⑤ R-8 原生覆盖面已实测并登记：DSH 原生**跟随同源重定向**（默认 5 跳，返回
   //    value.url），跨源封锁/超限封锁的文案清晰但**从不给出最终 URL**——后者正是
-  //    本移植的残余价值。安全偏差（预解析请求不经 DSH 的 public-address 策略）已
-  //    在 listener 头部与 T16 报告中登记。
+  //    本移植的残余价值。**SSRF 处置（PR #9 评审 F1）**：早前登记的「预解析请求
+  //    绕过 DSH public-address 策略 = upstream parity」已被独立评审推翻并修复——
+  //    每一跳请求前先做 `resolvePublicAddresses` 镜像校验（DNS → 逐个地址判定非公网
+  //    → 终止链路）+ 原生同源约束；非公网目标绝不预解析，B 段 fail open，拒绝文案
+  //    仍由原生 provider 给出。回归：单测「私网目标零 fetch」+ e2e
+  //    `webfetch-private-target-unprobed`（loopback fixture 观测到 0 次请求）。
   {
     id: 'webfetch-redirect-guard',
     upstreamFiles: [
@@ -656,10 +660,14 @@ const MANIFEST_ROWS = [
     event: 'tools/pre-execute',
     mode: 'B',
     summary:
-      'webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引，覆盖 H-24 的形态降级）+ D 段结果改写（含 D）；pre/post 配对用 exec 对象承载的 WeakMap（callId/token 原生字段）',
-    e2eScenario: 'webfetch-redirect-denied',
-    // P3-T16: flipped 'pending' → 'ported' (listener + unit test + the
-    // `webfetch-redirect-denied` scenario all landed).
+      'webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引，覆盖 H-24 的形态降级）+ D 段结果改写（含 D）；每跳预解析前做公网地址校验 + 同源约束（PR #9 F1 SSRF 修复）；pre/post 配对用 exec 对象承载的 WeakMap（callId/token 原生字段）',
+    e2eScenario: 'webfetch-private-target-unprobed',
+    // P3-T16: flipped 'pending' → 'ported' (listener + unit test + an e2e
+    // scenario all landed). The scenario was RE-SCOPED from
+    // `webfetch-redirect-denied` by PR #9 review F1: a hermetic loopback fixture
+    // can no longer exercise the live deny (a private destination must not be
+    // probed at all), so the scenario now asserts the SSRF boundary — the fixture
+    // observes zero requests and the native provider owns the refusal.
     status: 'ported',
   },
   // H-26 — phase3-hooks.md §1 P4 行（批 C）。**B + D 组合行**（同 H-24 记录纪律）：
@@ -788,6 +796,12 @@ const MANIFEST_ROWS = [
     //    （P3-T13 先例），**缺席 loud-but-non-fatal**（一行 NOTE + 脚手架照常）。
     // ⑤ 计划清单（`.omo/plans/*.md` 的 checkbox 进度）是唯一真实读盘输入：按
     //    会话 cwd 记忆化（每个工作区根首次现形读一次），pre-step 热路径不再触盘。
+    //    **失效边界（PR #9 评审 F3）**：`session/disposed` 时按该会话 cwd 调
+    //    `PlanInventoryReader.invalidate`，同一工作区根的下一次激活重新触盘
+    //    （长命 dsh/web 进程里新建/改写的计划因此可见）。同一个 cwd 上若有多个活
+    //    会话，其中一个 dispose 会让其余会话在**下一次 pre-step** 多读一次盘——
+    //    这是**有意选择**（正确性优先于命中率）：失效按 cwd 而非 session，因为缓存
+    //    的键就是 cwd；多读只影响「何时再读」，不影响读到什么，也不改变任何判定。
     // ⑥ **E 段（turn-stopping 续行）不在本行落地**：上游 start-work 本身没有
     //    turn-stopping 面——本行 summary 里的「E 段」是**目录级**标注（P3-T1
     //    的 A/E 记法），真正的续行机在 H-25 `atlas/`（60 文件，Phase 5 deferred）。

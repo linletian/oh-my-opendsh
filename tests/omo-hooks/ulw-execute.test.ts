@@ -1157,28 +1157,41 @@ describe('P3-T17 ulw-execute — 计划清单读面（含 .sisyphus/plans 旧布
     expect(readPlanProgress(weird).total).toBe(0)
   })
 
-  it('⑨ createInventoryReader 按 cwd 记忆化（同一目录只读一次）', () => {
+  it('⑨ createInventoryReader 按 cwd 记忆化（同一缓存寿命内只读一次）', () => {
     let reads = 0
     const loaded: string[] = []
     const reader = createInventoryReader((directory) => {
       reads += 1
       return { entries: [planEntry(join(directory, 'x.md'), 0, 1)], scannedDirs: [directory] }
     }, (directory) => loaded.push(directory))
-    const first = reader('/a')
-    const second = reader('/a')
+    const first = reader.inventoryFor('/a')
+    const second = reader.inventoryFor('/a')
     expect(first).toBe(second)
     expect(reads).toBe(1)
     expect(loaded).toEqual(['/a'])
-    reader('/b')
+    reader.inventoryFor('/b')
     expect(reads).toBe(2)
     expect(loaded).toEqual(['/a', '/b'])
+    // F3: the memo is NOT permanent. `invalidate` is the boundary the registrar
+    // drives from `session/disposed`; the NEXT read re-reads and re-announces.
+    reader.invalidate('/a')
+    expect(reader.inventoryFor('/a')).not.toBe(first)
+    expect(reads).toBe(3)
+    expect(loaded).toEqual(['/a', '/b', '/a'])
+    // Only the invalidated key is dropped: `/b` still hits its memo.
+    reader.inventoryFor('/b')
+    expect(reads).toBe(3)
+    // `clear` drops everything (the fiber-teardown floor).
+    reader.clear()
+    reader.inventoryFor('/b')
+    expect(reads).toBe(4)
   })
 
   it('⑨ createInventoryReader 吞掉读面抛错（空清单）', () => {
     const reader = createInventoryReader(() => {
       throw new Error('permission denied')
     })
-    expect(reader('/a')).toEqual(EMPTY_PLAN_INVENTORY)
+    expect(reader.inventoryFor('/a')).toEqual(EMPTY_PLAN_INVENTORY)
   })
 })
 
@@ -1784,6 +1797,58 @@ describe('P3-T17 ulw-execute — 注册面', () => {
       await call.listener(payload, nextDouble().next)
       expect(injected).toHaveLength(1)
     } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('⑭ session/disposed 按 cwd 失效清单缓存：dispose 后再激活能发现新计划（F3）', async () => {
+    const directory = join(tmpdir(), `ulw-execute-invalidate-${randomUUID()}`)
+    mkdirSync(join(directory, '.omo', 'plans'), { recursive: true })
+    writeFileSync(join(directory, '.omo', 'plans', 'alpha.md'), '## TODOs\n- [ ] 1. First\n')
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (line: unknown) => {
+      warnings.push(String(line))
+    }
+    try {
+      const { ctx, onCalls } = fakeContext()
+      registerUlwExecute(ctx, ulwExecuteRow())
+      const pre = onCalls.find((candidate) => candidate.event === 'agent/pre-step')
+      const disposed = onCalls.find((candidate) => candidate.event === 'session/disposed')
+      if (pre === undefined || disposed === undefined) throw new Error('registrar wiring incomplete')
+
+      const activate = async (session: unknown): Promise<number> => {
+        const { payload, injected } = injectingPayload(session, ['start work on the plan'])
+        await pre.listener(payload, nextDouble().next)
+        return injected.length
+      }
+      const loads = (): string[] => warnings.filter((line) => line.includes('inventory loaded'))
+
+      const sessionA = atlasSession(directory)
+      expect(await activate(sessionA)).toBe(1)
+      expect(loads()).toHaveLength(1)
+      expect(loads()[0]).toContain('1 plan(s)')
+
+      // Prometheus creates a second plan while the process stays alive.
+      writeFileSync(join(directory, '.omo', 'plans', 'beta.md'), '## TODOs\n- [x] 1. Second\n')
+
+      // A NEW child session on the SAME cwd still hits the memo: the cache is
+      // keyed by cwd on the registration, not by session.
+      expect(await activate(atlasSession(directory))).toBe(1)
+      expect(loads()).toHaveLength(1)
+
+      // F3: `session/disposed` invalidates that cwd, so the next activation
+      // re-reads the plan directory and the new plan becomes visible.
+      disposed.listener(sessionA)
+      expect(await activate(atlasSession(directory))).toBe(1)
+      expect(loads()).toHaveLength(2)
+      expect(loads()[1]).toContain('2 plan(s)')
+
+      // A malformed/absent payload is a no-op, never a throw (discipline ②).
+      expect(() => disposed.listener(undefined)).not.toThrow()
+      expect(() => disposed.listener({ header: {} })).not.toThrow()
+    } finally {
+      console.warn = originalWarn
       rmSync(directory, { recursive: true, force: true })
     }
   })

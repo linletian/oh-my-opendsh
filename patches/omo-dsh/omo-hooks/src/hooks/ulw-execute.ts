@@ -620,12 +620,21 @@ export interface UlwExecuteDeps {
    * 的工作区根——插件的 `process.cwd()` 是 dsh 服务的启动目录，而本 hook 要读的
    * 是**子会话 header 的 cwd**（委派子会话的 cwd 由父会话复制，两者不必等于
    * 服务启动目录；e2e 沙箱里也确实不同）。因此本移植把读面做成**按 cwd 记忆化**：
-   * 某个工作区根在**首次**被某个 atlas 会话看到时读一次（`readPlanInventory`），
+   * 某个工作区根**首次**被某个 atlas 会话看到时读一次（`readPlanInventory`），
    * 之后同一 cwd 的每一次 pre-step 都命中内存缓存，**不再触盘**。即本 listener
-   * 对每个工作区根总共读一次盘，而不是每步一次——这正是纪律③要防的「每步 I/O
-   * 与不可预期延迟」；完全零读盘在此处会让计划发现（本模块的核心语义）无输入。
+   * 对每个工作区根在**每个缓存寿命内**只读一次盘，而不是每步一次——这正是纪律③
+   * 要防的「每步 I/O 与不可预期延迟」；完全零读盘在此处会让计划发现（本模块的
+   * 核心语义）无输入。
    * 首个读点另打一行 `inventory loaded` 日志，使这条边界在运行时可审计。
    * 单测注入固定清单（零 I/O 与真实读盘两条路径都有覆盖）。
+   *
+   * ⚠️ **缓存的失效边界（PR #9 评审 F3）**：与 fiber 同寿的 Map 若永不失效，
+   * 长命 dsh/web 进程里「同一个 cwd 第一次激活后新建/改写的计划」永远不可见，
+   * 偏离上游「每次激活重读清单」的语义。失效点是 `session/disposed`：registrar 在
+   * 该事件上按 cwd 调用 {@link PlanInventoryReader.invalidate}，于是**下一次**激活
+   * （新子会话、同一工作区根）重新触盘。按 cwd 而不是按 session 失效，是因为缓存
+   * 的键就是 cwd，而 cwd 会跨会话复用；这也意味着一个会话 dispose 只丢掉它自己
+   * 工作区的那一条记忆，其他工作区不受影响。
    */
   readonly inventoryFor: (directory: string) => PlanInventory
   /** 读取当前 jobs surface（延迟获取的落地值；缺席为 undefined）。 */
@@ -637,17 +646,38 @@ export interface UlwExecuteDeps {
 }
 
 /**
+ * {@link createInventoryReader} 的读面 + 失效面。把失效做成**显式方法**而不是
+ * 内部定时器/TTL，是为了让「什么时候允许丢掉记忆」成为调用方（registrar）的
+ * 一个可审计决定：本移植只在 `session/disposed` 上丢掉对应 cwd。
+ */
+export interface PlanInventoryReader {
+  /** 按 cwd 记忆化的读面（{@link UlwExecuteDeps.inventoryFor}）。 */
+  readonly inventoryFor: (directory: string) => PlanInventory
+  /**
+   * 丢弃某个 cwd 的记忆化清单：该 cwd 的**下一次**读取重新触盘。`session/disposed`
+   * 是生产上的唯一调用点（PR #9 评审 F3）。
+   */
+  readonly invalidate: (directory: string) => void
+  /** 丢弃全部记忆（fiber 销毁的兜底面 / 测试用）。 */
+  readonly clear: () => void
+}
+
+/**
  * 按 cwd 记忆化的计划清单读取器（见 {@link UlwExecuteDeps.inventoryFor}）。
  * 缓存是 registrar 闭包里的一个 Map（fiber 作用域，随插件销毁）；键是会话的
  * 工作区根，值是**已解析的清单**（不含任何 live 对象）。`onFirstLoad` 在该键
  * **首次**被读取后回调一次（调用方据此打审计日志），缓存命中时不回调。
+ *
+ * 清单**不随进程永久有效**：调用方在计划可能变更的边界按 cwd 调
+ * {@link PlanInventoryReader.invalidate}（本移植的边界是 `session/disposed`），
+ * 于是「同一 cwd 只读一次」不再是永久不变量，而只是「一次缓存寿命内读一次」。
  */
 export function createInventoryReader(
   read: (directory: string) => PlanInventory,
   onFirstLoad?: (directory: string, inventory: PlanInventory) => void,
-): (directory: string) => PlanInventory {
+): PlanInventoryReader {
   const cache = new Map<string, PlanInventory>()
-  return (directory) => {
+  const inventoryFor = (directory: string): PlanInventory => {
     const cached = cache.get(directory)
     if (cached !== undefined) return cached
     let inventory: PlanInventory
@@ -665,6 +695,15 @@ export function createInventoryReader(
       }
     }
     return inventory
+  }
+  return {
+    inventoryFor,
+    invalidate: (directory) => {
+      cache.delete(directory)
+    },
+    clear: () => {
+      cache.clear()
+    },
   }
 }
 
@@ -924,10 +963,12 @@ export function readJobsService(ctx: HooksRegistrationContext): JobsSurface | un
 
 /**
  * 本 registrar。上游 20 文件 → 1 个 pre-step listener + 1 个 jobs 延迟获取 +
- * 1 个 `session/disposed` 清理（纪律⑤：幂等守卫随会话回收）。
+ * 1 个 `session/disposed` 清理（纪律⑤：幂等守卫随会话回收；**同时**按 cwd 失效
+ * 计划清单缓存，见 {@link PlanInventoryReader.invalidate}）。
  *
  * `entry.event`（manifest 的 PRIMARY event = `agent/pre-step`）是唯一事件来源；
- * 本文件不写第二个事件字面量（纪律④）。
+ * 本文件不写第二个事件字面量（纪律④）。`session/disposed` 是生命周期事件，
+ * 不是本 hook 的替代主事件（与 prometheus-md-only.ts:749 的形态一致）。
  */
 export const registerUlwExecute: HookRegistrar = (
   ctx: HooksRegistrationContext,
@@ -936,10 +977,10 @@ export const registerUlwExecute: HookRegistrar = (
   // 纪律③的静态半：静态文本块在 apply() 时构建一次（纯常量函数）；
   // 计划清单走按 cwd 记忆化的读面（见 UlwExecuteDeps.inventoryFor —— 每个工作区
   // 根首次现形时读一次并打一行审计日志，之后的 pre-step 不再触盘）。
-  const inventoryFor = createInventoryReader(readPlanInventory, (directory, inventory) => {
+  const inventory = createInventoryReader(readPlanInventory, (directory, loaded) => {
     console.warn(formatUlwExecuteLine(
-      `inventory loaded for ${directory}: ${inventory.entries.length} plan(s)`
-      + ` (${inventory.scannedDirs.length} dir(s) scanned)`,
+      `inventory loaded for ${directory}: ${loaded.entries.length} plan(s)`
+      + ` (${loaded.scannedDirs.length} dir(s) scanned)`,
     ))
   })
   const blocks = buildStaticTextBlocks()
@@ -967,7 +1008,7 @@ export const registerUlwExecute: HookRegistrar = (
 
   const listener = createUlwExecuteListener({
     blocks,
-    inventoryFor,
+    inventoryFor: inventory.inventoryFor,
     readJobs: () => jobs,
     log: (line) => console.warn(line),
     now: () => new Date().toISOString(),
@@ -977,5 +1018,20 @@ export const registerUlwExecute: HookRegistrar = (
 
   // 幂等守卫的 WeakMap 是 listener 闭包内的；这条注册是**兜底**：将来若守卫
   // 改成强引用，会话回收的清理点已经就位（纪律⑤）。
-  ctx.on('session/disposed', () => {})
+  //
+  // PR #9 评审 F3：它同时是**计划清单缓存的失效边界**。键是 cwd（会跨会话复用），
+  // 所以按被回收会话的 `header.cwd` 丢掉那一条记忆；下一次同一工作区根的激活重新
+  // 触盘，长命进程里新建/改写的计划因此可见。payload 是 `session/disposed(session)`
+  // （dsh-session/lib/types/index.d.ts:50），畸形载荷只是少失效一次，绝不上抛。
+  //
+  // 仲裁注记（评审质疑①，PR #9 第二轮）：同一个 cwd 上若有**多个活会话**，其中一个
+  // dispose 会连带丢掉这条 cwd 的记忆，于是其余活会话在**下一次 pre-step** 多读一次盘
+  // （一次 `readPlanInventory`）。这是**有意选择**，不是遗漏：失效按 cwd 而不是按
+  // session，是因为缓存的键就是 cwd；代价是每个幸存会话一次多余的读盘，方向与上游
+  // 「每次激活重读清单」同向（多读不多用），既无害也不改变任何判定——缓存失效只影响
+  // 「何时再读」，不影响读到什么。这里明说，而不是让读者从「cwd 会跨会话复用」自行推出。
+  ctx.on('session/disposed', (session) => {
+    const cwd = readSessionCwd(session)
+    if (cwd !== undefined) inventory.invalidate(cwd)
+  })
 }

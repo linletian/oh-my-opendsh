@@ -28,7 +28,7 @@
 //
 // The `.ts` extension in the import paths is load-bearing (Node 24
 // type-stripping does no specifier resolution; see the plugin's index.ts).
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { HOOK_MANIFEST, type HookManifestEntry } from '../../patches/omo-dsh/omo-hooks/src/manifest.ts'
 import type { HooksRegistrationContext } from '../../patches/omo-dsh/omo-hooks/src/index.ts'
 import {
@@ -54,6 +54,45 @@ import {
   type JobsSurface,
 } from '../../patches/omo-dsh/omo-hooks/src/hooks/background-notification.ts'
 import type { NotifierBackend } from '../../patches/omo-dsh/omo-hooks/src/hooks/session-notification.ts'
+
+/**
+ * F2 (PR #9 review) — this suite must NEVER touch the host desktop-notification
+ * system. `registerBackgroundNotification` wires the REAL platform backend with
+ * the REAL `runCommandViaExecFile` (background-notification.ts:661-665), so the
+ * registrar wiring tests would exec `notify-send`/`osascript`. On the official
+ * CI runner that binary is absent and production records
+ * `spawn notify-send ENOENT` as a warn, which made the "no warn" assertion red
+ * at the exact head (both green-set runs); on a developer machine it really
+ * popped a desktop notification. Neither belongs in a unit gate.
+ *
+ * PRODUCTION CODE IS NOT CHANGED (the review requires that). The runner is
+ * replaced at the module boundary instead — the same seam
+ * `createPlatformNotifierBackend` already takes as a constructor argument
+ * (`{ run }`), reached through the module the registrar imports it from.
+ * Everything else stays real: the registrar, the platform dispatch, the
+ * listener, the argv builder, the whole notification pipeline.
+ */
+const runnerSpy = vi.hoisted(() => ({
+  /** Every command the production runner WOULD have spawned. */
+  calls: [] as Array<{ command: string; args: readonly string[] }>,
+}))
+
+vi.mock('../../patches/omo-dsh/omo-hooks/src/hooks/session-notification.ts', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('../../patches/omo-dsh/omo-hooks/src/hooks/session-notification.ts')
+  >()
+  return {
+    ...actual,
+    runCommandViaExecFile: async (command: string, args: readonly string[]): Promise<void> => {
+      runnerSpy.calls.push({ command, args: [...args] })
+    },
+  }
+})
+
+/** Each case starts with an empty spawn ledger (the mock is file-wide). */
+beforeEach(() => {
+  runnerSpy.calls.length = 0
+})
 
 /** One synthetic `JobSnapshot` (the leaf fields the listener reads). */
 interface FakeJob {
@@ -578,7 +617,21 @@ describe('P3-T12 background-notification — registrar wiring', () => {
         formatBackgroundNotificationNoteLine(BACKGROUND_NOTE_PULL_ONLY),
         ...(backendExists ? ['[omo-hooks] background-notification: completed pnpm vitest run'] : []),
       ])
+      // F2: the dispatch is now driven by the INJECTED runner (the module mock
+      // above), so "no warn" is a statement about the pipeline, not about
+      // whether this host happens to have `notify-send` installed.
       expect(warnSpy).not.toHaveBeenCalled()
+      if (backendExists) {
+        // The REAL backend and REAL argv builder ran; only the OS spawn is
+        // replaced. This is what keeps the registrar wiring genuinely covered.
+        expect(runnerSpy.calls).toHaveLength(1)
+        expect(runnerSpy.calls[0]!.command).toBe(
+          process.platform === 'linux' ? 'notify-send' : 'osascript',
+        )
+        expect(runnerSpy.calls[0]!.args.length).toBeGreaterThan(0)
+      } else {
+        expect(runnerSpy.calls).toHaveLength(0)
+      }
     } finally {
       logSpy.mockRestore()
       warnSpy.mockRestore()

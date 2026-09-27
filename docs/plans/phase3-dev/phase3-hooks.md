@@ -49,7 +49,7 @@
 | H-21 | `directory-readme-injector/`（**8 文件**） | 目录 | D | 读文件后把所在目录链 README 注入工具输出。与 dsh-agent-instructions 无重叠（lib:17-18 候选名不含 README）；读 README.md 自身 ×2 注入的上游后果保留登记；compaction/prune 不重新武装 = 已知组合语义 | ✅ **已移植**（场景 `directory-readme-injected`，P3-T15） |
 | H-22 | `agent-usage-reminder/` | 目录 | D | 工具结果尾部追加 agent 使用提醒（REMINDER_MESSAGE 按 DSH 名册现实改写） | ✅ **已移植**（场景 `agent-usage-reminder-appended`，P3-T15） |
 | H-23 | `task-resume-info/` | 目录 | D | 工具结果追加任务恢复信息。前置闭环：可独立成立、不依赖 OMO task 系统；foreground 不产提示的登记假设已注记 | ✅ **已移植**（场景 `task-resume-info-appended`，P3-T15） |
-| H-24 | `webfetch-redirect-guard/`（**5 文件**） | 目录 | B + D | webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引）+ D 段（被 row-10 agent-usage-reminder 抢占 = ACCEPTED 登记）。预解析 GET 绕过 DSH resolvePublicAddresses 公网策略 = upstream parity 已评审接受 | ✅ **已移植**（场景 `webfetch-redirect-denied`，P3-T16 listener+单测+e2e，B 模式打样） |
+| H-24 | `webfetch-redirect-guard/`（**5 文件**） | 目录 | B + D | webfetch 重定向护栏：B 段 deny（reason 携带最终 URL 指引）+ D 段（被 row-10 agent-usage-reminder 抢占 = ACCEPTED 登记）。**PR #9 评审 F1 推翻早前的「预解析 GET 绕过 DSH resolvePublicAddresses = upstream parity」登记**：每跳请求前先做公网地址镜像校验（DNS → 逐地址判非公网 → 终止链路）+ 原生同源约束，非公网目标零请求，B 段 fail open（拒绝文案仍由原生 provider 给出）。**遗留**：B 段 live deny 现需同源**公网**重定向链，hermetic e2e 无法提供 → 仅单测钉死 | ✅ **已移植**（场景 `webfetch-private-target-unprobed`，P3-T16 listener+单测+e2e，B 模式打样） |
 | H-26 | `prometheus-md-only/` | 目录 | B + D | prometheus 仅可写 .md：B 段 deny 非 .md 写（hook.ts:40-62 1:1）+ D 段劝导落 post-execute（注入警告段无附言缝）。foreground one-shot 委派身份缺口已注记（标识面收窄）。Phase 2"有意不镜像"是 persona/permission 层的决策，本模块在 hook listener 层补齐，层不冲突 | ✅ **已移植**（场景 `prometheus-md-only-denied`，P3-T16 listener+单测+e2e） |
 
 ### P5 ulw-execute（= start-work hook 语义，WP-6 尾部）
