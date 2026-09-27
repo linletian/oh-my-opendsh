@@ -206,6 +206,18 @@
 
 ---
 
+## 附：PR #9 评审修复记录（2026-09-27，分支推送后）
+
+PR 推送后收到独立评审（review 5305175934）三条 finding，仲裁逐条核实**全部成立**并修复（修复经双评审）：
+
+1. **[P1] webfetch-redirect-guard 预解析 SSRF 绕过**（推翻 T16 的 upstream-parity 登记：DSH 有 resolvePublicAddresses/WEB_BLOCKED_URL/同源约束，OMO 无——parity 框架不适用）→ 每跳请求前公网校验（分类器与 ipaddr.js 2.5.0 range() 语义逐条对账补齐）+ D 段改 append-only 透传原生文案 + 残余（TOCTOU/NAT64/::/96）显式登记；e2e 场景重定形为 webfetch-private-target-unprobed。提交 e0b3f34。
+2. **[P1] background-notification 单测依赖宿主 notify-send**（CI 两 run 同红实证）→ vi.mock 模块边界替换 runCommandViaExecFile（生产零改动），CI 结构性全绿。提交 e0b3f34。
+3. **[P2] ulw-execute 计划清单按 cwd 永久缓存** → session/disposed 按 cwd 失效（上游每次激活重读语义）+ 回归用例。提交 e0b3f34。
+
+另有**上游供应链漂移**（与 PR 代码无关，评审期定位）：dsh 内部依赖 `^0.1.5-rc.1` 浮动，上游 09-22~24 发布 rc.3/0.1.7-rc.x 后全新安装树缺 dsh-sandbox-local 等包 → CI e2e boot 全灭（干净 HOME 全新安装无仓库参与可复现）。修复：ci.yml/compat-probe.yml 安装步加 `--before=2026-09-19T00:00:00Z`（实证 520 包树完整）+ bump-dsh.sh 同步重写截止日（新版本发布日，毫秒精度回退）+ 双语文档 REVISIT 注记。提交 cf1b5e6。CI 残留环境泄漏一处（background-notification 场景假阳性断言语义）修复提交 b9f1de8。**最终两个 CI run（36349449078/36349446047）双双 PASS**。
+
+评审过程的流程性发现（踩坑候选，未登记）：文档回填与编码并发的时序交叉曾使一致性测试短暂失效（T20 mcode P1 已捕获并修复——假绿纪律兑现）。
+
 ## 退出标准核对表（P3-T21 填写）
 
 | # | 标准（计划书 §5） | 证据 | 结论 |
