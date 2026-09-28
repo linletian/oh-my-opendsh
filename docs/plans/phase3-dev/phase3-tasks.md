@@ -214,9 +214,25 @@ PR 推送后收到独立评审（review 5305175934）三条 finding，仲裁逐�
 2. **[P1] background-notification 单测依赖宿主 notify-send**（CI 两 run 同红实证）→ vi.mock 模块边界替换 runCommandViaExecFile（生产零改动），CI 结构性全绿。提交 e0b3f34。
 3. **[P2] ulw-execute 计划清单按 cwd 永久缓存** → session/disposed 按 cwd 失效（上游每次激活重读语义）+ 回归用例。提交 e0b3f34。
 
-另有**上游供应链漂移**（与 PR 代码无关，评审期定位）：dsh 内部依赖 `^0.1.5-rc.1` 浮动，上游 09-22~24 发布 rc.3/0.1.7-rc.x 后全新安装树缺 dsh-sandbox-local 等包 → CI e2e boot 全灭（干净 HOME 全新安装无仓库参与可复现）。修复：ci.yml/compat-probe.yml 安装步加 `--before=2026-09-19T00:00:00Z`（实证 520 包树完整）+ bump-dsh.sh 同步重写截止日（新版本发布日，毫秒精度回退）+ 双语文档 REVISIT 注记。提交 cf1b5e6。CI 残留环境泄漏一处（background-notification 场景假阳性断言语义）修复提交 b9f1de8。**最终两个 CI run（36349449078/36349446047）双双 PASS**。
+另有**上游供应链漂移**（与 PR 代码无关，评审期定位）：dsh 内部依赖 `^0.1.5-rc.1` 浮动，上游 09-22~24 发布 rc.3/0.1.7-rc.x 后全新安装树缺 dsh-sandbox-local 等包 → CI e2e boot 全灭（干净 HOME 全新安装无仓库参与可复现）。修复：ci.yml/compat-probe.yml 安装步加 `--before=2026-09-19T00:00:00Z`（当时实证 520 包可安装可引导；**第二轮评审证明该树实为 rc.1 顶层 + 230×rc.2 传递的混合树**，此处"rc.1 时代完整树"的表述撤回，更正见下一条附录）+ bump-dsh.sh 同步重写截止日（新版本发布日，毫秒精度回退）+ 双语文档 REVISIT 注记。提交 cf1b5e6。CI 残留环境泄漏一处（background-notification 场景假阳性断言语义）修复提交 b9f1de8。**最终两个 CI run（36349449078/36349446047）双双 PASS**。
 
 评审过程的流程性发现（踩坑候选，未登记）：文档回填与编码并发的时序交叉曾使一致性测试短暂失效（T20 mcode P1 已捕获并修复——假绿纪律兑现）。
+
+## 附：PR #9 第二轮评审修复记录（2026-09-28）
+
+复审（PRR…Pen7Vw/Pes…hw，基线 060ce20）确认首轮三条阻塞全部闭环，另列 N1–N6 非阻塞项；其后独立评审（评论 2026-09-28T15:51）新提 **3 个 P1**。主 agent 逐条实证仲裁，结论与处置如下（全部修复经双评审：Kimi K3 独立 sub-agent + mcode cli，终审双 APPROVE）：
+
+1. **[P1] macOS 通知多行 body → osascript 编译失败（成立）**。实证：本仓 `escapeAppleScriptText`（上游逐字移植）不处理换行；本仓内容约减新增 `${head}\n${count} todos still incomplete` 多行源；上游 `buildReadyNotificationContent` 自身亦 `join("\n")`——**上游同源潜伏缺陷，移植忠实继承并被内容约减扩大暴露面**（error 类不过 pending-work 闸门）。裸换行落入 AppleScript 字符串字面量 = 编译错误，失败被吞为一行 FAILED 日志。修复：escape 追加 CRLF/CR/LF → `" & return & "` 拼接（替换顺序：反斜杠→引号→换行最后，注释钉注入面收口）；VERBATIM 注释改为诚实登记"刻意分歧"；buildOsascriptArgs 级回归（5 个用例实证红于修复前）。
+2. **[P1] `--before=2026-09-19` 实为 rc.2 混合树（成立，实测）**。`npm install --package-lock-only` 实测：旧截止日解析 = rc.1×1 + **rc.2×230**（rc.2 发布于 2026-09-10T14:57:10.790Z，早于截止日，`^0.1.5-rc.1` 满足之）——CI 绿在无人真实安装的混合树上，D7 名实不符；ci.yml 的"rc.1-era/520 包"表述失实。修复：截止日改由修复后的 bump-dsh.sh 计算 = **2026-09-10T09:05:02.041Z**（rc.1↔rc.2 发布时刻中点），实测 231/231 家族 rc.1 + 零嵌套 + 临时前缀全新安装可引导；两处 workflow 与 release-process 双语文案更正（含 rc.2 日期括号注，防 rc.2/rc.3 误读——mcode 复审即曾误读，已澄清不另计缺陷）。
+3. **[P1] bump-dsh.sh extract_cutoff 必 ETARGET（成立，实测；机制比评审假设更精确）**。发布时刻截止日（03:12:53.293Z/03:12:54Z/03:13:00Z）实测 ETARGET，03:20:00Z 成功；npm-pick-manifest 源码 `Date.parse(time[ver]) <= before` 为**含等号逐包**比较——顶层包本身可通过，但 **monorepo 家族非原子发布**：`@deepseek-ai/dsh-webhook-github@0.1.5-rc.1` 晚于顶层 92 秒（03:14:25.423Z）才存在，任何更早截止日必然缺包（此前复审"含等号故不会 ETARGET"的论断在家族维度不成立，实测推翻）。修复：safe_point = 目标↔最早更晚版本发布时刻中点（无后继时取 bump 时刻）+ `verify_cutoff` 真实 lockfile 解析验证（家族逐包=目标版本、任意深度嵌套检测、按失败类别二分重试 ≤3）+ **先算后写**（N2 原子性）+ `--self-test --online` 真实注册表冒烟 + hermetic 自测扩案（中点/无后继/原子性/毫秒精度）。
+4. **N1（Medium，成立）→ 本轮修复**：探针校验后丢弃已验证地址集、fetch 二次解析 DNS 的 rebinding 窗口 → 镜像原生 `createPinnedLookup`（dsh-web-fetch-http:217-235）：每跳 undici Agent `connect.lookup` 钉住已验证地址集、finally 关闭；新增 undici 依赖（^8.10.0，与原生同主版本；NOTICES 独立小节；license 门 checked=54）+ 7 个回归用例（含 pinned.invalid→127.0.0.1 真实回环端到端；4 红于修复前循环体、3 红于导入）。**实现偏差登记**：Node 全局 fetch 与 npm-undici Agent 不兼容（实测 UND_ERR_INVALID_ARG），探针传输改用 undici 自带 fetch（与原生同构），新增 dispatcherFactory 测试缝。
+5. **N2（Medium，成立）→ 并入 #3**（先算后写 + 原子性自测）；**N3/N4（Low，措辞失准，成立）→ 已改写**（well-known NAT64 前缀=更严 fail-safe，站点自定义前缀=未镜像发现、与 N1 同类残余；ipaddr.js 措辞改为"套件锁表漂移、升级由 bump REVISIT 人工覆盖"）；**N5（Low，文档计数过期，成立）→ manual-testing/release-process 双语已更新**（本表快照注记见下）；**N6（Low，成立）→ hermetic 自测接入门 8（proofs 6/6）+ check-docs-consistency d09**（两 workflow 安装行 --before 同值且形合法，坏件实证变红）。
+6. **mcode 两条 P3 仲裁**：① "prose 与 <= 规则矛盾"——**部分成立（清晰度）**：mcode 误将 rc.2（09-10）当作 rc.3（09-22），规则本身无矛盾；已在三处补 rc.2 日期括号注防再误读。② "response 可能未赋值即读"——**不成立**：try/finally 无 catch，throw 路径经 finally 后不可达读取点，TS 严格模式 CFA 通过（typecheck 绿），close-on-throw 路径有测试钉死。
+7. **已知边界新增登记**：探针传输忽略代理环境变量（含 NODE_USE_ENV_PROXY=1；原生 proxyRouteFor 未镜像；该场景探针 fail-open、原生仍为拒绝权威）；MAX_WEBFETCH_REDIRECTS=10 放大面（单 web_fetch 最多 11 次探测，native maxRedirects=5 一倍）——均不阻塞，已回复披露。
+
+本地验证：`ci-local.sh` **8/8**（976 单测 / e2e 22/22 / static 23/23 / proofs 6/6 / licenses checked=54 violations=0 / d09 9/9）+ `--self-test --online` PASS + 真实注册表截止日验证（231/231 rc.1，任意深度）+ 临时前缀全新安装引导成功。
+
+**退出标准核对表快照注记**：上表 a/c 行内 "13 场景" "950 测试" "5/5 proofs" 等数字为 **2026-09-21（commit 6948f12 复跑时点）的历史快照**；本轮后当前值为 22 场景、976 单测、proofs 6/6、licenses checked=54。历史行保留原值以维持证据链可追溯。
 
 ## 退出标准核对表（P3-T21 填写）
 
