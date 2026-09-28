@@ -30,6 +30,14 @@
 # (or drives one real child-composition path) in-process and asserts on it.
 # Total budget well under a minute.
 #
+# N6 (PR #9 round 2) added a SIXTH stage: `scripts/bump-dsh.sh --self-test` —
+# the hermetic contract of the D7 TWO-token pin (safe-point cutoff math, the
+# compute-before-write atomicity of the bump, the lockfile family assertion, the
+# millisecond fallback). It was reachable only by hand, which is how a contract
+# rots; it needs no dsh and no network. The script's `--online` half (a REAL
+# `npm install --package-lock-only` verification) stays a manual opt-in — the
+# ci-local chain is hermetic by design.
+#
 # Usage: scripts/run-proofs.sh
 # Exit:  0 = all proofs PASS; non-zero = the first failing proof's exit code.
 
@@ -52,6 +60,7 @@ PROOF_NAMES=(
   "T15 dual-route logging"
   "P3-T19 guardrail deny path + R-9 throw semantics"
   "P3-T19 guardrail C/E mode mechanisms"
+  "bump-dsh --self-test (D7 two-token pin: safe-point cutoff + write atomicity)"
 )
 
 if ! command -v dsh >/dev/null 2>&1; then
@@ -93,6 +102,7 @@ PROOF_COMMANDS=(
   "node scripts/prove-route-logging.mjs $NM"
   "node scripts/prove-guardrail-deny-path.mjs $NM $RENDERED/agent.cordis.yml"
   "node scripts/prove-guardrail-modes.mjs $NM"
+  "bash scripts/bump-dsh.sh --self-test"
 )
 TOTAL_PROOFS=${#PROOF_NAMES[@]}
 if [[ "$TOTAL_PROOFS" != "${#PROOF_COMMANDS[@]}" ]]; then
@@ -138,6 +148,12 @@ run_proof "${PROOF_NAMES[1]}" ${PROOF_COMMANDS[1]}
 run_proof "${PROOF_NAMES[2]}" ${PROOF_COMMANDS[2]}
 run_proof "${PROOF_NAMES[3]}" ${PROOF_COMMANDS[3]}
 run_proof "${PROOF_NAMES[4]}" ${PROOF_COMMANDS[4]}
+# N6 (PR #9 round 2): the D7 two-token pin's own contract had no gate — the
+# bumped script's --self-test was reachable only by hand, which is exactly how
+# the proof set above rotted before. It is hermetic (no network, no repo writes)
+# and fast, so it belongs in this zero-cost chain. `--online` (the real
+# resolution smoke) is NOT run here: ci-local gates stay hermetic.
+run_proof "${PROOF_NAMES[5]}" ${PROOF_COMMANDS[5]}
 
 if [[ "$STAGE" != "$TOTAL_PROOFS" ]]; then
   echo "run-proofs: FAIL — ran ${STAGE} proofs but the registry declares ${TOTAL_PROOFS}" >&2

@@ -62,14 +62,39 @@ plugin-tree loader cannot resolve the bare specifiers `dsh-base/cordis.patch.yml
 declares: the profile boot dies with `plugin tree failed to load … could not be resolved`
 and all 22 e2e scenarios fail before readiness. Both dsh installs
 (`.github/workflows/ci.yml`, `.github/workflows/compat-probe.yml`) therefore pass
-`--before=2026-09-19T00:00:00Z`, npm's "resolve as if it were this date" cutoff, which
-freezes the **whole** resolved tree — umbrella and transitive — at the last rc.1-era
-resolution (re-verified: 520 packages, sandbox family hoisted, e2e 22/22 green, where the
-floating tree boots 0/22). The date is part
-of the D7 pin now: a `DSH_VERSION` bump to an rc published after the cutoff must move and
-re-verify it, and the weekly compat-probe sentinel is the reminder that upstream has
-moved on. `scripts/compat-probe.sh` deliberately installs a NEW rc **without** a cutoff —
-it probes the new tree; it does not reproduce CI's pinned one.
+`--before=<cutoff>`, npm's "resolve as if it were this date" cutoff, which freezes the
+**whole** resolved tree — umbrella and transitive — at one point inside the pinned
+version's publish window.
+
+**The cutoff is a safe point, not a publish instant (PR #9 round 2).** npm applies
+`--before` **per package** (`Date.parse(time[ver]) <= before`), and the dsh monorepo does
+not publish its family atomically: at rc.1 the top-level package published
+`2026-09-10T03:12:53.293Z`, while `@deepseek-ai/dsh-webhook-github@0.1.5-rc.1` only exists
+from `2026-09-10T03:14:25.423Z` — 92 s later, and invisible in
+`npm view @deepseek-ai/dsh time` — so cutoffs at `03:12:53.293Z`, `03:12:54Z` and
+`03:13:00Z` all ETARGET on the real registry. The committed value,
+`2026-09-10T09:05:02.041Z`, is the midpoint between rc.1's publish instant and rc.2's (the
+earliest-published **later** version), and it was verified by a real
+`npm install --package-lock-only`: 231/231 `@deepseek-ai/dsh*` lock entries at
+`0.1.5-rc.1`, zero nested `node_modules/@deepseek-ai/dsh/node_modules` paths. The cutoff
+that stood here before this round, `2026-09-19T00:00:00Z`, resolved a **mixed** tree
+instead — top-level rc.1 plus 230 rc.2 transitives (rc.2 was published
+`2026-09-10T14:57:10.790Z`, more than eight days BEFORE that cutoff, so the `<=` rule
+admitted it — the cutoff never froze what it claimed to freeze), a combination no user
+ever installs.
+
+**Both tokens are computed, never typed.** The cutoff is part of the D7 pin now:
+`scripts/bump-dsh.sh <version>` reads the registry's time map for the new version, takes
+that safe point, and **verifies it with a real lockfile-only resolution**, retrying with
+the candidate bisected in the direction the failure indicates (up to 3 attempts) before it
+writes either workflow — so a failure before the write leaves both files byte-identical,
+and an ill-shaped/divergent pair is impossible to commit (check-docs-consistency `d09`
+also compares the two). If the registry cannot answer (offline) it falls back to the
+**bump instant** and prints a loud, non-blocking warning that the cutoff could **not** be
+computed from registry data and must be re-verified; the same path skips the resolution
+check. The weekly compat-probe sentinel is the reminder that upstream has moved on;
+`scripts/compat-probe.sh` deliberately installs a NEW rc **without** a cutoff — it probes
+the new tree; it does not reproduce CI's pinned one.
 
 ### Support window, and what version probing actually measures
 
@@ -200,16 +225,36 @@ locally — `scripts/compat-probe.sh` (temp dsh prefix + sandboxed DSH_HOME +
 doctor-lite + mock e2e against the NEW dsh) followed by one manual real-model
 `concerto_verify`. The final pin flip is the D7-named
 `scripts/bump-dsh.sh <version>` — it refuses to run unless the matrix row is ✅
-and the local `dsh --version` already reports the new version, then runs the
-full zero-cost chain. Options in order of preference: **follow** (new ✅ row) →
+and the local `dsh --version` already reports the new version. It then computes
+the new version's **verified `--before` cutoff** from the registry time map and
+writes it together with `DSH_VERSION` (the pin has been TWO tokens — version +
+cutoff — since PR #9; both cutoffs must agree, which
+`scripts/check-docs-consistency.mjs` `d09` enforces), and only then runs the full
+zero-cost chain — which now includes the script's own hermetic self-test as part
+of gate 8. If the registry is unreachable it falls back to the bump instant and
+warns loudly that the cutoff is UNVERIFIED and must be re-checked. Options in
+order of preference: **follow** (new ✅ row) →
 **bridge** (shim in the patch layer, row notes it) → **lag** (`/install` stays
 on LKG; README status states the max supported dsh).
 
-### Follow-up (recorded, NOT implemented): what a new upstream release does to CI
+### Follow-up (partially mitigated): what a new upstream release does to CI
 
 Found 2026-09-10 while explaining why a green run went red. Deferred by the user the same day:
 dsh is moving fast and this is still an MVP, so the apparatus below is not worth building yet.
 Recorded so the reasoning does not have to be re-derived.
+
+**Update (2026-09-2x, PR #9): the `--before` cutoff landed and it defuses the FIRST of the two
+dangerous directions below.** A caret-ranged sibling that upstream publishes after the cutoff
+no longer reaches CI: the resolution is frozen at the safe point, so "re-run two days later"
+resolves the same tree instead of silently switching (that silent switch was the
+`0.1.6`-stable row). **The four-row table below therefore describes PRE-cutoff behaviour** and
+is kept as the record of why the cutoff exists; with the cutoff in place only the rows where
+the pinned range cannot reach the new version at all (`0.2.0`) still describe today. What the
+cutoff does **not** do is make the pin self-updating: the frozen tree is only as good as the
+bump that verified it, and a version the pin's range cannot reach still leaves CI green while
+this layer may be broken. The miss that remains is the **monitoring** one: nothing tells a
+human that a frozen cutoff has drifted out of the usable window, and the sentinel still reads
+only `latest`.
 
 `^0.1.5-rc.1` expands to `>=0.1.5-rc.1 <0.2.0-0` (checked with npm's bundled `semver`):
 
@@ -311,7 +356,7 @@ editorial.
 | `scripts/release-check.sh` (8 gates) | local, release preflight | zero gates + your existing L2 evidence |
 | `scripts/release.sh` + `scripts/release-bump.mjs` | local, on release | zero |
 | `scripts/compat-probe.sh` | local, on 🔬 rows | zero (auto part) + one real-model verify |
-| `scripts/bump-dsh.sh` | local, D7 pin flip | zero gates; refuses without a ✅ row |
+| `scripts/bump-dsh.sh` | local, D7 pin flip | zero LLM cost; its hermetic `--self-test` runs inside `ci-local.sh` gate 8 (`run-proofs.sh`); refuses without a ✅ row. `--self-test --online` adds one REAL registry resolution and stays manual |
 | `.github/workflows/compat-probe.yml` | weekly cron + manual dispatch | zero (GitHub Actions free tier) |
 
 ## 10. Decisions & first exercise

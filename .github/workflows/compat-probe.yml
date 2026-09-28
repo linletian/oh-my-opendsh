@@ -37,16 +37,23 @@ jobs:
 
       # The sentinel loads .omo/compat.yaml with the installed dsh's js-yaml
       # (the shared read-only dialect loader from scripts/doctor-lite.mjs).
-      # Same D7 caveat as ci.yml: the version pin alone leaves every
-      # caret-ranged transitive floating (upstream 0.1.5-rc.3 / 0.1.7-rc.*,
-      # published 2026-09-22..24), which is how a pinned install silently stops
-      # hoisting the sandbox family the plugin tree needs. `--before` freezes the
-      # whole resolved tree at the last rc.1-era resolution. REVISIT on every dsh
-      # bump (scripts/bump-dsh.sh rewrites the quoted version below): the cutoff
-      # must stay inside the pinned rc's publish window — bump-DATE, not
-      # copy-paste-forever.
+      # Same D7 caveat as ci.yml: the version pin alone leaves every caret-ranged
+      # transitive floating (`^0.1.5-rc.1` satisfies 0.1.5-rc.2/rc.3; upstream
+      # published 0.1.5-rc.3 / 0.1.7-rc.* on 2026-09-22..24), which is how a
+      # pinned install silently stops hoisting the sandbox family the plugin tree
+      # needs. `--before` freezes the whole resolved tree — and the cutoff is a
+      # SAFE POINT, not a publish instant: npm applies it per package and this
+      # monorepo does not publish its family atomically (at rc.1,
+      # @deepseek-ai/dsh-webhook-github landed 92s AFTER the top-level package),
+      # so the cutoff must sit strictly between the pinned family's MAX publish
+      # instant and the successor family's MIN publish instant. The committed
+      # value is the rc.1 midpoint and was verified by a real lockfile-only
+      # resolution: 231/231 @deepseek-ai/dsh* entries at 0.1.5-rc.1, zero nested
+      # paths. REVISIT on every dsh bump: scripts/bump-dsh.sh computes and
+      # verifies the safe point, then rewrites the quoted version AND both
+      # cutoffs — never hand-edit either.
       - name: install dsh (parser provider)
-        run: npm install --global "@deepseek-ai/dsh@0.1.5-rc.1" --before=2026-09-19T00:00:00Z
+        run: npm install --global "@deepseek-ai/dsh@0.1.5-rc.1" --before=2026-09-10T09:05:02.041Z
 
       - name: detect new upstream versions → open issue
         run: node scripts/check-compat-probes.mjs

@@ -17,6 +17,9 @@
 //
 // The `.ts` extension in the import paths is load-bearing (Node 24
 // type-stripping does no specifier resolution; see the plugin's index.ts).
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import type { LookupFunction } from 'node:net'
 import { describe, expect, it } from 'vitest'
 import { HOOK_MANIFEST, type HookManifestEntry } from '../../patches/omo-dsh/omo-hooks/src/manifest.ts'
 import type { HooksRegistrationContext } from '../../patches/omo-dsh/omo-hooks/src/index.ts'
@@ -36,6 +39,9 @@ import {
   buildNativePolicyPassthrough,
   buildRedirectDenyReason,
   buildRedirectLimitMessage,
+  createPinnedDispatcher,
+  createPinnedLookup,
+  createUndiciPinnedDispatcher,
   decideWebFetchRedirectDeny,
   decideWebFetchRedirectResultRewrite,
   handleWebFetchPostExecute,
@@ -49,10 +55,13 @@ import {
   resolvePublicAddresses,
   resolveRedirectLocation,
   resolveWebFetchRedirects,
+  undiciPinnedFetch,
   validateRedirectUrl,
   type PendingDenial,
+  type PinnedDispatcherFactory,
   type RedirectFetchLike,
   type RedirectLookupLike,
+  type WebFetchRedirectDispatcher,
 } from '../../patches/omo-dsh/omo-hooks/src/hooks/webfetch-redirect-guard.ts'
 
 /** One recorded `ctx.on` call — the registration observable. */
@@ -143,11 +152,14 @@ interface FetchCall {
   readonly status: number
   readonly headers: Record<string, string>
   readonly redirect: string
+  /** N1: the per-hop pinned dispatcher the probe was handed (records every hop). */
+  readonly dispatcher: WebFetchRedirectDispatcher
 }
 
 /**
  * A hermetic fetch double: `handler` decides the response for call `index`
- * (0-based), so a chain can be scripted hop by hop. Records the request.
+ * (0-based), so a chain can be scripted hop by hop. Records the request,
+ * including the pinned dispatcher N1 hands it.
  */
 function fetchDouble(
   handler: (index: number, url: string) => { status: number; location?: string },
@@ -159,6 +171,7 @@ function fetchDouble(
       status: 0,
       headers: init.headers,
       redirect: init.redirect,
+      dispatcher: init.dispatcher,
     })
     const outcome = handler(calls.length - 1, url)
     calls[calls.length - 1] = { ...calls[calls.length - 1]!, status: outcome.status }
@@ -650,6 +663,281 @@ describe('P3-T16 webfetch-redirect-guard — the public-destination gate (review
     })
     expect(calls).toHaveLength(2)
     expect(lookups).toEqual(['example.com', 'example.com'])
+  })
+})
+
+// ── N1 (PR #9 round 2): the probe is PINNED to the validated answer set ──────
+//
+// Pre-fix, each hop called `resolvePublicAddresses` and then DISCARDED the
+// result, handing the URL to a plain `fetch` that re-resolved the hostname — the
+// classic DNS-rebinding window (public for the check, private for the
+// connection). These cases are RED on that code: it built no dispatcher at all,
+// so `calls[0].dispatcher` is undefined, the recording factory is never called,
+// and the recording lookup cannot be driven.
+describe('P3-T16 webfetch-redirect-guard — N1 the pinned probe (PR #9 review round 2)', () => {
+  /**
+   * Drive a `node:dns`-shaped lookup the way a connector does and capture the
+   * single callback invocation. This is the ONLY way to observe the pinning: the
+   * lookup is the surface that decides which address the socket reaches.
+   */
+  function driveLookup(
+    pinned: LookupFunction,
+    hostname: string,
+    options: { readonly family?: number | 'IPv4' | 'IPv6'; readonly all?: boolean },
+  ): {
+    readonly error: NodeJS.ErrnoException | null
+    readonly address: string | readonly { address: string; family: number }[]
+    readonly family: number | undefined
+  } {
+    const results: Array<{
+      error: NodeJS.ErrnoException | null
+      address: string | readonly { address: string; family: number }[]
+      family: number | undefined
+    }> = []
+    pinned(hostname, options, (error, address, family) => {
+      results.push({ error, address, family })
+    })
+    expect(results).toHaveLength(1)
+    return results[0]!
+  }
+
+  /** A dispatcher double whose close is observable and AWAITED (start/end pair). */
+  function recordingDispatcherFactory(events: string[]): {
+    factory: PinnedDispatcherFactory
+    lookups: LookupFunction[]
+    created: number
+    closed: number
+  } {
+    const lookups: LookupFunction[] = []
+    const counters = { created: 0, closed: 0 }
+    const factory: PinnedDispatcherFactory = async ({ lookup: pinned }) => {
+      const hop = lookups.length
+      lookups.push(pinned)
+      counters.created += 1
+      const dispatcher = {
+        async close(): Promise<void> {
+          events.push(`close:${hop}:start`)
+          // An extra await turn: if the production loop did not AWAIT the close,
+          // the next hop's fetch would be recorded between start and end.
+          await Promise.resolve()
+          counters.closed += 1
+          events.push(`close:${hop}:end`)
+        },
+      }
+      return dispatcher as unknown as WebFetchRedirectDispatcher
+    }
+    return {
+      factory,
+      lookups,
+      get created() { return counters.created },
+      get closed() { return counters.closed },
+    }
+  }
+
+  it('① the pinned lookup serves ONLY the validated set: family filtering, all=true, ENOTFOUND', () => {
+    const v4 = { address: '93.184.216.34', family: 4 }
+    const v6 = { address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 }
+    const both = createPinnedLookup([v4, v6])
+
+    // family 0 / absent ⇒ the whole eligible set, in the order it was validated.
+    const any = driveLookup(both, 'example.com', { all: true })
+    expect(any.error).toBeNull()
+    expect(any.address).toEqual([v4, v6])
+    // ... and the first element when `all` is not requested (native's `selected`).
+    const first = driveLookup(both, 'example.com', {})
+    expect(first.address).toBe(v4.address)
+    expect(first.family).toBe(4)
+
+    // Numeric AND string family forms both filter (Node accepts 'IPv4'/'IPv6').
+    expect(driveLookup(both, 'example.com', { family: 6 }).address).toBe(v6.address)
+    expect(driveLookup(both, 'example.com', { family: 'IPv6' }).address).toBe(v6.address)
+    expect(driveLookup(both, 'example.com', { family: 'IPv4', all: true }).address).toEqual([v4])
+    // NEVER an address outside the validated set — that is the whole pin.
+    for (const options of [{}, { family: 4 }, { family: 6 }, { all: true }] as const) {
+      const outcome = driveLookup(both, 'example.com', options)
+      const served = Array.isArray(outcome.address) ? outcome.address : []
+      for (const entry of served) expect([v4, v6]).toContainEqual(entry)
+    }
+
+    // An empty eligible set is an ENOTFOUND-shaped error, never a DNS fallback.
+    const v4Only = createPinnedLookup([v4])
+    const missing = driveLookup(v4Only, 'example.com', { family: 6 })
+    expect(missing.error?.code).toBe('ENOTFOUND')
+    // `hostname` is the extra field native attaches; @types/node's
+    // ErrnoException does not declare it, so read it through the shape.
+    expect((missing.error as (NodeJS.ErrnoException & { hostname?: string }) | null)?.hostname)
+      .toBe('example.com')
+    expect(missing.error?.message).toBe('no validated address for example.com in family 6')
+    expect(missing.address).toBe('')
+    expect(missing.family).toBe(6)
+    const missingAll = driveLookup(v4Only, 'example.com', { family: 6, all: true })
+    expect(missingAll.error?.code).toBe('ENOTFOUND')
+    expect(missingAll.address).toEqual([])
+  })
+
+  it('② every hop gets its own dispatcher, handed to fetch, and CLOSED (awaited) before the next hop', async () => {
+    const events: string[] = []
+    const rec = recordingDispatcherFactory(events)
+    const { fetchImpl, calls } = fetchDouble((index) => {
+      events.push(`fetch:${index}`)
+      return index < 2 ? { status: 302, location: '/next' } : { status: 200 }
+    })
+    const resolution = await resolveWebFetchRedirects(
+      { url: 'https://example.com/start' },
+      fetchImpl,
+      undefined,
+      PUBLIC_DNS,
+      rec.factory,
+    )
+    expect(resolution).toEqual({ type: 'resolved', url: 'https://example.com/next', redirectCount: 2 })
+    expect(calls).toHaveLength(3)
+    expect(rec.created).toBe(3)
+    expect(rec.closed).toBe(3)
+    // One dispatcher PER HOP, and the same object the fetch double received.
+    for (let i = 0; i < calls.length; i += 1) {
+      expect(calls[i]!.dispatcher).toBeDefined()
+    }
+    // AWAITED: each close fully resolves before the next hop's fetch starts.
+    expect(events).toEqual([
+      'fetch:0', 'close:0:start', 'close:0:end',
+      'fetch:1', 'close:1:start', 'close:1:end',
+      'fetch:2', 'close:2:start', 'close:2:end',
+    ])
+  })
+
+  it('③ a policy refusal never builds a dispatcher — nothing to leak, nothing dialled', async () => {
+    const events: string[] = []
+    const rec = recordingDispatcherFactory(events)
+    const { fetchImpl, calls } = fetchDouble(() => ({ status: 200 }))
+    const resolver = scriptedResolver(() => [{ address: '10.0.0.1', family: 4 }])
+    await expect(
+      resolveWebFetchRedirects(
+        { url: 'https://example.com/start' },
+        fetchImpl,
+        undefined,
+        resolver,
+        rec.factory,
+      ),
+    ).rejects.toBeInstanceOf(WebFetchRedirectPolicyError)
+    expect(rec.created).toBe(0)
+    expect(rec.closed).toBe(0)
+    expect(calls).toHaveLength(0)
+    expect(events).toEqual([])
+
+    // The ZERO above is only meaningful if this same factory really counts, so
+    // prove it on the allowed path: one public hop ⇒ exactly one dispatcher,
+    // closed. (Pre-fix this half fails: the loop built none either way.)
+    const allowed = recordingDispatcherFactory(events)
+    await resolveWebFetchRedirects(
+      { url: 'https://example.com/start' },
+      fetchImpl,
+      undefined,
+      PUBLIC_DNS,
+      allowed.factory,
+    )
+    expect(allowed.created).toBe(1)
+    expect(allowed.closed).toBe(1)
+    expect(events).toEqual(['close:0:start', 'close:0:end'])
+  })
+
+  it('④ a transport error still closes the dispatcher it opened', async () => {
+    const events: string[] = []
+    const rec = recordingDispatcherFactory(events)
+    const fetchImpl: RedirectFetchLike = async () => {
+      events.push('fetch:boom')
+      throw new Error('ECONNRESET')
+    }
+    await expect(
+      resolveWebFetchRedirects(
+        { url: 'https://example.com/start' },
+        fetchImpl,
+        undefined,
+        PUBLIC_DNS,
+        rec.factory,
+      ),
+    ).rejects.toThrow('ECONNRESET')
+    expect(rec.created).toBe(1)
+    expect(rec.closed).toBe(1)
+    expect(events).toEqual(['fetch:boom', 'close:0:start', 'close:0:end'])
+  })
+
+  it('⑤ rebinding regression: the connection lookup never re-resolves', async () => {
+    // The classic rebinding resolver: public for the validation, and a THROW if
+    // it is ever consulted again. Pre-fix the probe's plain fetch re-resolved
+    // through real DNS (outside this spy) and reached the private answer; the
+    // assertions below fail there because no dispatcher/lookup exists at all.
+    const consultations: string[] = []
+    const resolver: RedirectLookupLike = async (hostname) => {
+      consultations.push(hostname)
+      if (consultations.length > 1) {
+        throw new Error('the resolver was consulted again — the probe is not pinned')
+      }
+      return [{ address: '93.184.216.34', family: 4 }]
+    }
+    const events: string[] = []
+    const rec = recordingDispatcherFactory(events)
+    const { fetchImpl, calls } = fetchDouble(() => ({ status: 200 }))
+    const resolution = await resolveWebFetchRedirects(
+      { url: 'https://example.com/start' },
+      fetchImpl,
+      undefined,
+      resolver,
+      rec.factory,
+    )
+    expect(resolution).toEqual({ type: 'resolved', url: 'https://example.com/start', redirectCount: 0 })
+    expect(consultations).toEqual(['example.com'])
+    expect(calls).toHaveLength(1)
+    // The connection lookup really carries the VALIDATED answer ...
+    expect(rec.lookups).toHaveLength(1)
+    const pinned = driveLookup(rec.lookups[0]!, 'example.com', { all: true })
+    expect(pinned.address).toEqual([{ address: '93.184.216.34', family: 4 }])
+    // ... and driving it consults NO resolver: the second (private) answer is
+    // unreachable by construction.
+    expect(consultations).toEqual(['example.com'])
+  })
+
+  it('⑥ the loopback end-to-end proof: a real undici Agent + real fetch reach ONLY the pinned address', async () => {
+    const seen: string[] = []
+    const server = createServer((request, response) => {
+      seen.push(request.url ?? '')
+      response.writeHead(200, { 'content-type': 'text/plain' })
+      response.end('pinned')
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const dispatcher = await createPinnedDispatcher(
+      [{ address: '127.0.0.1', family: 4 }],
+      createUndiciPinnedDispatcher,
+    )
+    try {
+      // `pinned.invalid` is guaranteed unresolvable: if ANY real resolution ran,
+      // this fetch would fail with ENOTFOUND instead of reaching the loopback
+      // server. That is the rebinding window closed, measured end to end.
+      const port = (server.address() as AddressInfo).port
+      const response = await undiciPinnedFetch(`http://pinned.invalid:${port}/probe`, {
+        headers: { 'User-Agent': 'omo-hooks-test' },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10_000),
+        dispatcher,
+      })
+      expect(response.status).toBe(200)
+      // The probe's contract only exposes `body.cancel()`; the body itself is
+      // read here through the real undici Response to prove the transport is
+      // genuinely wired (one explicit cast, test-only).
+      expect(await (response as unknown as { text(): Promise<string> }).text()).toBe('pinned')
+      expect(seen).toEqual(['/probe'])
+    } finally {
+      await dispatcher.close()
+      await new Promise<void>((resolve) => { server.close(() => resolve()) })
+    }
+  })
+
+  it('⑦ the production factory really imports undici (no mock) and builds a closable dispatcher', async () => {
+    const dispatcher = await createUndiciPinnedDispatcher({
+      lookup: createPinnedLookup([{ address: '93.184.216.34', family: 4 }]),
+    })
+    expect(typeof (dispatcher as { close?: unknown }).close).toBe('function')
+    expect(typeof (dispatcher as { dispatch?: unknown }).dispatch).toBe('function')
+    await dispatcher.close()
   })
 })
 

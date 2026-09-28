@@ -47,12 +47,29 @@ CI 安装 `@deepseek-ai/dsh@<精确 rc>`，但 **dsh 自身的依赖对预发布
 `dsh-base/cordis.patch.yml:206` 声明的裸包名：profile 引导以
 `plugin tree failed to load … could not be resolved` 失败，22 个 e2e 场景全部在 boot 阶段挂掉。
 因此两处 dsh 安装（`.github/workflows/ci.yml`、`.github/workflows/compat-probe.yml`）都加上
-`--before=2026-09-19T00:00:00Z`——npm 的"按该日期解析"截止开关，它冻结的是**整棵**解析树
-（伞包 + 传递依赖），停在 rc.1 时代的最后一次解析（已复验：520 个包，sandbox 系已提升，
-e2e 22/22 全绿，而浮动树 0/22）。该日期如今是 D7 pin 的一部分：把 `DSH_VERSION` 翻到截止日
-之后发布的 rc 时，必须同步移动并复验它；每周的 compat-probe 哨兵就是上游已经前移的提醒。
-`scripts/compat-probe.sh` 则刻意**不带**截止日去安装新 rc——它探测的是新树，不是复现 CI 的
-固定树。
+`--before=<截止日>`——npm 的"按该日期解析"截止开关，它把**整棵**解析树（伞包 + 传递依赖）冻结在
+所 pin 版本发布窗口内的某一点上。
+
+**该截止日是安全点，不是发布时刻（PR #9 第二轮）。** npm 对 `--before` 是**逐包**比较
+（`Date.parse(time[ver]) <= before`），而 dsh monorepo 的家族并非原子发布：rc.1 时顶层包发布于
+`2026-09-10T03:12:53.293Z`，而 `@deepseek-ai/dsh-webhook-github@0.1.5-rc.1` 直到
+`2026-09-10T03:14:25.423Z` 才存在——晚了 92 秒，且在 `npm view @deepseek-ai/dsh time` 里**看不见**——
+所以取 `03:12:53.293Z`、`03:12:54Z`、`03:13:00Z` 作截止日在真实 registry 上全部 ETARGET。当前提交的
+`2026-09-10T09:05:02.041Z` 是 rc.1 发布时刻与 rc.2（最早的**更晚**版本）发布时刻的中点，并已用真实的
+`npm install --package-lock-only` 复验：231/231 个 `@deepseek-ai/dsh*` 锁条目均为 `0.1.5-rc.1`，
+零嵌套 `node_modules/@deepseek-ai/dsh/node_modules` 路径。本轮之前放在这里的
+`2026-09-19T00:00:00Z` 解析出的是**混合树**——顶层 rc.1 加 230 个 rc.2 传递依赖（rc.2 发布于
+`2026-09-10T14:57:10.790Z`，早于该截止日八天多，因此 `<=` 规则放行了它——该截止日从未冻结它声称
+冻结的东西），这种组合真实用户永远装不出来。
+
+**两个 token 都是算出来的，不是手写的。** 截止日如今是 D7 pin 的一部分：
+`scripts/bump-dsh.sh <版本>` 读取新版本在 registry 时间表里的取值，取出该安全点，并用**真实的
+lockfile-only 解析验证**它；验证失败时按失败方向对候选点做二分（最多 3 次尝试），**全部在写文件之前
+完成**——因此写入前的任何失败都让两个 workflow 文件保持逐字节不变，而一对形状错误或互不一致的取值
+也提交不进来（`check-docs-consistency` 的 `d09` 也会比对两处取值）。若 registry 不可达（离线），
+脚本回退到**bump 时刻**，并响亮地打印非阻塞警告：该截止日**无法**从 registry 数据算出，必须重新验证；
+同一条路径会跳过解析校验。每周的 compat-probe 哨兵就是上游已经前移的提醒。
+`scripts/compat-probe.sh` 则刻意**不带**截止日去安装新 rc——它探测的是新树，不是复现 CI 的固定树。
 
 ### 支持窗口，以及"逐版本探测"实际测的是什么
 
@@ -140,12 +157,20 @@ TDD 形态：新能力或新适配先写 AC 检查——对着当前 dsh 跑红 
 | **B — 硬破坏** | API 改名/移除——响亮报错 | 适配分支 → patch/minor → 新 ✅ 行 |
 | **C — 静默变化** | 行为漂移但不报错 | 最危险的一类（P-19）。靠反向断言抓；按 B 处理且优先级更高 |
 
-节奏：每周 `compat-probe` 工作流（免费、无 secrets）探测上游新版本，每个新版本开一个 issue；验证在本地跑——`scripts/compat-probe.sh`（临时 dsh 前缀 + 沙箱 DSH_HOME + doctor-lite + 对**新** dsh 的 mock e2e），然后一步手动真模型 `concerto_verify`。最后的 pin 翻转用 D7 命名的 `scripts/bump-dsh.sh <version>`——矩阵行不是 ✅ 或本地 `dsh --version` 不匹配就拒绝执行，然后跑完整零成本链。处理选项按优先级：**跟进**（新 ✅ 行）→ **桥接**（patch 层加垫片，行内注明）→ **滞后**（`/install` 停在 LKG；README 状态注明最高支持的 dsh）。
+节奏：每周 `compat-probe` 工作流（免费、无 secrets）探测上游新版本，每个新版本开一个 issue；验证在本地跑——`scripts/compat-probe.sh`（临时 dsh 前缀 + 沙箱 DSH_HOME + doctor-lite + 对**新** dsh 的 mock e2e），然后一步手动真模型 `concerto_verify`。最后的 pin 翻转用 D7 命名的 `scripts/bump-dsh.sh <version>`——矩阵行不是 ✅ 或本地 `dsh --version` 不匹配就拒绝执行。它随后从 registry 时间表算出新版本的**已验证 `--before` 截止日**，与 `DSH_VERSION` 一起写入（自 PR #9 起 pin 是**两个** token：版本 + 截止日；两处截止日必须一致，由 `scripts/check-docs-consistency.mjs` 的 `d09` 兜底），之后才跑完整零成本链——该链现已包含脚本自身的 hermetic self-test（属于门 8）。若 registry 不可达，它回退到 bump 时刻并响亮警告该截止日**未经验证**、必须重新检查。处理选项按优先级：**跟进**（新 ✅ 行）→ **桥接**（patch 层加垫片，行内注明）→ **滞后**（`/install` 停在 LKG；README 状态注明最高支持的 dsh）。
 
-### 后续项（已记录，**未实施**）：上游发新版本时 CI 会怎样
+### 后续项（已部分缓解）：上游发新版本时 CI 会怎样
 
 2026-09-10 排查"一次绿灯为什么变红"时发现。用户同日裁定延后：dsh 迭代快、本项目仍是 MVP，
 下面这套设施现在不值得搭。记录在此，以免重新推导。
+
+**更新（2026-09-2x，PR #9）：`--before` 截止日已经落地，它拆掉了下面两个危险方向中的第一个。**
+上游在截止日之后发布的 caret 范围内兄弟包不会再进 CI：解析被冻结在安全点上，于是"两天后重跑"
+解析出同一棵树，而不再静默切换（那个静默切换就是 `0.1.6` 稳定版那一行）。**因此下面那张四行表
+描述的是截止日落地之前的行为**，保留它是为了记录截止日为何存在；有了截止日之后，只有"被 pin 的
+范围根本够不到新版本"（`0.2.0`）那类情形仍描述今天。截止日**不能**让 pin 自我更新：冻结的树有多好，
+取决于验证它的那次 bump；而范围够不到的版本仍会让 CI 保持绿色、本层却可能已经坏了。仍然缺的是
+**监控**：没有任何东西会告诉人"冻结的截止日已经漂出可用窗口"，而哨兵依旧只读 `latest`。
 
 `^0.1.5-rc.1` 展开为 `>=0.1.5-rc.1 <0.2.0-0`（用 npm 自带的 `semver` 实测）：
 
@@ -231,7 +256,7 @@ scripts/release.sh <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--no-gh] [
 | `scripts/release-check.sh`（8 门） | 本地，发布 preflight | 零成本门禁 + 你已有的 L2 证据 |
 | `scripts/release.sh` + `scripts/release-bump.mjs` | 本地，发布时 | 零 |
 | `scripts/compat-probe.sh` | 本地，处理 🔬 行时 | 零（自动部分）+ 一次真模型 verify |
-| `scripts/bump-dsh.sh` | 本地，D7 pin 翻转 | 零成本门禁；无 ✅ 行拒绝执行 |
+| `scripts/bump-dsh.sh` | 本地，D7 pin 翻转 | 零 LLM 成本；其 hermetic `--self-test` 已并入 `ci-local.sh` 门 8（`run-proofs.sh`）；无 ✅ 行拒绝执行。`--self-test --online` 会额外做一次真实 registry 解析，仍属手动 |
 | `.github/workflows/compat-probe.yml` | 每周 cron + 手动触发 | 零（GitHub Actions 免费层） |
 
 ## 10. 决策与首个实战对象

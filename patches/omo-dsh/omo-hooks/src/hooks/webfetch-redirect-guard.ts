@@ -122,7 +122,7 @@
 // key — and no stale sweep is needed: the entry dies with the execution.
 //
 // ═══════════ THE PUBLIC-DESTINATION GATE (SSRF fix, review F1) ═══════════
-// The B half POINTS THE HOST'S `fetch` AT A MODEL-CHOSEN URL. Upstream's
+// The B half POINTS A PROBE TRANSPORT AT A MODEL-CHOSEN URL. Upstream's
 // pre-resolution had exactly the same shape (a plain `fetch` loop) and the
 // first revision of this port registered that as "upstream parity"; an
 // independent review overturned that registration: upstream parity is NOT a
@@ -134,7 +134,10 @@
 //
 // The gate below is the fix, and it is a SELF-CONTAINED MIRROR of
 // `dsh-web-fetch-http`'s pre-connection policy — never an import, because this
-// package deliberately has no `@deepseek-ai/dsh-*` dependency:
+// package deliberately has no `@deepseek-ai/dsh-*` dependency. (It does carry
+// ONE third-party runtime dependency, `undici` — the very transport package
+// native builds its own pinned Agent from — added by N1 below; the mirror
+// proper still imports nothing from DSH.)
 //
 //   native (dsh-web-fetch-http/lib/index.js)
 //     validateFetchUrl       `:292-295`  ≤2048 chars, http(s) only, no credentials
@@ -148,6 +151,10 @@
 //     resolvePublicAddresses         (mirrored; its doc comment records the one
 //                                     deliberate omission — NAT64 discovery)
 //     isSameOriginUrl                (mirrored; compared per hop)
+//     createPinnedLookup             (mirrored, native `:217-235`; N1 — the
+//                                     validated answer set is pinned into the
+//                                     per-hop connection, so the probe cannot be
+//                                     re-pointed by a second DNS answer)
 //
 // EVERY hop is gated, INCLUDING the first: a redirect chain is followed only
 // while each target is same-origin AND every address its hostname resolves to is
@@ -164,27 +171,44 @@
 // "this listener never reaches the destination first".
 //
 // RESIDUALS, recorded rather than hidden:
-//   * DNS re-resolution (TOCTOU). This mirror resolves the hostname and then
-//     hands the URL to the host `fetch`, which resolves it AGAIN. The native
-//     provider closes that window by PINNING the validated answer set into the
-//     connection's `lookup` (`createPinnedLookup`, `:217-235`); a plain `fetch`
-//     gives this port no such seam, so a hostile resolver could answer public
-//     for the check and private for the connection. The window is bounded and
-//     one-sided: the guard's probe is a GET with `redirect: "manual"`, no
-//     credentials and no body read. The residual itself is ACCEPTED EXPLICITLY
-//     (review F1 arbitration, PR #9 round 2): inside a DNS-poisoning window this
-//     listener's own probe can still reach a private destination, because a
-//     plain `fetch` gives it no lookup to pin — its probe surface is therefore
-//     NOT proven equal to native's. What it cannot do is change the model's
-//     fate: the ACTUAL tool fetch still runs behind the native pinned lookup, so
-//     this guard's probe is advisory depth only and the native provider's
-//     decision is unchanged. That — not an equality claim — is the registered
-//     reading of "only what this listener itself probes".
-//   * NAT64 (`discoverNat64Prefixes`, `:81-105`) is not mirrored: rather than
-//     discover the local DNS64 prefix, the classifier blocks every transition/
-//     translation prefix outright (`64:ff9b::/96`, `64:ff9b:1::/48`,
-//     `::ffff:0:0:0/96`, `2002::/16`, `2001::/23`), which is STRICTER than the
-//     native check and therefore fails in the safe direction.
+//   * DNS re-resolution (TOCTOU) — CLOSED for this listener's own probe
+//     (PR #9 round 2, N1). The mirror still resolves the hostname itself and
+//     still hands the URL to `fetch`, but it now PINS the validated answer set
+//     into a per-hop undici `Agent` (`createPinnedLookup` /
+//     `createPinnedDispatcher`, mirroring native `:217-235` / `:154-176`), so
+//     the connection cannot be re-pointed by a second, hostile DNS answer. The
+//     probe's reachability is now provably the validated set: an empty eligible
+//     set raises an ENOTFOUND-shaped error rather than falling back to real DNS.
+//     Per hop, and closed per hop — an unclosed Agent would pin a socket pool
+//     per probe.
+//     WHAT REMAINS REGISTERED after this fix:
+//       (i) site-custom NAT64 prefixes, still unmirrored — see the next bullet;
+//       (ii) the tool fetch itself still resolves independently through the
+//            NATIVE provider's own pinned lookup (unchanged by this port), so
+//            the guard's probe and the real fetch remain two separate
+//            resolutions. That is by design: native is the authority for the
+//            model's fate, and this listener only ever adds advisory depth.
+//   * Proxy environment configuration is NOT mirrored. The probe transport is
+//     undici's own `fetch` with an explicit per-hop pinned `Agent`, so it ignores
+//     `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` and also `NODE_USE_ENV_PROXY=1`
+//     — under which Node's global `fetch` WOULD have routed through the env
+//     proxy. Native's proxied route (`proxyRouteFor`,
+//     dsh-web-fetch-http/lib/index.js:501) is not mirrored: on a host whose
+//     egress requires a proxy the probe's hop simply fails (a transport error),
+//     which the B half treats like any other pre-resolution failure and fails
+//     open (`undefined`). Native therefore remains the refusal authority there,
+//     and the guard loses its advisory depth for that class of host.
+//     Registered, not hidden; no proxy routing is implemented in this round.
+//   * NAT64 (`discoverNat64Prefixes`, `:81-105`) is not mirrored, and the two
+//     cases are NOT the same — the earlier blanket "stricter than native, so it
+//     fails in the safe direction" claim was too broad. For the WELL-KNOWN
+//     prefixes the static table blocks (`64:ff9b::/96`, `64:ff9b:1::/48`,
+//     `::ffff:0:0:0/96`, `2002::/16`, `2001::/23`) this IS stricter than native
+//     and does fail in the safe direction. For a SITE-CUSTOM RFC 6052 prefix —
+//     which native DISCOVERS through `ipv4only.arpa` and this port has no
+//     discovery for — an embedded-private IPv4 address is classified PUBLIC here
+//     and probed: the same residual class as an unpinned probe, NOT fail-safe.
+//     Registered, not hidden; no discovery is implemented in this round.
 //   * The classifier is a hand-written range table, not `ipaddr.js` (no
 //     dependency). It was RECONCILED (review round 2, MAJOR-1) against the
 //     installed `ipaddr.js` 2.5.0 — the parser the native `isPublicIpAddress`
@@ -196,10 +220,13 @@
 //     too — the only remaining mismatches are deliberate OVER-blocking (`::/96`
 //     and the transition prefixes native calls unicast), which merely costs the
 //     guard its probe and hands the decision to the provider. The residual is
-//     therefore VERSION SENSITIVITY, and it is registered: this mirror is pinned
-//     to ipaddr.js 2.5.0, so a bucket a later ipaddr.js adds must be added here
-//     by hand (the regression suite pins every 2.5.0 bucket by CIDR, so a silent
-//     ipaddr.js upgrade turns it red instead of silently widening this gate).
+//     therefore VERSION SENSITIVITY. What the regression suite locks is TABLE
+//     DRIFT against a HAND-COPIED transcription of ipaddr.js 2.5.0: it pins
+//     every 2.5.0 bucket by CIDR, but an ipaddr.js UPGRADE does not turn the
+//     suite red by itself — it becomes visible only when someone updates the
+//     transcription. The upgrade risk is covered MANUALLY, by the
+//     REVISIT-on-every-dsh-bump discipline (the bump is the only way a
+//     different ipaddr.js reaches this install).
 //
 // The pre-resolution remains BOUNDED (30s default, 120s max, upstream's
 // `normalizeTimeoutMs`) and composed with the call's own `exec.signal`, so a
@@ -227,6 +254,8 @@
 // specifier resolution, and there is no bundler to rewrite it.
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
+import type { LookupFunction } from 'node:net'
+import type { Dispatcher } from 'undici'
 import type { HookManifestEntry } from '../manifest.ts'
 import type { HookRegistrar } from '../index.ts'
 
@@ -365,13 +394,22 @@ export type RedirectResolutionResult =
   | { readonly type: 'resolved'; readonly url: string; readonly redirectCount: number }
   | { readonly type: 'exceeded'; readonly url: string; readonly maxRedirects: number }
 
-/** The `fetch` subset the pre-resolution uses — injectable so tests are hermetic. */
+/**
+ * The `fetch` subset the pre-resolution uses — injectable so tests are
+ * hermetic. `dispatcher` is REQUIRED, not optional: since N1 (PR #9 round 2)
+ * every probe hop is pinned to the address set the public-destination gate just
+ * validated, and a caller that omits it would silently reopen the rebinding
+ * window. The production default is {@link undiciPinnedFetch}, which is
+ * undici's own `fetch` — required, because the dispatcher is an undici `Agent`
+ * and Node's global `fetch` is a different copy of the same library.
+ */
 export type RedirectFetchLike = (
   url: string,
   init: {
     readonly headers: Record<string, string>
     readonly redirect: 'manual'
     readonly signal: AbortSignal
+    readonly dispatcher: WebFetchRedirectDispatcher
   },
 ) => Promise<{
   readonly status: number
@@ -456,6 +494,131 @@ export type RedirectLookupLike = (
 export interface PublicRedirectAddress {
   readonly address: string
   readonly family: number
+}
+
+/**
+ * The dispatcher face the probe hands to `fetch` — undici's own `Dispatcher`
+ * type, NOT a hand-rolled structural guess. The pinned `Agent` and the `fetch`
+ * that consumes it must come from the SAME undici module instance, and only the
+ * real type makes that pairing type-check instead of merely happening to work
+ * (see {@link undiciPinnedFetch} for the measured failure of the other pairing).
+ */
+export type WebFetchRedirectDispatcher = Dispatcher
+
+/**
+ * The `Agent` factory seam. Native builds its `Agent` inline (`requestPinned`,
+ * dsh-web-fetch-http/lib/index.js:154-176); this port takes the one indirection
+ * it needs to be testable without a live connection. The unit suite substitutes
+ * a recording factory and observes the PINNED LOOKUP plus the per-hop close; the
+ * production default is the real thing. Same discipline as `fetchImpl` /
+ * `resolver`: a seam, never a behaviour change.
+ */
+export type PinnedDispatcherFactory = (options: {
+  readonly lookup: LookupFunction
+}) => WebFetchRedirectDispatcher | Promise<WebFetchRedirectDispatcher>
+
+/**
+ * The production factory — native `requestPinned`'s dispatcher, mirrored: an
+ * undici `Agent` with `autoSelectFamily` and the pinned lookup installed on
+ * `connect`. `undici` is imported LAZILY, exactly as native does it, so the
+ * import cost stays off the boot path and the package is only needed when the
+ * guard really probes a redirect chain.
+ *
+ * A per-HOP agent is deliberate and is native's own rationale
+ * (`index.js:140-146`): pinning must not become process-wide because an
+ * operator-configured MCP server or model endpoint on loopback is a supported
+ * destination, and only the URLs this tool fetches are the model's to choose.
+ * The caller therefore OWNS the close — see {@link resolveWebFetchRedirects},
+ * which does it in a `finally`.
+ */
+export const createUndiciPinnedDispatcher: PinnedDispatcherFactory = async ({ lookup: pinnedLookup }) => {
+  const { Agent } = await import('undici')
+  return new Agent({
+    autoSelectFamily: true,
+    connect: { lookup: pinnedLookup },
+  })
+}
+
+/**
+ * The production probe transport, paired with {@link createUndiciPinnedDispatcher}
+ * through the SAME module specifier. Node's global `fetch` is a DIFFERENT copy of
+ * undici (the one bundled into the runtime), and handing it a dispatcher built
+ * from the npm-installed package fails at dispatch time with
+ * `TypeError: fetch failed` caused by `UND_ERR_INVALID_ARG: invalid
+ * onRequestStart method` — measured, not theoretical. Native pairs
+ * `const { Agent, fetch } = await import("undici")` for exactly this reason.
+ *
+ * The `fetchImpl` seam keeps its meaning: this is only the DEFAULT; a caller
+ * that injects its own transport owns the pairing.
+ */
+export const undiciPinnedFetch: RedirectFetchLike = async (url, init) => {
+  const { fetch: undiciFetch } = await import('undici')
+  return undiciFetch(url, {
+    method: 'GET',
+    redirect: 'manual',
+    headers: init.headers,
+    signal: init.signal,
+    dispatcher: init.dispatcher,
+  })
+}
+
+/**
+ * Native `createPinnedLookup` (dsh-web-fetch-http/lib/index.js:217-235),
+ * mirrored: a `node:dns`-shaped lookup that serves ONLY the address set
+ * {@link resolvePublicAddresses} just validated, and performs NO resolution of
+ * its own. This is what closes the N1 DNS-rebinding window — a hostile resolver
+ * can no longer answer public for the validation and private for the
+ * connection, because the connection never asks it anything.
+ *
+ * Family handling is native's exactly: a numeric `family`, the `'IPv4'` /
+ * `'IPv6'` string forms Node also accepts, or 0/absent for "any".
+ * `options.all === true` returns the whole eligible set (undici's
+ * happy-eyeballs path); otherwise the first eligible address. An EMPTY eligible
+ * set is an `ENOTFOUND`-shaped error, never a silent fallback to real DNS —
+ * that failure direction is the entire point of pinning.
+ */
+export function createPinnedLookup(addresses: readonly PublicRedirectAddress[]): LookupFunction {
+  return (hostname, options, callback) => {
+    const family = typeof options.family === 'number'
+      ? options.family
+      : options.family === 'IPv4'
+        ? 4
+        : options.family === 'IPv6'
+          ? 6
+          : 0
+    const eligible = family === 0
+      ? addresses
+      : addresses.filter((entry) => entry.family === family)
+    const selected = eligible[0]
+    if (selected === undefined) {
+      callback(
+        Object.assign(
+          new Error(`no validated address for ${hostname} in family ${family}`),
+          { code: 'ENOTFOUND', hostname },
+        ),
+        options.all === true ? [] : '',
+        family,
+      )
+      return
+    }
+    if (options.all === true) {
+      callback(null, eligible.map((entry) => ({ address: entry.address, family: entry.family })))
+      return
+    }
+    callback(null, selected.address, selected.family)
+  }
+}
+
+/**
+ * Capture the validated address set into ONE per-hop dispatcher. Split out from
+ * {@link createUndiciPinnedDispatcher} so the seam is visible at the call site:
+ * resolution first, pinning second, and nothing in between.
+ */
+export async function createPinnedDispatcher(
+  addresses: readonly PublicRedirectAddress[],
+  factory: PinnedDispatcherFactory = createUndiciPinnedDispatcher,
+): Promise<WebFetchRedirectDispatcher> {
+  return factory({ lookup: createPinnedLookup(addresses) })
 }
 
 /**
@@ -755,9 +918,11 @@ function isNonPublicIpv4(octets: readonly number[]): boolean {
  * {@link NON_PUBLIC_IPV6_RANGES} enumerate every non-unicast bucket of
  * `ipaddr.js` 2.5.0's `SpecialRanges` (the parser native calls), so an address
  * native refuses is refused here. STRICTER THAN NATIVE on `::/96` and the
- * transition/translation prefixes (see the header's NAT64 residual):
+ * WELL-KNOWN transition/translation prefixes (see the header's NAT64 residual):
  * over-blocking only costs the guard its probe and hands the decision to the
- * native provider, while under-blocking is the SSRF this exists to prevent.
+ * native provider, while under-blocking is the SSRF this exists to prevent. The
+ * SITE-CUSTOM RFC 6052 case is the exception and is registered as a residual in
+ * the header — it is NOT covered by this table.
  */
 export function isPublicIpAddress(input: string): boolean {
   const unbracketed = stripIpv6Brackets(input)
@@ -795,8 +960,11 @@ function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T>
  *
  * DELIBERATE OMISSION, recorded in the header: native's NAT64 arm
  * (`discoverNat64Prefixes`, `:81-105`) is not mirrored. The classifier blocks
- * the translation prefixes outright instead, which is stricter and needs no
- * second DNS lookup.
+ * the WELL-KNOWN translation prefixes outright — stricter than native, and no
+ * second DNS lookup — but a SITE-CUSTOM RFC 6052 prefix is NOT covered: an
+ * address embedded under one is classified public here and probed. That is a
+ * registered residual, not a fail-safe, and the header's RESIDUALS section says
+ * so precisely.
  */
 export async function resolvePublicAddresses(
   hostname: string,
@@ -884,7 +1052,11 @@ export function isSameOriginUrl(a: URL, b: URL): boolean {
  *   * per hop, FIRST: `validateRedirectUrl` + `resolvePublicAddresses` — the
  *     public-destination gate (header). This is the ONE place this port deviates
  *     from upstream's byte shape, and it deviates on purpose.
- *   * `fetch(currentUrl, { headers, redirect: 'manual', signal })`
+ *   * then the validated answer set is pinned into a per-hop dispatcher (N1,
+ *     header's RESIDUALS) and passed to
+ *     `fetch(currentUrl, { headers, redirect: 'manual', signal, dispatcher })`
+ *   * the dispatcher is CLOSED in a `finally` on every hop — success, early
+ *     return, policy throw or transport throw
  *   * body cancelled best-effort (never read)
  *   * not a redirect status          → `{type:'resolved', url: currentUrl}`
  *   * redirect status without Location → `{type:'resolved', url: currentUrl}`
@@ -904,17 +1076,24 @@ export function isSameOriginUrl(a: URL, b: URL): boolean {
  *   and `timeoutSeconds` is really honored through
  *   {@link normalizeTimeoutMs} — it is merely never SET by the deny path,
  *   which always passes `{ url }`.
- * @param fetchImpl - the fetch to use; defaults to the host global.
+ * @param fetchImpl - the fetch to use; defaults to {@link undiciPinnedFetch} —
+ *   undici's OWN fetch, because the pinned dispatcher comes from that same
+ *   module instance (see the two constants above).
  * @param callerSignal - the tool call's own cancellation signal, when present.
  * @param resolver - the DNS lookup the gate uses; defaults to `node:dns`.
  *   Injectable for the same reason {@link resolvePublicAddresses} takes one:
  *   the unit suite must not depend on real DNS.
+ * @param dispatcherFactory - the per-hop pinned `Agent` factory (N1); defaults
+ *   to the real undici one. Injectable for the same reason as the two seams
+ *   above: the suite must be able to observe the PINNED LOOKUP and the per-hop
+ *   close without opening a socket.
  */
 export async function resolveWebFetchRedirects(
   params: RedirectResolutionParams,
-  fetchImpl: RedirectFetchLike = fetch as unknown as RedirectFetchLike,
+  fetchImpl: RedirectFetchLike = undiciPinnedFetch,
   callerSignal?: AbortSignal,
   resolver: RedirectLookupLike = lookup as unknown as RedirectLookupLike,
+  dispatcherFactory: PinnedDispatcherFactory = createUndiciPinnedDispatcher,
 ): Promise<RedirectResolutionResult> {
   const timeoutMs = normalizeTimeoutMs(params.timeoutSeconds)
   const timeoutSignal = AbortSignal.timeout(timeoutMs)
@@ -935,15 +1114,37 @@ export async function resolveWebFetchRedirects(
   for (;;) {
     // ── the public-destination gate: nothing below this line may be reached
     //    for a URL whose hostname resolves to a non-public address ──────────
-    await resolvePublicAddresses(currentUrl.hostname, signal, resolver)
+    const addresses = await resolvePublicAddresses(currentUrl.hostname, signal, resolver)
 
-    const response = await fetchImpl(currentUrlText, { headers, redirect: 'manual', signal })
+    // ── N1 (PR #9 round 2): the validated answer set is PINNED into this hop's
+    //    own dispatcher and handed to the probe, so the connection cannot be
+    //    re-pointed by a second, hostile DNS answer — the rebinding window a
+    //    plain `fetch` left open. Per hop, and closed per hop: pinning must not
+    //    become process-wide (native's rationale, `:140-146`) and an unclosed
+    //    Agent would pin a socket pool per probe.
+    const dispatcher = await createPinnedDispatcher(addresses, dispatcherFactory)
+    let response: Awaited<ReturnType<RedirectFetchLike>>
+    try {
+      response = await fetchImpl(currentUrlText, {
+        headers,
+        redirect: 'manual',
+        signal,
+        dispatcher,
+      })
 
-    // Best-effort body release BEFORE every early return below — the terminal
-    // hop (a real page, possibly large) included. The pre-resolution never reads
-    // a body, so cancelling first costs nothing; an unconsumed stream would
-    // otherwise pin the socket.
-    await cancelBody(response)
+      // Best-effort body release BEFORE every early return below — the terminal
+      // hop (a real page, possibly large) included. The pre-resolution never
+      // reads a body, so cancelling first costs nothing; an unconsumed stream
+      // would otherwise pin the socket.
+      await cancelBody(response)
+    } finally {
+      // Native closes through its response wrapper; this port owns the
+      // dispatcher itself, so a `finally` is the only leak-free shape. A close
+      // failure can only mask a TRANSPORT error here — every POLICY refusal
+      // throws before the dispatcher exists — and both fail open at the
+      // listener, so no deny decision can be lost to it.
+      await dispatcher.close()
+    }
 
     if (!WEBFETCH_REDIRECT_STATUSES.has(response.status)) {
       return { type: 'resolved', url: currentUrlText, redirectCount }
@@ -1124,7 +1325,10 @@ export function buildNativePolicyPassthrough(nativeText: string, url?: string): 
  * refusal stays the native provider's (see the header).
  *
  * @param exec - the live execution object the waterfall handed over.
- * @param fetchImpl - the pre-resolution transport; defaults to the host global.
+ * @param fetchImpl - the pre-resolution transport; defaults to
+ *   {@link undiciPinnedFetch} — undici's own `fetch`, the copy that comes from
+ *   the same module instance as the pinned `Agent` (never the host global
+ *   `fetch`; see that constant).
  * @param resolver - the DNS lookup the public-destination gate uses; defaults to
  *   `node:dns`. Injectable so the unit suite never touches real DNS.
  */
@@ -1282,7 +1486,8 @@ export function decideWebFetchRedirectResultRewrite(
  *
  * `fetchImpl` / `resolver` are the same injectable pre-resolution seams
  * {@link decideWebFetchRedirectDeny} takes; the registrar never passes them, so
- * production always uses the host global and `node:dns`.
+ * production always uses {@link undiciPinnedFetch} (undici's own `fetch`, paired
+ * with a per-hop pinned `Agent` — never the host global `fetch`) and `node:dns`.
  */
 export async function handleWebFetchPreExecute(
   exec: unknown,

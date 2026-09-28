@@ -19,7 +19,8 @@
 #   8. scripts/run-proofs.sh      (T12 toolFilter / T13 maxDepth / T15 dual-route
 #                                  logging / P3-T19 guardrail deny path + R-9 /
 #                                  P3-T19 C+E mode mechanisms against the
-#                                  INSTALLED dsh — session-free)
+#                                  INSTALLED dsh / N6 bump-dsh --self-test —
+#                                  session-free)
 #
 # dsh install (D7 — pin-minor 0.1.x): the npm package is @deepseek-ai/dsh and
 # the 0.1 line is currently published as prereleases only. A plain `~0.1.0`
@@ -32,27 +33,50 @@
 #
 # D7 — pinning the TOP-LEVEL version is NOT enough (2026-09-2x, PR #9): dsh's own
 # dependencies use caret ranges on prereleases, so `npm install --global
-# @deepseek-ai/dsh@0.1.5-rc.1` resolves the NEWEST matching rc for every
-# transitive. Upstream published 0.1.5-rc.3 / 0.1.7-rc.* on 2026-09-22..24, and
-# the floating tree no longer HOISTS the sandbox family: @deepseek-ai/
-# dsh-sandbox-local / -fs-sandbox / -sandbox-windows-acl land nested under
-# dsh-base/node_modules instead of @deepseek-ai/dsh/node_modules/@deepseek-ai/,
+# @deepseek-ai/dsh@0.1.5-rc.1` resolves each transitive to the newest version
+# satisfying its range (and `^0.1.5-rc.1` DOES satisfy 0.1.5-rc.2 / rc.3 — the
+# family really floats). Upstream published 0.1.5-rc.3 / 0.1.7-rc.* on
+# 2026-09-22..24, and the floating tree no longer HOISTS the sandbox family:
+# @deepseek-ai/dsh-sandbox-local / -fs-sandbox / -sandbox-windows-acl land nested
+# under dsh-base/node_modules instead of @deepseek-ai/dsh/node_modules/@deepseek-ai/,
 # so the plugin-tree loader cannot resolve the bare specifiers that
 # dsh-base/cordis.patch.yml:206 declares. Every boot then dies with
 # "dsh: plugin tree failed to load: dsh: plugin(s) failed to load:
 # @deepseek-ai/dsh-sandbox-local; Cordis startup failed because these plugin(s)
 # could not be resolved" and all 22 e2e scenarios fail before readiness.
-# CI therefore installs with `--before=2026-09-19T00:00:00Z`: npm's "resolve as
-# if it were this date" cutoff, which freezes the whole resolved tree
-# (transitives included) at the last rc.1-era resolution — re-verified complete
-# and GREEN: 520 packages, sandbox family hoisted, e2e 22/22, where the floating
-# tree boots 0/22. This is where D7's pin discipline lands on the CI side;
+# CI therefore installs with `--before=<cutoff>`: npm's "resolve as if it were
+# this date" cutoff, which freezes the whole resolved tree (transitives
+# included).
+#
+# THE CUTOFF IS A SAFE POINT, NOT A PUBLISH INSTANT (PR #9 round 2). npm applies
+# `--before` PER PACKAGE (`Date.parse(time[ver]) <= before`), and the dsh monorepo
+# does not publish its family atomically, so the cutoff must lie strictly between
+# the pinned version's FAMILY-MAX publish instant (an inclusive lower bound) and
+# its SUCCESSOR family's MIN publish instant (an exclusive upper bound). Measured
+# at rc.1: the top-level package published 2026-09-10T03:12:53.293Z, but
+# @deepseek-ai/dsh-webhook-github 0.1.5-rc.1 exists only from
+# 2026-09-10T03:14:25.423Z — 92s later, and invisible in
+# `npm view @deepseek-ai/dsh time` — so a publish-moment cutoff, 03:12:54Z or
+# 03:13:00Z, ETARGETs on the real registry while 03:20:00Z works. Never reuse a
+# publish instant here. The committed 2026-09-10T09:05:02.041Z is the midpoint
+# between rc.1's publish instant and rc.2's (rc.2 is the earliest-published LATER
+# version), and it was verified by a REAL `npm install --package-lock-only`:
+# 231/231 @deepseek-ai/dsh* lock entries at 0.1.5-rc.1, zero
+# `node_modules/@deepseek-ai/dsh/node_modules` paths. The cutoff that stood here
+# before this round, 2026-09-19T00:00:00Z, resolved a MIXED tree instead —
+# top-level rc.1 plus 230 rc.2 transitives (rc.2 was published
+# 2026-09-10T14:57:10.790Z, more than eight days BEFORE that cutoff, so the `<=`
+# rule admitted it — the cutoff never froze what it claimed to freeze), a
+# combination no user ever installs.
+# This is where D7's pin discipline lands on the CI side;
 # .github/workflows/compat-probe.yml carries the same cutoff.
-# REVISIT on every DSH_VERSION bump (scripts/bump-dsh.sh) and when the weekly
-# compat-probe sentinel fires: the cutoff must stay inside the pinned rc's
-# publish window, so a bump to a version published after 2026-09-19 needs a new,
-# re-verified cutoff (scripts/compat-probe.sh installs a NEW rc without a cutoff
-# on purpose — it probes the new tree, it does not reproduce CI's).
+# REVISIT on every DSH_VERSION bump: scripts/bump-dsh.sh now COMPUTES this safe
+# point from the registry's own time map and VERIFIES it with a real
+# lockfile-only resolution (bisecting up to 3 attempts) before writing either
+# workflow — run it, never hand-edit the cutoff. The weekly compat-probe sentinel
+# also fires on a new upstream version (scripts/compat-probe.sh installs a NEW rc
+# without a cutoff on purpose — it probes the new tree, it does not reproduce
+# CI's).
 #
 # 0.1.5-rc.1 bump (2026-09-10, docs/dsh-0.1.5-rc.1-review.md): the harness is
 # now runtime-adaptive where the two lines differ — the session-log reader
@@ -105,7 +129,7 @@ jobs:
           # --before is load-bearing: the exact version pin alone leaves every
           # caret-ranged transitive floating (see the D7 header note). Keep this
           # cutoff identical to compat-probe.yml's and re-verify it on a bump.
-          npm install --global "@deepseek-ai/dsh@${DSH_VERSION}" --before=2026-09-19T00:00:00Z
+          npm install --global "@deepseek-ai/dsh@${DSH_VERSION}" --before=2026-09-10T09:05:02.041Z
           dsh --version
 
       - name: gate 1 — typecheck

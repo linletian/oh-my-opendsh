@@ -5,6 +5,9 @@
   "type": "module",
   "description": "OMO hook semantics as DSH event listeners (Phase 3).",
   "license": "MIT OR SUL-1.0",
+  "dependencies": {
+    "undici": "^8.10.0"
+  },
   "exports": {
     ".": "./src/index.ts"
   }

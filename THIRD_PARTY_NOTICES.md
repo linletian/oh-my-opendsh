@@ -189,3 +189,19 @@ which allows skills to be shared and used across multiple AI coding harnesses.
 
 deepseek-harness is the host framework for this project, providing the
 foundation upon which the oh-my-opendsh skills and hooks are layered.
+
+## undici
+
+- **Author:** Matteo Collina and Undici contributors
+- **License:** MIT (the installed package's own `LICENSE`; its manifest declares
+  `"license": "MIT"`)
+- **Homepage:** https://github.com/nodejs/undici
+
+undici is the HTTP transport the `webfetch-redirect-guard` hook uses to **pin** a
+probe's connection to the address set it just validated (PR #9 review round 2,
+N1) — the same primitive `dsh-web-fetch-http` builds its own pinned `Agent` from,
+which is why the mirror uses it rather than reimplementing a connector. It is the
+only third-party runtime dependency of the `@oh-my-opendsh/omo-hooks` package;
+`patches/omo-dsh/omo-hooks/package.json` declares `undici@^8.10.0` (the major the
+pinned dsh itself depends on), and `scripts/verify-licenses.sh` covers it like
+every other locked package.

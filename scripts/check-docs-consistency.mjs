@@ -18,6 +18,10 @@
 //   d08 EVERY live raw-URL pointer names the current alias — not just the
 //       wrapper. Scoped to the raw-URL shape so historical `v0.1` prose in the
 //       CHANGELOG and review records is never rewritten to match today.
+//   d09 the D7 `--before` cutoffs on the two dsh install lines are WELL-SHAPED
+//       and IDENTICAL (PR #9 round 2, N6). The pin is two tokens carried by two
+//       files; the drift that motivated the check was ci.yml sitting on a
+//       mixed-tree cutoff while compat-probe.yml claimed the same value.
 //
 // Usage: node scripts/check-docs-consistency.mjs [--json]
 // Exit: 1 iff any check FAILs.
@@ -146,6 +150,38 @@ async function run() {
         })
         .join('; '),
   ))
+
+  // d09 — the D7 --before cutoffs agree and are well-shaped (PR #9 round 2, N6).
+  //
+  // The pin is TWO tokens (version + cutoff) spread over two files, and nothing
+  // compared them: the values could drift apart silently, and an ill-shaped
+  // value (a truncation, a stray token) only surfaces as an `install dsh`
+  // ETARGET on a CI runner. Both facts are cheap to assert here. Only lines that
+  // really are the npm install command are read — the headers deliberately
+  // quote OLD cutoffs as history, and those must never be mistaken for
+  // configuration.
+  const CUTOFF_RE = /--before=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z)/g
+  const cutoffValues = (file) => {
+    let text = ''
+    try { text = readFileSync(join(REPO_ROOT, file), 'utf8') } catch { return null }
+    const values = []
+    for (const line of text.split('\n')) {
+      if (!line.includes('npm install') || !line.includes('--before=')) continue
+      for (const match of line.matchAll(CUTOFF_RE)) values.push(match[1])
+    }
+    return values
+  }
+  const ciCutoffs = cutoffValues('.github/workflows/ci.yml')
+  const probeCutoffs = cutoffValues('.github/workflows/compat-probe.yml')
+  const cutoffsMatch = Array.isArray(ciCutoffs) && Array.isArray(probeCutoffs)
+    && ciCutoffs.length === 1 && probeCutoffs.length === 1 && ciCutoffs[0] === probeCutoffs[0]
+  let cutoffDetail
+  if (ciCutoffs === null || probeCutoffs === null) cutoffDetail = 'a workflow file is missing'
+  else if (ciCutoffs.length !== 1) cutoffDetail = `ci.yml install line carries ${ciCutoffs.length} well-shaped --before cutoff(s), want exactly 1`
+  else if (probeCutoffs.length !== 1) cutoffDetail = `compat-probe.yml install line carries ${probeCutoffs.length} well-shaped --before cutoff(s), want exactly 1`
+  else if (ciCutoffs[0] !== probeCutoffs[0]) cutoffDetail = `cutoffs differ: ci.yml=${ciCutoffs[0]}, compat-probe.yml=${probeCutoffs[0]}`
+  else cutoffDetail = `both install lines pin --before=${ciCutoffs[0]}`
+  results.push(check('d09', 'D7 --before cutoffs well-shaped + identical', cutoffsMatch, cutoffDetail))
 
   const json = process.argv.includes('--json')
   if (json) {

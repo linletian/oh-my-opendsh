@@ -12,7 +12,12 @@
 //   文件" was a draft error, corrected as C-2). 语义移植（非逐字复制）: every
 //   dispatch/debounce rule, the two H-05 predicates, the AppleScript escaping and
 //   both backend command shapes are transcribed; the DELIVERY is DSH's. No
-//   upstream code is vendored.
+//   upstream code is vendored. ONE divergence from the upstream TEXT is
+//   delivered on purpose and recorded with its reason: `escapeAppleScriptText`
+//   also escapes newlines (PR #9 review F1 — upstream's osascript path is a
+//   COMPILE ERROR for any multiline body, and this port's content reduction
+//   emits multiline bodies more often than upstream does; see the function's
+//   doc comment).
 //
 //   The 16 upstream implementation files this module's semantics were read from
 //   (the plan §4.9 逐文件署名 requirement), each one either transcribed below or
@@ -24,8 +29,11 @@
 //     session-notification-event-properties.ts
 //                                         — NOT PORTED (opencode `event.properties`
 //                                           shape; DSH events are typed payloads)
-//     session-notification-formatting.ts  — PORTED (escapeAppleScriptText, verbatim;
-//                                           buildWindowsToastScript excluded by D9)
+//     session-notification-formatting.ts  — PORTED (escapeAppleScriptText, with ONE
+//                                           deliberate addition — the newline arm,
+//                                           PR #9 review F1, see the function's
+//                                           doc comment; buildWindowsToastScript
+//                                           excluded by D9)
 //     session-notification-init.ts        — PARTIAL (lazy platform cache → the
 //                                           registrar computes once at apply time)
 //     session-notification-linux.ts       — PORTED (notify-send argv, verbatim)
@@ -158,8 +166,10 @@
 //     (`session-notification-macos.ts:17-74`). Only the `osascript` tier is
 //     ported: `cmux`/`terminal-notifier` are non-system binaries, and the
 //     bundle-id tier reads `process.env.__CFBundleIdentifier`, an
-//     opencode.app-specific variable. The escaping is byte-identical, so the
-//     tier that is ported keeps upstream's exact argv shape.
+//     opencode.app-specific variable. The argv shape (`['-e', script]`) is
+//     upstream's exactly; the SCRIPT TEXT is NOT byte-identical for a multiline
+//     body — the port escapes newlines into AppleScript concatenation where
+//     upstream emits a raw LF (PR #9 review F1). See the function's doc comment.
 //   * **command resolution** — upstream resolves each binary to an absolute path
 //     with a cached `createCommandFinder` over `bunWhich`
 //     (`session-notification-utils.ts:25-50`) because its `ctx.$` shell template
@@ -438,15 +448,45 @@ export function buildNotifySendArgs(title: string, body: string): readonly strin
 }
 
 /**
- * Upstream `escapeAppleScriptText`, VERBATIM (`session-notification-formatting.ts:1-3`):
+ * Upstream `escapeAppleScriptText` (`session-notification-formatting.ts:1-3`):
  *
  *   return input.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
  *
- * Backslash first, then the quote — the order is load-bearing (escaping quotes
- * first would then re-escape their own backslashes).
+ * DELIBERATE DIVERGENCE from upstream verbatim (PR #9 review F1). Upstream
+ * escapes backslash and double-quote only, and AppleScript has NO backslash-n
+ * escape — so a raw line feed inside the string literal built by
+ * {@link buildAppleScript} is an osascript COMPILE ERROR: the whole
+ * notification is swallowed into one `session-notification FAILED:` log line.
+ * Upstream is not newline-free either — its own `buildReadyNotificationContent`
+ * joins a head line and a todo-count line with LF — so the latent osascript bug
+ * is upstream's; the port inherited it verbatim AND widened the exposure,
+ * because this file's {@link buildNotificationContent} emits a two-line body
+ * for a NON-EMPTY incomplete count on EVERY kind, including `error`, which
+ * bypasses the pending-work gate ({@link shouldSkipForPendingWork} gates `idle`
+ * only). On macOS that is the most common error-notification shape.
+ *
+ * The third replacement turns CRLF / CR / LF into AppleScript's concatenation
+ * form `" & return & "` — close the string literal, concatenate the `return`
+ * constant, reopen the literal. Replacement ORDER is load-bearing:
+ *   1. backslash first (escaping quotes first would then re-escape their own
+ *      backslashes);
+ *   2. quote second;
+ *   3. NEWLINE LAST — its replacement INTRODUCES `"` characters on purpose, and
+ *      running the quote escape after it would turn those structural quotes
+ *      into `\"` and corrupt the script.
+ * CRLF is matched as ONE unit so a DOS line ending concatenates ONE `return`,
+ * not two.
+ *
+ * Injection note: `baseTitle` / `baseMessage` / `errorMessage` are module
+ * constants today (see the header's content reduction), so today's input is
+ * author-controlled; this function is the single choke point that must stay
+ * correct if any of them ever becomes configurable.
  */
 export function escapeAppleScriptText(input: string): string {
-  return input.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return input
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r\n|\r|\n/g, '" & return & "')
 }
 
 /**

@@ -16,7 +16,11 @@
 //     the executing guard, and the post-await version re-check;
 //   * the command strings are upstream argv, byte for byte
 //     (`session-notification-linux.ts:13-18`, `session-notification-macos.ts:66-73`,
-//     `session-notification-formatting.ts:1-3`);
+//     `session-notification-formatting.ts:1-3`). ONE deliberate divergence from
+//     the upstream TEXT (PR #9 review F1): `escapeAppleScriptText` also escapes
+//     newlines, because upstream's raw-LF body is an osascript COMPILE ERROR and
+//     this port emits multiline bodies far more often. The group below pins both
+//     the two upstream replacements and the added arm;
 //   * the two H-05 predicates are upstream `session-todo-status.ts`, and the
 //     contrast test at the end of that group pins the fact that upstream uses TWO
 //     DIFFERENT incomplete predicates in two files (2-status here vs the E-mode
@@ -706,12 +710,26 @@ describe('P3-T12 session-notification — platform backends and command construc
     expect(buildNotifySendArgs('Title', 'Body')).toEqual(['Title', 'Body'])
   })
 
-  it('③ AppleScript escaping is upstream session-notification-formatting.ts:1-3, verbatim', () => {
+  it('③ AppleScript escaping keeps upstream session-notification-formatting.ts:1-3 plus the F1 newline arm', () => {
     expect(escapeAppleScriptText('plain')).toBe('plain')
     expect(escapeAppleScriptText('back\\slash')).toBe('back\\\\slash')
     expect(escapeAppleScriptText('say "hi"')).toBe('say \\"hi\\"')
     // Backslashes first: the quote escape must not be re-escaped.
     expect(escapeAppleScriptText('a\\"b')).toBe('a\\\\\\"b')
+    // F1: LINE TERMINATORS become AppleScript's concatenation form. AppleScript
+    // has no backslash-n, so this is the only correct spelling — a raw LF inside
+    // the literal is an osascript compile error.
+    expect(escapeAppleScriptText('a\nb')).toBe('a" & return & "b')
+    // CRLF is ONE line terminator: a naive /\r|\n/ split would concatenate two
+    // `return`s for a DOS line ending.
+    expect(escapeAppleScriptText('a\r\nb')).toBe('a" & return & "b')
+    expect(escapeAppleScriptText('a\rb')).toBe('a" & return & "b')
+    // The introduced quotes are STRUCTURAL and must survive unescaped — proving
+    // the newline arm really runs last.
+    expect(escapeAppleScriptText('a"b\nc')).toBe('a\\"b" & return & "c')
+    // ... and the backslash arm really ran first: the backslash is doubled
+    // BEFORE the newline arm adds its own quotes.
+    expect(escapeAppleScriptText('a\\\nb')).toBe('a\\\\" & return & "b')
   })
 
   it('④ the macOS script and argv are upstream session-notification-macos.ts:66-73, verbatim', () => {
@@ -777,6 +795,104 @@ describe('P3-T12 session-notification — platform backends and command construc
       'log:[omo-hooks] session-notification: idle oh-my-opendsh',
       'notify:oh-my-opendsh',
     ])
+  })
+})
+
+// PR #9 review F1 — the multiline AppleScript regression. The pre-fix code
+// escaped backslash and double-quote only, so the LF of a two-line body landed
+// RAW inside the `display notification "…"` literal, which osascript refuses to
+// COMPILE (AppleScript has no backslash-n). The listener swallows that into one
+// `FAILED:` line, so the user simply never hears about the error — and the error
+// shape below is the COMMON case, because `buildNotificationContent` appends the
+// incomplete-todo count to the body for every kind and `error` bypasses the
+// pending-work gate (`shouldSkipForPendingWork` gates `idle` only).
+describe('P3-T12 session-notification — F1 multiline AppleScript (PR #9 review)', () => {
+  /**
+   * The ` & return & ` concatenation marker the newline arm emits. Split on it
+   * and every piece must be a self-contained operand of the concatenation: no
+   * raw line terminator (that is the compile error) and paired structural
+   * quotes (an odd count means a literal was left open). Pre-fix this yields ONE
+   * operand containing the raw LF, so both assertions below are red.
+   */
+  function concatenationOperands(script: string): readonly string[] {
+    return script.split(' & return & ')
+  }
+
+  /** Count the UNESCAPED double quotes in one operand, left to right. */
+  function structuralQuotes(operand: string): number {
+    let count = 0
+    for (let i = 0; i < operand.length; i += 1) {
+      if (operand[i] === '\\') {
+        i += 1
+        continue
+      }
+      if (operand[i] === '"') count += 1
+    }
+    return count
+  }
+
+  it('① the real error body (kind=error, incompleteCount=3) is a compilable two-operand script', () => {
+    const content = buildNotificationContent({
+      kind: 'error',
+      baseTitle: 'oh-my-opendsh',
+      baseMessage: 'Ready for input',
+      errorMessage: 'Turn failed',
+      incompleteCount: 3,
+    })
+    // The multiline body this test is about really is what the listener emits.
+    expect(content.body).toBe('Turn failed\n3 todos still incomplete')
+    expect(content.title).toBe('oh-my-opendsh')
+
+    const args = buildOsascriptArgs(content.title, content.body)
+    expect(args[0]).toBe('-e')
+    expect(args[1]).toBe(
+      'display notification "Turn failed" & return & "3 todos still incomplete"'
+      + ' with title "oh-my-opendsh"',
+    )
+    // The concatenation marker IS present ...
+    expect(args[1]).toContain('" & return & "')
+    // ... and no raw line terminator survives inside the script.
+    expect(args[1]).not.toMatch(/[\r\n]/)
+    expect(buildAppleScript(content.title, content.body)).toBe(args[1])
+  })
+
+  it('② CRLF and a lone CR are also lifted out of the literal, one return each', () => {
+    // CRLF as ONE terminator: /[\r\n]/ would emit two adjacent returns here.
+    expect(buildOsascriptArgs('T', 'a\r\nb')[1]).toBe(
+      'display notification "a" & return & "b" with title "T"',
+    )
+    expect(buildOsascriptArgs('T', 'a\rb')[1]).toBe(
+      'display notification "a" & return & "b" with title "T"',
+    )
+    // Two DOS line terminators ⇒ two concatenations, still no raw CR/LF.
+    expect(buildOsascriptArgs('T', 'a\r\n\r\nb')[1]).toBe(
+      'display notification "a" & return & "" & return & "b" with title "T"',
+    )
+  })
+
+  it('③ a multiline TITLE takes the same path', () => {
+    const script = buildOsascriptArgs('Ti\ntle', 'Body')[1]!
+    expect(script).toBe('display notification "Body" with title "Ti" & return & "tle"')
+    expect(script).not.toMatch(/[\r\n]/)
+  })
+
+  it('④ structural guard: every concatenation operand is quote-balanced and LF-free', () => {
+    const script = buildOsascriptArgs(
+      'oh-my-opendsh',
+      'Turn failed\n3 todos still incomplete',
+    )[1]!
+    const operands = concatenationOperands(script)
+    // Red pre-fix: without the newline arm there is nothing to split on.
+    expect(operands.length).toBeGreaterThan(1)
+    for (const operand of operands) {
+      // Red pre-fix: operand 0 carries the raw LF inside its literal.
+      expect(operand).not.toMatch(/[\r\n]/)
+      expect(structuralQuotes(operand) % 2).toBe(0)
+    }
+    // The escaped-quote inputs exercise the same guard with the other arms.
+    const mixed = buildOsascriptArgs('T"it', 'a\\"b\nc')[1]!
+    expect(mixed).not.toMatch(/[\r\n]/)
+    expect(structuralQuotes(concatenationOperands(mixed)[0]!)).toBe(2)
   })
 })
 
