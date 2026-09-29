@@ -135,6 +135,7 @@ rather than in code.
   (Chinese), source archive [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/),
   and the quick install guide [`docs/install-concerto.md`](./docs/install-concerto.md)
 - ✅ Version management & release process landed (decision D13: three-party compat matrix + `scripts/release.sh` six-step release + weekly upstream sentinel; the "release notifications" and "upgrade cadence" open dimensions are closed) — see [`docs/release-process.md`](./docs/release-process.md)
+- ✅ **Phase 3 hook listener port landed** (2026-09-21, branch `feature/phase3-dev`) — the `omo-hooks` plugin ports OMO's behaviour-guardrail hooks onto DSH events: 14 modules ported (file/read advisory, todo continuation, session/background notifications, error recoveries, output truncation, README injection, usage reminders, webfetch/prometheus guards, ulw-execute work activation) with mock-LLM e2e per module; 47 further modules carry documented skip/defer verdicts (DSH-native coverage incl. `fs-observation-policy` + `dsh-goal` + `dsh-compaction`, Phase 4/5/6/7 ownership). The per-module authority is the coverage baseline [`docs/plans/phase3-dev/`](./docs/plans/phase3-dev/). ⚠️ **A guardrail layer is not the command face** (R-7): hook layer complete **≠** the `/ulw-*` commands (Phase 4) **≠** Team Mode (Phase 5)
 - ⏳ 2 open dimensions pending decision (npm package naming, telemetry; see "Open dimensions" in the decision record — the OMO core-package intake strategy was closed as D14)
 - ⏳ Workload rough estimate: ~16 weeks (one person lead)
 

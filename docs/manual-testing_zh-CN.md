@@ -28,7 +28,8 @@
    dsh --version
    ```
 
-   严格按 pin 版本安装，与 CI 一致：`npm i -g @deepseek-ai/dsh@0.1.5-rc.1`。
+   严格按 pin 版本安装，与 CI 一致：`npm i -g @deepseek-ai/dsh@0.1.5-rc.1 --before=2026-09-10T09:05:02.041Z`
+   （`--before` 不是装饰，是承重的——见下方「注意」）。
 
 3. 仓库依赖已安装（`node_modules` 存在）。
 4. 一个同时覆盖两条路由的 DeepSeek API key，以下任一方式提供：
@@ -39,7 +40,7 @@
 
    或已存于 `~/.dsh/.credentials.yaml`（本机已存在——smoke-real 以只读方式读取并注入其沙箱）。
 
-> **注意：** 严格安装 pin 版本（`@0.1.5-rc.1`），切勿替换成其他 rc。rc 时代的教训（P-11.5）：裸跑 `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` 曾拉来 rc.8 依赖并搞坏整个栈——恢复方法见 P-11.5 的 validated-tree 配方。
+> **注意：** 严格安装 pin 版本（`@0.1.5-rc.1`），切勿替换成其他 rc。rc 时代的教训（P-11.5）：裸跑 `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` 曾拉来 rc.8 依赖并搞坏整个栈——恢复方法见 P-11.5 的 validated-tree 配方。同一颗地雷在 2026-09 再次引爆（PR #9）：全新安装 `@0.1.5-rc.1` 会解析到 0.1.7-rc.* 的传递依赖，其中 `@deepseek-ai/dsh-sandbox-local`（以及 `-fs-sandbox` / `-sandbox-windows-acl`）不再被提升到插件树加载器解析裸包名的位置，导致组合出的插件树加载失败、所有 e2e 场景都在就绪前挂掉。顶层精确 pin **不**冻结传递依赖；`--before=2026-09-10T09:05:02.041Z` 才冻结。该截止日是**安全点，不是发布时刻**（PR #9 第二轮）：npm 对 `--before` 是**逐包**比较，而 monorepo 家族并非原子发布，所以它必须严格落在「所 pin 家族的发布时刻最大值」与「下一家族发布时刻最小值」之间——上面的 rc.1 取值正是两者的中点，并已用真实的 lockfile-only 解析复验（231/231 个 `@deepseek-ai/dsh*` 条目均为 rc.1，零嵌套路径）。在 `DSH_VERSION` 本身翻转之前请保留它；翻转时请让 [`scripts/bump-dsh.sh`](./release-process_zh-CN.md) 计算并验证新的截止日，而不是手改。
 
 ## L0 — 零成本自动化冒烟
 
@@ -49,7 +50,7 @@
 scripts/ci-local.sh
 ```
 
-预期输出：`PASS — all 8 gates green`（typecheck、104 个单元测试、mock-LLM e2e 4 个场景、doctor-lite、许可证、concerto static、docs consistency、session-free proofs）。
+预期输出：`PASS — all 8 gates green`（typecheck、976 个单元测试（omo-hooks 套件 543 个）、mock-LLM e2e 22 个场景、doctor-lite、许可证、concerto static、docs consistency、session-free proofs；proofs 阶段现已包含 `scripts/bump-dsh.sh --self-test`）。
 
 ```bash
 scripts/cold-start.sh

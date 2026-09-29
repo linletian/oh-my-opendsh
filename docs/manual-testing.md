@@ -28,7 +28,8 @@ A 5th run mode, 协奏模式 / **Concerto Mode** (preset id `concerto`, trust us
    dsh --version
    ```
 
-   Install exactly the pinned version, the way CI does: `npm i -g @deepseek-ai/dsh@0.1.5-rc.1`.
+   Install exactly the pinned version, the way CI does: `npm i -g @deepseek-ai/dsh@0.1.5-rc.1 --before=2026-09-10T09:05:02.041Z`
+   (the `--before` cutoff is load-bearing, not decoration — see the CAUTION below).
 
 3. Repo deps installed (`node_modules` present).
 4. ONE DeepSeek API key covering BOTH routes, available either as:
@@ -39,7 +40,7 @@ A 5th run mode, 协奏模式 / **Concerto Mode** (preset id `concerto`, trust us
 
    or already stored in `~/.dsh/.credentials.yaml` (present on this machine — smoke-real reads it READ-ONLY and injects it into its sandbox).
 
-> **CAUTION:** install the pinned version exactly (`@0.1.5-rc.1`); never substitute another rc. rc-era lesson (P-11.5): a naive `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` pulled rc.8 deps and broke the stack — see P-11.5 for the validated-tree restore recipe.
+> **CAUTION:** install the pinned version exactly (`@0.1.5-rc.1`); never substitute another rc. rc-era lesson (P-11.5): a naive `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` pulled rc.8 deps and broke the stack — see P-11.5 for the validated-tree restore recipe. The same landmine fired again in 2026-09 (PR #9): a fresh `@0.1.5-rc.1` install resolved 0.1.7-rc.* transitives in which `@deepseek-ai/dsh-sandbox-local` (and `-fs-sandbox` / `-sandbox-windows-acl`) is no longer hoisted where the plugin-tree loader resolves bare specifiers, so the composed tree failed to load and every e2e scenario died before readiness. The exact version pin does **not** freeze the transitives; `--before=2026-09-10T09:05:02.041Z` does. That cutoff is a **safe point, not a publish instant** (PR #9 round 2): npm applies `--before` per package and the monorepo does not publish its family atomically, so it must sit strictly between the pinned family's max publish instant and the next family's min publish instant — the rc.1 value above is the midpoint and was verified by a real lockfile-only resolution (231/231 `@deepseek-ai/dsh*` entries at rc.1, zero nested paths). Keep it until `DSH_VERSION` itself moves — and when it does, let [`scripts/bump-dsh.sh`](./release-process.md) compute and verify the new one rather than hand-editing it.
 
 ## L0 — Zero-cost automated smoke
 
@@ -49,7 +50,7 @@ No key needed. Re-run any time. These touch neither the real `~/.dsh` nor real k
 scripts/ci-local.sh
 ```
 
-Expected: `PASS — all 8 gates green` (typecheck, 104 unit tests, mock-LLM e2e 4 scenarios, doctor-lite, licenses, concerto static, docs consistency, session-free proofs).
+Expected: `PASS — all 8 gates green` (typecheck, 976 unit tests — 543 of them in the omo-hooks suite, mock-LLM e2e 22 scenarios, doctor-lite, licenses, concerto static, docs consistency, session-free proofs; the proofs stage now includes `scripts/bump-dsh.sh --self-test`).
 
 ```bash
 scripts/cold-start.sh

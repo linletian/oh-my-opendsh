@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Phase 3 (2026-09-21) — hook listener port (no version bump in this change; the next release heading is assigned at release time)
+
+- feat(omo-hooks): new host-only plugin `patches/omo-dsh/omo-hooks/` (`@oh-my-opendsh/omo-hooks`)
+  — OMO's behaviour-guardrail hooks ported onto DSH events as listeners, with `src/manifest.ts`
+  as the single source of truth (14 ported entries, per-file upstream provenance, mode A–F) and
+  boot markers (`[omo-hooks] loaded` summary + per-hook `registered` lines)
+- feat(hooks): 14 semantic ports, each with unit tests + a mock-LLM e2e scenario:
+  `bash-file-read-guard` (advisory via post-execute `additionalContexts`),
+  `todo-continuation-enforcer` (turn-stopping `agent.steer()` continuation with a
+  progress-resetting circuit breaker, cap 5), `empty-task-response-detector`,
+  `session-notification` (scheduler + Linux `notify-send` CI-verifiable backend + macOS
+  `osascript` L4-only; Windows out per D9), `background-notification` (deferred `ctx.jobs`
+  acquisition via `ctx.inject`), `edit-error-recovery`, `json-error-recovery`,
+  `tool-output-truncator` (adaptive budget computed from the token-meter wire view formula),
+  `directory-readme-injector`, `agent-usage-reminder`, `task-resume-info`,
+  `webfetch-redirect-guard` (B-mode `{kind:'deny', reason}` exemplar), `prometheus-md-only`,
+  `ulw-execute` (start-work hook semantics; the `/ulw-execute` command face stays Phase 4)
+- docs(hooks): 47 further hook modules carry documented skip/defer verdicts (DSH-native coverage
+  incl. `dsh-fs-observation-policy` / `dsh-goal` / `dsh-compaction` / `dsh-agent-instructions`;
+  Phase 4/5/6/7 ownership) — the coverage authority is `docs/plans/phase3-dev/phase3-hooks.md`
+- test(gates): static gate c11–c14 (census 19→23), probe asserts all 14 registered markers, two
+  new guardrail proofs (deny path + listener-throw fail-closed modes); attribution section in
+  `THIRD_PARTY_NOTICES.md` (Phase 3 hook semantic ports, per-file)
+
 ### Phase 2 (2026-09-14) — 11-agent roster (no version bump in this change; the next release heading is assigned at release time)
 
 - feat(roster): `src/roster.ts` — the 11-agent single source of truth (conductor `sisyphus` +

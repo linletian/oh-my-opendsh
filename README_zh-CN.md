@@ -124,6 +124,7 @@ env 对逐 agent 覆盖，因此模型链留在配置里，而不在代码里。
   [`patches/omo-dsh/omo-agents-current/`](./patches/omo-dsh/omo-agents-current/)；
   快速安装见 [`docs/install-concerto_zh-CN.md`](./docs/install-concerto_zh-CN.md)
 - ✅ 版本管理与发布流程已落地（决策 D13：三方兼容矩阵 + `scripts/release.sh` 六步发行 + 每周上游探测哨兵；「release 通知」「升级节奏」两个开放维度就此关闭）——见 [`docs/release-process_zh-CN.md`](./docs/release-process_zh-CN.md)
+- ✅ **Phase 3 hook listener 移植已落地**（2026-09-21，分支 `feature/phase3-dev`）——`omo-hooks` 插件把 OMO 的行为护栏 hook 移植到 DSH 事件：14 个模块已移植（文件读取劝导、todo 续行、会话/后台通知、错误恢复、输出截断、README 注入、使用提醒、webfetch/prometheus 门、ulw-execute 工作激活），每模块带 mock-LLM e2e；另有 47 个模块带成文的跳过/deferred 判定（含 DSH 原生覆盖——`fs-observation-policy`/`dsh-goal`/`dsh-compaction`——与 Phase 4/5/6/7 归属）。逐模块权威 = 覆盖基线 [`docs/plans/phase3-dev/`](./docs/plans/phase3-dev/)。⚠️ **护栏层 ≠ 命令面**（R-7）：hook 层完整 **≠** `/ulw-*` 命令（Phase 4）**≠** Team Mode（Phase 5）
 - ⏳ 2 个开放维度待决策（npm 命名、telemetry；详见决策记录"开放维度"——OMO core 包引进策略已由 D14 关闭）
 - ⏳ 工作量粗估：~16 周（一人主力）
 

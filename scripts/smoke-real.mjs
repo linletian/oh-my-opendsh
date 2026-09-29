@@ -159,8 +159,17 @@ const { DELEGATION_TOOL_NAMES, ROSTER } = await import(
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents')
+// P3-T3: the root cordis.yml inserts one row per package (omo-agents +
+// omo-hooks), and a boot whose overlay names a package the profile does not
+// carry fails with `plugin tree failed to load … ERR_MODULE_NOT_FOUND` — so
+// BOTH are installed before this smoke boots `--patch ./cordis.yml`.
+const HOOKS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks')
+const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR]
 const PROFILE = 'web'
 const CONCERTO_PRESET_ID = 'concerto'
+
+/** Both mounted plugins' boot markers (see PLUGIN_DIRS above). */
+const LOADED_MARKERS = ['[omo-agents] loaded', '[omo-hooks] loaded']
 
 const INSTALL_TIMEOUT_MS = Number(process.env.DSH_SMOKE_INSTALL_TIMEOUT_MS ?? 300_000)
 const BOOT_TIMEOUT_MS = Number(process.env.DSH_SMOKE_BOOT_TIMEOUT_MS ?? 90_000)
@@ -515,16 +524,23 @@ function seedSandbox(sandbox, routes, agentId) {
 }
 
 function installPlugin(sandbox, childEnv) {
-  const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', PLUGIN_DIR], {
-    cwd: REPO_ROOT,
-    env: childEnv,
-    encoding: 'utf8',
-    timeout: INSTALL_TIMEOUT_MS,
-  })
-  writeFileSync(join(sandbox.root, 'plugin-add.log'), `${add.stdout ?? ''}\n${add.stderr ?? ''}`)
-  if (add.status !== 0) {
-    throw new Error(`dsh plugin add exited ${add.status} (see plugin-add.log in the sandbox)`)
+  // One `plugin add` per cordis.yml insert row (P3-T3): the overlay names both
+  // packages, and a missing one aborts the whole boot.
+  let addLog = ''
+  for (const pluginDir of PLUGIN_DIRS) {
+    const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', pluginDir], {
+      cwd: REPO_ROOT,
+      env: childEnv,
+      encoding: 'utf8',
+      timeout: INSTALL_TIMEOUT_MS,
+    })
+    addLog += `$ dsh plugin --profile ${PROFILE} add ${pluginDir}\n${add.stdout ?? ''}\n${add.stderr ?? ''}\n`
+    if (add.status !== 0) {
+      writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
+      throw new Error(`dsh plugin add ${pluginDir} exited ${add.status} (see plugin-add.log in the sandbox)`)
+    }
   }
+  writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
 }
 
 /**
@@ -1039,7 +1055,7 @@ export function analyzeRealRun(
   const checks = {
     // Wiring observations (preflight — if these fail, the AC checks below are
     // read against a boot that never stood a chance).
-    pluginLoaded: bootLog.includes('[omo-agents] loaded'),
+    pluginLoaded: LOADED_MARKERS.every((marker) => bootLog.includes(marker)),
     sisyphusProviderActive: new RegExp(
       `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
     ).test(providersJson),
@@ -1188,7 +1204,7 @@ export function renderTranscript({ analysis, log, childLog, routes, meta }) {
     '',
     '## Wiring observations (auto-checked)',
     '',
-    `- ${checkMark(checks.pluginLoaded)} omo-agents plugin loaded in the booted dsh`,
+    `- ${checkMark(checks.pluginLoaded)} both mounted plugins loaded in the booted dsh (omo-agents + omo-hooks)`,
     `- ${checkMark(checks.sisyphusProviderActive)} sisyphus provider active in /api/llm.providers (llm-deepseek)`,
     `- ${checkMark(checks[`${agentId}ProviderActive`])} ${agentId} provider active in /api/llm.providers (${piAi ? 'llm-pi-ai settings profile' : 'llm-deepseek'})`,
     `- ${checkMark(checks.parentSessionLogFound)} parent session log found on disk`,
@@ -1549,7 +1565,7 @@ function selfInput(routes, agentId = DEFAULT_AGENT_ID, question = DEFAULT_QUESTI
     log: selfParentLog(routes, agentId, question),
     childLog: selfChildLog(routes, agentId, child),
     providersJson: selfProvidersJson(routes, agentId),
-    bootLog: '[omo-agents] loaded',
+    bootLog: LOADED_MARKERS.join('\n'),
   }
 }
 

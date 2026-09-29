@@ -125,6 +125,46 @@ own attribution headers are unchanged.
 pre-existing OMO-derived files backfilled = **3**; OMO-derived markdown files inventoried in
 total = **13**. No existing entry above this section was modified (additions only).
 
+### Phase 3 hook semantic ports
+
+The omo-hooks plugin's listeners are **not vendored code and not a copy**: each one is an
+independent DSH event-listener rewrite of OMO hook *semantics* — **semantic port only**, no
+TypeScript code copied (the upstream hook bodies depend on `@opencode-ai/sdk`'s `Hooks`
+interface and are not vendorable; see plan §2/§4.6). Same discipline as Phase 2 (D15's
+per-file disclosure extended to derived content). Every upstream path below is pinned to OMO
+tag `v4.19.4` (commit `b072d279110bdda2c6ac2525d0d24dc54d16148a`, under
+`packages/omo-opencode/src/hooks/`); each derived file carries its own attribution header
+naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/manifest.ts`
+(per-file machine-readable lists), not this table, are the per-file authority.
+
+#### Phase 3 additions (14 ported hook listeners)
+
+| Hook (manifest id) | Derived file(s) under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
+|---|---|---|---|
+| bash-file-read-guard | src/hooks/bash-file-read-guard.ts | bash-file-read-guard.ts | semantic port only |
+| todo-continuation-enforcer | src/hooks/todo-continuation-enforcer.ts | todo-continuation-enforcer/abort-detection.ts, compaction-guard.ts, constants.ts, continuation-injection.ts, countdown.ts, handler.ts, idle-event.ts, index.ts, message-directory.ts, non-idle-events.ts, pending-question-detection.ts, resolve-message-info.ts, session-state.ts, stagnation-detection.ts, todo.ts, token-limit-detection.ts, types.ts（+ 16 上游测试文件作移植种子） | semantic port only（toast/countdown/abort-detection/磁盘 marker 等平台语义未移植，逐条注记于文件头） |
+| empty-task-response-detector | src/hooks/empty-task-response-detector.ts | empty-task-response-detector.ts | semantic port only |
+| session-notification | src/hooks/session-notification.ts | session-notification-content.ts, -event-properties.ts, -formatting.ts, -init.ts, -linux.ts, -log.ts, -macos.ts, -platform.ts, -runner.ts, -scheduler.ts, -send.ts, -sender.ts, -sound.ts, -utils.ts, -windows.ts, session-notification.ts（+ 5 上游测试文件作移植种子；session-todo-status.ts 的两谓词语义并入本文件） | semantic port only（Windows 后端不移植 D9；声音后端与外部插件检测未移植，注记于文件头） |
+| background-notification | src/hooks/background-notification.ts | background-notification/hook.ts, index.ts, types.ts（+ 1 上游测试文件作移植种子） | semantic port only |
+| edit-error-recovery | src/hooks/edit-error-recovery.ts | edit-error-recovery/hook.ts, index.ts（+ 1 上游测试文件作移植种子；错误串表按 DSH 实际文案重建，差异注记于文件头） | semantic port only |
+| json-error-recovery | src/hooks/json-error-recovery.ts | json-error-recovery/hook.ts, index.ts（+ 1 上游测试文件作移植种子） | semantic port only |
+| tool-output-truncator | src/hooks/tool-output-truncator.ts | tool-output-truncator.ts（+ 1 上游测试文件作移植种子）；另吸收 `packages/omo-opencode/src/shared/` 的 dynamic-truncator 族支撑语义（dynamic-truncator.ts, dynamic-truncator-types.ts, token-limit-truncator.ts, context-window-usage.ts, context-limit-resolver.ts, logger.ts, normalize-sdk-response.ts, plugin-identity.ts——import 闭包 8 实现文件，语义吸收非逐字） | semantic port only |
+| directory-readme-injector | src/hooks/directory-readme-injector.ts | directory-readme-injector/constants.ts, finder.ts, hook.ts, index.ts, injector.ts, storage.ts（+ 2 上游测试文件作移植种子） | semantic port only（磁盘持久化未移植，注记于文件头） |
+| agent-usage-reminder | src/hooks/agent-usage-reminder.ts | agent-usage-reminder/constants.ts, hook.ts, index.ts, storage.ts, types.ts（+ 2 上游测试文件作移植种子） | semantic port only |
+| task-resume-info | src/hooks/task-resume-info.ts | task-resume-info/hook.ts, index.ts（+ 1 上游测试文件作移植种子） | semantic port only |
+| webfetch-redirect-guard | src/hooks/webfetch-redirect-guard.ts | webfetch-redirect-guard/constants.ts, hook.ts, index.ts, redirect-resolution.ts（+ 1 上游测试文件作移植种子） | semantic port only |
+| prometheus-md-only | src/hooks/prometheus-md-only.ts | prometheus-md-only/agent-matcher.ts, agent-resolution.ts, constants.ts, hook.ts, index.ts, path-policy.ts（+ 1 上游测试文件作移植种子） | semantic port only |
+| ulw-execute（上游名 start-work，按 v5 命名锚点） | src/hooks/ulw-execute.ts + src/hooks/ulw-execute/（constants.ts, context-builder.ts, identity.ts, live-state.ts, parse-request.ts, plan-discovery.ts, worktree.ts） | start-work/context-info-builder.ts, context-info-formatters.ts, explicit-plan-context.ts, index.ts, notepad-scaffold.ts, parse-user-request.ts, plan-discovery-context.ts, plan-selection.ts, session-plan-affinity.ts, start-work-hook.ts, work-initializer.ts, worktree-block.ts, worktree-detector.ts（+ 7 上游测试文件作移植种子；命令面在 hooks/ 之外，属 Phase 4；boulder-state 依赖段跳过，逐条注记） | semantic port only |
+
+> Deliberately **not** listed as ported: the 47 hook modules with a terminal
+> skip/defer/excluded disposition (DSH-native coverage, no DSH seam, platform coupling,
+> later-phase ownership, upstream-dead) — the per-module reasons are the coverage
+> authority: `docs/plans/phase3-dev/phase3-hooks.md` §2.
+
+**Counts:** Phase 3 derived listener files listed = **14 hook ids / 21 derived files**
+(14 `src/hooks/*.ts` + 7 `src/hooks/ulw-execute/` 子模块). No existing entry above this
+section was modified (additions only).
+
 ## oh-my-pi
 
 - **Author:** can1357
@@ -149,3 +189,19 @@ which allows skills to be shared and used across multiple AI coding harnesses.
 
 deepseek-harness is the host framework for this project, providing the
 foundation upon which the oh-my-opendsh skills and hooks are layered.
+
+## undici
+
+- **Author:** Matteo Collina and Undici contributors
+- **License:** MIT (the installed package's own `LICENSE`; its manifest declares
+  `"license": "MIT"`)
+- **Homepage:** https://github.com/nodejs/undici
+
+undici is the HTTP transport the `webfetch-redirect-guard` hook uses to **pin** a
+probe's connection to the address set it just validated (PR #9 review round 2,
+N1) — the same primitive `dsh-web-fetch-http` builds its own pinned `Agent` from,
+which is why the mirror uses it rather than reimplementing a connector. It is the
+only third-party runtime dependency of the `@oh-my-opendsh/omo-hooks` package;
+`patches/omo-dsh/omo-hooks/package.json` declares `undici@^8.10.0` (the major the
+pinned dsh itself depends on), and `scripts/verify-licenses.sh` covers it like
+every other locked package.

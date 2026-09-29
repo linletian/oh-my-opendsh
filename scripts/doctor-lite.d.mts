@@ -38,7 +38,7 @@ export interface DoctorCheck {
   issues: string[]
 }
 
-/** Runs the four checks in order; `pass` is false iff any check FAILed. */
+/** Runs the five checks in order; `pass` is false iff any check FAILed. */
 export declare function runDoctor(cordisPath: string): Promise<{
   checks: DoctorCheck[]
   pass: boolean

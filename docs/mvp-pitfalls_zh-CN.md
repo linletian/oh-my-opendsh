@@ -356,3 +356,61 @@ harness 某个字段的心智模型。它只在阶段自己的**正向**嵌套�
 | **状态** | 🔧 **已更正 + 已验证**(2026-09-13,P2-T18;`--self-test` 11/11 落点、`roster-parade` 19/19 断言、本地 8/8 门绿)。 |
 | **可迁移的教训** | **当字符串注入的锚点是"形状"而非"身份"时,它必须断言自己的命中次数。** "取首个命中"不是一种查找策略,而是"没有策略":在 n=1 它与正确无法区分,在 n=10 它悄悄写进错的对象——产出一个断言了**错主体**的**绿色**测试,这比红色更糟(又是 P-21.3 与 P-22 的教训,这次发生在 harness 自己身上)。 |
 
+## 12. P-25 ~ P-30（2026-09-19 ~ 09-21，Phase 3 hook 移植——listener 生命周期与观测面的六处实测坑）
+
+> 全部由 Phase 3 的双评审/编码循环实测发现（证据见 docs/plans/phase3-dev/phase3-tasks.md 各任务证据栏）；修复均已在对应任务落地并含变异/反假绿实证。
+
+### P-25 —— cordis `ctx.effect(execute)` 收集的是 execute 的**返回值**，不是立即执行体
+
+| 项 | 内容 |
+|---|---|
+| **症状** | 把 registrar 返回的 disposer 以 `ctx.effect(() => { disposer() })` 转发：注册时**立即拆除** listener（execute 体同步执行、disposer 被当场调用），且返回 undefined → Fiber stop 时无 disposal——语义恰好反转。因注册表为空，运行时与全部 8 门绿均不可见（潜伏缺陷）。 |
+| **证据** | cordis/lib/index.js:1134-1142 `_execute`：`const effect = runner.execute.call(this); if (typeof effect === "function") return runner.collect(effect);`——execute 的**返回值**（函数/Promise/generator yield）才被 collect 为 disposal。评审 MAJOR（P3-T3）由 Kimi 发现、仲裁对源码核实成立。 |
+| **修复** | `ctx.effect(() => disposer)`（返回而不调用）；fake ctx 改建模真实 cordis（收集返回值 + 模拟 Fiber stop 口）；断言更正为「apply 后不调用、stop 后恰好一次」+ 变异验证（回退错误形态新用例如期 FAIL）。 |
+| **可迁移的教训** | **生命周期 API 的「注册/拆除」语义必须用运行时证据钉死**——注释自称的语义（"run this disposer with my fiber"的读法）与实际（collect 返回值）可以相反；潜伏在空注册表后面的缺陷只能靠变异验证与评审源码对照抓出。 |
+
+### P-26 —— 插件 apply 时 `ctx.get('jobs')` 可为 undefined（loader 并发批次）→ 服务获取用 `ctx.inject(names, cb)` 延迟订阅
+
+| 项 | 内容 |
+|---|---|
+| **症状** | `background-notification` 的 apply 里 `ctx.get('jobs')` 返回 undefined → `onJobDone` 订阅从未发生、pull 降级也看不到 owned job——**该 hook 运行时零产出**，单测全绿（fake 镜像了错误假设），只有 e2e 的诚实观测断言（observedDefect bonus）把它顶出来。 |
+| **证据** | e2e 插桩实测 `[omo-hooks] DIAG background-notification: jobsService=undefined`；对照 dsh-tool-jobs/lib/index.js:200/:206 的 `ctx.jobs` 直接消费（硬依赖形态）与 omo-agents T16 的 ctx.inject(['llm']) SETTLED 先例（P-23 同族：异步注册时序）。 |
+| **修复** | 改 `ctx.inject(['jobs'], cb)` 延迟获取（服务出现即触发、已在场立即）；jobs 缺席 loud-but-non-fatal + pull 降级继续；场景从「观测缺陷态」翻正向锚点断言（DEFERRED→SUBSCRIBED 顺序实测）。**禁止**整插件 `inject: ['jobs']` 硬等待（其余 hook 被连坐）。 |
+| **可迁移的教训** | **可选服务的 apply 时直读是竞态**：要么 `inject` 延迟订阅，要么接受 undefined 并设计降级——且必须有一条**运行时**断言证明订阅真实发生（单测 fake 会镜像你的假设）。 |
+
+### P-27 —— `sessionProjections.stateOf` 返回 host state；wire view 计算字段要按 wire.view 公式自算
+
+| 项 | 内容 |
+|---|---|
+| **症状** | tool-output-truncator 的自适应预算首选 `record.projectedTokens`，但 `stateOf` 返回 host state（无该字段）→ 首选分支**生产不可达**、恒退化 pressureTokens（系统性少估占用、截断不足）；头部注释/manifest/单测 fake 三处同误，现有门结构性不可见。 |
+| **证据** | dsh-session-projection/lib/index.js:127-131（stateOf 返回 cell.state = host state）；dsh-token-meter/lib/index.js:511-514（projectedTokens 是 wire.view 的计算产物 `Math.max(0, pressureTokens + surfaceTokens - sampledSurfaceTokens)`）。评审 MAJOR（P3-T14）由 Kimi 发现、仲裁逐字核实。 |
+| **修复** | 读取面按 wire.view 公式自算（字段缺席才退化）+ **公式等价性钉测**（钉测文本与 lib:511-514 一致，上游改公式即红）+ 三处同误修正 + 优先/退化两正向用例。 |
+| **可迁移的教训** | **「同名字段在两个投影形态里」是陷阱**：读面选择必须对照实现（host state vs wire view），且 fake 必须按**真实**面建模——否则单测证明的是你自己的误解。 |
+
+### P-28 —— 变异 QA 的谓词必须按身份（callId）外科手术定位；sentinel 文本会误命中同 fixture 的其他工具结果
+
+| 项 | 内容 |
+|---|---|
+| **症状** | fabricated defect 用 `eventText.includes(SENTINEL)` 定位待变异事件——sentinel 也出现在 read 工具的行号文本里，且替换体硬编码 toolCallId 覆盖了原 id → 变异后对照断言连带失败（实测 parts 1-0/err, 1-1/ok, 1-0/err：对照消失、id 重复）。self-test 仍绿因为只断言「具名 check 在 failed 列表里」。 |
+| **证据** | mcode P2（P3-T6）+ Kimi 复核证实机理；修复后实证变异恰仅具名 check 失败。 |
+| **修复** | 谓词按触发器 callId 定位、替换体保留原 toolCallId；外科手术性实证输出进证据。 |
+| **可迁移的教训** | **变异必须外科手术式**：变异体的目的是「恰好破坏一个被测性质」——连带破坏会让「哪个断言防什么」的归因失真，评审/排查时被反事实的 failed 列表误导。 |
+
+### P-29 —— 以换行开头的模板字面量 `split('\n')[0]` 是 `''`，`includes('')` 恒真 = 结构性假绿断言
+
+| 项 | 内容 |
+|---|---|
+| **症状** | prove 脚本的 D-half reminder 存在性断言用 `REMINDER.split('\n')[0]` 取首行——该常量以换行开头，首元为 ''，于是 `text.includes('')` 对任意结果恒真：D-half listener 被整体移除，证明依然绿灯。 |
+| **证据** | mcode P1（P3-T19）；修复轮反假绿实证三态（A 假绿 / B 停用变红 / C 恢复绿）。 |
+| **修复** | 断言改取首段**非空**行（程序化 `find(line => line.trim().length > 0)`，非手抄字面量防文案漂移）；同模式清扫两 prove 脚本。 |
+| **可迁移的教训** | **存在性断言的针不能是空串/恒真式**——每个断言都要过一次「把它要防的东西真的拔掉」的反跑，假绿比红色更糟（P-21.3/P-24 同族，这次在 prove 脚本里）。 |
+
+### P-30 —— waterfall listener 的 `next()` 必须在 try 之外（try 内调用 + catch 内再调 = 双重调用 + 吞下游错误）
+
+| 项 | 内容 |
+|---|---|
+| **症状** | ulw-execute 的 pre-step listener：四处 `return await delegate()` 在 try 内，catch 又调一次——下游 listener/内建行为抛错时，catch 捕获**下游**异常并**第二次**调用 next()（waterfall 双重调用），且下游错误被吞没替换。头部注释自述「next() 永远在 try 之外」与实现直接矛盾。 |
+| **证据** | Kimi MAJOR F-1（P3-T17）+ 仲裁逐字核实（:700/:707/:731/:747 在 try 内、:751 在 catch）；先例 directory-readme-injector.ts:529-546（try 只包自有逻辑）。 |
+| **修复** | 按先例重构（catch fail-open 调一次、正常路径 try 后调一次）+「next() 抛错」用例补**调用计数断言**（恰好一次）——盲区闭合经变异验证。 |
+| **可迁移的教训** | **fail-open 的 catch 只能兜「自有逻辑」的错**：把 delegate/next 放进 try 就等于把下游的错误也算进自己的失败域——注释自述的纪律必须有用例钉住（计数断言），否则自述与实现可以一起漂。 |
+
