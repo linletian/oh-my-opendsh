@@ -11,7 +11,7 @@
 > - **2026-09-30 计划期评审修复**（评审：`phase4-review-temp.md`，3 缺口 + 4 一致性问题全部核验成立）——① T1：测试文件计数更正（keyword-detector 6→**7**；A 组对账纳入 feature 根 `commands.test.ts`/`init-deep-migration.test.ts`）；B 组① 改 followup 时序钉测（同上下文先例 dsh-command-goal:98-105 已实证，throw settle 子项闭环）；② T7：对照组更正（未知命令 = 零事件零报错、落回普通 prompt——DSH admission miss 语义）；③ T8 新增 **manifest 同步网 + 条目 fork + c14 两文档并集演进**（首个 manifest 触碰任务同 commit 落地，R-11）；④ T12 同步网纪律与 c14 演进兜底；⑤ T16 增 c14 复验三变异；⑥ WP-4/WP-6 标题编号 H-41/H-40 → **H-34/H-33**（延续 Phase 3 H-01…H-32 序列，映射 S-37/S-06）；⑦ T6/T15 steer → followup 措辞。
 > - **2026-09-30 复评修复（第 2 轮）**：T8/T12 的同步网引用 R-10 → **R-11**（与 plan §6 风险行同步改号——Phase 3 的 marker 同步 R-10 在 WP-5/T10 处保持不变）。
 > - **实施期仲裁记录（第 1 号）**：PRE-2 条件翻转（npm `latest=5.1.5`，v5 正式版已发布）——经用户批准裁决**保持 v4.19.4 vendor 基线**（ROADMAP §2 规则 1 上位 + Phase 1–3 同源锚点 + R-10 逐字对齐依赖；v5 改进走 D14 规则 4 定向搬运）。另：实施期授权记录——编码 sub-agent 模型经用户批准使用 `opencode-go-free/space-bunny-free`（原指定 `studio2207/Qwen3.8-Flash-Next-oQ4e-mtp` 因会话白名单固化不可路由）。
-> - **P4-T1 实测回填**：① 覆盖基线 §5 三组闭环转 ✅（证据 `.omo/evidence/p4t1/`）；② keyword-detector 24→**25 文件**（三处同步：commands.md §1.1 C-08/§1.2 H-33、plan §3）；③ Q-1 闭环 followup 形态定案（§4.2 改写，降级 b 封存）；④ Q-3 手势桥实测 → C-03 零代码落地（T15 任务书改写：无命令事件对、断言 `<skill_content>` 注入）；⑤ Q-4 裁定候选 b′ 嵌入注册 + vendor path（T5 任务书改写，否决物化）；⑥ Q-5 定案（goal=pause / ralph 无 stop API 记差异 / jobs.kill 级联 / 延迟 ctx.get）；⑦ Q-6 收窄清单扩充（六级过滤 + 双幂等 + `.hpp` 负向后查，T12 任务书改写）；⑧ marker 定位修正（`<session-context>` 在 commands.ts:67-70 wrapper，plan §4.7）；⑨ 测试种子实测 111 its。
+> - **P4-T1 实测回填**：① 覆盖基线 §5 三组闭环转 ✅（证据 `.omo/evidence/p4t1/`）；② keyword-detector 24→25 文件（三处同步；**后经 T12 复跑再更正为 24 hook 文件 + 1 目录外配置文件**，见后续修订记录）；③ Q-1 闭环 followup 形态定案（§4.2 改写，降级 b 封存）；④ Q-3 手势桥实测 → C-03 零代码落地（T15 任务书改写：无命令事件对、断言 `<skill_content>` 注入）；⑤ Q-4 裁定候选 b′ 嵌入注册 + vendor path（T5 任务书改写，否决物化）；⑥ Q-5 定案（goal=pause / ralph 无 stop API 记差异 / jobs.kill 级联 / 延迟 ctx.get）；⑦ Q-6 收窄清单扩充（六级过滤 + 双幂等 + `.hpp` 负向后查，T12 任务书改写）；⑧ marker 定位修正（`<session-context>` 在 commands.ts:67-70 wrapper，plan §4.7）；⑨ 测试种子实测 111 its。
 >
 > **编号**：`P4-T<n>`（Phase 4 - Task n）。工作包归属见计划书 §7。
 
@@ -38,7 +38,7 @@
   3. **逐模块语义**（C 组）：7 命令模板逐字复核（占位符、agent 绑定、team addendum 边界）；keyword-detector 收窄清单（模型变体文案、disabled_keywords 默认值、幂等语义）；stop-continuation-guard 的 backgroundManager 依赖等价面；每模板引用的 OMO 载体（`session_read`/boulder/notepad/`mktemp`）的 DSH 等价面判定；上游测试文件（keyword-detector **7 个**、templates 2 个、feature 根 2 个）用例数登记为单测种子。
   4. **降级判定**：若 Q-1 钉测发现 `followup` 在命令路径有未预见的状态/时序限制，按计划书 §4.2 降级（b）（steer/inbox 写入）逐命令定形态并**显式记入计划书与踩坑**；`/refactor` 的 deferred 裁定按模板实际引用面终态化。
 - **判定**：✅ 覆盖基线 §5 A/B/C 三组全部闭环；移植组/跳过组从草案转实测（估算按此修正，计划书 §7 回填）；Q-1…Q-7 各有逐字引用的结论。
-- **证据**：`.omo/evidence/p4t1/A-tree-reconciliation.md` / `B-dsh-mechanisms.md` / `C-module-semantics.md`（三组调研员全程只读 `git show/ls-tree` 与 installed dsh lib 逐字引用）。实测更正：keyword-detector **25 文件**（计划期 24 少计 1）；Q-1 闭环 followup 形态定案无降级；Q-3 桥接 = 手势注入（dsh-tool-skill pre-step SKILL_GESTURE）→ C-03 零代码；Q-4 裁定候选 b′（嵌入注册 + vendor path，否决物化）；测试种子 111 its。覆盖基线 §5/§6、计划书 §4.2/§4.3/§4.5/§4.6/§4.7/§6 已按实测回填（DoD-d）。
+- **证据**：`.omo/evidence/p4t1/A-tree-reconciliation.md` / `B-dsh-mechanisms.md` / `C-module-semantics.md`（三组调研员全程只读 `git show/ls-tree` 与 installed dsh lib 逐字引用）。实测更正：keyword-detector **24 文件** + 1 目录外配置文件（T12 复跑终定）；Q-1 闭环 followup 形态定案无降级；Q-3 桥接 = 手势注入（dsh-tool-skill pre-step SKILL_GESTURE）→ C-03 零代码；Q-4 裁定候选 b′（嵌入注册 + vendor path，否决物化）；测试种子 111 its。覆盖基线 §5/§6、计划书 §4.2/§4.3/§4.5/§4.6/§4.7/§6 已按实测回填（DoD-d）。
 - **依赖**：PRE-1…PRE-5。**量级**：1 天（实耗：3 并行调研约 0.5 天）。
 
 ---
