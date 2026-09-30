@@ -11,7 +11,7 @@
 > **修订记录**：
 >
 > - **2026-09-30 计划期评审修复**（评审：`phase4-review-temp.md`，全部 3 缺口 + 4 一致性问题经逐条源码/实树核验**成立**）——① §4.1 新增 omo-hooks manifest 五处硬耦合同步网（`EXPECTED_HOOK_COUNT` apply-throw / manifest.test.ts 三处 / `EXPECTED_SUMMARY_LINE` / c13 文件集合 / **c14 基线须扩为两文档并集 + ported 过滤**，首个 manifest 触碰任务同 commit 落地）；② §4.2 命令驱动机制改引同上下文先例 `invocation.agent.followup`（dsh-command-goal:98-105），steer 降为 turn-stopping 上下文对照；R-1 高→低-中，Q-1 收窄（throw settle 子项闭环）；③ §4.8/T7 对照组更正（未知命令 = 零事件零报错、落回普通 prompt，dsh-commands lib:293-299 明文）；④ §3 skill-badge 更正（默认 `disabled: true`，非挂载先例）；⑤ 接盘项编号 H-33/H-34 显式声明（延续 Phase 3 H 序列，映射 S-06/S-37）；⑥ §6 新增 R-11（计数断言/基线路径耦合类风险——初号 R-10，复评发现与 Phase 3 marker 同步 R-10 撞号后改号）；⑦ 覆盖基线 §6 统计口径更正（命令 6 + 关键词模式 1）；⑧ tasks T1 测试文件计数更正（keyword-detector 7 个 + feature 根 2 个纳入对账）。
-> - **2026-09-30 复评修复（第 2 轮）**（评审 §6.3 两项新引入问题，核验成立）——A：新增风险 R-10 → **R-11**（本文 9 处 "R-10" 均指 Phase 3 的 marker 同步风险，本机编号 R-10 永缺以消除歧义；tasks T8/T12 同步改号）；B：§4.4 C-05/C-08 行与 §4.5/§4.6 标题 4 处 S-06/S-37 → 「H-33/H-34（原 Phase 3 S-06/S-37）」（§3/§9 的 S-06/S-37 为溯源标注，按评审 §6.4 保留）。
+> - **2026-09-30 复评修复（第 2 轮）**（评审 §6.3 两项新引入问题，核验成立）——A：新增风险 R-10 → **R-11**（本文 9 处 "R-10" 均指 Phase 3 的 marker 同步风险，本机编号 R-10 永缺以消除歧义；tasks T8/T12 同步改号）；B：§4.4 C-05/C-08 行与 §4.5/§4.6 标题 4 处 S-06/S-37 → 「H-33/H-34（原 Phase 3 S-06/S-37）」（§3/§9 的 S-06/S-37 为溯源标注，按评审 §6.4 保留）。**补**：§4.9 自指语境（清点 `phase4-commands.md` 自身行）同改 H-33/H-34 为主、溯源为辅——与 §3/§9 的纯溯源用法区分（用户指出，核验成立）。
 
 ---
 
@@ -158,7 +158,7 @@ Phase 3 的 H-32 移植了 start-work **hook 语义**（激活检测 = DSH 原�
 
 ### 4.9 覆盖清单文档（退出标准承载）
 
-[命令与 skill 清单与覆盖基线](./phase4-commands.md) 从计划期即建立，核心列：**命令/skill（v4.19.4 路径）· 处置（已移植/DSH 原生跳过/deferred/排除）· 理由与证据（e2e 场景名/跳过依据）**。命令面 8 行 + skill 面 19 条目（17 shared + 2 senpi）+ 相关 hook 接盘 2 行（S-06/S-37 终态），全部模块有终态才算闭环；manifest ↔ 清单一致性由门 2 钉死。
+[命令与 skill 清单与覆盖基线](./phase4-commands.md) 从计划期即建立，核心列：**命令/skill（v4.19.4 路径）· 处置（已移植/DSH 原生跳过/deferred/排除）· 理由与证据（e2e 场景名/跳过依据）**。命令面 8 行 + skill 面 19 条目（17 shared + 2 senpi）+ 相关 hook 接盘 2 行（**H-33/H-34** 终态，原 Phase 3 S-06/S-37），全部模块有终态才算闭环；manifest ↔ 清单一致性由门 2 钉死。
 
 ### 4.10 署名与合规
 
