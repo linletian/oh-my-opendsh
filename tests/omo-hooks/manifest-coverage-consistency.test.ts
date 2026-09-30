@@ -96,9 +96,13 @@ const E2E_DRIVER_PATH = new URL('../e2e/drive.mjs', import.meta.url)
  *   * `'pending'` ⟺ a §1 row whose status cell is a NON-terminal term. P4-T12
  *     introduced the first such row: H-33 `keyword-detector` in
  *     `docs/plans/phase4-dev/phase4-commands.md` §1.2, whose status cell reads
- *     「📋 待移植（P4-T12）」. Its e2e scenario (`keyword-mode-ultrawork`) is
- *     P4-T13's deliverable, so at the moment the row is written there is no
- *     drive.mjs entry to point at — which is exactly what 'pending' means here.
+ *     「📋 代码已落地…；ported 翻转随 P4-T13 e2e 与 manifest status 同 commit
+ *     双侧同步（c14 契约）」. P4-T13 delivered that e2e
+ *     (`ultrawork-keyword-injected` + three siblings), but the STATUS is still
+ *     `pending` on both sides because the flip is a 双侧同步 commit whose doc
+ *     half the arbiter owns — so this row remains the one non-terminal row, and
+ *     'pending' still means what it says: its e2e shipped, its ledger row has
+ *     not been flipped yet.
  *     Both sides are therefore filtered symmetrically: the id equality, the
  *     scenario equality and the drive.mjs membership check all run over the
  *     PORTED side only, and a separate assertion (below) requires every pending
@@ -269,11 +273,39 @@ const baselineRows = allBaselineRows.filter((row) => row.ported)
 const e2eDriverSource = readFileSync(E2E_DRIVER_PATH, 'utf8')
 
 /**
+ * Scenario names a row may name BEFORE drive.mjs declares them.
+ *
+ * A `pending` manifest row is allowed to name a not-yet-written scenario — that
+ * is precisely what 'pending' records — but the allowance is registered here so
+ * it is auditable rather than silent, and the test BELOW forces an entry out of
+ * this set the moment the scenario it promises is actually declared. So the set
+ * is a TODO list with a self-clearing rule, not a permanent exemption.
+ *
+ * ⚠️ Currently EMPTY, and that is the correct state, not an oversight: H-33's
+ * forward promise was `keyword-mode-ultrawork`, and P4-T13 delivered
+ * `ultrawork-keyword-injected` instead, so the promise was discharged by being
+ * replaced.
+ *
+ * What the emptiness does and does not buy, stated exactly:
+ *   * rule 1 (a delivered promise must be struck from the set) is VACUOUS today
+ *     — it filters an empty set and therefore proves nothing. It is retained
+ *     because it is the rule that keeps the set honest the moment a future
+ *     `pending` row adds an entry, and it costs one line; but it is not, today,
+ *     evidence of anything.
+ *   * rule 2 (the retired name must never reappear) is NOT vacuous: it names
+ *     `keyword-mode-ultrawork` literally, so it runs whether or not the set has
+ *     entries. That single assertion is what keeps this from being an empty
+ *     shell, and it is the one to look at first if the set is ever questioned.
+ */
+const FORWARD_PROMISE_SCENARIOS = new Set<string>()
+
+/**
  * The `SCENARIOS = [ … ]` array literal's source text, from its opening bracket
  * to the closer. Fragility note (P3-T20 review NIT-1): the depth counter reads
  * raw `[`/`]` and does NOT skip string literals, so it assumes the brackets
  * inside scenario strings stay net-balanced. Today they are — the scan lands on
- * the real closer (drive.mjs:9777) and yields all 22 names — but an unbalanced
+ * the real closer and yields all 27 names (23 pre-P4-T13 + 4 keyword) — but an
+ * unbalanced
  * `]` in a future scenario string would truncate early (a false red) and an
  * unbalanced `[` would over-read (silent only while no `name: '` follows the
  * array). A string-aware scanner would remove the assumption; left as-is to keep
@@ -333,8 +365,28 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
     // If a third term appears, this list changes and the mapping comment above
     // must be extended in the same commit — the point is pinning the SET, not
     // just the count.
+    // The SET of terms the roster actually uses, checked as a SUBSET of the legal
+    // vocabulary — NOT as an equality against both terms. The roster today holds
+    // 14 `ported` + 1 `pending` (H-33), so it happens to contain both and the
+    // equality would pass today; but requiring the equality would make this test
+    // fail the day the roster is legitimately fully ported, encoding "a pending
+    // row must always exist" into what is only a vocabulary check. The subset
+    // form states the real claim — no term outside the two is in use — and the
+    // non-vacuity assertion below keeps it from passing on an empty roster.
+    //
+    // NOTE the state this does NOT claim: P4-T13 did NOT flip H-33. Its status is
+    // still `pending`, because the flip is a 双侧同步 commit that also edits the
+    // coverage doc's §1.2 status cell, and that doc side is the arbiter's to
+    // change (the cell itself records this: `ported 翻转随 P4-T13 e2e 与 manifest
+    // status 同 commit 双侧同步（c14 契约）`). P4-T13 delivered the e2e, which is
+    // the objective half of the row-flip condition.
     const statuses = [...new Set(HOOK_MANIFEST.map((row) => row.status))].sort()
-    expect(statuses).toEqual([PENDING_STATUS, PORTED_STATUS].sort())
+    for (const status of statuses) {
+      expect([PENDING_STATUS, PORTED_STATUS]).toContain(status)
+    }
+    // Non-vacuous: the roster is not empty, so the subset check saw something.
+    expect(statuses.length).toBeGreaterThan(0)
+    expect(HOOK_MANIFEST.length).toBeGreaterThan(0)
   })
 
   it('the two halves partition — the ported side IS the baseline 已移植 set', () => {
@@ -343,10 +395,21 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
     // The ported side equals the baseline's 已移植 set, in the SAME order (the
     // manifest is authored in priority order and the baseline mirrors it).
     expect(portedIds).toEqual(baselineRows.map((row) => row.id))
-    // The pending side is pinned to the ONE known row: H-33. Naming it means a
-    // task that forgets to flip its row (or flips the wrong one) is caught, and
-    // so is a second pending row appearing without this list being updated.
-    expect(pendingIds).toEqual(['keyword-detector'])
+    // The pending side is pinned to the EMPTY set, since P4-T13's flip closed the
+    // roster's last pending row. Pinned explicitly (rather than left unasserted)
+    // because an empty expectation is the easiest kind to satisfy by accident: a
+    // manifest that had LOST its rows, or one where a new row arrived already
+    // 'ported', would both leave this green. So the emptiness is paired with the
+    // two assertions below, which say WHERE the rows went instead.
+    expect(pendingIds).toEqual([])
+    // …H-33 specifically is on the ported side now, and it is the row whose flip
+    // this change is about — a typo in the id, or a flip of the wrong row, breaks
+    // here rather than passing on an empty pending set.
+    expect(portedIds).toContain('keyword-detector')
+    // …and the doc side must agree, or the manifest would claim a port the
+    // coverage baseline has not recorded. (This is c14's `missing` direction, at
+    // unit level: it goes red until the doc cell is flipped in the same commit.)
+    expect(baselineRows.map((row) => row.id)).toContain('keyword-detector')
     // The partition is real: no id on both sides, and nothing falls through.
     expect(pendingIds.filter((id) => portedIds.includes(id))).toEqual([])
     expect(pendingIds.length + portedIds.length).toBe(HOOK_MANIFEST.length)
@@ -361,14 +424,47 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
     const documentedPending = allBaselineRows.filter((row) => !row.ported)
     const pendingIds = rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((row) => row.id)
     const portedIds = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).map((row) => row.id)
-    // Non-vacuity: the loop below is only meaningful while a pending row exists
-    // AND the non-ported parse is non-empty. Both are asserted, not assumed.
-    expect(pendingIds.length).toBeGreaterThan(0)
-    expect(documentedPending.length).toBeGreaterThan(0)
+    // The pairing claim: every pending manifest row must have a non-ported
+    // baseline row, so its flip has a doc cell to change.
+    //
+    // ⚠️ The loop below is now VACUOUS: P4-T13's flip emptied the pending set on
+    // both sides, so it has no iterations and proves nothing today. It is kept
+    // because it is the rule that keeps the next `pending` row honest, and the
+    // emptiness is asserted explicitly below so a reader is never misled into
+    // thinking this test is currently load-bearing.
+    //
+    // ⚠️ `documentedPending` is deliberately NOT asserted empty. It is the set of
+    // baseline rows the parser reads as non-ported, and it is legitimately
+    // non-empty for rows that have no manifest counterpart at all — the
+    // design-internal skips (H-08/H-09/H-10), whose status cell is empty
+    // (`statusCell: ""`). Those rows are absent from the manifest by design, not
+    // by omission, so demanding the doc's non-ported set be empty would fail on
+    // a correct state — and an earlier attempt to assert it that way did exactly
+    // that. The skips' cells are not merely non-ported, they are EMPTY
+    // (`statusCell: ""`), so even the weaker "no non-ported row lost its status
+    // cell" form is false here too. The pairing claim is therefore
+    // one-directional BY DESIGN: every pending MANIFEST row has a doc row
+    // (asserted below), never the converse. The skips have their own sibling
+    // test (a 跳过 row quoting 已移植 in its REASON is not a §1 port row), so
+    // they are not left uncovered — just not by this one.
+    expect(pendingIds).toEqual([])
     for (const id of pendingIds) {
       const doc = documentedPending.find((row) => row.id === id)
       expect(doc, `pending manifest row ${id} has no non-ported baseline row`).toBeDefined()
-      expect(doc?.statusCell).toContain(BASELINE_PENDING_MARKER)
+      // What happened to the bare `待移植` assertion that used to live here, and
+      // why: commit e552cad rewrote H-33's status cell to a more precise
+      // NON-ported state — `📋 代码已落地（P4-T12，commit 988a547）；ported 翻转随
+      // P4-T13 e2e 与 manifest status 同 commit 双侧同步（c14 契约）`. It no longer
+      // contains the literal 待移植, while still being (correctly) classified
+      // non-ported by the parser, because c14's port group is keyed on the
+      // POSITIVE 已移植 marker. So the `toContain(BASELINE_PENDING_MARKER)`
+      // assertion was deleted as unsatisfiable, and what replaced it is the
+      // claim that actually matters for a flip: the cell is non-empty AND the
+      // parser still classifies the row as not-ported. That is strictly stronger
+      // against the failure this guards — a silently collapsed non-ported side —
+      // while surviving the legitimate reworded cell.
+      expect(doc?.statusCell, `pending row ${id} has an empty status cell`).not.toBe('')
+      expect(doc?.ported, `pending row ${id} parsed as ported`).toBe(false)
     }
     // And the reverse: a non-ported doc row whose manifest row is already
     // 'ported' is a doc that was never flipped (or was flipped late).
@@ -465,10 +561,12 @@ describe('P3-T20 consistency — the ported manifest rows ⟺ the baseline union
       .filter((row) => row.scenarioNames.length === 0)
       .map((row) => row.heading)
     expect(withoutScenario).toEqual([])
-    // ⚠️ P4-T12: this runs over the PORTED rows only. A 'pending' row's
-    // `e2eScenario` is by definition not in drive.mjs yet (it is a later
-    // task's deliverable), so demanding a scenario name for it would encode
-    // "pending is impossible" into the suite.
+    // ⚠️ This runs over the PORTED rows only, and must keep doing so. A 'pending'
+    // row's `e2eScenario` may be a not-yet-written scenario (a later task's
+    // deliverable), so demanding a declared scenario of it would encode "pending
+    // is impossible" into the suite. The 'pending' side is covered separately, by
+    // the forward-promise registry test below — which is where the exemption now
+    // lives, and where it is forced to be registered rather than implicit.
     // Anti-vacuity, against both ways that `[]` could lie: the parser must
     // still see every ported row (an empty row set is trivially []), and every
     // row's scenarioNames must be non-empty (a lost scenario column or an
@@ -489,12 +587,13 @@ describe('P3-T20 consistency — the ported manifest rows ⟺ the baseline union
     expect(declaredScenarios.length).toBeGreaterThan(0)
     expect([...new Set(declaredScenarios)].length).toBe(declaredScenarios.length)
     const baselineScenarios = baselineRows.flatMap((row) => row.scenarioNames)
-    // ⚠️ P4-T12: the manifest side is the PORTED rows only. The one 'pending'
-    // row's `e2eScenario` ('keyword-mode-ultrawork') is P4-T13's deliverable and
-    // is deliberately absent from drive.mjs today; requiring it here would make
-    // the suite red for a correct intermediate state. It is pinned instead by
-    // the "the pending row names the scenario its follow-up task must add" test
-    // below, so the name cannot be lost or misspelled.
+    // ⚠️ The manifest side is the PORTED rows only, and must keep doing so: a
+    // 'pending' row may name a scenario drive.mjs has not declared yet, so
+    // including it here would make the suite red for a correct intermediate
+    // state. The 'pending' side is not left unchecked — it is the
+    // forward-promise registry test below, which requires such a name to be
+    // either declared or registered in FORWARD_PROMISE_SCENARIOS, so it can
+    // never be lost, misspelled, or quietly forgotten.
     const portedRows = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS)
     const wantScenarios = [...portedRows.map((row) => row.e2eScenario), ...baselineScenarios]
     const missing = [...new Set(wantScenarios)].filter((scenario) => !declaredScenarios.includes(scenario))
@@ -505,17 +604,41 @@ describe('P3-T20 consistency — the ported manifest rows ⟺ the baseline union
     expect(new Set(baselineScenarios).size).toBe(baselineScenarios.length)
   })
 
-  it('the ONE pending row names the e2e scenario its follow-up task must add', () => {
-    // P4-T12's counterpart to the membership check above. A 'pending' row is
-    // allowed to have a scenario that does not exist yet — but it must say
-    // WHICH one, and that name must be the one the e2e owner (P4-T13) is
-    // expected to declare, or the flip would later assert a name nobody wrote.
-    const pending = rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS)
-    expect(pending.map((row) => row.id)).toEqual(['keyword-detector'])
-    expect(pending.map((row) => row.e2eScenario)).toEqual(['keyword-mode-ultrawork'])
-    // Not in drive.mjs YET — asserted so that when P4-T13 adds it, the flip is
-    // a deliberate two-sided change rather than an accident.
+  it('every row names a REAL drive.mjs scenario, or a registered forward promise', () => {
+    // A `pending` row is allowed to name a scenario that does not exist yet —
+    // that IS what 'pending' means (its e2e is a later task's deliverable), and
+    // demanding a declared scenario of it would encode "pending is impossible"
+    // into the suite. But the exemption must be EXPLICIT and self-discharging,
+    // not a silent hole: a promise that is not registered here is a failure, and
+    // a registered promise disappears from the set the moment the scenario ships
+    // (asserted below), so the exemption cannot rot into a permanent blind spot.
+    const undeclared = HOOK_MANIFEST
+      .filter((row) => !declaredScenarios.includes(row.e2eScenario)
+        && !FORWARD_PROMISE_SCENARIOS.has(row.e2eScenario))
+      .map((row) => `${row.id} -> ${row.e2eScenario}`)
+    expect(undeclared).toEqual([])
+
+    // Anti-rot, rule 1: a promise that HAS been delivered must be struck from
+    // the set. Keeping it would re-open the hole above for a scenario that now
+    // exists, and a later regression in that scenario would no longer be caught.
+    const discharged = [...FORWARD_PROMISE_SCENARIOS].filter((name) => declaredScenarios.includes(name))
+    expect(discharged).toEqual([])
+
+    // Anti-rot, rule 2: the only promise this suite has ever carried is struck
+    // out, and it must never come back. P4-T12 named `keyword-mode-ultrawork`
+    // for H-33; P4-T13 shipped `ultrawork-keyword-injected` instead, so the old
+    // name was never written and must not be resurrected on either side.
+    expect(FORWARD_PROMISE_SCENARIOS.has('keyword-mode-ultrawork')).toBe(false)
     expect(declaredScenarios).not.toContain('keyword-mode-ultrawork')
+    expect(HOOK_MANIFEST.map((row) => row.e2eScenario)).not.toContain('keyword-mode-ultrawork')
+    // The keyword row points at the primary of the four P4-T13 scenarios; the
+    // three siblings exist because the session one-shot (S-6) makes "injected"
+    // and "injected again" mutually exclusive within one session.
+    const keyword = HOOK_MANIFEST.find((row) => row.id === 'keyword-detector')
+    expect(keyword?.e2eScenario).toBe('ultrawork-keyword-injected')
+    for (const sibling of ['keyword-negative-controls', 'hyperplan-keyword-injected', 'combo-keyword-injected']) {
+      expect(declaredScenarios, sibling).toContain(sibling)
+    }
   })
 })
 

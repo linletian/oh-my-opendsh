@@ -561,28 +561,55 @@ describe('P4-T12 ④ the config rules, including the intersection rule', () => {
     expect(decide(mainFacts('hyperplan ulw go'), { config: unrelated }).kind).toBe('inject')
   })
 
-  it('the ctx config reader accepts both spellings and ignores anything else', () => {
+  it('the ctx config reader goes through ctx.get, and is inert on a throwing ctx', () => {
+    // ⚠️ The e2e found what this test now pins: `ctx.config` on a cordis ctx
+    // with no injected `config` service **throws** `cannot get property "config"
+    // without inject` (the ctx is a Proxy). The reader must go through
+    // `ctx.get('config')`, and it must be the only thing it touches.
+    const proxyCtx = new Proxy({}, {
+      get(target, property) {
+        if (property === 'get') {
+          return (name: string) => (name === 'config' ? undefined : undefined)
+        }
+        throw new Error(`cannot get property "${String(property)}" without inject`)
+      },
+    })
+    expect(readConfigOverride(proxyCtx as never)).toBeUndefined()
+
+    // A ctx whose `get` itself throws must also degrade, not propagate — a
+    // config read must never be able to fail hook registration.
+    expect(readConfigOverride({ get: () => { throw new Error('service container exploded') } } as never))
+      .toBeUndefined()
+    expect(readConfigOverride({ get: 'not a function' } as never)).toBeUndefined()
+    expect(readConfigOverride(undefined as never)).toBeUndefined()
+    // …and `ctx.config` is NEVER read, even when the object happens to carry one:
+    // reading it is the exact bug, so a fixture with the property must not change
+    // the answer (the service channel is `get`, not the property).
+    expect(readConfigOverride({ config: { keywordDetector: { disabledKeywords: ['team'] } }, get: () => undefined } as never))
+      .toBeUndefined()
+
     // S-10: omo-hooks mounts no cordis Config, so the read is optional. What
     // matters is that a MISSING or malformed surface degrades to the default
     // rather than throwing — a bad config must not fail every pre-step.
-    expect(readConfigOverride({} as never)).toBeUndefined()
-    expect(readConfigOverride({ config: {} } as never)).toBeUndefined()
-    expect(readConfigOverride({ config: { keywordDetector: 'nope' } } as never)).toBeUndefined()
-    expect(readConfigOverride({ config: { keywordDetector: {} } } as never)).toEqual({})
+    const withConfig = (value: unknown) => ({ get: (name: string) => (name === 'config' ? value : undefined) })
+    expect(readConfigOverride(withConfig(undefined) as never)).toBeUndefined()
+    expect(readConfigOverride(withConfig({}) as never)).toBeUndefined()
+    expect(readConfigOverride(withConfig({ keywordDetector: 'nope' }) as never)).toBeUndefined()
+    expect(readConfigOverride(withConfig({ keywordDetector: {} }) as never)).toEqual({})
     // camelCase (this package's convention) …
-    expect(readConfigOverride({
-      config: { keywordDetector: { disabledKeywords: ['team'], enabledExpansions: ['ultrawork'] } },
-    } as never)).toEqual({ disabledKeywords: ['team'], enabledExpansions: ['ultrawork'] })
+    expect(readConfigOverride(withConfig({
+      keywordDetector: { disabledKeywords: ['team'], enabledExpansions: ['ultrawork'] },
+    }) as never)).toEqual({ disabledKeywords: ['team'], enabledExpansions: ['ultrawork'] })
     // … and upstream's snake_case spellings, so a config carried over from an
     // opencode `oh-my-opencode.jsonc` is not silently ignored.
-    expect(readConfigOverride({
-      config: { keywordDetector: { disabled_keywords: ['hyperplan'], enabled_expansions: ['ultrawork'] } },
-    } as never)).toEqual({ disabledKeywords: ['hyperplan'], enabledExpansions: ['ultrawork'] })
+    expect(readConfigOverride(withConfig({
+      keywordDetector: { disabled_keywords: ['hyperplan'], enabled_expansions: ['ultrawork'] },
+    }) as never)).toEqual({ disabledKeywords: ['hyperplan'], enabledExpansions: ['ultrawork'] })
     // A field of the wrong TYPE is treated as absent (zod upstream would throw;
     // S-10 records why we chose the silent fallback).
-    expect(readConfigOverride({
-      config: { keywordDetector: { disabledKeywords: 'ultrawork' } },
-    } as never)).toEqual({})
+    expect(readConfigOverride(withConfig({
+      keywordDetector: { disabledKeywords: 'ultrawork' },
+    }) as never)).toEqual({})
   })
 
   it('enabled_expansions is an allowlist, and the two lists compose', () => {
@@ -1044,8 +1071,14 @@ describe('P4-T12 ⑧ the manifest row describes exactly this implementation', ()
     expect(row).toBeDefined()
     expect(row?.event).toBe('agent/pre-step')
     expect(row?.mode).toBe('A')
-    expect(row?.status).toBe('pending')
-    expect(row?.e2eScenario).toBe('keyword-mode-ultrawork')
+    // `ported` since P4-T13: listener + unit tests (P4-T12) + the e2e (P4-T13),
+    // flipped as the 双侧同步 commit that also moves the coverage doc's §1.2
+    // status cell. c14 fails in both directions if the two halves ever disagree.
+    expect(row?.status).toBe('ported')
+    // The scenario name, by contrast, IS settled: it points at the P4-T13
+    // scenario that really exists. The pre-T13 forward promise
+    // `keyword-mode-ultrawork` named a scenario that was never written.
+    expect(row?.e2eScenario).toBe('ultrawork-keyword-injected')
   })
 
   it('the row counts 17 upstream files + 7 test files, and names no test as a source', () => {

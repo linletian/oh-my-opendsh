@@ -31,7 +31,7 @@
 
 | # | 模块（hooks/ 下路径） | 原编号 | 处置 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
-| H-33 | `keyword-detector/`（**24 文件** + 1 目录外配置文件 = 25 条 upstreamFiles，T12 复核实测——P4-T1 的 25 把目录外 `config/schema/keyword-detector.ts` 计入目录，测试 7 个不变） | Phase 3 S-06 | **移植（收窄，见 C-08）** | 检测逻辑（detector.ts）+ 关键词注册表（constants.ts）+ ultrawork/hyperplan 文案 + 7 个测试文件（89 its 移植为单测种子）；移植形态 = omo-hooks 模式 A pre-step 注入；**实测补充收窄面**：synthetic/internal、system directive、non-OMO agent、planner、background session、非主 session 六级过滤 + 双幂等（消息级 includes + session 级 Set） | 📋 代码已落地（P4-T12，commit `988a547`）；ported 翻转随 P4-T13 e2e 与 manifest status 同 commit 双侧同步（c14 契约） |
+| H-33 | `keyword-detector/`（**24 文件** + 1 目录外配置文件 = 25 条 upstreamFiles，T12 复核实测——P4-T1 的 25 把目录外 `config/schema/keyword-detector.ts` 计入目录，测试 7 个不变） | Phase 3 S-06 | **移植（收窄，见 C-08）** | 检测逻辑（detector.ts）+ 关键词注册表（constants.ts）+ ultrawork/hyperplan 文案 + 7 个测试文件（89 its 移植为单测种子）；移植形态 = omo-hooks 模式 A pre-step 注入；**实测补充收窄面**：synthetic/internal、system directive、non-OMO agent、planner、background session、非主 session 六级过滤 + 双幂等（消息级 includes + session 级 Set） | ✅ 已移植（P4-T13，双侧同步）；e2e `ultrawork-keyword-injected` |
 | H-34 | `stop-continuation-guard/`（3 文件） | Phase 3 S-37 | **移植** | 服务形态（stop/isStopped/clear + 级联取消 backgroundManager 后代）；DSH 落点 = cordis 服务（omo-commands 写 / omo-hooks 读）+ ctx.jobs 级联取消（caller 传递 + ownerSession 围栏）；消费面 = C-05 命令。**fork 终态 = (ii) 纯服务模块** `src/services/stop-continuation-guard.ts`（不进 manifest——event/mode 字段无诚实取值、状态字段两难、c13 只扫 src/hooks、本行预授权出口） | ✅ 已落地（P4-T8，commit `ff136b7`；**fork ii 纯服务模块，c14 解析面豁免——本行状态格永不翻 ported**，e2e 随 P4-T9） |
 
 ## 2. shared-skills 内容 vendor 组（17 条目 = ROADMAP §16 裸名集合；来源 `packages/shared-skills/skills/`）

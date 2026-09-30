@@ -2519,6 +2519,21 @@ function requestHeaderRoute(events) {
   return route
 }
 
+/**
+ * `eventText(event)` with its escaped newlines restored.
+ *
+ * ⚠️ Load-bearing, not cosmetic: `eventText` is `JSON.stringify(event.data)`, so
+ * every `\n` inside a message body arrives as the two characters `\\` + `n`. A
+ * multi-line anchor (the vendored bodies all are) therefore NEVER matches against
+ * the raw string, and the check built on it is silently vacuous — it can only
+ * ever report "absent". This is the same trap the P4-T5 catalog assertion
+ * documents; it is repeated here because these checks are new, and a vacuous
+ * negative is the one failure mode a negative-only scenario cannot afford.
+ */
+function eventTextFlat(event) {
+  return eventText(event).replace(/\\n/g, '\n')
+}
+
 function eventText(event) {
   try {
     return JSON.stringify(event.data ?? {})
@@ -8291,10 +8306,269 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+
+  // ── P4-T13 keyword-mode self-test: the GOOD inputs must PASS, and each
+  // fabricated defect must fail on its OWN named check. Without this the
+  // negative-controls scenario would pass on a dead hook, which is the whole
+  // failure mode a keyword hook has.
+  const goodUltrawork = analyzeUltraworkKeywordInjected(fabricatedKeywordGoodInput(routes), routes)
+  if (goodUltrawork.result !== 'PASS') {
+    problems.push(`fabricated GOOD ultrawork-keyword-injected must PASS, got FAIL on: ${goodUltrawork.failed.join(', ')}`)
+  }
+  const keywordDefectCases = [
+    // ① the carrier is a BARE STRING — the BLOCKER-1 failure mode.
+    //    Expected check is `singleInboxSplice`, not the shape check, and the
+    //    distinction is the point: `messageContentText(<string>)` is `''`, so a
+    //    raw string is invisible to the needle matcher and the splice simply
+    //    DISAPPEARS. A bare string therefore cannot degrade into "some text
+    //    arrived" — it removes the carrier outright, which is what the check
+    //    reports. (Asserting the shape check here would be asserting something
+    //    this defect cannot reach.)
+    ['the injected carrier is a bare string instead of a UserMessage', (input) => {
+      input.log.events[3].data.inserted = [buildExpectedInjectedText('ultrawork')]
+    }, 'singleInboxSplice'],
+    // ② the source triple names the hook id instead of the package (the
+    //    regression I hit while fixing BLOCKER-1).
+    ['the injection source names the hook id instead of the package', (input) => {
+      input.log.events[3].data.inserted[0].source = { kind: 'plugin', plugin: keywordDetectorModule.KEYWORD_DETECTOR_ID, form: 'instructions' }
+    }, 'injectionIsFullUserMessage'],
+    // ③ a missing / non-uuid id: the inbox pending-uniqueness check reads it.
+    ['the injection id was stripped', (input) => {
+      delete input.log.events[3].data.inserted[0].id
+    }, 'injectionIdIsUuid'],
+    // ④ the body was truncated — a "prefix arrived" defect the text-equality
+    //    check must catch (a prefix check would pass this).
+    ['the injected body was truncated to a prefix', (input) => {
+      input.log.events[3].data.inserted[0].content[0].text = input.log.events[3].data.inserted[0].content[0].text.slice(0, 400)
+    }, 'injectionTextMatchesPluginBuild'],
+    // ④′ the SAME defect applied to the OTHER projection. The P3-T9 double-steer
+    //     cases (this file, ~line 3908) established that a mutation touching only
+    //     one projection is the standard way a real regression hides: the
+    //     untouched copy keeps matching the needle, the check reads it, and the
+    //     run passes. Here the history claim is corrupted while the inbox splice
+    //     stays perfect — and the model reads the CLAIM, so this is the
+    //     projection that actually matters for S-11's arrival claim.
+    ['the history-claim projection was truncated while the splice stayed correct', (input) => {
+      input.log.events[4].data.content[0].text = input.log.events[4].data.content[0].text.slice(0, 400)
+    }, 'injectionTextMatchesPluginBuild'],
+    // ④″ …and the id case, on the claim projection only. Two valid-looking
+    //     uuids differing between projections is invisible to a per-projection
+    //     shape check, which is what `bothProjectionsShareOneId` exists for.
+    ['the two projections carried different injection ids', (input) => {
+      input.log.events[4].data.id = '11111111-2222-4333-8444-555555555555'
+    }, 'bothProjectionsShareOneId'],
+    // ⑤ S-11's own claim: the banner must arrive on a LATER request. Putting it
+    //    on request #0 is the opencode timing this deployment does not have.
+    ['the banner arrived on the FIRST request (S-11 timing regression)', (input) => {
+      input.requests[0].body.messages.push(fabricatedKeywordInjection(buildExpectedInjectedText('ultrawork')))
+    }, 'bannerArrivesAfterTheInjectingStep'],
+    // ⑥ …and the mirror: if the banner never reaches the wire at all, the
+    //    on-wire check must fail (otherwise ⑤ is satisfied by an empty run).
+    ['the banner never reached the model on the wire', (input) => {
+      for (const request of input.requests) {
+        request.body.messages = request.body.messages.filter((message) => {
+          const text = messageContentText(message)
+          return !text.includes(keywordDetectorConstants.ULTRAWORK_BANNER_LINE)
+        })
+      }
+    }, 'bannerReachesModelOnWire'],
+    // ⑦ control ④ broken: a SECOND injection in the follow-up turn.
+    ['the second keyword turn injected again (S-6 one-shot gone)', (input) => {
+      const injected = fabricatedKeywordInjection(buildExpectedInjectedText('ultrawork'))
+      input.log.events.splice(8, 0,
+        { seq: 80, type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [injected] } },
+        { ...fabricatedKeywordInjectedEvent(buildExpectedInjectedText('ultrawork'), injected.source, injected.id), seq: 81 })
+    }, 'exactlyOneInjectionAcrossBothTurns'],
+    // ⑧ the second turn never ran — so "no second injection" would be vacuous.
+    ['the second keyword turn produced no assistant message', (input) => {
+      input.log.events = input.log.events.filter((event) => !eventText(event).includes(ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY))
+    }, 'secondKeywordTurnRan'],
+    // ⑨ the bash step did not execute — the premise behind "a later request
+    //    existed".
+    ['the step tool call never ran', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'tool/result')
+    }, 'stepToolCallExecuted'],
+  ]
+  for (const [label, mutate, expectedCheck] of keywordDefectCases) {
+    KEYWORD_SELF_TEST_ATTESTATION.push(['ultrawork-keyword-injected', label])
+    const input = fabricatedKeywordGoodInput(routes)
+    mutate(input)
+    const verdict = analyzeUltraworkKeywordInjected(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated ultrawork-keyword-injected defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  // The negative-controls analysis has the opposite vacuity risk, so its
+  // defects are the ones that would make a DEAD hook look correct.
+  const goodNegatives = analyzeKeywordNegativeControls(fabricatedKeywordNegativeGoodInput(routes), routes)
+  if (goodNegatives.result !== 'PASS') {
+    problems.push(`fabricated GOOD keyword-negative-controls must PASS, got FAIL on: ${goodNegatives.failed.join(', ')}`)
+  }
+  const keywordNegativeDefectCases = [
+    // A stray injection in ANY of the three turns must fail the negative — this
+    // is the case that proves the scenario is not a rubber stamp.
+    ['a mode was injected during a control turn', (input) => {
+      const injected = fabricatedKeywordInjection(buildExpectedInjectedText('ultrawork'))
+      input.log.events.splice(2, 0, { ...fabricatedKeywordInjectedEvent(buildExpectedInjectedText('ultrawork'), injected.source, injected.id), seq: 15 })
+    }, 'noKeywordInjectedUserMessage'],
+    // …and a keyword body arriving through SOME OTHER plugin's channel, which the
+    // carrier-count check above would miss (it only knows our own triple).
+    ['a foreign plugin carried the keyword body', (input) => {
+      const event = { ...fabricatedKeywordInjectedEvent(`prefix ${KEYWORD_TEXTS.ultrawork.slice(0, 120)} suffix`, { kind: 'plugin', plugin: 'some-other-plugin', form: 'snapshot' }, 'foreign-1'), seq: 16 }
+      input.log.events.splice(2, 0, event)
+    }, 'noForeignPluginCarriedKeywordText'],
+    // …and on the wire, separately: a banner that reached the model without a
+    // user/message carrier (a different delivery path) must also fail.
+    ['a mode banner reached the wire without a user-message carrier', (input) => {
+      input.requests[0].body.messages.push({
+        role: 'user',
+        content: [{ type: 'text', text: `**MANDATORY**: Say "${keywordDetectorConstants.ULTRAWORK_BANNER_LINE}" exactly once` }],
+      })
+    }, 'noKeywordBannerOnTheWire'],
+    // The premise: if a control prompt was never delivered, the control proves
+    // nothing. Strip one and the scenario must fail rather than pass quietly.
+    ['a control prompt never reached the session', (input) => {
+      input.log.events = input.log.events.filter((event) => !eventText(event).includes('control two'))
+    }, 'allThreeControlPromptsDelivered'],
+    // …and if control ②'s keyword stopped being inside the fence, the control
+    // would be testing nothing (it would have become control ①).
+    ['control two\'s keyword stopped being fence-only', (input) => {
+      input.log.events.find((event) => eventText(event).includes('control two')).data.content[0].text
+        = 'e2e keyword control two: run ulw now, first echo the step marker then summarize'
+    }, 'controlTwoKeywordIsInsideTheFence'],
+    // …and if control ③ stopped being slash-led, the slash gate is untested.
+    ['control three stopped being a slash command', (input) => {
+      input.log.events.find((event) => eventText(event).includes('control three')).data.content[0].text
+        = 'e2e keyword control three: please run ulw, first echo the step marker then summarize'
+    }, 'controlThreePromptIsSlashLed'],
+    // A control ① that quietly acquired a keyword is no longer control ①.
+    ['control one\'s prompt acquired a keyword', (input) => {
+      input.log.events.find((event) => eventText(event).includes('control one')).data.content[0].text
+        = 'e2e keyword control one: run ulw, first echo the step marker then summarize'
+    }, 'controlOnePromptHasNoKeyword'],
+  ]
+  // The hyperplan scenario was self-test-invisible until P4-T13 review: no GOOD
+  // input, no defect cases, so `analyzeHyperplanKeywordInjected` was never run
+  // outside a real e2e. Both directions are now covered, and the two defect
+  // cases are the two failure shapes that differ from ultrawork's — a bare
+  // string (the BLOCKER-1 mode) and the S-11 timing claim.
+  const goodHyperplan = analyzeHyperplanKeywordInjected(fabricatedHyperplanGoodInput(routes), routes)
+  if (goodHyperplan.result !== 'PASS') {
+    problems.push(`fabricated GOOD hyperplan-keyword-injected must PASS, got FAIL on: ${goodHyperplan.failed.join(', ')}`)
+  }
+  for (const [label, mutate, expectedCheck] of [
+    ['the hyperplan injection was a bare string', (input) => {
+      input.log.events[3].data.inserted = [buildExpectedInjectedText('hyperplan')]
+    }, 'singleInboxSplice'],
+    ['the hyperplan banner arrived on the FIRST request', (input) => {
+      input.requests[0].body.messages.push(fabricatedKeywordInjection(buildExpectedInjectedText('hyperplan')))
+    }, 'bannerArrivesAfterTheInjectingStep'],
+  ]) {
+    KEYWORD_SELF_TEST_ATTESTATION.push(['hyperplan-keyword-injected', label])
+    const input = fabricatedHyperplanGoodInput(routes)
+    mutate(input)
+    const verdict = analyzeHyperplanKeywordInjected(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated hyperplan-keyword-injected defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  // ⚠️ THE two cases that make this scenario mean anything. Its four other checks
+  // are negatives, and a hook that is not running satisfies all of them — which
+  // is how a real registration crash (the `ctx.config` proxy throw) passed this
+  // scenario outright. These two restore the falsifiability.
+  keywordNegativeDefectCases.unshift(
+    ['the hook never registered on agent/pre-step', (input) => {
+      input.bootLog = FABRICATED_BOOT_LOG
+    }, 'keywordDetectorRegisteredOnPreStep'],
+    ['the hook registration FAILED at boot', (input) => {
+      input.bootLog = [
+        input.bootLog,
+        omoHooksMarkers.formatHookFailedLine(
+          keywordDetectorModule.KEYWORD_DETECTOR_ID,
+          new Error('cannot get property "config" without inject'),
+        ),
+      ].join('\n')
+    }, 'keywordDetectorRegistrationDidNotFail'],
+  )
+  for (const [label, mutate, expectedCheck] of keywordNegativeDefectCases) {
+    KEYWORD_SELF_TEST_ATTESTATION.push(['keyword-negative-controls', label])
+    const input = fabricatedKeywordNegativeGoodInput(routes)
+    mutate(input)
+    const verdict = analyzeKeywordNegativeControls(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated keyword-negative-controls defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
+  // The combo's suppression claim gets its own sensitivity cases: a combo that
+  // ALSO carried the standalone bodies would satisfy every other check.
+  const goodCombo = analyzeComboKeywordInjected(fabricatedComboGoodInput(routes), routes)
+  if (goodCombo.result !== 'PASS') {
+    problems.push(`fabricated GOOD combo-keyword-injected must PASS, got FAIL on: ${goodCombo.failed.join(', ')}`)
+  }
+  // A real run's two projections (inbox splice + history claim) carry the SAME
+  // text, so a defect must be applied to BOTH: mutating only the splice lets the
+  // untouched claim keep matching the needle, and the suppression check then
+  // reads the untouched copy and passes. (That is exactly how the first attempt
+  // at the wrapper defect escaped — the check was reading a carrier the defect
+  // had not reached.)
+  const mutateComboCarrierText = (input, rewrite) => {
+    for (const message of [...(input.log.events[3].data.inserted ?? []), input.log.events[4].data]) {
+      if (message?.content?.[0]?.text !== undefined) {
+        message.content[0].text = rewrite(message.content[0].text)
+      }
+    }
+  }
+  for (const [label, mutate, expectedCheck] of [
+    ['the combo also carried the standalone hyperplan body', (input) => {
+      mutateComboCarrierText(input, (text) => `${text}\n\n<hyperplan-mode>\n\n${KEYWORD_TEXTS.hyperplan}`)
+    }, 'comboCarriesNoHyperplanStandaloneBody'],
+    // The instruction-form variant: the BODY is absent but the MANDATORY line
+    // rode along. A body-only check would pass this one.
+    ['the combo carried the standalone hyperplan MANDATORY line without its body', (input) => {
+      mutateComboCarrierText(input, (text) => `**MANDATORY**: ${SUPPRESSION_INSTRUCTION_ANCHOR} exactly once.\n\n${text}`)
+    }, 'comboCarriesNoHyperplanStandaloneInstruction'],
+    ['the combo body was wrapped in a second ultrawork tag pair', (input) => {
+      mutateComboCarrierText(input, (text) => text.replace(ULTRAWORK_TAG_ANCHOR, `${ULTRAWORK_TAG_ANCHOR}\n\n${ULTRAWORK_TAG_ANCHOR}`))
+    }, 'comboCarriesOneUltraworkTagPair'],
+    ['the combo wrapper was not the verbatim upstream banner', (input) => {
+      // Rewritten through the derived banner, not a literal, so the defect is
+      // still "the wrapper is not the shipped one" after any upstream reword.
+      mutateComboCarrierText(input, (text) => text.replace(
+        keywordDetectorConstants.COMBO_BANNER_LINE,
+        keywordDetectorConstants.ULTRAWORK_BANNER_LINE,
+      ))
+    }, 'comboCarriesTheVerbatimWrapper'],
+  ]) {
+    KEYWORD_SELF_TEST_ATTESTATION.push(['combo-keyword-injected', label])
+    const input = fabricatedComboGoodInput(routes)
+    mutate(input)
+    const verdict = analyzeComboKeywordInjected(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated combo-keyword-injected defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
 }
+
+
+/**
+ * The P4-T13 portion of the self-test banner, BUILT FROM WHAT ACTUALLY RAN.
+ *
+ * The banner used to be a hand-maintained string listing every scenario and
+ * every fabricated defect. That is a second copy of the case list, and it drifted
+ * immediately: a defect case was added whose label never reached the banner, so
+ * the suite printed a self-test attestation that was quietly incomplete — the
+ * worst possible failure mode for the line whose entire job is to say what was
+ * proven. Every keyword case now pushes its (scenario, label) here as it runs,
+ * and the banner renders from this list, so the two cannot disagree.
+ */
+const KEYWORD_SELF_TEST_ATTESTATION = []
 
 // ══ P3-T17 ulw-execute: the A-mode activation scenarios (TWO) ════════════════
 //
@@ -9941,6 +10215,871 @@ export function analyzeSkillsCatalogVisible(
 // ephemeral loopback port that only exists once the server is listening, while
 // the mock script's tool arguments must name that exact URL.
 
+// ── P4-T13 keyword-mode scenarios (H-33 keyword-detector; see the S-11 note) ──
+//
+// WHAT THESE SCENARIOS PROVE, and nothing more. H-33 is an INJECTION hook: a
+// user message naming a keyword must make the mode's protocol text reach the
+// model, and a message that does not must leave the session untouched. Four
+// scenarios, because four things have to be observable and one session can only
+// observe one of them (S-6's session-level one-shot means a second keyword turn
+// in the same session is *supposed* to inject nothing — see control ④):
+//
+//   1. `ultrawork-keyword-injected`   — the main link + control ④ (idempotency)
+//   2. `keyword-negative-controls`    — controls ①②③ in three turns of one session
+//   3. `hyperplan-keyword-injected`   — the second keyword type's own text
+//   4. `combo-keyword-injected`       — strict adjacency + standalone suppression
+//
+// ⚠️ THE ASSERTION SHAPE IS S-11, NOT UPSTREAM'S. dsh-agent-loop claims the
+// inbox batch BEFORE the waterfall runs (lib:888-899), so `agent.inject()`'s
+// content is claimed at the NEXT step boundary and the model reads it from the
+// request after that. These scenarios therefore assert:
+//     ① the injected message is a full `InjectedUserMessage` in the session log
+//        (role / source triple / content block / a uuid id);
+//     ② a request **after** the injecting step carries the banner + the vendor
+//        body anchor on the wire;
+//     ③ the second keyword turn injects NOTHING.
+// They deliberately do NOT assert "the first request already carries the banner"
+// — that would be upstream's opencode timing, and asserting it here would be
+// asserting a property this deployment does not have. `bannerAbsentFromFirstRequest`
+// is kept as its OWN named check so the timing is pinned as data rather than
+// assumed: if a future DSH changed the claim order, exactly that check flips and
+// the report says so.
+//
+// IDEMPOTENCY vs TIMING ARE SEPARATE CLAIMS. The one-shot guard is keyed on the
+// session object, so control ④'s second `ulw` turn is blocked by S-6 — NOT by
+// S-11's one-step delay. Mixing them would make control ④ pass for the wrong
+// reason, so control ④ runs in its own session where the timing question does
+// not arise.
+
+const keywordDetectorConstants = await import(
+  '../../patches/omo-dsh/omo-hooks/src/hooks/keyword-detector/constants.ts'
+)
+const keywordDetectorMessages = await import(
+  '../../patches/omo-dsh/omo-hooks/src/hooks/keyword-detector/messages.ts'
+)
+const omoHooksMarkers = await import('../../patches/omo-dsh/omo-hooks/src/boot-markers.ts')
+const keywordDetectorModule = await import(
+  '../../patches/omo-dsh/omo-hooks/src/hooks/keyword-detector.ts'
+)
+
+/** The real vendored bodies, read through the plugin's own loader. */
+const KEYWORD_TEXTS = (() => {
+  const loaded = keywordDetectorMessages.loadInstructionTexts()
+  if (!loaded.ok) {
+    throw new Error(`P4-T13 setup: vendored keyword instruction texts unavailable: ${JSON.stringify(loaded.failures)}`)
+  }
+  return loaded.texts
+})()
+
+// A 2-step turn needs one tool call, and it must not be one of the fixtures'
+// triggers. `bash echo` is chosen deliberately: none of H-02's three
+// FILE_READ_PATTERNS (`^\s*cat|head|tail\s+…`) can match a bare `echo`, so the
+// bash-file-read-guard advisory cannot appear and muddy the request count. The
+// echo marker proves the call really executed rather than being skipped.
+const KEYWORD_STEP_MARKER = 'keyword-mode-step-marker-4d7a2b'
+const KEYWORD_STEP_COMMAND = `echo ${KEYWORD_STEP_MARKER}`
+
+/** The three keyword scenarios' wrap-up texts (each ends its turn). */
+const ULTRAWORK_KEYWORD_SUMMARY =
+  'MOCK-ULW-KEYWORD-8f3c1d: ultrawork mode banner and body reached me'
+const ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY =
+  'MOCK-ULW-KEYWORD-FOLLOWUP-2a6e5b: second keyword turn, no second injection'
+const KEYWORD_CONTROL_SUMMARY = 'MOCK-KEYWORD-CONTROL-71c4d9: three negative turns ran'
+const HYPERPLAN_KEYWORD_SUMMARY =
+  'MOCK-HYPERPLAN-KEYWORD-5b8e3f: hyperplan mode banner and body reached me'
+const COMBO_KEYWORD_SUMMARY =
+  'MOCK-COMBO-KEYWORD-9e2a7c: combo banner only, no standalone banner'
+
+// ── the prompts ──────────────────────────────────────────────────────────────
+//
+// Each carries a distinctive prefix so the session log can attribute the turn,
+// and the keyword is a real bare token in running prose (not in a fence, not
+// behind a slash) so the trigger is the keyword itself.
+const ULTRAWORK_KEYWORD_PROMPT =
+  'e2e ultrawork-keyword-injected: run ulw on the following, first echo the step marker then summarize'
+const ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT =
+  'e2e ultrawork-keyword-injected: ulw again, and just confirm in one line'
+const HYPERPLAN_KEYWORD_PROMPT =
+  'e2e hyperplan-keyword-injected: plan this with hyperplan, first echo the step marker then summarize'
+const COMBO_KEYWORD_PROMPT =
+  'e2e combo-keyword-injected: use hyperplan ulw together, first echo the step marker then summarize'
+
+// ── control ①: no keyword anywhere in the message ─────────────────────────────
+const KEYWORD_CONTROL_NONE_PROMPT =
+  'e2e keyword control one: no mode keyword in this message at all, first echo the step marker then summarize'
+// ── control ②: the keyword appears ONLY inside a fenced code block ────────────
+// The fence is real markdown in the user text; the detector strips fenced
+// blocks before matching, so a turn whose ONLY keyword is in a fence must not
+// arm. (Inline-code form is covered by the unit suite's shell-strip case.)
+const KEYWORD_CONTROL_CODE_BLOCK_PROMPT = [
+  'e2e keyword control two: this message mentions a keyword only inside a code block,',
+  'first echo the step marker then summarize',
+  '',
+  '```text',
+  'ulw ultrawork hyperplan hpp',
+  '```',
+].join('\n')
+// ── control ③: a slash-command lead line ─────────────────────────────────────
+// A leading `/word` is a command, not free text, so the keyword it names must
+// not arm the mode. The command is kept syntactically plausible.
+const KEYWORD_CONTROL_SLASH_PROMPT =
+  '/ulw-execute e2e keyword control three: a slash command naming a keyword, first echo the step marker then summarize'
+
+/** Two-step turn: one bash echo, then the wrap-up text that ends the turn. */
+function keywordTwoStepScript(summary) {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: KEYWORD_STEP_COMMAND,
+          description: 'Echo the scenario step marker so the turn takes a second step',
+        },
+      },
+      { type: 'text', text: summary },
+    ],
+  }
+}
+
+/** One-step turn: the wrap-up text alone. */
+function keywordOneStepScript(summary) {
+  return { sisyphus: [{ type: 'text', text: summary }] }
+}
+
+/** ultrawork-keyword-injected script: turn 1 two-step, turn 2 one-step (control ④). */
+function ultraworkKeywordScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: KEYWORD_STEP_COMMAND,
+          description: 'Echo the scenario step marker so the turn takes a second step',
+        },
+      },
+      { type: 'text', text: ULTRAWORK_KEYWORD_SUMMARY },
+      { type: 'text', text: ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY },
+    ],
+  }
+}
+
+/** keyword-negative-controls script: one wrap-up per control turn. */
+function keywordNegativeControlsScript() {
+  return {
+    sisyphus: [
+      { type: 'text', text: KEYWORD_CONTROL_SUMMARY },
+      { type: 'text', text: KEYWORD_CONTROL_SUMMARY },
+      { type: 'text', text: KEYWORD_CONTROL_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * The plugin-injected messages of one scenario, with their full `source` triple
+ * and the ids dsh actually stored — the BLOCKER-1 shape, read off the JSONL.
+ *
+ * `pluginInjectedMessageCarriers` is the shared carrier reader (it matches on a
+ * text needle); this wraps it so the assertions can name the needle from the
+ * plugin's own built text rather than a restated copy.
+ */
+function keywordInjectedCarriers(events, needle) {
+  const carriers = pluginInjectedMessageCarriers(events, needle)
+  return [
+    ...carriers.nextStepInsertions.map((entry) => ({ message: entry.message, seq: entry.event.seq, projection: 'inbox-splice' })),
+    ...carriers.userMessages.map((event) => ({ message: event.data, seq: event.seq, projection: 'history-claim' })),
+  ]
+}
+
+/** True when a stored message carries the keyword hook's producer triple. */
+function isKeywordInjectionSource(message) {
+  return message?.source?.kind === 'plugin'
+    && message.source.plugin === keywordDetectorModule.KEYWORD_DETECTOR_PLUGIN
+    && message.source.form === 'instructions'
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The two strings whose ABSENCE from a combo is the suppression claim.
+ *
+ * Module scope because the self-test needs the same two anchors, and a defect
+ * case that re-derived them would be testing a different claim than the check
+ * does. See the long note in `analyzeComboKeywordInjected` for why neither
+ * standalone BANNER string can serve: both are substrings of the verbatim
+ * upstream combo wrapper.
+ */
+const SUPPRESSION_BODY_ANCHOR = KEYWORD_TEXTS.hyperplan.slice(0, 120)
+
+/**
+ * The shared kernel of the three positive scenarios. `type` selects the keyword
+ * and the banner the model must be shown; the structural assertions (one
+ * injection, full message shape, a LATER request carrying it, first request not
+ * carrying it) are identical, so they are written once.
+ */
+function analyzeKeywordInjection(
+  { log, requests, providersJson, bootLog },
+  routes,
+  { keywordType, banner, summary, stepCount },
+) {
+  const events = log?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const expectedText = buildExpectedInjectedText(keywordType)
+  const carriers = keywordInjectedCarriers(events, expectedText.slice(0, 240))
+  const splices = carriers.filter((entry) => entry.projection === 'inbox-splice')
+  const claims = carriers.filter((entry) => entry.projection === 'history-claim')
+  const injected = carriers[0]?.message
+
+  // Which request FIRST carries the banner on the wire, and which FIRST carries
+  // the vendor body anchor. Both are indexed, not booleaned, so the detail block
+  // reports the timing instead of the report having to guess it.
+  const bannerRequestIndex = sisyphusRequests.findIndex((request) =>
+    requestMessagesContain(request, banner))
+  const bodyAnchor = bodyAnchorFor(keywordType)
+  const bodyRequestIndex = sisyphusRequests.findIndex((request) =>
+    requestMessagesContain(request, bodyAnchor))
+
+  const summaryEvent = events.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(summary),
+  )
+  const turnEnds = events.filter((event) => event.type === 'turn/end')
+  const stepToolCall = events.find((event) =>
+    event.type === 'tool/call' && event.data?.name === 'bash')
+  const stepToolResult = stepToolCall === undefined
+    ? undefined
+    : (() => {
+      const results = toolResultParts(events)
+      return results.find((part) => part.callId === stepToolCall.data?.callId)
+    })()
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+    // ①a. exactly ONE durable carrier per projection — a double inject would
+    // show as two, and the session one-shot (S-6) is what should prevent that.
+    singleInboxSplice: splices.length === 1,
+    singleHistoryClaim: claims.length === 1,
+    // ①b. the carrier is a full InjectedUserMessage, not a bare string
+    // (BLOCKER-1) and not a partial object.
+    //
+    // ⚠️ Asserted over EVERY carrier, not `carriers[0]`. The inbox splice and the
+    // history claim are two SEPARATE projections of one injection, and the model
+    // reads whichever the agent loop claims at the next step boundary — so a
+    // defect that corrupts only the claim is invisible to a first-carrier check
+    // while still reaching the model. The first version of these three checks
+    // read `carriers[0]`, which was the splice; a claim-only defect therefore
+    // slipped past all of them (that is the defect case below).
+    injectionIsFullUserMessage: carriers.length > 0
+      && carriers.every(({ message }) => message !== undefined
+        && message.role === 'user'
+        && isKeywordInjectionSource(message)
+        && Array.isArray(message.content)
+        && message.content.length === 1
+        && message.content[0]?.type === 'text'
+        && typeof message.content[0]?.text === 'string'),
+    // ①c. a fresh uuid id on EVERY projection: the inbox's pending-uniqueness
+    // check reads it, so a missing/duplicated id is the BLOCKER-1 failure mode.
+    injectionIdIsUuid: carriers.length > 0
+      && carriers.every(({ message }) => typeof message?.id === 'string'
+        && UUID_PATTERN.test(message.id)),
+    // ①c′. the two projections are the SAME message, so they must carry the same
+    // id. Two different uuids means the injection was built twice (or one
+    // projection was synthesised), which the per-projection id check alone
+    // cannot see: both ids would be valid uuids.
+    bothProjectionsShareOneId: new Set(carriers.map(({ message }) => message?.id)).size === 1,
+    // ①d. the body is the plugin's own built text (carrier note + vendor body +
+    // the `---` tail), compared against the module — not a restated copy.
+    injectionTextMatchesPluginBuild: carriers.length > 0
+      && carriers.every(({ message }) => message?.content?.[0]?.text === expectedText),
+    // ②. S-11: the banner reaches the model on a LATER request, not the first.
+    bannerReachesModelOnWire: bannerRequestIndex >= 0,
+    bannerArrivesAfterTheInjectingStep: bannerRequestIndex > 0,
+    vendorBodyReachesModelOnWire: bodyRequestIndex >= 0,
+    bannerAbsentFromFirstRequest: bannerRequestIndex !== 0,
+    // the two-step premise: the bash echo really ran, so "a later request
+    // existed" is not vacuously true.
+    stepToolCallExecuted: stepToolResult !== undefined
+      && stepToolResult.isError !== true
+      && stepToolResult.text.includes(KEYWORD_STEP_MARKER),
+    mockSawTheExpectedSteps: sisyphusRequests.length === stepCount,
+    assistantSummaryRecorded: summaryEvent !== undefined,
+    turnCompleted: turnEnds.length > 0
+      && turnEnds.every((end) => turnEndReasonKind(end) === 'completed'),
+  }
+  const failed = Object.entries(checks)
+    .filter(([, value]) => value !== true)
+    .map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    detail: {
+      keywordType,
+      banner,
+      bannerRequestIndex,
+      bodyRequestIndex,
+      sisyphusRequestCount: sisyphusRequests.length,
+      spliceCount: splices.length,
+      claimCount: claims.length,
+      injectionId: injected?.id,
+      injectionSource: injected?.source,
+      injectedTextLength: injected?.content?.[0]?.text?.length,
+      expectedTextLength: expectedText.length,
+    },
+  }
+}
+
+/** The plugin's own built injection text for one keyword type. */
+function buildExpectedInjectedText(keywordType) {
+  const deps = { texts: KEYWORD_TEXTS, agentName: 'sisyphus' }
+  const message = keywordDetectorMessages.KEYWORD_DETECTORS
+    .find((detector) => detector.type === keywordType)?.buildMessage(deps)
+  if (message === undefined) throw new Error(`P4-T13: no wired detector for ${keywordType}`)
+  return `${message}\n\n${keywordDetectorModule.INJECTION_SEPARATOR}\n`
+}
+
+// ⚠️ DERIVED, not restated: the hyperplan body's own MANDATORY instruction line,
+// read out of the message the plugin ACTUALLY builds. Hard-coding
+// `Say "HYPERPLAN MODE ENABLED!"` would be a second, silent copy of a string the
+// plugin owns — one that could drift while every assertion kept passing, and
+// would then test a claim about a phrase the plugin never emits.
+const SUPPRESSION_INSTRUCTION_ANCHOR = buildExpectedInjectedText('hyperplan').split('\n')[2]
+// Same discipline for the combo wrapper and the tag pair: both are read off the
+// built message, so an upstream reword shows up as a FAIL rather than a check
+// that has quietly stopped describing the shipped text.
+const COMBO_WRAPPER_ANCHOR = buildExpectedInjectedText('hyperplan-ultrawork').split('\n\n')[0]
+const ULTRAWORK_TAG_ANCHOR = KEYWORD_TEXTS.ultrawork.split('\n')[0]
+
+/** A body anchor that can only be present if the VENDORED text was injected. */
+function bodyAnchorFor(keywordType) {
+  if (keywordType === 'ultrawork') return KEYWORD_TEXTS.ultrawork.slice(0, 120)
+  if (keywordType === 'hyperplan') return KEYWORD_TEXTS.hyperplan.slice(0, 120)
+  // The combo's body IS the ultrawork body, so the combo case's body anchor is
+  // the ultrawork one — deliberately the same string, because the interesting
+  // claim about the combo is which body it carries and which it suppresses.
+  return KEYWORD_TEXTS.ultrawork.slice(0, 120)
+}
+
+export function analyzeUltraworkKeywordInjected(input, routes) {
+  const base = analyzeKeywordInjection(input, routes, {
+    keywordType: 'ultrawork',
+    banner: keywordDetectorConstants.ULTRAWORK_BANNER_LINE,
+    summary: ULTRAWORK_KEYWORD_SUMMARY,
+    stepCount: 3,
+  })
+  // Control ④ rides along as its OWN block of named checks rather than being
+  // folded into the injection link: the driver produces one verdict per
+  // scenario, and S-6 (one-shot) must not be indistinguishable from S-11
+  // (timing) in the failure output.
+  const idempotency = keywordIdempotencyChecks(input.log?.events ?? [])
+  const checks = { ...base.checks, ...idempotency.checks }
+  const failed = Object.entries(checks)
+    .filter(([, value]) => value !== true)
+    .map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    detail: { ...base.detail, ...idempotency.detail },
+  }
+}
+
+export function analyzeHyperplanKeywordInjected(input, routes) {
+  return analyzeKeywordInjection(input, routes, {
+    keywordType: 'hyperplan',
+    banner: keywordDetectorConstants.HYPERPLAN_BANNER_LINE,
+    summary: HYPERPLAN_KEYWORD_SUMMARY,
+    stepCount: 2,
+  })
+}
+
+export function analyzeComboKeywordInjected(input, routes) {
+  const base = analyzeKeywordInjection(input, routes, {
+    keywordType: 'hyperplan-ultrawork',
+    banner: keywordDetectorConstants.COMBO_BANNER_LINE,
+    summary: COMBO_KEYWORD_SUMMARY,
+    stepCount: 2,
+  })
+  const events = input.log?.events ?? []
+  const sisyphusRequests = input.requests.filter((request) => request.role === 'sisyphus')
+  const bodiesWith = (text) => sisyphusRequests.some((request) => requestMessagesContain(request, text))
+  // The text these suppression checks read is the one the run ACTUALLY delivered
+  // (the stored carrier), not the plugin's own build: reading the build would
+  // make every check below a statement about the module rather than the run, and
+  // no defect in the run could falsify them. `injectionTextMatchesPluginBuild`
+  // is the separate check that ties the two together.
+  const observed = keywordInjectedCarriers(events, buildExpectedInjectedText('hyperplan-ultrawork').slice(0, 240))
+  const injectedText = observed[0]?.message?.content?.[0]?.text ?? ''
+  // Suppression: the combo banner says "do NOT say the standalone banners", so
+  // the delivered text must NOT carry the hyperplan body or its MANDATORY line.
+  //
+  // ⚠️ **Why no check greps for a bare banner string.** BOTH standalone banner
+  // strings are SUBSTRINGS of the verbatim upstream combo wrapper, so a
+  // substring-absence test for either is unsatisfiable on a correct delivery:
+  //   * the ULTRAWORK banner is a substring of the COMBO banner
+  //     (`COMBO_BANNER_LINE`), and the HYPERPLAN banner occurs verbatim in the
+  //     wrapper's own clause — both named here through the constants rather than
+  //     as literals, for the same reason;
+  //   * `'HYPERPLAN MODE ENABLED!'` occurs in the wrapper's own clause
+  //     `Do NOT say the standalone "ULTRAWORK MODE ENABLED!" or
+  //     "HYPERPLAN MODE ENABLED!" banners.`
+  // Either test would fail the scenario on a correct run (which is exactly what
+  // happened on the first attempt) — so the suppression claim is made with two
+  // strings that are genuinely ABSENT from a correct combo: the hyperplan BODY,
+  // and the hyperplan body's own MANDATORY instruction form
+  // (`Say "HYPERPLAN MODE ENABLED!"`), which the wrapper never spells that way.
+  const suppressionChecks = {
+    comboCarriesTheVerbatimWrapper: injectedText.startsWith(COMBO_WRAPPER_ANCHOR),
+    comboCarriesNoHyperplanStandaloneBody: !injectedText.includes(SUPPRESSION_BODY_ANCHOR),
+    comboCarriesNoHyperplanStandaloneInstruction: !injectedText.includes(SUPPRESSION_INSTRUCTION_ANCHOR),
+    // …and the ultrawork body it DOES carry is the single, un-wrapped one.
+    comboCarriesOneUltraworkTagPair:
+      (injectedText.split(ULTRAWORK_TAG_ANCHOR).length - 1) === 1
+      && (injectedText.match(/<\/ultrawork-mode>/g) ?? []).length === 1,
+    // The same two discriminators, on the WIRE — the claim is about what the
+    // model is actually handed, not about what was stored.
+    noStandaloneHyperplanBodyOnTheWire: !bodiesWith(SUPPRESSION_BODY_ANCHOR),
+    noStandaloneHyperplanInstructionOnTheWire: !bodiesWith(SUPPRESSION_INSTRUCTION_ANCHOR),
+    exactlyOneComboCarrier: observed.length === 2, // one splice + one claim
+  }
+  const checks = { ...base.checks, ...suppressionChecks }
+  const failed = Object.entries(checks)
+    .filter(([, value]) => value !== true)
+    .map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    detail: {
+      ...base.detail,
+      comboWrapperFirstLine: COMBO_WRAPPER_ANCHOR,
+      ultraworkTagPairCount: injectedText.split(ULTRAWORK_TAG_ANCHOR).length - 1,
+    },
+  }
+}
+
+/**
+ * Controls ①②③ in three turns of ONE session.
+ *
+ * Why one session: all three are "the mode must NOT arm", so none of them ever
+ * sets the session one-shot, and sharing a session makes the claim stronger — a
+ * single stray injection anywhere in the three turns fails every control's
+ * "no keyword instruction reached the model" check at once.
+ *
+ * The negative needs its own rigor: "no injection happened" is the easiest
+ * assertion in the file to pass vacuously (a dead hook passes it). So the
+ * controls assert the POSITIVE side too — each turn really ran, reached the
+ * mock, and the real keyword text IS present in the user prompt (controls ② and
+ * ③) or genuinely absent (control ①). Without that, this scenario would pass
+ * even if the driver never delivered the prompts at all.
+ */
+export function analyzeKeywordNegativeControls(input, routes) {
+  const events = input.log?.events ?? []
+  const sisyphusRequests = input.requests.filter((request) => request.role === 'sisyphus')
+  const turnEnds = events.filter((event) => event.type === 'turn/end')
+  const userMessages = events.filter((event) => event.type === 'user/message')
+  // The prompts are searched as stored text (`messageContentText` joins the real
+  // content blocks, so newlines are REAL here) — but the control-② prompt spans
+  // several lines and the defect cases rewrite one line at a time, so the flat
+  // form is what the substring checks below see.
+  const userTexts = userMessages.map((event) => messageContentText(event.data))
+
+  // ⚠️ Scoped to the KEYWORD hook's own producer triple, not to "any plugin".
+  // A real run's log carries at least one OTHER plugin-sourced user message —
+  // dsh's own `dsh-system-prompt` snapshot (`form: 'snapshot'`) and the
+  // `skill-catalog` block are both `user/message` events with
+  // `source.kind === 'plugin'`. The first version of this check counted those
+  // and failed the scenario on a perfectly correct run; "some plugin injected
+  // something" is true of every session and therefore not a claim.
+  const keywordCarriers = userMessages.filter((event) => isKeywordInjectionSource(event.data))
+  // …and, separately: no OTHER plugin's message may carry a keyword body. That is
+  // the real leak risk (a mode's text arriving through some other channel), and
+  // `noKeywordBodyInTheLog` below is the log-wide form of it.
+  const foreignCarriersWithKeywordText = userMessages.filter((event) =>
+    event.data?.source?.kind === 'plugin'
+    && !isKeywordInjectionSource(event.data)
+    && (eventTextFlat(event).includes(KEYWORD_TEXTS.ultrawork.slice(0, 120))
+      || eventTextFlat(event).includes(KEYWORD_TEXTS.hyperplan.slice(0, 120))))
+
+  // The keyword's own banner, on the wire and in the log.
+  const bannerOnWire = sisyphusRequests.some((request) =>
+    requestMessagesContain(request, keywordDetectorConstants.ULTRAWORK_BANNER_LINE)
+    || requestMessagesContain(request, keywordDetectorConstants.HYPERPLAN_BANNER_LINE)
+    || requestMessagesContain(request, keywordDetectorConstants.COMBO_BANNER_LINE))
+  const bannerInLog = events.some((event) => eventTextFlat(event).includes(keywordDetectorConstants.ULTRAWORK_BANNER_LINE))
+  // The body of either mode must not be in the log either (a banner-less
+  // injection would be a worse bug than a banner'd one).
+  const bodyInLog = events.some((event) =>
+    eventTextFlat(event).includes(KEYWORD_TEXTS.ultrawork.slice(0, 120))
+    || eventTextFlat(event).includes(KEYWORD_TEXTS.hyperplan.slice(0, 120)))
+
+  // ⚠️ **The premise this scenario rests on, and the one it was blind to.**
+  //
+  // Every check below is a NEGATIVE: "no mode was injected". All of them pass
+  // trivially — indeed vacuously — when the hook is not running at all. That is
+  // not hypothetical: P4-T13 found the hook failing to register outright
+  // (`hook keyword-detector FAILED: Error: cannot get property "config" without
+  // inject`), and this scenario reported a clean PASS for it, because a hook
+  // that never registered also never injects. A negative-only scenario MUST
+  // therefore establish that its subject is alive before its negatives mean
+  // anything — so the registration line is checked here, against the registrar's
+  // own formatter rather than a restated string.
+  //
+  // The FAILURE line is asserted absent too, because "registered" and "failed"
+  // are the same registrar's two outcomes: a hook can print the failure and still
+  // be absent, and a boot log carrying both is a real ambiguity worth pinning.
+  const registeredLine = omoHooksMarkers.formatHookRegisteredLine(
+    keywordDetectorModule.KEYWORD_DETECTOR_ID, 'agent/pre-step',
+  )
+  // The failure line is a PREFIX, not a whole line: the registrar interpolates
+  // the thrown error's own message after the colon, so the tail differs per
+  // failure. The prefix is cut out of a real formatter call with a sentinel
+  // error, so it stays derived from the registrar rather than restated — and it
+  // stays prefix-shaped so ANY failure message is caught, not just the sentinel.
+  const failureSentinel = 'e2e-sentinel-7f1c'
+  const failureLine = omoHooksMarkers.formatHookFailedLine(
+    keywordDetectorModule.KEYWORD_DETECTOR_ID,
+    new Error(failureSentinel),
+  ).split(failureSentinel)[0]
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(input.bootLog),
+    // THE premise: the hook under test is actually wired to the event. Without
+    // this, all four negative checks below are unfalsifiable.
+    keywordDetectorRegisteredOnPreStep: (input.bootLog ?? '').includes(registeredLine),
+    keywordDetectorRegistrationDidNotFail: !(input.bootLog ?? '').includes(failureLine),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(input.providersJson),
+    sessionLogFound: input.log !== undefined,
+    // The PREMISE: all three prompts really reached the session as user turns.
+    // Without this the whole scenario would pass on an empty log.
+    allThreeControlPromptsDelivered:
+      userTexts.some((text) => text.includes('control one'))
+      && userTexts.some((text) => text.includes('control two'))
+      && userTexts.some((text) => text.includes('control three')),
+    // …and the mock answered each of the three turns.
+    mockSawThreeControlTurns: sisyphusRequests.length === 3
+      && events.filter((event) =>
+        event.type === 'assistant/message' && eventText(event).includes(KEYWORD_CONTROL_SUMMARY)).length === 3,
+    threeTurnsCompleted: turnEnds.length === 3
+      && turnEnds.every((end) => turnEndReasonKind(end) === 'completed'),
+    // CONTROL ① — no keyword in the message at all.
+    controlOnePromptHasNoKeyword: (() => {
+      const text = userTexts.find((candidate) => candidate.includes('control one'))
+      return text !== undefined
+        && !/\b(ultrawork|ulw|hyperplan|hpp)\b/i.test(text)
+    })(),
+    // CONTROL ② — the keyword IS there, but only inside the fence. Asserted
+    // positively so the control cannot pass by the prompt being keyword-free.
+    controlTwoKeywordIsInsideTheFence: (() => {
+      const text = userTexts.find((candidate) => candidate.includes('control two'))
+      if (text === undefined) return false
+      const fenced = text.match(/```[\s\S]*?```/g) ?? []
+      const outside = text.replace(/```[\s\S]*?```/g, '')
+      return /\b(ultrawork|ulw|hyperplan|hpp)\b/i.test(fenced.join('\n'))
+        && !/\b(ultrawork|ulw|hyperplan|hpp)\b/i.test(outside)
+    })(),
+    // CONTROL ③ — a slash-command lead, keyword present in the body of the line.
+    controlThreePromptIsSlashLed: (() => {
+      const text = userTexts.find((candidate) => candidate.includes('control three'))
+      return text !== undefined
+        && /^\s*\/[a-zA-Z][\w-]*(?:\s|$)/.test(text)
+        && /\bulw-execute\b/.test(text)
+    })(),
+    // THE NEGATIVE CLAIM, once, for all three turns.
+    noKeywordInjectedUserMessage: keywordCarriers.length === 0,
+    noForeignPluginCarriedKeywordText: foreignCarriersWithKeywordText.length === 0,
+    noKeywordBannerOnTheWire: !bannerOnWire,
+    noKeywordBodyInTheLog: !bodyInLog && !bannerInLog,
+  }
+  const failed = Object.entries(checks)
+    .filter(([, value]) => value !== true)
+    .map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    detail: {
+      turnCount: turnEnds.length,
+      sisyphusRequestCount: sisyphusRequests.length,
+      userMessageCount: userMessages.length,
+      pluginSourceCount: userMessages.filter((event) => event.data?.source?.kind === 'plugin').length,
+      keywordCarrierCount: keywordCarriers.length,
+      foreignCarriersWithKeywordText: foreignCarriersWithKeywordText.length,
+    },
+  }
+}
+
+/**
+ * Control ④ — the second keyword turn of the MAIN scenario, analysed here so
+ * its assertion is named separately from the injection link (S-6 vs S-11 must
+ * not be one check).
+ */
+function keywordIdempotencyChecks(events) {
+  const turnEnds = events.filter((event) => event.type === 'turn/end')
+  const expectedText = buildExpectedInjectedText('ultrawork')
+  const carriers = keywordInjectedCarriers(events, expectedText.slice(0, 240))
+  // Where the single injection sat in the event sequence, and where the second
+  // keyword turn's own messages did. One injection BEFORE that is the whole
+  // claim: the second turn added nothing.
+  const injectSeq = carriers[0]?.seq
+  const followupSummary = events.find(
+    (event) => event.type === 'assistant/message'
+      && eventText(event).includes(ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY),
+  )
+  const followupTurnEnd = turnEnds[1]
+  const checks = {
+    exactlyOneInjectionAcrossBothTurns: carriers.length === 2, // one splice + one claim
+    // The injection happened during TURN 1 — before the second keyword turn's
+    // own events. If it landed after them, the one-shot is not what stopped it.
+    injectionPredatesTheSecondTurn: injectSeq !== undefined
+      && followupSummary !== undefined
+      && injectSeq < followupSummary.seq,
+    // …and the second turn really ran to completion (so "no second injection"
+    // is not "the second turn never happened").
+    secondKeywordTurnRan: followupSummary !== undefined
+      && followupTurnEnd !== undefined
+      && followupSummary.seq < followupTurnEnd.seq
+      && turnEndReasonKind(followupTurnEnd) === 'completed',
+    bothTurnsCompleted: turnEnds.length === 2
+      && turnEnds.every((end) => turnEndReasonKind(end) === 'completed'),
+  }
+  return {
+    checks,
+    detail: {
+      turnCount: turnEnds.length,
+      carrierCount: carriers.length,
+      injectionSeq: injectSeq,
+      followupSummarySeq: followupSummary?.seq,
+    },
+  }
+}
+
+// ── fabricated P4-T13 keyword-mode inputs (must earn their PASS) ──────────────
+//
+// A keyword-injection analysis can pass VACUOUSLY in a way the injection
+// scenarios cannot: the negative controls pass when the hook is dead. So the
+// self-test proves each analysis is sensitive by feeding it a fabricated GOOD
+// input (must PASS) and then one defect at a time (each must FAIL on its OWN
+// named check).
+//
+// The GOOD inputs are built from the REAL session-log event shapes the driver
+// observed (a `user/message` claim carrying an `InjectedUserMessage`, a
+// `turn/end`, an `assistant/message`) and the REAL request bodies, so a defect
+// case is "the run went wrong like this", not "the fixture was shaped wrong".
+const KEYWORD_FABRICATED_SESSION_ID = 'fabricated-keyword-session'
+const KEYWORD_FABRICATED_SUMMARY_EVENT = { type: 'assistant/message', data: { text: ULTRAWORK_KEYWORD_SUMMARY } }
+
+/** A `user/message` event carrying one plugin-injected message, verbatim shape. */
+function fabricatedKeywordInjectedEvent(text, source, id) {
+  return {
+    type: 'user/message',
+    data: {
+      id,
+      role: 'user',
+      content: [{ type: 'text', text }],
+      source,
+    },
+  }
+}
+
+/** The `InjectedUserMessage` the real hook builds, from the real module. */
+function fabricatedKeywordInjection(text) {
+  return keywordDetectorModule.buildInjectionMessage(text)
+}
+
+/**
+ * The fabricated GOOD log for the main ultrawork scenario: turn 1 injects (splice
+ * at seq 5, claim at seq 6), the model summarises, turn 1 ends; turn 2 (the
+ * idempotency control) answers and ends with NO new carrier.
+ */
+function fabricatedKeywordGoodInput(routes) {
+  const expectedText = buildExpectedInjectedText('ultrawork')
+  const injected = fabricatedKeywordInjection(expectedText)
+  const source = injected.source
+  return {
+    log: {
+      header: { id: KEYWORD_FABRICATED_SESSION_ID },
+      events: [
+        { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_PROMPT }], source: { kind: 'user' } } },
+        { seq: 2, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: KEYWORD_STEP_COMMAND }) } },
+        { seq: 3, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-1', content: [{ type: 'text', text: KEYWORD_STEP_MARKER }] }] } } },
+        {
+          seq: 4,
+          type: 'agent/inbox/spliced',
+          data: { target: 'next-step', inserted: [injected] },
+        },
+        { ...fabricatedKeywordInjectedEvent(expectedText, source, injected.id), seq: 5 },
+        { ...KEYWORD_FABRICATED_SUMMARY_EVENT, seq: 6 },
+        { seq: 7, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+        { seq: 8, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT }], source: { kind: 'user' } } },
+        { seq: 9, type: 'assistant/message', data: { text: ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY } },
+        { seq: 10, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      ],
+    },
+    // The S-11 shape: request #0 predates the claim, #1 carries it.
+    requests: [
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_PROMPT }] }] } },
+      {
+        role: 'sisyphus',
+        body: {
+          messages: [
+            { role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_PROMPT }] },
+            { role: 'assistant', content: [{ type: 'text', text: 'ack' }] },
+            fabricatedKeywordInjection(expectedText),
+          ],
+        },
+      },
+      {
+        role: 'sisyphus',
+        body: {
+          messages: [
+            { role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_PROMPT }] },
+            fabricatedKeywordInjection(expectedText),
+            { role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT }] },
+          ],
+        },
+      },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+  }
+}
+
+/**
+ * The hyperplan scenario's GOOD input.
+ *
+ * It exists because the hyperplan scenario was otherwise self-test-INVISIBLE: it
+ * had no fabricated good input and no defect cases, so nothing in `--self-test`
+ * exercised `analyzeHyperplanKeywordInjected` at all. An analyzer that could only
+ * ever return FAIL (a typo in a check name, a wrong prompt constant) would have
+ * shown up as a green suite until a real run failed — which is the same
+ * blind-spot shape MAJOR-4 found on the boot-log side, one layer in.
+ *
+ * Single turn, two steps — the hyperplan scenario has no followup prompt, unlike
+ * the ultrawork one, so the idempotency checks are not part of its kernel.
+ */
+function fabricatedHyperplanGoodInput(routes) {
+  const expectedText = buildExpectedInjectedText('hyperplan')
+  const injected = fabricatedKeywordInjection(expectedText)
+  return {
+    log: {
+      header: { id: KEYWORD_FABRICATED_SESSION_ID },
+      events: [
+        { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: HYPERPLAN_KEYWORD_PROMPT }], source: { kind: 'user' } } },
+        { seq: 2, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: KEYWORD_STEP_COMMAND }) } },
+        { seq: 3, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-1', content: [{ type: 'text', text: KEYWORD_STEP_MARKER }] }] } } },
+        { seq: 4, type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [injected] } },
+        { ...fabricatedKeywordInjectedEvent(expectedText, injected.source, injected.id), seq: 5 },
+        { seq: 6, type: 'assistant/message', data: { text: HYPERPLAN_KEYWORD_SUMMARY } },
+        { seq: 7, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      ],
+    },
+    // Same S-11 shape as the ultrawork fixture: request #0 predates the claim.
+    requests: [
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: HYPERPLAN_KEYWORD_PROMPT }] }] } },
+      {
+        role: 'sisyphus',
+        body: {
+          messages: [
+            { role: 'user', content: [{ type: 'text', text: HYPERPLAN_KEYWORD_PROMPT }] },
+            { role: 'assistant', content: [{ type: 'text', text: 'ack' }] },
+            fabricatedKeywordInjection(expectedText),
+          ],
+        },
+      },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+  }
+}
+
+/** The fabricated GOOD input for the three negative controls. */
+function fabricatedKeywordNegativeGoodInput(routes) {
+  const controlTwoText = KEYWORD_CONTROL_CODE_BLOCK_PROMPT
+  const controlThreeText = KEYWORD_CONTROL_SLASH_PROMPT
+  return {
+    // The generic FABRICATED_BOOT_LOG carries only the three LOADED_MARKERS, but
+    // this scenario's whole premise is that the hook is ALIVE — so the fixture
+    // also carries the hook's own registration line, built through the
+    // registrar's formatter (never a restated string, so a reword cannot leave
+    // the fixture asserting a phrase the registrar no longer prints).
+    //
+    // ⚠️ This key used to appear TWICE in this one object literal, the second
+    // (plain, without the registration line) winning and silently undoing the
+    // first. The symptom was a GOOD input failing its own premise check, which
+    // is the only thing that made the shadowing visible.
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      omoHooksMarkers.formatHookRegisteredLine(
+        keywordDetectorModule.KEYWORD_DETECTOR_ID, 'agent/pre-step',
+      ),
+    ].join('\n'),
+    log: {
+      header: { id: 'fabricated-keyword-negatives' },
+      events: [
+        { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: KEYWORD_CONTROL_NONE_PROMPT }], source: { kind: 'user' } } },
+        { seq: 2, type: 'assistant/message', data: { text: KEYWORD_CONTROL_SUMMARY } },
+        { seq: 3, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+        { seq: 4, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: controlTwoText }], source: { kind: 'user' } } },
+        { seq: 5, type: 'assistant/message', data: { text: KEYWORD_CONTROL_SUMMARY } },
+        { seq: 6, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+        { seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: controlThreeText }], source: { kind: 'user' } } },
+        { seq: 8, type: 'assistant/message', data: { text: KEYWORD_CONTROL_SUMMARY } },
+        { seq: 9, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      ],
+    },
+    requests: [
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: KEYWORD_CONTROL_NONE_PROMPT }] }] } },
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: controlTwoText }] }] } },
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: controlThreeText }] }] } },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+  }
+}
+
+/**
+ * The fabricated GOOD input for the combo scenario: one turn, two steps, the
+ * combo message carried once (splice + claim) and carried on request #1.
+ */
+function fabricatedComboGoodInput(routes) {
+  const expectedText = buildExpectedInjectedText('hyperplan-ultrawork')
+  const injected = fabricatedKeywordInjection(expectedText)
+  return {
+    log: {
+      header: { id: 'fabricated-combo-session' },
+      events: [
+        { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: COMBO_KEYWORD_PROMPT }], source: { kind: 'user' } } },
+        { seq: 2, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: KEYWORD_STEP_COMMAND }) } },
+        { seq: 3, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-1', content: [{ type: 'text', text: KEYWORD_STEP_MARKER }] }] } } },
+        { seq: 4, type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [injected] } },
+        { ...fabricatedKeywordInjectedEvent(expectedText, injected.source, injected.id), seq: 5 },
+        { seq: 6, type: 'assistant/message', data: { text: COMBO_KEYWORD_SUMMARY } },
+        { seq: 7, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      ],
+    },
+    requests: [
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: COMBO_KEYWORD_PROMPT }] }] } },
+      {
+        role: 'sisyphus',
+        body: {
+          messages: [
+            { role: 'user', content: [{ type: 'text', text: COMBO_KEYWORD_PROMPT }] },
+            fabricatedKeywordInjection(expectedText),
+          ],
+        },
+      },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+  }
+}
+
 const SCENARIOS = [
   {
     name: 'hello',
@@ -10334,6 +11473,50 @@ const SCENARIOS = [
     script: skillsCatalogVisibleScript,
     analyze: analyzeSkillsCatalogVisible,
   },
+  // ── P4-T13: the keyword-mode injection chain (H-33) ────────────────────────
+  //
+  // FOUR scenarios, because the session one-shot (S-6) makes "inject once" and
+  // "inject again" mutually exclusive within one session. The main scenario
+  // carries its own idempotency control as turn 2; the other three need their
+  // own sessions.
+  {
+    name: 'ultrawork-keyword-injected',
+    prompt: ULTRAWORK_KEYWORD_PROMPT,
+    // Control ④: a SECOND `ulw` message in the same session. The one-shot guard
+    // (S-6) must make it a no-op — this is the e2e face of the session-level
+    // idempotency, and it is why this scenario is 2 turns rather than 1.
+    followupPrompts: [ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT],
+    roles: ['sisyphus'],
+    script: ultraworkKeywordScript,
+    analyze: analyzeUltraworkKeywordInjected,
+  },
+  {
+    name: 'keyword-negative-controls',
+    // Controls ①②③ in three turns of one session. All three are negatives, so
+    // none of them ever arms the one-shot — sharing the session is safe here and
+    // makes the claim stronger (one stray injection fails all three).
+    prompt: KEYWORD_CONTROL_NONE_PROMPT,
+    followupPrompts: [KEYWORD_CONTROL_CODE_BLOCK_PROMPT, KEYWORD_CONTROL_SLASH_PROMPT],
+    roles: ['sisyphus'],
+    script: keywordNegativeControlsScript,
+    analyze: analyzeKeywordNegativeControls,
+  },
+  {
+    name: 'hyperplan-keyword-injected',
+    prompt: HYPERPLAN_KEYWORD_PROMPT,
+    roles: ['sisyphus'],
+    // The driver CALLS `def.script(...)`, so the factory result is wrapped —
+    // passing the object directly is the `def.script is not a function` crash.
+    script: () => keywordTwoStepScript(HYPERPLAN_KEYWORD_SUMMARY),
+    analyze: analyzeHyperplanKeywordInjected,
+  },
+  {
+    name: 'combo-keyword-injected',
+    prompt: COMBO_KEYWORD_PROMPT,
+    roles: ['sisyphus'],
+    script: () => keywordTwoStepScript(COMBO_KEYWORD_SUMMARY),
+    analyze: analyzeComboKeywordInjected,
+  },
 ]
 
 /**
@@ -10545,11 +11728,33 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
   if (process.argv.includes('--self-test')) {
     const routes = resolveModelRoutes()
     const problems = await runAnalysisSelfTest(routes)
+    // ⚠️ Anti-vacuity for the generated banner itself. Every keyword case pushes
+    // its label as it runs, so an EMPTY accumulator means no case ran — the
+    // loops were skipped, renamed, or the push was lost in an edit. Without this
+    // the banner would render as nothing and the self-test would print a
+    // perfectly clean, completely unearned attestation. A banner that cannot
+    // prove it ran something is exactly the defect the hand-typed list had.
+    if (KEYWORD_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('the self-test banner is EMPTY: no P4-T13 keyword case pushed a label, so the attestation below would claim nothing')
+    }
     if (problems.length > 0) {
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    // Built from the labels the cases actually pushed (see the accumulator's
+    // doc comment): scenario-major, order-preserving, one clause per scenario.
+    // This replaces a hand-typed list that had already drifted out of date.
+    const KEYWORD_SELF_TEST_BANNER = [...KEYWORD_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [scenario, label]) => {
+        // The labels are plain text; a `'` needs no escaping inside the template
+        // literal this is rendered into, and stripping it would mangle the two
+        // labels that legitimately contain an apostrophe.
+        byScenario.set(scenario, [...(byScenario.get(scenario) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([scenario, labels]) => `P4-T13 ${scenario}: ${labels.join(', ')}`)
+      .join('; ')
+    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

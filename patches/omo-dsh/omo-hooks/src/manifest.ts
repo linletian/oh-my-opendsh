@@ -890,8 +890,39 @@ const MANIFEST_ROWS = [
     mode: 'A',
     summary:
       '用户文本命中 ultrawork/ulw/hyperplan/hpp/组合词 → 六级输入过滤 + 双幂等后注入模式指令正文（正文 = P4-T4 vendor 的 ultrawork/hyperplan SKILL.md；5+1 模型变体收窄为单一名册感知文案；team 枚举位预留不接线；toast 收窄为审计行）',
-    e2eScenario: 'keyword-mode-ultrawork',
-    status: 'pending',
+    // The scenario name is the one P4-T13 actually ships. It was
+    // `keyword-mode-ultrawork` while the row was `pending` — a name for a
+    // scenario that did not exist yet. Four scenarios landed instead, because
+    // the session one-shot (S-6) makes "injected" and "injected again" mutually
+    // exclusive within one session; `ultrawork-keyword-injected` is the primary
+    // one, and it carries the idempotency control as its second turn.
+    e2eScenario: 'ultrawork-keyword-injected',
+    // `ported` — flipped in P4-T13 as the **双侧同步** commit the coverage doc's
+    // §1.2 H-33 status cell itself spells out (`ported 翻转随 P4-T13 e2e 与
+    // manifest status 同 commit 双侧同步（c14 契约）`). The doc-side half of that
+    // cell is the arbiter's, flipped in the same change; the gate that enforces
+    // the pairing is c14 in `scripts/verify-concerto-static.mjs`, which fails in
+    // BOTH directions — a ported id with no 已移植 baseline row, and a 已移植
+    // row with no ported id.
+    //
+    // `HookManifestStatus`'s flip condition ("listener + unit test + e2e have all
+    // landed") was met by: the listener and unit tests in P4-T12, and the e2e in
+    // P4-T13 as four scenarios (`ultrawork-keyword-injected`,
+    // `keyword-negative-controls`, `hyperplan-keyword-injected`,
+    // `combo-keyword-injected`). The named checks and the fabricated-defect cases
+    // are deliberately NOT counted here — `node tests/e2e/drive.mjs --self-test`
+    // is the single source for both, and it re-renders its own banner from the
+    // cases that actually ran. A count written into this comment goes stale the
+    // next time a case is added, and a stale number inside a flip justification
+    // is worse than no number at all: read the suite instead.
+    //
+    // S-11 (the injection's arrival on the wire is one step boundary LATER than
+    // upstream, because dsh-agent-loop claims the inbox batch before the
+    // waterfall) is a MAPPING property, not a defect, and is documented in full at
+    // the hook's own header. The e2e asserts the late arrival — `banner on a
+    // LATER request` — and must NOT be rewritten to assert the banner on the
+    // FIRST request, which is upstream's timing and not this deployment's.
+    status: 'ported',
   },
 ] as const satisfies readonly HookManifestEntry[]
 

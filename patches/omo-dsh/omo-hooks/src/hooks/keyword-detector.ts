@@ -177,7 +177,7 @@
 //     从下一轮起才生效。
 //     **不修**：这是模式 A 的固有语义（`agent/pre-step` 的时点由宿主决定，
 //     插件无法把注入排进已 claim 的批次）。本移植**只登记**，不改时点。
-//     ⚠️ **P4-T13 的 e2e 断言口径按此设计**：`keyword-mode-ultrawork` 场景
+//     ⚠️ **P4-T13 的 e2e 断言口径按此设计**：`ultrawork-keyword-injected` 场景
 //     不得断言"首个模型请求就带 `ULTRAWORK MODE ENABLED!`"（会红），应断言
 //     "本轮注入被记录进 session log，且**后续**某次模型请求带上了它"。
 //     另注：即使时点相同，S-6 的会话级一次性守卫也只会让它注入一次——所以
@@ -591,13 +591,45 @@ export const registerKeywordDetector: HookRegistrar = (
 export function readConfigOverride(
   ctx: HooksRegistrationContext,
 ): Partial<KeywordDetectorConfig> | undefined {
-  const holder = ctx as { readonly config?: { readonly keywordDetector?: unknown } }
-  const raw = holder.config?.keywordDetector
+  // ⚠️ **`ctx.get('config')`, never `ctx.config`.** The cordis ctx is a Proxy that
+  // THROWS on an undeclared property access — `ctx.config` on a context with no
+  // injected `config` service raises `cannot get property "config" without
+  // inject`. P4-T13's e2e caught exactly that: the whole hook failed to register
+  // (`[omo-hooks] hook keyword-detector FAILED: Error: cannot get property
+  // "config" without inject`) and every keyword assertion was vacuously red.
+  // The optional-chaining `?.` did NOT help — the throw happens on the property
+  // GET, before the chain applies. `ctx.get(name)` is the sanctioned optional
+  // read (same idiom as ulw-execute's `ctx.get('jobs')`, which has the same
+  // "the service is usually absent at apply() time" property).
+  const service = readOptionalService(ctx, 'config')
+  const raw = isObject(service) ? (service as { keywordDetector?: unknown }).keywordDetector : undefined
   if (!isObject(raw)) return undefined
   const disabled = raw.disabledKeywords ?? raw.disabled_keywords
   const enabled = raw.enabledExpansions ?? raw.enabled_expansions
   return {
     ...(Array.isArray(disabled) ? { disabledKeywords: disabled as KeywordType[] } : {}),
     ...(Array.isArray(enabled) ? { enabledExpansions: enabled as KeywordType[] } : {}),
+  }
+}
+
+/**
+ * `ctx.get(name)` narrowed to a readable value, and **inert on a throwing ctx**.
+ *
+ * Two independent reasons for the try/catch, both learned the hard way:
+ *   * the ctx proxy throws for an undeclared property, and a future cordis could
+ *     throw from `get()` itself — either way a *config read* must not be able to
+ *     take hook registration down with it;
+ *   * S-10's whole premise is "a bad config degrades to the default, it does not
+ *     fail the step". A config read that throws would break that premise at
+ *     apply() time, long before any step runs.
+ */
+function readOptionalService(ctx: unknown, name: string): unknown {
+  if (!isObject(ctx)) return undefined
+  const get = (ctx as { get?: unknown }).get
+  if (typeof get !== 'function') return undefined
+  try {
+    return (get as (service: string) => unknown).call(ctx, name)
+  } catch {
+    return undefined
   }
 }
