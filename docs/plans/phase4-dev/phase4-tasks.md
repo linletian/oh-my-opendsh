@@ -107,7 +107,7 @@
 
 ### [ ] P4-T8 — 移植 stop-continuation-guard 服务 + `/stop-continuation` 命令
 
-- **产出**：guard 状态服务（cordis 服务形态，P4-T1 Q-5 裁定——omo-hooks 提供、omo-commands 消费；stop/isStopped/clear 词汇表与上游对齐）+ `src/commands/stop-continuation.ts` + omo-hooks 侧 H-03 enforcer 的停止标记检查（同 commit 跨插件改动）+ 单测。
+- **产出**：guard 状态服务（cordis 服务形态，P4-T1 Q-5 裁定——**omo-hooks 提供**（H-34 住 omo-hooks，§4.1 拓扑），**omo-commands 作为写入方消费**（stop()/clear()），**omo-hooks H-03 作为读取方消费**（isStopped()）；stop/isStopped/clear 词汇表与上游对齐）+ `src/commands/stop-continuation.ts` + omo-hooks 侧 H-03 enforcer 的停止标记检查（同 commit 跨插件改动）+ 单测。
 - **做法**：停止面接线按 Q-5 盘点逐机制落地——① todo 续行：H-03 steer 前查 isStopped（omo-hooks 改动 + 回归用例）；② goal 轮驱动：pause 面或差异记录；③ ralph：原生停止面或差异记录；④ 后台任务级联取消：`ctx.jobs` 取消 API（H-11 的 ctx.inject 延迟获取先例）；上游 `index.test.ts` 用例移植为单测种子；服务跨插件可见性单测（双插件共存模拟，R-5）。
 - **⚠️ omo-hooks manifest 同步网（R-11，计划书 §4.1 已成文——违者 boot 红/门红）**：guard 落地先裁定 **manifest 条目 fork**——(i) 若作为 manifest 条目（需裁定服务形态的"目标事件/模式"字段语义）：同 commit 同步 `EXPECTED_HOOK_COUNT` +1、`tests/omo-hooks/manifest.test.ts` 三处硬编码（:115/:126/:370）、`tests/omo-hooks/registration.test.ts` 的 `EXPECTED_SUMMARY_LINE`（事件计数随新条目归属变化）；(ii) 若以纯服务模块落地（无 manifest 条目）：**文件放 `src/hooks/` 之外**（c13 双向集合 + 孤儿 .ts 规则会拒绝 `src/hooks/` 下的无条目文件），且其覆盖行不得进 c14 解析面（见下）。**c14 演进（若本任务为首个 manifest 新增，否则 T12 承担）**：`COVERAGE_BASELINE_MD` 单文档 → `[phase3-hooks.md, phase4-commands.md]` 两文档并集（解析契约：`## 1.`–`## 2.` 之间、`| H-\d+ |` 行、第 5 数据格为状态列——phase4-commands.md §1.2 表格已按此契约排版）+ manifest 侧改按 `status === 'ported'` 过滤（理由：Phase 3 结项时全条目 ported，过滤不降既有断言强度；pending 期条目不破门；翻转 commit 仍须文档/manifest 同改），理由注释写入 gate 源码。
 - **判定**：✅ 单测覆盖：stop 后 isStopped 真 / clear 复位 / H-03 在 stopped 会话不再 steer / 级联取消调用面 / 服务缺席时 loud-but-non-fatal；vitest 绿；**fork 两分支各自的门 2/6 不红（含同 commit 的同步网改动）**。
