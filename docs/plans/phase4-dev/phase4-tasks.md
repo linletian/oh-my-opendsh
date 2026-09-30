@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **4/18**（P4-T1/T2/T3/T4 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **5/18**（P4-T1…T5 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -73,13 +73,13 @@
 - **证据**：commit `92279ee`。三方计数 disk/manifest/NOTICES = **291**（288 skill + 3 包根；277 verbatim + 12 已修改 + 2 新增；deviations 14 条 1:1）；`verify-licenses` PASS **checked=56**（+shared-skills +omo-commands）；漂移 `checked=320 violations=0`；`tests/vendor/` **23 passed**（含 12 组变异反跑实证）；「只从 tag 取内容」评审实证（56 个 tag↔HEAD 分歧文件全部源自 tag）；改名 sed 反向还原机器证明。**双评审 APPROVE**（sub-agent + mcode 各一轮 + existsSync 守护修复后复验）。三项构建配置改动（tsconfig exclude / vitest 排除 Bun payload 测试 / walker 修正）与载体路径白名单保留经仲裁批准。
 - **依赖**：P4-T1。**量级**：1 天（实耗约 0.7 天）。
 
-### [ ] P4-T5 — skill 投递机制落地 + catalog e2e
+### [x] P4-T5 — skill 投递机制落地 + catalog e2e
 
 - **产出**：按 P4-T1 Q-4 裁定落地投递——**已定案 = 候选 b′**：apply 时从 vendor 目录读各 SKILL.md 正文，`ctx.skills.register({name, description, whenToUse?, content, path: <vendor SKILL.md 绝对路径>})`（path 使引用文件磁盘可读；19 个 skill 全部注册，归当前 Fiber effect）；`tests/e2e/` 新增 `skills-catalog-visible` 场景。
 - **做法**：从模块 `import.meta.url` 解析 vendor 目录、apply 时一次读盘注册（命令路径不读盘纪律保留——skill 正文经 `ctx.skills.get` 原生面加载）；`$DSH_HOME` 解析不需要（无物化）；e2e 场景 = catalog 断言（19 裸名集合恰可见、无 `shared/` 前缀、start-work 以 `ulw-execute` 名出现）+ mock 发 `skill` 工具调用加载一个 skill → 断言正文经 `ctx.skills.get` 原生面返回 + 对照（未 vendor 名返回未找到）+ 引用文件经 path 可读性抽查（ultimate-browsing 一个引用文件）。
 - **判定**：✅ 门 3 绿；**对 `dsh-skill*` 包零 patch**（静态断言进 T16）；场景 verdict JSON 含 catalog 明细断言。
-- **证据**：（待填）
-- **依赖**：P4-T4。**量级**：0.5 天。
+- **证据**：commit `42baa49`。`skills-catalog-visible` **13/13 断言**（catalog 19 裸名恰可见、无 `shared/` 前缀、`ulw-execute` 在 `start-work` 不在、skill 工具正文与 vendor 逐字全文比对、未 vendor 名拒、ultimate-browsing 引用文件经 path 可读）；门 2 = **1162 测试**（tests/omo-commands 128）；9 条 fabricated 缺陷自证；strip-only 守卫含反事实实证。**双评审 APPROVE**（sub-agent 三轮 + mcode 三轮；23 条 findings 修复：重名计数诚实化/invocation 键 throw/per-tree non-fatal/全文比对/YAML 注释语义三类）。dsh 契约承重面（评审实测行号）：`source` 必填（dsh-skill lib:486）、duplicate first-wins（:197-200）、`super(ctx,"skills")`（:132）。
+- **依赖**：P4-T4。**量级**：0.5 天（实耗约 0.7 天）。
 
 ---
 
