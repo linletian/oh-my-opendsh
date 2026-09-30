@@ -26,71 +26,224 @@
 // a junk drawer. The feasibility report §4.4 topology reserved
 // patches/omo-dsh/omo-commands/ for exactly this.
 //
-// THIS FILE IN P4-T2 IS A SKELETON. It exports `name` and an apply() whose body
-// is intentionally empty; the ONLY thing P4-T2 delivers is the package shape
-// plus manifest.ts (the single source of truth for WHICH commands exist). The
-// deliverable is deliberately not mountable-as-a-feature yet: wiring it into
-// cordis.yml is P4-T3's job, and until then this plugin registers no command
-// and logs no marker — a half-loaded plugin that silently claimed success would
-// be worse than one that plainly does nothing.
+// WHAT P4-T2 DELIVERED AND WHAT P4-T3 ADDED. P4-T2 delivered the package shape
+// plus manifest.ts (the single source of truth for WHICH commands exist) behind
+// an EMPTY apply() that imported nothing; P4-T3 adds the mount itself — the
+// `inject: ['commands']` dependency, the registration loop, and the boot
+// markers. The implementation registry is DELIBERATELY EMPTY: all six manifest
+// rows are 'pending' at this point (no command handler, unit test or e2e
+// scenario has landed), so a correct boot logs the summary line
+// `[omo-commands] loaded: manifest 6 entries (pending=6, ported=0) — 0/6 commands
+// registered` and NOTHING else. That is the P3-T3 precedent exactly: an empty
+// implementation registry with the summary line derived from the manifest,
+// filled one command at a time from T6.
 //
-// For the same reason this module imports NOTHING: an import of manifest.ts
-// whose only purpose is to keep a future reference alive is dead weight a
-// bundled host would be right to drop, so P4-T3 adds that import together with
-// the registration loop that actually consumes it.
-//
-// THE `.ts` EXTENSION IN THAT IMPORT IS LOAD-BEARING: Node 24 type-stripping
-// (P-8.6) does no specifier resolution, and this workspace has no bundler to
-// rewrite it — so P4-T3's `from './manifest.ts'` must carry the extension
-// verbatim (the omo-hooks precedent, patches/omo-dsh/omo-hooks/src/index.ts,
-// carries the same note immediately above its import block; the no-build
-// rationale itself is recorded in patches/omo-dsh/omo-commands/
-// tsconfig.host.json's header).
+// The `.ts` extension in the imports below is LOAD-BEARING: Node 24
+// type-stripping (P-8.6) does no specifier resolution, and this workspace has no
+// bundler to rewrite it (the omo-hooks precedent carries the same note
+// immediately above its import block; the no-build rationale itself is recorded
+// in patches/omo-dsh/omo-commands/tsconfig.host.json's header, lines 6-8).
+
+import {
+  COMMAND_MANIFEST,
+  validateManifest,
+  type CommandManifestEntry,
+} from './manifest.ts'
+import {
+  formatCommandFailedLine,
+  formatCommandRegisteredLine,
+  formatLoadedSummaryLine,
+  formatManifestValidationFailedLine,
+} from './boot-markers.ts'
 
 export const name = 'omo-commands'
 
 /**
- * Minimal structural typing for the surface apply() will touch in P4-T3.
- * Declared here rather than imported from DSH for the reason in the header
- * (this workspace has no dsh dependency). An empty interface placeholder is
- * NOT used: `unknown` would be an unhelpful lie once the loop lands, and a
- * permissive `ctx: unknown` would let a typo'd property access typecheck today
- * and fail at boot tomorrow. When P4-T3 adds the registration loop, the needed
- * members (the `commands.register` / `skills.register` forms and the boot
- * logger) are added to this interface AT THAT TIME, mirroring omo-hooks'
- * HooksRegistrationContext.
+ * Minimal structural typing for the surface apply() touches — the omo-hooks
+ * HooksRegistrationContext discipline, at P4-T3 rather than at the skeleton.
+ * Declared here rather than imported from DSH for the reason in the header (this
+ * workspace has no dsh dependency).
  *
- * EVERY MEMBER IS OPTIONAL **ON PURPOSE, FOR THE SKELETON PHASE ONLY**. Today
- * `apply()` reads nothing off `ctx`, so a required member would be a lie the
- * typechecker could not keep; P4-T3, the moment the registration loop lands,
- * promotes `commands` (and then `skills`) to REQUIRED and keeps the interface
- * honest about what the loop actually touches. A leftover `?` after the loop
- * ships is a reviewable sign that this transition was not completed.
+ * `commands` was OPTIONAL during P4-T2's skeleton (nothing read it) and is
+ * REQUIRED now that the loop registers through it — the promotion P4-T2's
+ * comment promised, and the reason P4-T3 declares it in `inject` below: cordis
+ * then holds this plugin in the WAITING state and re-runs apply() when the
+ * service appears, instead of throwing inside the loop on a profile without it.
+ *
+ * Why the hard dependency is safe, measured: the `commands` service is mounted
+ * by the base bundle (`dsh-base/cordis.patch.yml` inserts `id: commands` →
+ * `@deepseek-ai/dsh-commands`), so every profile that can boot this overlay
+ * already carries it. The same choice is what `@deepseek-ai/dsh-command-goal`
+ * makes (`inject = ["commands", "goals"]`).
+ *
+ * `effect` stays OPTIONAL because it is cordis's own member, touched only on the
+ * branch where a registrar hands back a raw disposer. Its callback return type is
+ * `CommandDisposer | void` (NOT `unknown`) so that the fiber contract is stated
+ * where the loop consumes it — the same typed union omo-hooks' HooksRegistrationContext
+ * uses for its `effect`.
  */
 export interface CommandsRegistrationContext {
-  /** Reserved for P4-T3: the cordis command registration form. */
-  readonly commands?: {
-    register?: (definition: unknown) => unknown
+  /** The command registry (`dsh-commands`); every registration goes through it. */
+  readonly commands: {
+    register: (definition: CommandsRegistrationDefinition) => unknown
   }
+  /** cordis's fiber-scoped effect collector — used only to adopt a returned disposer. */
+  readonly effect?: (execute: () => CommandDisposer | void) => unknown
+}
+
+/** A cordis-style disposal: what an effect's execute callback RETURNS to be collected. */
+export type CommandDisposer = () => void
+
+/**
+ * The minimal structural shape this plugin passes to `ctx.commands.register`,
+ * mirroring `CommandDefinition` in `@deepseek-ai/dsh-commands/lib/types/types.d.ts`
+ * (measured on 0.1.5-rc.1) with the handler's invocation left opaque: the
+ * invocation surface (commandId / agent / rawInput / attachments / signal) is
+ * consumed by T6+ handlers, which declare their own structural types at that
+ * time rather than widening this one speculatively.
+ */
+export interface CommandsRegistrationDefinition {
+  /** Lowercase command name without the leading slash. */
+  readonly name: string
+  /** Human-readable summary used in discovery UI. */
+  readonly description: string
+  /** Optional free-form input hint advertised to capable clients. */
+  readonly input?: {
+    readonly hint: string
+    readonly attachments?: boolean
+  }
+  /** Execute against the receiving agent. */
+  readonly handler: (invocation: unknown) => unknown
 }
 
 /**
- * The plugin entry. P4-T2 leaves the body empty ON PURPOSE.
- *
- * TODO(P4-T3): `validateManifest(COMMAND_MANIFEST)` + one registration loop over
- * the manifest rows (one `[omo-commands] command <id> registered` line each plus
- * one summary line whose per-status counts come from `countsByStatus`, never
- * hard-coded), with the loud-but-non-fatal discipline proven by P2-T16 — a single
- * command's registration failure logs its own FAILED line and never suppresses
- * the other rows. The manifest is validated at apply() time so a roster typo
- * becomes a boot-time line instead of a silently missing command.
- *
- * NOTE for whoever writes that loop: the `ulw-plan` row MUST NOT get a handler.
- * Its port is the DSH-native skill gesture bridge (plan §4.3), and registering a
- * same-named command would shadow the bridge (a commands admission miss is what
- * lets the line fall back to an ordinary prompt). The row exists so the coverage
- * bookkeeping and the "do not register" constraint have one declared home.
+ * One command's registration. Returns an optional disposer for anything the
+ * registrar allocated BEYOND its `ctx.commands.register` call — a future T5+
+ * registrar that registers a skill or provides the stop-continuation guard
+ * service has to hand those back; a plain command handler returns nothing.
  */
-export function apply(_ctx: CommandsRegistrationContext): void {
-  // TODO(P4-T3): validateManifest(COMMAND_MANIFEST) + the registration loop + boot markers.
+export type CommandRegistrar = (
+  ctx: CommandsRegistrationContext,
+  entry: CommandManifestEntry,
+) => CommandDisposer | void
+
+/**
+ * The implementation registry, EMPTY AT P4-T3 ON PURPOSE — every manifest row is
+ * 'pending', so there is no handler to register yet. The loop below is complete
+ * and unit-tested against synthetic registrars (tests/omo-commands/
+ * registration.test.ts), and T6+ adds one entry per landed command.
+ *
+ * A row is registered only when BOTH hold: its status is 'ported' (the manifest
+ * row says handler + unit test + e2e all landed) and a registrar exists under its
+ * id. A 'ported' row with no registrar is NOT registered and NOT counted — the
+ * summary line then reads `<r>/<N>` with `<r>` below the ported count, which is
+ * the honest reading of "the manifest claims a port this tree cannot register".
+ * The boot never claims success it did not achieve.
+ *
+ * NOTE — `ulw-plan` MUST NEVER BE REGISTERED HERE, by any task. Registering a
+ * same-named command would shadow the `dsh-tool-skill` SKILL_GESTURE bridge
+ * (dsh's own command layer would win the name before the skill gesture is ever
+ * matched). This is a PRODUCT constraint, not a scheduling detail: the `ulw-plan`
+ * manifest row says so in its own row comment and `effectSummary` field, and
+ * tests/omo-commands/registration.test.ts pins it with a `not.toContain('ulw-plan')`
+ * guard on this record, so the ban survives whatever lands in T6+ even though the
+ * static gate does not (deliberately: the check belongs HERE, where a reviewer
+ * adding a registry entry reads it).
+ */
+export const COMMAND_REGISTRARS: Record<string, CommandRegistrar> = {}
+
+/**
+ * The registration loop, exported so its loud-but-non-fatal behaviour is
+ * unit-testable with a fake registry while `apply()` keeps the one-argument
+ * cordis entry-point signature (a test-only second parameter on apply would be a
+ * production seam for no production caller — the omo-hooks precedent).
+ *
+ * Contract, in order:
+ *   1. `validateManifest(entries)` — a broken roster logs the ONE
+ *      `manifest validation FAILED` line and returns; NO summary line, NO
+ *      registrations (loud-but-non-fatal: dsh keeps booting, and cold-start /
+ *      the probe fail on the missing `[omo-commands] loaded` marker).
+ *   2. one iteration per roster row, in roster order: skip rows that are not
+ *      'ported' (nothing to register yet) and rows with no registrar; otherwise
+ *      run the registrar inside its OWN try/catch and log exactly one
+ *      `registered` or `FAILED` line. A throw never stops the loop, so "one
+ *      command bad" can never mean "the rest never registered".
+ *   3. the summary marker LAST — it reports the loop's outcome (`<r>/<N>`), so
+ *      it cannot be printed before the loop has run (see boot-markers.ts's
+ *      ORDER note for why this differs from omo-hooks, which logs its summary
+ *      first because its counts come from the roster alone).
+ *
+ * FIBER REVERSIBILITY (discipline ①). A command registered through
+ * `ctx.commands.register` needs no re-wiring here: measured dsh-commands
+ * `lib/index.js:257-259`, `register()` returns `this.layers.effect(this.ctx, …)`,
+ * so the registration already belongs to the calling fiber and cordis disposes
+ * it on stop/update/undefine. That is a real difference from omo-hooks, whose
+ * registrars wire listeners through `ctx.on` and therefore own their own
+ * teardown. Only a registrar that RETURNS a raw disposer reaches `ctx.effect`
+ * here — and the forwarding arrow must RETURN the disposer and never CALL it
+ * (cordis runs the effect's execute callback immediately and collects its
+ * RETURN value as the fiber's disposal, Fiber#_execute).
+ */
+export function runCommandRegistrations(
+  ctx: CommandsRegistrationContext,
+  entries: readonly CommandManifestEntry[],
+  registrars: Readonly<Record<string, CommandRegistrar>>,
+  log: (line: string) => void,
+): void {
+  try {
+    validateManifest(entries)
+  } catch (err) {
+    log(formatManifestValidationFailedLine(err))
+    return
+  }
+  const registered: CommandManifestEntry[] = []
+  for (const entry of entries) {
+    if (entry.status !== 'ported') continue
+    const register = registrars[entry.id]
+    if (register === undefined) continue
+    try {
+      const disposer = register(ctx, entry)
+      // Register, never invoke: cordis runs this execute callback right now and
+      // collects what it RETURNS as the fiber's disposal, so the arrow must
+      // return `disposer`. Calling it inline would dispose at registration
+      // time; returning undefined would leave the fiber nothing to dispose.
+      // The `ctx.effect` half of this guard cannot be false on a real fiber —
+      // cordis's fiber mixin provides `effect` on every ctx — so this mirrors
+      // omo-hooks' identical implicit fallback: if it WERE absent, the returned
+      // disposer would be silently dropped while the row still logs
+      // `registered`, i.e. a leak no marker would reveal. Kept as a guard rather
+      // than asserted because the alternative is an unconditional call on an
+      // optional member.
+      if (typeof disposer === 'function' && typeof ctx.effect === 'function') {
+        ctx.effect(() => disposer)
+      }
+      registered.push(entry)
+      log(formatCommandRegisteredLine(entry.id))
+    } catch (err) {
+      log(formatCommandFailedLine(entry.id, err))
+    }
+  }
+  log(formatLoadedSummaryLine(entries, registered))
 }
+
+/**
+ * The plugin entry point: wire the real manifest and the real registry into the
+ * loop above. Everything observable from boot is produced by
+ * runCommandRegistrations (unit-tested), so this function stays a one-line
+ * assembly and the markers cannot drift from their tests.
+ */
+export function apply(ctx: CommandsRegistrationContext): void {
+  runCommandRegistrations(ctx, COMMAND_MANIFEST, COMMAND_REGISTRARS, (line) => {
+    console.log(line)
+  })
+}
+
+/**
+ * `commands` is a hard dependency (see the interface comment above), so cordis
+ * holds this plugin in the waiting state until the registry service is
+ * available and re-runs apply() then — the same shape as
+ * `@deepseek-ai/dsh-command-goal`'s `inject = ["commands", "goals"]`. Declaring
+ * it rather than reading `ctx.get('commands')` inside apply() is what turns a
+ * missing service into a WAIT instead of a boot-time throw inside the loop.
+ */
+export const inject = ['commands']

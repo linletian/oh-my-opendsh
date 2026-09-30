@@ -305,7 +305,14 @@ describe('P4-T4 shared-skills: the license gate scores the package, not its cont
 
   it('no repo package outside the vendor tree was dropped by the rule', () => {
     expect(scanned).toContain('package.json')
-    for (const p of ['patches/omo-dsh/omo-agents/package.json', 'patches/omo-dsh/omo-hooks/package.json']) {
+    // Every repo package must be in the sample, so "no repo package outside the
+    // vendor tree was dropped by the rule" cannot pass by omission when a new
+    // patch package lands (omo-commands added by P4-T3).
+    for (const p of [
+      'patches/omo-dsh/omo-agents/package.json',
+      'patches/omo-dsh/omo-hooks/package.json',
+      'patches/omo-dsh/omo-commands/package.json',
+    ]) {
       expect(scanned).toContain(p)
     }
     // every scored path is a workspace project, never nested content

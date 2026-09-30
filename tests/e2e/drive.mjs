@@ -9,11 +9,13 @@
 //   {result:"PASS"|"FAIL", scenarios:[...]}
 // (report §14.4.5 — CI parses stdout; all diagnostics go to stderr).
 //
-// P3-T3: the root cordis.yml now inserts TWO plugin rows (omo-agents +
-// omo-hooks), so stage 0 installs BOTH packages into the sandbox profile
-// (PLUGIN_DIRS) and `pluginLoaded` asserts BOTH load markers. The seven
-// scenarios themselves are unchanged — the hooks plugin registers no listener
-// yet (empty implementation registry), so it only adds its summary boot marker.
+// P3-T3: the root cordis.yml now inserts THREE plugin rows (omo-agents +
+// omo-hooks, plus omo-commands since P4-T3), so stage 0 installs all three
+// packages into the sandbox profile (PLUGIN_DIRS) and `pluginLoaded` asserts all
+// three load markers. The scenarios themselves are unchanged: omo-hooks'
+// implementation registry and omo-commands' are both empty, so neither plugin
+// adds behaviour — only its summary boot marker (`[omo-commands] loaded: …
+// 0/6 commands registered` at P4-T3, every manifest row still pending).
 // (P3-T6 amended that last clause: omo-hooks now registers its FIRST listener
 // and the chain carries ELEVEN scenarios — see the C-mode pilot section below.)
 //
@@ -503,29 +505,36 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // The concerto/roster package — also the source of the template this driver
 // renders for its own composition checks below.
 const PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents')
-// P3-T3: the root cordis.yml inserts one row per package, so a sandbox profile
-// must carry BOTH before it can boot the overlay at all.
+// P3-T3/P4-T3: the root cordis.yml inserts one row per package, so a sandbox
+// profile must carry ALL THREE before it can boot the overlay at all.
 const HOOKS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks')
-const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR]
+const COMMANDS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-commands')
+const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR, COMMANDS_PLUGIN_DIR]
 const PROFILE = 'web'
 const CONCERTO_PRESET_ID = 'concerto'
 
 /**
- * The load markers BOTH mounted plugins log at boot (P3-T3): omo-agents' plain
- * `loaded` line and omo-hooks' summary marker (`[omo-hooks] loaded: manifest 14
- * entries (…)` — the prefix is what boot_log.includes matches). A boot missing
- * either one means the corresponding cordis.yml insert row did not mount.
+ * The load markers ALL THREE mounted plugins log at boot (P3-T3; third row by
+ * P4-T3): omo-agents' plain `loaded` line, omo-hooks' summary marker
+ * (`[omo-hooks] loaded: manifest 14 entries (…)`) and omo-commands' summary
+ * marker (`[omo-commands] loaded: manifest 6 entries (…)` — the prefix is what
+ * boot_log.includes matches). A boot missing one means the corresponding
+ * cordis.yml insert row did not mount.
  */
-const LOADED_MARKERS = ['[omo-agents] loaded', '[omo-hooks] loaded']
+const LOADED_MARKERS = [
+  '[omo-agents] loaded',
+  '[omo-hooks] loaded',
+  '[omo-commands] loaded',
+]
 
-/** `pluginLoaded` for every analysis: both plugin rows really mounted. */
+/** `pluginLoaded` for every analysis: all three plugin rows really mounted. */
 function pluginsLoaded(bootLog) {
   return LOADED_MARKERS.every((marker) => bootLog.includes(marker))
 }
 
 /**
  * The boot-log text the `--self-test` fixtures feed the analyses that assert
- * `pluginLoaded` (a real boot carries both markers).
+ * `pluginLoaded` (a real boot carries all three markers).
  */
 const FABRICATED_BOOT_LOG = LOADED_MARKERS.join('\n')
 
@@ -2159,8 +2168,10 @@ async function sessionPrompt(boot, request) {
 // ── dsh process management (cold-start.sh discipline) ───────────────────────
 
 function installPlugin(sandbox, env) {
-  // P3-T3: one `plugin add` per cordis.yml insert row — a profile that carries
-  // only omo-agents would fail to resolve the omo-hooks row at boot.
+  // One `plugin add` per cordis.yml insert row (three rows since P4-T3): a
+  // profile missing ANY one of them aborts the whole boot naming that row
+  // (`plugin tree failed to load … ERR_MODULE_NOT_FOUND`) — not just a hooks
+  // profile.
   let addLog = ''
   for (const pluginDir of PLUGIN_DIRS) {
     const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', pluginDir], {

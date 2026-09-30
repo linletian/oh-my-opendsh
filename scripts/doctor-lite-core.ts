@@ -23,15 +23,17 @@ export const LLM_ADAPTER_ROWS = [
 ]
 
 /**
- * The plugin rows the repo-root cordis.yml must insert, in mount order (P3-T3).
- * Named and exported so the expectation is stated ONCE: every sandbox boot site
- * (scripts/cold-start.sh, tests/e2e/drive.mjs, scripts/concerto-mode-probe.sh,
- * scripts/smoke-real.mjs) installs one package per row, and doctor-lite's
- * `cordis-plugins` check compares the parsed patch file against this list (a row
- * dropped from the overlay — or a third one added without its install site —
- * fails the gate instead of surfacing as a plugin that never mounted).
+ * The plugin rows the repo-root cordis.yml must insert, in mount order (P3-T3;
+ * third row added by P4-T3). Named and exported so the expectation is stated
+ * ONCE: every sandbox boot site (scripts/cold-start.sh, tests/e2e/drive.mjs,
+ * scripts/concerto-mode-probe.sh, scripts/smoke-real.mjs) installs one package
+ * per row, and doctor-lite's `cordis-plugins` check compares the parsed patch
+ * file against this list (a row dropped from the overlay — or one added without
+ * its install site — fails the gate instead of surfacing as a plugin that never
+ * mounted). scripts/verify-concerto-static.mjs's c11 reads the SAME constant, so
+ * the count lives in exactly one place.
  */
-export const EXPECTED_INSERT_ROW_IDS = ['omo-agents', 'omo-hooks'] as const
+export const EXPECTED_INSERT_ROW_IDS = ['omo-agents', 'omo-hooks', 'omo-commands'] as const
 
 /**
  * Parses a `dsh --version` line. Accepts optional leading whitespace and a
