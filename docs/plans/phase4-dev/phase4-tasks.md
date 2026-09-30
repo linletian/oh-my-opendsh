@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **1/18**（P4-T1 ✅ 调研闭环，覆盖基线转实测）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **3/18**（P4-T1/T2/T4 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -45,13 +45,13 @@
 
 ## WP-1 插件骨架（计划书 §4.1）
 
-### [ ] P4-T2 — `omo-commands` 包骨架 + `manifest.ts` 单一事实源
+### [x] P4-T2 — `omo-commands` 包骨架 + `manifest.ts` 单一事实源
 
 - **产出**：`patches/omo-dsh/omo-commands/`（`package.json` `@oh-my-opendsh/omo-commands` / `tsconfig.host.json` / `src/index.ts` 空 apply / `src/manifest.ts`）。
 - **做法**：布局镜像 omo-hooks（host-only、Node 24 type-stripping、`.ts` 扩展 load-bearing 注释）；`manifest.ts` 按计划书 §4.1 声明条目形状（`id`（v5 名）/ 上游源路径逐文件 / 参数语法 / agent 绑定 / 效果摘要 / e2e 场景名 / 状态），条目集合 = P4-T1 实测后的移植组；派生函数（按状态过滤等）供 boot marker 与一致性测试消费。
 - **判定**：✅ `pnpm typecheck` 绿；manifest 条目形状单测（空字段 throw、id 唯一、状态枚举合法）；`typecheck` 链扩展（根 package.json 先例）。
-- **证据**：（待填）
-- **依赖**：P4-T1。**量级**：3 小时。
+- **证据**：commit `92279ee`。`pnpm vitest run tests/omo-commands/` = **41 passed**（形状 + 负向 + 守卫顺序）；`pnpm typecheck` / `typecheck:libs` 四 face 全绿；门 6/7 不回归。**双评审 APPROVE**（sub-agent 两轮 + mcode 两轮；14+5 条成立 findings 修复后针对性再审通过）。编码方五条质疑经仲裁全部批准（逐字 hint/封闭二值 status/整树记账/计数校验/C-03 否决点）；评审发现 templates/ 计数错（11→14）已两处同步更正（commit `8ef02e1`）。
+- **依赖**：P4-T1。**量级**：3 小时（实耗相符）。
 
 ### [ ] P4-T3 — 挂载 + boot marker 接线
 
@@ -65,13 +65,13 @@
 
 ## WP-2 skills vendor 与投递（计划书 §4.3）
 
-### [ ] P4-T4 — vendor 17 shared-skills + 2 senpi 指令 skill
+### [x] P4-T4 — vendor 17 shared-skills + 2 senpi 指令 skill
 
 - **产出**：`patches/omo-dsh/vendor/shared-skills/`（17+2 skill 目录 + `VENDOR-MANIFEST.json` 逐文件 sha256 + 包级 `NOTICE.md` + `package.json` 补 `license: "SUL-1.0"`）；`THIRD_PARTY_NOTICES.md` Phase 4 小节；`start-work` → `ulw-execute` 改名逐处入 `deviations[]`（目录名 + frontmatter `name:` + 正文引用，改名前原文 sha256 双向锚，R-8）。
 - **做法**：Phase 1 vendoring playbook 全流程（`git show v4.19.4:<path>` 取内容，不碰工作树；manifest 生成脚本化复用/扩展）；frontmatter 适配（DSH 必需键 `name`/`description`，P4-T1 C 组核对的差异键逐处 deviation）；**只 vendor 不改写正文语义**（载体收窄注记进覆盖清单差异段，不进 skill 正文——内容保真优先，适配由消费侧命令/persona 承担）；`verify-licenses` 计数变化逐条对应。
 - **判定**：✅ manifest 漂移检测脚本绿（Phase 1 工具复用）；`verify-licenses` 绿且 `checked` 计数 = 54 + 新增条目数；NOTICES 行数与 manifest 文件集合一致（一致性单测）；改名 skill 在 catalog 语义下以 `ulw-execute` 裸名出现（单测模拟 frontmatter 解析）。
-- **证据**：（待填）
-- **依赖**：P4-T1。**量级**：1 天。
+- **证据**：commit `92279ee`。三方计数 disk/manifest/NOTICES = **291**（288 skill + 3 包根；277 verbatim + 12 已修改 + 2 新增；deviations 14 条 1:1）；`verify-licenses` PASS **checked=56**（+shared-skills +omo-commands）；漂移 `checked=320 violations=0`；`tests/vendor/` **23 passed**（含 12 组变异反跑实证）；「只从 tag 取内容」评审实证（56 个 tag↔HEAD 分歧文件全部源自 tag）；改名 sed 反向还原机器证明。**双评审 APPROVE**（sub-agent + mcode 各一轮 + existsSync 守护修复后复验）。三项构建配置改动（tsconfig exclude / vitest 排除 Bun payload 测试 / walker 修正）与载体路径白名单保留经仲裁批准。
+- **依赖**：P4-T1。**量级**：1 天（实耗约 0.7 天）。
 
 ### [ ] P4-T5 — skill 投递机制落地 + catalog e2e
 
