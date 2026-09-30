@@ -63,6 +63,10 @@ import {
   REMOVE_AI_SLOPS_DESCRIPTION,
   createRemoveAiSlopsCommand,
 } from './commands/remove-ai-slops.ts'
+import {
+  STOP_CONTINUATION_DESCRIPTION,
+  createStopContinuationCommand,
+} from './commands/stop-continuation.ts'
 import type {
   CommandInvocationLike,
   CommandResultLike,
@@ -107,6 +111,20 @@ export interface CommandsRegistrationContext extends SkillRegistrationContext {
   }
   /** cordis's fiber-scoped effect collector — used only to adopt a returned disposer. */
   readonly effect?: (execute: () => CommandDisposer | void) => unknown
+  /**
+   * Cordis's OPTIONAL service lookup (`Context#get`), used by `/stop-continuation`
+   * to reach the `omoStopContinuation` guard published by the omo-hooks plugin
+   * (P4-T8). Declared optional, never `inject`ed as a hard dependency — the two
+   * plugins mount in no guaranteed order, and a hard dependency would park this
+   * fiber in `waiting` until the other side appears, which would be a deadlock
+   * rather than a degradation. Missing service = the command reports that the guard
+   * is unavailable and changes nothing (loud, non-fatal).
+   *
+   * `get` is a strict read: cordis returns `undefined` for a service whose
+   * providing fiber is not ACTIVE yet, which is exactly why the handler reads it
+   * per invocation instead of caching a handle at apply time.
+   */
+  readonly get?: (name: string) => unknown
 }
 
 /** A cordis-style disposal: what an effect's execute callback RETURNS to be collected. */
@@ -182,6 +200,15 @@ export type CommandRegistrar = (
  * adding a registry entry reads it).
  */
 export const COMMAND_REGISTRARS: Record<string, CommandRegistrar> = {
+  // P4-T8 — the ONLY command that talks to another plugin, and the only entry that
+  // passes `ctx` itself instead of a command module's factory: the handler resolves
+  // the guard through `ctx.get(...)` PER INVOCATION, never a handle captured at apply
+  // time (Q-5). It sits first because this record is kept in MANIFEST ROSTER ORDER and
+  // the roster lists `stop-continuation` before `handoff` /
+  // `remove-ai-slops` — tests/omo-commands/registration.test.ts pins that order.
+  'stop-continuation': (ctx, entry) => {
+    registerPortedCommand(ctx, entry, STOP_CONTINUATION_DESCRIPTION, createStopContinuationCommand(ctx))
+  },
   handoff: (ctx, entry) => {
     registerPortedCommand(ctx, entry, HANDOFF_DESCRIPTION, createHandoffCommand())
   },

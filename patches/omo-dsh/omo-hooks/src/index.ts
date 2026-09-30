@@ -53,7 +53,7 @@
 // unread file" natively and strictly more (manifest.ts header; plan revision
 // 2026-09-19). And `keyword-detector` is the one row whose `status` is **'pending'**
 // rather than 'ported': its listener + unit tests landed with P4-T12, its e2e
-// scenario (`keyword-mode-ultrawork`) is P4-T13. The row is registered and live
+// scenario (`ultrawork-keyword-injected`) is P4-T13. The row is registered and live
 // either way — `status` records the port ledger, not whether a listener exists.
 //
 // BOOT-MARKER CONTRACT (probe / cold-start assertion anchors; the pure
@@ -125,6 +125,14 @@ import {
   formatLoadedSummaryLine,
   formatManifestValidationFailedLine,
 } from './boot-markers.ts'
+import {
+  STOP_CONTINUATION_GUARD_DISPOSED_EVENT,
+  STOP_CONTINUATION_GUARD_ID,
+  STOP_CONTINUATION_SERVICE,
+  createStopContinuationGuard,
+  handleSessionDisposed,
+  type StopContinuationJobsLike,
+} from './services/stop-continuation-guard.ts'
 import { registerBashFileReadGuard } from './hooks/bash-file-read-guard.ts'
 import { registerTodoContinuationEnforcer } from './hooks/todo-continuation-enforcer.ts'
 import { registerEmptyTaskResponseDetector } from './hooks/empty-task-response-detector.ts'
@@ -172,6 +180,21 @@ export type HookDisposer = () => void
 export interface HooksRegistrationContext {
   on(event: string, listener: (...args: readonly unknown[]) => unknown): unknown
   effect?(execute: () => HookDisposer | void): unknown
+  /**
+   * Cordis's service PUBLISH form (`Context#provide(name, value, check?)`, verbatim
+   * `cordis/lib/index.js:792-826`): registers a service owned by the CALLING fiber
+   * and returns the disposer that unregisters it.
+   *
+   * P4-T8 added it for the stop-continuation guard — the one surface this plugin
+   * provides for ANOTHER plugin to consume (`omoStopContinuation`; the fork
+   * decision and full rationale live in services/stop-continuation-guard.ts).
+   * Declared OPTIONAL for the same reason `get` is: a context without it (the unit
+   * fakes, a minimal host) means "this build cannot publish", which
+   * {@link provideStopContinuationGuard} reports loudly on `console.warn` and then
+   * degrades to — it never throws, because a boot failure here would take down
+   * fifteen listeners that have nothing to do with the guard.
+   */
+  provide?(name: string, value: unknown): unknown
   /**
    * Cordis's optional service lookup (`Context#get(name)`), used by the hooks
    * that must read a DSH service rather than only observe events — the E-mode
@@ -571,7 +594,72 @@ export function runHookRegistrations(
  * assembly and the markers cannot drift from their tests.
  */
 export function apply(ctx: HooksRegistrationContext): void {
+  // P4-T8: the guard is published BEFORE the registration loop, so a registrar
+  // (H-03 reads it) — and the omo-commands plugin, whenever it mounts — can already
+  // resolve it while listeners are being wired.
+  provideStopContinuationGuard(ctx)
   runHookRegistrations(ctx, HOOK_MANIFEST, HOOK_REGISTRARS, (line) => {
     console.log(line)
   })
+}
+
+/**
+ * P4-T8 — publish the `omoStopContinuation` service plus its `session/disposed`
+ * cleanup listener as one fiber-owned unit.
+ *
+ * **WHY THERE IS NO MANIFEST ROW FOR THIS** (the P4-T8 fork): a manifest row is
+ * "one listener owns one event", and this unit has neither a primary event (its only
+ * listener is the `session/disposed` cleanup; its real consumer is ANOTHER plugin's
+ * command) nor an honest `status` to write — 'ported' would need a docs/plans flip I
+ * cannot make, and 'pending' would have the roster contradicting shipped code. It
+ * therefore lives at `src/services/stop-continuation-guard.ts`, outside the `src/hooks/`
+ * scan that c13 reconciles. The full argument is in that file's module header §1; this
+ * is only the pointer (the omo-commands manifest row points here the same way).
+ *
+ * WHY `console.warn` AND NOT A BOOT MARKER: apply()'s boot line array is pinned
+ * verbatim by tests/omo-hooks/registration.test.ts (a file outside this task's
+ * scope), so a new `console.log` line here would fail that suite. The degraded path
+ * warns — and it is genuinely a warning: a host without `provide` cannot offer the
+ * guard at all, which silently disables `/stop-continuation`'s primary effect.
+ * Everything else is observable through the service itself
+ * (`ctx.get('omoStopContinuation')`) and the guard's own `console.warn` lines.
+ */
+function provideStopContinuationGuard(ctx: HooksRegistrationContext): void {
+  const log = (line: string): void => {
+    console.warn(line)
+  }
+  if (typeof ctx.provide !== 'function') {
+    log(`[omo-hooks] ${STOP_CONTINUATION_GUARD_ID} NOTE: this host exposes no ctx.provide; the ${STOP_CONTINUATION_SERVICE} service is NOT published and /stop-continuation will report the guard as unavailable`)
+    return
+  }
+  const guard = createStopContinuationGuard({
+    // LAZY, never cached: the jobs service is read at the moment a stop happens, so
+    // a service that mounts after this fiber — or a profile that never mounts one —
+    // is handled correctly in both directions. The H-11 deferred-get precedent.
+    readJobs: () => readJobsService(ctx),
+    log,
+  })
+  // REVERSIBILITY: both registrations are fiber-owned by construction, so nothing
+  // is collected by hand. Measured: `ctx.provide` stores the impl on the CALLING
+  // fiber and returns its disposer (cordis/lib/index.js:792-826), and `ctx.on` ends
+  // in `this.register(label, hooks, listener, options)` (cordis :371-380), which
+  // registers on the same fiber. Stopping the fiber unpublishes the service AND
+  // unhooks the listener; because `stoppedSessions` lives in this fiber's closure,
+  // the stop state dies with it too.
+  ctx.provide(STOP_CONTINUATION_SERVICE, guard)
+  ctx.on(STOP_CONTINUATION_GUARD_DISPOSED_EVENT, (session) => {
+    handleSessionDisposed(guard, session, log)
+  })
+}
+
+/**
+ * 解析 jobs 服务（可选能力）。返回 `undefined` = 未挂载/未激活，而不是错误：级联取消
+ * 是「有就做」，没有就如实报零（guard 的 `stop()` 会把这件事写进返回值与日志）。
+ */
+function readJobsService(ctx: HooksRegistrationContext): StopContinuationJobsLike | undefined {
+  const jobs = ctx.get?.('jobs')
+  if (typeof jobs !== 'object' || jobs === null) return undefined
+  const candidate = jobs as Partial<StopContinuationJobsLike>
+  if (typeof candidate.list !== 'function' || typeof candidate.kill !== 'function') return undefined
+  return candidate as StopContinuationJobsLike
 }

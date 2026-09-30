@@ -171,6 +171,7 @@
 import type { HookManifestEntry } from '../manifest.ts'
 import type { HookRegistrar, HooksRegistrationContext } from '../index.ts'
 import { describeError } from '../boot-markers.ts'
+import { STOP_CONTINUATION_SERVICE } from '../services/stop-continuation-guard.ts'
 
 /** The manifest id this registrar implements (manifest.ts row H-03). */
 export const TODO_CONTINUATION_ENFORCER_ID = 'todo-continuation-enforcer'
@@ -384,6 +385,14 @@ export type ContinuationSkipReason =
   | 'no-todos'
   | 'all-complete'
   | 'goal-owns-continuation'
+  /**
+   * P4-T8: `/stop-continuation` has marked this session stopped (upstream
+   * `stop-continuation-guard/hook.ts` + upstream's `todo-continuation-enforcer`
+   * consumer of the same guard state). Checked FIRST so a stopped session is not
+   * steered for any other reason — including the circuit-breaker reset branches,
+   * which would otherwise churn breaker state for a session the user paused.
+   */
+  | 'stopped-by-command'
   | 'circuit-breaker'
 
 /** The pure outcome of one turn-stopping evaluation. */
@@ -397,6 +406,13 @@ export interface ContinuationDecisionInput {
   readonly todos: TodoSnapshot
   /** Whether an active, armed goal already owns continuation (R-8). */
   readonly goalOwned: boolean
+  /**
+   * P4-T8: whether `/stop-continuation` stopped this session. Read from the
+   * `omoStopContinuation` service published by this same plugin (services/
+   * stop-continuation-guard.ts) through the LAZY `ctx.get`, never a module-level
+   * handle — the service must be consulted at steer time, not captured at boot.
+   */
+  readonly stopped: boolean
   /**
    * This session's consecutive granted continuations SINCE THE LAST PROGRESS
    * (the breaker's memory). The listener applies the 进展复员 reset — comparing
@@ -422,7 +438,13 @@ export interface ContinuationDecisionInput {
 export function decideTodoContinuation(
   input: ContinuationDecisionInput,
 ): ContinuationDecision {
-  const { todos, goalOwned, consecutiveSteers } = input
+  const { todos, goalOwned, stopped, consecutiveSteers } = input
+  // P4-T8 (Q-5 ①): the user's explicit stop outranks every other consideration —
+  // including "there is nothing to do", whose convergence branch would otherwise
+  // clear the breaker and re-arm the budget of a session the user just paused.
+  if (stopped) {
+    return { kind: 'skip', reason: 'stopped-by-command' }
+  }
   if (todos === null || todos === undefined) {
     return { kind: 'skip', reason: 'projection-absent' }
   }
@@ -530,6 +552,47 @@ export function hasActiveGoal(ctx: ServiceAccessorContext, agent: unknown): bool
   return phase === 'active' && activation === 'armed'
 }
 
+/**
+ * P4-T8: read the stop guard's state for this agent's session.
+ *
+ * WHY THE SERVICE AND NOT A DIRECT IMPORT: both live in this plugin, so a direct
+ * import would be the shorter path — but the guard instance is created per fiber
+ * INSIDE `apply()` (it owns `stoppedSessions`), so a module-level import would hand
+ * the listener a DIFFERENT instance whose Set is always empty. The service is the
+ * only handle that follows the fiber. `ctx.get` is a strict read (a service whose
+ * provider fiber is not yet ACTIVE returns `undefined`), which degrades to
+ * "not stopped" — the pre-P4-T8 behaviour — and never throws.
+ */
+export function isContinuationStopped(
+  ctx: ServiceAccessorContext,
+  agent: unknown,
+): boolean {
+  const guard = getService(ctx, STOP_CONTINUATION_SERVICE)
+  if (!isObject(guard)) return false
+  const isStopped = (guard as { readonly isStopped?: unknown }).isStopped
+  if (typeof isStopped !== 'function') return false
+  const sessionId = readAgentSessionId(agent)
+  if (sessionId === undefined) return false
+  try {
+    return (isStopped as (id: string) => boolean).call(guard, sessionId) === true
+  } catch {
+    // A guard that throws must not turn a turn-stopping evaluation into an error;
+    // the listener's own outer catch would swallow it anyway — answering `false`
+    // here keeps the failure local and honest ("not stopped").
+    return false
+  }
+}
+
+/** `agent.session.id` (Agent.session: Session, Session.id: SessionId — measured). */
+function readAgentSessionId(agent: unknown): string | undefined {
+  if (!isObject(agent)) return undefined
+  const session = (agent as { readonly session?: unknown }).session
+  if (typeof session === 'string') return session
+  if (!isObject(session)) return undefined
+  const id = (session as { readonly id?: unknown }).id
+  return typeof id === 'string' ? id : undefined
+}
+
 // --- The listener ------------------------------------------------------------
 
 /** The seams the listener depends on, injected so the unit suite owns them. */
@@ -538,6 +601,12 @@ export interface ContinuationDeps {
   readonly readTodos: (session: unknown) => TodoSnapshot
   /** Whether an armed goal already drives continuation (R-8). */
   readonly hasActiveGoal: (agent: unknown) => boolean
+  /**
+   * P4-T8: whether `/stop-continuation` stopped this agent's session. Resolved
+   * through the lazy service read below; a missing service yields `false`, i.e.
+   * "not stopped", which is the pre-T8 behaviour — never an error.
+   */
+  readonly isContinuationStopped: (agent: unknown) => boolean
   /** Diagnostic sink for the breaker and for swallowed failures. */
   readonly log: (line: string) => void
 }
@@ -635,6 +704,7 @@ export function createTodoContinuationListener(deps: ContinuationDeps): TurnStop
       const decision = decideTodoContinuation({
         todos,
         goalOwned: deps.hasActiveGoal(agent),
+        stopped: deps.isContinuationStopped(agent),
         consecutiveSteers: granted,
       })
       if (decision.kind === 'skip') {
@@ -686,6 +756,7 @@ export const registerTodoContinuationEnforcer: HookRegistrar = (
   const listener = createTodoContinuationListener({
     readTodos: (session) => readTodosProjection(ctx, session),
     hasActiveGoal: (agent) => hasActiveGoal(ctx, agent),
+    isContinuationStopped: (agent) => isContinuationStopped(ctx, agent),
     log: (line) => console.warn(line),
   })
   ctx.on(entry.event, (payload) => listener(payload))

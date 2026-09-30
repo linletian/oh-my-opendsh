@@ -38,12 +38,12 @@ import {
  * intended friction, and scripts/concerto-mode-probe.sh re-derives the same
  * line from the plugin's own modules at probe time.
  */
-// P4-T6 更新：两条命令落地后本行随之改写（pending=4, ported=2, 2/6 registered）。
+// P4-T8 更新：第三条命令落地后本行随之改写（pending=3, ported=3, 3/6 registered）。
 // 逐字手打而非由 manifest 派生，正是这条断言的价值：派生会让它与被测对象同源，
 // 恒真；cold-start.sh 与 concerto-mode-probe.sh 按同一字符串 grep，所以任何漂移
 // 先在这里变红，而不是等到真机 boot。
 const EXPECTED_SUMMARY_LINE =
-  '[omo-commands] loaded: manifest 6 entries (pending=4, ported=2) — 2/6 commands registered'
+  '[omo-commands] loaded: manifest 6 entries (pending=3, ported=3) — 3/6 commands registered'
 
 /**
  * A legal manifest row with one field overridden — widened on purpose so these
@@ -71,7 +71,7 @@ function row(overrides: Partial<CommandManifestEntry> = {}): CommandManifestEntr
  * resolved through a lookup that throws on a renamed id (a rename must fail
  * here, not silently register 1/6).
  */
-const REAL_REGISTERED_IDS = ['handoff', 'remove-ai-slops']
+const REAL_REGISTERED_IDS = ['stop-continuation', 'handoff', 'remove-ai-slops']
 
 function registeredRows(ids: readonly string[]): CommandManifestEntry[] {
   return ids.map((id) => {
@@ -93,7 +93,7 @@ describe('P4-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', (
     // from the manifest's statuses — so a roster of two ported rows with an
     // empty registration log must read 0/6, never 2/6.
     expect(formatLoadedSummaryLine(COMMAND_MANIFEST, [])).toBe(
-      '[omo-commands] loaded: manifest 6 entries (pending=4, ported=2) — 0/6 commands registered',
+      '[omo-commands] loaded: manifest 6 entries (pending=3, ported=3) — 0/6 commands registered',
     )
   })
 

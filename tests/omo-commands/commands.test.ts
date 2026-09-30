@@ -516,8 +516,10 @@ describe('P4-T6 the semantic-port table registers both commands and both narrowi
   const NOTICES = readFileSync(join(REPO, 'THIRD_PARTY_NOTICES.md'), 'utf8')
 
   it('has one row per ported command, each naming its derived files and its upstream source', () => {
-    const rows = NOTICES.split('\n').filter((line) => line.startsWith('| handoff ') || line.startsWith('| remove-ai-slops '))
-    expect(rows).toHaveLength(2)
+    const rows = NOTICES.split('\n').filter((line) => line.startsWith('| handoff ')
+      || line.startsWith('| remove-ai-slops ')
+      || line.startsWith('| stop-continuation '))
+    expect(rows).toHaveLength(3)
     expect(rows[0]).toContain('src/templates/handoff.ts')
     expect(rows[0]).toContain('templates/handoff.ts')
     expect(rows[1]).toContain('src/templates/remove-ai-slops.ts')
@@ -534,8 +536,20 @@ describe('P4-T6 the semantic-port table registers both commands and both narrowi
     expect(slopsRow).toContain('**不移植**')
   })
 
-  it('counts the derived files it lists (no stale count after errors.ts landed)', () => {
-    expect(NOTICES).toContain('**2 command ids / 8 derived')
+  it('does not name a ported command among the pending rows (the id list tracks the count)', () => {
+    // MAJOR-2: 计数改成"三条已移植"之后，待移植列表里还留着 stop-continuation，
+    // 于是表格自己打自己的脸。这条断言让"列表 ⊆ 真的 pending"成为被测事实。
+    // 从 omo-commands 那一节起算（omo-hooks 节有同名的引文，措辞相近），并只取引文
+    // 本身 —— 下面的 **Counts** 段合法地列着 stop-continuation 的派生文件。
+    const section = NOTICES.indexOf('| Command (manifest id) |')
+    const start = NOTICES.indexOf('Deliberately **not** listed as ported', section)
+    const pendingBlock = NOTICES.slice(start, NOTICES.indexOf('**Counts:**', start))
+    expect(pendingBlock).not.toContain('stop-continuation')
+    for (const id of ['ulw-execute', 'ulw-plan', 'hyperplan']) expect(pendingBlock).toContain(id)
+  })
+
+  it('counts the derived files it lists (no stale count after P4-T8 landed)', () => {
+    expect(NOTICES).toContain('**3 command ids / 10 derived')
     for (const file of ['src/templates/render.ts', 'src/commands/errors.ts', 'src/commands/command-types.ts']) {
       expect(NOTICES).toContain(file)
     }

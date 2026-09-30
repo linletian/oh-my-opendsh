@@ -226,7 +226,21 @@ const MANIFEST_ROWS = [
   // H-03 enforcer 读它，两者**无代码 import**。DSH 停止面映射（P4-T1 Q-5 实测）：
   // todo 续行 = H-03 查标记；goal 轮驱动 = `ctx.goals.pause`（≠ clear）；ralph =
   // **无可编程 stop API**，记差异（模板文案只做用户层面指引）；后台任务级联 =
-  // `ctx.jobs.list` 过滤 running|pending + 逐个 `ctx.jobs.kill`。
+  // `ctx.jobs.list` 过滤 **running|stopping** + 逐个 `ctx.jobs.kill`（T8 实测更正：
+  // 本行原文写的是上游的 `running|pending`，而 DSH 的 JobStatus 词表是
+  // `'running' | 'stopping' | 'completed' | 'killed' | 'failed'`，**没有 pending**；
+  // `kill` 又是同步返回 `'requested' | 'already-finished'`，所以不需要上游的
+  // allSettled。详见 patches/omo-dsh/omo-hooks/src/services/stop-continuation-guard.ts
+  // 的模块头 §4）。
+  //
+  // **manifest 条目 fork：guard 不作为本表的 manifest 条目**，而是作为 omo-hooks 的
+  // 服务模块 `src/services/stop-continuation-guard.ts` 落地（在 `src/hooks/` 之外，
+  // 因此不进 c13 的文件集核对）。**论证不在这里** —— 单点写在
+  // `patches/omo-dsh/omo-hooks/src/services/stop-continuation-guard.ts` 的模块头
+  // §1（为什么不给它一行：没有诚实的 event/mode 取值、状态字段只有两个坏选项、
+  // 覆盖基线已预留这个出口、c13 只扫 src/hooks），本行只留指针，免得同一段论证在两
+  // 个包里各有一份而彼此漂移。H-34 覆盖行的终态表述由仲裁者执行（P4-T8 双评审裁定：
+  // 该行永不带「已移植」字样，终态为「✅ 已落地（fork ii 纯服务模块，c14 解析面豁免）」）。
   {
     id: 'stop-continuation',
     upstreamSources: [
@@ -240,7 +254,10 @@ const MANIFEST_ROWS = [
     effectSummary:
       '停止本会话全部续行机制：guard 服务置停止标记（omo-hooks H-03 查标记）+ goal pause + ctx.jobs 级联取消',
     e2eScenario: 'stop-continuation-halts-todo',
-    status: 'pending',
+    // T8 翻转：命令 handler + guard 服务 + 单测（12 条上游 its 移植 + 跨插件 R-5 +
+    // H-03 停止门）同批落地。e2e 场景属 T9，同 T6 的注记：翻转先于场景落地，
+    // 补场景是 T9 的第一条交付动作。
+    status: 'ported',
   },
   // C-06 → `/handoff`（phase4-commands.md §1.1 C-06 行）。上游源实测 1 文件 =
   // 内建模板 `templates/handoff.ts`。argumentHint 逐字取 commands.ts:107（`[goal]`）。

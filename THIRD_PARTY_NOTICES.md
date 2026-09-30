@@ -165,6 +165,12 @@ naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/man
 (14 `src/hooks/*.ts` + 7 `src/hooks/ulw-execute/` 子模块). No existing entry above this
 section was modified (additions only).
 
+**P4-T8 addition (add-only, and deliberately NOT one of the 14 manifest rows):**
+
+| Derived file under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
+|---|---|---|
+| `src/services/stop-continuation-guard.ts`（**无 manifest 条目** —— 它是 cordis **服务提供方**，发布 `omoStopContinuation` 供 `omo-commands` 的 `/stop-continuation` 消费，H-03 在同一插件内经 `ctx.get` 读取） | hooks/stop-continuation-guard/hook.ts, index.ts, index.test.ts（12 its 作移植种子）, plugin/stop-continuation.ts（命令侧四机制调用序列） | semantic port only（continuation marker 文件不移植：本仓无该读写面；后台级联改为 `ctx.jobs.list(caller)` + 同步 `kill(id, caller, reason)`—— **caller 必须传**：`list` 对无 caller 只回无主 job，而真实生产者一律带 owner（实测 dsh-jobs-local:178-180、dsh-tool-bash:416-417），不传会真机静默空转；再按 `ownerSession === sessionId` 收窄到本会话，对齐上游 `getAllDescendantTasks`；状态词表 `running｜stopping` —— DSH 无上游的 `pending`；`session.deleted` → `session/disposed`；**不入 c13 文件集核对**（`src/services/` 不在 `src/hooks/`），故 14 ids / 21 files 的计数不含它） |
+
 ### Phase 4 skills vendoring
 
 The 19 instruction skills of Phase 4 are **vendored content**, not a port: every
@@ -568,20 +574,26 @@ its own attribution header naming the same sources — those headers and
 `patches/omo-dsh/omo-commands/src/manifest.ts` (per-file machine-readable lists),
 not this table, are the per-file authority.
 
+`src/templates/stop-continuation.ts` is the one template in this section that is
+**never handed to the model**: `/stop-continuation` performs its effect and reports
+the real outcome (see the row below), so `renderStopContinuationInstruction()` is a
+deliberate zero-injection shape, not a used path.
+
 | Command (manifest id) | Derived file(s) under `patches/omo-dsh/omo-commands/` | Upstream source file(s) at `v4.19.4` | Disposition |
 |---|---|---|---|
 | handoff | src/commands/handoff.ts + src/commands/user-message.ts + src/commands/command-types.ts + src/commands/errors.ts + src/templates/handoff.ts + src/templates/render.ts | templates/handoff.ts, commands.ts（条目）, hooks/auto-slash-command/executor.ts（模板变量替换 + `formatCommandTemplate` 消息外框） | semantic port only（PHASE 0.5 的 `session_read` 调用收窄为指引文案：DSH 有近等价 service `@deepseek-ai/dsh-session-query` 但无现成模型工具；PHASE 1 的 `todoread()` / `Bash({command: …})` 拼写、`Suggested execution order` 代码块与 PHASE 3 的 `from todoread()` 后缀**按能力改写为散文指引**（DSH 无 todoread 面，bash 工具形态相近但拼写不同源，顺序内容保留）；PHASE 4 第 1 步补 DSH 会话面（Web GUI 新会话 / 再跑 `dsh`），OpenCode 写法留作括注 —— 三处收窄逐条注记于模板文件头 §1/§2/§3 与 `HANDOFF_CARRIER_NOTE` 第 1/2/3 条） |
 | remove-ai-slops | src/commands/remove-ai-slops.ts + src/templates/remove-ai-slops.ts（共用上面两个 structural-type / 渲染文件） | templates/remove-ai-slops.ts（正文 L1-114）、同文件 L116-216（team-mode addendum，**不移植**）、commands.ts（条目）, hooks/auto-slash-command/executor.ts | semantic port only（team-mode addendum 整段不移植，理由与恢复路径注记于文件头；`load_skills=["remove-ai-slops"]` / `$omo:remove-ai-slops` 的载体映射登记于 `REMOVE_AI_SLOPS_CARRIER_NOTE`，正文逐字保留） |
+| stop-continuation | src/commands/stop-continuation.ts + src/templates/stop-continuation.ts（共用上面三个 structural-type / 渲染 / 错误模块；服务名常量本地重述，与 omo-hooks 侧由跨包相等单测钉住） | templates/stop-continuation.ts, commands.ts（条目）, plugin/stop-continuation.ts（命令侧效果序列） | semantic port only（四机制逐条映射：todo 续行 = H-03 查 guard 停止标记（真）；goal = `ctx.goals.pause`（**pause 而非 upstream 的 clearGoal**，目标保留可恢复）；后台任务 = `ctx.jobs.list` + `kill`（真）；ralph = **无程序化 stop API**，模板改为用户层面指引不承诺取消；boulder state 无对应面，随 `ulw-execute` 接盘）。**本命令的模板不下发给模型**（刻意零注入，见该节前言）：命令做的事就是命令本身，把"我已经停好了"再当一条用户消息喂回去只会多一个回合） |
 
-> Deliberately **not** listed as ported: the four manifest rows still `pending`
-> (`ulw-execute`, `ulw-plan`, `hyperplan`, `stop-continuation`) — their per-row
+> Deliberately **not** listed as ported: the three manifest rows still `pending`
+> (`ulw-execute`, `ulw-plan`, `hyperplan`) — their per-row
 > reasons and ownership are the coverage authority:
 > `docs/plans/phase4-dev/phase4-commands.md` §1.2. `ulw-plan` in particular must
 > never become a registered command: it would shadow DSH's own skill gesture.
 
-**Counts:** Phase 4 derived command files listed = **2 command ids / 8 derived
-files** (`src/templates/{handoff,remove-ai-slops,render}.ts` +
-`src/commands/{handoff,remove-ai-slops,user-message,command-types,errors}.ts`).
+**Counts:** Phase 4 derived command files listed = **3 command ids / 10 derived
+files** (`src/templates/{handoff,remove-ai-slops,render,stop-continuation}.ts` +
+`src/commands/{handoff,remove-ai-slops,user-message,command-types,errors,stop-continuation}.ts`).
 No existing entry above this section was modified (additions only).
 
 ## oh-my-pi

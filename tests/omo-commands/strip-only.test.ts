@@ -126,6 +126,7 @@ describe('P4-T5 the omo-commands sources are loadable by Node strip-only type er
       'commands/errors.ts',
       'commands/handoff.ts',
       'commands/remove-ai-slops.ts',
+      'commands/stop-continuation.ts',
       'commands/user-message.ts',
       'index.ts',
       'manifest.ts',
@@ -133,6 +134,7 @@ describe('P4-T5 the omo-commands sources are loadable by Node strip-only type er
       'templates/handoff.ts',
       'templates/remove-ai-slops.ts',
       'templates/render.ts',
+      'templates/stop-continuation.ts',
     ])
   })
 

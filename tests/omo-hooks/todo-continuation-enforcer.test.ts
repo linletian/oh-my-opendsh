@@ -44,6 +44,7 @@ import {
   getIncompleteCount,
   getIncompleteTodos,
   hasActiveGoal,
+  isContinuationStopped,
   isIncompleteTodo,
   readTodosProjection,
   registerTodoContinuationEnforcer,
@@ -51,6 +52,7 @@ import {
   type ContinuationDeps,
   type TodoLike,
 } from '../../patches/omo-dsh/omo-hooks/src/hooks/todo-continuation-enforcer.ts'
+import { STOP_CONTINUATION_SERVICE } from '../../patches/omo-dsh/omo-hooks/src/services/stop-continuation-guard.ts'
 
 /** One `todo_write` entry, as the DSH `todos` projection stores it. */
 function todo(status: string, content: string): TodoLike {
@@ -88,6 +90,9 @@ function makeDeps(overrides: Partial<ContinuationDeps> = {}): {
     deps: {
       readTodos: () => [],
       hasActiveGoal: () => false,
+      // P4-T8: default "not stopped" — the pre-T8 behaviour every pre-T8 fixture
+      // below assumes. The stopped path has its own describe block.
+      isContinuationStopped: () => false,
       log: (line) => {
         logs.push(line)
       },
@@ -208,8 +213,117 @@ describe('P3-T7 continuation text — semantic port of constants.ts:7-14 + conti
   })
 })
 
+describe('P4-T8 the stop gate — `/stop-continuation` must actually stop todo continuation', () => {
+  // This is Q-5 机制 ①. Upstream's `stop-continuation-guard` publishes stop state
+  // and upstream's `todo-continuation-enforcer` reads it; in DSH the guard is the
+  // `omoStopContinuation` service (this plugin) and the enforcer reads it lazily.
+  const incomplete = [{ status: 'pending', content: 'finish the port' }]
+
+  it('the pure decision skips with stopped-by-command BEFORE any other gate', () => {
+    // Deliberately given a list that WOULD steer (incomplete todos, no goal, budget
+    // available) so the assertion cannot pass by accident on another gate.
+    expect(decideTodoContinuation({
+      todos: incomplete,
+      goalOwned: false,
+      stopped: true,
+      consecutiveSteers: 0,
+    })).toEqual({ kind: 'skip', reason: 'stopped-by-command' })
+  })
+
+  it('a stopped session with NOTHING to do also reports stopped, not "all-complete"', () => {
+    // The ordering is load-bearing: the convergence branch would DELETE the
+    // breaker entry (re-arming the budget) for a session the user just paused.
+    expect(decideTodoContinuation({ todos: [], goalOwned: false, stopped: true, consecutiveSteers: 0 }))
+      .toEqual({ kind: 'skip', reason: 'stopped-by-command' })
+    expect(decideTodoContinuation({ todos: undefined, goalOwned: false, stopped: true, consecutiveSteers: 0 }))
+      .toEqual({ kind: 'skip', reason: 'stopped-by-command' })
+  })
+
+  it('the breaker entry SURVIVES the stopped period — armed first, then proven still armed', () => {
+    // MINOR-5：旧写法从一开始就 stopped，于是"breaker 从没被点亮"和"条目熬过了停止
+    // 期"给出同样的结果 —— 不可判别。现在先**点亮并触发** breaker，再进入停止期，
+    // 最后 clear 后看下一回合是否仍然不 steer。只有"停止期把条目清掉了"这种实现
+    // 才会让阶段 ③ 的回合 steer 出去。
+    let stopped = false
+    const { agent, steers } = fakeAgent(session())
+    const { deps, logs } = makeDeps({
+      readTodos: () => incomplete,
+      isContinuationStopped: () => stopped,
+    })
+    const listener = createTodoContinuationListener(deps)
+
+    // 阶段 ①：预算用满并触发 breaker（无进展：incomplete 数恒为 1，进展复员不生效）。
+    for (let turn = 1; turn <= MAX_CONSECUTIVE_FAILURES; turn += 1) {
+      listener({ agent, turn, signal: undefined })
+    }
+    listener({ agent, turn: MAX_CONSECUTIVE_FAILURES + 1, signal: undefined })
+    expect(steers).toHaveLength(MAX_CONSECUTIVE_FAILURES)
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toContain('stopped steering')
+
+    // 阶段 ②：停止期。'stopped-by-command' 既不 steer 也不产生 breaker 日志。
+    stopped = true
+    for (let turn = MAX_CONSECUTIVE_FAILURES + 2; turn <= MAX_CONSECUTIVE_FAILURES + 4; turn += 1) {
+      listener({ agent, turn, signal: undefined })
+    }
+    expect(steers).toHaveLength(MAX_CONSECUTIVE_FAILURES)
+    expect(logs).toHaveLength(1)
+
+    // 阶段 ③：clear 后第一回合 —— 条目还活着（预算仍是满的），所以仍然不 steer。
+    stopped = false
+    listener({ agent, turn: MAX_CONSECUTIVE_FAILURES + 5, signal: undefined })
+    expect(steers).toHaveLength(MAX_CONSECUTIVE_FAILURES)
+    expect(logs).toHaveLength(2)
+    expect(logs[1]).toContain('stopped steering')
+  })
+
+  it('the listener stops steering the moment the guard says stopped, and resumes on clear', () => {
+    let stopped = false
+    const { agent, steers } = fakeAgent(session())
+    const { deps } = makeDeps({
+      readTodos: () => incomplete,
+      isContinuationStopped: () => stopped,
+    })
+    const listener = createTodoContinuationListener(deps)
+
+    listener({ agent, turn: 1, signal: undefined })
+    expect(steers).toHaveLength(1)
+
+    stopped = true
+    listener({ agent, turn: 2, signal: undefined })
+    expect(steers).toHaveLength(1)
+
+    stopped = false
+    listener({ agent, turn: 3, signal: undefined })
+    expect(steers).toHaveLength(2)
+  })
+
+  it('isContinuationStopped resolves agent.session.id against the published service', () => {
+    const stopStates = new Set<string>(['sess-stopped'])
+    const ctx = {
+      get: (name: string) => name === STOP_CONTINUATION_SERVICE
+        ? { isStopped: (id: string) => stopStates.has(id) }
+        : undefined,
+    }
+    expect(isContinuationStopped(ctx, { session: { id: 'sess-stopped' } })).toBe(true)
+    expect(isContinuationStopped(ctx, { session: { id: 'sess-other' } })).toBe(false)
+  })
+
+  it('isContinuationStopped degrades to false for every absent/odd capability — never a throw', () => {
+    const throwingGuard = {
+      get: () => ({ isStopped: () => { throw new Error('guard exploded') } }),
+    }
+    expect(isContinuationStopped({}, { session: { id: 'x' } })).toBe(false)
+    expect(isContinuationStopped({ get: () => undefined }, { session: { id: 'x' } })).toBe(false)
+    expect(isContinuationStopped({ get: () => ({}) }, { session: { id: 'x' } })).toBe(false)
+    expect(isContinuationStopped({ get: () => ({ isStopped: () => true }) }, { session: {} })).toBe(false)
+    expect(isContinuationStopped({ get: () => ({ isStopped: () => true }) }, 'not-an-object')).toBe(false)
+    expect(isContinuationStopped(throwingGuard, { session: { id: 'x' } })).toBe(false)
+  })
+})
+
 describe('P3-T7 decideTodoContinuation — the gate ordering', () => {
-  const base: ContinuationDecisionInput = { todos: [], goalOwned: false, consecutiveSteers: 0 }
+  const base: ContinuationDecisionInput = { todos: [], goalOwned: false, stopped: false, consecutiveSteers: 0 }
 
   it('① skips with a distinct reason per gate, in upstream gate order', () => {
     expect(decideTodoContinuation({ ...base, todos: undefined }))
@@ -499,6 +613,7 @@ describe('P3-T7 listener — fail-open discipline ②', () => {
         throw new Error('boom')
       },
       hasActiveGoal: () => false,
+      isContinuationStopped: () => false,
       log: () => {
         throw new Error('logger down')
       },

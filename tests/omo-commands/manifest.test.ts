@@ -157,7 +157,7 @@ describe('P4-T2 COMMAND_MANIFEST — shape and content', () => {
     expect([...commandStatusSet].sort()).toEqual(['pending', 'ported'])
   })
 
-  it('splits the roster by status as of P4-T6 (two commands ported, four pending)', () => {
+  it('splits the roster by status as of P4-T8 (three commands ported, three pending)', () => {
     // The hard-coded facts, not lengths: a row silently flipping to 'ported'
     // would let a command with no handler look shipped, and a row silently
     // REVERTING to 'pending' after its handler landed would make the boot stop
@@ -166,9 +166,9 @@ describe('P4-T2 COMMAND_MANIFEST — shape and content', () => {
       'ulw-execute',
       'ulw-plan',
       'hyperplan',
-      'stop-continuation',
     ])
     expect(commandsByStatus(COMMAND_MANIFEST, 'ported').map((row) => row.id)).toEqual([
+      'stop-continuation',
       'handoff',
       'remove-ai-slops',
     ])
@@ -539,7 +539,7 @@ describe('P4-T2 derived helpers', () => {
     // 为空 —— 后者在第一条命令落地时就失去意义，等于没有判据。
     const pending = commandsByStatus(COMMAND_MANIFEST, 'pending').map((row) => row.id)
     const ported = commandsByStatus(COMMAND_MANIFEST, 'ported').map((row) => row.id)
-    expect(ported).toEqual(['handoff', 'remove-ai-slops'])
+    expect(ported).toEqual(['stop-continuation', 'handoff', 'remove-ai-slops'])
     expect([...pending, ...ported].sort()).toEqual([...COMMAND_IDS].sort())
     expect(pending.length + ported.length).toBe(COMMAND_MANIFEST.length)
     // An empty status matches nothing rather than everything: a caller passing
@@ -567,10 +567,10 @@ describe('P4-T2 derived helpers', () => {
     // The T3 summary line's fields come from here, never from a hard-coded
     // string — so this test pins the DERIVATION, not the rendered text.
     const counts = countsByStatus(COMMAND_MANIFEST)
-    // P4-T6: 两条已移植。逐个数字手打，与 boot-markers.test.ts 的手打汇总行
-    // （pending=4, ported=2, 2/6 registered）互为对账。
-    expect(counts.get('pending')).toBe(4)
-    expect(counts.get('ported')).toBe(2)
+    // P4-T8: 三条已移植。逐个数字手打，与 boot-markers.test.ts 的手打汇总行
+    // （pending=3, ported=3, 3/6 registered）互为对账。
+    expect(counts.get('pending')).toBe(3)
+    expect(counts.get('ported')).toBe(3)
     // Both keys are present even at 0, so two boots stay line-comparable.
     expect([...counts.keys()]).toEqual([...COMMAND_MANIFEST_STATUSES])
     let total = 0
