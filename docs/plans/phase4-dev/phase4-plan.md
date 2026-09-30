@@ -8,7 +8,9 @@
 >
 > **状态**：📋 **计划已立项，待实施**。实施期实测对本文的回填、逐任务证据与退出标准核对见[任务清单](./phase4-tasks.md)。
 >
-> **修订记录**：（计划期草案；P4-T1 调研回填后在此追加）
+> **修订记录**：
+>
+> - **2026-09-30 计划期评审修复**（评审：`phase4-review-temp.md`，全部 3 缺口 + 4 一致性问题经逐条源码/实树核验**成立**）——① §4.1 新增 omo-hooks manifest 五处硬耦合同步网（`EXPECTED_HOOK_COUNT` apply-throw / manifest.test.ts 三处 / `EXPECTED_SUMMARY_LINE` / c13 文件集合 / **c14 基线须扩为两文档并集 + ported 过滤**，首个 manifest 触碰任务同 commit 落地）；② §4.2 命令驱动机制改引同上下文先例 `invocation.agent.followup`（dsh-command-goal:98-105），steer 降为 turn-stopping 上下文对照；R-1 高→低-中，Q-1 收窄（throw settle 子项闭环）；③ §4.8/T7 对照组更正（未知命令 = 零事件零报错、落回普通 prompt，dsh-commands lib:293-299 明文）；④ §3 skill-badge 更正（默认 `disabled: true`，非挂载先例）；⑤ 接盘项编号 H-33/H-34 显式声明（延续 Phase 3 H 序列，映射 S-06/S-37）；⑥ §6 新增 R-10（计数断言/基线路径耦合类风险）；⑦ 覆盖基线 §6 统计口径更正（命令 6 + 关键词模式 1）；⑧ tasks T1 测试文件计数更正（keyword-detector 7 个 + feature 根 2 个纳入对账）。
 
 ---
 
@@ -45,10 +47,10 @@ Phase 0–3 交付的、本阶段直接复用的资产：
 
 | 构件 | 现状 | Phase 4 的影响面 |
 |---|---|---|
-| **DSH 命令面（pinned 0.1.5-rc.1 实有）** | `ctx.commands.register({name, description, input:{hint,attachments}, handler})` → `CommandResult = {kind:success/error, text?, sourceEventSeq?}`；`command/run` + `command/done` 会话事件对（log-only，按 `commandId` 配对）；注册返回 disposer；原生先例 `dsh-command-goal`（lib:174）与 `dsh-command-compact`（含 `ctx.effect` 生命周期 + 进行中操作收尾纪律） | **本阶段全部命令注册的形态**；`parseCommand` 的 name/rawInput 切分由 DSH 完成；**handler 如何驱动 agent 行为（注入模板为 user message）是 P4-T1 的 Q-1** |
-| **DSH skill 面（已挂载，零改动复用）** | `dsh-skill`（注册表：`ctx.skills.register` 嵌入注册 / `registerProvider` 提供者注册 / 按名 load）+ `dsh-skill-filesystem`（项目根 `.dsh/skills`、`.agents/skills` + `customSkillDirs` + 用户根；frontmatter `name`/`description`/`whenToUse`/`disable-model-invocation`/`user-invocable`；监听变更）+ `dsh-tool-skill`（模型面 `skill` 工具）+ `dsh-skill-badge`（bundled provider 先例）——四行均在 dsh-base composition（cordis.patch.yml:273-284） | 退出标准 b 的载体；**user-invocable skill 是否已桥接为 slash 命令面（pinned 版本实测）= P4-T1 的 Q-3**；skill 内容投递机制选型 = Q-4 |
+| **DSH 命令面（pinned 0.1.5-rc.1 实有）** | `ctx.commands.register({name, description, input:{hint,attachments}, handler})` → `CommandResult = {kind:success/error, text?, sourceEventSeq?}`；`command/run` + `command/done` 会话事件对（log-only，按 `commandId` 配对）；注册返回 disposer；原生先例 `dsh-command-goal`（lib:174 注册；**lib:98-105 `invocation.agent.followup(createUserMessage(...))` = 命令 handler 上下文驱动 agent 的同上下文先例**——`submitObjectiveAttachments` 把附件作为 user message 直接排队）与 `dsh-command-compact`（含 `ctx.effect` 生命周期 + 进行中操作收尾纪律）；**未知命令/语法不命中 = 返回 `undefined`，零事件零报错**（dsh-commands lib:293-299 注释明文 + :319-321 实现），行落回普通 prompt 路径 | **本阶段全部命令注册的形态**；`parseCommand` 的 name/rawInput 切分由 DSH 完成；handler 驱动 agent 行为 = `followup`（同上下文先例已实证），Q-1 收窄为时序/排队细节钉测 |
+| **DSH skill 面（注册表/发现/模型面三行已挂载，零改动复用）** | `dsh-skill`（注册表：`ctx.skills.register` 嵌入注册 / `registerProvider` 提供者注册 / 按名 load）+ `dsh-skill-filesystem`（项目根 `.dsh/skills`、`.agents/skills` + `customSkillDirs` + 用户根；frontmatter `name`/`description`/`whenToUse`/`disable-model-invocation`/`user-invocable`；监听变更）+ `dsh-tool-skill`（模型面 `skill` 工具）——三行挂载于 dsh-base composition（cordis.patch.yml:273-284 区间）；同区间另有 `dsh-skill-badge` 行但**默认 `disabled: true`**（:279-281，可选 bundled provider，非挂载先例——其代码形态仅作嵌入注册的参考） | 退出标准 b 的载体；**user-invocable skill 是否已桥接为 slash 命令面（pinned 版本实测）= P4-T1 的 Q-3**；skill 内容投递机制选型 = Q-4 |
 | **Phase 3 ulw-execute hook 语义（H-32）** | `omo-hooks` 已移植激活检测（DSH 原生形态：指挥委派 atlas + 工作计划意图 pre-step 检测）、计划发现、上下文构建、脚手架；激活 marker 常量三处与上游逐字对齐并登记为 R-10 对接点 | **`/ulw-execute` 命令模板落地时，模板 marker（`<session-context>` + `You are starting an Atlas work session.`）必须与 H-32 的激活检测对接**——R-10 的本阶段侧；常量漂移会造成双轨 |
-| **Phase 3 deferred 项（本阶段接盘）** | S-06 `keyword-detector/`（24 文件，ultrawork/hyperplan/team 关键词模式）；S-37 `stop-continuation-guard/`（3 文件，服务形态 stop/isStopped/clear + 级联取消，消费面 = 本阶段命令） | 两者进入本阶段移植组；team 关键词子模式随 Team Mode 再 deferred（Phase 5） |
+| **Phase 3 deferred 项（本阶段接盘）** | S-06 `keyword-detector/`（24 文件，ultrawork/hyperplan/team 关键词模式）；S-37 `stop-continuation-guard/`（3 文件，服务形态 stop/isStopped/clear + 级联取消，消费面 = 本阶段命令） | 两者进入本阶段移植组（本阶段编号 **H-33/H-34**，映射见覆盖基线 §1.2）；team 关键词子模式随 Team Mode 再 deferred（Phase 5） |
 | **todo-continuation-enforcer（H-03）** | omo-hooks 已移植（E 模式 steer 续行 + 进展复员熔断 cap 5） | `/stop-continuation` 的"停掉 todo 续行"语义需要 H-03 检查停止标记——**跨插件状态面的设计项**（§4.6） |
 | **名册与编排面（Phase 2）** | 11 agent 名册 + maxDepth 2 委派（atlas 可再委派 worker）；prometheus 访谈对象已适配为指挥；plan-consultant/plan-reviewer 只读顾问就位 | `/ulw-execute` 的 atlas 绑定、`/ulw-plan` 的 prometheus 人格、ultrawork 指令引用的 reviewer 闸门——agent 目标全部已就位，命令面只做"激活与路由" |
 | **e2e 基础设施** | `tests/e2e/drive.mjs` + mock-LLM：22 场景、tool_calls 批次、MOCKROLE 名册注入、session JSONL 断言通道、变异 QA 体例、self-test fabricated-log 门 | 命令场景的新通道：**drive 需要能"敲 slash 命令"**（`command/run` 事件断言）；skill 场景需断言 `skill` 工具调用或目录可见性 |
@@ -69,18 +71,20 @@ Phase 0–3 交付的、本阶段直接复用的资产：
 - **单一事实源 `src/manifest.ts`**（omo-hooks manifest 先例）：每个移植命令一条声明——`id`（v5 命名锚点适用处用 v5 名）、上游源路径（tag 相对路径，逐文件）、参数语法（argumentHint 语义）、agent 绑定、效果摘要、e2e 场景名、状态。覆盖清单文档由 manifest **派生核对**（一致性单测防漂移）。
 - **挂载**：根 `cordis.yml` 第三个 `- insert:` 行（`id: omo-commands`）；cold-start / probe / doctor-lite / 静态门相应扩展（计数 2→3 是变异敏感网，须同 commit 同步）。
 - **boot marker**：`[omo-commands] command <id> registered` 逐命令一行 + 汇总行（probe 断言锚点）；loud-but-non-fatal 纪律（单命令注册失败不拖垮其余）。
-- **omo-hooks 扩容**：keyword-detector（模式 A pre-step 注入）与 stop-continuation-guard（状态服务）住 omo-hooks——Phase 3 计划 §9 已明示"keyword-detector 与本阶段移植的 pre-step 注入面共享注册处"。两插件无相互 import；跨插件状态（停止标记）经 **cordis 服务**共享（§4.6）。
+- **omo-hooks 扩容**：keyword-detector（模式 A pre-step 注入）与 stop-continuation-guard（状态服务）住 omo-hooks——Phase 3 计划 §9 已明示"keyword-detector 与本阶段移植的 pre-step 注入面共享注册处"。两插件无相互 import；跨插件状态（停止标记）经 **cordis 服务**共享（§4.6）。两模块的 Phase 4 编号为 **H-33（keyword-detector，原 Phase 3 S-06）/ H-34（stop-continuation-guard，原 S-37）**——延续 Phase 3 H-01…H-32 序列的新 H 号段，归 Phase 4 拥有，映射与解析契约见[覆盖基线](./phase4-commands.md) §1.2。
+- ⚠️ **omo-hooks manifest 的既有硬耦合（计划期实测定案，违者破门/破启动）**：`EXPECTED_HOOK_COUNT = 14`（manifest.ts:172）被 `validateManifest()` 在 **apply 时**强制（index.ts:501，不等 `entries.length` 即 throw）——新增条目不同步 bump = **boot 红，不是测试红**。同步网全清单（新增/删除 manifest 条目时必须同 commit 落地）：① `EXPECTED_HOOK_COUNT`；② `tests/omo-hooks/manifest.test.ts` 三处硬编码（:115 注释 / :126 `toBe(14)` / :370 错误文案）；③ `tests/omo-hooks/registration.test.ts` 的 `EXPECTED_SUMMARY_LINE`（按事件计数派生，新条目的事件归属改变计数）；④ 门 6 **c13**（`src/hooks/` 文件集合 ↔ manifest 双向一致 + 孤儿 .ts 规则——**非 manifest 条目的服务模块文件不得放 `src/hooks/` 下**）；⑤ 门 6 **c14**（基线文档硬编码 `COVERAGE_BASELINE_MD = phase3-hooks.md`，:75；解析器只吃 `## 1.`–`## 2.` 之间 `| H-\d+ |` 行、状态列含「已移植」，:673；且比对对象是**全部** manifest id，不按状态过滤——新增 pending 条目即报 `manifest ids absent from the phase3-hooks.md §1 port group`）。**c14 必须随首个 manifest 新增同 commit 演进**：基线来源扩为 `[phase3-hooks.md, phase4-commands.md]` 两文档并集 + manifest 侧改按 `status === 'ported'` 过滤（稳态断言强度不变——Phase 3 结项时 14 条目全 ported；pending 期条目不破门，翻转 commit 仍须文档/manifest 同改）。理由注释写入 gate 源码。H-34（服务形态）是否适格为 manifest 条目（无目标事件/模式字段）属实施期裁定——**若否，其文件放 `src/hooks/` 之外**（c13 安全）且其覆盖行不进 c14 解析面，计数网相应缩为 +1（P4-T8 任务书承载完整 fork）。
 - **skill 内容**不进任何插件包——vendor 进 `patches/omo-dsh/vendor/shared-skills/`（Phase 1 布局），运行时投递机制见 §4.3。
 
 ### 4.2 命令注册机制：模板 → user message 的 DSH 形态
 
-OMO 命令 = 模板文本（`<command-instruction>…</command-instruction>` 包裹）+ 可选 agent 绑定 + `$ARGUMENTS`/`$SESSION_ID`/`$TIMESTAMP` 占位符，opencode 把渲染后的模板当用户消息跑一轮。DSH 的 `ctx.commands` handler 只返回人看的 `CommandResult`——**"驱动 agent 行为"需要 handler 主动注入消息**。草案形态（P4-T1 的 Q-1 实测裁定）：
+OMO 命令 = 模板文本（`<command-instruction>…</command-instruction>` 包裹）+ 可选 agent 绑定 + `$ARGUMENTS`/`$SESSION_ID`/`$TIMESTAMP` 占位符，opencode 把渲染后的模板当用户消息跑一轮。DSH 的 `ctx.commands` handler 只返回人看的 `CommandResult`——**"驱动 agent 行为"需要 handler 主动注入消息**。机制已有**同上下文原生先例**（计划期实测，R-1 据此降级）：
 
-- **草案（a）handler 内 `agent.steer(createUserMessage(渲染后模板))`**——Phase 3 E 模式先例（`dsh-hooks-claude-code/lib/index.js:292-307`）；需核实：命令执行时 agent 的状态要求（idle/running）、steer 与命令返回值的时序、`signal` 中止语义。
-- **草案（b）handler 返回 success 文本 + 模板经 inbox 写入**——若 steer 在命令路径上有状态限制，退化为 inbox 写入 + 下一轮自然拾取。
+- **草案（a）handler 内 `invocation.agent.followup(createUserMessage(渲染后模板))`**——**同一命令注册面**的原生先例：`dsh-command-goal/lib/index.js:98-105`（`submitObjectiveAttachments` 在 `/goal` handler 路径内把附件作为 model-visible user message 直接排队）。语义 = 排队一条 user message 交给模型。剩余钉测项（P4-T1 Q-1）：followup 排队与 `command/done` 的时序、agent 运行中（非 idle）时的行为、`signal` 中止语义。
+- **对照（非先例）**：`agent.steer(createUserMessage(...))` 是 **`agent/turn-stopping` listener 上下文**的机制（Phase 3 E 模式，`dsh-hooks-claude-code/lib/index.js:292-307`）——写 inbox 供 driver 重读决定是否续行，与命令 handler 上下文时序语义不同，**不作为命令面先例引用**。
+- **降级（b）**：若 Q-1 钉测发现 followup 在命令路径有未预见的状态限制，退化为 steer/inbox 写入 + 下一轮自然拾取——语义差异（排队语义 vs 续行投票）须成文记录。
 - **占位符渲染**：`$ARGUMENTS` = `invocation.rawInput`；`$SESSION_ID`/`$TIMESTAMP` 由 handler 从会话面取（P4-T1 核实暴露面）；渲染 = 纯函数，单测钉死。
 - **agent 绑定**（start-work → atlas）：DSH 命令 API 无 per-command agent 字段（计划期实测 `CommandDefinition` 联合）——翻译 = 模板文本明确"你是 atlas / 指挥委派 atlas"，由 Phase 2 名册的既有委派链执行；`/ulw-execute` 模板 marker 与 H-32 激活检测的对接见 §4.7。
-- **纪律**：handler 自包 try/catch；模板常量 apply 时一次构建（不在命令路径读盘——vendor 的 skill 内容例外，经 `ctx.skills.get` 原生面加载）；注册返回 disposer 归当前 Fiber；命令 handler 抛错的 DSH 语义（settle 为 `kind:'error'`）由 P4-T1 核实并钉测。
+- **纪律**：handler 自包 try/catch；模板常量 apply 时一次构建（不在命令路径读盘——vendor 的 skill 内容例外，经 `ctx.skills.get` 原生面加载）；注册返回 disposer 归当前 Fiber；命令 handler 抛错 settle 为 `kind:'error'` 已是明文语义（`dsh-commands` types：thrown/aborted handler settles as `kind: 'error'`——Q-1 的该子项已闭环），单测钉死即可。
 
 ### 4.3 skills 内容 vendor 与投递
 
@@ -96,7 +100,7 @@ OMO 命令 = 模板文本（`<command-instruction>…</command-instruction>` 包
 - **候选（b）`ctx.skills.register` 嵌入注册**：插件内嵌 skill 文本（runtime provider）——无文件系统依赖，但 286 文件的内容嵌入代码形态不佳，且漂移检测失真。
 - **判定轴**：发现可靠性（项目根 vs 用户根的 cwd 语义）、用户可编辑性、CI 可验性、与 `dsh-skill` 的耦合度（两者都"原样复用"，差异在投递路径）。
 
-**user-invocable 命令面**（Q-3）：若 pinned 版本已把 `user-invocable: true` 的 skill 桥接为 `/skill-name` 命令，则 `/ulw-plan`（及 OMO 中同为 skill 的命令面）**零代码落地**；若没有（计划期 grep 未见桥接消费者），`/ulw-plan` = omo-commands 显式注册一个 handler——加载 ulw-plan skill 正文 + steer 注入（"加载并遵循此 skill"语义），语义等价于 OMO 的 skill-as-command。
+**user-invocable 命令面**（Q-3）：若 pinned 版本已把 `user-invocable: true` 的 skill 桥接为 `/skill-name` 命令，则 `/ulw-plan`（及 OMO 中同为 skill 的命令面）**零代码落地**；若没有（计划期 grep 未见桥接消费者），`/ulw-plan` = omo-commands 显式注册一个 handler——加载 ulw-plan skill 正文 + followup 注入（"加载并遵循此 skill"语义），语义等价于 OMO 的 skill-as-command。
 
 ### 4.4 命令清单与处置（计划期草案；权威逐行版随 P4-T1 转实测）
 
@@ -145,7 +149,7 @@ Phase 3 的 H-32 移植了 start-work **hook 语义**（激活检测 = DSH 原�
 | 层 | 扩展内容 |
 |---|---|
 | **L1 单测（门 2）** | ① 每命令的模板渲染纯函数单测（占位符、参数语法、team-mode addendum 缺席）；② keyword 检测逻辑单测（上游测试用例移植为种子——keyword-detector 有 7 个测试文件）；③ manifest ↔ 覆盖清单一致性；④ boot marker 纯函数；⑤ vendor manifest 漂移检测（Phase 1 先例） |
-| **e2e（门 3）** | 每命令 ≥ 1 场景：**drive 需新增"敲命令"通道**（scripted 步骤发 `/name args` 行 → 断言 `command/run`/`command/done` 事件 + steer 注入的模板文本进入模型请求 + 预期行为链）；skill 场景 = 断言目录可见（catalog 含 17 裸名）+ `skill` 工具加载正文（mock 发 tool_calls）；对照组（无关键词不注入、未知命令原生报错） |
+| **e2e（门 3）** | 每命令 ≥ 1 场景：**drive 需新增"敲命令"通道**（scripted 步骤发 `/name args` 行 → 断言 `command/run`/`command/done` 事件 + followup 注入的模板文本进入模型请求 + 预期行为链）；skill 场景 = 断言目录可见（catalog 含 17 裸名）+ `skill` 工具加载正文（mock 发 tool_calls）；对照组（无关键词不注入；**未知命令行 = 无 `command/run`/`command/done` 事件、无 error 结果、该行落回普通 prompt 路径**——DSH admission miss 不记任何事件，dsh-commands lib:293-299 明文） |
 | **doctor-lite（门 4）** | omo-commands 行 Config schema 校验 + cordis.yml 三 insert 行断言（check 2b 扩展，计数 2→3） |
 | **concerto-static（门 6）** | c 组延续编号（c15+）：三 insert 行、omo-commands 署名头覆盖、manifest ↔ 文件集合一致、**vendor skills 的 NOTICES/manifest 行存在性**、改名（ulw-execute）一致性 |
 | **probe（门 8）** | 冷启动日志断言 `[omo-commands] command <id> registered` 逐行 + 汇总行；prove 脚本断言命令注册表在真实 composition 中可见（真实注册表 + stub 先例） |
@@ -167,7 +171,7 @@ ROADMAP §4 Phase 4 给出 2 条退出标准，逐条落到可执行证据：
 
 | # | ROADMAP 原文 | 证据（本计划的关键判定） |
 |---|---|---|
-| **a** | 每条命令在脚本化场景中驱动预期 agent 行为 | 覆盖清单每行"已移植"状态带 e2e 场景名；门 3 全绿；每场景含**对照断言**（无关键词/未知命令不受误伤）；`command/run`/`command/done` 事件与模板注入文本在 session log 可观测 |
+| **a** | 每条命令在脚本化场景中驱动预期 agent 行为 | 覆盖清单每行"已移植"状态带 e2e 场景名；门 3 全绿；每场景含**对照断言**（无关键词不注入；未知命令零事件零报错、落回普通 prompt）；`command/run`/`command/done` 事件与模板注入文本在 session log 可观测 |
 | **b** | skill 加载原样复用 `dsh-skill` | 17 裸名 skill 在 catalog 可见（场景断言）；`skill` 工具经 `ctx.skills.get` 原生面加载正文（e2e 断言）；**对 `dsh-skill*` 包零 patch、零 fork**（静态门断言 vendor 目录外无 dsh-skill 改动） |
 
 **DoD 补充**（沿用 Phase 1/2/3 的 c/d/e）：
@@ -189,7 +193,7 @@ ROADMAP §4 Phase 4 给出 2 条退出标准，逐条落到可执行证据：
 
 | # | 风险 / 问题 | 影响 | 处置 |
 |---|---|---|---|
-| **R-1** | **命令驱动机制不成立**：`ctx.commands` handler 若无法在命令执行上下文 steer/inject agent（状态限制、时序约束），全部"模板 → agent 行为"命令失去载体 | 高（架构） | P4-T1 Q-1 第一优先核实；备选形态（inbox 写入 / 返回值引导用户发消息）按降级阶梯记录；若结构性不成立，按 DoD-d 改计划而非硬造 |
+| **R-1** | ~~**命令驱动机制不成立**~~ → **命令注入的时序细节**：`ctx.commands` handler 驱动 agent 的机制**已有同上下文原生先例**（`dsh-command-goal/lib/index.js:98-105` 的 `invocation.agent.followup(createUserMessage(...))`，评审实测）——"能否驱动"不是未知；余下的是 followup 排队与 `command/done` 的时序、agent 运行中行为、`signal` 中止语义 | 低-中（时序细节） | P4-T1 Q-1 钉测（已从架构核实降级为例行钉测）；若钉测发现未预见限制，按 §4.2 降级（b）（steer/inbox）逐命令记录 |
 | **R-2** | **user-invocable 桥接缺席**：pinned 0.1.5-rc.1 未见 user-invocable skill → slash 命令的消费者（计划期 grep） | 中 | Q-3 核实；缺席则 `/ulw-plan` 走显式 handler（§4.3），语义等价已论证；**不为桥接改写 dsh-skill**（退出标准 b 禁止） |
 | **R-3** | **skill 内容体量**：286+2 文件的 vendor 是 Phase 1（26 文件）的 11 倍；per-file 署名与 manifest 维护成本 | 中 | Phase 1 playbook 的目录分组纪律复用；manifest 生成脚本化（vendor  playbook 已有工具）；前端类 skill（ultimate-browsing 48 文件、programming 75 文件）的引用文件完整性由 sha256 钉死 |
 | **R-4** | **关键词误注入**：ultrawork 关键词检测在 DSH 指挥链上误触发（如用户引用"ulw"字样讨论）会注入强约束指令，扭曲会话 | 中 | 上游防护语义全套移植（code block 剥离、slash 前导排除、幂等检测）；对照场景 e2e（讨论关键词不触发）；配置面可禁用 |
@@ -198,12 +202,13 @@ ROADMAP §4 Phase 4 给出 2 条退出标准，逐条落到可执行证据：
 | **R-7** | **范围误读**：产出被理解为"OMO 编排全流程已可用"（实际 Team Mode/计划载体仍缺席，hyperplan 是降级形态） | 低（沟通） | README/CHANGELOG 写明：命令面 ≠ Team Mode（Phase 5）≠ 编辑面（Phase 6）；hyperplan 降级语义成文 |
 | **R-8** | **vendor 漂移检测误报**：skills 内容改名（start-work→ulw-execute）使 sha256 与上游偏离，后续定向搬运（D14 规则 4）比对成本上升 | 低 | deviations[] 逐处登记（D15-c 既定纪律）；改名前原文的 sha256 同时登记（双向锚） |
 | **R-9** | **e2e 命令通道缺口**：drive.mjs 现无"敲 slash 命令"的剧本原语，通道建设可能牵出 session 输入面假设 | 中 | P4-T1 顺带核实 mock-LLM 沙箱的命令注入点；打样场景（第一条命令）承担通道建设，后续场景复用 |
+| **R-10** | **新增 manifest 条目触碰既有计数断言/基线路径**：omo-hooks manifest 扩容触发 `EXPECTED_HOOK_COUNT`（apply 时 throw = boot 红）、单测硬编码、`EXPECTED_SUMMARY_LINE`、c13 文件集合、c14 基线文档五处硬耦合——计划期曾全部漏列（评审缺口 1）。同类坑已有先例：P3-T5 剔除 H-01 时同步过 15→14 网 | 高（破门/破启动） | §4.1 的同步网全清单成文；**首个 manifest 触碰任务（T8 或 T12）同 commit 落地 c14 两文档并集演进**；T8/T12 任务书各带同步网清单；T16 复验 |
 
 ### 开放问题（全部转 P4-T1 调研闭环，不阻塞立项）
 
 | # | 问题 | 关联 |
 |---|---|---|
-| Q-1 | 命令 handler 驱动 agent 行为的精确机制（steer 状态要求/时序/signal 语义；handler throw 的 settle 形态） | R-1 |
+| Q-1 | `followup` 注入的时序钉测（排队 vs `command/done` 先后、agent 运行中行为、signal 中止）；~~handler throw 的 settle 形态~~（已闭环：types.d.ts 明文 thrown/aborted settle 为 `kind:'error'`） | R-1 |
 | Q-2 | `$SESSION_ID`/`$TIMESTAMP` 在 handler 内的暴露面 | §4.2 |
 | Q-3 | user-invocable skill → slash 命令桥接在 pinned 版本是否存在 | R-2 |
 | Q-4 | skill 投递机制选型（filesystem 物化 vs 嵌入注册）+ `customSkillDirs` 可否经 patch overlay 配置 | §4.3 |
