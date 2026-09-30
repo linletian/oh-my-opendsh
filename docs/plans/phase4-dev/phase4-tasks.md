@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **6/18**（P4-T1…T5、T12 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **7/18**（P4-T1…T6、T12 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -85,13 +85,13 @@
 
 ## WP-3 模板命令批 A（计划书 §4.2；命令 e2e 通道打样）
 
-### [ ] P4-T6 — 移植 `/handoff` + `/remove-ai-slops`
+### [x] P4-T6 — 移植 `/handoff` + `/remove-ai-slops`
 
 - **产出**：`src/commands/handoff.ts` + `src/commands/remove-ai-slops.ts` + `src/templates/` 对应模板常量（署名头：上游 `templates/handoff.ts` / `templates/remove-ai-slops.ts` 逐字标注 + "语义移植"声明）+ 单测；manifest 两条目填入。
 - **做法**：模板渲染纯函数（`$ARGUMENTS`/`$SESSION_ID`/`$TIMESTAMP` 占位符；P4-T1 Q-2 暴露面）；命令 handler 按 Q-1 裁定形态驱动 agent（首选 `followup`，降级 = steer/inbox）；`remove-ai-slops` 模板引用 skill 的段落与 S4-11 vendor 内容对齐（`skill(name="remove-ai-slops")` 的 DSH 等价 = dsh-tool-skill 工具名，P4-T1 核实）；`handoff` 的 `session_read` 引用按 Q-1/C 组等价面裁定（无等价面则收窄记差异）；team-mode addendum 段不移植（D-03）；handler try/catch + throw settle 形态钉测。
 - **判定**：✅ 单测覆盖：占位符渲染全集、空参数/非法参数、模板文本含上游关键强制段（逐字锚点）、handler 异常 settle 为 `kind:'error'`；vitest 绿。
-- **证据**：（待填）
-- **依赖**：P4-T3、P4-T5（remove-ai-slops 的 skill 引用）。**量级**：4 小时。
+- **证据**：commit `261c5ba`。tests/omo-commands **207 测试**（全量 1247）；remove-ai-slops 模板与上游**逐字节相同**（双评审 import 求值 diff 实证）；handoff 三处收窄登记（session_read 指引化/PHASE 1·3 散文/PHASE 4 DSH 会话面）；`formatCommandTemplate` 外框移植后与上游模拟**逐字节相同**（评审复刻实证）；followup 消息 = deepFreeze(structuredClone) 复刻 dsh-llm 三性质；NOTICES 语义移植表（2 命令/8 文件，只增不改）。**双评审**：sub-agent REJECT→修复→APPROVE（MAJOR：散文改写与登记说反话、PHASE 4 零登记）+ mcode 两轮 APPROVE（FINDINGS none）；共 12 条 findings 修复。仲裁新裁定：`$TIMESTAMP`=ISO（上游 executor.ts:95 实测）；外框移植；`resolveFileReferencesInText`/`resolveCommandsInText` 不移植记差异。覆盖基线 C-06/C-07 行已翻 ✅（e2e 随 T7）。
+- **依赖**：P4-T3、P4-T5（remove-ai-slops 的 skill 引用）。**量级**：4 小时（实耗约 5 小时）。
 
 ### [ ] P4-T7 — e2e：命令通道打样场景
 
