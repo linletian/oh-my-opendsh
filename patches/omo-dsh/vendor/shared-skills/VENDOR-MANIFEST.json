@@ -1,0 +1,1644 @@
+{
+  "upstream": {
+    "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+    "tag": "v4.19.4",
+    "commit": "b072d279110bdda2c6ac2525d0d24dc54d16148a",
+    "paths": [
+      "packages/shared-skills/skills",
+      "packages/omo-senpi/skills/ultrawork",
+      "packages/omo-senpi/skills/hyperplan"
+    ],
+    "pathMapping": "VENDORED skills/<name>/<rest>  ->  UPSTREAM <packages/shared-skills/skills | packages/omo-senpi/skills>/<name>/<rest>, with one exception: skills/ulw-execute/** comes from packages/shared-skills/skills/start-work/** (see renames[]). The two senpi skills (ultrawork, hyperplan) keep their own upstream package path because their content lives in packages/omo-senpi, not packages/shared-skills. Files[] entries carry an explicit `upstreamPath` whenever the mapping is not the identity, and every `modified` entry carries `upstreamSha256` = the upstream bytes at the tag (the R-8 two-way anchor).",
+    "license": "SUL-1.0 (repository root LICENSE.md; the package manifest carries no license field)"
+  },
+  "vendoredAt": "2026-09-30",
+  "package": {
+    "name": "@oh-my-opencode/shared-skills",
+    "version": "0.1.0",
+    "upstreamManifest": "packages/shared-skills/package.json",
+    "note": "The upstream package is harness-neutral content (markdown + reference files + scripts); only its skills/ tree is vendored here. `exports` / `types` / `files` are kept unchanged even though ./index.mjs and ./index.d.ts are not part of this copy (playbook M-3: dangling exports are recorded, not rewritten)."
+  },
+  "counts": {
+    "total": 291,
+    "verbatim": 277,
+    "modified": 12,
+    "projectNew": 2,
+    "upstreamSkillFiles": 288,
+    "senpiSkillFiles": 2,
+    "sharedSkillsSkillFiles": 286,
+    "skillDirectories": 19,
+    "deviations": 14,
+    "deviationClasses": {
+      "modification": 12,
+      "addition": 2
+    }
+  },
+  "renames": [
+    {
+      "from": "skills/start-work",
+      "to": "skills/ulw-execute",
+      "kind": "skill-name rename to the v5 naming anchor",
+      "authority": "ROADMAP §2 rule 6; docs/plans/phase4-dev/phase4-plan.md §3 (命名锚点: start-work 按 v5 名 ulw-execute 读取); docs/plans/phase4-dev/phase4-commands.md §1.1 C-02 / §2 S4-13",
+      "tokenRenamed": "start-work -> ulw-execute",
+      "tokenOccurrencesRenamed": 40,
+      "tokenOccurrencesRetained": 2,
+      "roundTripProof": "sed 's/ulw-execute/start-work/g' over every one of the 11 touched files reproduces the upstream v4.19.4 bytes exactly (verified per file, 2026-09-30). No other character of any skill body changed.",
+      "retainedLiterals": [
+        {
+          "literal": ".omo/start-work/ledger.jsonl",
+          "file": "skills/ulw-execute/SKILL.md",
+          "why": "OMO runtime state path, not a reference to the skill's name. Renaming it would repoint an instruction at a ledger directory this project never creates; the carrier gap is already tracked by the omo-hooks H-32 port (phase 3, R-6). Carrier-narrowing notes deliberately do NOT go into skill bodies (phase4-plan.md §4.3)."
+        },
+        {
+          "literal": "components/start-work-continuation",
+          "file": "skills/ulw-execute/SKILL.md",
+          "why": "Codex harness component path (the Stop/SubagentStop continuation hook), not a reference to the skill's name. Same reasoning as above; it is upstream provenance, kept verbatim so the body stays diffable against the tag."
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "path": "skills/ast-grep/.gitignore",
+      "sha256": "ee7f2b315ff326aa49cc69cf32dc7ba220424d4d85b3ecd71c2350f528ac0a83",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/LICENSE",
+      "sha256": "b083425948376611de9b92b0aeb7377e604505756ea427e541a34d9b030d4dc1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/README.md",
+      "sha256": "eb4d54eeb38d3d2449dc1eacc89c4da4d53227c153c299afe3e599428c05cd30",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/SKILL.md",
+      "sha256": "c5512fb494945183219f23fe3edd05c601a09c396c5771bd750bf8a079b62d3e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/SOURCE",
+      "sha256": "acc67b077a7f39249fa142e658169f4fb0f40043ec442c86f8e01df976eaf11e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/install.ps1",
+      "sha256": "8846e5e77100bc6ecefc85247924cc0103587b807346bd8bb27f005bfe61dbab",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/install.sh",
+      "sha256": "40913184b183f9d9752607992482292985d95964c0293be218a3f8ecc8defbb1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/references/cli.md",
+      "sha256": "2efbc5c65289e720142d59817319abb4844accfd9d818b875b9e132ec8ac7825",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/references/install.md",
+      "sha256": "112528e9c25540bb1680c7ab3c64d38e63fb277992ca40cacf9639ec0d7c0789",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/references/patterns.md",
+      "sha256": "e768cc174f09e1d7f68f7566fa1880041aa293fefd46a2265bd9136f4932b7f7",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/references/pitfalls.md",
+      "sha256": "508459b3133e5376e31762c5c9c94c497a9559651d3a452fb2ccf8f220ed2485",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/references/recipes.md",
+      "sha256": "759043076319c4812f18d66730815b6b8202944c29a089908e11aa5b52da5b9f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/references/sgconfig.md",
+      "sha256": "c3b246b39f9537a618ec9769c731a3c33549670aa9759fbc8cbd69420c886089",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/references/yaml-rules.md",
+      "sha256": "2d6414b75f9a4ac08414d034403099daa6abafd62503fa607cfcba6ebd0fbcd3",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/scripts/ast_grep_helper.py",
+      "sha256": "0ca189f5b0fe873f8d5f3de0f9ff76b13953f19ca3e51b3a744af0ab7b30fe52",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/tests/smoke.ps1",
+      "sha256": "36316c7e369f32e74f31c6d1bec0bead7088b87c0d345f85f1f23ca0830c0b56",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ast-grep/tests/smoke.sh",
+      "sha256": "8428ba1e9f140b7310e4a2285556b45769d2c247ba8b833484ec5ebde9eab798",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/.gitignore",
+      "sha256": "a7279f1e3541835bbcbce42791210e0829eae00d3597e4c91b6ffc74863f78a6",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/.npmignore",
+      "sha256": "c97d9bc630afec0c407f6fb4ee122a031f63516419d15a26f602bedc4c47e594",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/SKILL.md",
+      "sha256": "c60bc47a3108a6682ee687ad83850076a25e613cb25194fd401f11975e469035",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/agents/openai.yaml",
+      "sha256": "29eb958fa13f5a2d7c4b9eef23cc6009ed48f3fcaf930f5189e68c3357868ee1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/pyrightconfig.json",
+      "sha256": "d0ea39475b86bbc7b9f742e12fe2f7e42c71fb92539f71f31590001c93e11983",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/references/all-platforms.md",
+      "sha256": "bb0dfa72fe060b6a3bfb46f246f1cd31a472ae6cf67c528bb726623f00c37cd8",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/references/claude.md",
+      "sha256": "46bf09894224e25ccbea950f7d96dde0205958547011d870fcf4e42f12cf0156",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/references/codex.md",
+      "sha256": "23d43c81556182d7faa9a6eb96a553fca6fd55005c1b2a8bcd0110c7ff100f2e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/references/opencode.md",
+      "sha256": "60528f9e7eb8eb3f385941c72221447eb8e0f476e0c0a4313b7b594eff6e36a7",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/references/senpi.md",
+      "sha256": "aab9b9544c51e515e1a6fa9dd57a9523d6b1ad15194782fb73ba9d794c184fbb",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/__init__.py",
+      "sha256": "5384bfdb2df380b6557cc7a71d16891415bccaa87699406e236f752c6415389f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/aside_scanner.py",
+      "sha256": "5f8569c83682b85c3a654d9e042ebc77f8d111f29465ba335537acfdf1a90a54",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/claude.py",
+      "sha256": "71eaafa18752ab93aa3ee731f6cff501ce97bfa58589912c923511097a1c96a2",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/cli.py",
+      "sha256": "34142c2430e20ade47559e9b48ebe192f9717994972749911e2a2b5a6ae0d0c3",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/codex.py",
+      "sha256": "b71613b07cc03fdc043d43aa9ba3910bb523fcb60908061eb4900c115a76793a",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/file_scanners.py",
+      "sha256": "cf496ddf6e0696c6613afb708c948f1b464acebd43db804ffa4342922343520d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/jsonio.py",
+      "sha256": "ac944438ccae9d732065a303a2263211659d27ba6256292a573f51a58b6f2ad4",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/kiro_scanner.py",
+      "sha256": "45003791d9845d61abc6927c4fdad923850a5c4c3cfd47b565ae235e9bd6949a",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/opencode.py",
+      "sha256": "690edd01415cbc87e92fd4f3a4e344ce63cfcec5ba814f6fcc36baa595194c84",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/pi_family.py",
+      "sha256": "78940f0a00ad552582b2db5f24d6d9bd25a71bfc27d0e3336164ebe41599d77e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/scanners.py",
+      "sha256": "c75fcaf2f8831cefbe211a46c7e88a56d25f2647f14d8242f8e1f76681b6e0df",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/sqlite_optional_scanners.py",
+      "sha256": "9905a6e1c1a961e105f1b149649274b867a0ad16ba41caae35a84b73c459123e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/sqlite_scanners.py",
+      "sha256": "5e4c276684f3c0fe2d3d56d9b4ec3936114f10812061b22b327270533b759759",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/timeparse.py",
+      "sha256": "a206e8fe38b7c247e1e62d7a9c2357bb84c60b681a3ea1ae7c81af032fd2d4b4",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/transcript.py",
+      "sha256": "9912c277ff4c723fe7882f0dcb953c51cf05892347dc6878aa708ed7440ecc92",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/agent_sessions/types.py",
+      "sha256": "050410f1f9ff6697274ecee9ccebff141c31b0eff1364e1ac3c5da0724b22f8c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/find-agent-sessions.py",
+      "sha256": "ee7b58fbf028cca4f2462458cde61abe0a0b16a711c63eda325e78c2c5f51c92",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/tests/test_agent_sessions.py",
+      "sha256": "0bc0ab88b1dbe01f20b813d028d403ebf4fb288c7b5c2b1c6c0fc29fea95098d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/tests/test_aside_scanner.py",
+      "sha256": "c6bb1fe79044cff1973aa6d3865373bac42c055be1569f5450c3aa109c33b2cf",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/tests/test_cli_contract.py",
+      "sha256": "c508650732d496779c2246748a0d98ec77022f6d1b02cfc706c61bb3db28f59c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/tests/test_extended_scanners.py",
+      "sha256": "980a90e16a7fa1fc8a256eee93a961f4b095ff7e183d795bdffaf38f7f1b9cd2",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/tests/test_optional_sqlite_scanners.py",
+      "sha256": "779916758797b8f146f9d517a503f0b00e6b987a382dde8fabb08cc5a059d366",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/coding-agent-sessions/scripts/tests/test_pi_family_scanners.py",
+      "sha256": "e3f74109e0c6164c369cdabbae3ebdb1bc3140ec8219bf32067c23c227790c84",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/data-scientist/SKILL.md",
+      "sha256": "278bc6eed27f349e167b0bcd3eafa175e2caf2a8b4e1b8a496381f39b3a930e9",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/data-scientist/references/common-scenarios.md",
+      "sha256": "9dbff926e3ce78f868e83b99a2d9f02c468df522149aeb3787205088480f2266",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/data-scientist/references/execution-templates.md",
+      "sha256": "3d66ec9f4b92d5c9bef27ee5345a19e2a76865ed67dc9484caa41d94db1ef3b1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/data-scientist/references/integration-patterns.md",
+      "sha256": "6a8f513404b1bca7800ed5a641867387e2d3ece75e2d67fcd8efc78edbcf5bdd",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/data-scientist/references/performance-benchmarks.md",
+      "sha256": "093d7375e16be0db336d022943811e8ef0e4441c8d20a7a1aa9c48411d7d2735",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/data-scientist/references/uv-setup.md",
+      "sha256": "afb31fe100adc90ceb272b86a8218a21e041d7729bbe984837d4aeb4d3cf547c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/data-scientist/scripts/quick-query.py",
+      "sha256": "dd08663d99266bba8a965913cdc66841633c26e9fddabbc2d80086768bf88a16",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/data-scientist/scripts/setup-uv.ps1",
+      "sha256": "a573c080dc28d879da03082e42df914ed054db3d64d47bc5ab0fb9c7a76d0a75",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/data-scientist/scripts/setup-uv.sh",
+      "sha256": "8e1b831a83ca31cb91ccae8b93ce1ebc4f06b964fc9a2385d259715f021e2dc9",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/SKILL.md",
+      "sha256": "8384561eb5a48aa444c0f6ba41f5104244d6313b01bd9389cf2421387fbbfb31",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/methodology/00-setup.md",
+      "sha256": "dc05ca5d38d870359b2ab8304ae32b31430892d864723d87f846e7a41cf8ed7f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/methodology/02-investigate.md",
+      "sha256": "5ad08378f47e3b9ebe0fd1995e7d9b382d6cb84e1a32fa2e4c60789df8398fce",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/methodology/03-flaky-triage.md",
+      "sha256": "1d2585fe7ea51ff13204a9eb635ed328ef23da5142d376ccf8d90d494943b9d2",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/methodology/04-oracle-triple.md",
+      "sha256": "dff93abea2c0ed61bc49bfc944d6e43ed6e624671322ed890f42934f04b10493",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/methodology/05-escalate.md",
+      "sha256": "33e2eb6af5e33e2b19df0cdee97abc71dca50c82a7e401181d91795e54718b39",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/methodology/06-fix.md",
+      "sha256": "2dc445cd7643b5287e17ee5267f99cdfb4882d8a0134776a249ba9ecd176a009",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/methodology/08-qa.md",
+      "sha256": "09f668880bfb868a46d937aa57ad67397438e6333897b8c0cb50a9c8282ce032",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/methodology/09-cleanup.md",
+      "sha256": "5675b3e72c38b9d0c87ab1b473f9f303aaea24047c8ef8d96e069539c8125679",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/methodology/partial-runtime-evidence.md",
+      "sha256": "820c1ce061a9cbef3145d3ede253e4e21c3fa384935ac2e76008b391945feb2a",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/runtimes/bundled-js-binary.md",
+      "sha256": "f7f01bc4d95c24bd28d24a3ae240a037b0ded00d690d18a6900ddf63025fe4ec",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/runtimes/go.md",
+      "sha256": "284614797d02d1aee25f440a7daa145af59a3ff61e5ba79c28ad0542c28f4f00",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/runtimes/native-binary.md",
+      "sha256": "520a767fadbd4d0b1b59fb6c652ded7f47a0ff5d742563f927334ae4537c2be0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/runtimes/node.md",
+      "sha256": "0b728b643ed89c318bb564e1137cf68bb6acb61c1774ed73dee04b5a70cf1058",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/runtimes/python.md",
+      "sha256": "7c69b34e0d1342900c566468828e8af5a688669b75803a5eb8f2f6e156d38490",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/runtimes/rust.md",
+      "sha256": "48fa55949ba60c42a1e9827af94122905ea82cb147262b1e044a27734b6a2958",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/tools/ghidra.md",
+      "sha256": "8d50534340eef3cd664458cade9d11d18cabff804979128d7107a5fdd36dbbf0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/tools/playwright-cli.md",
+      "sha256": "1a56d1b4bea981d21362029af7275327855a26e34b47ec6d5ccc5d459ff43989",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/tools/pwndbg.md",
+      "sha256": "11bd4dbe9f8d08816ddc4d169eb84fdd21cbded3721c63d5fb0346e40b875030",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/debugging/references/tools/pwntools.md",
+      "sha256": "0123de928e1e88186487adfee0b69d7a886c596fdd0c5132256cf9319fea466e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/.gitignore",
+      "sha256": "04343fa2bd17d0ea8aaafdf39069b24992a8b8e7977c2ef407f10ed5dfda4906",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/.npmignore",
+      "sha256": "31d5963a0b1dbac7c063aa0d7ecac2b3b13d784e096ffbe4747f30a5b21870d0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/ATTRIBUTION.md",
+      "sha256": "0c3d28009bf55f148866013e74f45eee2421f8358d770ae8c47189fbb91c2484",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/LICENSE-Apache-2.0.txt",
+      "sha256": "9d95806a26532623360eb84bb17d298f394b55ef73fb4c0796d99b4319b2b0da",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/SKILL.md",
+      "sha256": "c8377a7ff288456506da8fd1e29aa65852359dfc0edcfc4edae0c46fad399209",
+      "origin": "modified",
+      "upstreamSha256": "cb3a0ca65af2f94e03151a0caaf87bbe748dc7b5f09d77358f9dcbdb9b9764a2"
+    },
+    {
+      "path": "skills/frontend/references/design/README.md",
+      "sha256": "8ecd047eb514a61bcef52371a2d59b6c1ad91f9c9e48637a2c18ef4efb76e3c4",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/design/_INDEX.md",
+      "sha256": "83347fb4cbd0d00dbeb31284f58d215254844be15524d4f4115a23e7b2bd9cca",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/design/aside.md",
+      "sha256": "430c29884f7cddf2dee1ee8722c71d5f8a8bdf49218dbbc7cbbfba612ba37081",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/design/clone-from-url.md",
+      "sha256": "1ebd9bc28f59d1944c7e6e9e9af39b728936725bf774d50b806116257e824dd1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/design/design-system-architecture.md",
+      "sha256": "bf749ed406c8a26d6422f610fb02c821760a20d47fc9b6921bf1522ac877bd5c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/design/interaction-skill.md",
+      "sha256": "9438a159baab72b17427596718217e9f31ce4f77efb04bad97b66cc1713c4ba8",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/design/layout-skill.md",
+      "sha256": "bf38b363120ca797c4c49421e64e707da81e42f0a7b4dc0d643e06e004308534",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/design/lazyweb.md",
+      "sha256": "9f19eeb60596123ac02d6d00b76dea76af43f3a2b1d67fb07d65c9bb50cf4ac1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/design/react-dev-tooling-skill.md",
+      "sha256": "26f648a70311d870ffce17798f9ed17501911e483898ee04aed8b08686c36e20",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/designpowers/EVIDENCE.md",
+      "sha256": "1c5e5e8149c34cee0887381bf68890f3ad5a732dafd7ceb63395903da3ad6366",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/designpowers/README.md",
+      "sha256": "ba00e786d1673ccf868c92464e8918f37896eb9979b47460d062688f7f7982d1",
+      "origin": "modified",
+      "upstreamSha256": "279635a5695f4dc4e7f342038074402bc4ed38f900b15623a88f988dd3b98640"
+    },
+    {
+      "path": "skills/frontend/references/designpowers/UPSTREAM.md",
+      "sha256": "ea8c049856a3a6b71b5122bb590214c509ae445fa67412b1775b8e9bed0141b8",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/designpowers/lane-a-direction.md",
+      "sha256": "137dc78237dc6bef2b19ea6e323b7688f4523e14e58672e149b1a4866ea43b08",
+      "origin": "modified",
+      "upstreamSha256": "56f982df6cdef6ae6b821e3b16395c6f4908103eda8fae3c75ec22f615b718f9"
+    },
+    {
+      "path": "skills/frontend/references/designpowers/lane-b-execution.md",
+      "sha256": "1b6cfc366b05b1336f4c3b7b26d05fbcee5b03f90f4dd8321a294347776c3e6b",
+      "origin": "modified",
+      "upstreamSha256": "591d7406e2836c0531e08d016073db6c77dd6c5ec69ee013f7fa1fe8a4283579"
+    },
+    {
+      "path": "skills/frontend/references/designpowers/lane-c-review.md",
+      "sha256": "23caaf59307351026b34dc2cdb60bc5b1656803b5326bfdb46671cee00bbc286",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/designpowers/lane-d-memory.md",
+      "sha256": "b26148a0be4fe2ba968bb3dee0551cf4775ecef41b9d6945f2e8862dae8296bb",
+      "origin": "modified",
+      "upstreamSha256": "394da780de7ec826e238017b9a3d42b1195976a3c971e7dd1f7cd734cdc15336"
+    },
+    {
+      "path": "skills/frontend/references/designpowers/orchestration.md",
+      "sha256": "3860cc4c01508157a8fab69f92124b0d1bccf5fb4ff99cd3fade9bbaa8b12422",
+      "origin": "modified",
+      "upstreamSha256": "6c6de38691d0ac6e21ec43d79d9fdd37a894347e95999d6f39c7b012eca5c67d"
+    },
+    {
+      "path": "skills/frontend/references/designpowers/routing.md",
+      "sha256": "47d2186fab08f99b1a71f8602cddae46a8653b33763b882ee17a603f2d402636",
+      "origin": "modified",
+      "upstreamSha256": "356b920ce02c632366f17b2cfe29ca62c544d99d4181e7e0128dd175c0bf8268"
+    },
+    {
+      "path": "skills/frontend/references/perfection/README.md",
+      "sha256": "5161a5c6d53827b819f053f6996dcba91c8debcad3d4aa1a493f06a1ec1c0ecd",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/references/perfection/react-perf-tooling.md",
+      "sha256": "0ddf4845f9a772ea018eb6d44d46407efa3e96371e41eaecb774595412f50bf6",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/frontend/scripts/perfection/lighthouse-audit.py",
+      "sha256": "c153442f27df76cda427a18bcf41e307a61643436b081904aa1f8df660c11dbd",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/git-master/SKILL.md",
+      "sha256": "1be137cfb44c11c2df9b91795cb69174ba0f98ceb8021468b3790c65698d67df",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/git-master/agents/openai.yaml",
+      "sha256": "9701ce4b0829dfb16def982ac1b225851e184c83213911c8890207ae4e2badb9",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/hyperplan/SKILL.md",
+      "sha256": "52dc045c2b529bb9b6fa860b771324ad536e70a7ef4ded18d14766822d83e38e",
+      "origin": "verbatim",
+      "upstreamPath": "packages/omo-senpi/skills/hyperplan/SKILL.md"
+    },
+    {
+      "path": "skills/init-deep/SKILL.md",
+      "sha256": "e91afd9d818564e2c65483d01cb2b3d5a6e64fe2484e54009812ae1d3cce10fa",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/SKILL.md",
+      "sha256": "42bf87caa5030af0bf693b1feac59530f1ad7428e2a1d8ca1344ece3084782ce",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/bash/README.md",
+      "sha256": "e559fbfcbbe1a03a7f8a32241d324aca9fcf4f6e8a7d58181e37224f411d78a2",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/c-cpp/README.md",
+      "sha256": "ae3962f7c1246e3ac0e584884b5e77d0de586b9d0eadf16c6ebb8aa8a58417ef",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/csharp/README.md",
+      "sha256": "c87244f6ba9cbc531fa9dc015a70fc73cee26b494ad4e0bcf0a1d3c72079b88d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/dart/README.md",
+      "sha256": "dc9e2b41d43f9a35d28f752780813932a80dc1370d3393740d0bd38d7f3197d1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/elixir/README.md",
+      "sha256": "0b5b6a48a913f165a929a39a9e3be198193dc67ba4b8f1a4b64f04e287a4660c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/go/README.md",
+      "sha256": "8e5e9e2dc38c89d49760462403ed1fb11903c4742b2f070c1afe6f8d113bdc80",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/haskell/README.md",
+      "sha256": "77a7b0ef0491f6ebb9ca075cf899a07c79dddc906aa193ba5048e353035472b7",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/java/README.md",
+      "sha256": "9d5a8cb92cef00d9501a1fbba17d5053582235ca3b6e0755d243b6ca45771521",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/julia/README.md",
+      "sha256": "e03e37768363662303a879afdc8458d7d233666f519ebc1605c1f41edaab50bd",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/kotlin/README.md",
+      "sha256": "c5813606710179db98148c0db7c117e50a60eed3c439b1f8b775084161be56df",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/lua/README.md",
+      "sha256": "f533b59997f8bc9925f3b11b54bc8e036d75e4dab7955b5b0c9cb15ea83f4bc5",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/php/README.md",
+      "sha256": "2be8639cde943a631ecdf94b2a6f95d1f09dc9a4238fe5fef44cad823e6f2403",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/python/README.md",
+      "sha256": "df95e1b807c44de9691694395c5d43d60351edc066ae96987b47e4c6769fcc6f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/ruby/README.md",
+      "sha256": "b2c057589b609fb7af99ef570b1fd809b5f12c0f1d8e055c80533c7afc40b14e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/rust/README.md",
+      "sha256": "4f88a325ba280b71575ebfd348900de8e3d0fb359c05a9b3d71422b8aaa139fa",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/swift/README.md",
+      "sha256": "9da823941c8118d001616ba4ab5a646f33d599eaabdbbcce44f9b811388bac28",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/terraform/README.md",
+      "sha256": "8649c4a100ea743a94a8fbf8c44d7771cc7a4e6c1778e80fb95130957b75c478",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/typescript/README.md",
+      "sha256": "e77eafe8b87113384caf0b3da0f8c0b4b1ae14ad600003199ded8536e1b84ff1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/yaml/README.md",
+      "sha256": "aeb7da40037cd74a5d9d1ca787d576c362ce74aa43d130ecddad81eefec9cfcc",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/references/zig/README.md",
+      "sha256": "1fe334a8d4dd1641d94bbe54e48cfdf20807765286b4299259db80863e9e982d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/scripts/detect-lsp.ts",
+      "sha256": "b05f8cc92a01c6877760d82c48c4a74588a7e2cd01f927924abbba35660c64cc",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/scripts/lsp-server-table.ts",
+      "sha256": "0380487e1cf0637a114ecce50b37d6e87178e9094b1c67d8ca33e8718e4c0cbe",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/scripts/tsconfig.json",
+      "sha256": "a12a98f24065aafb6d8781d8b6731754a0692374871b9ee3d4db70a218505b92",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/lsp-setup/scripts/verify-lsp.ts",
+      "sha256": "ad6be2c4d4d5256b5a49cbb9e4fb7ce41a903c45a9c19d9445eb780f3779a2a1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/SKILL.md",
+      "sha256": "29e3a97cb4036f257e0785f7bd66644df4cb657f143cc184bda715dd09659eec",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/code-smells.md",
+      "sha256": "508f31398a48dba1e9a165ffe893ca82cce933580438d1ff60b9afca03545b33",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/README.md",
+      "sha256": "faedb8ab4e13f4ff03ad3497f3ed44df1b5b71463b741a58ee61b60ddb68b188",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/backend-stack.md",
+      "sha256": "66d0031dd943bd6baf695d1049e5740738264a5c085f32dba4322bd8842238f1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/bootstrap.md",
+      "sha256": "6fefd389c7565537a19c28477cc4f26c8902ffa0f6a61b58acac0beab10373c6",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/bubbletea-v2.md",
+      "sha256": "e9c99d5695df86954782667892c9d35bcdccf8c9918bace9c324172b46bd80a3",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/cobra-stack.md",
+      "sha256": "80b95001f2fa38f630579a4475f165ff97a47bd9d3339797edd4841d4d6c1858",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/concurrency.md",
+      "sha256": "b2a60f69a80497f090c78023432af9a6ea3fa974079dd2f72460f0075d26bc0b",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/data-modeling.md",
+      "sha256": "9dac5a3debf5519053e36472fe5577d5f2f9e302d00a1f40a43f94589a525564",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/error-handling.md",
+      "sha256": "fb67e9b98d7f07db2fc49dc310bab93102520e12592c733e880b6d8aa0d2958f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/golangci-strict.md",
+      "sha256": "63873c768df6215e6b9c4ea86c99e434a64b4749030e4fef2e7fe9aaa3ed2661",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/grpc-connect.md",
+      "sha256": "0b2bab192ace681729954c05fba4c2d622019a69544c5628011cc6e22cb5c831",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/libraries.md",
+      "sha256": "f1c4f46904035bcc91254ffb3f5559987694bcc4b89dfe8c0bd2e223835978d4",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/one-liners.md",
+      "sha256": "ff354a8700a9987ad21f4fb0cf4d5695857cae093c42358bc3eef13826f8ddfb",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/sqlc-pgx.md",
+      "sha256": "26243d7b26e3ffadce87b4f78739e6582c69d5c144af89f2ef55c076b5e1b399",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/testing.md",
+      "sha256": "e9014b01d8cf3967ae2b022491a95f7955c3ace2624fbd8cbb1630921499dff9",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/go/type-patterns.md",
+      "sha256": "87d930ed6cdc57b3c20aae802679a4f419f77b5fcf4a630a6973271cc62545c7",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/logging.md",
+      "sha256": "c86c9103d6acfe5f615e7d1fc1d19a456060deafb9e450101a3ae0c32db319de",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/README.md",
+      "sha256": "23ef4282a10fce99de314ddc3c8d93eca79c92f256c87cf8caa54a2ee703e738",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/async-anyio.md",
+      "sha256": "26e069cfc9debf45ff1629d0246a6831c64a33f8e595976f8cb19d4b5647ca95",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/data-modeling.md",
+      "sha256": "eed848d993a4bbd30dca44fba0599a359e64596a18e305f06c5a76f4f65d9ebf",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/data-processing.md",
+      "sha256": "1cee6ea8692c213f244070f69682b00b25ab763d64cd114c41b7ac84c7865ed9",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/error-handling.md",
+      "sha256": "c8a31325999441f1890e9a35bcef02a316a930bf36bba992e376e6c6a742dcd5",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/fastapi-stack.md",
+      "sha256": "56726249ec0ee805ef900ecdfa2b5939f829b06506aa2cb82ab9924d846ffa44",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/httpx2-optimization.md",
+      "sha256": "68c6c96802ee3f5c66e948beff411a7bbb33c7f68de79c4b2ee9349e035dfa82",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/libraries.md",
+      "sha256": "85847a200b8c0a509008662dae1b4f4dbd3934bac490e61097bf986f83c8f464",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/one-liners.md",
+      "sha256": "17b459cfadbc7e81d2d196d2251191ee8f3b8e97f668cb61f5b02d3cf736fbd1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/orjson-stack.md",
+      "sha256": "5b4ad8732b2192542ed6ea603829635aba98a0449758fd572f172737b2a19792",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/pydantic-ai.md",
+      "sha256": "b025532f9da79848e03b60c68559fcf992bbe596da0c0bb08fb5e98ed0ae0fb8",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/pyproject-strict.md",
+      "sha256": "655eb106a165d3730d656a9689ac98a00abf7d32cc89f2decaf33ddf43ac0e45",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/textual-tui.md",
+      "sha256": "bf59c001a76b30777882b2c729321d809a2a81bf75b720e72da1c38a3e7708d9",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/python/type-patterns.md",
+      "sha256": "4fa0bf3c7e82c6a7141c54aac9e1703cd9ce86122903dbe2fe00700930ca4626",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/README.md",
+      "sha256": "7502ee277c86df00388ea7cdbc5b54fc743d4eacab8b4015cd00ad0483ead727",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/async-tokio.md",
+      "sha256": "48e54d0b4be71fe1765e9bc62e0073a767abd966e29d4b456ae1326d0dc7b760",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/axum-stack.md",
+      "sha256": "54500cdf3981235b6af178ec4868a8a320087fe18b0a6104c9f462091b1b081b",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/cargo-strict.md",
+      "sha256": "f156787df0f8ec551495a247b04d937d22d02a3d23af93599cb05a73ec51fdbf",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/clap-stack.md",
+      "sha256": "28a1fca06a892686b001f15a467c98b8ec55ae2bae93afbb55447919084158f4",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/concurrency.md",
+      "sha256": "d8043493eaf8572b4fd7899c46041bad39f6e321537d2fb8a533be919a01f04d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/libraries.md",
+      "sha256": "a45ff769535abb54a486a019d3a38389e4be814425635801ab13a4f1cd787eac",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/one-liners.md",
+      "sha256": "b0cfffa76da01016c933d6d548f3d621546710a6a2d4d609fb185647b74cc455",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/proptest-insta.md",
+      "sha256": "be787a4e174f55062931b70c53027a6c46423e3473608b315ac800b52325c3d1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/type-state.md",
+      "sha256": "3dc21686fa0b2f1cb0c6206e38b800aa8b9ecf482d02faa9c1c4fd925da051e5",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/unsafe-discipline.md",
+      "sha256": "81d1596842a6295a03f0f23c06307b8b0f3d45d33cedd355a499d8185bafe934",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust/zero-cost-safety.md",
+      "sha256": "a03623f9e0d80cdb5c2addddb97b27932c84adb5232b2d659442ba5e74e37bbb",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust-ub/README.md",
+      "sha256": "25300ebe1a467f47695959b00964ded8c560e51bb5d92dffe178f9d3f24b87a9",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust-ub/miri-sanitizers-loom.md",
+      "sha256": "b3b56208978286dd975440fa1f28d01b9ed05b23d33a1faaa904e62ca310c4e8",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/rust-ub/ub-taxonomy.md",
+      "sha256": "7c0b369732920f6e59e67fa2f7a9a10fa4ba5b0a23b95ddd1aa2c4011a661326",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/typescript/README.md",
+      "sha256": "e301d7c1e4fdd246a4888a1942d272ce69b8077b2ba0a844d8d8e362709e0b80",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/typescript/backend-hono.md",
+      "sha256": "7df19dd33da142423412ad4a0fa67a8b800e79d200adc62e20d05bcb15ff8e4f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/typescript/bootstrap.md",
+      "sha256": "4e61ffdc1a5df3637a14766a846b12a2d57943d6b002081f53c8cbd6d679303e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/typescript/data-modeling.md",
+      "sha256": "14022cca137f1f92e81aa21b3ad9702ead535fccda8bf4f760235195a288c627",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/typescript/error-handling.md",
+      "sha256": "5d99ea45d454723b1d8292357a7a20b434801101336863df89e000c67bf1e807",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/typescript/tsconfig-strict.md",
+      "sha256": "e844903aa4dcf9c5e45592eccbbf04d6146c602c70067c72be74f523b0e2134d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/references/typescript/type-patterns.md",
+      "sha256": "a21e27706f5d1e60be8f37d2d47949d0759158c999c4a08628f5f925b184d946",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/check-no-excuse-rules.sh",
+      "sha256": "35ffeb7759a01419eb6a3eba1c6c51913aaf659b0549d45d74d230a5a087efa7",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/new-project.py",
+      "sha256": "233d7521ae549bd271e4f621099adc8d12739fa9d7d0bb5743bc8d89a8747db1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/.editorconfig",
+      "sha256": "9e17077786f55b097bcce4b8b40cb7c8a5fc0595c94a8688ca8d1d56112638ef",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/.golangci.yml",
+      "sha256": "e50ce5d579eedc10132436442672872ab72b26e33c41d4b996b9be929df90e4a",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/AGENTS.md.tmpl",
+      "sha256": "ac81f2614b1417dfc5b0ca21c40ee74c357b55a97c92cb02db84ac418587c744",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/README.md.tmpl",
+      "sha256": "b0780490defb300a8ec5cd46555074ab58f9147d298964ff5ce2a40d24dde066",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/Taskfile.yml",
+      "sha256": "eb59766ea776398a4109383dc279c13673dbad3645f1a2a4f70da92bd08f48b6",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/ci.yml",
+      "sha256": "8403a5a4dd6d55773aa651600dc95d01bfc2462ce6756903ec3d2a4330371df7",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/config.go",
+      "sha256": "a0c27a75fa06cabf7bd0431524702fa5adc020a890710370ca65d6fae4998e44",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/gitignore",
+      "sha256": "f1c9290f151958ed89682eeb6a5358b92c1d23d63cbaf2ac9bacfdd63305e9f7",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/main.go.tmpl",
+      "sha256": "de00e3621a5e9e7c4639936f3822bdffc512c7fd04bc089144f0e3f49c8e31a5",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/go/templates/run.go",
+      "sha256": "b59b73b7d0fe0122531d4523b8d72be3517bee015af41358e18edb18f183823f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/python/check-no-excuse-rules.py",
+      "sha256": "2b2f629dcbbf05f2ab533d23ecab0825d5c6d091e5a5837090200e93afdc0767",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/python/new-project.py",
+      "sha256": "3513d7e9d5817c9e1fd592edce227b57de33ed2c6eeac0e7b2790768c41cba4b",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/python/new-script.py",
+      "sha256": "cc707edad564c142164847b514879fc9ed3a349b43c16f18f6fed616c69704be",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/rust/check-no-excuse-rules.py",
+      "sha256": "f3bff5658e80a610990328dd8452665fffe4ea82f2bf5bae59c63b385624a458",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/rust/check-no-excuse-rules.sh",
+      "sha256": "68fd0318b4fa85224a672a565d426560bf3c549a85553b14d83e6fe1320400c0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/rust/new-project.py",
+      "sha256": "a8d33ebe544aceb243a8432fa9e9baca95514f396af831628ade4db1fb4a8686",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/typescript/check-no-excuse-rules.test.ts",
+      "sha256": "fc9a30014ceea907a7ea815067984a5d33519f31b30c350aa25155b33419cccf",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/typescript/check-no-excuse-rules.ts",
+      "sha256": "7fe3c6520c2f639b1358d5882b5198c088043224c695f9445f28ef5cd3c2711c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/programming/scripts/typescript/new-project.ts",
+      "sha256": "495e5add86f0ca9819f537e51083c34b6480e1f7d147ded7c9cf93fdbe48ccc5",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/refactor/SKILL.md",
+      "sha256": "31bd5c62f1b9075552768362b1a413b74e1f8f0bb1f78c6ff49e16d6e8f7b988",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/remove-ai-slops/SKILL.md",
+      "sha256": "90e250c79fb111017f5eb52d0ad0e804c7314e974b43acae6ef353b6281e8560",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/review-work/SKILL.md",
+      "sha256": "bd02445f639ffdfd48b6061e9aba27c3ba3252ef453aa1fee910e8c197e44395",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/.gitignore",
+      "sha256": "60c9bdd905fcf45ac485c680d32e9773962cf061b6f041dcddd033911558a672",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/ATTRIBUTION.md",
+      "sha256": "63130929b6612537c9a3849601fe037de640aff6b2c303835eb7e3908f80c066",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/SKILL.md",
+      "sha256": "b3d974e28376e900ec8d77a3d0fa4cef71151f6743eaccbc18d798987e565182",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/__init__.py",
+      "sha256": "eee4946f8900d64c842cdc0747c186c935464d813b2cc6800ba9cc69f1e78fba",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/__main__.py",
+      "sha256": "e1d70ef281d4c583f72725a2cc2f1e59c826fda1c8c46f9e0e561d7383644903",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/bias_check.py",
+      "sha256": "6539c78944368c916f0677af9efee0c382d3a29b48fb1416c5a56ba095bd0106",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/curl_probe.py",
+      "sha256": "d510beb40243204b3849a2d9de32253239306f834ca9bfcf14649efd402df811",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/executor.py",
+      "sha256": "01833dc8674f0dc4a56cd27417f5e4d6dda47801cb266028684a1da4ba548145",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/fetch_chain.py",
+      "sha256": "549011463b3ee72ab8fb19563eed2162a54a0a90c284d2693662929714af94cb",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/referers.py",
+      "sha256": "c17c2b7837a6dcf534e880f86e5cb93aa58880b2511f914154834f9c0ea3a8c2",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/result_schema.py",
+      "sha256": "89c547e5bb39e1ead239870a58118e27719eb4ea6a21686f3007a8b664fd1e06",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/summary.py",
+      "sha256": "13e9dfe96f5204d0e206d67562584a00f7d63fd9658fae5f4b0a431f5c24a01c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/templates/package.json",
+      "sha256": "d160b1f74e6672e24e90d345fa7fb0370772b67653b3c273435fa48f87f7140c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/templates/playwright_mobile_chrome.js",
+      "sha256": "71ce0aa8ef61f7d3c86d71b4d5bd6e16d03b44bfdd57bf8a986c6059c29b2670",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/templates/playwright_real_chrome.js",
+      "sha256": "a5638eb16a1c4c6fcdf99d9fee55a5efc21e15616aa8f83a6271b66028c2b80b",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/tests/test_fetch_chain.py",
+      "sha256": "1e39af47d6c36643b6f94259936f068d8a7d93af182274993c1539827373e084",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/tests/test_playwright_templates.py",
+      "sha256": "670d5fd3ae1ef688302ec70e34ddd8410533f20530132e77e2b526e9cc003fb1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/url_transforms.py",
+      "sha256": "091433e23b9f66bd6d6c0379c013589c6881d7e840c98aa6af0e018ef361de09",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/validators.py",
+      "sha256": "82a0009273c2739b0b660785289cdf36dd04c5af81cbd70e620d2cfe997ef140",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/waf_detector.py",
+      "sha256": "0ac33d841587d201ad435649b8eb01df8aee273f5e411d0b385a722f65f4df4a",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/engine/waf_profiles.yaml",
+      "sha256": "ee5da75975e23e627eed6ca54f83bd7b0a5b839cb50eeb4f059ff0251f410376",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/agent-reach/README.md",
+      "sha256": "fbd949222d979a0e6e0e26ba9c1c109d69db14dc4116d87697a027d996842be4",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/agent-reach/career.md",
+      "sha256": "e70badf6c860a55cc049c15cc5cef31ca0fa2a2ae9ae1f72ade24b91844c1a2f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/agent-reach/dev.md",
+      "sha256": "af4761bd057455d41ec7c3baf9a9396f6e56204bcbba79105602113f5033487f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/agent-reach/search.md",
+      "sha256": "8eabfb645505148ea32e22e372c6d5a48615fba2e2f00eb8590e07464833851b",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/agent-reach/social.md",
+      "sha256": "10498c5a2d9642794cd3e650d66ff9d3dc24156ccd3005041c8c79dc51484643",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/agent-reach/video.md",
+      "sha256": "2850ecfdf9ac262720349574146af41b8bc9eea4c61632a9a53630351c6b2b00",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/agent-reach/web.md",
+      "sha256": "71ebb112a410ec8b7598e65c7643f2f9564f84d2c1f2f8b0ae4c00116365f984",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/chrome-stealth.md",
+      "sha256": "7b787a431e21f58307ada40e913dfd17790dd4fc1d6aa00b31727be041a152bd",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/README.md",
+      "sha256": "7bed96a1a35595b86e02503efe849e0de376c7038bfae2b70c94d9d3c3431b2b",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/cache-archive.md",
+      "sha256": "4abe85d2083881871a7e840754b7a82d27592c0108f583493f33002705e0fe6f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/fallback.md",
+      "sha256": "ae8c745bcfaa82835298a17bad814012e65cb7a129b6a7812541bfdecc4bfbbe",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/jina.md",
+      "sha256": "1ddd2ac5a05596a4862d3cc7b3f9b279d00e4f98495fba4a2c851cf06a69ffa7",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/json-api.md",
+      "sha256": "ec58e38953ac8da7e448b420334d13b831d9405d8dba217a8d777672525aefa4",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/media.md",
+      "sha256": "3533b9b9f7b6c3183d2bb2630e654ed799a92a7b7dda7fd489be001dcc401edb",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/metadata.md",
+      "sha256": "9a32c65befc2b2e0db0861b400fd596d4a83485abd82d4dba00e17e128f8b420",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/naver.md",
+      "sha256": "1de0ecd0d4244f253538b6b197adf6e72e21e35c137b2f956af06a4c5804e942",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/playwright.md",
+      "sha256": "e6a07b103c002516f77ea348d82a8e01bf0ea1fe54cda68b9ed96d6c6d4e524c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/public-api.md",
+      "sha256": "c0cf68114fb8ec10deb70ca65b127738fa32f7a58a2a920419b343fd6ad1a563",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/rss.md",
+      "sha256": "b1e3c2aec7dc3ea9ac3b6c022432a70b7451c820e899387a7ee47c1195fbcfb4",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/tls-impersonate.md",
+      "sha256": "33e3bd1c9cb790fd3bf1f490d0b0361a39003435de23b8686048bc1e3c25b328",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/references/insane-search/twitter.md",
+      "sha256": "bccfb77c1e88f7b4b429da33068c9616d49028d0287066bc911620e67432e0d2",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/scripts/cookie_crypto.py",
+      "sha256": "bd6db0712562d675053a5bd32ff2e398df822da0086d4131af95cc4056fa5e62",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/scripts/cookie_domains.py",
+      "sha256": "bb35263a7664fb44b6ead0fea1a8076884e63469fed2f1d4f3cc50e1c4554c41",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/scripts/cookie_paths.py",
+      "sha256": "5bfbe453b028240c1418ccdf0c82819a66d3e0a619f854b1f038c29b2959c308",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/scripts/extract_cookies.py",
+      "sha256": "2d10fd1686259f829f4c61b81611fff243d1fe9542b2492e741ca822161f23cf",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/scripts/tests/test_cookie_domain_filter.py",
+      "sha256": "0bd6a8505d97e86c75529e0c2e9847abee670ac013ba9a20877349f1e26b9b35",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultimate-browsing/scripts/tests/test_extract_cookies.py",
+      "sha256": "18ff0d5456e6052953bdd78073139f40195f1a9a5dfb610f9516f92790959bae",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ultrawork/SKILL.md",
+      "sha256": "5819671cef65512961cbfdf2be0844b06ba4159b066dbca2335081d0933e860b",
+      "origin": "verbatim",
+      "upstreamPath": "packages/omo-senpi/skills/ultrawork/SKILL.md"
+    },
+    {
+      "path": "skills/ulw-execute/SKILL.md",
+      "sha256": "c8e61efc97d9b10dd4ca2c8b57b8f975e4f5ec4f49c9ab08ea2807d1abe4eec5",
+      "origin": "modified",
+      "upstreamPath": "packages/shared-skills/skills/start-work/SKILL.md",
+      "upstreamSha256": "46bb59a181afb87bed0422168d18f42a9fb7f344b0c49734a7abc4f36a79cf1f"
+    },
+    {
+      "path": "skills/ulw-plan/SKILL.md",
+      "sha256": "f8a9daec74dbe816901faabf0627073fbc82acb82d63e57bbc3cf94e1183b0ef",
+      "origin": "modified",
+      "upstreamSha256": "ba34fdf47344a754cd04db7f099c4834509dc27932d75f026c04ca5f42f2bd7a"
+    },
+    {
+      "path": "skills/ulw-plan/agents/openai.yaml",
+      "sha256": "54abc3831451bdce17efb6ca2e66c5c138fdffa7db6fa1d44a1aea479fa2bf37",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ulw-plan/references/full-workflow.md",
+      "sha256": "e7ebd3e52d580d6d445063794b9e3fa82d011f85081a7fd9e299cb69df99029b",
+      "origin": "modified",
+      "upstreamSha256": "fd15dd4b3047d5dd5956a76e184c1e67cee9e8266a8e48bae57161650ab19a8e"
+    },
+    {
+      "path": "skills/ulw-plan/references/intent-clear.md",
+      "sha256": "5f41e8f79e6785bd903caea007220a07c109838acb7d084ceba55cb25256fee0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ulw-plan/references/intent-unclear.md",
+      "sha256": "db4a8ea6763d59a2f1b3d5e375b34eb44bdb58a6356679198dffe32010baa1ae",
+      "origin": "modified",
+      "upstreamSha256": "77d7cbc7637338fb2a1e0cb0e918b775784f27a2df371fdbb095dd0b719b2da3"
+    },
+    {
+      "path": "skills/ulw-plan/scripts/scaffold-plan.mjs",
+      "sha256": "f387b5998c47453c7538ce72e5b3a606aaf8999b2bbb1b9c0145a2798676ea7f",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ulw-research/ATTRIBUTION.md",
+      "sha256": "27a9ce59d41688c07ff35c92648fb5a53c22726186c6c56bdd90485cec4a213b",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/ulw-research/SKILL.md",
+      "sha256": "d264a7a8553758f89b6b0ac1e965b9c70cbb5eaf843a924c2fbf4efa3a8bae6c",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/SKILL.md",
+      "sha256": "045341d7d920c20e614cc99a875eab8398d888a887feb94bb674e1b9b5097178",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/references/agent-browser-setup.md",
+      "sha256": "44587dabb684880c42ed1e4c740070c51434950bcb239509dc0d1880922b3b7e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/ansi.test.ts",
+      "sha256": "f9522a05bde69a25e13b221fabcfbc37e27389f26bfeb5970c27b918ea572540",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/ansi.ts",
+      "sha256": "8d6e2f3881093538a96040ec8fea28285754e28ceac1b1f1da1e6d5024eeacfd",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/cli.test.ts",
+      "sha256": "fb3bc2bc49a00abe618bd2c24923aaedb62ad3e92c1ed6158366cb7036942c87",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/cli.ts",
+      "sha256": "b83f6fdd485d2ed4e780341ef276ab22e3a8596632aa95e257ab180213771f31",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/east-asian-width.test.ts",
+      "sha256": "533ca220b2fb69a4b9197a802d5b15cb0c1298f30b5c66c89361ae1a8826eaef",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/east-asian-width.ts",
+      "sha256": "c4d4a9e60c9954c0dd2e88af17813d26857e948e44413897b6b03dc29dde391d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/image-diff.test.ts",
+      "sha256": "a84ad683d70192e682536259e7d46cb1c48e144192779f5dfe1d0eecb047687d",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/image-diff.ts",
+      "sha256": "043a38c77b00c869f7f88de6a251483f07c17e645a8d338293f3aa9848574be1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/png-crc.ts",
+      "sha256": "881027d0bb58b1633fd46b58e3034fefb61cba2e173af666c24a5ea4f95429d0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/png-decode.test.ts",
+      "sha256": "0c5b1f41abcfd5a8aead930f2cf230f9a8596950a0558f5c93aa9b8dcf148433",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/png-decode.ts",
+      "sha256": "3163a500732c46eae1fc11629def336b16f4843acd294318ca576063a57bfb37",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/png-synth.ts",
+      "sha256": "b05a453c673f6bd17a3a4a407e8694283effd2905d3b40025c41d27c77c79839",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/tui-grid.test.ts",
+      "sha256": "da1fe2eb193d833632a54f827b9fad9cea372c93923ff8a57f7a39c77b55985b",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/tui-grid.ts",
+      "sha256": "e3362b0f71f0e0afc95319383707e9eb84efd0115d6afd17272021224c861e26",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/types.ts",
+      "sha256": "ef5ee3c9adfeb2d92138b2ce543232a8323247d5b9dbdde13b26f3197ee13c62",
+      "origin": "verbatim"
+    },
+    {
+      "path": "skills/visual-qa/scripts/visual-qa.mjs",
+      "sha256": "0cde7d1099dbb09d8f4a5c1cb6335d14e4fc51339692a6987c977d35440a8fc2",
+      "origin": "verbatim"
+    },
+    {
+      "path": "package.json",
+      "sha256": "94ae6968aa3f6f7cdbee464437bf0623b120f109a411238dab20558b317b12bd",
+      "origin": "modified",
+      "upstreamPath": "packages/shared-skills/package.json",
+      "upstreamSha256": "d873ee4a46d36012213e166faa5e7dfb169df5089f27c62c14ab5cdf400e4103"
+    },
+    {
+      "path": "NOTICE.md",
+      "sha256": "da7cfe45728b90a9c05050d081038c5b090d723f131845f63906bac67f624e52",
+      "origin": "project-new"
+    },
+    {
+      "path": "VENDOR-MANIFEST.json",
+      "sha256": null,
+      "note": "self-referential; hash omitted",
+      "origin": "project-new"
+    }
+  ],
+  "deviations": [
+    {
+      "class": "modification",
+      "path": "package.json",
+      "kind": "fields-added",
+      "field": "license",
+      "value": "SUL-1.0",
+      "decision": "D15.1",
+      "why": "The only field added; verified by diff against the tag (one added line). verify-licenses scores a missing license field as MISSING/FAIL, and the license that actually applies is the OMO repository-root LICENSE.md, carried by the upstream package manifest's absence of the field. Upstream carries no `scripts`, so unlike hashline-core no `test:vitest` was added: the 7 *.test.ts files in this tree are SKILL PAYLOAD that run under Bun inside a user's project, not a test suite for this repo (see the vitest.config.ts exclude note)."
+    },
+    {
+      "class": "modification",
+      "path": "skills/ulw-execute/SKILL.md",
+      "kind": "directory-rename + token-rename",
+      "upstreamPath": "packages/shared-skills/skills/start-work/SKILL.md",
+      "renames": 4,
+      "renamedSites": [
+        "frontmatter `name: start-work` -> `name: ulw-execute` (the DSH-required key; this is what makes the skill appear under the bare name ulw-execute in the catalog)",
+        "body heading `# start-work` -> `# ulw-execute`",
+        "usage gesture `$start-work [plan-name] ...` -> `$ulw-execute [plan-name] ...`",
+        "no-plan bootstrap `\"$start-work\"` reference -> `\"$ulw-execute\"`"
+      ],
+      "retained": 2,
+      "retainedWhy": "`.omo/start-work/ledger.jsonl` and `components/start-work-continuation` are OMO runtime carrier paths, not the skill's name; see renames[0].retainedLiterals.",
+      "why": "The skill's own name is the v5 naming anchor for this project. Without the frontmatter change the skill would be catalogued as start-work and the /ulw-execute command surface (C-02) would reference a name that does not exist. The pre-rename upstream sha256 is kept in files[].upstreamSha256 (R-8 two-way anchor)."
+    },
+    {
+      "class": "modification",
+      "path": "skills/ulw-plan/SKILL.md",
+      "kind": "token-rename",
+      "renames": 4,
+      "why": "Cross-skill references to the renamed skill (4 x `$start-work`), rewritten to the v5 name so the planning skill points at a skill that exists in this catalog. No other text touched."
+    },
+    {
+      "class": "modification",
+      "path": "skills/ulw-plan/references/full-workflow.md",
+      "kind": "token-rename",
+      "renames": 6,
+      "why": "Cross-skill references to the renamed skill (5 x `$start-work` + 1 prose reference 'the harness's start-work rule'), rewritten to the v5 name. Prose only in the sense of a name, not of meaning: no sentence was reworded beyond the identifier."
+    },
+    {
+      "class": "modification",
+      "path": "skills/ulw-plan/references/intent-unclear.md",
+      "kind": "token-rename",
+      "renames": 3,
+      "why": "Cross-skill references to the renamed skill (2 x `$start-work` + 1 prose reference 'the harness's start-work rule'), rewritten to the v5 name."
+    },
+    {
+      "class": "modification",
+      "path": "skills/frontend/SKILL.md",
+      "kind": "token-rename",
+      "renames": 1,
+      "why": "Skill-catalog enumeration lists `/start-work` among the skills this one does not replace; rewritten to `/ulw-execute`."
+    },
+    {
+      "class": "modification",
+      "path": "skills/frontend/references/designpowers/README.md",
+      "kind": "token-rename",
+      "renames": 1,
+      "why": "Same skill-catalog enumeration (`/start-work`); rewritten to `/ulw-execute`."
+    },
+    {
+      "class": "modification",
+      "path": "skills/frontend/references/designpowers/routing.md",
+      "kind": "token-rename",
+      "renames": 5,
+      "why": "Routing contract names the orchestration skill 5 times (1 in the 'not a replacement for' list, 1 in the routing table, 1 in the section heading '## Execution Through /start-work', 1 in the body, 1 in the closing sentence); all rewritten to `ulw-execute`."
+    },
+    {
+      "class": "modification",
+      "path": "skills/frontend/references/designpowers/orchestration.md",
+      "kind": "token-rename",
+      "renames": 1,
+      "why": "Phase-ownership routing list names `/start-work`; rewritten to `/ulw-execute`."
+    },
+    {
+      "class": "modification",
+      "path": "skills/frontend/references/designpowers/lane-b-execution.md",
+      "kind": "token-rename",
+      "renames": 11,
+      "why": "Backticked skill-name tokens `start-work` (11) naming the orchestrator that dispatches UI workers; rewritten to `ulw-execute`."
+    },
+    {
+      "class": "modification",
+      "path": "skills/frontend/references/designpowers/lane-d-memory.md",
+      "kind": "token-rename",
+      "renames": 3,
+      "why": "Backticked skill-name tokens `start-work` (3) in the memory-handoff tables; rewritten to `ulw-execute`."
+    },
+    {
+      "class": "modification",
+      "path": "skills/frontend/references/designpowers/lane-a-direction.md",
+      "kind": "token-rename",
+      "renames": 1,
+      "why": "Bare skill-name reference 'for start-work workers' in the FAIL criteria; rewritten to 'for ulw-execute workers'."
+    },
+    {
+      "class": "addition",
+      "path": "NOTICE.md",
+      "kind": "project-notice",
+      "decision": "D15.3",
+      "why": "SUL-1.0 'Notices' requires a prominent notice in modified copies; this is the package-level notice."
+    },
+    {
+      "class": "addition",
+      "path": "VENDOR-MANIFEST.json",
+      "kind": "project-record",
+      "why": "this file: provenance + per-file sha256 + the deviation list."
+    }
+  ]
+}
