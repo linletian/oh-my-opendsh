@@ -4,7 +4,7 @@
 // WHY EVERY EXPECTATION BELOW IS HARD-CODED. The point of this suite is
 // mutation sensitivity: a test that derives its expectation from manifest.ts
 // agrees with ANY drift in manifest.ts and is therefore worthless. So the
-// expected id set, the hard-coded spot-checked rows and the 14-count are transcribed
+// expected id set, the hard-coded spot-checked rows and the 15-count are transcribed
 // by hand from the coverage baseline, exactly like tests/omo-agents/roster.test.ts
 // transcribes phase2-roster.md §1 总表. If a row changes, THIS file must be
 // edited in the same commit — that is the intended friction (the plan §4.1
@@ -49,6 +49,7 @@ const EXPECTED_IDS: readonly string[] = [
   'webfetch-redirect-guard',
   'prometheus-md-only',
   'ulw-execute',
+  'keyword-detector',
 ]
 
 /**
@@ -112,22 +113,22 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
   it('① accepts the real HOOK_MANIFEST as currently authored', () => {
     // Non-vacuous by construction, not by this line: validateManifest's first
     // check is the EXPECTED_HOOK_COUNT equality (manifest.ts check 5), so an
-    // empty table throws "expected 14 hook entries, got 0" rather than passing
+    // empty table throws "expected 15 hook entries, got 0" rather than passing
     // a bare call. The explicit length assertion below documents that intent
     // for the reader.
     expect(HOOK_MANIFEST.length).toBeGreaterThan(0)
     expect(() => validateManifest(HOOK_MANIFEST)).not.toThrow()
   })
 
-  it('⑥ declares exactly 14 entries — the P3-T5 port-group count (15 minus H-01)', () => {
-    // Pins phase3-hooks.md §5 after the WP-2 arbitration removed H-01. Without
-    // the non-empty assertion a dropped collection (suite never ran) would look
-    // like a green.
-    expect(HOOK_MANIFEST.length).toBe(14)
+  it('⑥ declares exactly 15 entries — 14 Phase 3 rows plus P4-T12\'s H-33', () => {
+    // Pins phase3-hooks.md §5 (14 after the WP-2 arbitration removed H-01) plus
+    // phase4-commands.md §1.2 H-33 (P4-T12). Without the non-empty assertion a
+    // dropped collection (suite never ran) would look like a green.
+    expect(HOOK_MANIFEST.length).toBe(15)
     expect(HOOK_MANIFEST.length).toBe(EXPECTED_HOOK_COUNT)
   })
 
-  it('③ ids equal the hard-coded 14-id list, in priority order', () => {
+  it('③ ids equal the hard-coded 15-id list, in priority order', () => {
     expect(HOOK_IDS).toEqual([...EXPECTED_IDS])
     expect([...new Set(HOOK_IDS)].length).toBe(EXPECTED_IDS.length)
   })
@@ -156,7 +157,10 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     // e2e the P3-T9 arbitration moved into T14) plus 批 A's H-14/H-15/H-16;
     // P3-T15 flipped 批 B's H-21/H-22/H-23; P3-T16 flipped 批 C's B+D pair
     // H-24/H-26 (each with listener + unit test + the scenario its row names);
-    // P3-T17 flipped H-32, the last row. The roster now has NO 'pending' row.
+    // P3-T17 flipped H-32, the last Phase 3 row. P4-T12 then added H-33
+    // 'keyword-detector' as the roster's ONLY 'pending' row — its listener and
+    // unit tests landed with T12, its e2e scenario ('keyword-mode-ultrawork')
+    // is P4-T13.
     //
     // The F pair (H-03/H-10/H-11) is now INCLUDED: their listeners, unit tests
     // and e2e scenarios landed at P3-T7/P3-T9 and P3-T12/P3-T13, but those tasks'
@@ -165,7 +169,9 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     // landed listeners is exactly the drift the T20 consistency test exists to
     // catch. The hard-coded id list is the point: a row silently flipping would
     // let a not-yet-e2e-proven hook look shipped.
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending')).toEqual([])
+    expect(hooksByStatus(HOOK_MANIFEST, 'pending').map((row) => row.id)).toEqual([
+      'keyword-detector',
+    ])
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
       'todo-continuation-enforcer',
@@ -367,7 +373,7 @@ describe('P3-T2 validateManifest — rejection branches', () => {
   it('⑤ throws when the roster is short (a dropped row is not a valid roster)', () => {
     const rows = legalRows(EXPECTED_HOOK_COUNT)
     rows.pop()
-    expect(rejectionMessage(rows)).toContain('expected 14 hook entries, got 13')
+    expect(rejectionMessage(rows)).toContain('expected 15 hook entries, got 14')
   })
 })
 
@@ -392,7 +398,12 @@ describe('P3-T2 derived helpers', () => {
     const grouped = hooksByEvent(HOOK_MANIFEST)
     // Hand-counted from the manifest rows: A/B/C/D/E all appear; agent/status
     // and tools/pre-execute carry exactly the rows named here.
-    expect(grouped.get('agent/pre-step')?.map((row) => row.id)).toEqual(['ulw-execute'])
+    // Two A-mode pre-step rows: P3-T17's 'ulw-execute' and P4-T12's
+    // 'keyword-detector' (both pattern A, both `agent.inject`).
+    expect(grouped.get('agent/pre-step')?.map((row) => row.id)).toEqual([
+      'ulw-execute',
+      'keyword-detector',
+    ])
     expect(grouped.get('tools/pre-execute')?.map((row) => row.id)).toEqual([
       'webfetch-redirect-guard',
       'prometheus-md-only',
@@ -420,8 +431,10 @@ describe('P3-T2 derived helpers', () => {
 
   it('⑤ hooksByStatus filters by status and matches nothing for an empty status', () => {
     // P3-T7 flipped H-02, P3-T14 the D-mode group, P3-T15 批 B, P3-T16 批 C and
-    // P3-T17 the last row (H-32), so EVERY row is 'ported' and the pending list
-    // is empty — a hard-coded fact, not a length, so a wrong row cannot pass.
+    // P3-T17 the last Phase 3 row (H-32), so those 14 are all 'ported'.
+    // P4-T12 added H-33 'keyword-detector' as the roster's ONLY 'pending' row
+    // (listener + unit tests landed with T12; its e2e scenario is P4-T13) — a
+    // hard-coded fact, not a length, so a wrong row cannot pass.
     const ported = new Set([
       'bash-file-read-guard',
       'todo-continuation-enforcer',
@@ -438,9 +451,12 @@ describe('P3-T2 derived helpers', () => {
       'prometheus-md-only',
       'ulw-execute',
     ])
-    // Every manifest id is in the ported set: the roster has no 'pending' row.
-    expect(EXPECTED_IDS.filter((id) => !ported.has(id))).toEqual([])
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending').map((row) => row.id)).toEqual([])
+    // Exactly one id is NOT yet ported, and it is the P4-T12 row — a hard-coded
+    // id, so a wrong row cannot pass.
+    expect(EXPECTED_IDS.filter((id) => !ported.has(id))).toEqual(['keyword-detector'])
+    expect(hooksByStatus(HOOK_MANIFEST, 'pending').map((row) => row.id)).toEqual([
+      'keyword-detector',
+    ])
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
       'todo-continuation-enforcer',
@@ -457,6 +473,9 @@ describe('P3-T2 derived helpers', () => {
       'prometheus-md-only',
       'ulw-execute',
     ])
+    // The ported set really is the 'ported' set (the two assertions above could
+    // both pass if a row were in neither list).
+    expect([...ported]).toEqual(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id))
     expect(hooksByStatus(HOOK_MANIFEST, '')).toEqual([])
     expect(hooksByStatus([], 'pending')).toEqual([])
   })

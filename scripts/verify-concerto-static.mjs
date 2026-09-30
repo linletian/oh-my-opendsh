@@ -45,9 +45,12 @@
 //   c13 the manifest id set and the src/hooks/ file set agree in BOTH
 //       directions; the ulw-execute/ submodule directory belongs to the
 //       `ulw-execute` id and is never a separate entry
-//   c14 the manifest is the 14-row port group the coverage baseline
-//       (phase3-hooks.md §1, rows reading 已移植) declares — 文档是人读的一半、
-//       manifest 是机读的一半，本记录是两者之间的桥
+//   c14 the PORTED manifest rows are the 已移植 port group the coverage
+//       baseline UNION declares — 文档是人读的一半、manifest 是机读的一半，
+//       本记录是两者之间的桥。基线自 P4-T12 起是两份文档的并集
+//       （phase3-hooks.md §1 + phase4-commands.md §1.2），manifest 侧按
+//       `status === 'ported'` 过滤；全量行数对 EXPECTED_HOOK_COUNT 与 c13 的
+//       文件集核对都**不过滤**（演进理由见实现处注释）
 //
 // Usage: node scripts/verify-concerto-static.mjs [--json]
 // Exit: 1 iff any check FAILs (a check that could not run is also a FAIL,
@@ -74,7 +77,16 @@ const COMPAT_YML = join(REPO_ROOT, '.omo', 'compat.yaml')
 const HOOKS_SRC = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks', 'src')
 const HOOKS_DIR = join(HOOKS_SRC, 'hooks')
 const HOOKS_MANIFEST_TS = join(HOOKS_SRC, 'manifest.ts')
-const COVERAGE_BASELINE_MD = join(REPO_ROOT, 'docs', 'plans', 'phase3-dev', 'phase3-hooks.md')
+
+/**
+ * c14 的覆盖基线 —— **两文档并集**（P4-T12 演进，见 c14 的实现处注释）。
+ * 保持为数组而不是 `A + B` 的字符串拼接：解析要逐文档报告行数与问题，
+ * 拼成一段会让「哪一份文档没贡献任何行」不可见。
+ */
+const COVERAGE_BASELINE_MDS = [
+  join(REPO_ROOT, 'docs', 'plans', 'phase3-dev', 'phase3-hooks.md'),
+  join(REPO_ROOT, 'docs', 'plans', 'phase4-dev', 'phase4-commands.md'),
+]
 
 /**
  * c12 接受的「移植声明」措辞。中文形态是房屋体例；若干文件头部的上游逐文件
@@ -660,34 +672,88 @@ async function run() {
 
     // c14 — 覆盖基线 §1 的移植组 = manifest。文档是人读的一半、manifest 是机读的
     // 一半；本记录是桥。单向同步纪律（manifest.ts 头部同一口径）：落一个移植时先改
-    // phase3-hooks.md（可审计的记录）→ 再改 manifest.ts（status/e2eScenario）→ 再落
-    // listener 代码；绝不反向。解析契约：取 `## 1.` 与 `## 2.` 之间、以 `| H-xx |`
-    // 开头的行，拆成单元格后**只对状态列**（第 6 格）做「已移植」判定（§1 内的跳过
-    // 组因此天然被排除；且跳过行的理由里出现「已移植」字样也不会误判——T19 Kimi 轮1
-    // NIT-1 指出的注释/实现精度差已按实现收窄，见下）；模块列的第一个
-    // 反引号 code span 归一化为 id——去掉尾部 `.ts` / `/` / `-*`，再过
-    // BASELINE_ID_RENAMES 的 v5 改名表（仅 H-32）。解析不产出任何行 = 直接 FAIL
-    // （杜绝格式漂移后断言真空）。
+    // 覆盖基线文档（可审计的记录）→ 再改 manifest.ts（status/e2eScenario）→ 再落
+    // listener 代码；绝不反向。解析不产出任何行 = 直接 FAIL（杜绝格式漂移后断言真空）。
+    //
+    // ══ P4-T12 演进：单文档 → 两文档并集 + manifest 侧 status 过滤 ══
+    //
+    // **为什么演进**。c14 原先把「移植组」定义为 phase3-hooks.md §1 一份文档的
+    // 已移植行，与 manifest 的**全量** id 一一相等。P4-T12 落 H-33
+    // `keyword-detector` 时这条等式第一次不再成立，且不是漂移：H-33 属于
+    // Phase 4 的端口（H-33/H-34 是 Phase 4 拥有的新 H 号，见
+    // phase4-commands.md §1.2 的编号声明），它的行在 phase4-commands.md §1.2 而
+    // 不在 phase3-hooks.md §1；同时它的 manifest 状态是 **'pending'**（listener +
+    // 单测已落，e2e 属 P4-T13，见 manifest.ts 该行注释①）。两侧因此**同时**需要
+    // 一次口径调整：基线扩为并集，manifest 侧按 `status === 'ported'` 过滤。
+    //
+    // **两侧过滤为什么必须同时做，且语义对称**。「文档侧的『已移植』」与
+    // 「manifest 侧的 `status === 'ported'`」是同一个状态的两份书写：某一行处于
+    // 「已立项、未移植」时，两侧都必须把它排除。只过滤一侧会立刻破坏等式；而
+    // 只在文档侧过滤会让 manifest 里一个 `pending` 行永久无人对账——**翻转
+    // （pending → ported）就再也不会被任何断言看见**。对称过滤把「翻转」变成
+    // 一个可观测事件：翻转的同一 commit 若只改一侧，门 6 立刻红。
+    //
+    // **仍然守住的强度**（演进没有削弱本记录）：
+    //   ① 全量 manifest 的行数仍与 `EXPECTED_HOOK_COUNT` 相等（**不过滤**）——
+    //      「15 行真的存在」这条守卫没有被 status 过滤掏空；
+    //   ② c13 的双向文件集核对跑在**全量** manifest 上，因此新增 pending 行
+    //      依然必须落成 `src/hooks/<id>.ts` 顶层 listener 文件；
+    //   ③ 两侧都非空才允许通过（任一侧解析出 0 行即 FAIL，断言不会真空）。
+    // 这三条合起来给出「pending 行存在于树里、但不参与移植组对账」的确切语义。
+    //
+    // **解析契约（两文档共用，phase4-commands.md §1.2 已按此布局）**：取 `## 1.`
+    // 与 `## 2.` 之间、以 `| H-xx |` 开头的行，拆成单元格后**只对状态列**
+    // （第 5 个数据格，下标 4）做「已移植」判定；模块列的第一个反引号 code span
+    // 归一化为 id——去掉尾部 `.ts` / `/` / `-*`，再过 BASELINE_ID_RENAMES 的 v5
+    // 改名表（仅 H-32）。两份文档的 §1 表格都是 6 列（`| # | 模块 | … | 状态 |`），
+    // 故状态格下标一致。
     try {
-      const lines = readFileSync(COVERAGE_BASELINE_MD, 'utf8').split('\n')
-      let inSectionOne = false
       const portedRows = []
-      for (const line of lines) {
-        if (/^## 1\./.test(line)) { inSectionOne = true; continue }
-        if (/^## 2\./.test(line)) { inSectionOne = false; continue }
-        if (!inSectionOne) continue
-        const row = line.match(/^\|\s*(H-\d+)\s*\|(.*)$/)
-        if (row === null) continue
-        // 单元格切分：heading 匹配吃掉了第 1 格与分隔 `|`，故
-        // cells = [模块, 形态, 模式, 语义摘要, 状态, '']（§1 表格六列固定）。
-        const cells = row[2].split('|').map((cell) => cell.trim())
-        const statusCell = cells[4] ?? ''
-        if (!statusCell.includes('已移植')) continue
-        portedRows.push({ heading: row[1], cells: row[2], statusCell })
+      const nonPortedRows = []
+      const perDocument = []
+      for (const baseline of COVERAGE_BASELINE_MDS) {
+        const label = relative(REPO_ROOT, baseline)
+        const lines = readFileSync(baseline, 'utf8').split('\n')
+        let inSectionOne = false
+        let found = 0
+        let total = 0
+        for (const line of lines) {
+          if (/^## 1\./.test(line)) { inSectionOne = true; continue }
+          if (/^## 2\./.test(line)) { inSectionOne = false; continue }
+          if (!inSectionOne) continue
+          const row = line.match(/^\|\s*(H-\d+)\s*\|(.*)$/)
+          if (row === null) continue
+          // 单元格切分：heading 匹配吃掉了第 1 格与分隔 `|`，故
+          // cells = [模块, 形态, 模式, 语义摘要, 状态, '']（§1 表格六列固定）。
+          const cells = row[2].split('|').map((cell) => cell.trim())
+          const statusCell = cells[4] ?? ''
+          total += 1
+          if (!statusCell.includes('已移植')) {
+            // 非已移植行 = 跳过行 + 待移植行。两类都收集：跳过行用于「文档多出
+            // 一条非已移植行而 manifest 已翻」的检查（那是文档侧漏翻），待移植
+            // 行用于 pending 行的翻转锚点守卫。
+            nonPortedRows.push({ heading: row[1], cells: row[2], statusCell, doc: label })
+            continue
+          }
+          found += 1
+          portedRows.push({ heading: row[1], cells: row[2], statusCell, doc: label })
+        }
+        perDocument.push({ label, ported: found, total })
       }
       const problems = []
       if (portedRows.length === 0) {
-        problems.push('no 已移植 row parsed from phase3-hooks.md §1 — the assertion would be vacuous (table format changed?)')
+        problems.push(`no 已移植 row parsed from ${COVERAGE_BASELINE_MDS.map((f) => relative(REPO_ROOT, f)).join(' + ')} §1 — the assertion would be vacuous (table format changed?)`)
+      }
+      // 逐文档非空：并集里一份文档贡献 0 行时，并集断言仍会被另一份撑住，
+      // 于是「那份文档的表格漂移了」这件事会被静默吞掉。逐文档报数让漂移可见。
+      //
+      // ⚠️ 判据是**总行数**（已移植 + 非已移植）而不是已移植行数：P4-T12 之后
+      // phase4-commands.md 的两条 H 行（H-33/H-34）都还在 pending，它合法地
+      // 贡献 0 条已移植行。要求每份文档都贡献已移植行会在下一个纯 Phase 4 阶段
+      // 误报；要求它贡献至少一条 `| H-xx |` 行则既能抓住表格漂移（真 0 行），
+      // 又能让「整份文档暂时全是 pending」合法通过。
+      for (const entry of perDocument) {
+        if (entry.total === 0) problems.push(`${entry.label}: 0 — a baseline document in the union contributed no | H-xx | row at all (table format changed?)`)
       }
       const derived = []
       for (const row of portedRows) {
@@ -705,17 +771,41 @@ async function run() {
       }
       const derivedIds = derived.map((row) => row.id)
       const derivedSet = new Set(derivedIds)
-      const manifestSet = new Set(manifestIds)
+      // manifest 侧的「已移植」= `status === 'ported'`（与文档侧的状态格对称，
+      // 见上方「两侧过滤为什么必须同时做」）。`pending` 行不进对账——但它仍在
+      // c13 的文件集核对与 EXPECTED_HOOK_COUNT 里。
+      const portedManifestIds = hooksManifest.HOOK_MANIFEST
+        .filter((entry) => entry.status === 'ported')
+        .map((entry) => entry.id)
+      const pendingManifestIds = hooksManifest.HOOK_MANIFEST
+        .filter((entry) => entry.status !== 'ported')
+        .map((entry) => entry.id)
+      const manifestSet = new Set(portedManifestIds)
       if (derivedSet.size !== derivedIds.length) {
         problems.push(`baseline yields duplicate listener ids: [${derivedIds.join(', ')}]`)
       }
-      const missing = manifestIds.filter((id) => !derivedSet.has(id))
+      const missing = portedManifestIds.filter((id) => !derivedSet.has(id))
       const extra = derivedIds.filter((id) => !manifestSet.has(id))
-      if (missing.length > 0) problems.push(`manifest ids absent from the phase3-hooks.md §1 port group: ${missing.join(', ')}`)
-      if (extra.length > 0) problems.push(`phase3-hooks.md §1 已移植 rows with no manifest entry: ${extra.join(', ')}`)
+      const union = COVERAGE_BASELINE_MDS.map((f) => relative(REPO_ROOT, f)).join(' + ')
+      if (missing.length > 0) problems.push(`ported manifest ids absent from the ${union} §1 port group: ${missing.join(', ')}`)
+      if (extra.length > 0) problems.push(`${union} §1 已移植 rows with no ported manifest entry: ${extra.join(', ')}`)
+      // 守卫 ①：**全量**行数仍对 EXPECTED_HOOK_COUNT（不过滤 status）。
       if (manifestIds.length !== hooksManifest.EXPECTED_HOOK_COUNT) {
         problems.push(`manifest carries ${manifestIds.length} rows but EXPECTED_HOOK_COUNT is ${hooksManifest.EXPECTED_HOOK_COUNT}`)
       }
+      // 翻转锚点守卫：**P4-T12 双评审后删除**（MAJOR-2）。它想守的是"两侧同改"
+      // 这条纪律，但它把两类完全不同的行混进了一个判据：
+      //   * phase3-hooks.md §1 里 H-08 / H-09 两条**设计内跳过**行（永不移植）；
+      //   * phase4-commands.md §1.2 里"已移植但设计上不进入 e2e"的 pending 行。
+      // P4-T13 交付 H-33/H-34 时两侧同改为 ported，`pendingManifestIds` 归零而
+      // H-08/H-09 仍在文档里 —— 那个分支会**按设计报红**，把一次正确提交判成失败。
+      //
+      // 两个单侧变异各由既有断言承担，无需新分支（评审已在 /tmp 对两侧分别实证为红）：
+      //   * 文档已移植、manifest 未翻 → `missing`（ported manifest id 不在文档端口组）；
+      //   * manifest 已翻、文档未翻 → `extra`（文档已移植行没有 ported manifest 项）。
+      // 另：脚本层与 `tests/omo-hooks/manifest-coverage-consistency.test.ts` 的
+      // pending→ported 锚点测试互补——后者在单元层断言"pending 行确实带着
+      // 它将来的 e2e 场景名"，双侧对账仍只由本处的 missing/extra 负责。
       const renames = derived
         .filter((row) => row.id !== row.moduleName)
         .map((row) => `${row.heading} ${row.moduleName} → ${row.id}`)
@@ -723,11 +813,16 @@ async function run() {
       results.push(check('c14', 'manifest ↔ coverage baseline port group', problems.length === 0,
         problems.length > 0
           ? problems.join('; ')
-          : `${portedRows.length} 已移植 rows in phase3-hooks.md §1 → ${derivedIds.length} ids == the ${manifestIds.length} manifest ids`
+          : `${portedRows.length} 已移植 rows across ${union} §1 `
+            + `(${perDocument.map((d) => `${d.label}: ${d.ported}/${d.total}`).join(', ')}) → ${derivedIds.length} ids `
+            + `== the ${portedManifestIds.length} ported manifest ids of ${manifestIds.length} total`
+            + (pendingManifestIds.length === 0
+              ? ''
+              : ` (not in the port group, flip both sides when ported: ${pendingManifestIds.join(', ')})`)
             + (renames === '' ? '' : ` (v5 rename: ${renames})`)))
     } catch (e) {
       results.push(check('c14', 'manifest ↔ coverage baseline port group', false,
-        `${relative(REPO_ROOT, COVERAGE_BASELINE_MD)} could not be read: ${String(e.message ?? e)}`))
+        `${COVERAGE_BASELINE_MDS.map((f) => relative(REPO_ROOT, f)).join(' + ')} could not be read: ${String(e.message ?? e)}`))
     }
   }
 

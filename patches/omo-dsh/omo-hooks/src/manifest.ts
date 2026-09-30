@@ -24,6 +24,11 @@
 //   git -C <omo> ls-tree -r --name-only v4.19.4 \
 //     packages/omo-opencode/src/hooks/<module>.ts      # single-file modules
 //
+// P4-T12 追加的一条口径：某个 hook 的**配置定义**可以住在 `hooks/<module>/`
+// 之外，被该 hook 共同 import。此类文件登记在 `upstreamFiles` 里（本表目前
+// 唯一一条 = `config/schema/keyword-detector.ts`），因为它承载被移植的类型与
+// 字段；纯 `*.test.ts` 与 `AGENTS.md` 仍然两列都不进（N-03）。
+//
 // (baseline anchor commit b072d279110bdda2c6ac2525d0d24dc54d16148a; PRE-1).
 // `*.test.ts` files go to `upstreamTestFiles` — they are the R-3 unit-test
 // seeds — and `AGENTS.md` is excluded from both lists (N-03: that file
@@ -162,18 +167,26 @@ export interface HookManifestEntry {
 }
 
 /**
- * The P3-T5 port count (phase3-hooks.md §5: 移植组 = 14 — the P3-T1 "15" minus
- * H-01, which the WP-2 arbitration moved to DSH-native skip). Named and exported
- * so the expectation is stated ONCE and `validateManifest` can reject a dropped
- * or duplicated row without a magic number in the middle of the checks — the
- * "14 rows really exist" guard is this constant (check 5) plus the uniqueness
+ * The port count (phase3-hooks.md §5 移植组 = 14 — the P3-T1 "15" minus H-01,
+ * which the WP-2 arbitration moved to DSH-native skip; plus **P4-T12's H-33
+ * `keyword-detector`**, the first Phase 4 row = 15). Named and exported so the
+ * expectation is stated ONCE and `validateManifest` can reject a dropped or
+ * duplicated row without a magic number in the middle of the checks — the
+ * "N rows really exist" guard is this constant (check 5) plus the uniqueness
  * check.
+ *
+ * ⚠️ **P4-T12 加行的同步网（漏一处即 boot 红或门红）**：本常量 14→15、
+ * tests/omo-hooks/manifest.test.ts 的三处硬编码、tests/omo-hooks/
+ * registration.test.ts 的 `EXPECTED_SUMMARY_LINE`（pre-step 计数 1→2）、
+ * registration.test.ts 的 onCalls / registered 断言各加一行、门 6 的 c13 自动
+ * 跟随、c14 的基线扩为两文档并集且 manifest 侧按 `status === 'ported'` 过滤。
  */
-export const EXPECTED_HOOK_COUNT = 14
+export const EXPECTED_HOOK_COUNT = 15
 
 /**
- * The 14-row port roster, in ROADMAP priority order (P0 文件护栏 → P1 todo/goal
- * 执行器 → P3 会话通知 → P4 其余 → P5 ulw-execute) — the same order as
+ * The 15-row port roster, in ROADMAP priority order (P0 文件护栏 → P1 todo/goal
+ * 执行器 → P3 会话通知 → P4 其余 → P5 ulw-execute → **P4 keyword-detector**) —
+ * the same order as
  * phase3-hooks.md §1, so the T3 boot-marker log is deterministic and the
  * coverage-list diff is a line-by-line read.
  *
@@ -808,6 +821,77 @@ const MANIFEST_ROWS = [
     //    T17 的实现只有 A 段（激活检测 + 注入 + 脚手架）；本行的 mode 记为 'A'，
     //    与实现的唯一事件面（agent/pre-step）一致。
     status: 'ported',
+  },
+  {
+    // ── H-33 / keyword-detector（P4-T12 落地；Phase 3 的 S-06 收窄） ──────────
+    //
+    // ① **状态为 'pending' 的理由**：计划书 §「port 状态」把状态定义为
+    //    「listener + 单测 + e2e 三者齐备才是 ported」。本任务交付前两者，
+    //    e2e（P4-T13 的 `keyword-mode-*` 场景）属另一任务，故此处 'pending'。
+    //    ⚠️ **翻转是同一 commit 的双改**：本行翻 'ported' 的同时，c14 基线文档
+    //    `docs/plans/phase4-dev/phase4-commands.md` §1.2 的 H-33 状态格必须改成
+    //    「✅ 已移植」——c14 的 manifest 侧按 `status === 'ported'` 过滤（见
+    //    verify-concerto-static.mjs 的 c14 注释），两侧不同步即门 6 红。
+    //    （`docs/plans/` 是仲裁侧文件，本任务只读不写。）
+    // ② **模式 A**：与 H-32 同事件面（`agent/pre-step`），注入面是 `agent.inject()`。
+    //    事件差异已登记在 listener 头部 S-1：上游触发面是**每消息一次**的
+    //    `chat.message`，pre-step 是**每步一次**（H-32 实测一次会话 268 步），
+    //    故会话级一次性守卫是 DSH 的**必需**适配而非可选（listener 头部 S-6）。
+    // ③ **件数算术**（`git ls-tree -r v4.19.4` 逐条实测，两列合计写成显式等式）：
+    //
+    //        upstreamFiles 17 + upstreamTestFiles 7 = 24
+    //                              = 25 − 1 (AGENTS.md，N-03 排除)
+    //
+    //    展开：上游**目录** = 24 条目 = 16 实现 + 7 测试 + 1 个 `AGENTS.md`。
+    //    `AGENTS.md` 按 N-03 不入两列（N-03：它与代码多处不符，且不是 hook
+    //    源），故 16 + 7 = 23；另加**目录之外**的
+    //    `config/schema/keyword-detector.ts`（KeywordType 枚举 + 两个配置
+    //    字段的定义处，被 constants.ts 与 hook.ts 共同 import）= 17 + 7 = 24。
+    //    等式右侧的 25 就是覆盖文档那个数字的来源：目录 24 + 配置 schema 1，
+    //    减去 N-03 排除的 `AGENTS.md` 才等于本行的 24。
+    //    📌 **与覆盖文档的口径差**：phase4-commands.md §1.2 的 H-33 行写
+    //    「`keyword-detector/`（25 文件，P4-T1 实测——计划期 24 少计 1）」。
+    //    实测目录只有 24 条目；25 = 目录 24 + 配置 schema 1。本行按 17 件
+    //    登记（口径 = 两列之和），不改那份文档（`docs/plans/` 是仲裁侧
+    //    文件，本任务只读），差异已登记进 P4-T12 报告交仲裁裁定。
+    // ④ **注入文案不 vendor**：本行 `upstreamFiles` 不含 `prompts-core` 的 6 个
+    //    prompt .md——注入正文改为引用 P4-T4 已 vendor 的
+    //    `skills/{ultrawork,hyperplan}/SKILL.md`（listener 头部 S-2/S-7）。
+    id: 'keyword-detector',
+    upstreamFiles: [
+      'packages/omo-opencode/src/config/schema/keyword-detector.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/constants.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/detector.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/hook.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/index.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/types.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/hyperplan/default.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/hyperplan/index.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/team/default.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/team/index.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork/default.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork/gemini.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork/glm.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork/gpt.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork/planner.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork/source-detector.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork/index.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/keyword-detector/index.test.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/hyperplan.test.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/hook-ralph-loop.test.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/hyperplan-ultrawork.test.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork-edge-trigger.test.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork-runtime-variant.test.ts',
+      'packages/omo-opencode/src/hooks/keyword-detector/ultrawork/ultrawork-source-routing.test.ts',
+    ],
+    event: 'agent/pre-step',
+    mode: 'A',
+    summary:
+      '用户文本命中 ultrawork/ulw/hyperplan/hpp/组合词 → 六级输入过滤 + 双幂等后注入模式指令正文（正文 = P4-T4 vendor 的 ultrawork/hyperplan SKILL.md；5+1 模型变体收窄为单一名册感知文案；team 枚举位预留不接线；toast 收窄为审计行）',
+    e2eScenario: 'keyword-mode-ultrawork',
+    status: 'pending',
   },
 ] as const satisfies readonly HookManifestEntry[]
 

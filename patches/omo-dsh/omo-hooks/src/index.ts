@@ -25,12 +25,16 @@
 // the first implementation; P3-T7 landed the P1 todo/goal executor pair; P3-T12
 // landed the P3 session-notification family; P3-T14 landed the WP-6 批 A D-mode
 // trio; P3-T15 landed the 批 B injection/reminder trio; P3-T16 landed the 批 C
-// **B-mode pair**; P3-T17 (this revision) lands the LAST row, H-32
+// **B-mode pair**; P3-T17 landed H-32
 // **'ulw-execute'** (the start-work hook semantics: activation detection, plan
-// discovery, work-context construction and the notepad/jobs scaffold). apply()
+// discovery, work-context construction and the notepad/jobs scaffold);
+// **P4-T12 (this revision) lands the FIRST Phase 4 row, H-33
+// **'keyword-detector'** (the ultrawork / hyperplan keyword modes: shell
+// stripping, six input gates, dual idempotency and the vendored instruction
+// bodies). apply()
 // validates the manifest, logs the summary boot marker, and runs the per-hook
 // registration loop; the loop's implementation registry (HOOK_REGISTRARS) now
-// carries **FOURTEEN** entries — 'bash-file-read-guard' (the C-mode pilot),
+// carries **FIFTEEN** entries — 'bash-file-read-guard' (the C-mode pilot),
 // 'todo-continuation-enforcer' (E mode), 'empty-task-response-detector' (D
 // mode), 'session-notification' (F mode, the completion/error observer + the
 // platform backend abstraction), 'background-notification' (F mode, the
@@ -38,19 +42,24 @@
 // NotifierBackend), the P3-T14 D-mode trio 'edit-error-recovery' /
 // 'json-error-recovery' / 'tool-output-truncator', the P3-T15 批 B trio
 // 'directory-readme-injector' / 'agent-usage-reminder' / 'task-resume-info', the
-// P3-T16 批 C B+D pair 'webfetch-redirect-guard' / 'prometheus-md-only', and the
-// P3-T17 A-mode row 'ulw-execute' — so exactly fourteen `registered` lines are
-// logged after the summary and the roster has no unimplemented row left.
+// P3-T16 批 C B+D pair 'webfetch-redirect-guard' / 'prometheus-md-only', the
+// P3-T17 A-mode row 'ulw-execute', and the P4-T12 A-mode row
+// 'keyword-detector' — so exactly fifteen `registered` lines are logged after
+// the summary.
 //
-// Note the roster is 14 entries, not 15: P3-T5's other half is the WP-2
-// arbitration that REMOVED H-01 (write-existing-file-guard) from the port group
-// — dsh-fs-observation-policy already covers "overwrite an unread file" natively
-// and strictly more (manifest.ts header; plan revision 2026-09-19).
+// Two count notes, both historical. The roster was 14 rows until P4-T12: P3-T5's
+// other half is the WP-2 arbitration that REMOVED H-01 (write-existing-file-guard)
+// from the port group — dsh-fs-observation-policy already covers "overwrite an
+// unread file" natively and strictly more (manifest.ts header; plan revision
+// 2026-09-19). And `keyword-detector` is the one row whose `status` is **'pending'**
+// rather than 'ported': its listener + unit tests landed with P4-T12, its e2e
+// scenario (`keyword-mode-ultrawork`) is P4-T13. The row is registered and live
+// either way — `status` records the port ledger, not whether a listener exists.
 //
 // BOOT-MARKER CONTRACT (probe / cold-start assertion anchors; the pure
 // formatters live in boot-markers.ts, whose header carries the full grammar —
 // KEEP THESE FORMATS STABLE and extend the probe, never the format):
-//   * `[omo-hooks] loaded: manifest 14 entries (pre-step=<n>, pre-execute=<n>,
+//   * `[omo-hooks] loaded: manifest 15 entries (pre-step=<n>, pre-execute=<n>,
 //      post-execute=<n>, turn-stopping=<n>, session/event=<n>, status=<n>)`
 //     — ONE line per boot, AFTER validateManifest accepted the roster. Every
 //       count is DERIVED from HOOK_MANIFEST (boot-markers.ts), never hard-coded.
@@ -130,6 +139,7 @@ import { registerTaskResumeInfo } from './hooks/task-resume-info.ts'
 import { registerWebfetchRedirectGuard } from './hooks/webfetch-redirect-guard.ts'
 import { registerPrometheusMdOnly } from './hooks/prometheus-md-only.ts'
 import { registerUlwExecute } from './hooks/ulw-execute.ts'
+import { registerKeywordDetector } from './hooks/keyword-detector.ts'
 
 export const name = 'omo-hooks'
 
@@ -450,6 +460,35 @@ export type HookRegistrar = (
  *     always `return next()`). FILTER NOTE: it short-circuits on "no descriptor"
  *     (a non-delegated session), so on the conductor's own pre-steps it does one
  *     in-memory `ownEvents()` scan and delegates — the same read H-26 performs.
+ *
+ * P4-T12 added the FIRST Phase 4 entry — H-33 `keyword-detector`, the roster's
+ * SECOND A-mode (pre-step) row:
+ *   'keyword-detector': registerKeywordDetector (hooks/keyword-detector.ts) — ONE
+ *     `agent/pre-step` waterfall listener that reads this turn's user text,
+ *     passes it through the six input gates (synthetic/internal, system
+ *     directive, slash lead, foreign agent, planner seat, background session),
+ *     shell-strips code, matches ultrawork / ulw / hyperplan / hpp / the strict
+ *     `hyperplan ulw` combo, applies both idempotency guards, and then
+ *     `agent.inject()`s the mode instruction bodies read from the P4-T4 vendored
+ *     `skills/{ultrawork,hyperplan}/SKILL.md`. Its two pre-step siblings order
+ *     as: `ulw-execute` (row 14) then `keyword-detector` (row 15) — there is NO
+ *     collision and no intended interaction between them:
+ *       * `ulw-execute` injects the PLAN CONTEXT (it only fires for a delegated
+ *         `omo-atlas` child whose task text hits work-intent markers, and it
+ *         short-circuits on "no descriptor");
+ *       * `keyword-detector` injects the MODE DIRECTIVE (it only fires for a
+ *         user-authored keyword in the turn's own text).
+ *     A delegated `omo-atlas` child whose task text carries "ultrawork" is the
+ *     one shape where both can fire in the same step; their injections are
+ *     disjoint documents (plan context vs mode directive) and both are
+ *     `agent.inject()` appends, so the row order affects only which lands first
+ *     in the queue. ACCEPTED as benign; no merge, no preemption.
+ *     DEGRADED-CAPABILITY NOTE (unique to this row): the instruction bodies are
+ *     read from disk ONCE at apply time; if the vendored SKILL.md files are
+ *     absent the hook logs one named NOTE per missing file and injects NOTHING
+ *     for the rest of the process lifetime — it never substitutes hand-written
+ *     instruction text (hooks/keyword-detector.ts header; keyword-detector/
+ *     messages.ts).
  */
 export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'bash-file-read-guard': registerBashFileReadGuard,
@@ -466,6 +505,7 @@ export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'webfetch-redirect-guard': registerWebfetchRedirectGuard,
   'prometheus-md-only': registerPrometheusMdOnly,
   'ulw-execute': registerUlwExecute,
+  'keyword-detector': registerKeywordDetector,
 }
 
 /**
