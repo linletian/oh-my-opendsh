@@ -10,7 +10,8 @@
 >
 > **修订记录**：
 >
-> - **2026-09-30 计划期评审修复**（评审：`phase4-review-temp.md`，全部 3 缺口 + 4 一致性问题经逐条源码/实树核验**成立**）——① §4.1 新增 omo-hooks manifest 五处硬耦合同步网（`EXPECTED_HOOK_COUNT` apply-throw / manifest.test.ts 三处 / `EXPECTED_SUMMARY_LINE` / c13 文件集合 / **c14 基线须扩为两文档并集 + ported 过滤**，首个 manifest 触碰任务同 commit 落地）；② §4.2 命令驱动机制改引同上下文先例 `invocation.agent.followup`（dsh-command-goal:98-105），steer 降为 turn-stopping 上下文对照；R-1 高→低-中，Q-1 收窄（throw settle 子项闭环）；③ §4.8/T7 对照组更正（未知命令 = 零事件零报错、落回普通 prompt，dsh-commands lib:293-299 明文）；④ §3 skill-badge 更正（默认 `disabled: true`，非挂载先例）；⑤ 接盘项编号 H-33/H-34 显式声明（延续 Phase 3 H 序列，映射 S-06/S-37）；⑥ §6 新增 R-10（计数断言/基线路径耦合类风险）；⑦ 覆盖基线 §6 统计口径更正（命令 6 + 关键词模式 1）；⑧ tasks T1 测试文件计数更正（keyword-detector 7 个 + feature 根 2 个纳入对账）。
+> - **2026-09-30 计划期评审修复**（评审：`phase4-review-temp.md`，全部 3 缺口 + 4 一致性问题经逐条源码/实树核验**成立**）——① §4.1 新增 omo-hooks manifest 五处硬耦合同步网（`EXPECTED_HOOK_COUNT` apply-throw / manifest.test.ts 三处 / `EXPECTED_SUMMARY_LINE` / c13 文件集合 / **c14 基线须扩为两文档并集 + ported 过滤**，首个 manifest 触碰任务同 commit 落地）；② §4.2 命令驱动机制改引同上下文先例 `invocation.agent.followup`（dsh-command-goal:98-105），steer 降为 turn-stopping 上下文对照；R-1 高→低-中，Q-1 收窄（throw settle 子项闭环）；③ §4.8/T7 对照组更正（未知命令 = 零事件零报错、落回普通 prompt，dsh-commands lib:293-299 明文）；④ §3 skill-badge 更正（默认 `disabled: true`，非挂载先例）；⑤ 接盘项编号 H-33/H-34 显式声明（延续 Phase 3 H 序列，映射 S-06/S-37）；⑥ §6 新增 R-11（计数断言/基线路径耦合类风险——初号 R-10，复评发现与 Phase 3 marker 同步 R-10 撞号后改号）；⑦ 覆盖基线 §6 统计口径更正（命令 6 + 关键词模式 1）；⑧ tasks T1 测试文件计数更正（keyword-detector 7 个 + feature 根 2 个纳入对账）。
+> - **2026-09-30 复评修复（第 2 轮）**（评审 §6.3 两项新引入问题，核验成立）——A：新增风险 R-10 → **R-11**（本文 9 处 "R-10" 均指 Phase 3 的 marker 同步风险，本机编号 R-10 永缺以消除歧义；tasks T8/T12 同步改号）；B：§4.4 C-05/C-08 行与 §4.5/§4.6 标题 4 处 S-06/S-37 → 「H-33/H-34（原 Phase 3 S-06/S-37）」（§3/§9 的 S-06/S-37 为溯源标注，按评审 §6.4 保留）。
 
 ---
 
@@ -110,20 +111,20 @@ OMO 命令 = 模板文本（`<command-instruction>…</command-instruction>` 包
 | C-02 | `/ulw-execute` | `templates/start-work.ts` + `commands.ts` start-work 条目（agent: atlas 绑定） | **移植** | v5 名；模板 marker 对接 H-32（§4.7）；`$SESSION_ID`/`$TIMESTAMP`/`$ARGUMENTS` 渲染；atlas 绑定经模板 + 名册委派链 |
 | C-03 | `/ulw-plan` | shared-skill `ulw-plan/`（6 文件） | **移植**（skill-as-command 形态，Q-3） | prometheus 访谈人格 skill 已 vendor；命令面 = user-invocable 桥接或显式 handler |
 | C-04 | `/hyperplan` | `templates/hyperplan.ts` + senpi skill `hyperplan/` | **移植（降级形态）** | 模板要求 `team_create`（Phase 5 缺席）——上游模板自带降级路径（team 工具缺席时的指引文案）；本阶段落地 = 模板 + skill 加载 + 降级语义；完整对抗评审环属 Phase 5 |
-| C-05 | `/stop-continuation` | `templates/stop-continuation.ts` + `hooks/stop-continuation-guard/`（S-37） | **移植** | 命令 = guard 服务的消费面；停 ralph/todo 续行/boulder 的 DSH 映射（§4.6） |
+| C-05 | `/stop-continuation` | `templates/stop-continuation.ts` + `hooks/stop-continuation-guard/`（H-34，原 Phase 3 S-37） | **移植** | 命令 = guard 服务的消费面；停 ralph/todo 续行/boulder 的 DSH 映射（§4.6） |
 | C-06 | `/handoff` | `templates/handoff.ts` | **移植** | 模板引用 `session_read`（OMO 工具）——DSH 等价面（session-query / 会话导出）由 P4-T1 核实，无等价面则模板语义收窄并记差异 |
 | C-07 | `/remove-ai-slops` | `templates/remove-ai-slops.ts` + shared-skill `remove-ai-slops/` | **移植** | 模板 + skill 双载体；team-mode addendum 段不移植（Phase 5） |
-| C-08 | ultrawork 关键词模式 | `hooks/keyword-detector/`（24 文件，S-06）+ senpi skill `ultrawork/` | **移植（收窄）** | ultrawork + hyperplan 关键词 → pre-step 注入（模式 A）；**team 关键词子模式 deferred → Phase 5**；模型变体文案（gpt/glm/gemini/planner）按 DSH 名册现实收窄 |
+| C-08 | ultrawork 关键词模式 | `hooks/keyword-detector/`（24 文件，H-33，原 Phase 3 S-06）+ senpi skill `ultrawork/` | **移植（收窄）** | ultrawork + hyperplan 关键词 → pre-step 注入（模式 A）；**team 关键词子模式 deferred → Phase 5**；模型变体文案（gpt/glm/gemini/planner）按 DSH 名册现实收窄 |
 | — | `/refactor` | `templates/refactor.ts`（+ refactor-sections/）+ shared-skill `refactor/` | **deferred → Phase 6（草案）** | 模板自述依赖 LSP/AST-grep/codemap（Phase 6 面）；skill 本体照常 vendor（内容属 17 skill 范围），命令面随编辑模型决策落地 |
 
-### 4.5 keyword-detector 移植设计（S-06 接盘）
+### 4.5 keyword-detector 移植设计（H-33 接盘，原 Phase 3 S-06）
 
 - **形态**：omo-hooks 的模式 A pre-step 注入——检测用户输入文本（剥 code block / inline code / slash 命令前导，上游 `detector.ts` 语义）命中 `ultrawork|ulw` / `hpp|hyperplan` 模式 → `agent.inject()` 注入对应指令文案；已注入幂等（上游"指令已在上下文则不重复"语义）。
 - **收窄清单**：① team 关键词（`TEAM_PATTERN`/`TEAM_MESSAGE`）deferred → Phase 5；② 模型/身份变体（`ultrawork/{gpt,glm,gemini,planner}.ts`）按 DSH 名册现实收窄为单一文案 + 名册可查的 reviewer 引用（Phase 2 plan-consultant/plan-reviewer 名）；③ `hyperplan-ultrawork` 组合模式的 banner 语义保留（组合 = 两基模式的交集规则，上游 constants.ts 明示）。
 - **指令内容**：ultrawork 指令正文 = senpi `ultrawork/SKILL.md`（vendor 内容，§4.3）——注入面引用 vendor 文本常量，不在 listener 里重写指令；notepad/`mktemp` 等 OMO 载体引用逐处收窄（DSH 等价物或记差异）。
 - **配置面**：上游 `disabled_keywords`/`enabled_expansions` 配置（config/schema/keyword-detector）——DSH 侧以插件 Config 落（cordis Config schema 先例），默认全开（与上游默认对齐，P4-T1 核实）。
 
-### 4.6 stop-continuation 的 DSH 语义映射（S-37 接盘）
+### 4.6 stop-continuation 的 DSH 语义映射（H-34 接盘，原 Phase 3 S-37）
 
 上游语义：`/stop-continuation` → guard 服务置停止标记（stop/isStopped/clear）→ 各续行机制（ralph loop / todo continuation / boulder）检查标记而停摆 + 级联取消后台后代任务。DSH 侧的续行机制盘点（P4-T1 逐一核实停止面）：
 
@@ -202,7 +203,7 @@ ROADMAP §4 Phase 4 给出 2 条退出标准，逐条落到可执行证据：
 | **R-7** | **范围误读**：产出被理解为"OMO 编排全流程已可用"（实际 Team Mode/计划载体仍缺席，hyperplan 是降级形态） | 低（沟通） | README/CHANGELOG 写明：命令面 ≠ Team Mode（Phase 5）≠ 编辑面（Phase 6）；hyperplan 降级语义成文 |
 | **R-8** | **vendor 漂移检测误报**：skills 内容改名（start-work→ulw-execute）使 sha256 与上游偏离，后续定向搬运（D14 规则 4）比对成本上升 | 低 | deviations[] 逐处登记（D15-c 既定纪律）；改名前原文的 sha256 同时登记（双向锚） |
 | **R-9** | **e2e 命令通道缺口**：drive.mjs 现无"敲 slash 命令"的剧本原语，通道建设可能牵出 session 输入面假设 | 中 | P4-T1 顺带核实 mock-LLM 沙箱的命令注入点；打样场景（第一条命令）承担通道建设，后续场景复用 |
-| **R-10** | **新增 manifest 条目触碰既有计数断言/基线路径**：omo-hooks manifest 扩容触发 `EXPECTED_HOOK_COUNT`（apply 时 throw = boot 红）、单测硬编码、`EXPECTED_SUMMARY_LINE`、c13 文件集合、c14 基线文档五处硬耦合——计划期曾全部漏列（评审缺口 1）。同类坑已有先例：P3-T5 剔除 H-01 时同步过 15→14 网 | 高（破门/破启动） | §4.1 的同步网全清单成文；**首个 manifest 触碰任务（T8 或 T12）同 commit 落地 c14 两文档并集演进**；T8/T12 任务书各带同步网清单；T16 复验 |
+| **R-11** | **新增 manifest 条目触碰既有计数断言/基线路径**：omo-hooks manifest 扩容触发 `EXPECTED_HOOK_COUNT`（apply 时 throw = boot 红）、单测硬编码、`EXPECTED_SUMMARY_LINE`、c13 文件集合、c14 基线文档五处硬耦合——计划期曾全部漏列（评审缺口 1）。同类坑已有先例：P3-T5 剔除 H-01 时同步过 15→14 网 | 高（破门/破启动） | §4.1 的同步网全清单成文；**首个 manifest 触碰任务（T8 或 T12）同 commit 落地 c14 两文档并集演进**；T8/T12 任务书各带同步网清单；T16 复验 |
 
 ### 开放问题（全部转 P4-T1 调研闭环，不阻塞立项）
 
