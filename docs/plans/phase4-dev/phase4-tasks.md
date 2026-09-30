@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **8/18**（P4-T1…T6、T8、T12 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **9/18**（P4-T1…T6、T8、T12、T13 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -154,13 +154,13 @@
 - **证据**：commit `988a547`。39 keyword 单测（全量 **1168**）；EXPECTED_HOOK_COUNT=15 boot 绿；c13「15 top-level listener files ↔ 15 manifest ids 双向」；c14 两文档并集 + ported 过滤落地（`phase3 14/16 + phase4 0/2 → 14 == 14/15`），单侧/双侧翻转三变异实证。**双评审**：sub-agent 首轮 **REJECT**（BLOCKER `agent.inject` 裸字符串——仲裁亲核 dsh-agent types:209 与 inbox pending-id 校验成立，修为 InjectedUserMessage 全字段形态；MAJOR c14 误报分支删除、notepad/mktemp 注记补齐）→ 修复后 APPROVE；mcode 两轮 APPROVE（FINDINGS none）。共 13 条 findings 修复（含 WeakMap descriptor 缓存、`.trim()` 对齐、mktemp `-t` 表述更正为 GNU-deprecated 真话）。S-11 登记：inject 晚一个 step 边界抵达（T13 e2e 断言口径）。
 - **依赖**：P4-T3、P4-T4（S5-01 内容）。**量级**：1 天（实耗约 0.8 天）。
 
-### [ ] P4-T13 — e2e：关键词模式场景
+### [x] P4-T13 — e2e：关键词模式场景
 
 - **产出**：`tests/e2e/` 新增 `ultrawork-keyword-injected` 场景（+ 对照）。
 - **做法**：剧本 = 用户消息含 `ulw` → 断言 ultrawork 指令注入下一请求（banner 首行 `ULTRAWORK MODE ENABLED!` 逐字锚点）；对照组 = ① 消息不含关键词不注入；② 关键词仅在 code block 中出现不注入；③ slash 命令行不注入；④ 二次消息幂等；hyperplan 关键词面同场景或姊妹场景断言。
 - **判定**：✅ 门 3 绿；对照四组各具名断言。
-- **证据**：（待填）
-- **依赖**：P4-T12。**量级**：3 小时。
+- **证据**：commit `bfd5f56`。**四场景 77 具名断言**（ultrawork-keyword-injected 21 / keyword-negative-controls 15 / hyperplan-keyword-injected 17 / combo-keyword-injected 24——S-6 会话一次性使"注入/再注入"互斥故拆分）+ **26 fabricated 缺陷**（横幅从用例自渲染 + 非空守卫）；S-11 口径落地（bannerRequestIndex=1 + 首请求缺席断言 + 缺陷钉死）；双投影断言（splice↔claim id 相等 + 只改 claim 缺陷）。**e2e 抓出真实崩溃**：`ctx.config` 在 cordis Proxy 上 throw 致 keyword-detector 从未注册（39 单测绿灯掩盖——单测喂普通对象非 Proxy ctx），修为 `ctx.get('config')` + readOptionalService，并新增注册面可证伪断言（负对照不再对死 hook 全绿）。六级过滤 e2e 覆盖 2/6 面（slash/code block），其余由单测承担（评审记录）。**双评审**：sub-agent REJECT→修复→APPROVE + mcode REJECT→修复→APPROVE（17 条 findings：前向承诺豁免/假前提注释/双投影/注册面/派生重述等）。manifest status=ported + H-33 行**双侧同步翻转**（c14 契约，23/23 复验）。
+- **依赖**：P4-T12。**量级**：3 小时（实耗约 5 小时）。
 
 ---
 
