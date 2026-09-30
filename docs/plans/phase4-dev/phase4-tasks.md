@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **5/18**（P4-T1…T5 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **6/18**（P4-T1…T5、T12 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -146,13 +146,13 @@
 
 ## WP-6 关键词模式（计划书 §4.5；H-33 接盘，原 Phase 3 S-06）
 
-### [ ] P4-T12 — 移植 keyword-detector（ultrawork/hyperplan；team deferred）
+### [x] P4-T12 — 移植 keyword-detector（ultrawork/hyperplan；team deferred）
 
 - **产出**：`patches/omo-dsh/omo-hooks/src/hooks/keyword-detector.ts`（+ 必要子模块：检测逻辑 / 文案常量 / 配置）+ ultrawork 指令内容接线（vendor S5-01 正文为注入文本源）+ 单测；omo-hooks manifest 新增条目。
 - **做法**：检测逻辑语义移植（剥 code block/inline code/slash 前导——`detector.ts` 逐字对照；`\b(ultrawork|ulw)\b` / `\bhyperplan\b|(?<![\w.])hpp\b`（`.hpp` 负向后查，上游 issue #4215）/ 组合模式严格相邻双词序与交集禁用规则（基词任一禁则禁 combo，detector.ts:53-56）——`constants.ts` 逐字对照）；注入形态 = 模式 A pre-step（`agent.inject()`，恒 `return next()`）；**双幂等**（消息级 `!text.includes(keyword.message)` + session 级一次性 Set）；**六级输入过滤全套移植**（synthetic/internal、system directive、non-OMO agent、planner、background session、非主 session 只留 ultrawork/combo）；**收窄落地**：team 关键词跳过（枚举位预留）、模型变体文案（5+1 个 md）收窄为单一名册感知文案（reviewer 引用 = plan-consultant/plan-reviewer，Phase 2 名册名）、notepad/`mktemp` 载体引用记差异；配置面 = 插件 Config（disabled_keywords/enabled_expansions 等价物，上游两字段 optional 无默认 = 缺席全启用，DSH 默认对齐）；上游 7 个测试文件（89 its）用例移植为单测种子。**⚠️ manifest 同步网（R-11）**：本任务必然新增 manifest 条目——同 commit 同步 `EXPECTED_HOOK_COUNT`、manifest.test.ts 三处、`EXPECTED_SUMMARY_LINE`（pre-step 计数 +1）；**若 T8 未落地 c14 两文档并集演进（T8 走了纯服务 fork），本任务承担该演进**（契约见 T8 任务书 ⚠️ 段）。
 - **判定**：✅ 单测覆盖：命中/剥离/幂等/组合 banner/禁用配置/收窄注记；manifest ↔ 清单一致性不回归；vitest 绿。
-- **证据**：（待填）
-- **依赖**：P4-T3、P4-T4（S5-01 内容）。**量级**：1 天。
+- **证据**：commit `988a547`。39 keyword 单测（全量 **1168**）；EXPECTED_HOOK_COUNT=15 boot 绿；c13「15 top-level listener files ↔ 15 manifest ids 双向」；c14 两文档并集 + ported 过滤落地（`phase3 14/16 + phase4 0/2 → 14 == 14/15`），单侧/双侧翻转三变异实证。**双评审**：sub-agent 首轮 **REJECT**（BLOCKER `agent.inject` 裸字符串——仲裁亲核 dsh-agent types:209 与 inbox pending-id 校验成立，修为 InjectedUserMessage 全字段形态；MAJOR c14 误报分支删除、notepad/mktemp 注记补齐）→ 修复后 APPROVE；mcode 两轮 APPROVE（FINDINGS none）。共 13 条 findings 修复（含 WeakMap descriptor 缓存、`.trim()` 对齐、mktemp `-t` 表述更正为 GNU-deprecated 真话）。S-11 登记：inject 晚一个 step 边界抵达（T13 e2e 断言口径）。
+- **依赖**：P4-T3、P4-T4（S5-01 内容）。**量级**：1 天（实耗约 0.8 天）。
 
 ### [ ] P4-T13 — e2e：关键词模式场景
 
