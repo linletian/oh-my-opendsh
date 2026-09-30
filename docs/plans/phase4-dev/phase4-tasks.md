@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **7/18**（P4-T1…T6、T12 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **8/18**（P4-T1…T6、T8、T12 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -105,14 +105,14 @@
 
 ## WP-4 stop-continuation（计划书 §4.6；H-34 接盘，原 Phase 3 S-37）
 
-### [ ] P4-T8 — 移植 stop-continuation-guard 服务 + `/stop-continuation` 命令
+### [x] P4-T8 — 移植 stop-continuation-guard 服务 + `/stop-continuation` 命令
 
 - **产出**：guard 状态服务（cordis 服务形态，P4-T1 Q-5 裁定——**omo-hooks 提供**（H-34 住 omo-hooks，§4.1 拓扑），**omo-commands 作为写入方消费**（stop()/clear()），**omo-hooks H-03 作为读取方消费**（isStopped()）；stop/isStopped/clear 词汇表与上游对齐）+ `src/commands/stop-continuation.ts` + omo-hooks 侧 H-03 enforcer 的停止标记检查（同 commit 跨插件改动）+ 单测。
 - **做法**：停止面接线按 Q-5 盘点逐机制落地——① todo 续行：H-03 steer 前查 isStopped（omo-hooks 改动 + 回归用例）；② goal 轮驱动：pause 面或差异记录；③ ralph：原生停止面或差异记录；④ 后台任务级联取消：`ctx.jobs` 取消 API（H-11 的 ctx.inject 延迟获取先例）；上游 `index.test.ts` 用例移植为单测种子；服务跨插件可见性单测（双插件共存模拟，R-5）。
 - **⚠️ omo-hooks manifest 同步网（R-11，计划书 §4.1 已成文——违者 boot 红/门红）**：guard 落地先裁定 **manifest 条目 fork**——(i) 若作为 manifest 条目（需裁定服务形态的"目标事件/模式"字段语义）：同 commit 同步 `EXPECTED_HOOK_COUNT` +1、`tests/omo-hooks/manifest.test.ts` 三处硬编码（:115/:126/:370）、`tests/omo-hooks/registration.test.ts` 的 `EXPECTED_SUMMARY_LINE`（事件计数随新条目归属变化）；(ii) 若以纯服务模块落地（无 manifest 条目）：**文件放 `src/hooks/` 之外**（c13 双向集合 + 孤儿 .ts 规则会拒绝 `src/hooks/` 下的无条目文件），且其覆盖行不得进 c14 解析面（见下）。**c14 演进（若本任务为首个 manifest 新增，否则 T12 承担）**：`COVERAGE_BASELINE_MD` 单文档 → `[phase3-hooks.md, phase4-commands.md]` 两文档并集（解析契约：`## 1.`–`## 2.` 之间、`| H-\d+ |` 行、第 5 数据格为状态列——phase4-commands.md §1.2 表格已按此契约排版）+ manifest 侧改按 `status === 'ported'` 过滤（理由：Phase 3 结项时全条目 ported，过滤不降既有断言强度；pending 期条目不破门；翻转 commit 仍须文档/manifest 同改），理由注释写入 gate 源码。
 - **判定**：✅ 单测覆盖：stop 后 isStopped 真 / clear 复位 / H-03 在 stopped 会话不再 steer / 级联取消调用面 / 服务缺席时 loud-but-non-fatal；vitest 绿；**fork 两分支各自的门 2/6 不红（含同 commit 的同步网改动）**。
-- **证据**：（待填）
-- **依赖**：P4-T3。**量级**：4 小时（+同步网 1 小时）。
+- **证据**：commit `ff136b7`。**fork 裁定 = (ii) 纯服务模块** `src/services/stop-continuation-guard.ts`（四理由：event/mode 字段无诚实取值、状态字段两难、c13 只扫 src/hooks 实测、H-34 行预授权出口；c14 演进已由 T12 承担故本任务无 c14 改动）。四机制：① H-03 `stopped-by-command` 首门（breaker 三阶段可判别测试）；② goal pause（CAS revision，非 active 不写，异常降级）；③ ralph 记差异（不承诺程序化取消）；④ 级联 `list({id:sessionId})` + `kill` + `ownerSession === sessionId` 围栏。跨插件：ctx.provide / 延迟 ctx.get / 服务名跨包相等断言 / R-5 真实注册链路测试。**双评审**：sub-agent REJECT→修复→APPROVE（MAJOR **级联空 caller 静默空转**——仲裁亲核 dsh-jobs-local:178-180/313-315 成立修复；NOTICES pending 列表）+ mcode 两轮 APPROVE（FINDINGS none）；12 条 findings 修复。门 2 = 1289、门 6 = 23/23。覆盖基线 H-34 行翻 ✅ 已落地（c14 豁免措辞，门 6 复验绿）。
+- **依赖**：P4-T3。**量级**：4 小时（实耗约 5 小时）。
 
 ### [ ] P4-T9 — e2e：stop-continuation 场景
 
