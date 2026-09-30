@@ -134,3 +134,51 @@ export function formatCommandFailedLine(id: string, err: unknown): string {
 export function formatManifestValidationFailedLine(err: unknown): string {
   return `[omo-commands] manifest validation FAILED: ${describeError(err)}`
 }
+
+/**
+ * `[omo-commands] skills: <r>/<N> registered (runtime, vendor path)` — the P4-T5
+ * skill-delivery summary. `<N>` counts every DISCOVERED skill file (registered
+ * plus failed) so the ratio is honest, and the parenthetical names the two facts
+ * a boot log reader cannot otherwise know: the contributions land in dsh's
+ * `runtime` bucket (measured: the registry labels its own runtime provider and
+ * rank 250, which outranks bundled providers at 600) and their bodies come from
+ * the plugin's own vendored tree at absolute paths.
+ *
+ * ORDER: the command summary comes first, this one second — they are two
+ * independent mechanisms, and a reader comparing boots should see the command
+ * surface's line before the skill surface's. The failure count is appended ONLY
+ * when non-zero, so a healthy boot's line stays exactly one field-ized shape.
+ */
+export function formatSkillsSummaryLine(outcome: {
+  registered: number
+  total: number
+  failed: number
+}): string {
+  const base = `[omo-commands] skills: ${outcome.registered}/${outcome.total} registered (runtime, vendor path)`
+  return outcome.failed === 0 ? base : `${base}, ${outcome.failed} failed`
+}
+
+/**
+ * `[omo-commands] skill <name> FAILED: <describeError>` — the per-skill
+ * failure form, kept DISTINCT from the command form above so the probe can
+ * assert each is absent independently. `<name>` is the skill DIRECTORY name (not
+ * the frontmatter name): a file that cannot be parsed far enough to learn its
+ * declared name must still be nameable in the log.
+ */
+export function formatSkillFailedLine(directoryName: string, err: unknown): string {
+  return `[omo-commands] skill ${directoryName} FAILED: ${describeError(err)}`
+}
+
+/**
+ * `[omo-commands] skills scan FAILED: <describeError> — 0 skills discovered under <dir>`
+ * — the TREE-level failure form, for the one failure that belongs to no skill:
+ * the vendor directory itself cannot be listed (missing `vendor/` on an installed
+ * copy, unreadable permissions). It is deliberately NOT the per-skill form: no
+ * skill was even discovered, so naming one would be a lie, and the per-skill
+ * assertion in `concerto-mode-probe.sh` must not be able to match this line.
+ * The summary marker still follows it, reporting `0/0` — the honest ratio for
+ * "nothing was delivered".
+ */
+export function formatSkillsScanFailedLine(dir: string, err: unknown): string {
+  return `[omo-commands] skills scan FAILED: ${describeError(err)} — 0 skills discovered under ${dir}`
+}

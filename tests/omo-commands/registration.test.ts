@@ -55,6 +55,10 @@ function fakeContext(): FakeContext {
   const disposals: (() => void)[] = []
   const registered: { name: string; description: string }[] = []
   const ctx: CommandsRegistrationContext = {
+    // P4-T5 added the required `skills` member (the plugin's second mechanism).
+    // This suite drives the COMMAND loop only, so the fake records nothing here;
+    // the skill loop's own behaviour is pinned in tests/omo-commands/skills.test.ts.
+    skills: { register: () => undefined },
     commands: {
       register: (definition) => {
         registered.push({ name: definition.name, description: definition.description })
@@ -130,14 +134,20 @@ afterEach(() => {
 })
 
 describe('P4-T3 the real mount: nothing registers while every row is pending', () => {
-  it('apply() logs exactly ONE line — the summary — for the real manifest + empty registry', () => {
+  it('apply() logs the command summary and NOTHING else for the real manifest + empty registry', () => {
     const logged: string[] = []
     vi.spyOn(console, 'log').mockImplementation((line?: unknown) => {
       logged.push(String(line))
     })
     apply(fakeContext().ctx)
+    // TWO lines since P4-T5 — the command summary, then the skill sweep's own
+    // summary (this fake's `skills.register` accepts every document, so the
+    // real 19-skill sweep reports 19/19 here; the sweep itself is pinned in
+    // tests/omo-commands/skills.test.ts). The command surface's contribution is
+    // still exactly ONE line.
     expect(logged).toEqual([
       '[omo-commands] loaded: manifest 6 entries (pending=6, ported=0) — 0/6 commands registered',
+      '[omo-commands] skills: 19/19 registered (runtime, vendor path)',
     ])
   })
 
@@ -151,7 +161,10 @@ describe('P4-T3 the real mount: nothing registers while every row is pending', (
     // this assertion.
     expect(lines.filter((line) => /^\[omo-commands\] command /.test(line))).toEqual([])
     expect(lines.filter((line) => line.includes('FAILED'))).toEqual([])
-    expect(lines).toHaveLength(1)
+    // The command loop's own vocabulary only — a `skills:` line would be the
+    // other mechanism's, and its absence here is what "the command loop said
+    // nothing but its summary" means.
+    expect(lines).toEqual(['[omo-commands] loaded: manifest 6 entries (pending=6, ported=0) — 0/6 commands registered'])
   })
 
   it('COMMAND_REGISTRARS really is empty and every manifest row is still pending', () => {
@@ -163,10 +176,14 @@ describe('P4-T3 the real mount: nothing registers while every row is pending', (
     ])
   })
 
-  it('declares `commands` as an injected hard dependency', () => {
+  it('declares BOTH registry services as injected hard dependencies', () => {
     // Why the boot waits instead of throwing: cordis holds the fiber in the
-    // waiting state until the registry service exists (dsh-base mounts it).
-    expect(inject).toEqual(['commands'])
+    // waiting state until the registry services exist. dsh-base mounts both —
+    // `- id: commands → @deepseek-ai/dsh-commands` and
+    // `- id: skill → @deepseek-ai/dsh-skill` (cordis.patch.yml:273-274) — so
+    // every profile that can boot the overlay already carries them. Order is
+    // the plugin's own (commands, then skills), matching apply()'s two loops.
+    expect(inject).toEqual(['commands', 'skills'])
   })
 
   it('NEVER carries a `ulw-plan` registrar — the product ban, pinned where the registry lives', () => {

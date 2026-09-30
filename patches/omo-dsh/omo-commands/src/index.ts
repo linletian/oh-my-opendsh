@@ -55,6 +55,12 @@ import {
   formatLoadedSummaryLine,
   formatManifestValidationFailedLine,
 } from './boot-markers.ts'
+import {
+  type SkillRegistrationContext,
+  VENDOR_SKILLS_DIR,
+  runSkillRegistrations,
+  scanVendorSkills,
+} from './skills.ts'
 
 export const name = 'omo-commands'
 
@@ -82,7 +88,7 @@ export const name = 'omo-commands'
  * where the loop consumes it — the same typed union omo-hooks' HooksRegistrationContext
  * uses for its `effect`.
  */
-export interface CommandsRegistrationContext {
+export interface CommandsRegistrationContext extends SkillRegistrationContext {
   /** The command registry (`dsh-commands`); every registration goes through it. */
   readonly commands: {
     register: (definition: CommandsRegistrationDefinition) => unknown
@@ -227,23 +233,47 @@ export function runCommandRegistrations(
 }
 
 /**
- * The plugin entry point: wire the real manifest and the real registry into the
- * loop above. Everything observable from boot is produced by
- * runCommandRegistrations (unit-tested), so this function stays a one-line
- * assembly and the markers cannot drift from their tests.
+ * The plugin entry point: wire the real manifest, the real registry and the real
+ * vendor tree into the two loops above. Everything observable from boot is
+ * produced by unit-tested functions, so this stays assembly-only and the markers
+ * cannot drift from their tests.
+ *
+ * P4-T5 added the SECOND loop. The command surface runs first (its summary line
+ * is the plugin's identity line), then the skill sweep: the vendor tree is read
+ * ONCE here, at apply time, and each document is handed to dsh's own registry —
+ * the bodies are then served from memory by `ctx.skills.get`, which is why the
+ * command path never reads the vendor tree itself.
  */
 export function apply(ctx: CommandsRegistrationContext): void {
-  runCommandRegistrations(ctx, COMMAND_MANIFEST, COMMAND_REGISTRARS, (line) => {
+  const log = (line: string): void => {
     console.log(line)
-  })
+  }
+  runCommandRegistrations(ctx, COMMAND_MANIFEST, COMMAND_REGISTRARS, log)
+  // The logger goes INTO the scan, not only after it: a vendor tree that cannot
+  // be listed at all (missing `vendor/` on a copied install) is reported by the
+  // scan itself as one `skills scan FAILED` line plus an empty scan — unprotected,
+  // that `readdirSync` would throw out of apply() and roll the command
+  // registration markers back with it (dual review, P4-T5 MAJOR).
+  runSkillRegistrations(ctx, scanVendorSkills(VENDOR_SKILLS_DIR, log), log)
 }
 
 /**
- * `commands` is a hard dependency (see the interface comment above), so cordis
- * holds this plugin in the waiting state until the registry service is
- * available and re-runs apply() then — the same shape as
- * `@deepseek-ai/dsh-command-goal`'s `inject = ["commands", "goals"]`. Declaring
- * it rather than reading `ctx.get('commands')` inside apply() is what turns a
- * missing service into a WAIT instead of a boot-time throw inside the loop.
+ * `commands` and `skills` are hard dependencies (see the interface comment
+ * above), so cordis holds this plugin in the waiting state until both registry
+ * services are available and re-runs apply() then — the same shape as
+ * `@deepseek-ai/dsh-command-goal`'s `inject = ["commands", "goals"]` and
+ * `@deepseek-ai/dsh-skill-badge`'s `inject = ["skills"]`. Declaring them rather
+ * than reading `ctx.get(...)` inside apply() is what turns a missing service into
+ * a WAIT instead of a boot-time throw inside a loop.
+ *
+ * MEASURED, both halves:
+ *   - `skills` is a base service: `dsh-base/cordis.patch.yml:273-274` inserts
+ *     `- id: skill → '@deepseek-ai/dsh-skill'`, unconditional (no `disabled`), so
+ *     every profile that can boot the overlay already has it — exactly like
+ *     `commands` (same file, `:286`). The `id: skill-badge` row right below the
+ *     filesystem row IS disabled, which is why the catalog may carry dsh's own
+ *     `dsh-badge` but never must.
+ *   - the service's own name on the fiber is what `inject` matches:
+ *     `dsh-skill/lib/index.js:132` — `super(ctx, "skills")`.
  */
-export const inject = ['commands']
+export const inject = ['commands', 'skills']

@@ -8193,6 +8193,104 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P4-T5 skills-catalog-visible self-test: the fabricated good input must
+  // PASS, and each fabricated defect must fail on its OWN named check — so the
+  // catalog/load/对照 assertions are proven sensitive rather than vacuous.
+  const goodSkills = analyzeSkillsCatalogVisible(fabricatedSkillsCatalogInput(routes), routes)
+  if (goodSkills.result !== 'PASS') {
+    problems.push(`fabricated GOOD skills-catalog-visible must PASS, got FAIL on: ${goodSkills.failed.join(', ')}`)
+  }
+  const skillsDefectCases = [
+    ['the catalog dropped one vendored skill', (input) => {
+      const names = vendoredSkillNames()
+      const dropped = names[names.length - 1]
+      input.requests[0].body.messages[0].content = input.requests[0].body.messages[0].content
+        .split('\n')
+        .filter((line) => !line.startsWith(`- \`${dropped}\``))
+        .join('\n')
+    }, 'catalogCoversEveryVendoredSkill'],
+    // SPLIT on purpose (dual review): bundling both defects into one case let a
+    // future parser that ignored the `start-work` name entirely pass the case via
+    // the prefix half. Each defect now fails on its own.
+    ['the catalog exposed a shared/-prefixed form', (input) => {
+      input.requests[0].body.messages[0].content += '\n<available_skills>\n- `shared/git-master`: prefixed\n</available_skills>'
+    }, 'catalogHasNoPrefixedForm'],
+    ['the catalog exposed the pre-v5 start-work name', (input) => {
+      input.requests[0].body.messages[0].content += '\n<available_skills>\n- `start-work`: the pre-v5 row name\n</available_skills>'
+    }, 'catalogHasNoPrefixedForm'],
+    // The bad block is in the SECOND request, not the first: pins the all-blocks
+    // scan. dsh republishes the catalog on digest change, so a regression
+    // introduced in a LATER republish must still be caught — a parser that only
+    // read `requests[0]`'s first block would pass this case silently.
+    ['a LATER request carried a malformed catalog block', (input) => {
+      input.requests[1].body.messages[0].content += '\n<available_skills>\n- `shared/ultrawork`: prefixed in a republish\n</available_skills>'
+    }, 'catalogHasNoPrefixedForm'],
+    ['the skills boot marker never landed', (input) => {
+      input.bootLog = FABRICATED_BOOT_LOG
+    }, 'skillsMarkerPresent'],
+    ['the skill tool returned an error instead of the body', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result' && event.data?.message?.content?.[0]?.toolCallId === 'mock-llm-tool-1-0'
+          ? {
+            ...event,
+            data: {
+              ...event.data,
+              message: {
+                ...event.data.message,
+                content: [{ ...event.data.message.content[0], isError: true, content: [{ type: 'text', text: 'Error: skill "git-master" is unknown or no longer available' }] }],
+              },
+            },
+          }
+          : event)
+    }, 'skillToolReturnedBody'],
+    ['the skill tool returned a placeholder body (not the vendored one)', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result' && event.data?.message?.content?.[0]?.toolCallId === 'mock-llm-tool-1-0'
+          ? {
+            ...event,
+            data: {
+              ...event.data,
+              message: {
+                ...event.data.message,
+                content: [{ ...event.data.message.content[0], content: [{ type: 'text', text: '<skill_content name="git-master">a plausible but wrong body</skill_content>' }] }],
+              },
+            },
+          }
+          : event)
+    }, 'skillToolBodyMatchesVendoredFile'],
+    ['the unvendored name was NOT refused (the rubber-stamp case)', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'tool/result' && event.data?.message?.content?.[0]?.toolCallId === 'mock-llm-tool-2-0'
+          ? {
+            ...event,
+            data: {
+              ...event.data,
+              message: {
+                ...event.data.message,
+                content: [{ ...event.data.message.content[0], isError: false, content: [{ type: 'text', text: 'here is a body for any name you like' }] }],
+              },
+            },
+          }
+          : event)
+    }, 'unknownSkillNameRefused'],
+    // NOTE the label: this defect trips `turnCompleted`, NOT the request-count
+    // check `mockSawBothSkillSteps`. Dropping the closing event leaves all three
+    // requests in place, which is the point — it shows the count check and the
+    // turn-closure check are independent, and a PASS here would have hidden a
+    // driver that counted requests without ever seeing a completed turn.
+    ['the turn never ended', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'turn/end')
+    }, 'turnCompleted'],
+  ]
+  for (const [label, mutate, expectedCheck] of skillsDefectCases) {
+    const input = fabricatedSkillsCatalogInput(routes)
+    mutate(input)
+    const verdict = analyzeSkillsCatalogVisible(input, routes)
+    if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+      problems.push(`fabricated skills-catalog-visible defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
@@ -9367,6 +9465,85 @@ export function analyzePrometheusMdOnlyDenied(
   }
 }
 
+// ── fabricated P4-T5 skills-catalog-visible inputs (must earn their PASS) ──────
+//
+// The `--self-test` QA exists because an analysis can PASS vacuously: checks
+// written so that nothing real can fail them. This factory proves the opposite
+// for the P4-T5 analysis — the fabricated GOOD input must PASS, and each
+// fabricated defect must fail on its OWN named check.
+//
+// NOT FABRICABLE, SAID OUT LOUD: `referencedFileReadableViaPath` reads the real
+// vendor tree, so no in-memory defect can make it fail (deleting a vendored file
+// to prove it would be a worse idea than the gap). Its sensitivity is covered by
+// the real e2e run instead — if the plugin's resolution anchor moved, the GOOD
+// input here would fail the same check.
+function fabricatedSkillsCatalogInput(routes) {
+  const names = vendoredSkillNames()
+  const catalog = [
+    '<system-reminder>',
+    'A skill is a reusable set of task-specific instructions. The following skills are available in this session:',
+    '',
+    '<available_skills>',
+    ...names.map((name) => `- \`${name}\`: fabricated description for ${name}`),
+    '</available_skills>',
+    '</system-reminder>',
+  ].join('\n')
+  const gitMaster = vendoredSkillEntries().get('git-master')
+  const body = gitMaster === undefined ? 'fabricated body' : gitMaster.document.content
+  const loadResultText = [
+    '<skill_content name="git-master" provider="runtime">',
+    body,
+    '</skill_content>',
+  ].join('\n')
+  return {
+    log: {
+      header: { id: 'fabricated-skills-session' },
+      events: [
+        { seq: 1, type: 'turn/start', data: { turn: 1 } },
+        { seq: 2, type: 'step/start', data: { turn: 1, step: 1 } },
+        { seq: 3, type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'tool-call', id: 'mock-llm-tool-1-0', name: 'skill', arguments: JSON.stringify({ name: 'git-master' }) }] } } },
+        { seq: 4, type: 'tool/call', data: { turn: 1, step: 1, callId: 'mock-llm-tool-1-0', name: 'skill', arguments: JSON.stringify({ name: 'git-master' }) } },
+        fabricatedToolResultEvent(5, 'mock-llm-tool-1-0', loadResultText),
+        { seq: 6, type: 'step/end', data: { turn: 1, step: 1 } },
+        { seq: 7, type: 'step/start', data: { turn: 1, step: 2 } },
+        { seq: 8, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'tool-call', id: 'mock-llm-tool-2-0', name: 'skill', arguments: JSON.stringify({ name: SKILL_UNKNOWN_NAME }) }] } } },
+        { seq: 9, type: 'tool/call', data: { turn: 1, step: 2, callId: 'mock-llm-tool-2-0', name: 'skill', arguments: JSON.stringify({ name: SKILL_UNKNOWN_NAME }) } },
+        {
+          seq: 10,
+          type: 'tool/result',
+          data: {
+            turn: 1,
+            step: 2,
+            message: {
+              source: { kind: 'tool', callId: 'mock-llm-tool-2-0' },
+              content: [{
+                type: 'tool-result',
+                toolCallId: 'mock-llm-tool-2-0',
+                content: [{ type: 'text', text: `Error: skill "${SKILL_UNKNOWN_NAME}" is unknown or no longer available` }],
+                isError: true,
+              }],
+            },
+          },
+        },
+        { seq: 11, type: 'step/end', data: { turn: 1, step: 2 } },
+        { seq: 12, type: 'step/start', data: { turn: 1, step: 3 } },
+        { seq: 13, type: 'assistant/message', data: { turn: 1, step: 3, message: { content: [{ type: 'text', text: SKILL_CATALOG_SUMMARY }] } } },
+        { seq: 14, type: 'step/end', data: { turn: 1, step: 3 } },
+        { seq: 15, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      ],
+    },
+    // The wire bodies carry the catalog text with ESCAPED newlines — the shape
+    // the analyzer's `\\n` normalisation exists for.
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'user', content: catalog }] }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'user', content: 'step 2' }] }, receivedAt: 20 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'user', content: 'step 3' }] }, receivedAt: 30 },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: `${FABRICATED_BOOT_LOG}\n${omoCommandsMarkers.formatSkillsSummaryLine({ registered: omoCommandsSkills.EXPECTED_VENDOR_SKILL_COUNT, total: omoCommandsSkills.EXPECTED_VENDOR_SKILL_COUNT, failed: 0 })}\n`,
+  }
+}
+
 // ── fabricated P3-T16 批 C inputs (must earn their PASS) ─────────────────────
 // One GOOD fixture per scenario, mirroring the real runtime layout the scenario
 // produces, plus the named defect mutations the self-test applies. The disk
@@ -9522,6 +9699,238 @@ function fabricatedPrometheusMdOnlyInput(routes) {
     plansLandedOnDisk: true,
     draftsLandedOnDisk: true,
     conductorLandedOnDisk: true,
+  }
+}
+
+// ── P4-T5 skills-catalog-visible scenario (skill 投递机制) ─────────────────────
+//
+// WHAT THIS SCENARIO PROVES, and nothing more. P4-T5's mechanism is a DELIVERY
+// claim: the 19 vendored skills must become visible to a real agent through
+// dsh's own native skill surface. Four links, each observable only from outside
+// the process:
+//
+//   1. CATALOG — the model-facing `<available_skills>` block that
+//      `@deepseek-ai/dsh-tool-skill` injects on `agent/pre-step` must carry all
+//      19 vendored skills as BARE kebab-case names. The negative half matters as
+//      much: no `shared/`-prefixed form, and no `start-work` (upstream's pre-v5
+//      name for the row this repo calls `ulw-execute`).
+//   2. LOAD — one `skill` tool call for `git-master` must return the body through
+//      `ctx.skills.get`, and the returned text must be the vendored body
+//      (compared against the file the plugin read), not a placeholder.
+//   3. 对照 — a valid-but-unvendored name must come back as "unknown or no longer
+//      available", so link 2 cannot be passing because the tool answers for any
+//      name at all.
+//   4. PATH — the registered `path` must make the skill's own RELATIVE reference
+//      resolvable on disk: `ultimate-browsing`'s body names
+//      `references/insane-search/README.md`, and that file must be readable at
+//      `dirname(path) + "/references/insane-search/README.md"`.
+//
+// HONEST SCOPE. `path` is not echoed by the `skill` tool (its output schema is
+// `{name, provider, resourceBase?, content}` — measured on 0.1.5-rc.1), so link 4
+// resolves the reference against the SAME constant the plugin registers from
+// (imported below, never restated): the chain proven is "this directory is where
+// the delivered body came from and where its references live". A change to the
+// plugin's resolution anchor would break the boot-marker assertion in the same
+// scenario instead. The catalog assertion allows dsh's own bundled `dsh-badge`
+// alongside our runtime entries (measured ranks: runtime 250, bundled 600 — they
+// coexist rather than replacing one another).
+const SKILL_CATALOG_PROMPT =
+  'e2e skills-catalog-visible: load the git-master skill and report the first mode it offers'
+const SKILL_CATALOG_SUMMARY =
+  'MOCK-SKILL-CATALOG-2a6f1b: the git-master skill was loaded and its Mode Gate starts with COMMIT'
+// The 对照 name: valid kebab-case (so it clears dsh's own `isSkillName` guard and
+// reaches the catalog lookup) but not vendored — a malformed name would be
+// rejected by the name grammar instead, proving nothing about the catalog.
+const SKILL_UNKNOWN_NAME = 'not-a-vendored-skill'
+// A sentinel from git-master's BODY (not its frontmatter), so link 2 cannot be
+// satisfied by a description-only match.
+const SKILL_GIT_MASTER_BODY_SENTINEL = '## Mode Gate'
+// The relative reference ultimate-browsing's body points at (its SKILL.md:35) and
+// a sentinel inside that file.
+const SKILL_REFERENCE_RELATIVE = 'references/insane-search/README.md'
+const SKILL_REFERENCE_SENTINEL = 'R1'
+
+/**
+ * The plugin's own modules, imported (never restated) so this scenario's
+ * expectations move with the source. Node 24 type-strips the .ts directly; the
+ * `.ts` specifiers are load-bearing for the same reason they are inside the
+ * plugin (no bundler rewrites them — P-8.6).
+ */
+const omoCommandsSkills = await import('../../patches/omo-dsh/omo-commands/src/skills.ts')
+const omoCommandsMarkers = await import('../../patches/omo-dsh/omo-commands/src/boot-markers.ts')
+
+/** The vendored skill directory names, from the plugin's own discovery. */
+function vendoredSkillNames() {
+  return omoCommandsSkills.listVendorSkillDirectories(omoCommandsSkills.VENDOR_SKILLS_DIR)
+}
+
+/**
+ * The documents the plugin hands the registry, keyed by skill name — read
+ * through the plugin's own reader, so "the tool returned what the plugin
+ * registered" compares the two ends of one delivery path.
+ */
+function vendoredSkillEntries() {
+  return new Map(
+    omoCommandsSkills.scanVendorSkills(omoCommandsSkills.VENDOR_SKILLS_DIR).entries
+      .map((entry) => [entry.document.name, entry]),
+  )
+}
+
+/** skills-catalog-visible script: one load, one 对照, one wrap-up. */
+function skillsCatalogVisibleScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [{ name: 'skill', arguments: { name: 'git-master' } }],
+      },
+      {
+        type: 'tool_calls',
+        calls: [{ name: 'skill', arguments: { name: SKILL_UNKNOWN_NAME } }],
+      },
+      { type: 'text', text: SKILL_CATALOG_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * The skill names inside the model-facing `<available_skills>` catalog block,
+ * read off the WIRE body the mock recorded.
+ *
+ * The `\\n` normalisation is load-bearing, not cosmetic: `JSON.stringify` escapes
+ * every newline in the recorded body, so a naive `split('\n')` sees ONE line of
+ * literal `\n` sequences and every line-anchored match silently fails. The first
+ * run of this scenario failed exactly that way — the catalog was in the request
+ * all along, and the assertion reported an empty catalog.
+ */
+function catalogSkillNames(requests) {
+  const names = new Set()
+  for (const request of requests) {
+    const body = JSON.stringify(request.body ?? '')
+    // EVERY block, not just the first: dsh republishes the catalog
+    // (`renderCatalogUpdate`) whenever its digest changes, so a later request can
+    // carry a second `<available_skills>` block — and a regression introduced in
+    // that republish must still be caught.
+    for (const block of body.matchAll(/<available_skills>([\s\S]*?)<\/available_skills>/g)) {
+      for (const line of block[1].replace(/\\n/g, '\n').split('\n')) {
+        // The captured name is DELIBERATELY broad (anything between the
+        // backticks). A kebab-case-only pattern here would silently SKIP a
+        // malformed entry such as `shared/git-master` — which is precisely the
+        // defect the prefix check exists to catch, so the pattern would make the
+        // check vacuous. The self-test's defect case pins that.
+        const match = line.match(/^-\s+`([^`]+)`:/)
+        if (match !== null) names.add(match[1])
+      }
+    }
+  }
+  return [...names].sort()
+}
+
+export function analyzeSkillsCatalogVisible(
+  { log, requests, providersJson, bootLog },
+  routes,
+) {
+  const events = log?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const calls = events.filter((event) => event.type === 'tool/call')
+  const results = toolResultParts(events)
+  const findCall = (name, expectedArguments) => calls.find((event) => {
+    if (event.data?.name !== name) return false
+    const args = toolCallArguments(event)
+    if (args === undefined) return false
+    return Object.entries(expectedArguments).every(([key, value]) => args[key] === value)
+  })
+  const resultFor = (call) => (call === undefined
+    ? undefined
+    : results.find((part) => part.callId === call.data?.callId))
+  const loadResult = resultFor(findCall('skill', { name: 'git-master' }))
+  const unknownResult = resultFor(findCall('skill', { name: SKILL_UNKNOWN_NAME }))
+
+  const vendored = vendoredSkillNames()
+  const catalog = catalogSkillNames(sisyphusRequests)
+  const entries = vendoredSkillEntries()
+  const gitMaster = entries.get('git-master')
+  const ultimateBrowsing = entries.get('ultimate-browsing')
+  // The reference ultimate-browsing's BODY names, resolved against the
+  // directory the plugin registers as `path` (the SKILL.md's own directory).
+  const referencePath = ultimateBrowsing === undefined
+    ? undefined
+    : join(dirname(ultimateBrowsing.path), SKILL_REFERENCE_RELATIVE)
+  const skillsMarker = omoCommandsMarkers.formatSkillsSummaryLine({
+    registered: omoCommandsSkills.EXPECTED_VENDOR_SKILL_COUNT,
+    total: omoCommandsSkills.EXPECTED_VENDOR_SKILL_COUNT,
+    failed: 0,
+  })
+  // dsh's own bundled skill may share the catalog; ours do not displace it.
+  const allowedNames = new Set([...vendored, 'dsh-badge'])
+  const catalogExtras = catalog.filter((name) => !allowedNames.has(name))
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    skillsMarkerPresent: (bootLog ?? '').includes(skillsMarker),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+    // 1. catalog: every vendored skill is addressable by its BARE name.
+    catalogCoversEveryVendoredSkill:
+      vendored.length === omoCommandsSkills.EXPECTED_VENDOR_SKILL_COUNT
+      && vendored.every((name) => catalog.includes(name)),
+    // 1b. every catalog name is a bare kebab-case dsh can actually address (a
+    // `shared/`-prefixed entry would reach the model and then be rejected by
+    // `isSkillName` at the tool boundary), and the v5 rename is intact.
+    catalogHasNoPrefixedForm:
+      catalog.every((name) => omoCommandsSkills.SKILL_NAME_PATTERN.test(name))
+      && !catalog.includes('start-work')
+      && catalog.includes('ulw-execute'),
+    // 2. load: the tool returned the vendored body through ctx.skills.get.
+    skillToolReturnedBody:
+      loadResult !== undefined
+      && loadResult.isError !== true
+      && loadResult.text.includes(SKILL_GIT_MASTER_BODY_SENTINEL),
+    // FULL body, not a prefix: `renderSkillContent` embeds the registered
+    // content verbatim, so an exact substring test is both possible and strictly
+    // stronger — a prefix check would still pass if the tool returned the body
+    // with a different TAIL (a truncated or summary-rewritten one).
+    skillToolBodyMatchesVendoredFile:
+      loadResult !== undefined
+      && gitMaster !== undefined
+      && loadResult.text.includes(gitMaster.document.content),
+    // 3. 对照: an unvendored name is refused, so link 2 is not a rubber stamp.
+    unknownSkillNameRefused:
+      unknownResult !== undefined
+      && unknownResult.isError === true
+      && unknownResult.text.includes('is unknown or no longer available'),
+    // 4. path: the skill's own relative reference resolves on disk.
+    referencedFileReadableViaPath:
+      referencePath !== undefined
+      && existsSync(referencePath)
+      && readFileSync(referencePath, 'utf8').includes(SKILL_REFERENCE_SENTINEL),
+    // Closure: both tool steps and the wrap-up reached the mock; the turn ended.
+    mockSawBothSkillSteps: sisyphusRequests.length === 3,
+    assistantSummaryRecorded: events.some(
+      (event) => event.type === 'assistant/message' && eventText(event).includes(SKILL_CATALOG_SUMMARY),
+    ),
+    turnCompleted: events.some(
+      (event) =>
+        event.type === 'turn/end'
+        && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+    ),
+  }
+  const failed = Object.entries(checks)
+    .filter(([, value]) => value !== true)
+    .map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    detail: {
+      vendoredSkillCount: vendored.length,
+      catalogSkillNames: catalog,
+      catalogExtras,
+      skillsMarker,
+      referencePath,
+    },
   }
 }
 
@@ -9911,6 +10320,20 @@ const SCENARIOS = [
     script: atlasNestedDelegationScript,
     analyze: analyzeAtlasNestedDelegation,
   },
+  {
+    // P4-T5: the skill DELIVERY mechanism end to end. The 19 vendored skills
+    // must be visible to a real agent by bare name in the model-facing catalog,
+    // loadable through the native `skill` tool, refused when unvendored, and
+    // their relative references resolvable from the registered path. The
+    // scenario's own expectations are DERIVED from the plugin's modules (see the
+    // section header), so a roster change moves the assertions instead of
+    // silently passing them.
+    name: 'skills-catalog-visible',
+    prompt: SKILL_CATALOG_PROMPT,
+    roles: ['sisyphus'],
+    script: skillsCatalogVisibleScript,
+    analyze: analyzeSkillsCatalogVisible,
+  },
 ]
 
 /**
@@ -10126,7 +10549,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
     }
-    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
+    console.log('SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)')
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

@@ -43,6 +43,10 @@
 #                 non-vacuous from T6 on without a probe edit. Both FAILED forms
 #                 (`command … FAILED`, `manifest validation FAILED`) are
 #                 asserted ABSENT.
+#   P4-T5 skills — the skill DELIVERY mechanism's summary marker
+#                 `[omo-commands] skills: 19/19 registered (runtime, vendor
+#                 path)`, derived by running the plugin's own scan over the live
+#                 vendor tree, plus `skill <name> FAILED` asserted ABSENT.
 #   T8 persona  — the `omo-sisyphus system prompt assembled` boot marker, and
 #                 the MATERIALIZED $DSH_HOME preset's agent.cordis.yml: the
 #                 sentinel is gone and the persona block scalar carries the
@@ -438,6 +442,49 @@ EXPECTED_COMMANDS_REGISTERED_COUNT="$(printf '%s\n' "$EXPECTED_COMMANDS_REGISTER
 [[ "$EXPECTED_COMMANDS_PORTED" == "$EXPECTED_COMMANDS_REGISTERED_COUNT" ]] \
   || fail "omo-commands derivation is inconsistent: summary says ported=$EXPECTED_COMMANDS_PORTED but $EXPECTED_COMMANDS_REGISTERED_COUNT registered lines were derived"
 echo "concerto-probe: P4-T3 commands marker: $EXPECTED_COMMANDS_SUMMARY"
+
+# P4-T5: the skill-delivery summary, derived from the plugin's own skills.ts +
+# boot-markers.ts by RUNNING the same scan apply() runs (the count is the live
+# vendor tree, not a restatement). Two facts are cross-checked, because the
+# summary line alone cannot carry them: the number of SKILL DIRECTORIES the
+# reader finds, and the number of documents it can actually register. A file the
+# hand-rolled frontmatter reader rejects would show up as a smaller registered
+# count than directory count — i.e. a partially delivered catalog, which the
+# e2e would then report as a missing skill.
+EXPECTED_SKILLS_MARKERS="$(node --input-type=module -e "
+  Promise.all([
+    import('./patches/omo-dsh/omo-commands/src/skills.ts'),
+    import('./patches/omo-dsh/omo-commands/src/boot-markers.ts'),
+  ]).then(([skills, markers]) => {
+    const scan = skills.scanVendorSkills(skills.VENDOR_SKILLS_DIR)
+    const total = scan.entries.length + scan.failures.length
+    if (scan.failures.length > 0) {
+      throw new Error('vendored skill file(s) the plugin reader rejects: '
+        + scan.failures.map((failure) => failure.directoryName).join(', '))
+    }
+    // line 1: the summary the boot must log; line 2: the counts to cross-check.
+    console.log(markers.formatSkillsSummaryLine({ registered: scan.entries.length, total, failed: scan.failures.length }))
+    console.log('dirs=' + skills.listVendorSkillDirectories(skills.VENDOR_SKILLS_DIR).length + ' parsed=' + scan.entries.length)
+  })
+")" 2>&1 || fail "omo-commands skills module resolution failed (node stderr is merged in so the real reason shows): $EXPECTED_SKILLS_MARKERS"
+EXPECTED_SKILLS_SUMMARY="$(printf '%s\n' "$EXPECTED_SKILLS_MARKERS" | head -n 1)"
+EXPECTED_SKILLS_COUNTS="$(printf '%s\n' "$EXPECTED_SKILLS_MARKERS" | tail -n 1)"
+[[ -n "$EXPECTED_SKILLS_SUMMARY" ]] \
+  || fail "could not derive the omo-commands skills summary marker from skills.ts + boot-markers.ts"
+# `2>&1` (NIT 11) makes the failure message carry node's real stderr, at the cost
+# of letting a stderr line into the captured value — so the marker shape is
+# asserted, not merely its presence. A polluted first line fails HERE, loudly,
+# with the pollution visible, instead of silently derailing the grep below.
+[[ "$EXPECTED_SKILLS_SUMMARY" == \[omo-commands\]*" registered (runtime, vendor path)"* ]] \
+  || fail "the derived omo-commands skills marker is not the marker shape (stderr pollution?): $EXPECTED_SKILLS_SUMMARY"
+# Every discovered skill must be registrable: a file the hand-rolled reader
+# rejects would make the delivered catalog SHORTER than the tree, which the e2e
+# would report only as a missing skill name. Caught here instead, with counts.
+EXPECTED_SKILLS_DIRS="$(printf '%s' "$EXPECTED_SKILLS_COUNTS" | sed -n 's/^dirs=\([0-9]\+\).*/\1/p')"
+EXPECTED_SKILLS_PARSED="$(printf '%s' "$EXPECTED_SKILLS_COUNTS" | sed -n 's/.*parsed=\([0-9]\+\)$/\1/p')"
+[[ -n "$EXPECTED_SKILLS_DIRS" && "$EXPECTED_SKILLS_DIRS" == "$EXPECTED_SKILLS_PARSED" ]] \
+  || fail "omo-commands skills derivation is inconsistent: $EXPECTED_SKILLS_DIRS skill directories but $EXPECTED_SKILLS_PARSED parsed documents"
+echo "concerto-probe: P4-T5 skills marker: $EXPECTED_SKILLS_SUMMARY"
 if [[ "$EXPECTED_COMMANDS_REGISTERED_COUNT" != "0" ]]; then
   echo "concerto-probe: P4-T3 commands registered markers ($EXPECTED_COMMANDS_REGISTERED_COUNT):"
   printf '%s\n' "$EXPECTED_COMMANDS_REGISTERED_LINES" | sed 's/^/concerto-probe:   /'
@@ -856,6 +903,14 @@ boot_once() {
   if grep -q '\[omo-commands\] command .* FAILED' "$boot_log"; then
     fail "[$label] an omo-commands registration FAILED at boot — see FAILED line above"
   fi
+  # P4-T5: the skill delivery sweep ran and reported its honest ratio. The two
+  # FAILED forms (a per-skill read/parse/register failure, and a mismatch between
+  # the derived ratio and the derived directory count) are asserted ABSENT.
+  grep -qF "$EXPECTED_SKILLS_SUMMARY" "$boot_log" \
+    || fail "[$label] omo-commands skills marker missing or drifted (want: $EXPECTED_SKILLS_SUMMARY)"
+  if grep -q '\[omo-commands\] skill .* FAILED' "$boot_log"; then
+    fail "[$label] an omo-commands skill FAILED at boot — see FAILED line above"
+  fi
   if grep -q "\[omo-agents\] concerto .* FAILED" "$boot_log"; then
     fail "[$label] registration threw — see FAILED line above"
   fi
@@ -1145,5 +1200,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); omo-hooks mounted as the second insert row with the FULL 14-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, 14 lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines at P4-T3 = 0 since all six rows are pending) and NO command FAILED / manifest-validation-FAILED line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and the materialized-composition grep both derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row materialized toolName/deny/allow/maxDepth greps generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); omo-hooks mounted as the second insert row with the FULL 14-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, 14 lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines at P4-T3 = 0 since all six rows are pending) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO `skill … FAILED` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and the materialized-composition grep both derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row materialized toolName/deny/allow/maxDepth greps generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS"
 exit 0

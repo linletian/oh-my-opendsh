@@ -24,6 +24,9 @@ import {
   formatCommandRegisteredLine,
   formatLoadedSummaryLine,
   formatManifestValidationFailedLine,
+  formatSkillFailedLine,
+  formatSkillsScanFailedLine,
+  formatSkillsSummaryLine,
 } from '../../patches/omo-dsh/omo-commands/src/boot-markers.ts'
 
 /**
@@ -157,5 +160,63 @@ describe('P4-T3 per-command and failure lines', () => {
     expect(describeError(new RangeError('r'))).toBe('RangeError: r')
     expect(describeError(42)).toBe('42')
     expect(describeError({ code: 'X' })).toBe('[object Object]')
+  })
+})
+
+describe('P4-T5 the skill-delivery markers', () => {
+  it('renders the healthy sweep as ONE field-ized line with no failure clause', () => {
+    // Hand-transcribed: this is the line cold-start.sh and the probe grep for.
+    // The failure clause is ABSENT at zero failures on purpose — a boot log that
+    // always says ", 0 failed" is noise that trains readers to skip the field.
+    expect(formatSkillsSummaryLine({ registered: 19, total: 19, failed: 0 })).toBe(
+      '[omo-commands] skills: 19/19 registered (runtime, vendor path)',
+    )
+  })
+
+  it('appends the failure count ONLY when non-zero, and derives the ratio from the inputs', () => {
+    expect(formatSkillsSummaryLine({ registered: 18, total: 19, failed: 1 })).toBe(
+      '[omo-commands] skills: 18/19 registered (runtime, vendor path), 1 failed',
+    )
+    expect(formatSkillsSummaryLine({ registered: 0, total: 2, failed: 2 })).toBe(
+      '[omo-commands] skills: 0/2 registered (runtime, vendor path), 2 failed',
+    )
+    // A partial sweep must read as partial; nothing here can round to "all good".
+    expect(formatSkillsSummaryLine({ registered: 1, total: 3, failed: 2 })).not.toContain('1/1')
+  })
+
+  it('keeps the `[omo-commands] skills:` prefix cold-start.sh greps by', () => {
+    expect(formatSkillsSummaryLine({ registered: 0, total: 0, failed: 0 }))
+      .toMatch(/^\[omo-commands\] skills: /)
+  })
+
+  it('names a failing skill by its DIRECTORY name, so an unparseable file is still nameable', () => {
+    // The frontmatter name is unknowable exactly when the file is broken, so
+    // the log line must not depend on having read it.
+    expect(formatSkillFailedLine('remove-ai-slops', new Error('missing YAML frontmatter'))).toBe(
+      '[omo-commands] skill remove-ai-slops FAILED: Error: missing YAML frontmatter',
+    )
+    expect(formatSkillFailedLine('x', 'plain string failure')).toBe(
+      '[omo-commands] skill x FAILED: plain string failure',
+    )
+  })
+
+  it('keeps the skill FAILED form distinct from the command FAILED form', () => {
+    // The probe asserts BOTH are absent from a healthy boot; a renamed form
+    // could hide behind the other.
+    expect(formatSkillFailedLine('git-master', new Error('x'))).not.toContain('[omo-commands] command ')
+    expect(formatCommandFailedLine('hyperplan', new Error('x'))).not.toContain('[omo-commands] skill ')
+  })
+
+  it('names the tree in the skills-scan FAILED form, which no per-skill form may collide with', () => {
+    // The tree-level failure belongs to no skill, so it must NOT look like one:
+    // the probe greps `[omo-commands] skill .* FAILED` as "no per-skill failure",
+    // and a tree failure matching that pattern would be counted as a broken
+    // vendored file instead of a missing tree.
+    expect(formatSkillsScanFailedLine('/v/vendor/skills', new Error('ENOENT: no such file or directory'))).toBe(
+      '[omo-commands] skills scan FAILED: Error: ENOENT: no such file or directory — 0 skills discovered under /v/vendor/skills',
+    )
+    expect(formatSkillsScanFailedLine('/v/vendor/skills', 'plain string failure')).not.toMatch(
+      /\[omo-commands\] skill .* FAILED/,
+    )
   })
 })

@@ -6,9 +6,10 @@
 # are never touched), installs ALL THREE packages into a fresh web profile (the
 # root cordis.yml inserts one row per package — see its header), boots
 # `dsh --profile web --patch ./cordis.yml`, waits for the readiness line,
-# terminates with SIGTERM, and greps the captured log for the three load markers
-# (`[omo-agents] loaded` / `[omo-hooks] loaded` / `[omo-commands] loaded`) and for
-# plugin load errors. Exits 0 only if every check is clean.
+# terminates with SIGTERM, and greps the captured log for the load markers
+# (`[omo-agents] loaded` / `[omo-hooks] loaded` / `[omo-commands] loaded` /
+# `[omo-commands] skills:`) and for plugin load errors. Exits 0 only if every
+# check is clean.
 #
 # Learned flags (P-8): `--profile <name>` is required; `--patch` is a ROOT
 # flag and must precede app flags (e.g. `--port`) — once the app's own flags
@@ -159,6 +160,12 @@ grep -q "\[omo-hooks\] loaded" "$BOOT_LOG" \
   || fail "omo-hooks load marker missing from boot log (hooks plugin never mounted?)"
 grep -q "\[omo-commands\] loaded" "$BOOT_LOG" \
   || fail "omo-commands load marker missing from boot log (command plugin never mounted?)"
+# P4-T5: the skill delivery mechanism's own summary line. Prefix-only grep again
+# — the counts move as vendored skills change, and
+# scripts/concerto-mode-probe.sh is where the full line is pinned (derived from
+# the plugin's own modules).
+grep -q "\[omo-commands\] skills:" "$BOOT_LOG" \
+  || fail "omo-commands skills marker missing from boot log (skill sweep never ran?)"
 
 # Negative signal: no plugin load errors anywhere in the log.
 # NB: the generic words error/fatal/failed are scoped to plugin context
