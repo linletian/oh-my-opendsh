@@ -4,12 +4,14 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：📋 **0/18**（计划期草案；P4-T1 调研后按仲裁回填修正）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **1/18**（P4-T1 ✅ 调研闭环，覆盖基线转实测）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
 > - **2026-09-30 计划期评审修复**（评审：`phase4-review-temp.md`，3 缺口 + 4 一致性问题全部核验成立）——① T1：测试文件计数更正（keyword-detector 6→**7**；A 组对账纳入 feature 根 `commands.test.ts`/`init-deep-migration.test.ts`）；B 组① 改 followup 时序钉测（同上下文先例 dsh-command-goal:98-105 已实证，throw settle 子项闭环）；② T7：对照组更正（未知命令 = 零事件零报错、落回普通 prompt——DSH admission miss 语义）；③ T8 新增 **manifest 同步网 + 条目 fork + c14 两文档并集演进**（首个 manifest 触碰任务同 commit 落地，R-11）；④ T12 同步网纪律与 c14 演进兜底；⑤ T16 增 c14 复验三变异；⑥ WP-4/WP-6 标题编号 H-41/H-40 → **H-34/H-33**（延续 Phase 3 H-01…H-32 序列，映射 S-37/S-06）；⑦ T6/T15 steer → followup 措辞。
 > - **2026-09-30 复评修复（第 2 轮）**：T8/T12 的同步网引用 R-10 → **R-11**（与 plan §6 风险行同步改号——Phase 3 的 marker 同步 R-10 在 WP-5/T10 处保持不变）。
+> - **实施期仲裁记录（第 1 号）**：PRE-2 条件翻转（npm `latest=5.1.5`，v5 正式版已发布）——经用户批准裁决**保持 v4.19.4 vendor 基线**（ROADMAP §2 规则 1 上位 + Phase 1–3 同源锚点 + R-10 逐字对齐依赖；v5 改进走 D14 规则 4 定向搬运）。另：实施期授权记录——编码 sub-agent 模型经用户批准使用 `opencode-go-free/space-bunny-free`（原指定 `studio2207/Qwen3.8-Flash-Next-oQ4e-mtp` 因会话白名单固化不可路由）。
+> - **P4-T1 实测回填**：① 覆盖基线 §5 三组闭环转 ✅（证据 `.omo/evidence/p4t1/`）；② keyword-detector 24→**25 文件**（三处同步：commands.md §1.1 C-08/§1.2 H-33、plan §3）；③ Q-1 闭环 followup 形态定案（§4.2 改写，降级 b 封存）；④ Q-3 手势桥实测 → C-03 零代码落地（T15 任务书改写：无命令事件对、断言 `<skill_content>` 注入）；⑤ Q-4 裁定候选 b′ 嵌入注册 + vendor path（T5 任务书改写，否决物化）；⑥ Q-5 定案（goal=pause / ralph 无 stop API 记差异 / jobs.kill 级联 / 延迟 ctx.get）；⑦ Q-6 收窄清单扩充（六级过滤 + 双幂等 + `.hpp` 负向后查，T12 任务书改写）；⑧ marker 定位修正（`<session-context>` 在 commands.ts:67-70 wrapper，plan §4.7）；⑨ 测试种子实测 111 its。
 >
 > **编号**：`P4-T<n>`（Phase 4 - Task n）。工作包归属见计划书 §7。
 
@@ -17,17 +19,17 @@
 
 | # | 条件 | 判定 | 复核结果 |
 |---|---|---|---|
-| PRE-1 | 上游 OMO v4.19.4 可取到源码 | `git -C <omo> rev-parse v4.19.4^{commit}` 返回 `b072d279110bdda2c6ac2525d0d24dc54d16148a` | ⬜ 待复核 |
-| PRE-2 | v5.0.0 正式版**未**发布 → tag 选择闭合为 v4.19.4（D14 规则 3） | `npm view oh-my-openagent dist-tags --json` 的 `latest` 仍为 `4.19.4` | ⬜ 待复核 |
-| PRE-3 | 基线绿：`scripts/ci-local.sh` 8 门全绿 | 退出 0；记录基线（门 2 测试数、门 3 场景数、门 5 `checked`、门 6 断言数、门 8 proofs 数） | ⬜ 待复核 |
-| PRE-4 | installed dsh = pin 的 0.1.5-rc.1 | `dsh --version`；doctor-lite 基线 PASS | ⬜ 待复核 |
-| PRE-5 | 本地 OMO 检出只读可用 | `git -C ~/GithubRepo/oh-my-openagent ls-tree v4.19.4 packages/omo-opencode/src/features/builtin-commands/` 与 `packages/shared-skills/skills/` 非空；全程只用 `git show/ls-tree`，工作树不动 | ⬜ 待复核 |
+| PRE-1 | 上游 OMO v4.19.4 可取到源码 | `git -C <omo> rev-parse v4.19.4^{commit}` 返回 `b072d279110bdda2c6ac2525d0d24dc54d16148a` | ✅ 实测返回 `b072d279110bdda2c6ac2525d0d24dc54d16148a` |
+| PRE-2 | v5.0.0 正式版**未**发布 → tag 选择闭合为 v4.19.4（D14 规则 3） | `npm view oh-my-openagent dist-tags --json` 的 `latest` 仍为 `4.19.4` | ⚠️ 条件翻转后仲裁维持：实测 `latest=5.1.5`（v5 正式版已发布，PRE 字面失败）——**仲裁裁决：保持 v4.19.4**（用户批准）。理由：ROADMAP §2 规则 1（冻结基线）为上位规则；Phase 1 已闭合 tag 选择且 Phase 1–3 署名锚点同源；规则 3「低赌注」论证仅覆盖核心包，不适用于 286+ 文件内容面；R-10 对接依赖 H-32 与 v4.19.4 逐字对齐；v5 具体改进走 D14 规则 4 定向搬运 |
+| PRE-3 | 基线绿：`scripts/ci-local.sh` 8 门全绿 | 退出 0；记录基线（门 2 测试数、门 3 场景数、门 5 `checked`、门 6 断言数、门 8 proofs 数） | ✅ 8/8 PASS（日志 `.omo/evidence/pre3-baseline.log`）：门 2 = **976 测试（42 文件）**、门 3 = **22 场景**、门 5 = **checked=54**、门 6 = **23 断言（c01–c14）**、门 8 = **6 proofs** |
+| PRE-4 | installed dsh = pin 的 0.1.5-rc.1 | `dsh --version`；doctor-lite 基线 PASS | ✅ `dsh --version` = 0.1.5-rc.1；doctor-lite 随门 4 绿（PRE-3 同跑） |
+| PRE-5 | 本地 OMO 检出只读可用 | `git -C ~/GithubRepo/oh-my-openagent ls-tree v4.19.4 packages/omo-opencode/src/features/builtin-commands/` 与 `packages/shared-skills/skills/` 非空；全程只用 `git show/ls-tree`，工作树不动 | ✅ 两树非空（builtin-commands 20 文件 / shared-skills 17 目录）；P4-T1 全程 `git show/ls-tree` 只读 |
 
 ---
 
 ## WP-0 调研核对（计划书 §3/§4.4/§4.5/§4.6，覆盖基线 §5）
 
-### [ ] P4-T1 — 命令/skill 全树对账 + DSH 机制逐件复核
+### [x] P4-T1 — 命令/skill 全树对账 + DSH 机制逐件复核
 
 - **产出**：回填后的 [命令与 skill 清单与覆盖基线](./phase4-commands.md)（§5 待核清单 A/B/C 三组全部转 ✅ 或更正）；计划书 §4 的机制草案（命令驱动形态、skill 投递选型、停止面映射）按实测更正（DoD-d）；证据进 `.omo/evidence/`。
 - **做法**：
@@ -36,8 +38,8 @@
   3. **逐模块语义**（C 组）：7 命令模板逐字复核（占位符、agent 绑定、team addendum 边界）；keyword-detector 收窄清单（模型变体文案、disabled_keywords 默认值、幂等语义）；stop-continuation-guard 的 backgroundManager 依赖等价面；每模板引用的 OMO 载体（`session_read`/boulder/notepad/`mktemp`）的 DSH 等价面判定；上游测试文件（keyword-detector **7 个**、templates 2 个、feature 根 2 个）用例数登记为单测种子。
   4. **降级判定**：若 Q-1 钉测发现 `followup` 在命令路径有未预见的状态/时序限制，按计划书 §4.2 降级（b）（steer/inbox 写入）逐命令定形态并**显式记入计划书与踩坑**；`/refactor` 的 deferred 裁定按模板实际引用面终态化。
 - **判定**：✅ 覆盖基线 §5 A/B/C 三组全部闭环；移植组/跳过组从草案转实测（估算按此修正，计划书 §7 回填）；Q-1…Q-7 各有逐字引用的结论。
-- **证据**：（待填）
-- **依赖**：PRE-1…PRE-5。**量级**：1 天。
+- **证据**：`.omo/evidence/p4t1/A-tree-reconciliation.md` / `B-dsh-mechanisms.md` / `C-module-semantics.md`（三组调研员全程只读 `git show/ls-tree` 与 installed dsh lib 逐字引用）。实测更正：keyword-detector **25 文件**（计划期 24 少计 1）；Q-1 闭环 followup 形态定案无降级；Q-3 桥接 = 手势注入（dsh-tool-skill pre-step SKILL_GESTURE）→ C-03 零代码；Q-4 裁定候选 b′（嵌入注册 + vendor path，否决物化）；测试种子 111 its。覆盖基线 §5/§6、计划书 §4.2/§4.3/§4.5/§4.6/§4.7/§6 已按实测回填（DoD-d）。
+- **依赖**：PRE-1…PRE-5。**量级**：1 天（实耗：3 并行调研约 0.5 天）。
 
 ---
 
@@ -73,8 +75,8 @@
 
 ### [ ] P4-T5 — skill 投递机制落地 + catalog e2e
 
-- **产出**：按 P4-T1 Q-4 裁定落地投递（候选 a = apply 时物化到 skill 根 + filesystem provider 原生发现；候选 b = `ctx.skills.register` 嵌入注册）；`tests/e2e/` 新增 `skills-catalog-visible` 场景。
-- **做法**：物化路径沿用 concerto-preset.ts 纪律（从模块 `import.meta.url` 解析 vendor 目录、幂等同步、`$DSH_HOME` 解析五行重实现先例）；若选 filesystem 路径，核实项目根（`.dsh/skills`/`.agents/skills`）与用户根的 cwd 语义对 e2e 沙箱的影响；e2e 场景 = catalog 断言（17 裸名集合恰可见、无 `shared/` 前缀）+ mock 发 `skill` 工具调用加载一个 skill → 断言正文经 `ctx.skills.get` 原生面返回 + 对照（未 vendor 名返回未找到）。
+- **产出**：按 P4-T1 Q-4 裁定落地投递——**已定案 = 候选 b′**：apply 时从 vendor 目录读各 SKILL.md 正文，`ctx.skills.register({name, description, whenToUse?, content, path: <vendor SKILL.md 绝对路径>})`（path 使引用文件磁盘可读；19 个 skill 全部注册，归当前 Fiber effect）；`tests/e2e/` 新增 `skills-catalog-visible` 场景。
+- **做法**：从模块 `import.meta.url` 解析 vendor 目录、apply 时一次读盘注册（命令路径不读盘纪律保留——skill 正文经 `ctx.skills.get` 原生面加载）；`$DSH_HOME` 解析不需要（无物化）；e2e 场景 = catalog 断言（19 裸名集合恰可见、无 `shared/` 前缀、start-work 以 `ulw-execute` 名出现）+ mock 发 `skill` 工具调用加载一个 skill → 断言正文经 `ctx.skills.get` 原生面返回 + 对照（未 vendor 名返回未找到）+ 引用文件经 path 可读性抽查（ultimate-browsing 一个引用文件）。
 - **判定**：✅ 门 3 绿；**对 `dsh-skill*` 包零 patch**（静态断言进 T16）；场景 verdict JSON 含 catalog 明细断言。
 - **证据**：（待填）
 - **依赖**：P4-T4。**量级**：0.5 天。
@@ -147,7 +149,7 @@
 ### [ ] P4-T12 — 移植 keyword-detector（ultrawork/hyperplan；team deferred）
 
 - **产出**：`patches/omo-dsh/omo-hooks/src/hooks/keyword-detector.ts`（+ 必要子模块：检测逻辑 / 文案常量 / 配置）+ ultrawork 指令内容接线（vendor S5-01 正文为注入文本源）+ 单测；omo-hooks manifest 新增条目。
-- **做法**：检测逻辑语义移植（剥 code block/inline code/slash 前导——`detector.ts` 逐字对照；`\b(ultrawork|ulw)\b` / `\b(hpp|hyperplan)\b` / 组合模式与交集禁用规则——`constants.ts` 逐字对照）；注入形态 = 模式 A pre-step（`agent.inject()`，恒 `return next()`）；幂等（指令已在上下文不重复注入）；**收窄落地**：team 关键词跳过（枚举位预留）、模型变体文案收窄为单一名册感知文案（reviewer 引用 = plan-consultant/plan-reviewer，Phase 2 名册名）、notepad/`mktemp` 载体引用记差异；配置面 = 插件 Config（disabled_keywords 等价物，默认与上游对齐）；上游 7 个测试文件用例移植为单测种子。**⚠️ manifest 同步网（R-11）**：本任务必然新增 manifest 条目——同 commit 同步 `EXPECTED_HOOK_COUNT`、manifest.test.ts 三处、`EXPECTED_SUMMARY_LINE`（pre-step 计数 +1）；**若 T8 未落地 c14 两文档并集演进（T8 走了纯服务 fork），本任务承担该演进**（契约见 T8 任务书 ⚠️ 段）。
+- **做法**：检测逻辑语义移植（剥 code block/inline code/slash 前导——`detector.ts` 逐字对照；`\b(ultrawork|ulw)\b` / `\bhyperplan\b|(?<![\w.])hpp\b`（`.hpp` 负向后查，上游 issue #4215）/ 组合模式严格相邻双词序与交集禁用规则（基词任一禁则禁 combo，detector.ts:53-56）——`constants.ts` 逐字对照）；注入形态 = 模式 A pre-step（`agent.inject()`，恒 `return next()`）；**双幂等**（消息级 `!text.includes(keyword.message)` + session 级一次性 Set）；**六级输入过滤全套移植**（synthetic/internal、system directive、non-OMO agent、planner、background session、非主 session 只留 ultrawork/combo）；**收窄落地**：team 关键词跳过（枚举位预留）、模型变体文案（5+1 个 md）收窄为单一名册感知文案（reviewer 引用 = plan-consultant/plan-reviewer，Phase 2 名册名）、notepad/`mktemp` 载体引用记差异；配置面 = 插件 Config（disabled_keywords/enabled_expansions 等价物，上游两字段 optional 无默认 = 缺席全启用，DSH 默认对齐）；上游 7 个测试文件（89 its）用例移植为单测种子。**⚠️ manifest 同步网（R-11）**：本任务必然新增 manifest 条目——同 commit 同步 `EXPECTED_HOOK_COUNT`、manifest.test.ts 三处、`EXPECTED_SUMMARY_LINE`（pre-step 计数 +1）；**若 T8 未落地 c14 两文档并集演进（T8 走了纯服务 fork），本任务承担该演进**（契约见 T8 任务书 ⚠️ 段）。
 - **判定**：✅ 单测覆盖：命中/剥离/幂等/组合 banner/禁用配置/收窄注记；manifest ↔ 清单一致性不回归；vitest 绿。
 - **证据**：（待填）
 - **依赖**：P4-T3、P4-T4（S5-01 内容）。**量级**：1 天。
@@ -174,11 +176,11 @@
 
 ### [ ] P4-T15 — `/ulw-plan` 命令面 + e2e
 
-- **产出**：按 P4-T1 Q-3 裁定——桥接存在 = 配置/frontmatter 落地（零代码）；桥接缺席 = `src/commands/ulw-plan.ts` 显式 handler（加载 S4-15 正文 + followup 注入"加载并遵循此 skill"语义）；`tests/e2e/` 新增 `ulw-plan-loads-prometheus-skill` 场景；hyperplan 场景（`hyperplan-degraded-noted`）一并落地。
-- **做法**：e2e 断言 = 敲 `/ulw-plan <请求>` → 命令事件对 + ulw-plan skill 正文（或加载指令）注入下一请求 + 指挥按 prometheus 人格行事的剧本回应（访谈问题写回，Phase 2 适配语义）；hyperplan 场景断言降级指引真实出现；对照 = 两命令无参数变体行为。
-- **判定**：✅ 门 3 绿；Q-3 裁定结论与落地形态一致（DoD-d）。
+- **产出**：按 P4-T1 Q-3 裁定——**手势桥存在 = 零代码落地**（omo-commands **不得注册同名 `ulw-plan` 命令**，否则屏蔽手势）；唯一落地件 = 确认 S4-15 经 T5 注册进 catalog 且 user-invocable（默认 true 即可）+ 覆盖清单 C-03 行记形态；`tests/e2e/` 新增 `ulw-plan-loads-prometheus-skill` 场景；hyperplan 场景（`hyperplan-degraded-noted`）一并落地。
+- **做法**：e2e 断言 = 用户行敲 `/ulw-plan <请求>` → **无 `command/run`/`command/done` 事件**（手势非命令，对照断言具名）+ ulw-plan skill 正文以 `<skill_content>`（source `kind:"skill-invocation"`）注入下一请求 + 用户原文骑行 + 指挥按 prometheus 人格行事的剧本回应（访谈问题写回，Phase 2 适配语义）；hyperplan 场景断言降级指引真实出现（降级文案按 T14 重写形态锚定，非上游 `~/.omo/omo.jsonc` 字面）；对照 = 无参数变体行为。
+- **判定**：✅ 门 3 绿；Q-3 裁定结论与落地形态一致（DoD-d——手势桥零代码，无显式 handler）。
 - **证据**：（待填）
-- **依赖**：P4-T14、P4-T5。**量级**：4 小时。
+- **依赖**：P4-T14、P4-T5。**量级**：4 小时（手势桥免 handler 开发，实耗应低于估算）。
 
 ---
 

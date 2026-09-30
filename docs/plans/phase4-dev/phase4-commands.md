@@ -4,7 +4,7 @@
 >
 > **用法**：本文件是 **ROADMAP Phase 4 退出标准的载体**——v4.19.4 命令面（`features/builtin-commands/`）、shared-skills 内容（`packages/shared-skills/skills/`）、关键词模式与停止续行接盘项（`hooks/keyword-detector/`、`hooks/stop-continuation-guard/`）的权威清单，逐行记录"已移植 / 跳过（含理由）/ deferred / 排除"。
 >
-> **状态**：📋 **计划期草案**（2026-09-29 立项；2026-09-30 评审修复：接盘项编号定案 H-33/H-34〈映射 S-06/S-37，Phase 4 拥有的新 H 号段〉+ §1.2 增 c14 解析契约声明 + §6 统计口径更正〈命令 6 + 关键词模式 1〉+ 头部 §4→§5 引用更正）。清单行已经计划期 `git ls-tree` 粗核（命令 7 条目 / shared-skills 17 目录 286 文件 / senpi 指令 skill 2 条目 / keyword-detector 24 文件〈含 7 个测试文件〉 / stop-continuation-guard 3 文件），"语义摘要"与"处置"列为草案——**P4-T1 逐文件复核后转实测**，§5 待核清单全部闭环才算立项完成。
+> **状态**：✅ **P4-T1 实测已回填**（2026-09-30 立项；2026-09-30 评审修复：接盘项编号定案 H-33/H-34〈映射 S-06/S-37，Phase 4 拥有的新 H 号段〉+ §1.2 增 c14 解析契约声明 + §6 统计口径更正〈命令 6 + 关键词模式 1〉+ 头部 §4→§5 引用更正；**P4-T1 实测**：三组证据 `.omo/evidence/p4t1/{A,B,C}-*.md`——① keyword-detector 文件数 **24→25**（草案少计 1，测试 7 个正确）；② Q-3 桥接**存在但形态为手势注入**（dsh-tool-skill `agent/pre-step` SKILL_GESTURE，非命令注册桥）→ C-03 零代码落地；③ Q-4 裁定**候选 b**（`ctx.skills.register` 嵌入注册 + vendor 路径）；④ Q-2：invocation 仅 5 字段，`$SESSION_ID`=`invocation.agent.id`、`$TIMESTAMP`=`Date.now()` 派生；⑤ 7 命令/17 目录 286 文件/senpi 2×1/guard 3 文件/frontmatter 全含 name+description 全部证实）。
 >
 > **命名锚点**：`start-work` 一律按 v5 名 **`ulw-execute`** 读取（命令、skill 目录、模板、文档）；署名与 NOTICES 注明 v4.19.4 源路径。
 
@@ -16,12 +16,12 @@
 |---|---|---|---|---|---|
 | C-01 | `/goal` | `templates/goal.ts` + `commands.ts` goal 条目 | **跳过（DSH 原生）** | `dsh-goal` + `dsh-goal-round-driver` + `dsh-tool-goal` + `dsh-command-goal` 原生覆盖（ROADMAP 明示、可行性报告 §2.2）；原生面 = set/view/pause/resume/clear，OMO 模板的会话内目标语义等价 | ⏭️ 跳过成文（原生面引用待 P4-T1 逐字核对） |
 | C-02 | `/ulw-execute` | `templates/start-work.ts` + `commands.ts` start-work 条目（`agent: atlas` 绑定） | **移植** | 编排者激活命令：模板 marker（`<session-context>` + `You are starting an Atlas work session.`）对接 omo-hooks H-32 激活检测（R-10 闭环）；`$ARGUMENTS`/`$SESSION_ID`/`$TIMESTAMP` 渲染；flags `[plan-name] [--worktree <path>] [--make-pr] [--ship]`；boulder-state/ledger 引用段按 Phase 3 H-32 收窄口径记差异 | 📋 待移植（P4-T10/T11） |
-| C-03 | `/ulw-plan` | shared-skill `ulw-plan/`（6 文件，见 §2 S4-15）；**非内建命令**——OMO 经 user-invocable skill 面暴露 | **移植**（skill-as-command） | prometheus 访谈式规划人格的入口；DSH 形态 = user-invocable 桥接（若 pinned 版本存在，Q-3）或 omo-commands 显式 handler（加载 skill 正文 + followup 注入）；访谈对象 = 指挥（Phase 2 适配已就位） | 📋 待移植（P4-T15） |
+| C-03 | `/ulw-plan` | shared-skill `ulw-plan/`（6 文件，见 §2 S4-15）；**非内建命令**——OMO 经 user-invocable skill 面暴露 | **移植**（skill-as-command，**DSH 原生手势桥**） | prometheus 访谈式规划人格的入口；**Q-3 实测形态**：0.1.5-rc.1 无 user-invocable→命令注册桥，但 dsh-tool-skill 的 `agent/pre-step` 钩子以 SKILL_GESTURE 正则扫描 `/name` 手势、对 user-invocable skill 注入 `<skill_content>`（用户原文随行）——语义等价 OMO 的 skill-as-command，**零代码落地**（前提是 S4-15 经 T4/T5 进入 catalog 且 user-invocable）；e2e 断言注入而非命令事件对；访谈对象 = 指挥（Phase 2 适配已就位） | 📋 待移植（P4-T15） |
 | C-04 | `/hyperplan` | `templates/hyperplan.ts` + senpi skill `hyperplan/SKILL.md`（§3 S5-02） | **移植（降级形态）** | 对抗式多 agent 规划；模板要求 `team_create`（Phase 5 缺席）→ 落地 = 模板 + hyperplan skill 加载 + 上游自带降级路径（team 工具缺席指引文案）；完整评审环 deferred → Phase 5 | 📋 待移植（P4-T14） |
 | C-05 | `/stop-continuation` | `templates/stop-continuation.ts` + `hooks/stop-continuation-guard/`（H-34 接盘） | **移植** | 停止本会话全部续行机制：todo 续行（H-03 enforcer 查标记）、goal 轮驱动（pause 面，Q-5）、ralph（原生停止面，Q-5）、后台任务级联取消（ctx.jobs）；guard 服务经 cordis 服务跨插件共享 | 📋 待移植（P4-T8/T9） |
 | C-06 | `/handoff` | `templates/handoff.ts` | **移植** | 会话交接摘要：模板引用 `session_read`（OMO 工具）——DSH 等价面（session-query 等）P4-T1 核实，无等价面则收窄记差异；`$SESSION_ID`/`$TIMESTAMP` 渲染；`[goal]` 参数 | 📋 待移植（P4-T6/T7） |
 | C-07 | `/remove-ai-slops` | `templates/remove-ai-slops.ts` + shared-skill `remove-ai-slops/`（§2 S4-11） | **移植** | 清除 AI 生成代码异味 + 批判性自评审；模板 + skill 双载体；`REMOVE_AI_SLOPS_TEAM_MODE_ADDENDUM` 段不移植（Phase 5） | 📋 待移植（P4-T6/T7） |
-| C-08 | ultrawork 关键词模式 | `hooks/keyword-detector/`（24 文件，H-33 接盘）+ senpi skill `ultrawork/SKILL.md`（§3 S5-01） | **移植（收窄）** | prompt 命中 `\b(ultrawork|ulw)\b` / `\b(hpp|hyperplan)\b`（剥 code block/slash 前导）→ pre-step 注入对应指令（模式 A）；`hyperplan-ultrawork` 组合 banner；**收窄**：team 关键词 deferred → Phase 5；模型变体文案（gpt/glm/gemini/planner）按 DSH 名册收窄；notepad/`mktemp` 载体引用记差异 | 📋 待移植（P4-T12/T13） |
+| C-08 | ultrawork 关键词模式 | `hooks/keyword-detector/`（**25 文件**，P4-T1 实测，H-33 接盘）+ senpi skill `ultrawork/SKILL.md`（§3 S5-01） | **移植（收窄）** | prompt 命中 `\b(ultrawork|ulw)\b` / `\b(hpp|hyperplan)\b`（剥 code block/slash 前导）→ pre-step 注入对应指令（模式 A）；`hyperplan-ultrawork` 组合 banner；**收窄**：team 关键词 deferred → Phase 5；模型变体文案（gpt/glm/gemini/planner）按 DSH 名册收窄；notepad/`mktemp` 载体引用记差异 | 📋 待移植（P4-T12/T13） |
 
 ### 1.2 hook 接盘项（Phase 3 deferred → 本阶段消化为终态；omo-hooks 插件）
 
@@ -31,7 +31,7 @@
 
 | # | 模块（hooks/ 下路径） | 原编号 | 处置 | 语义摘要 | 状态 |
 |---|---|---|---|---|---|
-| H-33 | `keyword-detector/`（**24 文件**） | Phase 3 S-06 | **移植（收窄，见 C-08）** | 检测逻辑（detector.ts）+ 关键词注册表（constants.ts）+ ultrawork/hyperplan 文案 + 7 个测试文件（用例移植为单测种子）；移植形态 = omo-hooks 模式 A pre-step 注入 | 📋 待移植（P4-T12） |
+| H-33 | `keyword-detector/`（**25 文件**，P4-T1 实测——计划期 24 少计 1，测试 7 个不变） | Phase 3 S-06 | **移植（收窄，见 C-08）** | 检测逻辑（detector.ts）+ 关键词注册表（constants.ts）+ ultrawork/hyperplan 文案 + 7 个测试文件（89 its 移植为单测种子）；移植形态 = omo-hooks 模式 A pre-step 注入；**实测补充收窄面**：synthetic/internal、system directive、non-OMO agent、planner、background session、非主 session 六级过滤 + 双幂等（消息级 includes + session 级 Set） | 📋 待移植（P4-T12） |
 | H-34 | `stop-continuation-guard/`（3 文件） | Phase 3 S-37 | **移植** | 服务形态（stop/isStopped/clear + 级联取消 backgroundManager 后代）；DSH 落点 = cordis 服务（omo-commands 写 / omo-hooks 读）+ ctx.jobs 级联取消；消费面 = C-05 命令。**manifest 条目 fork 见 T8**（若不适格为条目则文件放 `src/hooks/` 之外、本行不进 c14 解析面） | 📋 待移植（P4-T8） |
 
 ## 2. shared-skills 内容 vendor 组（17 条目 = ROADMAP §16 裸名集合；来源 `packages/shared-skills/skills/`）
@@ -76,21 +76,21 @@
 | D-05 | senpi skills `give-me-tips` / `ulw-loop` / `ulw-research`（senpi 侧副本） | **排除** | give-me-tips = senpi 运营内容，无 OMO 行为语义；ulw-loop 属 ralph 邻域（DSH 原生 ralph 已覆盖 loop 语义，且 v5 mass-ulw 为 ROADMAP §6 观察项）；ulw-research 的 shared-skills 副本（S4-16）已 vendor，senpi 副本为 senpi 平台绑定版 |
 | D-06 | `commands.ts` 的 `disabled_commands` 配置与 opencode 命令加载器胶水（`claude-code-command-loader/`） | **排除** | opencode 平台耦合；DSH 等价面 = 插件 Config（omo-commands 自身的禁用面，如需） |
 
-## 5. P4-T1 待核清单（立项期开放问题 → 调研任务）
+## 5. P4-T1 待核清单（✅ 已闭环——证据 `.omo/evidence/p4t1/{A,B,C}-*.md`）
 
-**A 组（清单完整性）**：① `features/builtin-commands/` 全树对账（含 `templates/refactor-sections/` 子目录与测试文件计数）；② `packages/shared-skills/skills/` 17 目录逐文件清单（286 计划期粗核数复核）；③ senpi `ultrawork`/`hyperplan` 两 skill 与 shared-skills 同名 skill 的关系（内容重叠/引用）；④ keyword-detector 24 文件与 stop-continuation-guard 3 文件的逐文件处置。
+**A 组（清单完整性）✅**：① `features/builtin-commands/` 实测 **20 文件**（types.ts 封闭联合恰 7 成员；feature 根 commands.test.ts 17 its + init-deep-migration.test.ts 1 it；templates/ 11 文件含 refactor-sections/ 5）；agent 绑定仅 start-work（动态 resolveStartWorkAgent：atlas 已注册→atlas，否则 sisyphus）；argumentHint 有 = goal/refactor/start-work/handoff/hyperplan，无 = stop-continuation/remove-ai-slops。② shared-skills 恰 **17 目录 286 文件**（逐目录计数与 §2 行全符）；17/17 SKILL.md 全含 `name`+`description`（仅 ulw-plan 多 `metadata.short-description`）——**frontmatter 适配面近零**。③ senpi `ultrawork`/`hyperplan` 各恰 1 文件；同名 ulw-research **非复制**（shared 版 394 行带 Codex 工具翻译表；senpi 版 402 行绑定 team_create/task_send，diff ~495 行，核心编排结构一致）——S4-16 取 shared 版、senpi 版排除（D-05 维持）。④ keyword-detector 实测 **25 文件**（草案 24 ❌，少计 1；测试 7 个不变）+ guard 恰 3 文件（1 测试 12 its）。
 
-**B 组（DSH 机制，Q-1…Q-5）**：① `ctx.commands` handler 的 `followup` 注入时序钉测（同上下文先例 dsh-command-goal:98-105 已实证存在性；throw settle 为 `kind:'error'` 已明文闭环）；② `$SESSION_ID`/`$TIMESTAMP` 暴露面；③ user-invocable skill → 命令面桥接存在性（pinned 0.1.5-rc.1 实测）；④ skill 投递选型 + `customSkillDirs` patch 可配置性；⑤ 续行机制盘点（`ctx.goals` pause 词汇表 / ralph 停止面 / `ctx.jobs` 取消 API）与跨插件 cordis 服务形态。
+**B 组（DSH 机制，Q-1…Q-5）✅**：① **Q-1 闭环**：followup 可用——`command/run` 先于 handler 追加、`command/done` 在 settle 后追加（dsh-commands/lib/index.js:325/379/385），handler 内 followup 消息排在 command/done 之后、下一回合生效；agent 非 idle 时无条件 splice 进 next-turn inbox（排队不丢弃，dsh-agent-loop:783-791）；signal = withAbort 只停止等待不中断 handler，abort 经 settleThrown 记 `command/done` error。**命令驱动形态定案 = 草案（a）followup，无降级**。② **Q-2**：invocation 仅 `commandId/agent/rawInput/attachments/signal` 五字段（types.d.ts:18-34）——`$SESSION_ID` = `invocation.agent.id`（Agent.id 即 SessionId）、`$TIMESTAMP` = `Date.now()` 由 handler 派生。③ **Q-3**：无 user-invocable→命令注册桥（dsh-commands 零命中）；**实际桥 = dsh-tool-skill `agent/pre-step` 手势注入**（SKILL_GESTURE 正则 + `isUserInvocable` 过滤 + `<skill_content>` 注入，用户原文骑行普通 user message；前提 = 无同名命令抢先，因 commands admission miss 落回普通 prompt）。④ **Q-4 裁定 = 候选 b**：`ctx.skills.register` 嵌入注册（content 从 vendor 文件读取 + `path` 指向 vendor SKILL.md 使引用文件磁盘可读）——零 FS 副作用、effect 自动注销、与 cwd/.git 无关（e2e 沙箱友好）、漂移检测经 vendor manifest 保留；候选 a（物化）否决理由：.git 探测回退 cwd 的 e2e 语义风险 + patch overlay 整键替换非深合并。⑤ **Q-5**：`ctx.goals` 词汇全（get/disarm/create/edit/pause/resume/complete/block/clear，revision CAS）——`/stop-continuation` 对 goal 走 **pause**；ralph **无可编程 stop API**（仅脚本自终止或自持 workflowEngine 句柄 cancel）——记差异；`ctx.jobs.kill(id, caller?, reason?)→'requested'|'already-finished'` 满足级联取消面；跨插件共享 = 提供方 `ctx.provide`/Service 子类，消费方**延迟 ctx.get**（先例 dsh-commands:349 execute 内取服务）——绝不在 apply 期缓存。
 
-**C 组（逐模块语义）**：① 7 命令模板逐字复核（占位符集合、agent 绑定、team addendum 边界）；② keyword-detector 收窄清单（变体文案、配置面默认值、幂等语义）；③ stop-continuation-guard 的 backgroundManager 依赖的 DSH 等价面；④ 每模板引用的 OMO 载体（session_read/boulder/notepad/mktemp）的 DSH 等价面判定；⑤ 上游测试文件登记（keyword-detector 7 个、templates 2 个）用例数 → 单测种子。
+**C 组（逐模块语义）✅**：① 7 模板复核完成（逐字段落见证据 C 文）；**关键修正**：`<session-context>` marker 段在 **commands.ts:67-70 wrapper**（`Session ID: $SESSION_ID` / `Timestamp: $TIMESTAMP`）而非模板本体，`You are starting an Atlas work session.` 在 start-work.ts:1——**/ulw-execute 模板移植必须含 wrapper 段**（R-10 对接面 = wrapper + 首行双常量）；hyperplan 降级指引逐字在 hyperplan.ts:17（指向 `~/.omo/omo.jsonc`，与 prompts/mode/hyperplan.md 末行路径不一致——移植时按 DSH 现实重写并记差异）；占位符替换器语义参考 = hooks/auto-slash-command/executor.ts:20,89-99。② keyword-detector 收窄清单实测扩充：六级过滤（synthetic/internal、system directive、non-OMO agent、planner、background session、非主 session）+ 双幂等（消息级 `!text.includes(message)` + session 级 Set）+ 组合模式严格相邻双词序 + 交集禁用（基词任一禁则禁 combo）；hyperplan 正则含 `.hpp` 负向后查（issue #4215）；配置两字段 optional 无默认（缺席 = 全启用）；变体文案 = 5+1 个 md（default/gpt/gemini/glm/planner/codex）按名册收窄为单一文案。③ guard：stoppedSessions Set；stop = add + marker；clear = delete + marker "idle"；**chat.message 故意 no-op**（stop 仅显式 clear/session.deleted 清除）；级联 = Pick\<BackgroundManager,"getAllDescendantTasks"|"cancelTask"\>，filter running|pending → allSettled cancelTask（DSH 映射 = ctx.jobs.list + kill）。④ 载体等价面判定：session_read → dsh-session-query 近等价 service 但**无现成模型工具**（handoff 模板该段收窄为指引经会话导出面，记差异）；boulder → Phase 3 已落 live-state.ts（ctx.jobs 承载，文件格式不兼容，复用 H-32 差异清单）；notepad/mktemp → 无专用等价（记差异）；team_create → **无等价面**（Phase 5）；goal 工具族 → dsh-goal 原生等价。⑤ 测试种子实测 **111 its**（keyword-detector 7 文件 89；templates 2 文件 4；commands.test 17；init-deep-migration 1；另有 guard 12 its 可参考）。
 
 ## 6. 覆盖统计（随实施滚动更新）
 
 | 状态 | 计数 | 口径 |
 |---|---|---|
-| 命令移植组（§1.1） | **6 条命令**（C-02…C-07；C-01 原生跳过） | 计划期草案，P4-T1 转实测 |
+| 命令移植组（§1.1） | **6 条命令**（C-02…C-07；C-01 原生跳过） | P4-T1 实测锁定；C-03 形态 = 手势桥零代码 |
 | 关键词模式（§1.1 C-08） | **1**（非命令，单列） | ultrawork/hyperplan 关键词 → pre-step 注入 |
-| hook 接盘项（§1.2） | **2**（H-33/H-34） | Phase 3 S-06/S-37 终态化 |
-| skills vendor（§2+§3） | **19**（17 shared + 2 senpi） | 计划期粗核 288 文件，P4-T1 复核 |
+| hook 接盘项（§1.2） | **2**（H-33/H-34） | Phase 3 S-06/S-37 终态化；H-33 实测 25 文件 |
+| skills vendor（§2+§3） | **19**（17 shared + 2 senpi） | P4-T1 实测 **288 文件**（286+2）锁定分母 |
 | deferred / 排除（§4） | **6** | 每行终态理由齐备 |
-| 全树覆盖 | 命令面 + skill 面 + 接盘项全部条目 | 退出标准的完整性硬判定（P4-T1 对账后锁定分母） |
+| 全树覆盖 | 命令面 + skill 面 + 接盘项全部条目 | 退出标准的完整性硬判定（P4-T1 已锁定分母） |
