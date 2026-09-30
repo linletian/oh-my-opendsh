@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **3/18**（P4-T1/T2/T4 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **4/18**（P4-T1/T2/T3/T4 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -53,13 +53,13 @@
 - **证据**：commit `92279ee`。`pnpm vitest run tests/omo-commands/` = **41 passed**（形状 + 负向 + 守卫顺序）；`pnpm typecheck` / `typecheck:libs` 四 face 全绿；门 6/7 不回归。**双评审 APPROVE**（sub-agent 两轮 + mcode 两轮；14+5 条成立 findings 修复后针对性再审通过）。编码方五条质疑经仲裁全部批准（逐字 hint/封闭二值 status/整树记账/计数校验/C-03 否决点）；评审发现 templates/ 计数错（11→14）已两处同步更正（commit `8ef02e1`）。
 - **依赖**：P4-T1。**量级**：3 小时（实耗相符）。
 
-### [ ] P4-T3 — 挂载 + boot marker 接线
+### [x] P4-T3 — 挂载 + boot marker 接线
 
 - **产出**：根 `cordis.yml` 第三个 `- insert:` 行（`id: omo-commands`）；`src/index.ts` 的 apply 注册循环 + boot marker（`[omo-commands] command <id> registered` 逐行 + 汇总行）；cold-start / doctor-lite / probe 的 omo-commands 接线。
 - **做法**：P-8 schema 纪律（insert 形态、`dsh plugin --profile add`）；loud-but-non-fatal（单命令注册失败不拖垮其余）；doctor-lite check 2b 扩展为**恰好 3 个 insert 行**（id 集合 {omo-agents, omo-hooks, omo-commands}——计数 2→3 的变异敏感网同 commit 同步：cold-start 双安装→三安装、drive.mjs、probe、smoke-real、c14 类断言）；注册表占位形态 = 空注册表 + 汇总行计数从 manifest 派生（P3-T3 先例），T6+ 逐命令填入。
 - **判定**：✅ `scripts/cold-start.sh` 绿且日志含 omo-commands marker；门 4/8 绿；`--dump-config` 含 omo-commands 行。
-- **证据**：（待填）
-- **依赖**：P4-T2。**量级**：3 小时。
+- **证据**：commit `b3233cd`。cold-start PASS 且日志逐字含 `[omo-commands] loaded: manifest 6 entries (pending=6, ported=0) — 0/6 commands registered`；`--dump-config` 第 546 行含第三行；门 2 = **1065 测试**（+25）；门 4 doctor-lite `exactly the 3 plugin rows`；门 6 c11 断言名改计数派生（评审实证删行/加行双 FAIL）。**双评审 APPROVE**（sub-agent 两轮 + mcode 两轮；11 条 findings 修复，含 9 变异捕获实证）。仲裁裁定：ulw-plan 永不注册禁令归 COMMAND_REGISTRARS 处 + 逐 id 守卫单测（非 T16 静态门）；NOTICES 逐命令语义移植表随 T6 建立。
+- **依赖**：P4-T2。**量级**：3 小时（实耗约 4 小时）。
 
 ---
 
