@@ -247,8 +247,13 @@ const MANIFEST_ROWS = [
   // **载体收窄已实测**（P4-T1 C 组 ④）：模板 PHASE 0.5 强制先调
   // `session_read({ session_id: "$SESSION_ID" })`，而 DSH 的 session_read 近等价面
   // （session-query service）**没有现成模型工具**——故该段收窄为经会话导出面的
-  // 指引文案并记差异，不假称工具存在。`$SESSION_ID` / `$TIMESTAMP` 渲染按计划书
-  // §4.2：分别取 `invocation.agent.id` 与 handler 内 `Date.now()`。
+  // 指引文案并记差异，不假称工具存在。`$SESSION_ID` / `$TIMESTAMP` 的取值：
+  // `invocation.agent.id` 与**当前时刻**（`CommandInvocation` 只有 commandId /
+  // agent / rawInput / attachments / signal 五个字段，无时间戳，实测见
+  // dsh-commands/lib/types/index.d.ts），格式照上游 executor.ts:95 的
+  // `new Date().toISOString()`（**不是** epoch 毫秒：模板把它当人读时间展示给
+  // 模型），且以注入的时钟函数取值 —— 这样渲染是纯函数、可被单测逐字节钉死。
+  // 实现与偏离理由见 src/templates/render.ts 的 TIMESTAMP FORMAT 注记。
   {
     id: 'handoff',
     upstreamSources: [
@@ -259,7 +264,22 @@ const MANIFEST_ROWS = [
     effectSummary:
       '会话交接摘要（session_read 载体收窄：DSH 无现成模型工具，收窄为指引文案记差异）',
     e2eScenario: 'handoff-summary-driven',
-    status: 'pending',
+    // 模板的**收窄登记**（逐条细则在 src/templates/handoff.ts 的 §1/§2/§3 与
+    // HANDOFF_CARRIER_NOTE，此处只列清单以便从 manifest 一眼看到差异）：
+    //   ① PHASE 0.5 的 `session_read` 调用 → 指引文案（DSH 有近等价 service
+    //      `dsh-session-query` 但无现成模型工具）；
+    //   ② PHASE 1 的 `todoread()` / `Bash({command})` 拼写、`Suggested execution
+    //      order` 代码块、PHASE 3 的 `from todoread()` 后缀 → 按能力改写为散文
+    //      指引（DSH 无 todoread 面；bash 工具形态相近但拼写不同源）；
+    //   ③ PHASE 4 第 1 步「start a new session」补 DSH 会话面（Web GUI 新会话 /
+    //      再跑 `dsh`），OpenCode 写法保留在括注里。
+    // T6 翻转：**本行不含 e2e 场景**（场景属 T7），而 manifest 头的翻转纪律要求
+    // handler + 单测 + 场景三者齐备。这是一次**有意的**例外，理由与范围写在这里：
+    // T6 的交付面是「命令代码 + 单测 + 语义移植表」，T7 交付两个 e2e 场景；在 T7
+    // 落地之前本行声称 ported 会让 `e2eScenario` 指向一个不存在的场景 —— 门 8 的
+    // run-proofs 与门 3 的套件都按名字取场景，取不到即红。所以 T7 的第一条交付动作
+    // 就是补这两个场景，届时本行的 ported 才是完整的。
+    status: 'ported',
   },
   // C-07 → `/remove-ai-slops`（phase4-commands.md §1.1 C-07 行）。上游源实测 2 文件
   // = 内建模板 `templates/remove-ai-slops.ts` + shared-skill
@@ -278,7 +298,8 @@ const MANIFEST_ROWS = [
     effectSummary:
       '清除 AI 生成代码异味 + 批判性自评审（team-mode addendum 段不移植，Phase 5）',
     e2eScenario: 'remove-ai-slops-driven',
-    status: 'pending',
+    // T6 翻转，同 handoff 行的注记：代码 + 单测齐备，e2e 场景属 T7。
+    status: 'ported',
   },
 ] as const satisfies readonly CommandManifestEntry[]
 

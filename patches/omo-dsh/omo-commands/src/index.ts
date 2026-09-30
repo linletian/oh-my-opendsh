@@ -56,6 +56,18 @@ import {
   formatManifestValidationFailedLine,
 } from './boot-markers.ts'
 import {
+  HANDOFF_DESCRIPTION,
+  createHandoffCommand,
+} from './commands/handoff.ts'
+import {
+  REMOVE_AI_SLOPS_DESCRIPTION,
+  createRemoveAiSlopsCommand,
+} from './commands/remove-ai-slops.ts'
+import type {
+  CommandInvocationLike,
+  CommandResultLike,
+} from './commands/command-types.ts'
+import {
   type SkillRegistrationContext,
   VENDOR_SKILLS_DIR,
   runSkillRegistrations,
@@ -102,8 +114,10 @@ export type CommandDisposer = () => void
 
 /**
  * The minimal structural shape this plugin passes to `ctx.commands.register`,
- * mirroring `CommandDefinition` in `@deepseek-ai/dsh-commands/lib/types/types.d.ts`
- * (measured on 0.1.5-rc.1) with the handler's invocation left opaque: the
+ * mirroring `CommandDefinition` in `@deepseek-ai/dsh-commands/lib/types/index.d.ts:37-52`
+ * (measured on 0.1.5-rc.1 — re-verified against the installed .d.ts in this round;
+ * review NIT-8 caught that the earlier citation named types.d.ts) with the handler's
+ * invocation left opaque: the
  * invocation surface (commandId / agent / rawInput / attachments / signal) is
  * consumed by T6+ handlers, which declare their own structural types at that
  * time rather than widening this one speculatively.
@@ -134,10 +148,10 @@ export type CommandRegistrar = (
 ) => CommandDisposer | void
 
 /**
- * The implementation registry, EMPTY AT P4-T3 ON PURPOSE — every manifest row is
- * 'pending', so there is no handler to register yet. The loop below is complete
- * and unit-tested against synthetic registrars (tests/omo-commands/
- * registration.test.ts), and T6+ adds one entry per landed command.
+ * The implementation registry — T6 landed the first two commands (`handoff`,
+ * `remove-ai-slops`), so it is no longer empty. The loop below is complete and
+ * unit-tested against synthetic registrars (tests/omo-commands/
+ * registration.test.ts); T7+ adds one entry per landed command.
  *
  * A row is registered only when BOTH hold: its status is 'ported' (the manifest
  * row says handler + unit test + e2e all landed) and a registrar exists under its
@@ -145,6 +159,17 @@ export type CommandRegistrar = (
  * summary line then reads `<r>/<N>` with `<r>` below the ported count, which is
  * the honest reading of "the manifest claims a port this tree cannot register".
  * The boot never claims success it did not achieve.
+ *
+ * KEY SHAPE — why each entry is a one-liner over its `src/commands/<id>.ts`
+ * factory instead of a bespoke registration body. The command module owns the
+ * handler and the template wiring (upstream-fidelity lives there, with its
+ * attribution header); this file owns exactly two facts it must not duplicate:
+ * the command NAME (from the manifest row's `id`) and the input HINT (from the
+ * same row's measured `argumentHint`). So the manifest stays the single source
+ * for what upstream declared, and `input` is omitted entirely when
+ * `argumentHint` is `null` — which is what dsh means by "no input descriptor
+ * advertised", and is exactly the upstream state of `remove-ai-slops`
+ * (commands.ts:85-92 carries no `argumentHint`).
  *
  * NOTE — `ulw-plan` MUST NEVER BE REGISTERED HERE, by any task. Registering a
  * same-named command would shadow the `dsh-tool-skill` SKILL_GESTURE bridge
@@ -156,7 +181,58 @@ export type CommandRegistrar = (
  * static gate does not (deliberately: the check belongs HERE, where a reviewer
  * adding a registry entry reads it).
  */
-export const COMMAND_REGISTRARS: Record<string, CommandRegistrar> = {}
+export const COMMAND_REGISTRARS: Record<string, CommandRegistrar> = {
+  handoff: (ctx, entry) => {
+    registerPortedCommand(ctx, entry, HANDOFF_DESCRIPTION, createHandoffCommand())
+  },
+  'remove-ai-slops': (ctx, entry) => {
+    registerPortedCommand(ctx, entry, REMOVE_AI_SLOPS_DESCRIPTION, createRemoveAiSlopsCommand())
+  },
+}
+
+/**
+ * 两条 registrar 共用的一条尾巴：把命令模块产出的 `{handler}` 适配成本文件声明的
+ * `CommandsRegistrationDefinition` 再交给 `ctx.commands.register`。
+ *
+ * `input.hint` 来自 manifest 行的 `argumentHint`（唯一事实源），`null` 时**完全不
+ * 声明** `input`；命令名也取自 manifest 行的 `id`，所以两条命令都不在任何地方
+ * 硬打一次自己的名字。
+ */
+function registerPortedCommand(
+  ctx: CommandsRegistrationContext,
+  entry: CommandManifestEntry,
+  description: string,
+  command: { handler: (invocation: CommandInvocationLike) => CommandResultLike },
+): void {
+  ctx.commands.register({
+    name: entry.id,
+    description,
+    handler: adaptHandler(command.handler),
+    ...entry.argumentHint === null ? {} : { input: { hint: entry.argumentHint } },
+  })
+}
+
+/**
+ * THE ONE TYPE HOLE IN THIS PACKAGE, isolated on purpose.
+ *
+ * `CommandsRegistrationDefinition.handler` is declared `(invocation: unknown) =>
+ * unknown` because this file does not import dsh's `CommandInvocation`
+ * (dsh-commands/lib/types/index.d.ts:14-36 — P4-2). A handler written against the
+ * narrower `CommandInvocationLike` (./command-types.ts) therefore cannot be
+ * assigned straight into it: `unknown` is not assignable to `CommandInvocationLike`.
+ *
+ * The cast is safe by measurement, not by hope: the registry only ever calls the
+ * handler with a real `CommandInvocation`, which structurally HAS `rawInput` and
+ * `agent` (the two fields these handlers read) — that is the contract of the five
+ * measured fields. Putting the assertion in one named function means a future
+ * command needing a THIRD invocation field has exactly one place to revisit, and
+ * a reader sees the hole instead of finding casts scattered through the registry.
+ */
+function adaptHandler(
+  handler: (invocation: CommandInvocationLike) => CommandResultLike,
+): (invocation: unknown) => unknown {
+  return (invocation: unknown) => handler(invocation as CommandInvocationLike)
+}
 
 /**
  * The registration loop, exported so its loud-but-non-fatal behaviour is

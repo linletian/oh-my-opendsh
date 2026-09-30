@@ -29,6 +29,7 @@ import {
   validateManifest,
   type CommandManifestEntry,
 } from '../../patches/omo-dsh/omo-commands/src/manifest.ts'
+import { COMMAND_REGISTRARS } from '../../patches/omo-dsh/omo-commands/src/index.ts'
 
 /**
  * phase4-commands.md §1.1 移植组 ids, in baseline order (C-02…C-07 → their
@@ -156,18 +157,30 @@ describe('P4-T2 COMMAND_MANIFEST — shape and content', () => {
     expect([...commandStatusSet].sort()).toEqual(['pending', 'ported'])
   })
 
-  it('all six rows are pending at skeleton stage (P4-T2 ships no command code)', () => {
-    // The hard-coded fact, not a length: a row silently flipping to 'ported'
-    // would let a command with no handler look shipped.
+  it('splits the roster by status as of P4-T6 (two commands ported, four pending)', () => {
+    // The hard-coded facts, not lengths: a row silently flipping to 'ported'
+    // would let a command with no handler look shipped, and a row silently
+    // REVERTING to 'pending' after its handler landed would make the boot stop
+    // registering a command that exists. Both directions are named here.
     expect(commandsByStatus(COMMAND_MANIFEST, 'pending').map((row) => row.id)).toEqual([
       'ulw-execute',
       'ulw-plan',
       'hyperplan',
       'stop-continuation',
+    ])
+    expect(commandsByStatus(COMMAND_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'handoff',
       'remove-ai-slops',
     ])
-    expect(commandsByStatus(COMMAND_MANIFEST, 'ported')).toEqual([])
+  })
+
+  it('every ported row HAS a registrar, and every registrar names a ported row', () => {
+    // The manifest says ported ⇔ code exists. Asserted in BOTH directions, because
+    // the T3 loop's failure mode is one-sided silence: a ported row with no
+    // registrar quietly under-counts the summary, and a registrar with no ported
+    // row is dead code that looks live.
+    expect(Object.keys(COMMAND_REGISTRARS).sort())
+      .toEqual(commandsByStatus(COMMAND_MANIFEST, 'ported').map((row) => row.id).sort())
   })
 })
 
@@ -522,12 +535,13 @@ describe('P4-T2 validateManifest — rejection branches', () => {
 
 describe('P4-T2 derived helpers', () => {
   it('⑤ commandsByStatus filters by status and matches nothing for an empty status', () => {
-    // P4-T2 ships no command code, so EVERY row is 'pending' and the ported list
-    // is empty — a hard-coded fact, not a length.
-    expect(commandsByStatus(COMMAND_MANIFEST, 'ported').map((row) => row.id)).toEqual([])
-    expect(commandsByStatus(COMMAND_MANIFEST, 'pending').length).toBe(
-      COMMAND_MANIFEST.length,
-    )
+    // P4-T6 起两条已移植，故这里断言「两个集合互补且并集为全体」，而不是某一侧
+    // 为空 —— 后者在第一条命令落地时就失去意义，等于没有判据。
+    const pending = commandsByStatus(COMMAND_MANIFEST, 'pending').map((row) => row.id)
+    const ported = commandsByStatus(COMMAND_MANIFEST, 'ported').map((row) => row.id)
+    expect(ported).toEqual(['handoff', 'remove-ai-slops'])
+    expect([...pending, ...ported].sort()).toEqual([...COMMAND_IDS].sort())
+    expect(pending.length + ported.length).toBe(COMMAND_MANIFEST.length)
     // An empty status matches nothing rather than everything: a caller passing
     // an unset variable must not be told the whole roster is in that state.
     expect(commandsByStatus(COMMAND_MANIFEST, '' as never)).toEqual([])
@@ -535,16 +549,28 @@ describe('P4-T2 derived helpers', () => {
   })
 
   it('⑤ commandsByStatus preserves roster order in its result', () => {
-    const pending = commandsByStatus(COMMAND_MANIFEST, 'pending')
-    expect(pending.map((row) => row.id)).toEqual([...COMMAND_IDS])
+    // Not `toEqual([...COMMAND_IDS])` any more: COMMAND_IDS is the full roster, so
+    // that identity only held while every row was pending. The invariant is
+    // "roster order preserved inside each filtered subset", asserted as the
+    // filtered id list appearing in COMMAND_IDS order.
+    // An arrow, not a detached `COMMAND_IDS.indexOf`: the bare method reference
+    // loses its receiver (Array.prototype.indexOf called on undefined).
+    const positions = (id: string): number => COMMAND_IDS.indexOf(id)
+    const pending = commandsByStatus(COMMAND_MANIFEST, 'pending').map((row) => positions(row.id))
+    const ported = commandsByStatus(COMMAND_MANIFEST, 'ported').map((row) => positions(row.id))
+    expect(pending).toEqual([...pending].sort((a, b) => a - b))
+    expect(ported).toEqual([...ported].sort((a, b) => a - b))
+    expect([...pending, ...ported].sort((a, b) => a - b)).toEqual(COMMAND_IDS.map((_, index) => index))
   })
 
   it('⑤ countsByStatus derives both status counts for the boot-marker summary', () => {
     // The T3 summary line's fields come from here, never from a hard-coded
     // string — so this test pins the DERIVATION, not the rendered text.
     const counts = countsByStatus(COMMAND_MANIFEST)
-    expect(counts.get('pending')).toBe(6)
-    expect(counts.get('ported')).toBe(0)
+    // P4-T6: 两条已移植。逐个数字手打，与 boot-markers.test.ts 的手打汇总行
+    // （pending=4, ported=2, 2/6 registered）互为对账。
+    expect(counts.get('pending')).toBe(4)
+    expect(counts.get('ported')).toBe(2)
     // Both keys are present even at 0, so two boots stay line-comparable.
     expect([...counts.keys()]).toEqual([...COMMAND_MANIFEST_STATUSES])
     let total = 0

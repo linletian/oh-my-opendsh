@@ -554,6 +554,36 @@ with no file.
 > tracked by the `omo-hooks` H-32 port (phase 3, risk R-6), not inside skill
 > bodies.
 
+### Phase 4 commands semantic porting (add-only)
+
+The `omo-commands` plugin's command definitions are **not vendored code and not a
+copy**: each one is an independent DSH semantic port of an OMO builtin command —
+the instruction body (upstream's own prose, the part an agent reads) is
+reproduced, while the command entry and the injection path are DSH-native.
+**Semantic port only**, the same discipline as the Phase 3 `omo-hooks` listeners
+above. Every upstream path below is pinned to OMO tag `v4.19.4` (commit
+`b072d279110bdda2c6ac2525d0d24dc54d16148a`, under
+`packages/omo-opencode/src/features/builtin-commands/`); each derived file carries
+its own attribution header naming the same sources — those headers and
+`patches/omo-dsh/omo-commands/src/manifest.ts` (per-file machine-readable lists),
+not this table, are the per-file authority.
+
+| Command (manifest id) | Derived file(s) under `patches/omo-dsh/omo-commands/` | Upstream source file(s) at `v4.19.4` | Disposition |
+|---|---|---|---|
+| handoff | src/commands/handoff.ts + src/commands/user-message.ts + src/commands/command-types.ts + src/commands/errors.ts + src/templates/handoff.ts + src/templates/render.ts | templates/handoff.ts, commands.ts（条目）, hooks/auto-slash-command/executor.ts（模板变量替换 + `formatCommandTemplate` 消息外框） | semantic port only（PHASE 0.5 的 `session_read` 调用收窄为指引文案：DSH 有近等价 service `@deepseek-ai/dsh-session-query` 但无现成模型工具；PHASE 1 的 `todoread()` / `Bash({command: …})` 拼写、`Suggested execution order` 代码块与 PHASE 3 的 `from todoread()` 后缀**按能力改写为散文指引**（DSH 无 todoread 面，bash 工具形态相近但拼写不同源，顺序内容保留）；PHASE 4 第 1 步补 DSH 会话面（Web GUI 新会话 / 再跑 `dsh`），OpenCode 写法留作括注 —— 三处收窄逐条注记于模板文件头 §1/§2/§3 与 `HANDOFF_CARRIER_NOTE` 第 1/2/3 条） |
+| remove-ai-slops | src/commands/remove-ai-slops.ts + src/templates/remove-ai-slops.ts（共用上面两个 structural-type / 渲染文件） | templates/remove-ai-slops.ts（正文 L1-114）、同文件 L116-216（team-mode addendum，**不移植**）、commands.ts（条目）, hooks/auto-slash-command/executor.ts | semantic port only（team-mode addendum 整段不移植，理由与恢复路径注记于文件头；`load_skills=["remove-ai-slops"]` / `$omo:remove-ai-slops` 的载体映射登记于 `REMOVE_AI_SLOPS_CARRIER_NOTE`，正文逐字保留） |
+
+> Deliberately **not** listed as ported: the four manifest rows still `pending`
+> (`ulw-execute`, `ulw-plan`, `hyperplan`, `stop-continuation`) — their per-row
+> reasons and ownership are the coverage authority:
+> `docs/plans/phase4-dev/phase4-commands.md` §1.2. `ulw-plan` in particular must
+> never become a registered command: it would shadow DSH's own skill gesture.
+
+**Counts:** Phase 4 derived command files listed = **2 command ids / 8 derived
+files** (`src/templates/{handoff,remove-ai-slops,render}.ts` +
+`src/commands/{handoff,remove-ai-slops,user-message,command-types,errors}.ts`).
+No existing entry above this section was modified (additions only).
+
 ## oh-my-pi
 
 - **Author:** can1357

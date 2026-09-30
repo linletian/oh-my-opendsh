@@ -108,9 +108,11 @@ export function formatLoadedSummaryLine(
 
 /**
  * `[omo-commands] command <id> registered` — one line per successfully
- * registered command. NOTE (P4-T3): with every manifest row 'pending', a correct
- * boot logs NO line of this form; the loop that would emit it is in place and
- * T6+ fills the registry one command at a time (the probe's assertions follow).
+ * registered command. P4-T6 changed the census: a correct boot now logs this
+ * line for each PORTED row (handoff, remove-ai-slops) and for no other id, in
+ * manifest order, before the summary line. A pending row must never produce one
+ * — that asymmetry is the whole point of the line (the probe's assertions
+ * follow).
  */
 export function formatCommandRegisteredLine(id: string): string {
   return `[omo-commands] command ${id} registered`

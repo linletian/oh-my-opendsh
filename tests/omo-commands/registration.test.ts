@@ -46,14 +46,15 @@ import {
  */
 interface FakeContext {
   readonly ctx: CommandsRegistrationContext
-  /** Definitions passed to `ctx.commands.register`, in call order. */
-  readonly registered: { name: string; description: string }[]
+  /** Definitions passed to `ctx.commands.register`, in call order. `hint` is the
+   *  definition's `input.hint` — P4-T6 registrars add it from the manifest row. */
+  readonly registered: { name: string; description: string; hint: string | undefined }[]
   stopFiber(): void
 }
 
 function fakeContext(): FakeContext {
   const disposals: (() => void)[] = []
-  const registered: { name: string; description: string }[] = []
+  const registered: { name: string; description: string; hint: string | undefined }[] = []
   const ctx: CommandsRegistrationContext = {
     // P4-T5 added the required `skills` member (the plugin's second mechanism).
     // This suite drives the COMMAND loop only, so the fake records nothing here;
@@ -61,7 +62,14 @@ function fakeContext(): FakeContext {
     skills: { register: () => undefined },
     commands: {
       register: (definition) => {
-        registered.push({ name: definition.name, description: definition.description })
+        registered.push({
+          name: definition.name,
+          description: definition.description,
+          // P4-T6: the registrar's only addition to the definition is `input`,
+          // derived from the manifest row's `argumentHint` — so the fake has to
+          // record it for the assertion to mean anything.
+          hint: definition.input?.hint,
+        })
         // The real dsh-commands register() is
         //   `return this.layers.effect(this.ctx, (layer) => …)`  (lib/index.js:257-259)
         // — it registers the unregistration with the CALLING FIBER itself and
@@ -133,8 +141,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('P4-T3 the real mount: nothing registers while every row is pending', () => {
-  it('apply() logs the command summary and NOTHING else for the real manifest + empty registry', () => {
+describe('P4-T3/T6 the real mount: two commands register, the pending four stay silent', () => {
+  it('apply() logs the command summary plus exactly the lines for the two ported rows', () => {
     const logged: string[] = []
     vi.spyOn(console, 'log').mockImplementation((line?: unknown) => {
       logged.push(String(line))
@@ -145,13 +153,21 @@ describe('P4-T3 the real mount: nothing registers while every row is pending', (
     // real 19-skill sweep reports 19/19 here; the sweep itself is pinned in
     // tests/omo-commands/skills.test.ts). The command surface's contribution is
     // still exactly ONE line.
+    // Hand-transcribed, roster order (manifest.ts MANIFEST_ROWS):
+    //   ulw-execute, ulw-plan, hyperplan, stop-continuation  → pending, silent
+    //   handoff, remove-ai-slops                            → ported, registered
+    // The two `skills:` lines are the OTHER mechanism's (P4-T5's summary) — they
+    // are listed only to pin that the command surface contributes exactly one
+    // summary line plus its own per-command lines, in that order.
     expect(logged).toEqual([
-      '[omo-commands] loaded: manifest 6 entries (pending=6, ported=0) — 0/6 commands registered',
+      '[omo-commands] command handoff registered',
+      '[omo-commands] command remove-ai-slops registered',
+      '[omo-commands] loaded: manifest 6 entries (pending=4, ported=2) — 2/6 commands registered',
       '[omo-commands] skills: 19/19 registered (runtime, vendor path)',
     ])
   })
 
-  it('registers nothing at all — no `registered` line, no FAILED line', () => {
+  it('registers EXACTLY the two ported commands, and never the pending four', () => {
     // The invariant that makes an empty registry honest: silence, never a line
     // that claims success.
     const { lines } = runLoop(COMMAND_MANIFEST, COMMAND_REGISTRARS)
@@ -159,20 +175,43 @@ describe('P4-T3 the real mount: nothing registers while every row is pending', (
     // line whose text merely mentions the word (e.g. a manifest-validation
     // message counting "command entries") must not be able to satisfy or break
     // this assertion.
-    expect(lines.filter((line) => /^\[omo-commands\] command /.test(line))).toEqual([])
+    expect(lines.filter((line) => /^\[omo-commands\] command /.test(line))).toEqual([
+      '[omo-commands] command handoff registered',
+      '[omo-commands] command remove-ai-slops registered',
+    ])
+    // NOTHING may be reported as FAILED on a healthy mount: the two ported rows
+    // registered, so a FAILED line here would mean the loop logged both a success
+    // and a failure for the same roster.
     expect(lines.filter((line) => line.includes('FAILED'))).toEqual([])
-    // The command loop's own vocabulary only — a `skills:` line would be the
-    // other mechanism's, and its absence here is what "the command loop said
-    // nothing but its summary" means.
-    expect(lines).toEqual(['[omo-commands] loaded: manifest 6 entries (pending=6, ported=0) — 0/6 commands registered'])
+    expect(lines).toEqual([
+      '[omo-commands] command handoff registered',
+      '[omo-commands] command remove-ai-slops registered',
+      '[omo-commands] loaded: manifest 6 entries (pending=4, ported=2) — 2/6 commands registered',
+    ])
   })
 
-  it('COMMAND_REGISTRARS really is empty and every manifest row is still pending', () => {
+  it('registers the two ported commands with their measured descriptions and hints', () => {
+    // `input.hint` comes from the manifest row's `argumentHint` (one fact, one
+    // place). `remove-ai-slops` has NO hint upstream (commands.ts:85-92) and so
+    // no `input` member at all — asserted as `undefined`, not as an empty string.
+    const { context } = runLoop(COMMAND_MANIFEST, COMMAND_REGISTRARS)
+    expect(context.registered.map((entry) => [entry.name, entry.hint])).toEqual([
+      ['handoff', '[goal]'],
+      ['remove-ai-slops', undefined],
+    ])
+    expect(context.registered.map((entry) => entry.description)).toEqual([
+      '(builtin) Create a detailed context summary for continuing work in a new session',
+      '(builtin) Remove AI-generated code smells from branch changes and critically review the results',
+    ])
+  })
+
+  it('COMMAND_REGISTRARS holds exactly the ported rows, in roster order', () => {
     // If this fails, the summary line in the test above is stale prose: a landed
-    // command would need the hard-coded line updated in the same commit.
-    expect(Object.keys(COMMAND_REGISTRARS)).toEqual([])
+    // command needs the hard-coded line updated in the SAME commit. Both halves
+    // are named — the registry keys AND the statuses they correspond to.
+    expect(Object.keys(COMMAND_REGISTRARS)).toEqual(['handoff', 'remove-ai-slops'])
     expect(COMMAND_MANIFEST.map((entry) => entry.status)).toEqual([
-      'pending', 'pending', 'pending', 'pending', 'pending', 'pending',
+      'pending', 'pending', 'pending', 'pending', 'ported', 'ported',
     ])
   })
 

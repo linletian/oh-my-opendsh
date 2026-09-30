@@ -38,8 +38,12 @@ import {
  * intended friction, and scripts/concerto-mode-probe.sh re-derives the same
  * line from the plugin's own modules at probe time.
  */
+// P4-T6 更新：两条命令落地后本行随之改写（pending=4, ported=2, 2/6 registered）。
+// 逐字手打而非由 manifest 派生，正是这条断言的价值：派生会让它与被测对象同源，
+// 恒真；cold-start.sh 与 concerto-mode-probe.sh 按同一字符串 grep，所以任何漂移
+// 先在这里变红，而不是等到真机 boot。
 const EXPECTED_SUMMARY_LINE =
-  '[omo-commands] loaded: manifest 6 entries (pending=6, ported=0) — 0/6 commands registered'
+  '[omo-commands] loaded: manifest 6 entries (pending=4, ported=2) — 2/6 commands registered'
 
 /**
  * A legal manifest row with one field overridden — widened on purpose so these
@@ -60,11 +64,37 @@ function row(overrides: Partial<CommandManifestEntry> = {}): CommandManifestEntr
   }
 }
 
+/**
+ * P4-T6: the formatter's `registered` argument is the roster rows the loop
+ * actually registered, so the real-mount expectation passes the two ported
+ * rows — named by hand, not filtered out of the same object under test, and
+ * resolved through a lookup that throws on a renamed id (a rename must fail
+ * here, not silently register 1/6).
+ */
+const REAL_REGISTERED_IDS = ['handoff', 'remove-ai-slops']
+
+function registeredRows(ids: readonly string[]): CommandManifestEntry[] {
+  return ids.map((id) => {
+    const found = COMMAND_MANIFEST.find((entry) => entry.id === id)
+    if (found === undefined) throw new Error(`no manifest row named ${id} — the id changed, update the pinned line`)
+    return found
+  })
+}
+
 describe('P4-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', () => {
   it('renders the REAL manifest as the hard-coded line above', () => {
     // The single most load-bearing assertion in this file: it pins what
     // cold-start.sh and the probe will look for.
-    expect(formatLoadedSummaryLine(COMMAND_MANIFEST, [])).toBe(EXPECTED_SUMMARY_LINE)
+    expect(formatLoadedSummaryLine(COMMAND_MANIFEST, registeredRows(REAL_REGISTERED_IDS))).toBe(EXPECTED_SUMMARY_LINE)
+  })
+
+  it('still reports 0 registered when the loop registered nothing (empty is not a rounding error)', () => {
+    // The `registered` half of the line comes from the loop's real output, not
+    // from the manifest's statuses — so a roster of two ported rows with an
+    // empty registration log must read 0/6, never 2/6.
+    expect(formatLoadedSummaryLine(COMMAND_MANIFEST, [])).toBe(
+      '[omo-commands] loaded: manifest 6 entries (pending=4, ported=2) — 0/6 commands registered',
+    )
   })
 
   it('derives the status counts from the roster, in COMMAND_MANIFEST_STATUSES order', () => {

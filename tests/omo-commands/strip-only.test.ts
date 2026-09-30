@@ -119,9 +119,20 @@ describe('P4-T5 the omo-commands sources are loadable by Node strip-only type er
   it('finds the package sources (a silent empty scan must not pass for green)', () => {
     expect(sources.map((entry) => entry.file)).toEqual([
       'boot-markers.ts',
+      // P4-T6 起包内有子目录（handler 一层、模板一层）。这些是相对包根的递归
+      // 相对路径 —— 所以这份清单同时钉住「有哪些文件」与「没有多出清单外的文件」，
+      // 新增一个文件而忘了在这里登记（或反之）都会变红。
+      'commands/command-types.ts',
+      'commands/errors.ts',
+      'commands/handoff.ts',
+      'commands/remove-ai-slops.ts',
+      'commands/user-message.ts',
       'index.ts',
       'manifest.ts',
       'skills.ts',
+      'templates/handoff.ts',
+      'templates/remove-ai-slops.ts',
+      'templates/render.ts',
     ])
   })
 
