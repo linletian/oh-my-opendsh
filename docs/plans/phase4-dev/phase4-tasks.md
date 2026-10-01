@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **13/18**（P4-T1…T10、T12、T13、T14 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **15/18**（P4-T1…T15 ✅——余 T16/T17/T18）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -134,13 +134,13 @@
 - **证据**：commit `df6e08c`。双层 marker 逐字携带（`<session-context>` wrapper `commands.ts:63-74` + 本体首行）；R-10 跨包一致性断言**打在渲染产物上**（常量漂移/模板停产/判定改写/`||`退化四变异各红）；H-32 双轨：marker 轨判定面 = **atlas 子会话委派任务文本**（评审 BLOCKER「轨 B 在编排者会话不可达」经仲裁裁定为**语义更正非开门**——H-32 注入面本就只属于 atlas lane，评审探针 CASE 3 实证 atlas 子会话 injected=1）；listener 集成测试（真实模板产物 → inject 一次/二次幂等/编排者形态零注入 by-design/无 marker 零注入）；110 既有 H-32 测试零改动。**双评审**：sub-agent REJECT→修复→APPROVE + mcode 两轮 APPROVE（10 条 findings：resume 分支原文入注记/CRITICAL 五条/hint 单源/wrapper 行号/条件式→断言式表述）。
 - **依赖**：P4-T3。**量级**：4 小时（实耗约 5 小时）。
 
-### [ ] P4-T11 — e2e：ulw-execute 命令场景
+### [x] P4-T11 — e2e：ulw-execute 命令场景
 
 - **产出**：`tests/e2e/` 新增 `ulw-execute-command-activates-atlas` 场景。
 - **做法**：剧本 = 敲 `/ulw-execute <plan>` → 断言命令事件对 + 模板注入 + 指挥委派 atlas（MOCKROLE 名册驱动）+ H-32 激活注入在 atlas 子会话可见（marker 路径，与 P3-T17 的意图路径场景互补）+ 幂等（二次激活不重复注入）；对照 = 无命令时纯讨论工作计划不触发 marker 路径。
 - **判定**：✅ 门 3 绿；R-10 对接在 e2e 层可观测（marker 路径与意图路径各自具名断言）。
-- **证据**：（待填）
-- **依赖**：P4-T10。**量级**：3 小时。
+- **证据**：commit `5209ebc`。`ulw-execute-command-activates-atlas` **25 断言**：① 命令面（boot 注册行/两次真调用独立 commandId/事件对）；② 模板注入指挥会话（双 marker 逐字 + session-context 本会话 id/ISO + 第 0 次请求）；③ **marker 路径**（atlas 子会话委派任务文本 11877 字符 = 模板逐字转交 → H-32 注入含磁盘计划名 + notepad scaffold + notepadFooterRewrittenByTheActivation）；④ 幂等对照（二次注入总数=1、conductorNotInjected by-design、无 marker 无意图对照零注入）。**settle 签名修复**（观测窗口守卫曾哑火——评审插桩实证）；驱动 `commandOpensTurn` 回合记账 + `lastTurnEndedOnItsOwnTerms`（窗口关闭从运气变断言）。marker vs 意图：e2e 证契约面各自具名，归因归单测（模板命中 5 条意图词）。**33 缺陷**各命中。**双评审**：sub-agent REJECT（BLOCKER 插桩实证成立）→修复→APPROVE + mcode 两轮 APPROVE；16 条 findings。证据件 `.omo/evidence/p4t11/`。
+- **依赖**：P4-T10。**量级**：3 小时（实耗约 4.5 小时）。
 
 ---
 
@@ -174,13 +174,13 @@
 - **证据**：commit `97faf6f`。hyperplan.test **23 测试**（全量 1345）；降级指引段落地（team-mode 缺席明示 + Phase 5 预告 + 名册委派降级路径：plan-consultant/plan-reviewer 交叉质询、prometheus 接 Phase 6、回复明说 DEGRADED）；**零死链守卫按句切分**（提及 team_create/task_send/缺席角色须在否定句）+ 变异 falsify + 残余风险钉死（同句巧句可过——启发式非证明，注释声明）；description 双串（上游原文署名锚点 + 注册串降级后缀，常量+渲染产物双断言，NOTICES/manifest/注记三处登记）；7-phase 逐字恢复 + 7-vs-8 登记（SKILL 实为 Phase 0-7 八段）；Phases 2-4 `task_send` 替换明示（评审实测 Phases 5/6 零 task_send）；Provenance 块按席位计数非上游成员名；roster 映射 `ALL_AGENT_IDS` 派生 + 反检。vendor frontmatter 张力记录于 carrier note 第 8 条（skill 正文保真不改写，降级由命令指引承担，Phase 5 对接）。**双评审**：双 REJECT→修复→双 APPROVE（19 条 findings）。
 - **依赖**：P4-T3、P4-T4（S5-02）。**量级**：3 小时（实耗约 4.5 小时）。
 
-### [ ] P4-T15 — `/ulw-plan` 命令面 + e2e
+### [x] P4-T15 — `/ulw-plan` 命令面 + e2e
 
 - **产出**：按 P4-T1 Q-3 裁定——**手势桥存在 = 零代码落地**（omo-commands **不得注册同名 `ulw-plan` 命令**，否则屏蔽手势）；唯一落地件 = 确认 S4-15 经 T5 注册进 catalog 且 user-invocable（默认 true 即可）+ 覆盖清单 C-03 行记形态；`tests/e2e/` 新增 `ulw-plan-loads-prometheus-skill` 场景；hyperplan 场景（`hyperplan-degraded-noted`）一并落地。
 - **做法**：e2e 断言 = 用户行敲 `/ulw-plan <请求>` → **无 `command/run`/`command/done` 事件**（手势非命令，对照断言具名）+ ulw-plan skill 正文以 `<skill_content>`（source `kind:"skill-invocation"`）注入下一请求 + 用户原文骑行 + 指挥按 prometheus 人格行事的剧本回应（访谈问题写回，Phase 2 适配语义）；hyperplan 场景断言降级指引真实出现（降级文案按 T14 重写形态锚定，非上游 `~/.omo/omo.jsonc` 字面）；对照 = 无参数变体行为。
 - **判定**：✅ 门 3 绿；Q-3 裁定结论与落地形态一致（DoD-d——手势桥零代码，无显式 handler）。
-- **证据**：（待填）
-- **依赖**：P4-T14、P4-T5。**量级**：4 小时（手势桥免 handler 开发，实耗应低于估算）。
+- **证据**：commit（随 T11 后一提交）。`ulw-plan-loads-prometheus-skill` **17 断言**（零 `command/run`/`command/done` + `matched:false` ×2 + 回落 prompt + `<skill_content>`（`kind:skill-invocation`）注入 ×2 + 整段 `includes(ulwPlanBody)` + `You are **Prometheus**` 锚 + body-not-frontmatter 哨兵 + 访谈语气针 `Which request did you mean`）；`hyperplan-degraded-noted` **28 断言**（T14 shipped 常量锚定降级指引/名册映射/description 降级后缀在外框且原句在前/7-phase/无参数变体省略 `**User Arguments**`/`deadLinkFree(body)=[]` + `deadLinkRuleIsDiscriminating` 跨句洗白探针）；**对照语义**（同一 admission 机制、相反注册事实——任一单独无法抓同名命令屏蔽手势）；**31 distinct 缺陷**（17+14）各命中。修复含第五 bug（删帧晋升 slot 0 假绿 → carrier 按内容定位）。**双评审**：sub-agent REJECT→修复→APPROVE + mcode 两轮 APPROVE；17 条 findings。
+- **依赖**：P4-T14、P4-T5。**量级**：4 小时（实耗约 4 小时）。
 
 ---
 
