@@ -8684,8 +8684,8 @@ async function runAnalysisSelfTest(routes) {
   // ── P4-T15 hyperplan-degraded-noted self-test: the good input must PASS, then
   // every named defect must FAIL on its own named check.
   //
-  // Defect counts, so a reader does not have to count: 18 for
-  // hyperplan-degraded-noted, 14 for ulw-plan-loads-prometheus-skill, 32 in total.
+  // Defect counts, so a reader does not have to count: 17 for
+  // hyperplan-degraded-noted, 14 for ulw-plan-loads-prometheus-skill, 31 in total.
   // The empty-list guard below is the real check on these numbers — if a case is
   // deleted, the banner is generated from the live list, so the SELF-TEST OK line
   // would silently shrink rather than fail. That is why the guard exists per
@@ -11692,6 +11692,13 @@ export function analyzeCommandChannelDriven({ log, requests, bootLog, commandRes
       && messageContentText(event.data).includes(COMMAND_CHANNEL_UNKNOWN_LINE),
   )
 
+  // Two of the checks below (`deadLinkRuleIsDiscriminating`,
+  // `commandBodyRejectsInvertedFrameTags`) do not assert anything about the RUN — they
+  // assert that this driver's own copies of two rules still bite. They are kept inside
+  // `checks` rather than moved out so the SELF-TEST OK line counts them and a future
+  // weakening of either shows up in this scenario's assertion list instead of hiding
+  // in a helper nobody reads. The cost is that "27 assertions" mixes the two kinds;
+  // the bonus block labels them (`driverSelfChecks`).
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
     // The head-hole guard: without this line the whole scenario could pass on a
@@ -11942,8 +11949,14 @@ function commandBodyRejectsInvertedFrameTags() {
   try {
     commandBody('</command-instruction>\nbody\n<command-instruction>')
     return false
-  } catch {
-    return true
+  } catch (error) {
+    // NARROW, not a bare `catch {}`. This must swallow EXACTLY the guard's own
+    // complaint about inverted tags — if `commandBody` threw for any other reason
+    // (a TypeError from a malformed argument, say), a bare catch would report that
+    // as "the guard works", which is the failure mode this whole check exists to
+    // catch. Anything else is re-thrown.
+    if (error instanceof Error && error.message.startsWith('frame tags inverted')) return true
+    throw error
   }
 }
 
@@ -11981,7 +11994,7 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
   const carriers = events
     .filter((event) => event.type === 'user/message')
     .map((event) => ({ event, text: messageContentText(event.data) }))
-    .filter((candidate) => candidate.text.includes('# /hyperplan Command'))
+    .filter((candidate) => candidate.text.startsWith('# /hyperplan Command'))
   // The two carriers are told apart BY THEIR OWN CONTENT, not by array position.
   // Index-based `carriers[0]` / `carriers[1]` was wrong: if the first frame never
   // arrived, the SECOND frame silently became `carriers[0]` and every first-frame
@@ -11989,8 +12002,15 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
   // stayed true and the miss was invisible. The argument-bearing frame is the one
   // that carries a `**User Arguments**` line, which is the very asymmetry the 对照
   // exists to test, so the locator and the claim are the same fact.
-  const first = carriers.find((candidate) => candidate.text.includes('**User Arguments**:'))
-  const second = carriers.find((candidate) => !candidate.text.includes('**User Arguments**:'))
+  // The two carriers are told apart POSITIONALLY (`first` / everything else), NOT by
+  // whether their text carries a `**User Arguments**` line. The content-based version
+  // made `bareFrameOmitsUserArgumentsLine` a tautology: the locator selected the
+  // carrier that lacked the line, so the check was guaranteed true by the selection
+  // itself, and when it did fail the report stated a falsehood ("this frame has a
+  // `**User Arguments**` line" about the frame chosen for lacking one). The content
+  // test now lives ONLY in the assertions, which is where it can be wrong.
+  const first = carriers[0]
+  const second = carriers.find((candidate) => candidate !== first)
   // LAZY, and separately named. The first version called `commandBody(first?.text
   // ?? '')` unconditionally, so a MISSING carrier made `commandBody` throw on its
   // own guard; runScenario's catch then collapsed the whole verdict into an opaque
@@ -12053,6 +12073,10 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
     // The carriers' EXISTENCE, named separately from their contents. Without these
     // two, a run that produced no carrier at all would report every content check
     // false with no statement that the carrier itself was missing.
+    // Two frames, no more and no fewer. A THIRD frame (a re-injection, a duplicated
+    // carrier) would silently pass a positional `carriers[0]` / `[1]` pair, so the
+    // count is a claim of its own.
+    exactlyTwoFramesArrived: carriers.length === 2,
     firstFrameCarrierArrived: first !== undefined,
     bareFrameCarrierArrived: second !== undefined,
     // The FIRST line's args are what the user typed, the SECOND's are empty — the
@@ -12119,6 +12143,8 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
   }
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
   const bonus = {
+    // Named separately, because these two are about the DRIVER, not the run.
+    driverSelfChecks: ['deadLinkRuleIsDiscriminating', 'commandBodyRejectsInvertedFrameTags'],
     commandLine: HYPERPLAN_COMMAND_LINE,
     bootRegistrationPresent: bootLog.includes(HYPERPLAN_BOOT_REGISTRATION_LINE),
     admissions: commandResults ?? [],
@@ -12283,8 +12309,6 @@ export function analyzeUlwPlanLoadsPrometheusSkill({ log, requests, bootLog, com
       && firstInjection.event.data.id.length > 0,
     // The full shipped frame, not a body-only substring: the `<skill_resources>`
     // hint and the closing tags are part of what the model receives.
-    // The full shipped frame, not a body-only substring: the `<skill_resources>`
-    // hint and the closing tags are part of what the model receives.
     injectionCarriesTheFullSkillFrame: firstText.startsWith('<skill_content name="ulw-plan">')
       && firstText.includes('<skill_resources>')
       && firstText.includes('<skill_instructions>')
@@ -12322,7 +12346,12 @@ export function analyzeUlwPlanLoadsPrometheusSkill({ log, requests, bootLog, com
     bothTurnsCompleted: turnEnds.length === 2
       && turnEndReasonKind(turnEnds[0]) === 'completed'
       && turnEndReasonKind(turnEnds[1]) === 'completed',
-    mockSawTwoRequests: sisyphusRequests.length === 2,
+    // NO request-count check here, deliberately. `twoInjectedMessagesArrived`,
+    // `bothGestureLinesFellBackToPrompts` and `bothTurnsCompleted` already imply it
+    // (each asserts its own pair, and two completed turns admit two requests), so a
+    // fourth statement of the same number could only restate them. The count is still
+    // reported in the bonus block; the MEASURED value is 2 — the gesture turn and the
+    // bare turn, one step each.
   }
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
   const bonus = {
@@ -15494,26 +15523,19 @@ function hyperplanDegradedDefectCases() {
           ? { ...event, data: { ...event.data, commandId: FABRICATED_COMMAND_ID } }
           : event)
     }, 'lifecyclePairPerLine'],
-    ['the first turn never received a frame at all', (input) => {
-      // MAJOR-3's own defect, and the only case that exercises the lazy body
-      // extraction: called unconditionally, a MISSING carrier makes the guard
-      // throw, the driver's catch collapses the verdict into an opaque crash
-      // string, and every named check is lost instead of one failing. The carrier
-      // check is what has to carry this — and because the two carriers are located
-      // BY CONTENT (the argument-bearing one carries a `**User Arguments**` line),
-      // dropping the first cannot silently re-label the second as the first.
+    ['only one of the two frames arrived', (input) => {
+      // MAJOR-3's own defect case, and the only one that exercises the lazy body
+      // extraction: called unconditionally, a MISSING carrier makes the guard throw,
+      // the driver's catch collapses the verdict into an opaque crash string, and
+      // every named check is lost instead of one failing.
+      //
+      // Renamed from "the first turn never received a frame": with the POSITIONAL
+      // locator (②) a single remaining carrier becomes `carriers[0]`, so the verdict
+      // cannot say WHICH frame was lost — only that one is missing. Claiming a
+      // specific one would overstate what the check knows.
       input.log.events = input.log.events.filter(
         (event) => !(event.type === 'user/message' && event.data?.id === 'fabricated-hyperplan-1'))
-    }, 'firstFrameCarrierArrived'],
-    ['the second line\'s command/done carried the FIRST line\'s commandId', (input) => {
-      // MAJOR-4's own defect. With one shared id in the fixture, run↔done pairing was
-      // unverifiable: a single id "matched" both dones, so a mispaired done could not
-      // fail anything. The fixture now mints two ids, as the host does.
-      input.log.events = input.log.events.map((event) =>
-        event.type === 'command/done' && event.data?.commandId === FABRICATED_COMMAND_ID_2
-          ? { ...event, data: { ...event.data, commandId: FABRICATED_COMMAND_ID } }
-          : event)
-    }, 'lifecyclePairPerLine'],
+    }, 'exactlyTwoFramesArrived'],
     ['the DEGRADED guidance was replaced by upstream\'s team-mode instruction', (input) => {
       // The T14 regression this scenario exists for: the body goes back to telling
       // the model to enable team-mode in a config file.
@@ -15666,9 +15688,14 @@ function fabricatedUlwPlanInput(routes) {
 /** Append or strip the lifecycle pair, the way a same-name command would. */
 function addCommandLifecycle(input) {
   input.log.events = [
+    // Integer seqs, and PREPENDED at 0 and 1 with the rest of the log renumbered
+    // above them. The fractional `0.5` was a lazy way to slot a pair ahead of
+    // events that already start at 1; the host's seqs are integers, and a fixture
+    // that emits anything else teaches the analyzer an ordering rule the host never
+    // applies.
     { seq: 0, type: 'command/run', data: { commandId: 'cmd-fabricated-ulw', name: 'ulw-plan', args: ULW_PLAN_REQUEST, source: { kind: 'user' } } },
-    { seq: 0.5, type: 'command/done', data: { commandId: 'cmd-fabricated-ulw', kind: 'success', text: 'queued' } },
-    ...input.log.events,
+    { seq: 1, type: 'command/done', data: { commandId: 'cmd-fabricated-ulw', kind: 'success', text: 'queued' } },
+    ...input.log.events.map((event, index) => ({ ...event, seq: index + 2 })),
   ]
 }
 
