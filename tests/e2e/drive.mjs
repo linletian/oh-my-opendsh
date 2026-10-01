@@ -12,10 +12,16 @@
 // P3-T3: the root cordis.yml now inserts THREE plugin rows (omo-agents +
 // omo-hooks, plus omo-commands since P4-T3), so stage 0 installs all three
 // packages into the sandbox profile (PLUGIN_DIRS) and `pluginLoaded` asserts all
-// three load markers. The scenarios themselves are unchanged: omo-hooks'
-// implementation registry and omo-commands' are both empty, so neither plugin
-// adds behaviour — only its summary boot marker (`[omo-commands] loaded: …
-// 0/6 commands registered` at P4-T3, every manifest row still pending).
+// three load markers. What that stage PROVES is mount, not behaviour: each
+// plugin's `pluginLoaded` analysis matches its **summary boot marker prefix**
+// (`[omo-commands] loaded: …`), which every plugin logs whether or not it
+// registers anything. The scenario bodies are where behaviour is asserted.
+// ⚠️ No counts here, on purpose — the summary line's per-status split is
+// computed from each plugin's own manifest at boot (see
+// scripts/verify-concerto-static.mjs's c21 for the same discipline on the
+// notices side). The version of this paragraph that transcribed
+// "0/6 commands registered … every manifest row still pending" went stale at
+// the first landed command and never came back.
 // (P3-T6 amended that last clause: omo-hooks now registers its FIRST listener
 // and the chain carries ELEVEN scenarios — see the C-mode pilot section below.)
 //
@@ -516,10 +522,11 @@ const CONCERTO_PRESET_ID = 'concerto'
 /**
  * The load markers ALL THREE mounted plugins log at boot (P3-T3; third row by
  * P4-T3): omo-agents' plain `loaded` line, omo-hooks' summary marker
- * (`[omo-hooks] loaded: manifest 14 entries (…)`) and omo-commands' summary
- * marker (`[omo-commands] loaded: manifest 6 entries (…)` — the prefix is what
- * boot_log.includes matches). A boot missing one means the corresponding
- * cordis.yml insert row did not mount.
+ * (`[omo-hooks] loaded: manifest <N> entries (…)`) and omo-commands' summary
+ * marker (`[omo-commands] loaded: manifest <N> entries (…)` — the prefix is what
+ * boot_log.includes matches, and `<N>`/the status counts are computed at boot
+ * from each plugin's own manifest, never transcribed). A boot missing one means
+ * the corresponding cordis.yml insert row did not mount.
  */
 const LOADED_MARKERS = [
   '[omo-agents] loaded',
@@ -8458,17 +8465,47 @@ async function runAnalysisSelfTest(routes) {
         })
       }
     }, 'bannerReachesModelOnWire'],
-    // ⑦ control ④ broken: a SECOND injection in the follow-up turn.
-    ['the second keyword turn injected again (S-6 one-shot gone)', (input) => {
-      const injected = fabricatedKeywordInjection(buildExpectedInjectedText('ultrawork'))
-      input.log.events.splice(8, 0,
-        { seq: 80, type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [injected] } },
-        { ...fabricatedKeywordInjectedEvent(buildExpectedInjectedText('ultrawork'), injected.source, injected.id), seq: 81 })
-    }, 'exactlyOneInjectionAcrossBothTurns'],
-    // ⑧ the second turn never ran — so "no second injection" would be vacuous.
+    // ⑦ control ④ BROKEN, and the defect is now the REVERSE of what this case used
+    //    to be: the session one-shot (S-6) used to forbid a second injection in
+    //    the follow-up turn, so "there are two" WAS the defect. That gate was
+    //    deleted in PR #10's review — its premise (one user message is visible
+    //    on every pre-step of its session) is falsified by `inbox.claim`'s
+    //    destructive splice — and upstream v4.19.4 has no session gate on the
+    //    keyword path. So the defect is now "the second turn did NOT re-arm",
+    //    which is exactly the regression a re-added session gate would cause.
+    ['the second keyword turn did NOT re-arm (a session gate is back)', (input) => {
+      // Drop BOTH projections of the second injection, located by shape rather
+      // than by seq: a fixture that renumbers its events would otherwise make
+      // this defect case mutate nothing and pass for the wrong reason.
+      const splices = input.log.events.filter((event) => event.type === 'agent/inbox/spliced'
+        && (event.data?.inserted ?? []).some((message) => isKeywordInjectionSource(message)))
+      const claims = input.log.events.filter((event) => event.type === 'user/message'
+        && isKeywordInjectionSource(event.data))
+      input.log.events = input.log.events.filter((event) => event !== splices[1] && event !== claims[1])
+    }, 'secondTurnArmedAgain'],
+    // ⑦′ …and the id half of the same contract: a re-arm that REUSES turn 1's id
+    //      would throw `message "…" is already pending` at the inbox's
+    //      pending-uniqueness check before the model ever saw it.
+    ['the re-arm reused turn 1\'s injection id', (input) => {
+      const splices = input.log.events.filter((event) => event.type === 'agent/inbox/spliced'
+        && (event.data?.inserted ?? []).some((message) => isKeywordInjectionSource(message)))
+      const claims = input.log.events.filter((event) => event.type === 'user/message'
+        && isKeywordInjectionSource(event.data))
+      const firstId = splices[0].data.inserted[0].id
+      splices[1].data.inserted[0].id = firstId
+      claims[1].data.id = firstId
+    }, 'secondInjectionHasItsOwnId'],
+    // ⑧ the second turn never ran — so "it armed again" would be vacuous.
     ['the second keyword turn produced no assistant message', (input) => {
       input.log.events = input.log.events.filter((event) => !eventText(event).includes(ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY))
     }, 'secondKeywordTurnRan'],
+    // ⑧′ …and turn 2's PROMPT never landed: with the second arm present but no
+    //      prompt above it, the re-arm check could not tell "armed again" from
+    //      "a third injection nobody asked for". Without the prompt event,
+    //      `secondTurnPromptLanded` is false on its own.
+    ['the second keyword turn prompt never landed', (input) => {
+      input.log.events = input.log.events.filter((event) => !eventText(event).includes(ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT))
+    }, 'secondTurnPromptLanded'],
     // ⑨ the bash step did not execute — the premise behind "a later request
     //    existed".
     ['the step tool call never ran', (input) => {
@@ -10557,24 +10594,22 @@ export function analyzeSkillsCatalogVisible(
 // WHAT THESE SCENARIOS PROVE, and nothing more. H-33 is an INJECTION hook: a
 // user message naming a keyword must make the mode's protocol text reach the
 // model, and a message that does not must leave the session untouched. Four
-// scenarios, because four things have to be observable and one session can only
-// observe one of them (S-6's session-level one-shot means a second keyword turn
-// in the same session is *supposed* to inject nothing — see control ④):
+// scenarios, one per keyword type plus the negative controls:
 //
-//   1. `ultrawork-keyword-injected`   — the main link + control ④ (idempotency)
+//   1. `ultrawork-keyword-injected`   — the main link + control ④ (re-arm)
 //   2. `keyword-negative-controls`    — controls ①②③ in three turns of one session
 //   3. `hyperplan-keyword-injected`   — the second keyword type's own text
 //   4. `combo-keyword-injected`       — strict adjacency + standalone suppression
 //
 // ⚠️ THE ASSERTION SHAPE IS S-11, NOT UPSTREAM'S. dsh-agent-loop claims the
-// inbox batch BEFORE the waterfall runs (lib:888-899), so `agent.inject()`'s
+// inbox batch BEFORE the waterfall runs (lib:889,895), so `agent.inject()`'s
 // content is claimed at the NEXT step boundary and the model reads it from the
 // request after that. These scenarios therefore assert:
 //     ① the injected message is a full `InjectedUserMessage` in the session log
 //        (role / source triple / content block / a uuid id);
 //     ② a request **after** the injecting step carries the banner + the vendor
 //        body anchor on the wire;
-//     ③ the second keyword turn injects NOTHING.
+//     ③ a SECOND keyword turn in the SAME session arms AGAIN (control ④).
 // They deliberately do NOT assert "the first request already carries the banner"
 // — that would be upstream's opencode timing, and asserting it here would be
 // asserting a property this deployment does not have. `bannerAbsentFromFirstRequest`
@@ -10582,11 +10617,21 @@ export function analyzeSkillsCatalogVisible(
 // assumed: if a future DSH changed the claim order, exactly that check flips and
 // the report says so.
 //
-// IDEMPOTENCY vs TIMING ARE SEPARATE CLAIMS. The one-shot guard is keyed on the
-// session object, so control ④'s second `ulw` turn is blocked by S-6 — NOT by
-// S-11's one-step delay. Mixing them would make control ④ pass for the wrong
-// reason, so control ④ runs in its own session where the timing question does
-// not arise.
+// ⚠️ CONTROL ④ FLIPPED IN PR #10's REVIEW — it used to assert the OPPOSITE. The
+// session one-shot (`S-6`) said a second `ulw` turn must inject nothing, on the
+// premise "one user message triggers every pre-step of its session". That premise
+// is false and the gate was deleted: `claim` destructively splices the batch out
+// (lib:104-111), so a user message is seen in exactly ONE pre-step, and upstream
+// v4.19.4 has no session gate on the keyword path at all. Control ④ now pins the
+// property that actually holds in both places: the SECOND turn arms again, with a
+// DISTINCT injection id (the inbox's pending-uniqueness check reads it).
+//
+// RE-ARM vs TIMING ARE SEPARATE CLAIMS. Turn 2 is deliberately TWO steps so the
+// second injection is claimed within the scenario (an injection left in
+// `next-step` at the end of a turn would only produce its splice projection, and
+// the "both projections share one id" claim would become vacuous). So "the second
+// turn armed" cannot be confused with S-11's one-step delay: the re-arm check is
+// about the SECOND turn's own events, which sit after its own prompt.
 
 const keywordDetectorConstants = await import(
   '../../patches/omo-dsh/omo-hooks/src/hooks/keyword-detector/constants.ts'
@@ -10634,8 +10679,12 @@ const COMBO_KEYWORD_SUMMARY =
 // behind a slash) so the trigger is the keyword itself.
 const ULTRAWORK_KEYWORD_PROMPT =
   'e2e ultrawork-keyword-injected: run ulw on the following, first echo the step marker then summarize'
+// ⚠️ TWO steps, not one: the re-arm's second injection is spliced at turn 2's
+// first pre-step and only CLAIMED at the next step boundary. A one-step turn 2
+// would end before that claim, leaving the scenario unable to assert the
+// "both projections of the second injection share one id" half of the contract.
 const ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT =
-  'e2e ultrawork-keyword-injected: ulw again, and just confirm in one line'
+  'e2e ultrawork-keyword-injected: ulw again, echo the step marker then confirm in one line'
 const HYPERPLAN_KEYWORD_PROMPT =
   'e2e hyperplan-keyword-injected: plan this with hyperplan, first echo the step marker then summarize'
 const COMBO_KEYWORD_PROMPT =
@@ -10684,7 +10733,7 @@ function keywordOneStepScript(summary) {
   return { sisyphus: [{ type: 'text', text: summary }] }
 }
 
-/** ultrawork-keyword-injected script: turn 1 two-step, turn 2 one-step (control ④). */
+/** ultrawork-keyword-injected script: turn 1 and turn 2 both two-step (control ④). */
 function ultraworkKeywordScript() {
   return {
     sisyphus: [
@@ -10697,6 +10746,14 @@ function ultraworkKeywordScript() {
         },
       },
       { type: 'text', text: ULTRAWORK_KEYWORD_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: KEYWORD_STEP_COMMAND,
+          description: 'Echo the scenario step marker so turn 2 takes a second step too',
+        },
+      },
       { type: 'text', text: ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY },
     ],
   }
@@ -10744,6 +10801,28 @@ function isKeywordInjectionSource(message) {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
+ * "each injection owns exactly two projections carrying one shared id, and the
+ * injections' ids are all different" — derived, not transcribed.
+ *
+ * ⚠️ This REPLACED a `new Set(ids).size === 1` check that was correct only
+ * because the session one-shot made a second injection impossible. With the
+ * gate gone (upstream parity) that check would have been *unsatisfiable* on a
+ * correct run — the exact "a plausible-looking simplification silently changes
+ * behaviour" failure this file's whole exercise is about, in the assertion
+ * rather than the hook. `expectedInjections` is passed in so the shape scales
+ * with the scenario instead of being hard-coded to two turns.
+ */
+function perInjectionIdShape(carriers, expectedInjections) {
+  const byId = new Map()
+  for (const { message } of carriers) {
+    const id = message?.id
+    byId.set(id, (byId.get(id) ?? 0) + 1)
+  }
+  if (byId.size !== expectedInjections) return false
+  return [...byId.values()].every((occurrences) => occurrences === 2)
+}
+
+/**
  * The two strings whose ABSENCE from a combo is the suppression claim.
  *
  * Module scope because the self-test needs the same two anchors, and a defect
@@ -10757,14 +10836,32 @@ const SUPPRESSION_BODY_ANCHOR = KEYWORD_TEXTS.hyperplan.slice(0, 120)
 /**
  * The shared kernel of the three positive scenarios. `type` selects the keyword
  * and the banner the model must be shown; the structural assertions (one
- * injection, full message shape, a LATER request carrying it, first request not
- * carrying it) are identical, so they are written once.
+ * injection per ARMED TURN, full message shape, a LATER request carrying it,
+ * first request not carrying it) are identical, so they are written once.
+ *
+ * `expectedInjections` is the number of times the scenario expects the mode to
+ * arm, NOT a constant: `hyperplan`/`combo` run one keyword turn (1), while
+ * `ultrawork` runs TWO — its second turn re-arms. That is upstream parity: the
+ * session one-shot that used to forbid it was removed in PR #10's review because
+ * its premise ("one user message is visible on every pre-step of its session")
+ * is false — `inbox.claim` splices the batch out destructively,
+ * dsh-agent-loop/lib/index.js:104-111 — and upstream v4.19.4 has no session gate
+ * on the keyword path at all (its `defaultModeUltraworkInjectedSessions` is read
+ * only inside the `detectedKeywords.length === 0` default-mode branch,
+ * hook.ts:120-121).
  */
 function analyzeKeywordInjection(
   { log, requests, providersJson, bootLog },
   routes,
-  { keywordType, banner, summary, stepCount },
+  { keywordType, banner, summary, stepCount, expectedInjections = 1 },
 ) {
+  // Each injection shows up in the log as TWO projections (the inbox splice and
+  // the next step boundary's history claim). Nothing derives `expectedCarriers`
+  // here: the two counts below are asserted INDEPENDENTLY, because they are two
+  // separate facts about the host — "this run produced the expected number of
+  // injections" (multiplied by two) and "every injection produced both of its
+  // projections" (the per-id census in `perInjectionIdShape`). Deriving one from
+  // the other would make the census vacuous.
   const events = log?.events ?? []
   const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
   const expectedText = buildExpectedInjectedText(keywordType)
@@ -10801,10 +10898,12 @@ function analyzeKeywordInjection(
       `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
     ).test(providersJson),
     sessionLogFound: log !== undefined,
-    // ①a. exactly ONE durable carrier per projection — a double inject would
-    // show as two, and the session one-shot (S-6) is what should prevent that.
-    singleInboxSplice: splices.length === 1,
-    singleHistoryClaim: claims.length === 1,
+    // ①a. exactly `expectedInjections` durable carriers PER projection — a
+    // double inject inside one turn shows as one too many, a missing one as one
+    // too few. It is not a constant any more: a second keyword turn in the same
+    // session legitimately arms again (see the header on expectedInjections).
+    singleInboxSplice: splices.length === expectedInjections,
+    singleHistoryClaim: claims.length === expectedInjections,
     // ①b. the carrier is a full InjectedUserMessage, not a bare string
     // (BLOCKER-1) and not a partial object.
     //
@@ -10828,11 +10927,17 @@ function analyzeKeywordInjection(
     injectionIdIsUuid: carriers.length > 0
       && carriers.every(({ message }) => typeof message?.id === 'string'
         && UUID_PATTERN.test(message.id)),
-    // ①c′. the two projections are the SAME message, so they must carry the same
-    // id. Two different uuids means the injection was built twice (or one
-    // projection was synthesised), which the per-projection id check alone
-    // cannot see: both ids would be valid uuids.
-    bothProjectionsShareOneId: new Set(carriers.map(({ message }) => message?.id)).size === 1,
+    // ①c′. the two projections of ONE injection are the SAME message, so they
+    // must carry the same id. Two different uuids there means the injection was
+    // built twice (or one projection was synthesised), which the per-projection
+    // id check alone cannot see: both ids would be valid uuids.
+    //
+    // ⚠️ With two armed turns this is no longer "the log holds exactly one id" —
+    // it is "EVERY id appears exactly twice, once per projection". Exactly
+    // `expectedInjections` distinct ids is the CONTRACT: a repeat would throw
+    // `message "…" is already pending` at the inbox's pending-uniqueness check,
+    // and the same id on both turns would make the re-arm impossible at all.
+    bothProjectionsShareOneId: perInjectionIdShape(carriers, expectedInjections),
     // ①d. the body is the plugin's own built text (carrier note + vendor body +
     // the `---` tail), compared against the module — not a restated copy.
     injectionTextMatchesPluginBuild: carriers.length > 0
@@ -10911,14 +11016,16 @@ export function analyzeUltraworkKeywordInjected(input, routes) {
     keywordType: 'ultrawork',
     banner: keywordDetectorConstants.ULTRAWORK_BANNER_LINE,
     summary: ULTRAWORK_KEYWORD_SUMMARY,
-    stepCount: 3,
+    // Two two-step turns → four sisyphus requests (2 × 2).
+    stepCount: 4,
+    expectedInjections: 2,
   })
   // Control ④ rides along as its OWN block of named checks rather than being
   // folded into the injection link: the driver produces one verdict per
-  // scenario, and S-6 (one-shot) must not be indistinguishable from S-11
+  // scenario, and the re-arm claim must not be indistinguishable from S-11
   // (timing) in the failure output.
-  const idempotency = keywordIdempotencyChecks(input.log?.events ?? [])
-  const checks = { ...base.checks, ...idempotency.checks }
+  const rearm = keywordRearmChecks(input.log?.events ?? [])
+  const checks = { ...base.checks, ...rearm.checks }
   const failed = Object.entries(checks)
     .filter(([, value]) => value !== true)
     .map(([name]) => name)
@@ -10926,7 +11033,7 @@ export function analyzeUltraworkKeywordInjected(input, routes) {
     result: failed.length === 0 ? 'PASS' : 'FAIL',
     failed,
     checks,
-    detail: { ...base.detail, ...idempotency.detail },
+    detail: { ...base.detail, ...rearm.detail },
   }
 }
 
@@ -11264,32 +11371,82 @@ export function analyzeKeywordNegativeControls(input, routes) {
 }
 
 /**
- * Control ④ — the second keyword turn of the MAIN scenario, analysed here so
- * its assertion is named separately from the injection link (S-6 vs S-11 must
- * not be one check).
+ * Control ④, flipped: the second keyword turn must ARM AGAIN.
+ *
+ * It is analysed here rather than folded into the injection link so "it armed
+ * again" is a NAMED check distinct from the link's own claims (a re-arm and an
+ * S-11 timing shift must not be one verdict).
+ *
+ * ⚠️ This block used to assert the exact opposite ("exactly one injection across
+ * both turns"), on the strength of the deleted session one-shot. Its premise —
+ * one user message triggers every pre-step of its session — is false:
+ * `inbox.claim` splices the batch out destructively (dsh-agent-loop
+ * lib:104-111), and upstream v4.19.4 has no session gate on the keyword path.
+ * What replaces it is a claim both places agree on: a SECOND `ulw` turn in the
+ * SAME session injects again, and its carrier is a different message (distinct
+ * id) that lands AFTER that turn's own prompt — so it cannot be the first
+ * injection being mis-counted.
  */
-function keywordIdempotencyChecks(events) {
+function keywordRearmChecks(events) {
   const turnEnds = events.filter((event) => event.type === 'turn/end')
   const expectedText = buildExpectedInjectedText('ultrawork')
   const carriers = keywordInjectedCarriers(events, expectedText.slice(0, 240))
-  // Where the single injection sat in the event sequence, and where the second
-  // keyword turn's own messages did. One injection BEFORE that is the whole
-  // claim: the second turn added nothing.
-  const injectSeq = carriers[0]?.seq
+  // ⚠️ **The partition point is the CLAIM projection, not the splice** — and that
+  // is a measured property of the host, not a preference. `agent.inject()` runs
+  // INSIDE the pre-step waterfall, which runs AFTER `inbox.claim` but BEFORE the
+  // claimed batch is materialised into `user/message` history events. So turn 2's
+  // injection is SPLICED (seq N) before turn 2's own prompt appears in the log
+  // (seq N+2), and only its CLAIM lands after. Observed shape from a real run:
+  //   splice₁ 6 · claim₁ 22 · splice₂ 29 · prompt₂ 31 · claim₂ 38
+  // Partitioning on seq over BOTH projections therefore files turn 2's injection
+  // into "turn 1" — an e2e that asserts the host's real ordering has to key on
+  // the projection whose event actually follows the prompt.
+  const claims = carriers.filter((entry) => entry.projection === 'history-claim')
+  const followupPrompt = events.find(
+    (event) => event.type === 'user/message'
+      && eventText(event).includes(ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT),
+  )
   const followupSummary = events.find(
     (event) => event.type === 'assistant/message'
       && eventText(event).includes(ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY),
   )
   const followupTurnEnd = turnEnds[1]
+  const firstTurnClaims = followupPrompt === undefined
+    ? []
+    : claims.filter((entry) => entry.seq < followupPrompt.seq)
+  const secondTurnClaims = followupPrompt === undefined
+    ? []
+    : claims.filter((entry) => entry.seq > followupPrompt.seq)
+  const splices = carriers.filter((entry) => entry.projection === 'inbox-splice')
+  const rearmSplice = secondTurnClaims[0] === undefined
+    ? undefined
+    : splices.find((entry) => entry.message?.id === secondTurnClaims[0].message?.id)
   const checks = {
-    exactlyOneInjectionAcrossBothTurns: carriers.length === 2, // one splice + one claim
-    // The injection happened during TURN 1 — before the second keyword turn's
-    // own events. If it landed after them, the one-shot is not what stopped it.
-    injectionPredatesTheSecondTurn: injectSeq !== undefined
-      && followupSummary !== undefined
-      && injectSeq < followupSummary.seq,
-    // …and the second turn really ran to completion (so "no second injection"
-    // is not "the second turn never happened").
+    // Two injections × two projections each (splice + next-boundary claim).
+    exactlyTwoInjectionsAcrossBothTurns: carriers.length === 4,
+    // ONE injection claimed in turn 1 — the first arm still happened.
+    turnOneArmedOnce: firstTurnClaims.length === 1,
+    // …and the re-arm: turn 2's prompt really landed, and a full injection is
+    // claimed after it. Without the prompt event this is false, so a run that
+    // never delivered turn 2 cannot pass by producing "no second injection".
+    secondTurnPromptLanded: followupPrompt !== undefined,
+    secondTurnArmedAgain: secondTurnClaims.length === 1,
+    // The two injections are DIFFERENT messages. A repeat would collide on the
+    // inbox's pending-uniqueness check (`message "…" is already pending`,
+    // dsh-agent-loop lib:192-194) — which is the real failure this half guards.
+    secondInjectionHasItsOwnId: firstTurnClaims.length === 1
+      && secondTurnClaims.length === 1
+      && secondTurnClaims[0].message?.id !== firstTurnClaims[0].message?.id,
+    // The ordering fact the whole partition rests on, as its OWN check: the
+    // re-arm is SPLICED before turn 2's prompt is materialised and CLAIMED after
+    // it. Flip this and the analyzer's turn split silently changes meaning, so
+    // it must fail as itself rather than as a mis-filed "no re-arm".
+    reArmSplicePrecedesItsOwnPrompt: rearmSplice !== undefined
+      && followupPrompt !== undefined
+      && rearmSplice.seq < followupPrompt.seq
+      && secondTurnClaims[0].seq > followupPrompt.seq,
+    // …and the second turn really ran to completion (so "it armed again" is not
+    // "the second turn never happened").
     secondKeywordTurnRan: followupSummary !== undefined
       && followupTurnEnd !== undefined
       && followupSummary.seq < followupTurnEnd.seq
@@ -11302,7 +11459,13 @@ function keywordIdempotencyChecks(events) {
     detail: {
       turnCount: turnEnds.length,
       carrierCount: carriers.length,
-      injectionSeq: injectSeq,
+      followupPromptSeq: followupPrompt?.seq,
+      firstTurnClaimSeqs: firstTurnClaims.map((entry) => entry.seq),
+      secondTurnClaimSeqs: secondTurnClaims.map((entry) => entry.seq),
+      carrierSeqsByProjection: {
+        'inbox-splice': carriers.filter((e) => e.projection === 'inbox-splice').map((e) => e.seq),
+        'history-claim': claims.map((e) => e.seq),
+      },
       followupSummarySeq: followupSummary?.seq,
     },
   }
@@ -11342,14 +11505,21 @@ function fabricatedKeywordInjection(text) {
 }
 
 /**
- * The fabricated GOOD log for the main ultrawork scenario: turn 1 injects (splice
- * at seq 5, claim at seq 6), the model summarises, turn 1 ends; turn 2 (the
- * idempotency control) answers and ends with NO new carrier.
+ * The fabricated GOOD log for the main ultrawork scenario: turn 1 arms (splice
+ * at seq 4, claim at seq 5), the model summarises, turn 1 ends; turn 2 (control
+ * ④) prompts, arms AGAIN (splice at seq 12, claim at seq 13) and ends.
+ *
+ * ⚠️ The second arm is the SHAPE a correct run must now produce — it used to be
+ * the shape the scenario forbade. Two ids, two projections each, the second pair
+ * strictly after turn 2's prompt.
  */
 function fabricatedKeywordGoodInput(routes) {
   const expectedText = buildExpectedInjectedText('ultrawork')
   const injected = fabricatedKeywordInjection(expectedText)
   const source = injected.source
+  // Turn 2's injection is a SEPARATE message (fresh id) — same body, because
+  // the re-arm is triggered by the same keyword, but a different carrier.
+  const reinjected = fabricatedKeywordInjection(expectedText)
   return {
     log: {
       header: { id: KEYWORD_FABRICATED_SESSION_ID },
@@ -11365,12 +11535,28 @@ function fabricatedKeywordGoodInput(routes) {
         { ...fabricatedKeywordInjectedEvent(expectedText, source, injected.id), seq: 5 },
         { ...KEYWORD_FABRICATED_SUMMARY_EVENT, seq: 6 },
         { seq: 7, type: 'turn/end', data: { reason: { kind: 'completed' } } },
-        { seq: 8, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT }], source: { kind: 'user' } } },
-        { seq: 9, type: 'assistant/message', data: { text: ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY } },
-        { seq: 10, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+        // ⚠️ Turn 2's SPLICE precedes turn 2's PROMPT in the log, and its claim
+        // follows it. That ordering is measured, not invented: `agent.inject()`
+        // runs inside the pre-step waterfall, which runs after `inbox.claim` but
+        // before the claimed batch is materialised into `user/message` events.
+        // A real run reads: splice₁ 6 · claim₁ 22 · splice₂ 29 · prompt₂ 31 ·
+        // claim₂ 38. The fixture reproduces it so the analyzer's partition point
+        // is exercised against the shape the host produces.
+        {
+          seq: 8,
+          type: 'agent/inbox/spliced',
+          data: { target: 'next-step', inserted: [reinjected] },
+        },
+        { seq: 9, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT }], source: { kind: 'user' } } },
+        { seq: 10, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: KEYWORD_STEP_COMMAND }) } },
+        { seq: 11, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-2', content: [{ type: 'text', text: KEYWORD_STEP_MARKER }] }] } } },
+        { ...fabricatedKeywordInjectedEvent(expectedText, reinjected.source, reinjected.id), seq: 12 },
+        { seq: 13, type: 'assistant/message', data: { text: ULTRAWORK_KEYWORD_FOLLOWUP_SUMMARY } },
+        { seq: 14, type: 'turn/end', data: { reason: { kind: 'completed' } } },
       ],
     },
-    // The S-11 shape: request #0 predates the claim, #1 carries it.
+    // The S-11 shape: request #0 predates the claim, #1 carries it; #2 is turn
+    // 2's first step (its own injection not yet claimed), #3 carries the re-arm.
     requests: [
       { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_PROMPT }] }] } },
       {
@@ -11393,6 +11579,17 @@ function fabricatedKeywordGoodInput(routes) {
           ],
         },
       },
+      {
+        role: 'sisyphus',
+        body: {
+          messages: [
+            { role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_PROMPT }] },
+            fabricatedKeywordInjection(expectedText),
+            { role: 'user', content: [{ type: 'text', text: ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT }] },
+            fabricatedKeywordInjection(expectedText),
+          ],
+        },
+      },
     ],
     providersJson: fabricatedProvidersJson(routes),
     bootLog: FABRICATED_BOOT_LOG,
@@ -11410,7 +11607,7 @@ function fabricatedKeywordGoodInput(routes) {
  * blind-spot shape MAJOR-4 found on the boot-log side, one layer in.
  *
  * Single turn, two steps — the hyperplan scenario has no followup prompt, unlike
- * the ultrawork one, so the idempotency checks are not part of its kernel.
+ * the ultrawork one, so the re-arm checks are not part of its kernel.
  */
 function fabricatedHyperplanGoodInput(routes) {
   const expectedText = buildExpectedInjectedText('hyperplan')
@@ -14171,16 +14368,18 @@ const SCENARIOS = [
   },
   // ── P4-T13: the keyword-mode injection chain (H-33) ────────────────────────
   //
-  // FOUR scenarios, because the session one-shot (S-6) makes "inject once" and
-  // "inject again" mutually exclusive within one session. The main scenario
-  // carries its own idempotency control as turn 2; the other three need their
-  // own sessions.
+  // FOUR scenarios: one per keyword type plus the negative controls. They cannot
+  // share a session because each asserts about its OWN injection text (the
+  // carrier reader keys on that text), so an extra injection would make the
+  // counts ambiguous rather than stronger.
   {
     name: 'ultrawork-keyword-injected',
     prompt: ULTRAWORK_KEYWORD_PROMPT,
-    // Control ④: a SECOND `ulw` message in the same session. The one-shot guard
-    // (S-6) must make it a no-op — this is the e2e face of the session-level
-    // idempotency, and it is why this scenario is 2 turns rather than 1.
+    // Control ④: a SECOND `ulw` message in the same session, which must ARM
+    // AGAIN. That is upstream parity — PR #10's review removed the session
+    // one-shot (S-6) after `inbox.claim`'s destructive splice falsified its
+    // premise, and upstream v4.19.4 has no session gate on the keyword path.
+    // It is why this scenario is 2 turns rather than 1.
     followupPrompts: [ULTRAWORK_KEYWORD_FOLLOWUP_PROMPT],
     roles: ['sisyphus'],
     script: ultraworkKeywordScript,
@@ -14189,8 +14388,8 @@ const SCENARIOS = [
   {
     name: 'keyword-negative-controls',
     // Controls ①②③⑤ in FOUR turns of one session. All four are negatives, so none
-    // of them ever arms the one-shot — sharing the session is safe here and makes
-    // the claim stronger (one stray injection fails all of them).
+    // of them ever arms the mode — sharing the session is safe here and makes the
+    // claim stronger (one stray injection fails all of them).
     //
     // ⚠️ `actions`, not `prompt` + `followupPrompts`: control ⑤ is a COMMAND, and
     // the command must arrive as a 4th turn AFTER the three prose turns. The

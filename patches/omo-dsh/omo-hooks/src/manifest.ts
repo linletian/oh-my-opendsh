@@ -835,8 +835,11 @@ const MANIFEST_ROWS = [
     //    （`docs/plans/` 是仲裁侧文件，本任务只读不写。）
     // ② **模式 A**：与 H-32 同事件面（`agent/pre-step`），注入面是 `agent.inject()`。
     //    事件差异已登记在 listener 头部 S-1：上游触发面是**每消息一次**的
-    //    `chat.message`，pre-step 是**每步一次**（H-32 实测一次会话 268 步），
-    //    故会话级一次性守卫是 DSH 的**必需**适配而非可选（listener 头部 S-6）。
+    //    `chat.message`，pre-step 是**每步一次**（H-32 实测一次会话 268 步）。
+    //    初版据此补过一道会话级一次性守卫，PR #10 复核发现其必要性前提与宿主事实
+    //    矛盾（`inbox.claim` 破坏性 → 一条用户消息只在一批可见）遂**删除**，
+    //    对齐上游——完整链路见 listener 头部 S-6。残留的批次差异由判定面逐条处理
+    //    （S-13），仍是**唯一**的幂等闸。
     // ③ **件数算术**（`git ls-tree -r v4.19.4` 逐条实测，两列合计写成显式等式）：
     //
     //        upstreamFiles 17 + upstreamTestFiles 7 = 24
@@ -849,11 +852,13 @@ const MANIFEST_ROWS = [
     //    字段的定义处，被 constants.ts 与 hook.ts 共同 import）= 17 + 7 = 24。
     //    等式右侧的 25 就是覆盖文档那个数字的来源：目录 24 + 配置 schema 1，
     //    减去 N-03 排除的 `AGENTS.md` 才等于本行的 24。
-    //    📌 **与覆盖文档的口径差**：phase4-commands.md §1.2 的 H-33 行写
-    //    「`keyword-detector/`（25 文件，P4-T1 实测——计划期 24 少计 1）」。
-    //    实测目录只有 24 条目；25 = 目录 24 + 配置 schema 1。本行按 17 件
-    //    登记（口径 = 两列之和），不改那份文档（`docs/plans/` 是仲裁侧
-    //    文件，本任务只读），差异已登记进 P4-T12 报告交仲裁裁定。
+    //    📌 **与覆盖文档的口径差**：覆盖文档 phase4-commands.md:34 的 H-33 行
+    //    现措辞是「**24 文件** + 1 目录外配置文件 = 25 条 upstreamFiles，T12
+    //    复核实测——P4-T1 的 25 把目录外 `config/schema/keyword-detector.ts`
+    //    计入目录，测试 7 个不变」。该措辞与上面这串等式**已对齐**（T12 复跑后
+    //    由仲裁者在文档侧更正）。本行的计数口径仍与其不同——本行按 **17 件**登记
+    //    （= 两列之和），文档那 25 是 upstreamFiles 条目数（含 7 个测试文件）；
+    //    两个数字分别对「实现件」和「上游文件条目」负责，不可互相替换。
     // ④ **注入文案不 vendor**：本行 `upstreamFiles` 不含 `prompts-core` 的 6 个
     //    prompt .md——注入正文改为引用 P4-T4 已 vendor 的
     //    `skills/{ultrawork,hyperplan}/SKILL.md`（listener 头部 S-2/S-7）。
@@ -889,13 +894,15 @@ const MANIFEST_ROWS = [
     event: 'agent/pre-step',
     mode: 'A',
     summary:
-      '用户文本命中 ultrawork/ulw/hyperplan/hpp/组合词 → 六级输入过滤 + 双幂等后注入模式指令正文（正文 = P4-T4 vendor 的 ultrawork/hyperplan SKILL.md；5+1 模型变体收窄为单一名册感知文案；team 枚举位预留不接线；toast 收窄为审计行）',
+      '用户文本命中 ultrawork/ulw/hyperplan/hpp/组合词 → 六级输入过滤 + 消息级幂等后注入模式指令正文（正文 = P4-T4 vendor 的 ultrawork/hyperplan SKILL.md；5+1 模型变体收窄为单一名册感知文案；team 枚举位预留不接线；toast 收窄为审计行）',
     // The scenario name is the one P4-T13 actually ships. It was
     // `keyword-mode-ultrawork` while the row was `pending` — a name for a
-    // scenario that did not exist yet. Four scenarios landed instead, because
-    // the session one-shot (S-6) makes "injected" and "injected again" mutually
-    // exclusive within one session; `ultrawork-keyword-injected` is the primary
-    // one, and it carries the idempotency control as its second turn.
+    // scenario that did not exist yet. Four scenarios landed instead, one per
+    // keyword type plus the negative controls; `ultrawork-keyword-injected` is
+    // the primary one, and its second turn now pins the **re-arm** control
+    // (upstream parity — the session one-shot S-6 once made "injected" and
+    // "injected again" mutually exclusive in one session, but that gate was
+    // removed in PR #10's review because its premise is false).
     e2eScenario: 'ultrawork-keyword-injected',
     // `ported` — flipped in P4-T13 as the **双侧同步** commit the coverage doc's
     // §1.2 H-33 status cell itself spells out (`ported 翻转随 P4-T13 e2e 与

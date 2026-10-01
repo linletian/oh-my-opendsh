@@ -27,11 +27,19 @@
 //   registered "[omo-commands] command <id> registered"
 //             — ONE line per manifest row that IS registered, i.e. a row whose
 //               status is 'ported' AND whose registrar exists and returned
-//               cleanly. A row with no registrar (not ported yet) is SILENT:
-//               P4-T3 ships all six rows 'pending', so a correct boot logs the
-//               summary line and NOTHING else. That silence is the honest
-//               reading — see index.ts's loop for why "no line" must not become
-//               "a line that claims success".
+//               cleanly. A row with no registrar (not ported yet) is SILENT: the
+//               manifest declares 6 rows, and whichever of them are still
+//               'pending' — or 'ported' without a registrar — produce NO line at
+//               all, so the boot logs the summary line and nothing else for
+//               them. That silence is the honest reading — see index.ts's loop
+//               for why "no line" must not become "a line that claims success".
+//               ⚠️ How many of the 6 sit in each status is deliberately NOT
+//               restated here. It is read from COMMAND_MANIFEST by the functions
+//               in this file, and the exact rendered line is pinned by
+//               tests/omo-commands/boot-markers.test.ts. A hand-copied census in
+//               a comment is what this paragraph used to be — it said "P4-T3
+//               ships all six rows 'pending'" and stayed that way through the
+//               whole Phase 4 landing, i.e. the drift outlived the claim.
 //   FAILED    "[omo-commands] command <id> FAILED: <describeError>"
 //             — loud-but-non-fatal: the failing command names itself and the
 //               loop keeps going (P2-T16 discipline — one broken command must

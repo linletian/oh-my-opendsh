@@ -29,7 +29,16 @@
 // silently changes behaviour (strip the code fence and the user writing about
 // `ulw` gets the 30 KB directive; drop a gate and the system arms the mode off
 // its own reminder). So the suite is organised as: recognition → the six input
-// gates → the config rules → the two idempotency guards → the injection surface.
+// gates → the config rules → the message-level idempotency guard → the batch
+// and identity faces → the injection surface.
+//
+// IDEMPOTENCY IS **ONE** GATE NOW. The suite used to assert two (message-level
+// + a session-level one-shot, S-6). PR #10's review falsified the second one's
+// premise — `inbox.claim` splices the batch out destructively, so one user
+// message is visible in exactly one pre-step (dsh-agent-loop/lib/index.js:104-111)
+// — and the gate was deleted to match upstream, which has no session gate on
+// the keyword path at all. Test ⑤ now asserts the **upstream-parity re-arm**
+// instead: a second `ulw` in the same session injects again.
 //
 // WHY THE EXPECTATIONS ARE HARD-CODED, in the same spirit as manifest.test.ts:
 // a test that re-derives its expectation from the module under test agrees
@@ -132,10 +141,13 @@ import {
   isForeignAgentSession,
   isNonOmoAgent,
   isPlannerAgent,
+  isSubagentIdentityUndecidable,
   isSubagentSession,
   isSyntheticOrInternalPayload,
   isUserAuthoredMessage,
   readCurrentUserTextDetail,
+  readCurrentUserTextsDetail,
+  readSessionOrigin,
   isSystemDirective,
   readCurrentUserText,
   readSessionDescriptor,
@@ -152,6 +164,7 @@ import {
   formatKeywordDetectorDegradedLine,
   formatKeywordDetectorLine,
   readConfigOverride,
+  sanitizeDiagnosticLabel,
   type InjectedUserMessage,
   type KeywordStepFacts,
 } from '../../patches/omo-dsh/omo-hooks/src/hooks/keyword-detector.ts'
@@ -199,10 +212,28 @@ function payloadWith(text: string): unknown {
   return { messages: [userMessage(text)] }
 }
 
+/** A pre-step payload carrying a BATCH of user messages (claim-batch shape). */
+function payloadWithBatch(...texts: readonly string[]): { messages: unknown[] } {
+  return { messages: texts.map((text) => userMessage(text)) }
+}
+
 const NO_DESCRIPTOR: SessionDescriptor = { found: false, mode: undefined, persona: undefined, label: undefined }
 
-/** A delegated child session descriptor (persona = the seat's real self-name). */
-function childDescriptor(seat: string | undefined, mode: 'continuable' | 'one-shot' = 'one-shot'): SessionDescriptor {
+/**
+ * A delegated child session descriptor (persona = the seat's real self-name).
+ *
+ * ⚠️ `mode` 的取值就是 S-13 的判据面，单测必须**显式**给：
+ *   * `'continuable'` —— descriptor 在 setup 期落盘且**带 persona**，所以 ④/⑤ 可
+ *     判定、⑥a 整跳（主部署里 concerto 委派的真实形态）。
+ *   * `'one-shot'` —— descriptor **不带 persona**（宿主按格式就不落），身份不可
+ *     判定 → 整跳。
+ *   * `undefined` —— 残余形态（descriptor 有、mode 不可识别），只有它能走到 ⑥b
+ *     的类型过滤；那道过滤今天按**防御层**保留（S-13 ④）。
+ */
+function childDescriptor(
+  seat: string | undefined,
+  mode: 'continuable' | 'one-shot' | undefined,
+): SessionDescriptor {
   return {
     found: true,
     mode,
@@ -211,17 +242,27 @@ function childDescriptor(seat: string | undefined, mode: 'continuable' | 'one-sh
   }
 }
 
+/** A child session object whose `header.origin` says 'subagent' (S-13 ①). */
+function subagentSession(events: readonly unknown[]): object {
+  return { header: { origin: 'subagent' }, ownEvents: () => [...events] }
+}
+
 /** The facts for a main-session turn whose user text is `text`. */
 function mainFacts(text: string, overrides: Partial<KeywordStepFacts> = {}): KeywordStepFacts {
   return {
     hasInject: true,
     texts: TEXTS,
-    promptText: text,
+    promptTexts: [text],
+    sessionOrigin: undefined,
     descriptor: NO_DESCRIPTOR,
-    alreadyInjected: false,
     config: resolveConfig(),
     ...overrides,
   }
+}
+
+/** The facts for a main-session batch whose user texts are `texts`. */
+function batchFacts(texts: readonly string[], overrides: Partial<KeywordStepFacts> = {}): KeywordStepFacts {
+  return mainFacts('', { promptTexts: [...texts], ...overrides })
 }
 
 /**
@@ -375,13 +416,22 @@ describe('P4-T12 ② the code shell is removed before matching', () => {
 
 describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
   it('① synthetic/internal: only a real user turn is judged at all', () => {
-    // Gate ①. DSH shape: the last user-authored message with text. A plugin
-    // injection (source.kind !== 'user'), a synthetic flag, a non-user role,
-    // and an empty text all yield undefined.
-    expect(readCurrentUserText(payloadWith('ulw go'))).toBe('ulw go')
-    expect(readCurrentUserText({ messages: [] })).toBeUndefined()
-    expect(readCurrentUserText({})).toBeUndefined()
-    expect(readCurrentUserText('not a payload')).toBeUndefined()
+    // Gate ①. DSH shape: every user-authored message with text in the CLAIMED
+    // BATCH. A plugin injection (source.kind !== 'user'), a synthetic flag, a
+    // non-user role, and an empty text are all excluded.
+    expect(readCurrentUserTextsDetail(payloadWith('ulw go'))).toEqual({
+      texts: ['ulw go'],
+      commandExpansionSkipped: false,
+    })
+    expect(readCurrentUserTextsDetail({ messages: [] })).toEqual({
+      texts: [],
+      commandExpansionSkipped: false,
+    })
+    expect(readCurrentUserTextsDetail({})).toEqual({ texts: [], commandExpansionSkipped: false })
+    expect(readCurrentUserTextsDetail('not a payload')).toEqual({
+      texts: [],
+      commandExpansionSkipped: false,
+    })
     expect(readCurrentUserText({ messages: [{ role: 'user', content: [{ type: 'text', text: 'ulw' }] }] }))
       .toBeUndefined() // no `source` = hand-built/foreign payload, not a user turn
     expect(readCurrentUserText({
@@ -390,17 +440,23 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
     expect(readCurrentUserText({
       messages: [{ role: 'assistant', source: { kind: 'user' }, content: [{ type: 'text', text: 'ulw' }] }],
     })).toBeUndefined()
-    // The turn's LAST user message wins (the main session's history may already
-    // contain an earlier "ulw"; re-arming on it every turn would be wrong).
-    const history = { messages: [userMessage('ulw earlier'), userMessage('now something else')] }
-    expect(readCurrentUserText(history)).toBe('now something else')
+    // ⚠️ The payload is the CLAIMED BATCH, not the session history (PR #10 A-5:
+    // `inbox.claim` destructively splices the batch out, dsh-agent-loop
+    // lib:104-111), so "the last user message wins" was never a rule about
+    // history — it was a rule about a batch, and it dropped arming when the
+    // batch held more than one message. Every candidate is now collected, in
+    // batch order (the F-3 regression).
+    expect(readCurrentUserTextsDetail(payloadWithBatch('ulw earlier', 'now something else'))).toEqual({
+      texts: ['ulw earlier', 'now something else'],
+      commandExpansionSkipped: false,
+    })
     // The named gate predicate (upstream's `isSyntheticOrInternalOnlyTextParts`)
     // agrees with the reader, and the decision short-circuits on it with its own
     // reason rather than falling through to 'no-keyword'.
     expect(isSyntheticOrInternalPayload(payloadWith('ulw go'))).toBe(false)
     expect(isSyntheticOrInternalPayload({ messages: [] })).toBe(true)
     expect(isSyntheticOrInternalPayload({})).toBe(true)
-    expect(decide({ ...mainFacts('ulw go'), promptText: undefined })).toEqual({
+    expect(decide(mainFacts('ulw go', { promptTexts: [] }))).toEqual({
       kind: 'skip',
       reason: 'synthetic-internal',
     })
@@ -462,8 +518,8 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
       // MINOR-7：S-12 有自己的具名 reason，不再并进 synthetic-internal。
       expect(readCurrentUserTextDetail({ messages: [message] }))
         .toEqual({ text: undefined, commandExpansionSkipped: true })
-      // promptText 必须真是 undefined 才会走到那两闸；给空串会落到 no-keyword。
-      expect(decide(mainFacts('unused', { promptText: undefined, commandExpansionSkipped: true })))
+      // promptTexts 必须真是空数组才会走到那两闸；塞一条散文会落到 no-keyword。
+      expect(decide(mainFacts('unused', { promptTexts: [], commandExpansionSkipped: true })))
         .toEqual({ kind: 'skip', reason: 'command-expansion' })
     })
 
@@ -498,17 +554,20 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
       expect(readCurrentUserText(payloadWith(prose))).toBeUndefined()
     })
 
-    it('⑤ a command-expansion message does not mask an EARLIER real user message', () => {
-      // `continue` 而非整体放弃：判据是「这条不是散文」，不是「本轮不可判」。
-      const earlier = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'run ulw now' }] }
+    it('⑤ a command-expansion message does not mask a REAL user message in the same batch', () => {
+      // `continue` 而非放弃整批：判据是「这条不是散文」，不是「本批不可判」。
       const expansion = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '<command-instruction># /ulw-execute Command\nbody\n</command-instruction>' }] }
-      expect(readCurrentUserText({ messages: [earlier, expansion] })).toBe('run ulw now')
+      expect(readCurrentUserTextsDetail({ messages: [expansion, userMessage('run ulw now')] }))
+        .toEqual({ texts: ['run ulw now'], commandExpansionSkipped: true })
     })
   })
 
   it('③ slash lead, ④ foreign agent, ⑤ planner, ⑥ background/非主', () => {
     // ③ — reached through the decision, not the raw predicate (② has its own).
     expect(decide(mainFacts('/ulw-execute now'))).toEqual({ kind: 'skip', reason: 'slash-command' })
+    // …per CANDIDATE, not per batch: a slash line in the batch must not veto
+    // another candidate's real prose (upstream judges每条 message 独立).
+    expect(decide(batchFacts(['/ulw-execute now', 'actually, run ulw'])).kind).toBe('inject')
 
     // ④ — a persona self-naming an agent OUTSIDE the Phase 2 roster is a
     // foreign agent; the upstream builder/plan literals are kept for parity.
@@ -519,38 +578,154 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
     expect(isNonOmoAgent('builder')).toBe(true)
     expect(isNonOmoAgent('plan')).toBe(true)
     expect(isNonOmoAgent('sisyphus')).toBe(false)
-    expect(decide(mainFacts('ulw go', { descriptor: childDescriptor('experiment') })))
-      .toEqual({ kind: 'skip', reason: 'foreign-agent' })
+    // persona 只在 continuable descriptor 里落盘，所以 ④ 的可达形态**必须**是它
+    // （one-shot persona 不可得 → S-13 的「身份不可判定」先一步整跳）。
+    expect(decide(mainFacts('ulw go', {
+      sessionOrigin: 'subagent',
+      descriptor: childDescriptor('experiment', 'continuable'),
+    }))).toEqual({ kind: 'skip', reason: 'foreign-agent' })
 
     // ⑤ — the upstream predicate covers all three DSH planning seats as-is
     // (S-5): prometheus by name; plan-consultant / plan-reviewer by `\bplan\b`
     // after [_-] → space normalization.
     for (const seat of ['prometheus', 'plan-consultant', 'plan-reviewer']) {
       expect(isPlannerAgent(seat), seat).toBe(true)
-      expect(decide(mainFacts('ulw go', { descriptor: childDescriptor(seat) })), seat)
-        .toEqual({ kind: 'skip', reason: 'planner-agent' })
+      expect(decide(mainFacts('ulw go', {
+        sessionOrigin: 'subagent',
+        descriptor: childDescriptor(seat, 'continuable'),
+      })), seat).toEqual({ kind: 'skip', reason: 'planner-agent' })
     }
     expect(isPlannerAgent('sisyphus')).toBe(false)
     expect(isPlannerAgent('atlas')).toBe(false)
 
     // ⑥a — a background (continuable) delegation gets NO keyword mode, even
-    // though its text is a real user-authored one.
+    // though its text is a real user-authored one and its persona IS readable
+    // (④/⑤ above are what a continuable child's gates actually evaluate, and
+    // they run BEFORE ⑥a — same position as upstream hook.ts:88-106).
     expect(isBackgroundSession(childDescriptor('explore', 'continuable'))).toBe(true)
     expect(isBackgroundSession(childDescriptor('explore', 'one-shot'))).toBe(false)
-    expect(decide(mainFacts('ulw go', { descriptor: childDescriptor('explore', 'continuable') })))
-      .toEqual({ kind: 'skip', reason: 'background-session' })
+    expect(decide(mainFacts('ulw go', {
+      sessionOrigin: 'subagent',
+      descriptor: childDescriptor('explore', 'continuable'),
+    }))).toEqual({ kind: 'skip', reason: 'background-session' })
 
-    // ⑥b — a foreground delegation keeps ultrawork + combo but NOT standalone
+    // ⑥b — a non-main session keeps ultrawork + combo but NOT standalone
     // hyperplan (upstream hook.ts:150-152).
-    expect(isSubagentSession(childDescriptor('explore'))).toBe(true)
-    expect(isSubagentSession(NO_DESCRIPTOR)).toBe(false)
-    const hyperplanOnly = decide(mainFacts('hyperplan this', { descriptor: childDescriptor('explore') }))
+    //
+    // ⚠️ **可达性（S-13 ④）**：continuable 被 ⑥a 整跳、one-shot 被「身份不可判定」
+    // 整跳，所以今天能走到这道过滤的只有 descriptor 有、mode 不可识别的残余形态。
+    // 它按**防御层**保留（静默删除会改动上游对齐面的登记），所以这里用残余形态
+    // 钉它的行为；`isSubagentSession` 的判定面本身已经是 header.origin。
+    expect(isSubagentSession('subagent')).toBe(true)
+    expect(isSubagentSession(undefined)).toBe(false)
+    const residual = { sessionOrigin: 'subagent' as const, descriptor: childDescriptor('explore', undefined) }
+    const hyperplanOnly = decide(mainFacts('hyperplan this', residual))
     expect(hyperplanOnly).toEqual({ kind: 'skip', reason: 'subagent-keyword-filtered' })
-    const ultrawork = decide(mainFacts('ulw go', { descriptor: childDescriptor('explore') }))
+    const ultrawork = decide(mainFacts('ulw go', residual))
     expect(ultrawork.kind).toBe('inject')
     expect(ultrawork.kind === 'inject' && ultrawork.types).toEqual(['ultrawork'])
-    const combo = decide(mainFacts('hyperplan ulw go', { descriptor: childDescriptor('explore') }))
+    const combo = decide(mainFacts('hyperplan ulw go', residual))
     expect(combo.kind === 'inject' && combo.types).toEqual(['hyperplan-ultrawork'])
+  })
+
+  // ── S-13：子会话身份面（PR #10 评审 A-1/A-2 采纳「选项甲」） ───────────────
+  describe('S-13 the subagent identity face comes from header.origin, not from descriptor', () => {
+    it('the origin reader is defensive on every layer, and has no timing window', () => {
+      // 三层各自降级为 `undefined`（= 主会话面）而不是抛——这段跑在**每个** pre-step。
+      expect(readSessionOrigin(undefined)).toBeUndefined()
+      expect(readSessionOrigin('not a session')).toBeUndefined()
+      expect(readSessionOrigin({})).toBeUndefined()
+      expect(readSessionOrigin({ header: 'not an object' })).toBeUndefined()
+      expect(readSessionOrigin({ header: {} })).toBeUndefined()
+      expect(readSessionOrigin({ header: { origin: 'something-else' } })).toBeUndefined()
+      expect(readSessionOrigin({ header: { origin: 'subagent' } })).toBe('subagent')
+      // 主会话的 header 没有 origin，所以它在首个 pre-step 上就与被委派的子会话
+      // 结构性地可分——这正是「读 descriptor」给不出的性质（那条路上有 268 步窗口）。
+      expect(readSessionOrigin({ header: { id: 'ses_main' } })).toBeUndefined()
+    })
+
+    it('undecidable identity ⇒ the whole step skips, with a NAMED, logged reason', () => {
+      // 形态 1：one-shot 的**首步**——descriptor 还没 append
+      // （`attachDescriptorAppend` 在 `await next()` 之后 append，
+      // dsh-subagent-in-process-driver/lib/index.js:139-149），而任务文本**恰好**
+      // 只在这一批可见（inbox.claim 破坏性，dsh-agent-loop/lib/index.js:104-111）。
+      expect(isSubagentIdentityUndecidable('subagent', NO_DESCRIPTOR)).toBe(true)
+      // 形态 2：descriptor 在了，但**格式**不带 persona（`ONE_SHOT_DESCRIPTOR_KEYS`，
+      // dsh-subagent descriptor.js:30-37）→ 没有任何闸可判 → 零注入。
+      expect(isSubagentIdentityUndecidable('subagent', childDescriptor(undefined, 'one-shot'))).toBe(true)
+      // …即使夹具**塞给**了 persona 也一样不信：真实的 one-shot descriptor 没有它，
+      // 而信一个宿主不持久化的 persona 正是 A-1 说的那种失明。
+      expect(isSubagentIdentityUndecidable('subagent', childDescriptor('prometheus', 'one-shot'))).toBe(true)
+      // continuable 可判定（setup 期落盘且带 persona）——它就是仍会跑闸的那种委派，
+      // 然后被 ⑥a 整跳。
+      expect(isSubagentIdentityUndecidable('subagent', childDescriptor('explore', 'continuable'))).toBe(false)
+      // 主会话永远不会「不可判定」：没有 origin 就不是子会话。
+      expect(isSubagentIdentityUndecidable(undefined, NO_DESCRIPTOR)).toBe(false)
+      // 判定面上，两种形态都给出具名 reason。
+      for (const descriptor of [NO_DESCRIPTOR, childDescriptor('atlas', 'one-shot')]) {
+        expect(decide(mainFacts('hyperplan this', { sessionOrigin: 'subagent', descriptor })), String(descriptor.mode))
+          .toEqual({ kind: 'skip', reason: 'subagent-identity-undecidable' })
+      }
+      // ⚠️ A-1 回归的**反向前提**：身份**可**判定时，同一条输入确实会武装。否则
+      // 「子会话从不注入」与「闸是对的」在结果上不可区分。用 `ulw` 而不是
+      // `hyperplan`：后者会被 ⑥b 的类型过滤拦掉（`SUBAGENT_ALLOWED_TYPES`），
+      // 那样这条断言就变成在测另一道闸。
+      expect(decide(mainFacts('ulw go', {
+        sessionOrigin: 'subagent',
+        descriptor: childDescriptor('explore', undefined),
+      })).kind).toBe('inject')
+    })
+
+    it('the cache never memoises `found:false`, and the main session never scans', async () => {
+      // S-13 ② 对闭包缓存的两条要求：
+      //   (a) `found:false` 在 one-shot 子会话首步上是**正常状态**，缓存它 = 把
+      //       时序窗冻成永久误判（A-2 原缺陷）；
+      //   (b) 主会话没有 origin，压根不扫 descriptor → 268 步热路径上
+      //       `ownEvents()` 全副本调用为**零**（MINOR-5 的优化不能反过来变成
+      //       每步一次全事件拷贝）。
+      let ownEventsCalls = 0
+      let landed = false
+      const session = {
+        header: { origin: 'subagent' as const },
+        ownEvents: () => {
+          ownEventsCalls += 1
+          return landed ? [{ type: 'subagent/descriptor', data: { mode: 'one-shot', label: 'one-1' } }] : []
+        },
+      }
+      const lines: string[] = []
+      const listener = createKeywordDetectorListener({
+        texts: TEXTS,
+        config: resolveConfig(),
+        log: (line) => lines.push(line),
+      })
+      const next = () => 'next'
+      const payload = { messages: [userMessage('hyperplan this')], agent: { session, inject: () => undefined } }
+      await listener(payload, next)
+      await listener(payload, next)
+      expect(ownEventsCalls).toBe(2)
+      // 除 ① 号外每个 skip 都记一行——这条正是「除 ① 号外每个 reason 一行」纪律
+      // 的承担者：静默它等于把 30 KB 注入决策藏起来。
+      expect(lines.filter((line) => line.includes('skipped: subagent-identity-undecidable'))).toHaveLength(2)
+      landed = true
+      await listener(payload, next)
+      expect(ownEventsCalls).toBe(3)
+      expect(lines.filter((line) => line.includes('skipped: subagent-identity-undecidable'))).toHaveLength(3)
+
+      // 主会话一次 descriptor 都不读。
+      let mainCalls = 0
+      const mainSession = {
+        header: { id: 'ses_main' },
+        ownEvents: () => { mainCalls += 1; return [{ type: 'subagent/descriptor', data: { mode: 'one-shot' } }] },
+      }
+      lines.length = 0
+      const mainPayload = {
+        messages: [userMessage('hyperplan this')],
+        agent: { session: mainSession, inject: () => undefined },
+      }
+      for (let step = 0; step < 5; step += 1) await listener(mainPayload, next)
+      expect(mainCalls).toBe(0)
+      expect(lines.filter((line) => line.includes('injected [hyperplan]'))).toHaveLength(5)
+    })
   })
 
   it('the descriptor reader reads mode AND persona from the session log', () => {
@@ -745,9 +920,9 @@ describe('P4-T12 ④ the config rules, including the intersection rule', () => {
   })
 })
 
-// ═══════════ ⑤ 组合抑制 + 幂等双闸 ═══════════════════════════════════════════
+// ═══════════ ⑤ 组合抑制 + 幂等闸 + 批次逐条 ═════════════════════════════════════
 
-describe('P4-T12 ⑤ the combo suppresses the standalones, and both idempotency gates bite', () => {
+describe('P4-T12 ⑤ the combo suppresses the standalones, and the idempotency gate is message-level', () => {
   it('a combo hit removes both standalone hits (upstream hook.ts:25-29)', () => {
     const hits = detectKeywordsWithMessages('hyperplan ulw now', { texts: TEXTS, agentName: undefined }, resolveConfig())
     expect(hits.map((hit) => hit.type)).toEqual(['hyperplan-ultrawork'])
@@ -772,30 +947,99 @@ describe('P4-T12 ⑤ the combo suppresses the standalones, and both idempotency 
     expect(pasted).toEqual({ kind: 'skip', reason: 'already-injected-message' })
   })
 
-  it('gate ② — session-level one-shot: the DSH-required adaptation', () => {
-    // S-6. DSH's pre-step fires per STEP, not per message (H-32 measured 268
-    // steps in one session), so without a session-level one-shot a single "ulw"
-    // would inject 268 times. The guard is the upstream mechanism with the
-    // predicate changed from "default-mode already armed" to "this session was
-    // already injected".
-    expect(decide(mainFacts('ulw go', { alreadyInjected: true })))
-      .toEqual({ kind: 'skip', reason: 'session-one-shot' })
-    // A different session is unaffected.
-    expect(decide(mainFacts('ulw go', { alreadyInjected: false })).kind).toBe('inject')
+  it('the session-level one-shot is GONE — a second `ulw` in one session re-arms (S-6)', async () => {
+    // S-6 的**删除**（PR #10 评审 A-5）。初版有一道会话级一次性 WeakSet，理由是
+    // 「同一条 ulw 消息会触发本会话的每一个 pre-step（268 步）」。该前提被宿主事实
+    // 证伪：`payload.messages` 是 `inbox.claim(...)` 的返回值（dsh-agent-loop
+    // lib:889,895），而 `claim`（lib:104-111）是破坏性 splice —— 一条用户消息**只
+    // 在一个批次可见一次**。268 是单会话步数，不是同一条消息的重复可见次数。
+    //
+    // 上游 v4.19.4 hook.ts:23 的 `defaultModeUltraworkInjectedSessions` 只在
+    // `detectedKeywords.length === 0` 的 default-mode 分支被读（hook.ts:120-121），
+    // **关键词触发路径上上游没有任何会话闸**——删闸 = 对齐上游。
+    //
+    // 所以判定面**没有**任何会话级输入可传了：这不是「默认值恰好是 false」，而是
+    // `KeywordStepFacts` 里那个字段已被删除。下面断言的是留下来的那个事实。
+    expect(decide(mainFacts('ulw go')).kind).toBe('inject')
+    expect(decide(mainFacts('ulw go')).kind).toBe('inject')
+    // `KeywordStepFacts` 上再没有 `alreadyInjected` 这个键 —— 断言它的缺席，
+    // 这样「有人又把会话闸加回来」会先红（TS 也会红，但运行期断言才是这条纪律）。
+    expect(Object.keys(mainFacts('ulw go')).sort()).toEqual(
+      ['config', 'descriptor', 'hasInject', 'promptTexts', 'sessionOrigin', 'texts'],
+    )
+    // 二次武装的**真实路径**：同一条 listener、同一个会话对象、两次 pre-step。
+    // 这是评审点名要修的后果（初版把用户第二次敲的 ulw 静默吞掉了，只留一行 warn）。
+    const injected: InjectedUserMessage[] = []
+    const lines: string[] = []
+    const listener = createKeywordDetectorListener({
+      texts: TEXTS,
+      config: resolveConfig(),
+      log: (line) => lines.push(line),
+    })
+    const session = { header: { id: 'ses_main' } }
+    const next = () => 'next'
+    const inject = (m: InjectedUserMessage) => injected.push(m)
+    await listener({ messages: [userMessage('ulw first')], agent: { session, inject } }, next)
+    await listener({ messages: [userMessage('ulw again')], agent: { session, inject } }, next)
+    expect(injected).toHaveLength(2)
+    expect(injected[0]?.id).not.toBe(injected[1]?.id)
+    expect(lines.filter((line) => line.includes('injected [ultrawork]'))).toHaveLength(2)
+    // 旧闸留下的那条 skip 日志**不再存在**——「除 ① 号外每个 reason 一行」的纪律
+    // 不会因为删闸而少一行可观测面（被删的是那条 reason 本身）。
+    expect(lines.some((line) => line.includes('session-one-shot'))).toBe(false)
   })
 
-  it('both gates are INDEPENDENT — each alone blocks, and neither masks the other', () => {
+  it('a batch is judged per message: an earlier keyword still arms under a later plain steer', () => {
+    // PR #10 评审 A-7 的**原始场景**：用户先敲「ulw 做 X」，同批又追一句无关的
+    // 「顺便做 Y」。claim 批次 = next-step 全部 + next-turn 一条，所以多条 user
+    // 消息同批可达；旧实现倒序取**最后一条**即 return，于是这里漏武装。上游的
+    // `chat.message` 是逐条触发的，所以逐条判定才是对齐面。
+    const merged = decide(batchFacts(['ulw 做 X', '顺便做 Y']))
+    expect(merged.kind).toBe('inject')
+    expect(merged.kind === 'inject' && merged.types).toEqual(['ultrawork'])
+    // 反向：后一条才是关键词时同样武装（旧实现在这里本来就是对的，回归要钉住）。
+    expect(decide(batchFacts(['顺便做 Y', 'ulw 做 X'])).kind).toBe('inject')
+    // 整批都没有关键词 → 仍然是 no-keyword（逐条不是「有一条就算」）。
+    expect(decide(batchFacts(['顺便做 Y', '还有这个']))).toEqual({ kind: 'skip', reason: 'no-keyword' })
+  })
+
+  it('two candidates hitting DIFFERENT keywords merge into ONE injection, deduped by type', () => {
+    const both = decide(batchFacts(['ulw 做 X', 'hyperplan 那个设计']))
+    expect(both.kind).toBe('inject')
+    if (both.kind !== 'inject') return
+    expect(both.types).toEqual(['ultrawork', 'hyperplan'])
+    // 一次注入、一份每个 type：正文里两个 tag 各出现一次。
+    expect(both.text).toContain('<ultrawork-mode>')
+    expect(both.text).toContain('<hyperplan-mode>')
+    expect(both.text.match(/<ultrawork-mode>/g)).toHaveLength(1)
+    expect(both.text.match(/<hyperplan-mode>/g)).toHaveLength(1)
+    // 同 type 命中两条 → 只注入一份。
+    const twice = decide(batchFacts(['ulw 做 X', '再 ulw 一次']))
+    expect(twice.kind === 'inject' && twice.types).toEqual(['ultrawork'])
+    expect(twice.kind === 'inject' && (twice.text.match(/<ultrawork-mode>/g) ?? []).length).toBe(1)
+    // 跨条组合抑制：组合正文**逐字包含** ultrawork 正文，所以「一条命中 ultrawork、
+    // 另一条命中组合」必须只剩组合，否则一次注入里会有两份 ultrawork 正文。
+    const crossCombo = decide(batchFacts(['ulw 做 X', 'hyperplan ulw 一起']))
+    expect(crossCombo.kind === 'inject' && crossCombo.types).toEqual(['hyperplan-ultrawork'])
+    expect(crossCombo.kind === 'inject' && (crossCombo.text.match(/<ultrawork-mode>/g) ?? []).length).toBe(1)
+  })
+
+  it('the message-level gate applies per candidate — one pasted body does not veto another message', () => {
+    // ① 号幂等逐字保留（上游 hook.ts:31-36），但**逐条**应用：一条消息里已带的
+    // 正文只压制它自己那次命中，不连坐同批另一条散文触发的同 type 注入。
     const hits = detectKeywordsWithMessages('ulw', { texts: TEXTS, agentName: undefined }, resolveConfig())
     const message = hits[0]?.message ?? ''
-    // Message gate only.
-    expect(decide(mainFacts(`ulw ${message}`)))
+    expect(filterAlreadyInjectedKeywords(hits, `please do this ulw ${message} thanks`)).toEqual([])
+    expect(filterAlreadyInjectedKeywords(hits, 'please do this ulw thanks')).toHaveLength(1)
+    // Through the decision: the exact injected text pasted back into a turn is
+    // recognised and skipped rather than doubled.
+    expect(decide(mainFacts(`ulw\n\n${message}`)))
       .toEqual({ kind: 'skip', reason: 'already-injected-message' })
-    // Session gate only.
-    expect(decide(mainFacts('ulw', { alreadyInjected: true })))
-      .toEqual({ kind: 'skip', reason: 'session-one-shot' })
-    // Both, with the message gate reported first (it is the cheaper, narrower one).
-    expect(decide(mainFacts(`ulw ${message}`, { alreadyInjected: true })))
-      .toEqual({ kind: 'skip', reason: 'already-injected-message' })
+    // …and the per-candidate form: the pasted body lives in candidate 1, candidate
+    // 2 is fresh prose that also asks for ultrawork → it still arms, once.
+    const perCandidate = decide(batchFacts([`ulw ${message}`, 'ulw again please']))
+    expect(perCandidate.kind).toBe('inject')
+    expect(perCandidate.kind === 'inject' && perCandidate.types).toEqual(['ultrawork'])
   })
 })
 
@@ -949,14 +1193,20 @@ describe('P4-T12 ⑥ the injected text is the vendored body, and the listener ne
     expect(decision.kind).toBe('inject')
     if (decision.kind !== 'inject') return
     expect(decision.text.endsWith('\n\n---\n')).toBe(true)
-    expect(decision.text.startsWith(`${COMBO_BANNER_PREFIX}\n\n<ultrawork-mode>`)).toBe(true)
+    // ⚠️ A-4（PR #10）：组合模式也前置了载体注记（`ULTRAWORK_CARRIER_NOTE`，
+    // messages.ts 的 `buildHyperplanUltraworkMessage`），所以 banner 与
+    // `<ultrawork-mode>` 之间的**直接邻接**已被注记打断。断言写成从真实注记常量
+    // 拼出来的形状，而不是硬编码 `banner\n\n<ultrawork-mode>`——后者会在注记存在
+    // 时必然红，而它本来的用意只是「组合体是 banner + ultrawork 正文」。
+    expect(decision.text.startsWith(`${COMBO_BANNER_PREFIX}\n\n${ULTRAWORK_CARRIER_NOTE}\n\n<ultrawork-mode>`))
+      .toBe(true)
     // Only ONE body: the two standalone bodies are suppressed (⑤), and the
     // vendored ultrawork body is not double-wrapped.
     expect(decision.text.match(/<ultrawork-mode>/g)).toHaveLength(1)
     expect(decision.text).not.toContain('<hyperplan-mode>')
   })
 
-  it('the listener injects ONCE per session, always calls next, and never throws', async () => {
+  it('the listener injects ONCE per claimed BATCH, always calls next, and never throws', async () => {
     const lines: string[] = []
     const listener = createKeywordDetectorListener({ texts: TEXTS, config: resolveConfig(), log: (line) => lines.push(line) })
     const injected: InjectedUserMessage[] = []
@@ -967,12 +1217,31 @@ describe('P4-T12 ⑥ the injected text is the vendored body, and the listener ne
     }
     let nextCalls = 0
     const next = () => { nextCalls += 1; return 'next' }
-    // Three steps in the same session = three pre-steps, ONE injection.
-    for (let step = 0; step < 3; step += 1) {
-      expect(await listener(payload, next)).toBe('next')
-    }
-    expect(nextCalls).toBe(3)
+    // ONE pre-step, ONE claimed batch → ONE injection. The real host cannot
+    // deliver this batch twice: `inbox.claim` splices it out destructively
+    // (dsh-agent-loop lib:104-111), so one user message is seen in exactly one
+    // pre-step. That — not a session gate — is what makes "one message arms
+    // once" true, and it is why S-6's gate could be deleted.
+    expect(await listener(payload, next)).toBe('next')
+    expect(nextCalls).toBe(1)
     expect(injected).toHaveLength(1)
+    // …and ONE batch holding the SAME keyword three times is still ONE injection
+    // (F-3 merges by type), so even a maximally redundant batch cannot multiply
+    // the 30 KB body.
+    const agent = { session, inject: (message: InjectedUserMessage) => { injected.push(message) } }
+    for (let step = 0; step < 2; step += 1) {
+      expect(await listener({ ...payloadWithBatch('ulw build the thing', 'ulw build it', 'now ulw please'), agent }, next))
+        .toBe('next')
+      expect(await listener({
+        messages: [userMessage('ulw build the thing')],
+        agent,
+      }, next)).toBe('next')
+    }
+    expect(nextCalls).toBe(5)
+    expect(injected).toHaveLength(5)
+    // Every injection carries its own id, so the inbox's pending-uniqueness check
+    // (BLOCKER-1 below) never fires on a re-arm.
+    expect(new Set(injected.map((m) => m.id)).size).toBe(5)
     // ⚠️ BLOCKER-1: the payload is a **UserMessage object**, not a bare string.
     // dsh-agent's signature is `inject(message: UserMessage)`; dsh-agent-loop
     // reads `message.id` for pending uniqueness (lib:192-194), so a bare string
@@ -992,8 +1261,23 @@ describe('P4-T12 ⑥ the injected text is the vendored body, and the listener ne
     // A fresh, non-empty id per injection (uuid shape).
     expect(message?.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
     expect(typeof message?.id).not.toBe('undefined')
-    expect(lines.filter((line) => line.includes('injected ['))).toHaveLength(1)
-    expect(lines.filter((line) => line.includes('skipped: session-one-shot'))).toHaveLength(2)
+    expect(lines.filter((line) => line.includes('injected ['))).toHaveLength(5)
+    // ⚠️ And the hook's OWN injected message, replayed back at it in the next
+    // batch (which is exactly what the host does: `inject()` splices into
+    // `next-step`, so the next pre-step claims it), is filtered out by the user
+    // source gate — that is the other half of "no self-retrigger" (S-6 ①).
+    lines.length = 0
+    const echoed = injected[0]
+    await listener({
+      messages: [echoed, userMessage('nothing to see here')],
+      agent: { session, inject: () => undefined },
+    }, next)
+    expect(lines.filter((line) => line.includes('injected ['))).toHaveLength(0)
+    // …and that echo step logged nothing at all, because gate ① is the one reason
+    // deliberately left unlogged (its "no user prose" case is the overwhelming
+    // majority of pre-steps). The `'nothing to see here'` steer is real user
+    // prose with no keyword, so the decision is `no-keyword`… which IS logged;
+    // what must not appear is a second injection.
 
     // A throwing inject surface must NOT fail the step: fail open, still next().
     const boom = createKeywordDetectorListener({
@@ -1024,8 +1308,9 @@ describe('P4-T12 ⑥ the injected text is the vendored body, and the listener ne
     }
     for (let i = 0; i < 50; i += 1) inject(buildInjectionMessage(`body ${i}`))
     expect(seen.size).toBe(50)
-    // …and the two-in-a-row case the hook actually produces (a session one-shot
-    // expires when the session object changes): distinct ids, so no throw.
+    // …and the two-in-a-row case the hook actually produces (two batches, each
+    // carrying its own `ulw` — upstream re-arms, so the hook may too): distinct
+    // ids, so the inbox's pending-uniqueness check never throws.
     const first = buildInjectionMessage('same body')
     const second = buildInjectionMessage('same body')
     expect(first.id).not.toBe(second.id)
@@ -1034,40 +1319,41 @@ describe('P4-T12 ⑥ the injected text is the vendored body, and the listener ne
     expect(first.content[0]?.text).toBe(second.content[0]?.text)
   })
 
-  it('the descriptor is read ONCE per session, and the seat matchers are prebuilt', async () => {
+  it('a FOUND descriptor is cached per session, and the seat matchers are prebuilt', async () => {
     // MINOR-5: pre-step fires per STEP (H-32 measured 268 steps in one session)
     // and `ownEvents()` returns a full copy of the event log each call, while the
     // identity face is constant for the life of the session. Assert the cache
     // actually bites — otherwise this is an optimisation nobody can regress.
+    //
+    // ⚠️ 前提（S-13 ②）：descriptor **只在 `header.origin === 'subagent'` 的会话
+    // 上读**，所以夹具必须是子会话；主会话的零读断言在 S-13 的 describe 里。
     let ownEventsCalls = 0
-    const session = {
-      ownEvents: () => {
-        ownEventsCalls += 1
-        return [{
-          type: 'subagent/descriptor',
-          data: { version: 3, mode: 'continuable', label: 'explore-1', persona: 'You are **omo-explore**.' },
-        }]
-      },
+    const session = subagentSession([{
+      type: 'subagent/descriptor',
+      data: { version: 3, mode: 'continuable', label: 'explore-1', persona: 'You are **omo-explore**.' },
+    }])
+    const countingSession = {
+      ...session,
+      ownEvents: () => { ownEventsCalls += 1; return (session as { ownEvents: () => unknown[] }).ownEvents() },
     }
     const lines: string[] = []
     const listener = createKeywordDetectorListener({ texts: TEXTS, config: resolveConfig(), log: (l) => lines.push(l) })
     const next = () => 'next'
-    const payload = { messages: [userMessage('ulw go')], agent: { session, inject: () => undefined } }
+    const payload = { messages: [userMessage('ulw go')], agent: { session: countingSession, inject: () => undefined } }
     for (let step = 0; step < 5; step += 1) await listener(payload, next)
     expect(ownEventsCalls).toBe(1)
     // A second session gets its own read (the cache is keyed, not global-once).
     let otherCalls = 0
-    const other = {
-      ownEvents: () => {
-        otherCalls += 1
-        return [{ type: 'subagent/descriptor', data: { mode: 'one-shot', label: 'other-1' } }]
-      },
+    const other = subagentSession([{ type: 'subagent/descriptor', data: { mode: 'continuable', label: 'other-1' } }])
+    const countingOther = {
+      ...other,
+      ownEvents: () => { otherCalls += 1; return (other as { ownEvents: () => unknown[] }).ownEvents() },
     }
     for (let step = 0; step < 3; step += 1) {
-      await listener({ messages: [userMessage('ulw go')], agent: { session: other, inject: () => undefined } }, next)
+      await listener({ messages: [userMessage('ulw go')], agent: { session: countingOther, inject: () => undefined } }, next)
     }
     expect(otherCalls).toBe(1)
-    // …and the main session (no session object at all) still works, uncached.
+    // …and a payload with NO session object at all still works (main-session face).
     expect(await listener({ messages: [userMessage('ulw go')], agent: { inject: () => undefined } }, next)).toBe('next')
   })
 
@@ -1169,6 +1455,92 @@ describe('P4-T12 ⑦ the vendor carrier is real, and a missing one degrades loud
     // Every diagnostic the hook can emit names the hook — the cold-start /
     // probe greps anchor on this prefix.
     expect(formatKeywordDetectorLine('x').startsWith('[omo-hooks] keyword-detector: ')).toBe(true)
+  })
+
+  // ── A-8：诊断行里的调用方可控 label 必须剥控制字符 ────────────────────────
+  //
+  // `descriptor.label` 的来源是委派方的 `args.description`（dsh-tool-subagent 的
+  // 工具入参）——**模型/用户可控的散文**。它曾经被逐字拼进 console.warn，于是
+  // `\n` / `\x1b` 能伪造整行日志（下游 grep 锚 `[omo-hooks] keyword-detector:`
+  // 会被骗）、把光标移到行首覆盖既有输出、用 CSI 改终端颜色。评审已逐条排除其他
+  // 注入面：**只有这一行**。注入正文走 `agent.inject()` 的结构化载荷，不拼字符串。
+  describe('A-8 a caller-controlled label cannot forge a diagnostic line', () => {
+    it('the sanitizer strips C0/DEL and rewrites the 8-bit CSI introducer', () => {
+      // undefined 透传（调用方据此打 'main session' 兜底标签）。
+      expect(sanitizeDiagnosticLabel(undefined)).toBeUndefined()
+      // 普通散文一个字符都不动——中文、空格、连字符、点号、引号全保留。
+      expect(sanitizeDiagnosticLabel('explore-1')).toBe('explore-1')
+      expect(sanitizeDiagnosticLabel('探查-只读 子会话')).toBe('探查-只读 子会话')
+      expect(sanitizeDiagnosticLabel("it's fine")).toBe("it's fine")
+      // 换行 / 回车 / 制表 / 退格 / ESC / DEL 全被摘掉。
+      expect(sanitizeDiagnosticLabel('a\nb')).toBe('ab')
+      expect(sanitizeDiagnosticLabel('a\r\nb')).toBe('ab')
+      expect(sanitizeDiagnosticLabel('a\tb')).toBe('ab')
+      expect(sanitizeDiagnosticLabel('a\x08b')).toBe('ab')
+      expect(sanitizeDiagnosticLabel('a\x1bb')).toBe('ab')
+      expect(sanitizeDiagnosticLabel('a\x00b')).toBe('ab')
+      expect(sanitizeDiagnosticLabel('a\x7fb')).toBe('ab')
+      // 8-bit 转义：`\x9b` 是 CSI 的等价写法，只删 C0 会漏掉它 → 换成一个可见
+      // 中点，这样「这里曾经有过一个转义序列」在日志里仍看得见。
+      expect(sanitizeDiagnosticLabel('a\x9b31mb')).toBe('a·31mb')
+      // 整条都是控制字符 → undefined（而不是打出一串看不见的字符）。
+      expect(sanitizeDiagnosticLabel('\n\r\x1b')).toBeUndefined()
+      expect(sanitizeDiagnosticLabel('   ')).toBeUndefined()
+      // 伪造的整行必须被压成单行：换行没了，所以下游日志里只剩**一行**，
+      // 且那一行里除本 hook 自己的前缀外没有任何第二个锚点。
+      const forged = '[omo-hooks] keyword-detector: injected [ultrawork] into ATTACKER'
+      expect(sanitizeDiagnosticLabel(forged)).toBe(forged)
+      expect(sanitizeDiagnosticLabel('x\n[omo-hooks] keyword-detector: injected [ultrawork] into ATTACKER'))
+        .not.toContain('\n')
+    })
+
+    it('through the listener: the emitted line is ONE line with no escape sequences', async () => {
+      const lines: string[] = []
+      const listener = createKeywordDetectorListener({
+        texts: TEXTS,
+        config: resolveConfig(),
+        log: (line) => lines.push(line),
+      })
+      const next = () => 'next'
+      // 一个 continuable 子会话（身份可判定），label 来自调用方散文。
+      const session = subagentSession([{
+        type: 'subagent/descriptor',
+        data: { version: 3, mode: 'continuable', label: 'evil\n\u001b[31mFAKE\u001b[0m', persona: 'You are **omo-explore**.' },
+      }])
+      // continuable 被 ⑥a 整跳 → 注入行不会出现。要看到注入行就得走能注入的
+      // 形态：残余形态（descriptor 有、mode 不可识别，S-13 ④）。
+      const residual = subagentSession([{
+        type: 'subagent/descriptor',
+        data: { version: 3, mode: 'not-a-mode', label: 'evil\n\u001b[31mFAKE\u001b[0m', persona: 'You are **omo-explore**.' },
+      }])
+      await listener({
+        messages: [userMessage('ulw go')],
+        agent: { session: residual, inject: () => undefined },
+      }, next)
+      const injected = lines.filter((line) => line.includes('injected ['))
+      expect(injected).toHaveLength(1)
+      const line = injected[0] ?? ''
+      // 一行：无 \r / \n / ESC / 8-bit CSI。
+      expect(line).not.toMatch(/[\r\n\u001b\u009b\u0000-\u001f\u007f]/)
+      // 本 hook 自己的锚点只出现一次 —— 第二行/伪造段已被压平。
+      expect(line.split('[omo-hooks] keyword-detector:')).toHaveLength(2)
+      // 可读性：被剥掉 ESC 之后剩下的可打印字符仍在，读者知道是哪个会话
+      // （`\u001b[31m` → `[31m`，因为被摘掉的只有那个转义**引导符**本身）。
+      expect(line).toContain('evil')
+      expect(line).toContain('FAKE')
+      // 主会话的兜底标签仍然是 'main session'（label 缺席）。
+      lines.length = 0
+      await listener({ messages: [userMessage('ulw go')], agent: { inject: () => undefined } }, next)
+      expect(lines.some((line) => line.includes('into main session ('))).toBe(true)
+      // 顺带：continuable 子会话在 ⑥a 整跳时，label 根本不会被拼进任何行。
+      lines.length = 0
+      await listener({
+        messages: [userMessage('ulw go')],
+        agent: { session, inject: () => undefined },
+      }, next)
+      expect(lines.filter((line) => line.includes('skipped: background-session'))).toHaveLength(1)
+      expect(lines.some((line) => line.includes('evil'))).toBe(false)
+    })
   })
 })
 

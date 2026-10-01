@@ -147,13 +147,21 @@ boot_exit=$?
 
 # Positive signal: our plugins actually loaded (T6 dropped the "(no-op)"
 # suffix — the plugin now performs concerto preset registration). P3-T3 adds the
-# hooks half: `[omo-hooks] loaded: manifest 14 entries (…)` is the summary boot
-# marker emitted after validateManifest accepted the roster (14 since P3-T5
-# removed H-01; P3-T5 also made it emit one `registered` line). P4-T3 adds the
-# command half: `[omo-commands] loaded: manifest 6 entries (pending=6, ported=0)
-# — 0/6 commands registered`. The grep is on the PREFIX only (counts evolve per
-# task; scripts/concerto-mode-probe.sh is the place that pins the full line,
-# re-derived from the plugin's own manifest.ts + boot-markers.ts).
+# hooks half: `[omo-hooks] loaded: manifest <N> entries (…)` is the summary boot
+# marker emitted after validateManifest accepted the roster. P4-T3 adds the
+# command half: `[omo-commands] loaded: manifest <N> entries (pending=<n>,
+# ported=<n>) — <r>/<N> commands registered`, where the manifest declares 6 rows
+# and every count in that line is computed from COMMAND_MANIFEST at boot (the
+# line is assembled by `formatLoadedSummaryLine` in
+# patches/omo-dsh/omo-commands/src/boot-markers.ts).
+#
+# ⚠️ The greps below are on the PREFIX only, deliberately, and that is why no
+# count is written into this comment: the counts evolve per task, so a copy
+# pasted here is a value with no reader and no test — the one this file used to
+# carry (`pending=6, ported=0 — 0/6`) went stale at the first landed command and
+# never came back. scripts/concerto-mode-probe.sh is the place that pins the
+# full line, re-derived from the plugin's own manifest.ts + boot-markers.ts, and
+# tests/omo-commands/boot-markers.test.ts pins the exact rendered string.
 grep -q "\[omo-agents\] loaded" "$BOOT_LOG" \
   || fail "plugin load marker missing from boot log (plugin never mounted?)"
 grep -q "\[omo-hooks\] loaded" "$BOOT_LOG" \

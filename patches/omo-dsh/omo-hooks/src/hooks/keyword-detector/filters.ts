@@ -26,9 +26,42 @@
 // The DSH fact that shapes four of the six: `agent/pre-step` carries no
 // roster-seat identifier on `payload.agent` (prometheus-md-only.ts header,
 // dsh-agent/lib/types/*: `agentPreset` on a CHILD session is the PARENT's,
-// copied verbatim — so it names no seat). The only durable seat evidence is
-// the child's own `subagent/descriptor` persona, which self-names as
-// `omo-<seat-id>` in every Phase 2 persona file. Hence {@link resolveRosterSeat}.
+// copied verbatim — so it names no seat). The seat evidence is the child's own
+// `subagent/descriptor` persona, which self-names as `omo-<seat-id>` in every
+// Phase 2 persona file. Hence {@link resolveRosterSeat}.
+//
+// ⚠️ **ONE-SHOT BOUNDARY（PR #10 评审 A-1 亲核，版本锚 DSH 0.1.5-rc.1）**：persona
+// 只能从 descriptor 读到，而 descriptor **不覆盖全部子会话**：
+//   * `dsh-subagent/lib/types/descriptor.js:30-37` — `ONE_SHOT_DESCRIPTOR_KEYS`
+//     = `{version, mode, provider, label}`，**不含 persona**；one-shot 的两个分支
+//     都不落它——`parseSubagentDescriptor` 的 :118-125 与
+//     `snapshotSubagentDescriptor` 的 :151-157（persona 只在 snapshot 的
+//     continuable 分支 :160-169 里被 `spread` 进去）。
+//   * `dsh-subagent-in-process-driver/lib/index.js:139-149` — one-shot 的
+//     `attachDescriptorAppend` 在 `await next()` **之后**才 append，所以子会话
+//     **首个** pre-step 链上任何 listener 都读不到 descriptor；continuable 在
+//     setup 期**同步**落盘（`dsh-subagent/lib/index.js:1063-1067`），无此窗口。
+//  两条合起来 = one-shot 子会话的 persona **结构性不可得**，④/⑤ 两闸对它恒
+//   失明。姊妹模块已登记同一边界（prometheus-md-only.ts:85-87、
+//   ulw-execute/identity.ts:24-27）。
+//
+// 所以「我是不是子会话」**不能**读 descriptor（它有上面那个时序窗，且 first-step
+// 的缺席会被缓存记住）。读面是 `session.header.origin === 'subagent'`
+// （`readonly header` 在 `dsh-session/lib/types/index.d.ts:117`；`origin?:
+// 'subagent'` 在它 `export` 出去的 `dsh-session/lib/types/types.d.ts:81`——
+// index.d.ts 的同段是 `session/flush` 事件声明，别再引错）；由 `childSessionMeta`
+// 在 `agents.create()` 时写入（`dsh-subagent/lib/index.js:502-511` 的
+// `origin: "subagent"`）——它在首个
+// pre-step **之前**即可读、创建后不可变、one-shot/continuable 都有、主会话无。
+// 证伪命令：`grep -n 'origin: "subagent"' <dsh>/node_modules/@deepseek-ai/dsh-subagent/lib/index.js`。
+//
+// persona 不可得的会话（本文件 {@link isSubagentIdentityUndecidable}）一律保守
+// 整跳，见调用方 decideKeywordInjection 的具名 reason
+// `subagent-identity-undecidable`。**这是一处如实登记的收窄**：它关掉了上游
+// 「前台子会话放行 ultrawork/combo」这条 lane（上游 hook.ts:144-152 的
+// `isNonMainSession` 面）。代价可接受，因为 ① concerto 组合里 10 个席位均为
+// `backgroundMode: continuable`（本就由 ⑥a 整跳）；② atlas 的 ultrawork 武装走
+// H-32 自有注入面，不经过本 hook。
 //
 // The `.ts` extension is load-bearing (Node 24 type-stripping; see index.ts).
 
@@ -72,6 +105,18 @@ interface SessionLike {
  *   continuable → `{version, mode:'continuable', provider, label, …, persona, toolFilter?}`
  *   one-shot    → `{version, mode:'one-shot', provider, label}`（**无 persona**）
  * 首个 descriptor 是权威（establishing provider 只追加一次），故命中即停。
+ *
+ * ⚠️ **时序窗（PR #10 评审 A-2 亲核，DSH 0.1.5-rc.1）**：本读面在 **one-shot**
+ * 子会话的首个 pre-step 上**必然读不到 descriptor**，无论 waterfall 顺序如何——
+ * `attachDescriptorAppend` 把 append 放在 `await next()` **之后**
+ * （`dsh-subagent-in-process-driver/lib/index.js:139-149`），所以本 listener
+ * 执行时 append 还没发生。continuable 无此窗口（setup 期同步落盘，
+ * `dsh-subagent/lib/index.js:1063-1067`）。**因此「descriptor 缺席」在
+ * one-shot 的第一步是一个正常状态，而不是「不是子会话」的证据**——调用方据此
+ * 用 {@link readSessionOrigin}（无时序窗）判子会话，用
+ * {@link isSubagentIdentityUndecidable} 判不可判定。调用方也**不得**把
+ * `found: false` 记进缓存：那会把第一步的缺席永久化成误判。
+ * 证伪命令：`grep -n 'attachDescriptorAppend' <dsh>/node_modules/@deepseek-ai/dsh-subagent-in-process-driver/lib/index.js`。
  */
 export interface SessionDescriptor {
   readonly found: boolean
@@ -79,6 +124,26 @@ export interface SessionDescriptor {
   readonly mode: 'continuable' | 'one-shot' | undefined
   readonly persona: string | undefined
   readonly label: string | undefined
+}
+
+/**
+ * `session.header.origin`。读不到 / 非 `'subagent'` 一律 `undefined`（= 主会话面）。
+ *
+ * 防御性三层（这段跑在**每个** pre-step 上，崩一次就丢一步）：
+ *   1. `session` 非对象 → undefined（主会话的 `agent.session` 可能缺席）；
+ *   2. `header` 非对象 → undefined（Session 类型保证它总在
+ *      `dsh-session/lib/types/index.d.ts:110-117`，但那是类型不是运行时保证——
+ *      单测与 mock 载荷可以是任意对象）；
+ *   3. `origin !== 'subagent'` → undefined（主会话根本没有这个字段）。
+ *
+ * 这是**无时序窗**的子会话判定面：header 由 `childSessionMeta` 在
+ * `agents.create()` 时随 meta 写入，创建后不可变。
+ */
+export function readSessionOrigin(session: unknown): 'subagent' | undefined {
+  if (!isObject(session)) return undefined
+  const header = (session as { header?: unknown }).header
+  if (!isObject(header)) return undefined
+  return header.origin === 'subagent' ? 'subagent' : undefined
 }
 
 /**
@@ -226,7 +291,7 @@ export const COMMAND_INSTRUCTION_MARKER = '<command-instruction>'
  * alpha`：命令准入后，omo-commands 把命令模板作为**一条 source.kind==='user' 的
  * followup 消息**投进会话。`isUserAuthoredMessage` 放它过（它确实是 user 源），
  * `isSyntheticOrInternalMessage` 也放它过（`role` 是 'user'，无 synthetic 标记）
- * ——于是 `readCurrentUserText` 把**命令模板本身**当成本轮用户散文交给检测面，
+ * ——于是批次读面把**命令模板本身**当成本批用户散文交给检测面，
  * 模板里的 `ulw` token 命中 ultrawork 规则，模型在 turn 2 就喊
  * `ULTRAWORK MODE ENABLED!`。`/hyperplan` 同形：模板含 `hyperplan` token。
  *
@@ -265,18 +330,37 @@ export function isCommandExpansionMessage(text: string): boolean {
 
 
 /**
- * 取**本轮**的用户文本（上游 `extractPromptText(output.parts)` 的 DSH 形状）。
+ * 取本批（claim batch）里的**全部**用户散文候选（上游 `extractPromptText(
+ * output.parts)` 的 DSH 形状）。
  *
- * 取**最后**一条用户消息而非第一条（ulw-execute 取第一条，因为委派子会话
- * 只有一条任务消息）。理由：本 hook 判别的是"用户此刻敲下的那句话"，主会话
- * 的历史里可能已经有更早的 `ulw`（那一条不该在每一轮都重新武装模式）；
- * 委派子会话的任务消息同时也是最后一条，两种会话在此取到同一对象。
+ * ⚠️ **载荷 = 当批，不是全史**（PR #10 评审 A-5/A-7 亲核，DSH 0.1.5-rc.1）。
+ * `agent/pre-step` 的 `payload.messages` 是 `inbox.claim(...)` 的返回值
+ * （`dsh-agent-loop/lib/index.js:889,895`），而 `claim`（:104-111）把
+ * `next-step` 整段 `mutate(... , 0, length, [], false)` **破坏性摘走**并返回，
+ * 外加至多一条 `next-turn`。所以：**一条用户消息只会在一个 pre-step 批次里可见
+ * 一次**——载荷里**不存在**「更早的历史」可回看。
+ * 证伪命令：`grep -n 'claim(target, turn)' <dsh>/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js`。
+ *
+ * **为什么逐条判而不是只看最后一条**（评审 A-7 的原始场景成立）：批次 = next-step
+ * 全部 + next-turn 一条，**多条 user 消息同批可达**（多 steer / steer+followup
+ * 组合）。倒序取最后一条时，若用户先敲「ulw 做 X」再追一句无关的「顺便做 Y」，
+ * 本轮就**漏武装**。上游的触发面 `chat.message` 是**逐条**消息触发的
+ * （v4.19.4 `hook.ts` 每个 `chat.message` 一次），所以逐条判定才是对齐面。
+ * 合并与去重在判定函数里做（同 type 只注入一份，一次注入）。
+ *
+ * **旧头注的错误假设已删除**：它写的理由是「主会话的历史里可能已经有更早的
+ * `ulw`，取最后一条是为了不在每一轮重新武装」——「载荷含全史」不成立（上面第一
+ * 段），而「靠取最后一条来防重复武装」这件事本身在 PR #10 复核后由**删除会话级
+ * 幂等闸**承担（见 listener 头部 S-6），不再由这个读面承担。
  *
  * 合成/内部消息（插件注入、非 user role、`synthetic`/`internal` 标记）一律
- * 不参与——这就是上游 ① 号闸在 DSH 上的落点。
+ * 不参与——这就是上游 ① 号闸在 DSH 上的落点。它同时也是**唯一**的重复触发防线
+ * 的一半：本 hook 自己 `agent.inject()` 出去的消息带
+ * `source.kind === 'plugin'`，下一批被 claim 回来时在这一步就被滤掉。
  */
-export interface CurrentUserText {
-  readonly text: string | undefined
+export interface CurrentUserTexts {
+  /** 本批里所有通过 ① 号闸与 S-12 的用户散文，按消息在批次中的先后顺序。 */
+  readonly texts: readonly string[]
   /**
    * MINOR-7：S-12 跳过了一条**命令扩展消息**——这与「没有用户文本」是两件不同的事。
    * 合并成同一个 `synthetic-internal` 会让本文件「每个 reason 对应一行日志」的
@@ -287,31 +371,46 @@ export interface CurrentUserText {
   readonly commandExpansionSkipped: boolean
 }
 
-export function readCurrentUserTextDetail(payload: unknown): CurrentUserText {
-  if (!isObject(payload)) return { text: undefined, commandExpansionSkipped: false }
+const NO_USER_TEXTS: CurrentUserTexts = { texts: [], commandExpansionSkipped: false }
+
+export function readCurrentUserTextsDetail(payload: unknown): CurrentUserTexts {
+  if (!isObject(payload)) return NO_USER_TEXTS
   const messages = payload.messages
-  if (!Array.isArray(messages)) return { text: undefined, commandExpansionSkipped: false }
+  if (!Array.isArray(messages)) return NO_USER_TEXTS
+  const texts: string[] = []
   let skippedExpansion = false
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i]
+  for (const message of messages) {
     if (!isUserAuthoredMessage(message)) continue
     if (isSyntheticOrInternalMessage(message)) continue
     const text = textOfMessage(message)
     if (text.length === 0) continue
     // S-12：命令模板消息是命令面的**扩展产物**，不是用户散文。见上。
     //
-    // `continue` 而不是 `return undefined`：本轮可能既有命令扩展消息又有更早的
-    // 真实用户散文，后者仍应被检测——判据是「这条不是散文」，不是「本轮不可判」。
-    //
-    // ⚠️ 与上游的一处**方向差**（采纳-12 记录）：上游的检测面只看本轮输入行，
-    // 从不向更早的消息回看；这里回看，因为 DSH 的检测面是整条消息流，天然含有
-    // 历史。后果是：一条命令扩展消息之后，用户在**更早**那一轮敲的 `ulw` 仍会
-    // 武装模式。该差异被 S-6（一次性守卫 `alreadyInjected`）夹住——同一注入不会
-    // 重复发生，所以回看不会累积成多份指令。维持现状并登记。
+    // `continue` 而不是放弃整批：本批可能既有命令扩展消息又有真实用户散文，后者
+    // 仍应被检测——判据是「这条不是散文」，不是「本批不可判」。
     if (isCommandExpansionMessage(text)) { skippedExpansion = true; continue }
-    return { text, commandExpansionSkipped: skippedExpansion }
+    texts.push(text)
   }
-  return { text: undefined, commandExpansionSkipped: skippedExpansion }
+  return { texts, commandExpansionSkipped: skippedExpansion }
+}
+
+/**
+ * 最后一条候选（沿用旧名与旧语义，供只需要单值的读面使用）。
+ *
+ * ⚠️ **判定面不得再用它**：`decideKeywordInjection` 消费的是
+ * {@link readCurrentUserTextsDetail} 的**全部**候选（评审 A-7）。这里保留单值
+ * 版本是因为 `isSyntheticOrInternalPayload` 只问「有没有散文」，单测也用它做
+ * 最小断言；它不再是武装与否的判定面。
+ */
+export function readCurrentUserTextDetail(payload: unknown): {
+  readonly text: string | undefined
+  readonly commandExpansionSkipped: boolean
+} {
+  const detail = readCurrentUserTextsDetail(payload)
+  return {
+    text: detail.texts[detail.texts.length - 1],
+    commandExpansionSkipped: detail.commandExpansionSkipped,
+  }
 }
 
 export function readCurrentUserText(payload: unknown): string | undefined {
@@ -365,6 +464,11 @@ export function isNonOmoAgent(agentName: string | undefined): boolean {
  * 插件所在的那个 agent 自己的会话，故判定为 OMO 会话。DSH 没有上游的
  * "会话切 agent"动作（ulw-execute/identity.ts 已登记该事实），所以这一闸
  * 的可达形态是**外来 persona**，而不是"用户把会话切到了非 OMO agent"。
+ *
+ * ⚠️ 前提：调用方只会在 {@link isSubagentIdentityUndecidable} 为 false 的会话
+ * 上问这个问题。persona 不可得的会话（本闸判据的输入恒 undefined）由那道闸
+ * 整跳，不再往下走——否则 ④/⑤ 对 one-shot 子会话是**结构性失明**（PR #10 评审
+ * A-1）。
  */
 export function isForeignAgentSession(persona: string | undefined): boolean {
   return hasForeignOmoSelfName(persona)
@@ -401,7 +505,44 @@ export function isBackgroundSession(descriptor: SessionDescriptor): boolean {
   return descriptor.found && descriptor.mode === 'continuable'
 }
 
-/** ⑥b 非主 session：有 descriptor 即为被委派出来的子会话（否则是用户主会话）。 */
-export function isSubagentSession(descriptor: SessionDescriptor): boolean {
-  return descriptor.found
+/**
+ * ⑥b 非主 session 的判定面：`session.header.origin === 'subagent'`
+ * （PR #10 评审 A-1/A-2 采纳「选项甲」，DSH 0.1.5-rc.1）。
+ *
+ * **为什么不是「有 descriptor」**：one-shot 子会话在**首个** pre-step 上必然读不到
+ * descriptor（`attachDescriptorAppend` 在 `await next()` 之后才 append，
+ * `dsh-subagent-in-process-driver/lib/index.js:139-149`），而 task 文本只在
+ * **那一批**可见（`inbox.claim` 破坏性，`dsh-agent-loop/lib/index.js:104-111`）。
+ * 旧判据于是「唯一的携带任务文本的第一步 + 永久记缓存的 `found:false`」=
+ * ⑥b 对 one-shot **永不触发**（hyperplan 独立词等不被裁剪）。header.origin 无
+ * 时序窗，所以窗口与缓存毒化两个问题一起消失。
+ *
+ * 上游对应物是 `isNonMainSession = mainSessionID && input.sessionID !==
+ * mainSessionID`（v4.19.4 hook.ts:116-117）——同样问「这个会话不是用户主会话」。
+ */
+export function isSubagentSession(origin: 'subagent' | undefined): boolean {
+  return origin === 'subagent'
+}
+
+/**
+ * **身份不可判定** = 是子会话，但 persona 在本会话上结构性不可得 → 整跳。
+ *
+ * 两种形态（见本文件头部的 ONE-SHOT BOUNDARY）：
+ *   * descriptor 缺席 —— one-shot 的**首步**（append 还没发生）；
+ *   * `mode === 'one-shot'` —— descriptor 在，但它**按格式就不含 persona**
+ *     （`ONE_SHOT_DESCRIPTOR_KEYS`，descriptor.js:30-37；两个 one-shot 分支
+ *     parse :118-125 / snapshot :151-157 都不落它）。
+ *
+ * 处置是**保守整跳**而非「放行」：④/⑤/⑥b 三闸的判据输入全是 persona 或
+ * descriptor，在 persona 不可得的会话上继续判定 = 让一个「规划席位是否会被
+ * 30 KB 执行指令污染」的问题**无答案地通过**，而这正是上游把 planner 谓词放在
+ * 位序最高处要防的事。代价（关掉上游「前台子会话放行 ultrawork/combo」lane）
+ * 已在本文件头部如实登记。
+ */
+export function isSubagentIdentityUndecidable(
+  origin: 'subagent' | undefined,
+  descriptor: SessionDescriptor,
+): boolean {
+  if (origin !== 'subagent') return false
+  return !descriptor.found || descriptor.mode === 'one-shot'
 }

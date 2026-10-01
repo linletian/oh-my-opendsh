@@ -203,6 +203,10 @@ function withRosterNote(body: string, agentName: string | undefined): string {
  * 唯一的偏离是**前置**一段载体注记（{@link ULTRAWORK_CARRIER_NOTE}，见那里
  * 的三条差异），它不带标签，因此不改变"标签唯一"这一性质。
  *
+ * ⚠️ **两侧注记一致性纪律（A-4）**：组合形态 {@link buildHyperplanUltraworkMessage}
+ * 交付**同一份** vendor 正文，所以那一侧也前置**同一个常量**；改这里必须同步看
+ * 那一侧（详细纪律写在那里的注释里）。
+ *
  * 对照：hyperplan 的 vendor 正文**没有**标签（首行是
  * `# HYPERPLAN — Adversarial Multi-Agent Planning`），所以
  * {@link buildHyperplanMessage} 保留上游形状的 `<hyperplan-mode>` 包装。
@@ -331,19 +335,43 @@ export function buildHyperplanMessage(deps: KeywordMessageDeps): string {
 }
 
 /**
- * 组合模式正文 = 上游 constants.ts 的 banner 包装（逐字）**+** ultrawork 正文。
+ * 组合模式正文 = 上游 constants.ts 的 banner 包装（逐字）**+** ultrawork 载体注记
+ * **+** ultrawork 正文。
  *
  * 上游 `getHyperplanUltraworkMessage` 是 `BANNER + "\n\n" + getUltraworkMessage(...)`：
  * hyperplan 侧在独立词被抑制后，由 banner 里那句 `skill(name="hyperplan")`
  * 负责加载。本移植保持同一形状——banner 逐字保留（含"不要说独立 banner"的
  * 禁令与加载指令），正文只挂 ultrawork 一侧。
+ *
+ * ⚠️ **两侧注记一致性纪律（A-4）**：本函数交付的 ultrawork 段与
+ * {@link buildUltraworkMessage} 交付的是**同一份 vendor 正文**，因此两处对它的
+ * 载体声明必须同形——独立形态 {@link ULTRAWORK_CARRIER_NOTE} 前置在正文之前，
+ * 组合形态也必须前置（位置：`banner` 之后、正文之前）。若只有独立形态挂注记，
+ * 组合形态（用户敲 `hyperplan ulw`）就丢掉了三条载体差异声明（notepad 落点
+ * `.omo/notepads/` vs `$TMPDIR`、`read` vs `cat` 回读、`mktemp -p` 形态），而组合
+ * 模式恰是最看重跨轮续接的工作流：notepad 落进临时目录，下一轮根本看不见，
+ * 正文"read the WHOLE notepad FIRST … then resume"这条唯一的续接规则随之失效。
+ * 纪律推论（编辑时两条一起看）：
+ *
+ *   1. vendor 正文**逐字**两处共用 → 注记必须两处同挂，不允许"组合形态省略"
+ *      之类的形状分叉；
+ *   2. 注记**不带** `<ultrawork-mode>` 标签，所以前置它不改变"标签唯一"
+ *      这一性质（vendor 正文自带该对标签，本移植两处都不再包第二对）。
+ *
+ * 单测纪律：形状变更由 `tests/omo-hooks/combo-carrier-note.test.ts` 承载
+ * （注记存在、位置在 banner 与正文之间、正文仍自带唯一一对标签）。
  */
 export function buildHyperplanUltraworkMessage(deps: KeywordMessageDeps): string {
   // 上游形状逐字照搬：`getHyperplanUltraworkMessage` = BANNER + "\n\n" +
   // getUltraworkMessage(...)。banner 逐字保留（含"不要说独立 banner"的禁令与
-  // hyperplan 加载指令），ultrawork 侧直接挂 vendor 正文——它自带
+  // hyperplan 加载指令）；ultrawork 侧先挂载体注记再挂 vendor 正文——正文自带
   // `<ultrawork-mode>` 标签，所以这里不再补第二对。
-  return withRosterNote(`${COMBO_BANNER_PREFIX}\n\n${deps.texts.ultrawork}`, deps.agentName)
+  //
+  // ⚠️ 载体注记与 buildUltraworkMessage 的那一份**同一个常量**：组合形态漏挂它
+  // 会让 notepad 落进 $TMPDIR（下一轮不可见），见本函数上方注释的"两侧注记一致性
+  // 纪律（A-4）"。不要因为这里"多了一段"就顺手删掉。
+  const body = `${COMBO_BANNER_PREFIX}\n\n${ULTRAWORK_CARRIER_NOTE}\n\n${deps.texts.ultrawork}`
+  return withRosterNote(body, deps.agentName)
 }
 
 /**

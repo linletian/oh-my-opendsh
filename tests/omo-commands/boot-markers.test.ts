@@ -5,8 +5,11 @@
 // real boot log, and tests/e2e/drive.mjs's `pluginLoaded` analysis matches the
 // prefix. A test that derived its expectation from the formatter would agree
 // with ANY drift and prove nothing, so the exact summary line is transcribed by
-// hand — exactly like tests/omo-hooks/registration.test.ts transcribes
-// `[omo-hooks] loaded: manifest 14 entries (…)`. The transcription doubles as the
+// hand — exactly like tests/omo-hooks/registration.test.ts transcribes its own
+// `[omo-hooks] loaded: manifest <N> entries (…)` line (the `<N>` is left
+// abstract HERE on purpose: quoting that file's current number would put a
+// second census in a comment, which is the drift this discipline exists to kill).
+// The transcription doubles as the
 // "counts are derived, not hard-coded" assertion: a hard-coded count INSIDE the
 // plugin could not move at all.
 //

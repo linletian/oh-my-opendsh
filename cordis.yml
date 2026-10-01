@@ -44,9 +44,20 @@
 # P4-T3: the Phase 4 command surface. Its `inject: ['commands']` declares the
 # dsh-commands registry as a hard dependency, and the base bundle mounts that
 # service (dsh-base/cordis.patch.yml inserts `id: commands`), so this row
-# activates in every profile that can boot the overlay. At P4-T3 the plugin logs
-# ONE line — `[omo-commands] loaded: manifest 6 entries (pending=6, ported=0) —
-# 0/6 commands registered` — because every manifest row is still pending.
+# activates in every profile that can boot the overlay. The plugin logs ONE line
+# per boot — `[omo-commands] loaded: manifest <N> entries (pending=<n>,
+# ported=<n>) — <r>/<N> commands registered` — and that is still all it logs.
+#
+# ⚠️ NO CENSUS NUMBERS HERE, AND THAT IS THE RULE. The invariant is only: the
+# manifest declares 6 rows; the pending/ported split is computed from
+# COMMAND_MANIFEST at boot and the summary line is assembled by
+# `formatLoadedSummaryLine` (patches/omo-dsh/omo-commands/src/boot-markers.ts).
+# Both numbers move as rows land, and nothing reads a hand-copied census from
+# this file — the earlier comment that pasted them went stale the moment the
+# first command landed and survived the entire Phase 4 landing still saying
+# "every manifest row is still pending". The authoritative values are the
+# plugin's own rendered line, pinned by tests/omo-commands/boot-markers.test.ts
+# and re-derived in scripts/concerto-mode-probe.sh.
 - insert:
     - id: omo-commands
       name: '@oh-my-opendsh/omo-commands'

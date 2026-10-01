@@ -6,7 +6,7 @@
 >
 > **配套文档**：[任务清单](./phase4-tasks.md) · [命令与 skill 清单与覆盖基线](./phase4-commands.md)
 >
-> **状态**：📋 **计划已立项，待实施**。实施期实测对本文的回填、逐任务证据与退出标准核对见[任务清单](./phase4-tasks.md)。
+> **状态**：✅ **18/18 任务完成**（2026-09-30 立项 → 2026-10-01 收官；PR #10 评审修复轮记录见[任务清单](./phase4-tasks.md)『PR #10 评审仲裁与修复』节）。逐任务证据与退出标准核对见[任务清单](./phase4-tasks.md)。
 >
 > **修订记录**：
 >
@@ -48,14 +48,14 @@ Phase 0–3 交付的、本阶段直接复用的资产：
 
 | 构件 | 现状 | Phase 4 的影响面 |
 |---|---|---|
-| **DSH 命令面（pinned 0.1.5-rc.1 实有）** | `ctx.commands.register({name, description, input:{hint,attachments}, handler})` → `CommandResult = {kind:success/error, text?, sourceEventSeq?}`；`command/run` + `command/done` 会话事件对（log-only，按 `commandId` 配对）；注册返回 disposer；原生先例 `dsh-command-goal`（lib:174 注册；**lib:98-105 `invocation.agent.followup(createUserMessage(...))` = 命令 handler 上下文驱动 agent 的同上下文先例**——`submitObjectiveAttachments` 把附件作为 user message 直接排队）与 `dsh-command-compact`（含 `ctx.effect` 生命周期 + 进行中操作收尾纪律）；**未知命令/语法不命中 = 返回 `undefined`，零事件零报错**（dsh-commands lib:293-299 注释明文 + :319-321 实现），行落回普通 prompt 路径 | **本阶段全部命令注册的形态**；`parseCommand` 的 name/rawInput 切分由 DSH 完成；handler 驱动 agent 行为 = `followup`（同上下文先例已实证），Q-1 收窄为时序/排队细节钉测 |
+| **DSH 命令面（pinned 0.1.5-rc.1 实有）** | `ctx.commands.register({name, description, input:{hint,attachments}, handler})` → `CommandResult = {kind:success/error, text?, sourceEventSeq?}`；`command/run` + `command/done` 会话事件对（log-only，按 `commandId` 配对）；注册返回 disposer；原生先例 `dsh-command-goal`（lib:174 注册；**lib:98-105 `invocation.agent.followup(createUserMessage(...))` = 命令 handler 上下文驱动 agent 的同上下文先例**——`submitObjectiveAttachments` 把附件作为 user message 直接排队）与 `dsh-command-compact`（含 `ctx.effect` 生命周期 + 进行中操作收尾纪律）；**未知命令/语法不命中 = 返回 `undefined`，零事件零报错**（dsh-commands lib:293-299 注释明文 + :319-322 实现——:320 语法不命中分支、:322 未知命令分支），行落回普通 prompt 路径 | **本阶段全部命令注册的形态**；`parseCommand` 的 name/rawInput 切分由 DSH 完成；handler 驱动 agent 行为 = `followup`（同上下文先例已实证），Q-1 收窄为时序/排队细节钉测 |
 | **DSH skill 面（注册表/发现/模型面三行已挂载，零改动复用）** | `dsh-skill`（注册表：`ctx.skills.register` 嵌入注册 / `registerProvider` 提供者注册 / 按名 load）+ `dsh-skill-filesystem`（项目根 `.dsh/skills`、`.agents/skills` + `customSkillDirs` + 用户根；frontmatter `name`/`description`/`whenToUse`/`disable-model-invocation`/`user-invocable`；监听变更）+ `dsh-tool-skill`（模型面 `skill` 工具）——三行挂载于 dsh-base composition（cordis.patch.yml:273-284 区间）；同区间另有 `dsh-skill-badge` 行但**默认 `disabled: true`**（:279-281，可选 bundled provider，非挂载先例——其代码形态仅作嵌入注册的参考） | 退出标准 b 的载体；**user-invocable skill 是否已桥接为 slash 命令面（pinned 版本实测）= P4-T1 的 Q-3**；skill 内容投递机制选型 = Q-4 |
 | **Phase 3 ulw-execute hook 语义（H-32）** | `omo-hooks` 已移植激活检测（DSH 原生形态：指挥委派 atlas + 工作计划意图 pre-step 检测）、计划发现、上下文构建、脚手架；激活 marker 常量三处与上游逐字对齐并登记为 R-10 对接点 | **`/ulw-execute` 命令模板落地时，模板 marker（`<session-context>` + `You are starting an Atlas work session.`）必须与 H-32 的激活检测对接**——R-10 的本阶段侧；常量漂移会造成双轨 |
 | **Phase 3 deferred 项（本阶段接盘）** | S-06 `keyword-detector/`（**24 文件** + 1 目录外配置文件，T12 复核实测；ultrawork/hyperplan/team 关键词模式）；S-37 `stop-continuation-guard/`（3 文件，服务形态 stop/isStopped/clear + 级联取消，消费面 = 本阶段命令） | 两者进入本阶段移植组（本阶段编号 **H-33/H-34**，映射见覆盖基线 §1.2）；team 关键词子模式随 Team Mode 再 deferred（Phase 5） |
 | **todo-continuation-enforcer（H-03）** | omo-hooks 已移植（E 模式 steer 续行 + 进展复员熔断 cap 5） | `/stop-continuation` 的"停掉 todo 续行"语义需要 H-03 检查停止标记——**跨插件状态面的设计项**（§4.6） |
 | **名册与编排面（Phase 2）** | 11 agent 名册 + maxDepth 2 委派（atlas 可再委派 worker）；prometheus 访谈对象已适配为指挥；plan-consultant/plan-reviewer 只读顾问就位 | `/ulw-execute` 的 atlas 绑定、`/ulw-plan` 的 prometheus 人格、ultrawork 指令引用的 reviewer 闸门——agent 目标全部已就位，命令面只做"激活与路由" |
 | **e2e 基础设施** | `tests/e2e/drive.mjs` + mock-LLM：22 场景、tool_calls 批次、MOCKROLE 名册注入、session JSONL 断言通道、变异 QA 体例、self-test fabricated-log 门 | 命令场景的新通道：**drive 需要能"敲 slash 命令"**（`command/run` 事件断言）；skill 场景需断言 `skill` 工具调用或目录可见性 |
-| **门链** | `scripts/ci-local.sh` 8 门全绿（门 2 = 976 单测、门 3 = 22 场景、门 5 `checked=54`、门 6 = 23 断言 c01–c14、门 8 = 6 proofs） | 全部保持绿；omo-commands / skills vendor 的静态断言与 probe marker **扩展既有门**，不加新门、不绕过旧门 |
+| **门链** | `scripts/ci-local.sh` 8 门全绿（Phase 3 结项基线，2026-09 快照：门 2 = 976 单测、门 3 = 22 场景、门 5 `checked=54`、门 6 = 23 断言 c01–c14、门 8 = 6 proofs） | 全部保持绿；omo-commands / skills vendor 的静态断言与 probe marker **扩展既有门**，不加新门、不绕过旧门 |
 | **挂载机制** | 根 `cordis.yml` 已有两个 `- insert:` 行（omo-agents + omo-hooks），doctor-lite check 2b 钉死 id 集合 | 第三个 insert 行（omo-commands）→ doctor-lite / 静态门 / probe 相应扩展（计数 2→3 是变异敏感点） |
 | **Phase 1 vendoring 基建** | `patches/omo-dsh/vendor/` 布局 + `VENDOR-MANIFEST.json` + 包级 `NOTICE.md` + per-file NOTICES + `verify-licenses` SUL 名称门（D15/D16）+ vendoring-playbook 实录 | skills 内容 vendor 复用同一 playbook；`shared-skills` 为第二个 vendor 对象（第一个 = hashline-core） |
 | **上游 OMO 检出** | `~/GithubRepo/oh-my-openagent`，v4.19.4 = `b072d279…` 只读可用 | P4-T1 逐模块复核的唯一来源 |
@@ -73,7 +73,7 @@ Phase 0–3 交付的、本阶段直接复用的资产：
 - **挂载**：根 `cordis.yml` 第三个 `- insert:` 行（`id: omo-commands`）；cold-start / probe / doctor-lite / 静态门相应扩展（计数 2→3 是变异敏感网，须同 commit 同步）。
 - **boot marker**：`[omo-commands] command <id> registered` 逐命令一行 + 汇总行（probe 断言锚点）；loud-but-non-fatal 纪律（单命令注册失败不拖垮其余）。
 - **omo-hooks 扩容**：keyword-detector（模式 A pre-step 注入）与 stop-continuation-guard（状态服务）住 omo-hooks——Phase 3 计划 §9 已明示"keyword-detector 与本阶段移植的 pre-step 注入面共享注册处"。两插件无相互 import；跨插件状态（停止标记）经 **cordis 服务**共享（§4.6）。两模块的 Phase 4 编号为 **H-33（keyword-detector，原 Phase 3 S-06）/ H-34（stop-continuation-guard，原 S-37）**——延续 Phase 3 H-01…H-32 序列的新 H 号段，归 Phase 4 拥有，映射与解析契约见[覆盖基线](./phase4-commands.md) §1.2。
-- ⚠️ **omo-hooks manifest 的既有硬耦合（计划期实测定案，违者破门/破启动）**：`EXPECTED_HOOK_COUNT = 14`（manifest.ts:172）被 `validateManifest()` 在 **apply 时**强制（index.ts:501，不等 `entries.length` 即 throw）——新增条目不同步 bump = **boot 红，不是测试红**。同步网全清单（新增/删除 manifest 条目时必须同 commit 落地）：① `EXPECTED_HOOK_COUNT`；② `tests/omo-hooks/manifest.test.ts` 三处硬编码（:115 注释 / :126 `toBe(14)` / :370 错误文案）；③ `tests/omo-hooks/registration.test.ts` 的 `EXPECTED_SUMMARY_LINE`（按事件计数派生，新条目的事件归属改变计数）；④ 门 6 **c13**（`src/hooks/` 文件集合 ↔ manifest 双向一致 + 孤儿 .ts 规则——**非 manifest 条目的服务模块文件不得放 `src/hooks/` 下**）；⑤ 门 6 **c14**（基线文档硬编码 `COVERAGE_BASELINE_MD = phase3-hooks.md`，:75；解析器只吃 `## 1.`–`## 2.` 之间 `| H-\d+ |` 行、状态列含「已移植」，:673；且比对对象是**全部** manifest id，不按状态过滤——新增 pending 条目即报 `manifest ids absent from the phase3-hooks.md §1 port group`）。**c14 必须随首个 manifest 新增同 commit 演进**：基线来源扩为 `[phase3-hooks.md, phase4-commands.md]` 两文档并集 + manifest 侧改按 `status === 'ported'` 过滤（稳态断言强度不变——Phase 3 结项时 14 条目全 ported；pending 期条目不破门，翻转 commit 仍须文档/manifest 同改）。理由注释写入 gate 源码。H-34（服务形态）是否适格为 manifest 条目（无目标事件/模式字段）属实施期裁定——**若否，其文件放 `src/hooks/` 之外**（c13 安全）且其覆盖行不进 c14 解析面，计数网相应缩为 +1（P4-T8 任务书承载完整 fork）。
+- ⚠️ **omo-hooks manifest 的既有硬耦合（违者破门/破启动；数值与行号为 PR #10 修复轮（c22 落地）后的实测快照——c22 的实现与范围注释把 verify-concerto-static.mjs 的 c14 实现段整体推移了 +80 行，本区块锚点已同步）**：`EXPECTED_HOOK_COUNT = 15`（`omo-hooks/src/manifest.ts:184`）被 `validateManifest()` 在 **apply 时**强制（`omo-hooks/src/index.ts:564`，不等 `entries.length` 即 throw）——新增条目不同步 bump = **boot 红，不是测试红**。同步网全清单（新增/删除 manifest 条目时必须同 commit 落地）：① `EXPECTED_HOOK_COUNT`；② `tests/omo-hooks/manifest.test.ts` 三处硬编码（:115-116 注释 / :127 `toBe(15)` / :383 错误文案 `'expected 15 hook entries, got 14'`）；③ `tests/omo-hooks/registration.test.ts` 的 `EXPECTED_SUMMARY_LINE`（:59，按事件计数派生——当前分布 2-2-8-1-2-0，新条目的事件归属改变计数）；④ 门 6 **c13**（`src/hooks/` 文件集合 ↔ manifest 双向一致 + 孤儿 .ts 规则——**非 manifest 条目的服务模块文件不得放 `src/hooks/` 下**）；⑤ 门 6 **c14**（基线文档 = `COVERAGE_BASELINE_MDS` 两文档并集 `[phase3-hooks.md, phase4-commands.md]`，`verify-concerto-static.mjs:124-127`；解析器只吃 `## 1.`–`## 2.` 之间 `| H-\d+ |` 行（:898）、状态格 `includes('已移植')` 判定（:905）；manifest 侧按 `status === 'ported'` 过滤（:952）——pending 行不进对账但仍在 c13 与 EXPECTED_HOOK_COUNT 里）。**c14 的两文档并集 + ported 过滤演进已在 T12 随 H-33 首个新增同 commit 完成**（稳态断言强度不变——Phase 3 结项时 14 条目全 ported；pending 期条目不破门，翻转 commit 仍须文档/manifest 同改）；后续再新增条目按同一契约同步。理由注释写入 gate 源码。H-34（服务形态）是否适格为 manifest 条目的实施期裁定已落：**否**——其文件放 `src/services/`（c13 安全）且其覆盖行不进 c14 解析面（P4-T8 fork ii 终态）。
 - **skill 内容**不进任何插件包——vendor 进 `patches/omo-dsh/vendor/shared-skills/`（Phase 1 布局），运行时投递机制见 §4.3。
 
 ### 4.2 命令注册机制：模板 → user message 的 DSH 形态
@@ -82,7 +82,7 @@ OMO 命令 = 模板文本（`<command-instruction>…</command-instruction>` 包
 
 - **机制（P4-T1 Q-1 钉测闭环，形态定案 = 草案 a）**：handler 内 `invocation.agent.followup(createUserMessage(渲染后模板))`——同上下文先例 `dsh-command-goal/lib/index.js:98-105`。钉测结论（dsh-commands/lib/index.js）：`command/run`(:325) 先于 handler(:379) 追加、`command/done` 在 settle(:385) 后追加——followup 消息排在 `command/done` 之后、作为下一回合 user message 生效；agent 非 idle 时 followup 无条件 splice 进 next-turn inbox（**排队不丢弃**，dsh-agent-loop:783-791，仅 disposed 取消 park）；signal = withAbort(:124-140) 只停止等待不中断 handler，abort 经 settleThrown(:388-398) 记 `command/done` error 并原样抛。**降级（b）封存不用**。
 - **对照（非先例）**：`agent.steer(createUserMessage(...))` 是 **`agent/turn-stopping` listener 上下文**的机制（Phase 3 E 模式，`dsh-hooks-claude-code/lib/index.js:292-307`）——写 inbox 供 driver 重读决定是否续行，与命令 handler 上下文时序语义不同，**不作为命令面先例引用**。
-- **占位符渲染（P4-T1 Q-2 闭环）**：`$ARGUMENTS` = `invocation.rawInput`；invocation 仅 5 字段（`commandId/agent/rawInput/attachments/signal`，types.d.ts:18-34）——`$SESSION_ID` = `invocation.agent.id`（Agent.id 即 SessionId）、`$TIMESTAMP` = `Date.now()` 由 handler 派生；渲染 = 纯函数，单测钉死。OMO 侧替换器语义参考 = `hooks/auto-slash-command/executor.ts:20,89-99`。
+- **占位符渲染（P4-T1 Q-2 闭环）**：`$ARGUMENTS` = `invocation.rawInput`；invocation 仅 5 字段（`commandId/agent/rawInput/attachments/signal`，`lib/types/index.d.ts:18-35`）——`$SESSION_ID` = `invocation.agent.id`（Agent.id 即 SessionId）、`$TIMESTAMP` = `Date.now()` 由 handler 派生；渲染 = 纯函数，单测钉死。OMO 侧替换器语义参考 = `hooks/auto-slash-command/executor.ts:20,89-99`。
 - **agent 绑定**（start-work → atlas）：DSH 命令 API 无 per-command agent 字段（计划期实测 `CommandDefinition` 联合）——翻译 = 模板文本明确"你是 atlas / 指挥委派 atlas"，由 Phase 2 名册的既有委派链执行；`/ulw-execute` 模板 marker 与 H-32 激活检测的对接见 §4.7。
 - **纪律**：handler 自包 try/catch；模板常量 apply 时一次构建（不在命令路径读盘——vendor 的 skill 内容例外，经 `ctx.skills.get` 原生面加载）；注册返回 disposer 归当前 Fiber；命令 handler 抛错 settle 为 `kind:'error'` 已是明文语义（`dsh-commands` types：thrown/aborted handler settles as `kind: 'error'`——Q-1 的该子项已闭环），单测钉死即可。
 
@@ -117,7 +117,7 @@ OMO 命令 = 模板文本（`<command-instruction>…</command-instruction>` 包
 ### 4.5 keyword-detector 移植设计（H-33 接盘，原 Phase 3 S-06）
 
 - **形态**：omo-hooks 的模式 A pre-step 注入——检测用户输入文本（剥 code block / inline code / slash 命令前导，上游 `detector.ts` 语义）命中 `ultrawork|ulw` / `hpp|hyperplan` 模式 → `agent.inject()` 注入对应指令文案；已注入幂等（上游"指令已在上下文则不重复"语义）。
-- **收窄清单（P4-T1 实测扩充）**：① team 关键词（`TEAM_PATTERN`/`TEAM_MESSAGE`）deferred → Phase 5；② 模型/身份变体（5+1 个 md：default/gpt/gemini/glm/planner/codex）按 DSH 名册现实收窄为单一文案 + 名册可查的 reviewer 引用（Phase 2 plan-consultant/plan-reviewer 名）；③ `hyperplan-ultrawork` 组合模式保留（严格相邻双词序，constants.ts:14-15；交集禁用 = 基词任一禁则禁 combo，detector.ts:53-56）；④ **六级输入过滤全套移植**：synthetic/internal、system directive、non-OMO agent（builder/plan）、planner、background session、非主 session（只留 ultrawork/combo）；⑤ **双幂等**：消息级 `!text.includes(keyword.message)`（hook.ts:31-36）+ session 级一次性 Set；⑥ hyperplan 正则含 `.hpp` 负向后查（`(?<![\w.])hpp\b`，上游 issue #4215）。
+- **收窄清单（P4-T1 实测扩充）**：① team 关键词（`TEAM_PATTERN`/`TEAM_MESSAGE`）deferred → Phase 5；② 模型/身份变体（5+1 个 md：default/gpt/gemini/glm/planner/codex）按 DSH 名册现实收窄为单一文案 + 名册可查的 reviewer 引用（Phase 2 plan-consultant/plan-reviewer 名）；③ `hyperplan-ultrawork` 组合模式保留（严格相邻双词序，constants.ts:14-15；交集禁用 = 基词任一禁则禁 combo，detector.ts:53-56）；④ **六级输入过滤全套移植**：synthetic/internal、system directive、non-OMO agent（builder/plan）、planner、background session、非主 session（只留 ultrawork/combo）。**【PR #10 评审更正（A-1/A-2，仲裁亲核成立）**：④⑤⑥b 的身份面原读 `subagent/descriptor` 事件的 persona——但 one-shot 子会话的 descriptor **不落 persona**（descriptor.js:37）且首步 pre-step 时 descriptor 尚未落盘（in-process-driver:139-149），任务文本又只在首步可见（claim 破坏性）→ 该形态下三闸结构性失明。终态：子会话判定改读 `session.header.origin === 'subagent'`（创建期写入、无时序窗）；one-shot（persona 结构性不可得）→ 具名 reason `subagent-identity-undecidable` 保守整跳——**收窄登记**：上游「前台子会话放行 ultrawork/combo」的 lane 在 DSH one-shot 形态关闭（planner 席位不被污染是更上位意图）；concerto 默认委派形态 continuable 本就被 ⑥a 整跳，atlas 的 ultrawork 武装走 H-32 自有注入面，不受影响】；⑤ **幂等**：消息级 `!text.includes(keyword.message)`（hook.ts:31-36）逐字保留。**【PR #10 评审更正（A-5，仲裁亲核成立）**：初版另加了 session 级一次性 Set（原任务书要求，基于「同一条 ulw 消息每步可见」的宿主模型）——该模型被 inbox `claim` 的破坏性语义证伪（一条消息只在一批可见；上游会话闸只在 default-mode 分支，关键词路径无闸），已删闸对齐上游，同会话二次武装恢复为上游行为】；⑥ hyperplan 正则含 `.hpp` 负向后查（`(?<![\w.])hpp\b`，上游 issue #4215）。
 - **指令内容**：ultrawork 指令正文 = senpi `ultrawork/SKILL.md`（vendor 内容，§4.3）——注入面引用 vendor 文本常量，不在 listener 里重写指令；notepad/`mktemp` 等 OMO 载体引用逐处收窄（DSH 等价物或记差异）。
 - **配置面**：上游 `disabled_keywords`/`enabled_expansions` 两字段 optional 无默认（缺席 = 全启用无 allowlist，P4-T1 实测）——DSH 侧以插件 Config 落（cordis Config schema 先例），默认全开（与上游默认对齐）。
 
@@ -160,7 +160,7 @@ Phase 3 的 H-32 移植了 start-work **hook 语义**（激活检测 = DSH 原�
 ### 4.10 署名与合规
 
 - 命令 handler/模板/listener 文件头部署名注释（上游源文件 tag 相对路径 + "语义移植"声明），沿用 Phase 3 先例。
-- skills vendor：`THIRD_PARTY_NOTICES.md` 新增 "Phase 4 skills vendoring" 小节（per-file，286+2 文件量级——按 Phase 1 的目录级分组 + 逐文件 manifest 双层纪律落地，D15 的字面要求与可操作性平衡按 playbook 既有裁定执行）；`VENDOR-MANIFEST.json` 逐文件 sha256；改名处 `deviations[]`。
+- skills vendor：`THIRD_PARTY_NOTICES.md` 新增 "Phase 4 skills vendoring" 小节（per-file，291 文件 = 288 skill + 3 包根——按 Phase 1 的目录级分组 + 逐文件 manifest 双层纪律落地，D15 的字面要求与可操作性平衡按 playbook 既有裁定执行）；`VENDOR-MANIFEST.json` 逐文件 sha256；改名处 `deviations[]`。
 - `verify-licenses` 的 `checked` 预期变化（54 → 54+新增 vendor 条目），每处变化有对应条目；纯命令代码零新增 npm 依赖。
 
 ## 5. 退出标准与证据
@@ -211,8 +211,8 @@ ROADMAP §4 Phase 4 给出 2 条退出标准，逐条落到可执行证据：
 | Q-3 | user-invocable → 命令桥接存在性 | ✅ 注册桥不存在；手势桥（dsh-tool-skill pre-step SKILL_GESTURE）存在 → `/ulw-plan` 零代码 |
 | Q-4 | skill 投递机制选型 | ✅ 候选 b′（嵌入注册 + vendor path）；否决物化（.git 探测 + patch 整键替换） |
 | Q-5 | 续行机制盘点 + 跨插件服务形态 | ✅ goals pause 可用；ralph 无 stop API（记差异）；jobs.kill 满足级联；延迟 ctx.get 先例定案 |
-| Q-6 | keyword-detector 收窄清单逐字复核 | ✅ 六级过滤 + 双幂等 + 组合相邻/交集禁用 + `.hpp` 负向后查 + 配置缺席全启用（§4.5） |
-| Q-7 | 上游树逐文件对账 | ✅ 7 命令/20 文件、17 目录 286 文件、senpi 2×1、keyword-detector **25**（少计 1 修正）、guard 3；测试种子 111 its |
+| Q-6 | keyword-detector 收窄清单逐字复核 | ✅ 六级过滤 + 幂等面 + 组合相邻/交集禁用 + `.hpp` 负向后查 + 配置缺席全启用（§4.5）**【PR #10 修订：本行成文时写「双幂等」——session 级闸经评审复核删除，终态口径见 §4.5 ⑤】** |
+| Q-7 | 上游树逐文件对账 | ✅ 7 命令/20 文件、17 目录 286 文件、senpi 2×1、keyword-detector **25 = 24 目录 + 1 目录外**（草案少计 1 修正；T12 复核实测终态口径）、guard 3；测试种子 111 its |
 
 ## 7. 工作包与估算
 

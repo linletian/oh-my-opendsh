@@ -366,20 +366,21 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
     // must be extended in the same commit — the point is pinning the SET, not
     // just the count.
     // The SET of terms the roster actually uses, checked as a SUBSET of the legal
-    // vocabulary — NOT as an equality against both terms. The roster today holds
-    // 14 `ported` + 1 `pending` (H-33), so it happens to contain both and the
-    // equality would pass today; but requiring the equality would make this test
-    // fail the day the roster is legitimately fully ported, encoding "a pending
-    // row must always exist" into what is only a vocabulary check. The subset
-    // form states the real claim — no term outside the two is in use — and the
-    // non-vacuity assertion below keeps it from passing on an empty roster.
+    // vocabulary — NOT as an equality against both terms. The roster is now fully
+    // `ported` (P4-T13 flipped H-33, closing the last `pending` row), so it does
+    // NOT contain both terms any more; requiring the equality would fail today
+    // and would encode "a pending row must always exist" into what is only a
+    // vocabulary check. The subset form states the real claim — no term outside
+    // the two is in use — and the non-vacuity assertion below keeps it from
+    // passing on an empty roster.
     //
-    // NOTE the state this does NOT claim: P4-T13 did NOT flip H-33. Its status is
-    // still `pending`, because the flip is a 双侧同步 commit that also edits the
-    // coverage doc's §1.2 status cell, and that doc side is the arbiter's to
-    // change (the cell itself records this: `ported 翻转随 P4-T13 e2e 与 manifest
-    // status 同 commit 双侧同步（c14 契约）`). P4-T13 delivered the e2e, which is
-    // the objective half of the row-flip condition.
+    // STATE THIS DOES CLAIM (terminal, and pinned by the it-block below): every
+    // roster row is `ported`, and `pendingIds` is empty. That emptiness is not
+    // "unasserted" — the next it-block pairs it with the ported-side identity and
+    // with `keyword-detector` (H-33) appearing on that side, so a roster that had
+    // merely LOST rows would not pass. The double-sided flip itself was c14's
+    // contract: the §1.2 status cell and the manifest status moved in the same
+    // commit, which is why the emptiness below is a state and not a wish.
     const statuses = [...new Set(HOOK_MANIFEST.map((row) => row.status))].sort()
     for (const status of statuses) {
       expect([PENDING_STATUS, PORTED_STATUS]).toContain(status)
@@ -632,8 +633,11 @@ describe('P3-T20 consistency — the ported manifest rows ⟺ the baseline union
     expect(declaredScenarios).not.toContain('keyword-mode-ultrawork')
     expect(HOOK_MANIFEST.map((row) => row.e2eScenario)).not.toContain('keyword-mode-ultrawork')
     // The keyword row points at the primary of the four P4-T13 scenarios; the
-    // three siblings exist because the session one-shot (S-6) makes "injected"
-    // and "injected again" mutually exclusive within one session.
+    // three siblings are one per keyword type plus the negative controls. (The
+    // original reason — "the session one-shot (S-6) makes 'injected' and
+    // 'injected again' mutually exclusive" — was struck in PR #10's review: that
+    // gate was deleted, so a session can now arm twice. The scenarios still do
+    // not share a session, but because each asserts about its OWN injected text.)
     const keyword = HOOK_MANIFEST.find((row) => row.id === 'keyword-detector')
     expect(keyword?.e2eScenario).toBe('ultrawork-keyword-injected')
     for (const sibling of ['keyword-negative-controls', 'hyperplan-keyword-injected', 'combo-keyword-injected']) {

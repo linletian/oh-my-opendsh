@@ -30,13 +30,18 @@
 // plus manifest.ts (the single source of truth for WHICH commands exist) behind
 // an EMPTY apply() that imported nothing; P4-T3 adds the mount itself — the
 // `inject: ['commands']` dependency, the registration loop, and the boot
-// markers. The implementation registry is DELIBERATELY EMPTY: all six manifest
-// rows are 'pending' at this point (no command handler, unit test or e2e
-// scenario has landed), so a correct boot logs the summary line
-// `[omo-commands] loaded: manifest 6 entries (pending=6, ported=0) — 0/6 commands
-// registered` and NOTHING else. That is the P3-T3 precedent exactly: an empty
-// implementation registry with the summary line derived from the manifest,
-// filled one command at a time from T6.
+// markers. The registry was DELIBERATELY EMPTY at that point and is populated
+// one command at a time since, which is the P3-T3 precedent exactly: an empty
+// implementation registry with the summary line derived from the manifest, filled
+// entry by entry as each command lands (T6 onward). The CURRENT contents are
+// {@link COMMAND_REGISTRARS} below; the count of each status is not restated
+// here on purpose — it moves as rows land, and it is computed from
+// COMMAND_MANIFEST at boot and rendered by `formatLoadedSummaryLine`
+// (boot-markers.ts), with the exact line pinned by
+// tests/omo-commands/boot-markers.test.ts. This paragraph used to paste the
+// summary line verbatim ("all six manifest rows are 'pending' … a correct boot
+// logs … and NOTHING else"); that census was stale from the first landed command
+// onward and contradicted {@link COMMAND_REGISTRARS} in the same file.
 //
 // The `.ts` extension in the imports below is LOAD-BEARING: Node 24
 // type-stripping (P-8.6) does no specifier resolution, and this workspace has no

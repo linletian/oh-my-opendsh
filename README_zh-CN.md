@@ -53,8 +53,9 @@ preset 携带 **11-agent 名册**：指挥 **sisyphus** + **10 个委派目标**
 | `sisyphus-junior` | worker | 快座 — `deepseek` / `deepseek-v4-flash` |
 | `prometheus` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 
-> ⚠️ **名册完整 ≠ 完整的 OMO 编排面**（风险 R-8，见 docs/plans/phase2-dev/phase2-plan.md §6）。具体分三件事：11-agent 名册完整
-> **≠** `/ulw-*` 命令面（Phase 4）**≠** Team Mode 的成员语义（Phase 5）。本仓库今日不对后两者作任何宣称。
+> ⚠️ **名册完整 ≠ 完整的 OMO 编排面**（风险 R-8，见 docs/plans/phase2-dev/phase2-plan.md §6）。那句话点名了另外两件事，其中一件已经关闭
+> ——`/ulw-*` 命令面（Phase 4）**已在本仓库落地**（R-7；见下方「Phase 4 命令面已落地」）。另一件仍然成立：Team Mode 的成员语义（Phase 5）
+> ——**本仓库今日不作此宣称**。
 
 - **一行命令**（推荐）：
 

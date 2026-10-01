@@ -134,10 +134,14 @@ export function suppressComboStandalones(hits: readonly DetectedKeyword[]): Dete
  * 消息级幂等（上游 hook.ts:31-36 逐字 + hook.ts:157-161 的调用点）：
  * 注入文本已经出现在本轮用户文本里 → 该关键词不重复注入。
  *
- * 这是**逐字移植**的那一道。会话级一次性守卫（`../keyword-detector.ts` 的
- * `injectedSessions` WeakSet）复用的是上游的 `Set` 机制，但判据不同——上游那个
- * Set 属于 default-mode 特性、不在关键词触发路径上，DSH 需要它是因为 pre-step
- * 每**步**触发一次（理由见 listener 头部 S-6）。
+ * 这是**唯一**的幂等闸，也是逐字移植的那一道。会话级一次性守卫
+ * （`../keyword-detector.ts` 的 `injectedSessions` WeakSet）**已在 PR #10 复核后
+ * 删除**：它的必要性前提（同一条用户消息在每一步都可见）被 `inbox.claim` 的破坏性
+ * splice 证伪，而上游那个同名 Set 属于 default-mode 特性、不在关键词触发路径上
+ * ——完整链路见 listener 头部 S-6。
+ *
+ * 调用方现在**逐条候选文本**调用本函数再按 type 去重（一条命中只要在**任一**条
+ * 候选里没带着正文就保留），见 `decideKeywordInjection` 的 ① 号幂等段。
  *
  * ⚠️ 判据用**未剥壳**的 `cleanText`（系统提醒已剔、代码壳保留）：注入正文落在
  * 指令块里，用户原封不动贴回同一段正文时也必须被认出。

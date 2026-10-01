@@ -55,10 +55,10 @@ targets**, each on its own route binding.
 | `prometheus` | read-only | strong — `deepseek-official` / `deepseek-v4-pro` |
 
 > ⚠️ **A complete roster is not a complete OMO orchestration surface**
-> (risk R-8, docs/plans/phase2-dev/phase2-plan.md §6). Concretely, and in three separate
-> senses: the 11-agent roster is complete **≠** the `/ulw-*` command face (Phase 4) **≠**
-> Team Mode membership semantics (Phase 5). Nothing in this repository claims either of the
-> latter two today.
+> (risk R-8, docs/plans/phase2-dev/phase2-plan.md §6). That sentence named two further
+> senses; one of them has since closed — the `/ulw-*` command face (Phase 4) **has landed**
+> here (R-7; see "Phase 4 command face landed" below). The other stands: Team Mode
+> membership semantics (Phase 5) — **not claimed in this repository today**.
 
 - **One line** (recommended):
 

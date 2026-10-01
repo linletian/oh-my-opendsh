@@ -76,6 +76,12 @@
 //       （phase3-hooks.md §1 + phase4-commands.md §1.2），manifest 侧按
 //       `status === 'ported'` 过滤；全量行数对 EXPECTED_HOOK_COUNT 与 c13 的
 //       文件集核对都**不过滤**（演进理由见实现处注释）
+//   c22 the coverage baseline's §1.1/§1.2/§2/§3 **状态列**是终态的——表格数据行
+//       的最后一格不得含前瞻/未完成标记（📋 / ⏳ / 待 vendor / 待移植 / 待 P4-T …）。
+//       c14 只核对**已翻好**的行，一行永远停在 pending 态它一声不响；PR #10 评审
+//       A-3/B-MAJOR-2 的 19 行 `📋 待 vendor（P4-T4）` 就是这样漏过去的。判据是
+//       负向的（不钉死终态措辞），作用域是**表格状态格**——§4 的「deferred → Phase 6」
+//       是终态判定、§5 标题里的「待核清单」是历史散文，两者都刻意排除
 //
 // The record COUNT appears nowhere in this file or in ci-local.sh / ci.yml: the
 // script derives its own total and prints `N/N PASS`, so there is no copy to go
@@ -143,6 +149,80 @@ const COMMANDS_TPL_DIR = join(COMMANDS_SRC, 'templates')
 const COMMANDS_MANIFEST_TS = join(COMMANDS_SRC, 'manifest.ts')
 const COMMANDS_SKILLS_TS = join(COMMANDS_SRC, 'skills.ts')
 const VENDOR_SKILLS_DIR = join(OMO_PATCH_DIR, 'vendor', 'shared-skills', 'skills')
+// ── P4-T18 (PR #10 review A-3 / B-MAJOR-2): c22 的覆盖基线终态性判据 ──────
+// 与上面 c14 同一份 phase4-commands.md，但**另一张脸**：c14 核对「文档里的已移植
+// 行 == manifest 的 ported 行」，它只看得见**已经翻好**的行；一行永远停在 pending
+// 态，c14 一声不响。所以需要一张独立的脸，专看状态列本身。
+const PHASE4_BASELINE_MD = COVERAGE_BASELINE_MDS[1]
+
+/**
+ * c22 判作用的四个表格。刻意排除 §4（deferred/排除表，无状态列，且「deferred →
+ * Phase 6」本身是**终态判定**而非本阶段前瞻）与 §5/§6（散文——§5 标题本身就叫
+ * 「P4-T1 待核清单（✅ 已闭环…）」，全文 grep 会当场误伤）。
+ *
+ * `label` 只用于报错与 detail，匹配用 `re`（对整行标题文本判定）。
+ *
+ * ⚠️ **门名里的「coverage baseline」只指 Phase 4 那一份，不是 c14 的并集**（评审
+ * B mcode MINOR，仲裁者采纳）。c14 的基线是 `COVERAGE_BASELINE_MDS` 的**两文档
+ * 并集**（phase3-hooks.md + phase4-commands.md），而 c22 只扫后者
+ * （`PHASE4_BASELINE_MD = COVERAGE_BASELINE_MDS[1]`）——所以 phase3-hooks.md 里出现
+ * 同类标记，本门**不会**捕获。范围是刻意的，依据三条：
+ *
+ *   1. **Phase 3 已结项**，其状态列不再变化：实测 §1 的 16 条 `| H-` 行前瞻标记
+ *      **0 处**（14 条已移植 + H-08/H-09 两条「跳过」终态判定）。c22 要治的是
+ *      「本该终态的行写着前瞻」，对一份冻结的文档它无处可治。
+ *   2. **Phase 3 §1 的翻转纪律已被 c14 双向覆盖**：并集里 phase3 的行若从已移植
+ *      退回待移植，manifest 侧的 ported id 立刻在文档端口组里找不到 → c14 的
+ *      `missing` 报红（反向则是 `extra`）。真正没被任何门覆盖的只有「phase3 的
+ *      一行从没翻过、也永远不翻」这一种，而那正是设计内跳过行的定义。
+ *   3. **phase3 §2 是跳过/deferred/排除表**，与本门已排除的 phase4 §4 同构——
+ *      「deferred → Phase N」在那里同样是终态判定，把它纳入判据是范畴错误。
+ *
+ * 扩展路径（登记在此，不必现在做）：若 phase3-hooks.md 重新打开（有行回到待移植态），
+ * 把 `PHASE4_BASELINE_MD` 换成按文档逐个跑、每份配自己的 `C22_SECTIONS`——注意
+ * phase3 的 §1 用的是 `### P0…P5` 小节标题而非 `### 1.1`，行 id 也只有 `H-\d+`
+ * 没有 `C-`/`S4-`/`S5-`，两处都要另配，不能直接复用下面这张表。
+ */
+const C22_SECTIONS = [
+  { label: '1.1', re: /^###\s+1\.1\b/ },
+  { label: '1.2', re: /^###\s+1\.2\b/ },
+  { label: '2', re: /^##\s+2\./ },
+  { label: '3', re: /^##\s+3\./ },
+]
+
+/** 表格**数据行**的首格 id 形态（C-01 / H-33 / S4-01 / S5-01）。 */
+const C22_ROW_ID = /^(?:C-\d+|H-\d+|S4-\d+|S5-\d+)$/
+
+/**
+ * 前瞻 / 未完成标记 —— **负向**判据，命中即 FAIL。
+ *
+ * 全部来自本仓自己的行文普查（不是凭空想的模式）：终态格一律写 ✅ / ⏭️ 配
+ * 「已移植」「已 vendor」「已落地」「跳过成文」，而「还没做」一律写 📋 / ⏳ 配「待…」。
+ * 逐条可用 grep 在 phase4-commands.md 里反证：
+ *
+ *   📋 / ⏳      计划书的「未开始 / 开放维度」emoji，文档内 **0 次**——所以它们是
+ *                安全的模式集成员（出现了就说明有人把前瞻态写了回来）。
+ *   待 vendor    §2/§3 在 P4-T4 之前的状态列原样。
+ *   待移植       Phase 3 基线的 pending 词（phase3-hooks.md 的口径），跨文档沿用。
+ *   待 P4-T      「待 P4-T4」式任务指针。
+ *   待实施 / 待 e2e / 待评审 / 待补 / 待核 —— 计划书其余的「待」搭配。
+ *
+ * ⚠️ **刻意不写「待」这个单字**：那会把散文里合法的历史表述（§5 的「待核清单」）
+ * 一并吞掉。判据要精确到搭配，不是精确到「有没有这个字」。
+ */
+const C22_FORWARD_MARKERS = [
+  '📋',
+  '⏳',
+  '待 vendor',
+  '待移植',
+  '待 P4-T',
+  '待实施',
+  '待 e2e',
+  '待评审',
+  '待补',
+  '待核',
+]
+
 /** c19：被判定为「重写了 dsh skill 装载面」的**基名**。P4-T16 评审 MINOR-8。 */
 const SKILL_SURFACE_PATTERN = /^(?:skill|skills)-(?:loader|registry|cache|resolver)\b|^skill-loader\b/
 /**
@@ -1555,6 +1635,86 @@ async function run() {
   } catch (e) {
     results.push(check('c21', 'NOTICES / c13 counts are derived from manifest + filesystem, not transcribed', false,
       `the count cross-check could not run: ${String(e.message ?? e)}`))
+  }
+
+  // c22 — the coverage baseline's STATUS CELLS are terminal.
+  //
+  // WHY THIS RECORD EXISTS (PR #10 review A-3 / B-MAJOR-2, both upheld). 19 rows of
+  // phase4-commands.md §2/§3 still carried `📋 待 vendor（P4-T4）` while §1/§1.2 had
+  // already been flipped — so the doc that c14 reads as "the 文档是人读的一半" was
+  // asserting a claim about the port that the tree had long since outgrown, and
+  // nothing was checking it: `grep "S4-|待 vendor"` against this file returned
+  // zero hits. Every other count-copy in this gate got a record (c13, c21); the
+  // status column was the one machine-readable-looking column with no record.
+  //
+  // THE JUDGEMENT IS **NEGATIVE** AND WORDING-FREE ON PURPOSE. Pinning the exact
+  // terminal phrasing ("✅ 已移植（…）") would re-create the problem this record
+  // exists to kill: the next honest rewording would go red and the fix would be
+  // to widen the literal, not to fix the doc. So the rule is only "the status cell
+  // must not carry a forward-looking / unfinished marker", and the marker set is a
+  // named list derived by census of THIS REPO's own vocabulary — terminal cells
+  // say ✅ / ⏭️ / 已移植 / 已 vendor / 已落地 / 跳过成文, and anything not yet done
+  // is written 📋 / ⏳ / 待…
+  //
+  // SCOPE IS THE TABLE DATA ROWS' LAST CELL, in §1.1 / §1.2 / §2 / §3 only. Three
+  // deliberate exclusions, each for a reason that would otherwise bite:
+  //   * §4 (deferred / 排除) is EXCLUDED — it has no status column, and
+  //     「deferred → Phase 6」is a **terminal verdict** about that row, not a
+  //     promise about this phase; judging it by this rule would be a category error.
+  //   * §5/§6 are PROSE. §5's heading is literally 「P4-T1 待核清单（✅ 已闭环…）」,
+  //     where 待核清单 is a historical section title, and §5/§6 legitimately
+  //     recount what was pending at the time. A whole-document grep would go red
+  //     on those today.
+  //   * non-data rows (the `| # | … | 状态 |` header and the `|---|` separator)
+  //     are skipped by requiring the first cell to look like a row id.
+  // A line's status cell is its LAST cell, so a literal `|` inside an earlier cell
+  // cannot shift which cell is judged.
+  try {
+    const lines = readFileSync(PHASE4_BASELINE_MD, 'utf8').split('\n')
+    const problems = []
+    const perSection = new Map()
+    let section = null
+    for (const line of lines) {
+      const heading = line.match(/^(#{2,3})\s+(.*)$/)
+      if (heading !== null) {
+        // A heading's own text is never a status cell: record the section, move on.
+        section = C22_SECTIONS.find(({ re }) => re.test(line))?.label ?? null
+        continue
+      }
+      if (section === null) continue
+      if (!line.startsWith('|')) continue
+      const cells = line.slice(1, line.endsWith('|') ? -1 : undefined).split('|').map((cell) => cell.trim())
+      const id = cells[0] ?? ''
+      if (!C22_ROW_ID.test(id)) continue
+      const statusCell = cells[cells.length - 1] ?? ''
+      perSection.set(section, (perSection.get(section) ?? 0) + 1)
+      const hits = C22_FORWARD_MARKERS.filter((marker) => statusCell.includes(marker))
+      if (hits.length > 0) {
+        problems.push(`§${section} row ${id}: status cell still says ${hits.map((m) => `「${m}」`).join(' / ')} — ${statusCell.slice(0, 60)}`)
+      }
+    }
+    // Non-vacuity, per section: a check that silently matches nothing is the
+    // failure mode c14 already had to guard against ("the assertion would be
+    // vacuous (table format changed?)"). Each of the four sections must
+    // contribute at least one judged data row, so renaming a section or breaking
+    // the table shape goes red instead of reporting a clean sweep over nothing.
+    for (const { label } of C22_SECTIONS) {
+      if ((perSection.get(label) ?? 0) === 0) {
+        problems.push(`§${label} contributed 0 judged table rows (heading renamed, table shape changed, or the table is gone — the assertion would be vacuous)`)
+      }
+    }
+    const judged = [...perSection.values()].reduce((a, b) => a + b, 0)
+    if (judged === 0) problems.push('no table data row was judged anywhere in §1.1/§1.2/§2/§3 — the assertion would be vacuous')
+    results.push(check('c22', 'coverage baseline §1.1/§1.2/§2/§3 status cells carry no forward-looking marker',
+      problems.length === 0,
+      problems.length > 0
+        ? problems.join('; ')
+        : `${judged} status cells across §1.1/§1.2/§2/§3 (${C22_SECTIONS.map(({ label }) => `${label}:${perSection.get(label) ?? 0}`).join(' ')}) are terminal — `
+          + `none contains any of the ${C22_FORWARD_MARKERS.length} forward-looking markers (${C22_FORWARD_MARKERS.join(', ')}), `
+          + `checked in ${relative(REPO_ROOT, PHASE4_BASELINE_MD)}`))
+  } catch (e) {
+    results.push(check('c22', 'coverage baseline §1.1/§1.2/§2/§3 status cells carry no forward-looking marker', false,
+      `the status-cell check could not run: ${String(e.message ?? e)}`))
   }
 
   // Report.
