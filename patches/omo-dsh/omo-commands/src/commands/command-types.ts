@@ -21,6 +21,11 @@
 //   Agent.followup     dsh-agent/lib/types/runtime-types.d.ts:186-192
 //   UserMessage        dsh-llm（createUserMessage，lib/index.js:48-53）
 
+// P4-T16 — 命令面在本仓的类型定义（manifest 行、启动结果）。
+// 署名声明（c16 原生总体）：本文件**无上游对应物**——v4.19.4 没有任何同职责的模块。
+// 它是 DSH 侧的原生代码，不是语义移植；宣称上游来源就是假署名。语义移植文件请带
+// 「UPSTREAM SOURCE + @ v4.19.4 + 移植声明」三件套。
+
 /** `Agent` 的最小面：本包只用 `id` 与 `followup`。 */
 export interface CommandAgentLike {
   /** 会话 id —— `$SESSION_ID` 的唯一来源（invocation 没有 sessionId 字段）。 */

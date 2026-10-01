@@ -17,6 +17,11 @@
 // fails to load, so the two never import each other. Two copies, two module
 // lifetimes, one documented reason.
 
+// P4-T16 — 本仓命令面自有的错误类型。
+// 署名声明（c16 原生总体）：本文件**无上游对应物**——v4.19.4 没有任何同职责的模块。
+// 它是 DSH 侧的原生代码，不是语义移植；宣称上游来源就是假署名。语义移植文件请带
+// 「UPSTREAM SOURCE + @ v4.19.4 + 移植声明」三件套。
+
 /**
  * 取人读的那一句错误描述：`Error` 用 `message`，其余用 `String(value)`。
  *

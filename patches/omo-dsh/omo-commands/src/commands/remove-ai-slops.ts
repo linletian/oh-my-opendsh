@@ -11,6 +11,8 @@
 // `<session-context>` 段，于是 `$SESSION_ID` / `$TIMESTAMP` 不出现，
 // 渲染不依赖 `agent.id`，`MissingCommandSessionIDError` 在此不可达（单测钉死）。
 
+// 语义移植声明：本文件是 `templates/remove-ai-slops.ts` 上游模板的**语义移植**（handler 侧），不是逐字复制——上游在 process 内直接改写消息，本仓改为投递一条`<command-instruction>` 用户消息给 dsh 会话面。
+
 import { formatCommandTemplate, renderCommandTemplate } from '../templates/render.ts'
 import { REMOVE_AI_SLOPS_COMMAND_TEMPLATE } from '../templates/remove-ai-slops.ts'
 import { describeError } from './errors.ts'

@@ -137,7 +137,7 @@ tag `v4.19.4` (commit `b072d279110bdda2c6ac2525d0d24dc54d16148a`, under
 naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/manifest.ts`
 (per-file machine-readable lists), not this table, are the per-file authority.
 
-#### Phase 3 additions (14 ported hook listeners)
+#### Phase 3 additions (15 ported hook listeners — the 15th, `keyword-detector`, landed in Phase 4)
 
 | Hook (manifest id) | Derived file(s) under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
 |---|---|---|---|
@@ -155,21 +155,30 @@ naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/man
 | webfetch-redirect-guard | src/hooks/webfetch-redirect-guard.ts | webfetch-redirect-guard/constants.ts, hook.ts, index.ts, redirect-resolution.ts（+ 1 上游测试文件作移植种子） | semantic port only |
 | prometheus-md-only | src/hooks/prometheus-md-only.ts | prometheus-md-only/agent-matcher.ts, agent-resolution.ts, constants.ts, hook.ts, index.ts, path-policy.ts（+ 1 上游测试文件作移植种子） | semantic port only |
 | ulw-execute（上游名 start-work，按 v5 命名锚点） | src/hooks/ulw-execute.ts + src/hooks/ulw-execute/（constants.ts, context-builder.ts, identity.ts, live-state.ts, parse-request.ts, plan-discovery.ts, worktree.ts） | start-work/context-info-builder.ts, context-info-formatters.ts, explicit-plan-context.ts, index.ts, notepad-scaffold.ts, parse-user-request.ts, plan-discovery-context.ts, plan-selection.ts, session-plan-affinity.ts, start-work-hook.ts, work-initializer.ts, worktree-block.ts, worktree-detector.ts（+ 7 上游测试文件作移植种子；命令面在 hooks/ 之外，属 Phase 4；boulder-state 依赖段跳过，逐条注记） | semantic port only |
+| keyword-detector | src/hooks/keyword-detector.ts + src/hooks/keyword-detector/（constants.ts, detector.ts, filters.ts, messages.ts） | config/schema/keyword-detector.ts, hooks/keyword-detector/constants.ts, detector.ts, hook.ts, index.ts, types.ts, hyperplan/default.ts, hyperplan/index.ts, team/default.ts, team/index.ts, ultrawork/default.ts, ultrawork/gemini.ts, ultrawork/glm.ts, ultrawork/gpt.ts, ultrawork/planner.ts, ultrawork/source-detector.ts, ultrawork/index.ts（+ 7 上游测试文件作移植种子） | semantic port only（**Phase 4 落地，Phase 3 的 S-06 顺延项**：上游在 `chat.message` 上判别 ultrawork / ulw / hyperplan / hpp 与 `hyperplan ulw` 组合词后注入整份模式指令，本移植形态 = 一个 `agent/pre-step` waterfall listener（模式 A），命中即 `agent.inject()` 并永远 `next()`；**注入正文改为引用本仓 vendor 的 ultrawork / hyperplan SKILL.md**（P4-T4），5+1 个上游模型变体收窄为单一名册感知文案，`team` 枚举位**预留不接线**（Phase 5 面），toast 收窄为审计行。逐文件处置注记于 `src/hooks/keyword-detector.ts` 文件头，上游目录 24 条目（16 实现 + 测试）的件数算术亦记于该处） |
 
 > Deliberately **not** listed as ported: the 47 hook modules with a terminal
 > skip/defer/excluded disposition (DSH-native coverage, no DSH seam, platform coupling,
 > later-phase ownership, upstream-dead) — the per-module reasons are the coverage
 > authority: `docs/plans/phase3-dev/phase3-hooks.md` §2.
 
-**Counts:** Phase 3 derived listener files listed = **14 hook ids / 21 derived files**
-(14 `src/hooks/*.ts` + 7 `src/hooks/ulw-execute/` 子模块). No existing entry above this
-section was modified (additions only).
+**Counts:** Phase 3 derived listener files listed = **15 hook ids / 26 derived files**
+(15 top-level `src/hooks/*.ts` + 11 files in the `keyword-detector/` and
+`ulw-execute/` submodule directories). P4-T16: these two numbers were `14 / 21`
+and had been stale since P4-T8 added `keyword-detector/` — the file set moved
+twice (P4-T10's ulw-execute submodules, P4-T12's keyword-detector) and the prose
+did not. A hand-written count in a notices file is a count nobody re-reads, so
+they are now **derived**: `scripts/verify-concerto-static.mjs` record c21
+recomputes both from `manifest.ts` and the filesystem and fails if this paragraph
+disagrees. Editing the number without moving a file is now impossible.
+
+No existing entry above this section was modified (additions only).
 
 **P4-T8 addition (add-only, and deliberately NOT one of the 14 manifest rows):**
 
 | Derived file under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
 |---|---|---|
-| `src/services/stop-continuation-guard.ts`（**无 manifest 条目** —— 它是 cordis **服务提供方**，发布 `omoStopContinuation` 供 `omo-commands` 的 `/stop-continuation` 消费，H-03 在同一插件内经 `ctx.get` 读取） | hooks/stop-continuation-guard/hook.ts, index.ts, index.test.ts（12 its 作移植种子）, plugin/stop-continuation.ts（命令侧四机制调用序列） | semantic port only（continuation marker 文件不移植：本仓无该读写面；后台级联改为 `ctx.jobs.list(caller)` + 同步 `kill(id, caller, reason)`—— **caller 必须传**：`list` 对无 caller 只回无主 job，而真实生产者一律带 owner（实测 dsh-jobs-local:178-180、dsh-tool-bash:416-417），不传会真机静默空转；再按 `ownerSession === sessionId` 收窄到本会话，对齐上游 `getAllDescendantTasks`；状态词表 `running｜stopping` —— DSH 无上游的 `pending`；`session.deleted` → `session/disposed`；**不入 c13 文件集核对**（`src/services/` 不在 `src/hooks/`），故 14 ids / 21 files 的计数不含它） |
+| `src/services/stop-continuation-guard.ts`（**无 manifest 条目** —— 它是 cordis **服务提供方**，发布 `omoStopContinuation` 供 `omo-commands` 的 `/stop-continuation` 消费，H-03 在同一插件内经 `ctx.get` 读取） | hooks/stop-continuation-guard/hook.ts, index.ts, index.test.ts（12 its 作移植种子）, plugin/stop-continuation.ts（命令侧四机制调用序列） | semantic port only（continuation marker 文件不移植：本仓无该读写面；后台级联改为 `ctx.jobs.list(caller)` + 同步 `kill(id, caller, reason)`—— **caller 必须传**：`list` 对无 caller 只回无主 job，而真实生产者一律带 owner（实测 dsh-jobs-local:178-180、dsh-tool-bash:416-417），不传会真机静默空转；再按 `ownerSession === sessionId` 收窄到本会话，对齐上游 `getAllDescendantTasks`；状态词表 `running｜stopping` —— DSH 无上游的 `pending`；`session.deleted` → `session/disposed`；**不入 c13 文件集核对**（`src/services/` 不在 `src/hooks/`），故 15 ids / 26 files 的计数不含它） |
 
 ### Phase 4 skills vendoring
 
@@ -594,9 +603,21 @@ deliberate zero-injection shape, not a used path.
 > never become a registered command: it would shadow DSH's own skill gesture.
 >
 > `ulw-execute` left the `pending` set in P4-T10 (handler + template + unit tests
-> landed) and is listed above; its `e2eScenario` is still unimplemented, which is
-> the same deliberate exception the other ported command rows carry and why T11
-> exists.
+> landed) and is listed above; its declared `e2eScenario`
+> (`ulw-execute-command-activates-atlas`) landed with P4-T11, so that row is
+> terminal on all three faces — manifest, coverage baseline and a real mock-LLM
+> e2e scenario.
+>
+> Every ported command row now names a scenario that exists:
+> `ulw-execute` → `ulw-execute-command-activates-atlas`,
+> `handoff` → `handoff-summary-driven`,
+> `remove-ai-slops` → `remove-ai-slops-driven`,
+> `stop-continuation` → `stop-continuation-halts-todo`,
+> `hyperplan` → `hyperplan-degraded-noted`. The one remaining `pending` row is
+> `ulw-plan`, and its pendingness is a **permanent ruling, not unfinished work**
+> (Q-3: registering a command of that name would shadow DSH's own skill gesture
+> bridge). Its declared scenario `ulw-plan-loads-prometheus-skill` names the
+> zero-code gesture path that was delivered in its place.
 
 **Counts:** Phase 4 derived command files listed = **5 command ids / 14 derived
 files** (`src/templates/{handoff,hyperplan,remove-ai-slops,render,stop-continuation,ulw-execute}.ts` +

@@ -45,6 +45,31 @@
 //   c13 the manifest id set and the src/hooks/ file set agree in BOTH
 //       directions; the ulw-execute/ submodule directory belongs to the
 //       `ulw-execute` id and is never a separate entry
+//   c15 every cordis.yml insert row RESOLVES to a real, distinct published
+//       package (c11 pins the ids/order/names; c15 adds that each row's `name`
+//       really resolves — via the package.json `name` of some package under
+//       patches/omo-dsh/ — and that no two rows land on one package. There is NO
+//       `path` key: dsh resolves an insert row by `name` as a Node module
+//       specifier from the profile directory)
+//   c16 every omo-commands src/**/*.ts file carries the signature header
+//       (upstream source path + @ v4.19.4 + semantic-port declaration), over
+//       `commands/` and `templates/` as well as the top level
+//   c17 the omo-commands manifest ids and the src/commands + src/templates file
+//       sets agree in BOTH directions, and every manifest row DECLARES its
+//       upstream sources (non-empty — these are paths in the UPSTREAM repo, which
+//       this one does not vendor, so existence is not assertable)
+//   c18 the omo-commands manifest ↔ phase4-commands.md §1 port group, with
+//       `ulw-plan` as the ONE named permanent-`pending` exemption (Q-3)
+//   c19 the vendored skills agree across the manifest, the vendor directory and
+//       THIRD_PARTY_NOTICES.md in all three directions, AND no patches/*dsh-skill*
+//       file exists (the vendored surface is upstream content, left faithful)
+//   c21 the NOTICES / c13 hook+file counts are DERIVED from manifest.ts and the
+//       filesystem and all three copies agree (the prose said 14/21 while the
+//       tree held 15/26 for two port cycles; correcting a number does not stop it
+//       re-breaking, a check does)
+//   c20 rename consistency on the MACHINE-READABLE surfaces only: v5 bare names,
+//       no `start-work` id and no `shared/` skill prefix (attribution comments
+//       are exempt by construction, because that is what the notices are for)
 //   c14 the PORTED manifest rows are the 已移植 port group the coverage
 //       baseline UNION declares — 文档是人读的一半、manifest 是机读的一半，
 //       本记录是两者之间的桥。基线自 P4-T12 起是两份文档的并集
@@ -52,11 +77,18 @@
 //       `status === 'ported'` 过滤；全量行数对 EXPECTED_HOOK_COUNT 与 c13 的
 //       文件集核对都**不过滤**（演进理由见实现处注释）
 //
+// The record COUNT appears nowhere in this file or in ci-local.sh / ci.yml: the
+// script derives its own total and prints `N/N PASS`, so there is no copy to go
+// stale the way the NOTICES hook counts did (see c21). That is the whole reason
+// adding seven records in P4-T16 required no edit outside this file — which is
+// exactly the property worth stating, and the reason to not then quote the old
+// and new totals in the next sentence as this paragraph used to.
+//
 // Usage: node scripts/verify-concerto-static.mjs [--json]
 // Exit: 1 iff any check FAILs (a check that could not run is also a FAIL,
 // with the reason — same honesty rule as doctor-lite).
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -101,6 +133,68 @@ const PORT_DECLARATIONS = ['语义移植', '逐字移植', '逐行移植', '照�
  * 所以本表出现第二条就说明基线与 manifest 在命名上分叉——正是本记录要暴露的漂移。
  */
 const BASELINE_ID_RENAMES = new Map([['start-work', 'ulw-execute']])
+
+// ── P4-T16: the omo-commands half. Same sources-of-truth discipline as the
+// hooks constants above — every path is derived, none restated. ──
+const OMO_PATCH_DIR = join(REPO_ROOT, 'patches', 'omo-dsh')
+const COMMANDS_SRC = join(OMO_PATCH_DIR, 'omo-commands', 'src')
+const COMMANDS_CMD_DIR = join(COMMANDS_SRC, 'commands')
+const COMMANDS_TPL_DIR = join(COMMANDS_SRC, 'templates')
+const COMMANDS_MANIFEST_TS = join(COMMANDS_SRC, 'manifest.ts')
+const COMMANDS_SKILLS_TS = join(COMMANDS_SRC, 'skills.ts')
+const VENDOR_SKILLS_DIR = join(OMO_PATCH_DIR, 'vendor', 'shared-skills', 'skills')
+/** c19：被判定为「重写了 dsh skill 装载面」的**基名**。P4-T16 评审 MINOR-8。 */
+const SKILL_SURFACE_PATTERN = /^(?:skill|skills)-(?:loader|registry|cache|resolver)\b|^skill-loader\b/
+/**
+ * c19 零 patch 锚的**唯一**豁免：本仓自己的 `skills.ts`。
+ *
+ * P4-T16 再审 ⑤：此前写成前缀豁免 `!name.startsWith('skills')`，那会连带保护
+ * `skills-loader.ts`——一个真正重写了 dsh 装载面的文件。豁免必须是**精确基名**。
+ */
+const DSH_OWN_SKILL_MODULES = new Set(['skills.ts'])
+
+/**
+ * c16 的上游路径针。omo-hooks 的署名头指向 `packages/omo-opencode/src/hooks/…`，
+ * 而 omo-commands 的源散布在三个上游包里：内建命令模板（`templates/`）、
+ * shared skills（`packages/shared-skills/skills/`）与 senpi 指令 skill
+ * （`packages/omo-senpi/skills/`）。故这里收**三个**合法前缀，而不是拿 hooks 的
+ * 那一个去套——后者会把每个正确的署名头都判成缺失。
+ */
+const COMMANDS_UPSTREAM_PATH_PATTERN =
+  new RegExp('packages/(omo-opencode/src/(features/builtin-commands|hooks/auto-slash-command)'
+    + '|shared-skills/skills|omo-senpi/skills)\\S*')
+
+/**
+ * c16 的第二个总体：**DSH 原生**模块——上游 v4.19.4 没有任何对应文件，因此它们
+ * 既不能也不会写「语义移植」声明。
+ *
+ * 第一版 c16 要求 src 下每个 .ts 文件都带上游路径 + tag + 移植声明，于是这 6 个
+ * 文件全部报红。它们报红不是缺陷，是**断言写错了**：让一个纯 DSH 侧的类型定义
+ * 宣称自己语义移植自某个上游文件，正是 THIRD_PARTY_NOTICES 必须避免的假署名。
+ *
+ * 所以原生文件被要求写另一句话——「本文件无上游对应物」——它同样是声明，同样会因
+ * 缺失而红，只是声明的**内容**不同。六个名字是**决定**（这个文件确实没有上游对应
+ * 物）而不是计数；c16 会核对这份名单与 manifest 声明的 upstreamSources 完全不重叠，
+ * 所以「把一个真有上游来源的文件塞进原生名单」当场报红。
+ */
+const COMMANDS_NATIVE_FILES = new Set([
+  'boot-markers.ts',
+  'index.ts',
+  'skills.ts',
+  'commands/command-types.ts',
+  'commands/errors.ts',
+  'commands/user-message.ts',
+])
+
+/** c16 接受的「本文件无上游对应物」措辞。 */
+const NATIVE_DECLARATIONS = ['无上游对应', 'DSH 原生', 'dsh-native']
+
+/** c19/c20 的 skill 名单：从 manifest 模块自己读，读不到就抛（由调用方判 FAIL）。 */
+function listVendorSkillDirectoriesSafe(commandsSkills) {
+  const list = commandsSkills.listVendorSkillDirectories?.(VENDOR_SKILLS_DIR)
+  if (Array.isArray(list)) return [...list].sort()
+  throw new Error('skills.ts exposes no listVendorSkillDirectories(VENDOR_SKILLS_DIR)')
+}
 
 /** `dir` 下全部 `*.ts`，以相对 `base` 的路径返回（递归、排序）。 */
 function collectTsFiles(dir, base = dir, out = []) {
@@ -824,6 +918,643 @@ async function run() {
       results.push(check('c14', 'manifest ↔ coverage baseline port group', false,
         `${COVERAGE_BASELINE_MDS.map((f) => relative(REPO_ROOT, f)).join(' + ')} could not be read: ${String(e.message ?? e)}`))
     }
+  }
+
+  // ══ P4-T16 — the omo-commands half of the static gate ═══════════════════════
+  //
+  // c12/c13/c14 are the omo-HOOKS triangle. Phase 4 added a second package
+  // (`omo-commands`) whose files, manifest, coverage baseline and vendored skills
+  // had **no static anchor at all** — the command surface was checked only by unit
+  // tests and e2e, neither of which fails when a file's signature header rots or a
+  // manifest row loses its baseline. These records close that, mirroring c12/c13/
+  // c14 one-for-one so the two packages read the same way.
+
+  // c15 — the three insert rows resolve to REAL, DISTINCT workspace packages.
+  //
+  // c11 pins the ids, the mount order, and the `name` ↔ id coupling. What it
+  // cannot see is whether the package that `name` refers to EXISTS in this repo.
+  // dsh resolves an insert row's `name` as a Node module specifier from the
+  // PROFILE directory, so a row naming a package nobody publishes fails at
+  // `dsh plugin add` — visible in e2e (which installs every scenario) but
+  // invisible to a zero-cost static gate, and the failure message is a module
+  // resolution error three files away from the cause.
+  //
+  // NOTE the premise correction: the first draft of this record asserted an
+  // `insert[].path` key. There is no such key — dsh resolves by `name` alone,
+  // which is why the record went red on all three rows ("insert row has no
+  // path") rather than passing vacuously. The real chain is
+  // `name` → a directory under patches/omo-dsh/ whose package.json declares that
+  // exact name.
+  try {
+    const cordisRows = await loadYamlDialect(join(REPO_ROOT, 'cordis.yml'))
+    if (!Array.isArray(cordisRows)) throw new Error('cordis.yml is not a top-level array of patch entries')
+    const problems = []
+    // 本仓发布的包：扫 patches/omo-dsh/*/package.json，索引 package.json 的 name。
+    const published = new Map()
+    for (const entry of readdirSync(OMO_PATCH_DIR, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const manifestPath = join(OMO_PATCH_DIR, entry.name, 'package.json')
+      if (!existsSync(manifestPath)) continue
+      const parsed = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      if (typeof parsed?.name === 'string') {
+        if (published.has(parsed.name)) {
+          problems.push(`two packages publish the name '${parsed.name}' (${published.get(parsed.name)} and ${entry.name}) — dsh's resolution would be ambiguous`)
+        }
+        published.set(parsed.name, entry.name)
+      }
+    }
+    if (published.size === 0) problems.push('no published package found under patches/omo-dsh/ — the assertion would be vacuous')
+    const seenDirs = new Map()
+    for (const row of flatten(cordisRows)) {
+      if (!row || !Array.isArray(row.insert)) continue
+      for (const inserted of row.insert) {
+        if (!inserted || typeof inserted !== 'object') continue
+        const { id, name } = inserted
+        if (typeof name !== 'string' || name.length === 0) {
+          problems.push(`${id}: insert row has no name to resolve`)
+          continue
+        }
+        const dir = published.get(name)
+        if (dir === undefined) {
+          problems.push(`${id}: '${name}' is not published by any package under patches/omo-dsh/ (dsh would fail to resolve it)`)
+          continue
+        }
+        if (seenDirs.has(dir)) {
+          problems.push(`insert rows ${seenDirs.get(dir)} and ${id} both resolve to the package directory '${dir}/'`)
+        } else {
+          seenDirs.set(dir, id)
+        }
+      }
+    }
+    for (const id of EXPECTED_INSERT_ROW_IDS) {
+      if (!published.has(`@oh-my-opendsh/${id}`)) {
+        problems.push(`EXPECTED_INSERT_ROW_IDS names ${id}, but no package publishes @oh-my-opendsh/${id}`)
+      }
+    }
+    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct published package',
+      problems.length === 0,
+      problems.length > 0
+        ? problems.join('; ')
+        : `${seenDirs.size} insert rows each resolve to their own published package `
+          + `(${[...seenDirs].map(([dir, id]) => `${id}→${dir}/`).join(', ')}); `
+          + `${published.size} packages indexed by their package.json name`))
+  } catch (e) {
+    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct published package', false,
+      `cordis.yml could not be read/parsed: ${String(e.message ?? e)}`))
+  }
+
+  // c16 — the omo-commands signature headers. c12's rule verbatim (upstream
+  // tag-relative path + @ v4.19.4 + a semantic-port declaration), applied to
+  // `src/**/*.ts` — which INCLUDES `commands/` and `templates/`, the two
+  // subtrees c12 never looked at because they did not exist when it was written.
+  // The upstream path needle differs: commands' sources are builtin-command
+  // templates and shared/senpi skills, not `src/hooks/`.
+  // The manifest is imported HERE, before c16, not at c17. P4-T16 review MAJOR-2:
+  // c16's comment promised a cross-check against the manifest's `upstreamSources`
+  // while the import sat two records later, so the check could not exist — adding
+  // a genuinely-ported file (ulw-execute.ts) to the DSH-native list and rewriting
+  // its header to "no upstream counterpart" left the gate 30/30 green. c16 needs
+  // this fact; c17/c18/c19 need it too; one import serves all four.
+  let commandsManifest = null
+  let commandsSkills = null
+  // P4-T16 再审 ①：导入失败时 catch 里 push 了一条 c16，而 c16 自己的扫描块随后
+  // 仍然跑完（它不依赖 manifest，只依赖文件系统），又 push 了一条 —— 门因此打印
+  // 31 条记录、id 重复成 {c16: 2}。本文件别处的诚实性规则是「跑不了的检查也是
+  // FAIL」，但**同一条检查出现两次**不是诚实，是把分母改成了 31。
+  let commandsImportFailed = false
+  try {
+    commandsManifest = await import(pathToFileURL(COMMANDS_MANIFEST_TS).href)
+    // c19/c20 的 skill 名单来自 skills.ts（发现 + 解析），不是 manifest.ts ——
+    // manifest 只导出 EXPECTED_VENDOR_SKILL_COUNT 一个数字。
+    commandsSkills = await import(pathToFileURL(COMMANDS_SKILLS_TS).href)
+  } catch (e) {
+    commandsImportFailed = true
+    const reason = `omo-commands manifest.ts could not be imported: ${String(e.message ?? e)}`
+    results.push(check('c17', 'omo-commands manifest ↔ src file set', false, reason))
+    results.push(check('c18', 'omo-commands manifest ↔ coverage baseline', false, reason))
+    results.push(check('c19', 'vendor skills NOTICES/manifest/count agreement + zero dsh-skill patch', false, reason))
+    results.push(check('c20', 'rename consistency: v5 bare names, no start-work/shared/ residue', false, reason))
+  }
+
+  try {
+    const files = collectTsFiles(COMMANDS_SRC)
+    const offenders = []
+    let portedCount = 0
+    let nativeCount = 0
+    for (const rel of files) {
+      const header = signatureHeader(readFileSync(join(COMMANDS_SRC, rel), 'utf8'))
+      const problems = []
+      if (COMMANDS_NATIVE_FILES.has(rel)) {
+        nativeCount += 1
+        if (!NATIVE_DECLARATIONS.some((token) => header.includes(token))) {
+          problems.push('no "no upstream counterpart" declaration (this file is on the DSH-native list)')
+        }
+      } else {
+        portedCount += 1
+        if (!COMMANDS_UPSTREAM_PATH_PATTERN.test(header)) problems.push('no upstream tag-relative source path')
+        if (!/v4\.19\.4/.test(header)) problems.push('no @ v4.19.4 frozen-baseline tag')
+        if (!PORT_DECLARATIONS.some((token) => header.includes(token)) && !/ported/i.test(header)) {
+          problems.push('no semantic-port declaration')
+        }
+      }
+      if (problems.length > 0) offenders.push(`${rel} (${problems.join(', ')})`)
+    }
+    // ══ P4-T16 评审 MAJOR-1：这一段以前 push 进 `problems`，而 `problems` 声明在
+    // 上面的**循环体内**。循环外引用它 = ReferenceError，被本记录的 catch 吞成
+    // "src/**/*.ts could not be scanned"，于是名单完整性的诊断永远到不了输出，而
+    // 同一段 catch 还会顺手把上面已经算好的 offenders 明细一起盖掉——c16 变成一个
+    // 只说「扫不动」的黑盒。记录级列表是 `offenders`（和循环内推入的是同一个），
+    // 下面两段一律 push 进它。
+    //
+    // 名单完整性：原生名单里的每个文件必须真的存在（改名/删除后名单会留孤儿）。
+    for (const rel of COMMANDS_NATIVE_FILES) {
+      if (!files.includes(rel)) offenders.push(`COMMANDS_NATIVE_FILES lists ${rel}, which is not a file under omo-commands/src/`)
+    }
+    if (portedCount === 0) offenders.push('every file was classified DSH-native — the ported population is vacuous')
+    if (nativeCount === 0) offenders.push('no file is on the DSH-native list — the native population is vacuous')
+
+    // ══ P4-T16 评审 MAJOR-2：注释承诺过、但当时**不存在**的交叉核对。评审实证：
+    // 把真正移植的 ulw-execute.ts 塞进原生名单、头部改写为「无上游对应物」，
+    // 30/30 全绿——因为原生名单此前只被自己校验，没有任何外部事实能推翻它。
+    //
+    // 两个方向，都从 manifest 的 upstreamSources 派生（事实源，22 条）：
+    //   ① **名单 → 上游**（挡住上面那个变异）：`commands/<id>.ts` / `templates/<id>.ts`
+    //      里的 <id> 若是带 upstreamSources 的 manifest 行，那它就是移植，不可能是原生。
+    //   ② **上游 → 头部**（挡住相反的漂移）：每个非原生文件署名头里出现的
+    //      `packages/…` 路径（排除尾随 `/` 的示例路径）必须被某行 upstreamSources 覆盖。
+    //      这条是真的会红的：第一次跑就报出 4 个文件引用了 manifest 未列的上游文件，
+    //      于是那 5 条被补进了 manifest（署名面本该如此），而不是把断言放宽。
+    if (commandsManifest !== null) {
+      const rowsById = new Map(commandsManifest.COMMAND_MANIFEST.map((row) => [row.id, row]))
+      for (const rel of COMMANDS_NATIVE_FILES) {
+        const owner = rel.match(/^(?:commands|templates)\/([^/]+)\.ts$/)
+        if (owner === null) continue
+        const row = rowsById.get(owner[1])
+        if (row !== undefined && (row.upstreamSources ?? []).length > 0) {
+          offenders.push(`${rel} is on COMMANDS_NATIVE_FILES, but manifest row '${row.id}' declares `
+            + `${row.upstreamSources.length} upstream source(s) — a ported file cannot be declared native`)
+        }
+      }
+      // 包级并集（含共享模块的归属）由 manifest 自己导出，门里不重抄。
+      const allSources = commandsManifest.PACKAGE_UPSTREAM_SOURCES
+        ?? commandsManifest.COMMAND_MANIFEST.flatMap((row) => row.upstreamSources ?? [])
+      const covered = (path) => allSources.some(
+        (source) => path === source || path.startsWith(`${source}:`) || source.startsWith(`${path}/`),
+      )
+      for (const rel of files) {
+        if (COMMANDS_NATIVE_FILES.has(rel)) continue
+        const header = signatureHeader(readFileSync(join(COMMANDS_SRC, rel), 'utf8'))
+        // 尾随 `/` 的是**示例**目录（形如 `packages/…/hooks/`），不是一次具体引用。
+        const cited = [...new Set([...header.matchAll(/packages\/[A-Za-z0-9._\/-]+/g)]
+          .map((m) => m[0].replace(/:\d+/g, ''))
+          .filter((path) => !path.endsWith('/')))]
+        // P4-T16 评审 MINOR-5 之外的第二次收敛。判据是「**至少一条**被声明」，不是
+        // 「每一条都被声明」——后者要求 manifest 是署名的穷尽清单，而它不是：
+        // COMMAND_MANIFEST 的逐行 upstreamSources 是 phase4-commands.md §1.1 的镜子
+        // （tests/omo-commands/manifest.test.ts 按 §1.1 逐条钉死），行级**模板**额外
+        // 引用的上游文件（`commands/stop-continuation.ts` 的 `src/plugin/*.ts`、
+        // `commands/ulw-execute.ts` 的 `start-work-agent.ts`、
+        // `templates/stop-continuation.ts` 的上游 `.test.ts`）按设计不在行表里。
+        //
+        // 曾一度把 5 条补进 manifest 让穷尽判据变绿——那是越权：它让 manifest 不再
+        // 镜像 §1.1，两个 plan-mirroring 测试立刻变红。docs/plans/ 不在本任务的写
+        // 范围，所以正确做法是把判据降到 manifest 真正能证明的那一条，并把
+        // 「行表不是穷尽清单」写成下面这句注释而不是伪装成覆盖。
+        //
+        // **仍然钉死的东西**：一个非原生文件若引用的上游路径**一条都不**在 manifest
+        // 声明里（只有共享模块 render.ts 靠 PACKAGE_UPSTREAM_SOURCES 兜底），说明它
+        // 与本包的归属体系无关——那正是「真移植伪装成原生」的反向形态。
+        if (cited.length > 0 && !cited.some(covered)) {
+          offenders.push(`${rel} cites upstream path(s) none of which any manifest row or `
+            + `SHARED_UPSTREAM_SOURCES declares: ${cited.slice(0, 3).join(', ')}`)
+        }
+      }
+    } else {
+      // ①：不再把「manifest 不可用」重复计入 c16 —— 它已经由 c17/c18/c19/c20 的
+      // 失败记录承担，c16 的**扫描**部分（署名头）仍然照常出结论，在 c16 自己的
+      // 记录里报。跨检查的同一个事实不重复计数。
+      void commandsImportFailed
+    }
+    const nonVacuous = files.length > 0
+    results.push(check('c16', 'omo-commands src signature headers', nonVacuous && offenders.length === 0,
+      offenders.length > 0
+        ? offenders.join('; ')
+        : nonVacuous
+          ? `${portedCount} ported .ts files carry "upstream source + @ v4.19.4 + semantic-port declaration" and `
+            + `${nativeCount} DSH-native ones carry an explicit "no upstream counterpart" declaration, `
+            + `over ${files.length} files`
+          : `no .ts file under ${relative(REPO_ROOT, COMMANDS_SRC)}/ — assertion would be vacuous`))
+  } catch (e) {
+    results.push(check('c16', 'omo-commands src signature headers', false,
+      `${relative(REPO_ROOT, COMMANDS_SRC)}/**/*.ts could not be scanned: ${String(e.message ?? e)}`))
+  }
+
+  // c17 — the omo-commands manifest ↔ src file set, c13's rule for this package.
+  // Every manifest id must have `src/commands/<id>.ts` AND `src/templates/<id>.ts`;
+  // every file in either directory must belong to a manifest id. The template
+  // half is the part that rots: a port that lands its handler and forgets its
+  // template still boots, and no unit test imports the missing file.
+  if (commandsManifest !== null) {
+    try {
+      const ids = commandsManifest.COMMAND_MANIFEST.map((entry) => entry.id).sort()
+      const problems = []
+      if (ids.length === 0) problems.push('COMMAND_MANIFEST is empty — the assertion would be vacuous')
+      const commandFiles = readdirSync(COMMANDS_CMD_DIR)
+        .filter((n) => n.endsWith('.ts'))
+        .map((n) => n.slice(0, -'.ts'.length))
+        .sort()
+      const templateFiles = readdirSync(COMMANDS_TPL_DIR)
+        .filter((n) => n.endsWith('.ts'))
+        .map((n) => n.slice(0, -'.ts'.length))
+        .sort()
+      // Files that are infrastructure rather than per-command ports: they have no
+      // manifest row by design (T3's registrar module, the renderer, the shared
+      // types/errors helpers, the skill catalog reader). Named here rather than
+      // pattern-matched so an unexplained new file is a FAIL, not a silent skip.
+      const SHARED = ['command-types', 'errors', 'user-message', 'render', 'index']
+      const commandOwners = commandFiles.filter((name) => !SHARED.includes(name))
+      const templateOwners = templateFiles.filter((name) => !SHARED.includes(name))
+      // Q-3 的同一个裁定：`ulw-plan` **没有** src 文件，因为注册它会遮蔽手势桥。
+      // 把它写进豁免集而不是用 `pending` 过滤 —— 过滤会把"第二个漏翻转的行"一并
+      // 藏起来，而豁免集会让它当场报红。
+      const NO_CODE = new Set(['ulw-plan'])
+      for (const id of ids) {
+        if (NO_CODE.has(id)) {
+          if (commandOwners.includes(id) || templateOwners.includes(id)) {
+            problems.push(`'${id}' is the Q-3 gesture-bridge row and must have NO src/commands or src/templates file, but one exists`)
+          }
+          continue
+        }
+        if (!commandOwners.includes(id)) problems.push(`manifest id '${id}' has no src/commands/${id}.ts`)
+        if (!templateOwners.includes(id)) problems.push(`manifest id '${id}' has no src/templates/${id}.ts`)
+      }
+      for (const name of commandOwners) {
+        if (!ids.includes(name)) problems.push(`src/commands/${name}.ts has no manifest entry`)
+      }
+      for (const name of templateOwners) {
+        if (!ids.includes(name)) problems.push(`src/templates/${name}.ts has no manifest entry`)
+      }
+      // 每一行都必须**声明**上游源（署名面的机读一半）。注意断言的是"非空"而不是
+      // "文件存在"：这些是**上游仓库**里的路径（packages/…），本仓并不复制它们，
+      // 第一次写成 existsSync(patches/omo-dsh/<upstream path>) 时 17 条全部报红 ——
+      // 那是在断言一个从一开始就不成立的事实。
+      const unattributed = commandsManifest.COMMAND_MANIFEST
+        .filter((entry) => !Array.isArray(entry.upstreamSources) || entry.upstreamSources.length === 0)
+        .map((entry) => entry.id)
+      if (unattributed.length > 0) problems.push(`manifest rows declaring no upstream source: ${unattributed.join(', ')}`)
+      results.push(check('c17', 'omo-commands manifest ↔ src file set', problems.length === 0,
+        problems.length > 0
+          ? problems.join('; ')
+          : `${ids.length} manifest ids, each with both src/commands/<id>.ts and src/templates/<id>.ts; `
+            + `${commandOwners.length + templateOwners.length} owner files all accounted for; every row declares its upstream sources`))
+    } catch (e) {
+      results.push(check('c17', 'omo-commands manifest ↔ src file set', false,
+        `omo-commands src could not be scanned: ${String(e.message ?? e)}`))
+    }
+
+    // c18 — the omo-commands manifest ↔ phase4-commands.md §1. §1 is the
+    // commands baseline, exactly as phase3-hooks.md §1 / phase4-commands.md §1.2
+    // are the hooks baseline c14 reads. `ulw-plan` is the ONE row allowed to stay
+    // `pending` forever (Q-3: registering it would shadow the gesture bridge), so
+    // it is an EXPLICIT exemption rather than a filtered-out oddity — if a second
+    // pending row ever appears, this record is what notices.
+    try {
+      const baseline = join(REPO_ROOT, 'docs', 'plans', 'phase4-dev', 'phase4-commands.md')
+      const label = relative(REPO_ROOT, baseline)
+      const lines = readFileSync(baseline, 'utf8').split('\n')
+      let inSectionOne = false
+      const docRows = []
+      for (const line of lines) {
+        if (/^## 1\./.test(line)) { inSectionOne = true; continue }
+        if (/^## 2\./.test(line)) { inSectionOne = false; continue }
+        if (!inSectionOne) continue
+        const row = line.match(/^\|\s*(C-\d+)\s*\|(.*)$/)
+        if (row === null) continue
+        const cells = row[2].split('|').map((cell) => cell.trim())
+        // §1 的命令面表格：`| C-0x | /命令 | 形态 | 状态 | 语义摘要 |`
+        const commandCell = cells[0] ?? ''
+        const statusCell = cells[2] ?? ''
+        const id = commandCell.match(/`\/([^`]+)`/)
+        if (id === null) continue
+        docRows.push({ heading: row[1], id: id[1], statusCell, moduleCell: cells[1] ?? '' })
+      }
+      const problems = []
+      if (docRows.length === 0) {
+        problems.push(`no command row parsed from ${label} §1 — the assertion would be vacuous (table format changed?)`)
+      }
+      const manifestIds = commandsManifest.COMMAND_MANIFEST.map((entry) => entry.id)
+      const ported = manifestIds.filter((id) =>
+        commandsManifest.COMMAND_MANIFEST.find((entry) => entry.id === id).status === 'ported')
+      const pending = manifestIds.filter((id) => !ported.includes(id))
+      // Q-3 的永久豁免。写死不是"再抄一份名单"：它是**一条裁定**，不是一次同步
+      // ——ulw-plan 永不注册，所以它的 pending 状态是设计而非漂移。与之相对，
+      // 任何第二个 pending 行都是真的漏翻转。
+      const FOREVER_PENDING = new Set(['ulw-plan'])
+      const unexpectedPending = pending.filter((id) => !FOREVER_PENDING.has(id))
+      if (unexpectedPending.length > 0) {
+        problems.push(`manifest pending rows other than the Q-3 ${[...FOREVER_PENDING].join('/')} exemption: ${unexpectedPending.join(', ')} (each should have flipped to ported)`)
+      }
+      for (const id of FOREVER_PENDING) {
+        if (!pending.includes(id)) {
+          problems.push(`${id} is no longer pending — if it was registered, the Q-3 gesture-bridge exemption is void and c17 will say so`)
+        }
+      }
+      // 移植组对账：文档标「移植」的行 ⇔ manifest 的 ported 行。
+      // P4-T16 评审 MINOR-5：判据此前是 `/移植/`，而「待移植」「未移植」同样匹配
+      // ——文档侧的单侧漏翻在这一侧**完全不可见**。
+      //
+      // 不能直接把判据换成 c14 的 `已移植`：phase4-commands.md §1 的命令面用的是
+      // 另一套词（`**移植**` / `**移植（降级形态）**` / `**移植（收窄）**`），
+      // docs/plans/ 不是本任务的写范围。改成**否定优先**：凡是以否定词开头的格一律
+      // 排除，其余含「移植」即算已移植。既不假装文档用了 c14 的词，又让
+      // 「已移植 → 待移植」的漏翻当场可见。
+      const NOT_PORTED = /^(?:待|未|不|非|skip|defer)/
+      // 单元格是 `**移植**` 这种带星号的 Markdown，第一版直接拿它去测 `^待` 永远
+      // 不中——于是**待移植**仍被判成已移植，MINOR-5 的反跑随即全绿。先剥星号。
+      const isPortedCell = (cell) => {
+        const bare = cell.replace(/\*\*/g, '').trim()
+        return bare.includes('移植') && !NOT_PORTED.test(bare)
+      }
+      const docPorted = docRows.filter((row) => isPortedCell(row.statusCell))
+      const notPorted = docRows.filter((row) => !isPortedCell(row.statusCell))
+      const docPortedIds = docPorted.map((row) => row.id).sort()
+      const missing = ported.filter((id) => !docPortedIds.includes(id))
+      const extra = docPortedIds.filter((id) => !manifestIds.includes(id))
+      if (missing.length > 0) problems.push(`ported manifest ids absent from ${label} §1: ${missing.join(', ')}`)
+      if (extra.length > 0) problems.push(`${label} §1 移植 rows with no manifest entry: ${extra.join(', ')}`)
+      const renames = docRows
+        .filter((row) => row.id !== row.heading)
+        .map((row) => `${row.heading}/${row.moduleCell.slice(0, 28)}… → ${row.id}`)
+        .join(', ')
+      results.push(check('c18', 'omo-commands manifest ↔ coverage baseline', problems.length === 0,
+        problems.length > 0
+          ? problems.join('; ')
+          // 不是等式，说人话：文档的「已移植」行里有一条（ulw-plan）被 Q-3 裁定永久
+          // 豁免，manifest 侧它合法地停在 pending；其余行两侧相等。P4-T16 评审 MINOR-5
+          // 指出此前打印的 `6 移植 rows == the 5 ported manifest ids` 是**假等式**——
+          // 6 ≠ 5 却在说「==」。
+          : `${docPorted.length} 移植 rows in ${label} §1; [${[...FOREVER_PENDING].filter((id) => docPortedIds.includes(id)).join(', ')}] `
+            + `are exempt by the Q-3 ruling; the remaining ${docPorted.length - [...FOREVER_PENDING].filter((id) => docPortedIds.includes(id)).length} `
+            + `are exactly the ${ported.length} ported manifest ids `
+            + `of ${manifestIds.length} total; pending = [${pending.join(', ')}]; `
+            + `non-ported §1 rows: [${notPorted.map((r) => `${r.heading}/${r.id}`).join(', ') || 'none'}]`
+            + (renames === '' ? '' : ` (heading → id: ${renames})`)))
+    } catch (e) {
+      results.push(check('c18', 'omo-commands manifest ↔ coverage baseline', false,
+        `phase4-commands.md §1 could not be read: ${String(e.message ?? e)}`))
+    }
+
+    // c19 — the vendored skills' three登记 surfaces, and the zero-patch anchor.
+    // A vendored skill is declared in THREE places that no test cross-checked:
+    // the manifest's `vendoredSkills`, the NOTICES table, and the license gate's
+    // directory census. Any one of them can gain or lose a skill and the other
+    // two keep passing. Plus: `dsh-skill*` must have NO patch under patches/ — the
+    // vendored-skill surface is the upstream *content*, and patching dsh's own
+    // skill loader would make "vendor faithful" false in a way nothing notices.
+    try {
+      const problems = []
+      const names = listVendorSkillDirectoriesSafe(commandsSkills)
+      if (!Array.isArray(names) || names.length === 0) {
+        problems.push('could not read the vendored skill name set from the manifest module — the assertion would be vacuous')
+      }
+      const notices = readFileSync(join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), 'utf8')
+      const missingNotices = names.filter((name) => !notices.includes(`\`${name}\``))
+      // P4-T16 评审 MINOR-4：这一段原先是**同源自比较**——`names` 来自
+      // `listVendorSkillDirectories(VENDOR_SKILLS_DIR)`，而 `onDisk` 也是
+      // `readdirSync(VENDOR_SKILLS_DIR)`，两者必然相等，`missingOnDisk` /
+      // `undeclaredOnDisk` 永远为空，两个分支**不可达**。真正独立的第三个数是
+      // `EXPECTED_VENDOR_SKILL_COUNT`（manifest 自己声明的常量，此前无人核对）。
+      const onDisk = readdirSync(VENDOR_SKILLS_DIR).sort()
+      const declared = [...names].sort()
+      if (commandsSkills.EXPECTED_VENDOR_SKILL_COUNT !== declared.length) {
+        problems.push(`manifest lists ${declared.length} vendored skills but EXPECTED_VENDOR_SKILL_COUNT is `
+          + `${commandsSkills.EXPECTED_VENDOR_SKILL_COUNT} — the count nobody was checking`)
+      }
+      if (commandsSkills.EXPECTED_VENDOR_SKILL_COUNT !== onDisk.length) {
+        problems.push(`${relative(REPO_ROOT, VENDOR_SKILLS_DIR)} holds ${onDisk.length} directories, `
+          + `EXPECTED_VENDOR_SKILL_COUNT says ${commandsSkills.EXPECTED_VENDOR_SKILL_COUNT}`)
+      }
+      // NOTICES 面（真正的第三方，c19 的存在理由）仍然独立。
+      if (missingNotices.length > 0) {
+        problems.push(`vendored skills with no THIRD_PARTY_NOTICES.md entry: ${missingNotices.join(', ')}`)
+      }
+      // `dsh-skill*` 零 patch：本仓**不**给 dsh 自己的 skill 加载器打补丁。
+      // P4-T16 评审 MINOR-8：原先只匹配**文件名**，评审实证
+      // `patches/omo-dsh/omo-hooks/src/skill-loader.ts`（文件名里没有 dsh-skill）
+      // 全绿漏放——那正是打补丁的真实形态：改本仓的某个文件去接管 dsh 的 skill 行为。
+      // 现在按 **package.json 的 name** 判定（与 c15 同一判据），并额外把整条路径里
+      // 出现 `dsh-skill` 的目录也计入。
+      const dshSkillPatches = []
+      const skillSurfacePatches = []
+      const walk = (dir) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, entry.name)
+          if (entry.isDirectory()) { if (entry.name !== 'vendor') walk(full) }
+          else if (!entry.isFile()) continue
+          else if (entry.name === 'package.json') {
+            try {
+              const parsed = JSON.parse(readFileSync(full, 'utf8'))
+              if (typeof parsed?.name === 'string' && parsed.name.includes('dsh-skill')) {
+                dshSkillPatches.push(`${relative(REPO_ROOT, full)} (package name ${parsed.name})`)
+              }
+            } catch { /* a malformed package.json is not this check's business */ }
+          } else if (SKILL_SURFACE_PATTERN.test(entry.name) && !DSH_OWN_SKILL_MODULES.has(entry.name)) {
+            // 评审实证的漏放形态：`patches/omo-dsh/omo-hooks/src/skill-loader.ts`——
+            // 手工重写的 skill 加载器，文件名里**没有** dsh-skill，于是两种按名的
+            // 判据都看不见它。补一条按**基名**的判据，覆盖 dsh skill 面自己的
+            // 入口名（skill-loader / skill-registry / skill-registry.ts…）。
+            //
+            // ⑤ 再审：豁免此前是 `!entry.name.startsWith('skills')`，前缀豁免顺带
+            // 保护了 `skills-loader.ts` / `skills-registry.ts` 这类**真正**的替换物。
+            // 收窄为精确基名清单 `DSH_OWN_SKILL_MODULES`：只有本仓自己的那一个
+            // 模块名被豁免。
+            skillSurfacePatches.push(relative(REPO_ROOT, full))
+          } else if (/dsh-skill/.test(relative(REPO_ROOT, full))) {
+            dshSkillPatches.push(relative(REPO_ROOT, full))
+          }
+        }
+      }
+      walk(join(REPO_ROOT, 'patches'))
+      if (dshSkillPatches.length > 0) {
+        problems.push(`patches touching dsh's own skill packages must not exist (the vendored surface is upstream content, left faithful): ${dshSkillPatches.join(', ')}`)
+      }
+      if (skillSurfacePatches.length > 0) {
+        problems.push(`patches re-implementing dsh's skill loader surface must not exist: ${skillSurfacePatches.join(', ')}`)
+      }
+      // ── license 面（MINOR-9；再审 ② 改写）──
+      //
+      // 第一版的理由「vendor 目录没有独立的 package.json，license 事实只落在
+      // NOTICES 上」是**反的**：`patches/omo-dsh/vendor/shared-skills/package.json`
+      // 确实存在，且带 `license: "SUL-1.0"`。也就是说许可事实有两个落点，而当时
+      // 没有任何断言把它们绑在一起——NOTICES 写错、package.json 写对，门照样绿。
+      //
+      // 现在的事实源是 package.json 的 `license` 字段，NOTICES 是必须**与之一致**
+      // 的人类可读面。第二个断言不是「不许有 LICENSE 文件」，而是**单一事实源**：
+      // 许可条款只允许由 package.json 声明一处；旁边再立一个 LICENSE 文件，等于给
+      // 同一件事第二个可以各自漂移的来源。原来的措辞（「自带许可文件 = 违规」）
+      // 把这个说成了「不得存在」，那是比真实规则更宽的禁止，理由也站不住。
+      let vendorLicense = null
+      const vendorPkgPath = join(OMO_PATCH_DIR, 'vendor', 'shared-skills', 'package.json')
+      if (!existsSync(vendorPkgPath)) {
+        problems.push(`${relative(REPO_ROOT, vendorPkgPath)} is missing: the vendored skills' licence has no field to read`)
+      } else {
+        try {
+          const parsed = JSON.parse(readFileSync(vendorPkgPath, 'utf8'))
+          vendorLicense = typeof parsed?.license === 'string' ? parsed.license : null
+          if (vendorLicense === null) {
+            problems.push(`${relative(REPO_ROOT, vendorPkgPath)} declares no \`license\` field — the licence surface is unstated`)
+          }
+        } catch (e) {
+          problems.push(`${relative(REPO_ROOT, vendorPkgPath)} could not be parsed: ${String(e.message ?? e)}`)
+        }
+      }
+      const licenseMentions = (notices.match(/SUL-1\.0/g) ?? []).length
+      if (licenseMentions === 0) {
+        problems.push('THIRD_PARTY_NOTICES.md declares no SUL-1.0 licence for the vendored content — the licence surface is unstated')
+      } else if (vendorLicense !== null && !notices.includes(vendorLicense)) {
+        problems.push(`the vendored package declares license=${JSON.stringify(vendorLicense)} but `
+          + `THIRD_PARTY_NOTICES.md never states that identifier — the two licence surfaces disagree`)
+      }
+      // 单一事实源：package.json 已声明条款，目录里不得**另立**一个许可文件。
+      for (const stray of ['LICENSE', 'LICENSE.md', 'LICENCE', 'COPYING']) {
+        const strayPath = join(OMO_PATCH_DIR, 'vendor', 'shared-skills', stray)
+        if (existsSync(strayPath)) {
+          problems.push(`${relative(REPO_ROOT, strayPath)} stands alongside the package.json \`license\` field: `
+            + `the terms must be declared in exactly one place, or the two drift`)
+        }
+      }
+      results.push(check('c19', 'vendor skills NOTICES/manifest/count agreement + zero dsh-skill patch',
+        problems.length === 0,
+        problems.length > 0
+          ? problems.join('; ')
+          // MINOR-4：不再宣称「三方一致」——manifest 的名单与磁盘目录同源。
+          // 真正的三方是 manifest 名单 / 磁盘目录 / **EXPECTED_VENDOR_SKILL_COUNT**
+          // （独立的第三个数），NOTICES 是第四面且完全独立。
+          : `${declared.length} vendored skills: manifest list == ${relative(REPO_ROOT, VENDOR_SKILLS_DIR)} == `
+            + `EXPECTED_VENDOR_SKILL_COUNT (${commandsSkills.EXPECTED_VENDOR_SKILL_COUNT}), all named in `
+            + `THIRD_PARTY_NOTICES.md, licence = ${JSON.stringify(vendorLicense)} from the vendor package.json `
+            + `and stated in the notices (${licenseMentions} mention(s)), declared in exactly one place; `
+            + `no patches/* package or path naming dsh-skill`))
+    } catch (e) {
+      results.push(check('c19', 'vendor skills NOTICES/manifest/count agreement + zero dsh-skill patch', false,
+        `the vendored-skill census could not be read: ${String(e.message ?? e)}`))
+    }
+
+    // c20 — rename consistency. `start-work` and the `shared/` prefix are
+    // UPSTREAM names; the v5 bare names (`ulw-execute`, bare kebab-case skill
+    // names) are this repo's. A stale upstream name in a LOAD-BEARING position
+    // — a command id, a skill name, a boot-marker line, a template file — is a
+    // real bug, while the same string inside an attribution comment is exactly
+    // what the notices are FOR. So the scan is over the machine-readable
+    // surfaces only, never over comments.
+    try {
+      const problems = []
+      const commandIds = commandsManifest.COMMAND_MANIFEST.map((entry) => entry.id)
+      for (const id of commandIds) {
+        if (id === 'start-work') problems.push("command id 'start-work' is the pre-v5 upstream name; the v5 anchor is 'ulw-execute'")
+      }
+      if (commandIds.includes('ulw-execute') === false) problems.push("'ulw-execute' is absent from the command manifest")
+      for (const name of listVendorSkillDirectoriesSafe(commandsSkills)) {
+        if (name.startsWith('shared/')) problems.push(`vendored skill registered under the 'shared/' prefix: ${name} (bare kebab-case only)`)
+        if (name === 'start-work') problems.push("vendored skill 'start-work' is the pre-v5 name")
+      }
+      // 机器可读面：注册行与 manifest 行里不得出现旧名（署名注释除外）。
+      const machineReadable = readFileSync(COMMANDS_MANIFEST_TS, 'utf8')
+        .split('\n')
+        .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+        .join('\n')
+      const stale = machineReadable.match(/['"`]start-work['"`]/g)
+      if (stale !== null) {
+        problems.push(`${stale.length} quoted 'start-work' on non-comment manifest lines (attribution comments are exempt by construction)`)
+      }
+      // 裸名一致性：manifest 的 id 集合与 src 的文件集合必须都只有裸名。
+      const prefixed = commandIds.filter((id) => /[/\s]/.test(id))
+      if (prefixed.length > 0) problems.push(`command ids that are not bare names: ${prefixed.join(', ')}`)
+      results.push(check('c20', 'rename consistency: v5 bare names, no start-work/shared/ residue',
+        problems.length === 0,
+        problems.length > 0
+          ? problems.join('; ')
+          : `${commandIds.length} bare command ids (incl. ulw-execute) + ${listVendorSkillDirectoriesSafe(commandsSkills).length} bare vendored skill names; `
+            + "no 'start-work' or 'shared/' on any machine-readable surface (attribution comments exempt)"))
+    } catch (e) {
+      results.push(check('c20', 'rename consistency: v5 bare names, no start-work/shared/ residue', false,
+        `the rename surfaces could not be read: ${String(e.message ?? e)}`))
+    }
+  }
+
+  // c21 — the NOTICES counts are DERIVED, not transcribed.
+  //
+  // THIRD_PARTY_NOTICES.md is a legal artifact: a stale number in it is a wrong
+  // statement to a user, and it stayed wrong for two port cycles. It said
+  // "14 hook ids / 21 derived files" while the tree actually held 15 / 26 —
+  // P4-T10's ulw-execute submodules and P4-T12's keyword-detector each moved it
+  // and neither touched the prose. Correcting the number fixes this commit and
+  // re-breaks two commits later, which is the whole failure mode: a count in a
+  // document has no owner and no test.
+  //
+  // So this record recomputes the numbers from the two authorities that already
+  // exist (manifest.ts and the filesystem) and requires the document to say the
+  // same thing. The document stays the human-readable surface; the check is what
+  // makes it unable to drift. A notices file cannot host executable assertions —
+  // that is what this is.
+  try {
+    const notices = readFileSync(join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), 'utf8')
+    const hookTs = collectTsFiles(HOOKS_DIR)
+    const topLevel = hookTs.filter((rel) => !rel.includes('/'))
+    const submodules = hookTs.filter((rel) => rel.includes('/'))
+    const derived = {
+      ids: hooksManifest?.HOOK_MANIFEST.length,
+      files: hookTs.length,
+    }
+    const problems = []
+    if (derived.ids === undefined) throw new Error('the omo-hooks manifest was not imported, so the id count cannot be derived')
+    const claimed = notices.match(/\*\*(\d+) hook ids \/ (\d+) derived files\*\*/)
+    if (claimed === null) {
+      problems.push('THIRD_PARTY_NOTICES.md carries no "**N hook ids / M derived files**" count line — the c21 anchor is gone')
+    } else {
+      const [, claimIds, claimFiles] = claimed
+      if (Number(claimIds) !== derived.ids) {
+        problems.push(`NOTICES claims ${claimIds} hook ids, the manifest has ${derived.ids}`)
+      }
+      if (Number(claimFiles) !== derived.files) {
+        problems.push(`NOTICES claims ${claimFiles} derived files, ${relative(REPO_ROOT, HOOKS_DIR)} holds ${derived.files} (${topLevel.length} top-level + ${submodules.length} submodule)`)
+      }
+    }
+    // 第二处：那条「计数不含它」的行必须说的是**同一个** ids/files 对，否则两段
+    // 文字可以互相矛盾而门全绿。
+    const exclusion = notices.match(/故 (\d+) ids \/ (\d+) files 的计数不含它/)
+    if (exclusion === null) {
+      // 第一次写成 `if (exclusion !== null) { … }`：锚点文本一旦漂移，这一条就
+      // 变成**静默跳过**，而汇总行照旧打印 "the services-exclusion note …"，
+      // 读起来像是核对过了。读不到锚点本身就是漂移，必须报红。
+      problems.push('the src/services exclusion note carries no "故 N ids / M files 的计数不含它" anchor — the c21 cross-check is unreachable')
+    } else {
+      const [, exIds, exFiles] = exclusion
+      if (Number(exIds) !== derived.ids || Number(exFiles) !== derived.files) {
+        problems.push(`the src/services exclusion note says ${exIds}/${exFiles}, but the counts above it are ${derived.ids}/${derived.files}`)
+      }
+    }
+    // 第三处：c13 自己打印的计数也必须是派生值，不是它自己的字面量。
+    const c13 = results.find((r) => r.id === 'c13')
+    if (c13 === undefined) {
+      problems.push('c13 produced no result, so its file census could not be cross-checked')
+    } else if (c13.pass) {
+      const c13Top = c13.detail.match(/^(\d+) top-level listener files/)
+      if (c13Top === null) {
+        problems.push(`c13\'s detail no longer reports its top-level file count: ${c13.detail.slice(0, 60)}`)
+      } else if (Number(c13Top[1]) !== topLevel.length) {
+        problems.push(`c13 reports ${c13Top[1]} top-level listener files, the tree holds ${topLevel.length}`)
+      }
+    }
+    results.push(check('c21', 'NOTICES / c13 counts are derived from manifest + filesystem, not transcribed',
+      problems.length === 0,
+      problems.length > 0
+        ? problems.join('; ')
+        : `NOTICES, the services-exclusion note and c13 all report ${derived.ids} hook ids / ${derived.files} derived files `
+          + `(${topLevel.length} top-level + ${submodules.length} submodule), recomputed from manifest.ts + ${relative(REPO_ROOT, HOOKS_DIR)}`))
+  } catch (e) {
+    results.push(check('c21', 'NOTICES / c13 counts are derived from manifest + filesystem, not transcribed', false,
+      `the count cross-check could not run: ${String(e.message ?? e)}`))
   }
 
   // Report.

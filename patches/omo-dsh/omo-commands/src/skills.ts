@@ -53,6 +53,11 @@
 // see INVOCATION_KEYS below. (An earlier draft of this header claimed "THROWS on
 // anything else"; dual review caught that the implementation has always ignored
 // unknown scalar keys. This header now describes what the code does.)
+// P4-T16 — vendor SKILL.md 的发现 + 解析 + 注册机制（P4-T5 候选 b′ 的新机制面）。
+// 署名声明（c16 原生总体）：本文件**无上游对应物**——v4.19.4 没有任何同职责的模块。
+// 它是 DSH 侧的原生代码，不是语义移植；宣称上游来源就是假署名。语义移植文件请带
+// 「UPSTREAM SOURCE + @ v4.19.4 + 移植声明」三件套。
+
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

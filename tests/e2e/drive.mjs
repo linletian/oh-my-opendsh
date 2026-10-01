@@ -9184,8 +9184,15 @@ export function analyzeUlwExecuteActivated(
       && triggerSource?.plugin === E2E_ULW_PLUGIN
       && triggerSource?.form === 'instructions',
     injectionReachedTheModel: triggerRequestHasInjection,
-    // The atlas lane really took a SECOND step (the injection's step boundary).
-    atlasLaneTookASecondStep: atlasRequests.length >= 2,
+    // The atlas LANE issued more than one request — the injection's step boundary.
+    //
+    // P4-T16 renamed this. It read `atlasLaneTookASecondStep`, which claims a
+    // per-child step; the mock's request cursor advances by ROLE, so both children
+    // draw from the same `atlas` lane and nothing here can attribute a request to
+    // one child. The name now says what is actually measured, and matches T11's
+    // identically-shaped assertion. (T11's side carried a comment pointing at this
+    // sweep; that comment is updated below.)
+    atlasLaneMadeMoreThanOneRequest: atlasRequests.length >= 2,
     // 对照: a NON-atlas identity with plan-ish words → nothing injected.
     noInjectionForSiblingIdentity: exploreControlInjected.length === 0,
     // The scaffold side effect of the plan selection landed in the sandbox.
@@ -13368,9 +13375,9 @@ export function analyzeUlwExecuteCommandActivatesAtlas(
     // the claim). What the injection adds is a step to whichever child it
     // opened; the lane count is the only aggregate witness the parent side can
     // see.
-    // (P3-T17's identically named check still claims the second step per child —
-    // the same overreach. Deliberately NOT changed here: that scenario's own
-    // evidence is its own business. Recorded for the T16 consistency sweep.)
+    // (P4-T16: the T16 consistency sweep is DONE — P3-T17's side was renamed from
+    // `atlasLaneTookASecondStep` to this same name, and carries the same
+    // per-child caveat in its own comment. The two no longer disagree.)
     atlasLaneMadeMoreThanOneRequest: atlasRequests.length >= 2,
     // The scaffold side effect of the plan selection landed in the sandbox.
     notepadScaffoldLanded: notepadPresent.length === 4,

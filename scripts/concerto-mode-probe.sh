@@ -13,10 +13,16 @@
 #   plugin side — `[omo-agents] loaded`, `concerto preset <outcome>`, the
 #                 roster line listing `concerto:user`, and no FAILED line.
 #   P3-T3 hooks — the SECOND cordis.yml insert row's mount observable:
-#                 `[omo-hooks] loaded: manifest 14 entries (…)`, plus one
+#                 `[omo-hooks] loaded: manifest N entries (…)`, plus one
 #                 `hook <id> registered on <event>` line for EVERY implemented
-#                 hook — after P3-T17 that is the full 14-line set (P3-T5 landed
-#                 the first, bash-file-read-guard). BOTH expectations are DERIVED
+#                 hook — the full $EXPECTED_HOOK_COUNT-line set. N is never
+#                 written here: P4-T16 再审 ③, this block said "manifest 14
+#                 entries", "the full 14-line set" and "The roster is 14 (not 15)
+#                 since P3-T5 removed H-01" — all three were true once and are
+#                 false now (the roster is 15; H-01's removal stopped being the
+#                 reason anything). A header comment cannot be derived at runtime,
+#                 so it names the DERIVED VARIABLE instead of the number, and the
+#                 number is printed by the PASS line. BOTH expectations are DERIVED
 #                 below from the plugin's own modules (manifest.ts +
 #                 boot-markers.ts + the src/hooks/<id>.ts file set), never
 #                 retyped literals, so the probe asserts the booted plugin used
@@ -24,23 +30,30 @@
 #                 a drift in any of them fails here. The id set comes from the
 #                 hook FILES, not from HOOK_REGISTRARS: a registry
 #                 import-drifting back to `{}` would otherwise shrink the
-#                 expectation instead of failing. The roster is 14 (not 15)
-#                 since P3-T5 removed H-01. P3-T19 tightened the derivation from
-#                 "at least one implementation file" to "the src/hooks file set
-#                 EQUALS the manifest id set", and the boot block below asserts
-#                 each of the 14 lines plus the ABSENCE of any `hook … FAILED` /
-#                 `manifest validation FAILED` line.
+#                 expectation instead of failing. P3-T19 tightened the derivation
+#                 from "at least one implementation file" to "the src/hooks file
+#                 set EQUALS the manifest id set", and the boot block below
+#                 asserts each registered line plus the ABSENCE of any
+#                 `hook … FAILED` / `manifest validation FAILED` line.
 #   P4-T3 commands — the THIRD cordis.yml insert row's mount observable:
-#                 `[omo-commands] loaded: manifest 6 entries (pending=6,
-#                 ported=0) — 0/6 commands registered`, DERIVED below from the
-#                 plugin's own manifest.ts + boot-markers.ts + index.ts exactly
+#                 the summary line is $EXPECTED_COMMANDS_SUMMARY, DERIVED below
+#                 from the plugin's own manifest.ts + boot-markers.ts + index.ts.
+#                 P4-T16 再审 ③: this block still quoted the P4-T3-era value
+#                 "manifest 6 entries (pending=6, ported=0) — 0/6 commands
+#                 registered" — 6 was right, the status split has not been since
+#                 T6 (5 ported, 1 pending), and a header comment cannot be derived
+#                 at runtime. It names the variable; the PASS line prints it.
 #                 like the hooks half (registered lines = ported ids ∩
 #                 COMMAND_REGISTRARS keys; a ported row with no registrar fails
 #                 the derivation, so an emptied registry cannot shrink the
 #                 expectation to zero and leave the probe green). At P4-T3 all
-#                 six rows are 'pending', so the derivation yields the summary
-#                 line and zero registered lines — vacuously correct today and
-#                 non-vacuous from T6 on without a probe edit. Both FAILED forms
+#                 rows that are 'ported'. P4-T16: this comment still said "all six
+#                 rows are 'pending'" and "zero registered lines" — true at P4-T3,
+#                 false from T6 on, and wrong about the *present* (5 of 6 are
+#                 ported, so 5 registered lines). The derivation never broke; the
+#                 PROSE went stale, which is the failure c21 now guards for the
+#                 notices counts. The live numbers are derived below and printed
+#                 in the PASS line. Both FAILED forms
 #                 (`command … FAILED`, `manifest validation FAILED`) are
 #                 asserted ABSENT.
 #   P4-T5 skills — the skill DELIVERY mechanism's summary marker
@@ -350,12 +363,16 @@ echo "concerto-probe: P3-T3 hooks marker: $EXPECTED_HOOKS_SUMMARY"
 # be circular: the registry emptying would shrink the expectation to zero lines
 # and leave the probe green, which is the exact gap this closes. Every ported
 # hook that lands a file is covered without a probe edit — after P3-T17 the port
-# group is COMPLETE, so this derivation now yields the full 14 registered markers
-# (one per manifest row), and P3-T19 tightened it from "at least one file" to
-# "the src/hooks file set EQUALS the manifest id set": a dropped or renamed
-# implementation file is now a probe FAILURE instead of a silently smaller
-# expectation. There is no hand-maintained list of 14 lines anywhere in this
-# script.
+# group is COMPLETE, so this derivation yields one registered marker per manifest
+# row, and P3-T19 tightened it from "at least one file" to "the src/hooks file set
+# EQUALS the manifest id set": a dropped or renamed implementation file is now a
+# probe FAILURE instead of a silently smaller expectation.
+#
+# P4-T16: this comment said "the full 14 registered markers" and "no hand-maintained
+# list of 14 lines" — the roster is 15 rows now (keyword-detector landed at T12), so
+# the literal was wrong twice: wrong about today's count, and it bragged about a
+# list that did not exist in the first place. The count is never written here; it
+# is derived below and printed in the PASS line.
 EXPECTED_HOOK_REGISTERED_LINES="$(node --input-type=module -e "
   Promise.all([
     import('./patches/omo-dsh/omo-hooks/src/manifest.ts'),
@@ -386,6 +403,11 @@ EXPECTED_HOOK_REGISTERED_LINES="$(node --input-type=module -e "
   || fail "could not derive any omo-hooks registered marker from the src/hooks file set + manifest.ts + boot-markers.ts"
 echo "concerto-probe: P3-T5 hooks registered markers ($(printf '%s\n' "$EXPECTED_HOOK_REGISTERED_LINES" | grep -c .)):"
 printf '%s\n' "$EXPECTED_HOOK_REGISTERED_LINES" | sed 's/^/concerto-probe:   /'
+
+# P4-T16: the PASS line used to print the literal "14" here. The count is
+# derived from the marker list itself, so the prose cannot say 14 while the
+# roster is 15 rows.
+EXPECTED_HOOK_COUNT="$(printf '%s\n' "$EXPECTED_HOOK_REGISTERED_LINES" | grep -c . || true)"
 
 # P4-T3: the omo-commands mount marker's expected text, derived from the
 # plugin's OWN manifest.ts + boot-markers.ts + index.ts (Node 24 type-stripping,
@@ -865,8 +887,10 @@ boot_once() {
   # P3-T3/P3-T5 + P3-T19: the second cordis.yml insert row mounted, its ONE
   # summary marker matches the source-derived text exactly (-F: the marker
   # carries regex metacharacters), and EVERY implemented hook logged its
-  # `registered` line — the full 14-line set after P3-T17, with the id set in the
-  # expectation provably equal to the manifest id set (see the derivation above).
+  # `registered` line — the full $EXPECTED_HOOK_COUNT-line set, with the id set in
+  # the expectation provably equal to the manifest id set (see the derivation
+  # above). P4-T16 再审 ③: this said "the full 14-line set"; the count is derived
+  # and printed, never written here.
   # An empty or renamed HOOK_REGISTRARS fails HERE even though the summary line
   # still matches. A FAILED line is a real registration/validation failure and
   # must never ride along silently, so both FAILED forms are explicitly asserted
@@ -1200,5 +1224,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); omo-hooks mounted as the second insert row with the FULL 14-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, 14 lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines at P4-T3 = 0 since all six rows are pending) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO `skill … FAILED` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and the materialized-composition grep both derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row materialized toolName/deny/allow/maxDepth greps generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); omo-hooks mounted as the second insert row with the FULL $EXPECTED_HOOK_COUNT-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, $EXPECTED_HOOK_COUNT lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines, derived from the manifest's own ported rows — P4-T16 replaced the stale "at P4-T3 = 0 since all six rows are pending", which has been false since T6) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO `skill … FAILED` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and the materialized-composition grep both derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row materialized toolName/deny/allow/maxDepth greps generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS"
 exit 0

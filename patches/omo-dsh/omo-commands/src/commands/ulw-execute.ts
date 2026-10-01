@@ -39,6 +39,8 @@
 // atlas 缺席，这个回退需要被**重新实现**而不是自动生效 —— 静默继承上游代码
 // 会给出「已回退」的假象。
 
+// 语义移植声明：本文件是 `commands.ts:61-76` 的 `/ulw-execute` 条目加 `templates/start-work.ts` 模板的**语义移植**（handler 侧），不是逐字复制——上游经 subagent 编排器派发，本仓改为把命令模板排进本会话（`agent: atlas` 绑定保留）。
+
 import { formatCommandTemplate, renderCommandTemplate } from '../templates/render.ts'
 import { createUserMessage } from './user-message.ts'
 import { describeError } from './errors.ts'

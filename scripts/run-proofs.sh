@@ -61,6 +61,7 @@ PROOF_NAMES=(
   "P3-T19 guardrail deny path + R-9 throw semantics"
   "P3-T19 guardrail C/E mode mechanisms"
   "bump-dsh --self-test (D7 two-token pin: safe-point cutoff + write atomicity)"
+  "P4-T16 command registry in a real composition + handler-throw settle shape"
 )
 
 if ! command -v dsh >/dev/null 2>&1; then
@@ -103,6 +104,7 @@ PROOF_COMMANDS=(
   "node scripts/prove-guardrail-deny-path.mjs $NM $RENDERED/agent.cordis.yml"
   "node scripts/prove-guardrail-modes.mjs $NM"
   "bash scripts/bump-dsh.sh --self-test"
+  "node scripts/prove-command-registry.mjs $NM"
 )
 TOTAL_PROOFS=${#PROOF_NAMES[@]}
 if [[ "$TOTAL_PROOFS" != "${#PROOF_COMMANDS[@]}" ]]; then
@@ -143,17 +145,22 @@ run_proof() {
 #     listener fails only THAT call while the pipeline keeps working.
 #   * P3-T19: the C-mode advisory (additionalContexts) and E-mode steer surfaces of
 #     the guardrail layer, each with its non-trigger controls.
-run_proof "${PROOF_NAMES[0]}" ${PROOF_COMMANDS[0]}
-run_proof "${PROOF_NAMES[1]}" ${PROOF_COMMANDS[1]}
-run_proof "${PROOF_NAMES[2]}" ${PROOF_COMMANDS[2]}
-run_proof "${PROOF_NAMES[3]}" ${PROOF_COMMANDS[3]}
-run_proof "${PROOF_NAMES[4]}" ${PROOF_COMMANDS[4]}
 # N6 (PR #9 round 2): the D7 two-token pin's own contract had no gate — the
 # bumped script's --self-test was reachable only by hand, which is exactly how
 # the proof set above rotted before. It is hermetic (no network, no repo writes)
 # and fast, so it belongs in this zero-cost chain. `--online` (the real
 # resolution smoke) is NOT run here: ci-local gates stay hermetic.
-run_proof "${PROOF_NAMES[5]}" ${PROOF_COMMANDS[5]}
+#
+# P4-T16: the invocation list is now DERIVED from the two parallel arrays, one
+# `run_proof` line per INDEX. It used to be six hand-written
+# `run_proof "${PROOF_NAMES[N]}" ${PROOF_COMMANDS[N]}` lines — a THIRD copy of the
+# roster, which the count guard above cannot see: adding a seventh entry to both
+# arrays left six invocations, and the `STAGE != TOTAL_PROOFS` check at the bottom
+# was the only thing that noticed. That guard is load-bearing and stays; deriving
+# the loop means the failure cannot be reached in the first place.
+for ((i = 0; i < TOTAL_PROOFS; i++)); do
+  run_proof "${PROOF_NAMES[$i]}" ${PROOF_COMMANDS[$i]}
+done
 
 if [[ "$STAGE" != "$TOTAL_PROOFS" ]]; then
   echo "run-proofs: FAIL — ran ${STAGE} proofs but the registry declares ${TOTAL_PROOFS}" >&2

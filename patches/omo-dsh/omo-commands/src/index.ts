@@ -44,6 +44,11 @@
 // immediately above its import block; the no-build rationale itself is recorded
 // in patches/omo-dsh/omo-commands/tsconfig.host.json's header, lines 6-8).
 
+// P4-T16 — cordis 插件的 apply() 装配面（本仓的插件形态）。
+// 署名声明（c16 原生总体）：本文件**无上游对应物**——v4.19.4 没有任何同职责的模块。
+// 它是 DSH 侧的原生代码，不是语义移植；宣称上游来源就是假署名。语义移植文件请带
+// 「UPSTREAM SOURCE + @ v4.19.4 + 移植声明」三件套。
+
 import {
   COMMAND_MANIFEST,
   validateManifest,

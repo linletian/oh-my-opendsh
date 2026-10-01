@@ -126,6 +126,7 @@ export interface CommandManifestEntry {
  */
 export const EXPECTED_COMMAND_COUNT = 6
 
+
 /**
  * 6 行命令移植组，顺序 = 覆盖基线 §1.1 的 C-02…C-07（= ROADMAP 命令面序），使 T3
  * 的 boot marker 日志确定、与覆盖清单的逐行 diff 是一行一行的读法。
@@ -353,6 +354,30 @@ const MANIFEST_ROWS = [
  */
 export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = MANIFEST_ROWS
 
+
+/**
+ * 共享模块的上游源 —— `COMMAND_MANIFEST` 之外的归属。
+ *
+ * P4-T16 的 c16 交叉核对（署名头引用的 `packages/…` 路径必须被某个 manifest 声明）
+ * 第一次跑就报出 `templates/render.ts`：它移植自上游 executor 的
+ * `substituteCommandTemplate`，但不属于任何一条命令行，所以逐行表里没有它的位置。
+ *
+ * 两条路可选：把断言放宽成「只对有 manifest 行的文件生效」（render.ts 的署名从此
+ * 无人核对），或者让 manifest 把**包级**的归属也说出来。后者才是这个文件的职责——
+ * 它是署名面的机读一半，而一个只有逐行归属、没有包级归属的 manifest 是不完整的。
+ */
+export const SHARED_UPSTREAM_SOURCES: readonly string[] = [
+  'packages/omo-opencode/src/hooks/auto-slash-command/executor.ts',
+]
+
+/**
+ * 本包**全部**声明过的上游源 = 逐行表 ∪ 共享模块。c16 的双向交叉核对只用这一个
+ * 集合，避免在门里重抄一份归属（重抄的归属必然漂移）。
+ */
+export const PACKAGE_UPSTREAM_SOURCES: readonly string[] = [
+  ...COMMAND_MANIFEST.flatMap((entry) => entry.upstreamSources ?? []),
+  ...SHARED_UPSTREAM_SOURCES,
+]
 /**
  * 6 个命令 id，按表顺序派生（所以 id 里的笔误无法悄悄扩大这份列表）。T3 的
  * boot marker 逐行打印的正是它们，顺序固定。

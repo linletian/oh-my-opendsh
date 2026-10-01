@@ -45,6 +45,11 @@
 // frozen, ids differ per call, the text survives the clone) rather than
 // re-implementing deepFreeze's algorithm inside an assertion.
 
+// P4-T16 — 本仓向会话投递一条用户消息的辅助函数（取代上游的 bus 写入）。
+// 署名声明（c16 原生总体）：本文件**无上游对应物**——v4.19.4 没有任何同职责的模块。
+// 它是 DSH 侧的原生代码，不是语义移植；宣称上游来源就是假署名。语义移植文件请带
+// 「UPSTREAM SOURCE + @ v4.19.4 + 移植声明」三件套。
+
 import { randomUUID } from 'node:crypto'
 
 import type { CommandUserMessageLike } from './command-types.ts'
