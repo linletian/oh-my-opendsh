@@ -157,22 +157,21 @@ describe('P4-T2 COMMAND_MANIFEST — shape and content', () => {
     expect([...commandStatusSet].sort()).toEqual(['pending', 'ported'])
   })
 
-  it('splits the roster by status as of P4-T10 (four ported, two pending)', () => {
+  it('splits the roster by status as of P4-T14 (five ported, one pending)', () => {
     // The hard-coded facts, not lengths: a row silently flipping to 'ported'
     // would let a command with no handler look shipped, and a row silently
     // REVERTING to 'pending' after its handler landed would make the boot stop
     // registering a command that exists. Both directions are named here.
-    // P4-T10 flipped `ulw-execute` (handler + unit tests landed; its e2e is T11,
-    // the same deliberate exception the other ported rows carry). The two still
-    // pending are the ones with NO handler at all — `ulw-plan` must stay
-    // unregistered (registering it would shadow the skill gesture bridge, see
-    // that row's comment) and `hyperplan` is not started.
+    // P4-T14 is the LAST flip: `hyperplan` landed, so `ulw-plan` is the only row
+    // still pending — and it must STAY that way (registering it would shadow the
+    // skill gesture bridge, see that row's comment). It is the roster's one
+    // deliberate non-registration, not an oversight.
     expect(commandsByStatus(COMMAND_MANIFEST, 'pending').map((row) => row.id)).toEqual([
       'ulw-plan',
-      'hyperplan',
     ])
     expect(commandsByStatus(COMMAND_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'ulw-execute',
+      'hyperplan',
       'stop-continuation',
       'handoff',
       'remove-ai-slops',
@@ -544,7 +543,7 @@ describe('P4-T2 derived helpers', () => {
     // 为空 —— 后者在第一条命令落地时就失去意义，等于没有判据。
     const pending = commandsByStatus(COMMAND_MANIFEST, 'pending').map((row) => row.id)
     const ported = commandsByStatus(COMMAND_MANIFEST, 'ported').map((row) => row.id)
-    expect(ported).toEqual(['ulw-execute', 'stop-continuation', 'handoff', 'remove-ai-slops'])
+    expect(ported).toEqual(['ulw-execute', 'hyperplan', 'stop-continuation', 'handoff', 'remove-ai-slops'])
     expect([...pending, ...ported].sort()).toEqual([...COMMAND_IDS].sort())
     expect(pending.length + ported.length).toBe(COMMAND_MANIFEST.length)
     // An empty status matches nothing rather than everything: a caller passing
@@ -572,10 +571,10 @@ describe('P4-T2 derived helpers', () => {
     // The T3 summary line's fields come from here, never from a hard-coded
     // string — so this test pins the DERIVATION, not the rendered text.
     const counts = countsByStatus(COMMAND_MANIFEST)
-    // P4-T10: 四条已移植。逐个数字手打，与 boot-markers.test.ts 的手打汇总行
-    // （pending=2, ported=4, 4/6 registered）互为对账。
-    expect(counts.get('pending')).toBe(2)
-    expect(counts.get('ported')).toBe(4)
+    // P4-T14: 五条已移植。逐个数字手打，与 boot-markers.test.ts 的手打汇总行
+    // （pending=1, ported=5, 5/6 registered）互为对账。
+    expect(counts.get('pending')).toBe(1)
+    expect(counts.get('ported')).toBe(5)
     // Both keys are present even at 0, so two boots stay line-comparable.
     expect([...counts.keys()]).toEqual([...COMMAND_MANIFEST_STATUSES])
     let total = 0

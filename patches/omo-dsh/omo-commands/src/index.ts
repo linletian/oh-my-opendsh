@@ -68,6 +68,10 @@ import {
   createUlwExecuteCommand,
 } from './commands/ulw-execute.ts'
 import {
+  HYPERPLAN_DESCRIPTION,
+  createHyperplanCommand,
+} from './commands/hyperplan.ts'
+import {
   STOP_CONTINUATION_DESCRIPTION,
   createStopContinuationCommand,
 } from './commands/stop-continuation.ts'
@@ -221,6 +225,14 @@ export const COMMAND_REGISTRARS: Record<string, CommandRegistrar> = {
   // descriptor and act. So the marker travels 指挥者 → atlas, not 指挥者 → hook.
   'ulw-execute': (ctx, entry) => {
     registerPortedCommand(ctx, entry, ULW_EXECUTE_DESCRIPTION, createUlwExecuteCommand())
+  },
+  // P4-T14 — the DEGRADED hyperplan. `ctx`-free like the other three: it needs no
+  // service, and unlike `/ulw-execute` it is NOT an H-32 activation surface at all
+  // (its template carries no R-10 marker). It is a plain followup instruction that
+  // loads a vendored skill, so the roster-contract rewrite lives entirely in the
+  // template file and nothing has to cross package boundaries.
+  hyperplan: (ctx, entry) => {
+    registerPortedCommand(ctx, entry, HYPERPLAN_DESCRIPTION, createHyperplanCommand())
   },
   // P4-T8 — the ONLY command that talks to another plugin, and the only entry that
   // passes `ctx` itself instead of a command module's factory: the handler resolves

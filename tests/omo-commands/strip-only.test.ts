@@ -122,11 +122,12 @@ describe('P4-T5 the omo-commands sources are loadable by Node strip-only type er
       // P4-T6 起包内有子目录（handler 一层、模板一层）。这些是相对包根的递归
       // 相对路径 —— 所以这份清单同时钉住「有哪些文件」与「没有多出清单外的文件」，
       // 新增一个文件而忘了在这里登记（或反之）都会变红。P4-T10 增两条（ulw-execute
-      // 的 handler + 模板）。该扫描是本仓唯一能抓到「.ts 后缀被写丢」的守卫面 ——
+      // 的 handler + 模板；P4-T14 再增两条（hyperplan 的 handler + 模板）。该扫描是本仓唯一能抓到「.ts 后缀被写丢」的守卫面 ——
       // 写丢则真机 Node type-stripping 找不到模块，而 vitest(esbuild) 照常绿。
       'commands/command-types.ts',
       'commands/errors.ts',
       'commands/handoff.ts',
+      'commands/hyperplan.ts',
       'commands/remove-ai-slops.ts',
       'commands/stop-continuation.ts',
       'commands/ulw-execute.ts',
@@ -135,6 +136,7 @@ describe('P4-T5 the omo-commands sources are loadable by Node strip-only type er
       'manifest.ts',
       'skills.ts',
       'templates/handoff.ts',
+      'templates/hyperplan.ts',
       'templates/remove-ai-slops.ts',
       'templates/render.ts',
       'templates/stop-continuation.ts',

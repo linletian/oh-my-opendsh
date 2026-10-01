@@ -557,15 +557,15 @@ describe('P4-T6 the semantic-port table registers both commands and both narrowi
     expect(pendingLine, 'the pending-rows quote no longer enumerates its ids').toBeDefined()
     const pendingBlock = pendingLine ?? ''
     // Named ported rows must be ABSENT from the pending list, in both directions.
-    for (const id of ['stop-continuation', 'handoff', 'remove-ai-slops', 'ulw-execute']) {
+    for (const id of ['stop-continuation', 'handoff', 'remove-ai-slops', 'ulw-execute', 'hyperplan']) {
       expect(pendingBlock, `${id} is ported but named among the pending rows`).not.toContain(id)
     }
-    // …and the two rows that really are pending must be named.
-    for (const id of ['ulw-plan', 'hyperplan']) expect(pendingBlock).toContain(id)
+    // …and the one row that really is pending must be named.
+    for (const id of ['ulw-plan']) expect(pendingBlock).toContain(id)
   })
 
-  it('counts the derived files it lists (no stale count after P4-T10 landed)', () => {
-    expect(NOTICES).toContain('**4 command ids / 12 derived')
+  it('counts the derived files it lists (no stale count after P4-T14 landed)', () => {
+    expect(NOTICES).toContain('**5 command ids / 14 derived')
     for (const file of ['src/templates/render.ts', 'src/commands/errors.ts', 'src/commands/command-types.ts']) {
       expect(NOTICES).toContain(file)
     }
@@ -580,8 +580,8 @@ describe('P4-T6 the semantic-port table registers both commands and both narrowi
     const section = NOTICES.indexOf('| Command (manifest id) |')
     const rows = NOTICES.slice(section).split('\n').filter((line) => line.startsWith('| ') && !line.startsWith('|---') && line.includes('semantic port only'))
     // One row per ported command; `ulw-execute` is the fourth (P4-T10).
-    expect(rows).toHaveLength(4)
-    for (const id of ['ulw-execute', 'stop-continuation', 'handoff', 'remove-ai-slops']) {
+    expect(rows).toHaveLength(5)
+    for (const id of ['ulw-execute', 'hyperplan', 'stop-continuation', 'handoff', 'remove-ai-slops']) {
       expect(rows.some((row) => row.startsWith(`| ${id} |`)), `${id} has no semantic-port row`).toBe(true)
     }
     // …and the derived file list in the **Counts** paragraph covers every row's
@@ -592,11 +592,11 @@ describe('P4-T6 the semantic-port table registers both commands and both narrowi
     const listedCommands = [...countsBlock.matchAll(/src\/commands\/\{([^}]+)\}/g)]
       .flatMap((match) => match[1].split(',').map((name) => `src/commands/${name}.ts`))
     const listed = [...listedTemplates, ...listedCommands]
-    // The four ported commands each contribute a handler; the four templates each
+    // The five ported commands each contribute a handler; the five templates each
     // contribute a template file (render.ts is shared infrastructure, not a
     // command's own, and is listed too).
-    expect(listedCommands.filter((file) => ['handoff', 'remove-ai-slops', 'stop-continuation', 'ulw-execute', 'user-message', 'command-types', 'errors'].some((name) => file.endsWith(`${name}.ts`)))).toHaveLength(7)
-    expect(listedTemplates).toHaveLength(5)
+    expect(listedCommands.filter((file) => ['handoff', 'hyperplan', 'remove-ai-slops', 'stop-continuation', 'ulw-execute', 'user-message', 'command-types', 'errors'].some((name) => file.endsWith(`${name}.ts`)))).toHaveLength(8)
+    expect(listedTemplates).toHaveLength(6)
     expect(new Set(listed).size).toBe(listed.length)
   })
 })

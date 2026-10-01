@@ -233,7 +233,15 @@ const MANIFEST_ROWS = [
     effectSummary:
       '对抗式多 agent 规划（降级形态：team_create 缺席，模板降级指引按 DSH 现实重写）',
     e2eScenario: 'hyperplan-degraded-noted',
-    status: 'pending',
+    // T14 翻转：handler + 模板 + 单测已落地（src/commands/hyperplan.ts、
+    // src/templates/hyperplan.ts、tests/omo-commands/hyperplan.test.ts），e2e
+    // 场景属 T15 —— 与另外四条已移植行**同款有意的例外**，理由逐字沿用。
+    //
+    // 降级后缀的署名登记（③）：注册用 description = 上游原话**逐字**
+    // （`UPSTREAM_HYPERPLAN_DESCRIPTION`）+ 追加的降级后缀，二者不是一个字符串。
+    // 该注册串同时是模型可见外框里的 Description 行 —— 理由见
+    // src/commands/hyperplan.ts 的 MAJOR-1 注。
+    status: 'ported',
   },
   // C-05 → `/stop-continuation`（phase4-commands.md §1.1 C-05 行；H-34 接盘，原
   // Phase 3 S-37）。上游源实测 4 文件 = 内建模板 `templates/stop-continuation.ts`

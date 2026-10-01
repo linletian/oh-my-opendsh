@@ -79,8 +79,24 @@
 //          vocabulary is `'running' | 'stopping' | 'completed' | 'killed' |
 //          'failed'` (dsh-jobs/lib/types/types.d.ts:14) — there is NO 'pending', and
 //          'stopping' is DSH's second live state (cancellation already requested,
-//          producer winding down). Killing a stopping job is harmless
-//          ('already-finished'), so the filter covers exactly "not finished".
+//          producer winding down). So the filter covers exactly "not finished":
+//          `isTerminal` is `completed|killed|failed` (dsh-jobs-local:79-81) and
+//          `stopping` is **not** in it.
+//        - ⚠️ **重复 stop 对仍在 `stopping` 的 job 不是 no-op**：本注释先前写的是
+//          "Killing a stopping job is harmless ('already-finished')" —— 与实测相反。
+//          `kill` 只在 `isTerminal` 时返回 `'already-finished'`；`stopping` 不满足，
+//          于是走 `job.cancel(reason)` 并**再次**返回 `'requested'`
+//          （dsh-jobs-local:197-208）。级联侧按 verdict 计数（下方 :266-267），所以
+//          这些 job 会被**计入 `cancelledJobIds`**，而不是 `alreadyFinishedJobIds`。
+//        - ⚠️ **`stop()` 本身不短路，`cancelledJobIds` 也随之重复增长**
+//          （`stop` 无条件调用 `cascadeCancelJobs`，见 :212-221 —— 它只有
+//          `stoppedSessions.add`，没有 `has` 早退）。所以同会话连按两次
+//          `/stop-continuation`，同一批 winding-down job 会被**再请求一次取消**、
+//          **再计一次 cancelled**。真正的幂等载体是**下游的会话级 stop 行**：
+//          `stoppedSessions` 一旦有该会话，`isStopped(sessionId)` 恒真，
+//          todo-continuation 等消费者因此不再续行。读日志时请注意 —— 那行里的
+//          `cancelled N` 是**本次调用的请求数**，不是累计去重后的 job 数，不能
+//          拿它当幂等证据。
 //        - upstream's `abortSession` distinction has no DSH counterpart: `kill` is
 //          one request regardless of how far along the job is.
 //   ⑤ `chat.message` no-op: **kept, and it is load-bearing.** Upstream deliberately

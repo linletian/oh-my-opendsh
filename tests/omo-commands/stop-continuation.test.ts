@@ -279,6 +279,59 @@ describe('P4-T8 the background cascade — upstream ⑫ (cancel only running|pen
     expect(kills.map((call) => call.id)).toEqual(['mine'])
   })
 
+  it('⑬c a REPEATED stop re-requests a still-`stopping` job and re-counts it as cancelled', () => {
+    // T14 的注释修正的回归护栏。guard.ts 曾写 "Killing a stopping job is harmless
+    // ('already-finished')" —— 与实测相反：`isTerminal` 只含
+    // completed|killed|failed（dsh-jobs-local:79-81），`stopping` 不在其中，所以
+    // `kill` 再次 `cancel` 并**再次**返回 `'requested'`（:197-208）。
+    //
+    // 这个 fake 刻意**不复用** fakeJobs —— 那个把 kill 的返回值写死成 'requested'，
+    // 拿它断言 verdict 等于断言"我写死的值等于我写死的值"。这里按实测建模终态判据，
+    // 并同时放一个真终态 job 作对照，这样 'requested' 的断言才有内容。
+    const owner = 'session-repeat-stop'
+    const kills: { id: string; verdict: string }[] = []
+    const TERMINAL = ['completed', 'killed', 'failed']
+    const tasks = [
+      { id: 'winding-down', status: 'stopping', ownerSession: owner },
+      { id: 'already-done', status: 'completed', ownerSession: owner },
+    ]
+    const jobs: StopContinuationJobsLike = {
+      list: (caller) => tasks.filter((task) => task.ownerSession === caller.id),
+      kill: (id) => {
+        const target = tasks.find((task) => task.id === id)
+        if (target === undefined) throw new Error(`unknown job ${id}`)
+        const verdict = TERMINAL.includes(target.status) ? 'already-finished' : 'requested'
+        kills.push({ id, verdict })
+        // 真机把 status 重设为 'stopping'（同值），所以第二次 stop 看到的仍是
+        // 'stopping' —— 静态列表天然复现这一点，不需要可变 fake。
+        return verdict
+      },
+    }
+    const { guard } = makeGuard(jobs)
+
+    const first = guard.stop(owner)
+    // 第一次：winding-down 被请求取消。`already-done` 连 kill 都不会被调用 ——
+    // 级联在调用 kill **之前**按 CANCELLABLE_JOB_STATUSES 过滤（running|stopping），
+    // 所以终态 job 不出现在两个计数里的任何一个。`alreadyFinishedJobIds` 只会收
+    // 到"过滤时看着可取消、kill 时已成终态"的竞态 job。
+    expect(first.cancelledJobIds).toEqual(['winding-down'])
+    expect(first.alreadyFinishedJobIds).toEqual([])
+    expect(kills.map((call) => call.id)).toEqual(['winding-down'])
+
+    // 第二次 stop：job 仍在 stopping → kill 再次返回 'requested'，且被**再次**计入
+    // 当次的 cancelledJobIds。stop() 没有 has 早退，所以级联照跑。
+    const second = guard.stop(owner)
+    expect(second.cancelledJobIds).toEqual(['winding-down'])
+    expect(second.alreadyFinishedJobIds).toEqual([])
+    expect(kills.filter((call) => call.id === 'winding-down').map((call) => call.verdict))
+      .toEqual(['requested', 'requested'])
+
+    // 幂等的真正载体是会话级 stop 行，不是 cancelled 计数 —— 计数在这两次里重复了。
+    expect(guard.isStopped(owner)).toBe(true)
+    guard.clear(owner)
+    expect(guard.isStopped(owner)).toBe(false)
+  })
+
   it('reports kill()=already-finished separately from requested (the synchronous allSettled)', () => {
     const kills: string[] = []
     const jobs: StopContinuationJobsLike = {
