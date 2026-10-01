@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **11/18**（P4-T1…T8、T10、T12、T13 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **13/18**（P4-T1…T10、T12、T13、T14 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -114,13 +114,13 @@
 - **证据**：commit `ff136b7`。**fork 裁定 = (ii) 纯服务模块** `src/services/stop-continuation-guard.ts`（四理由：event/mode 字段无诚实取值、状态字段两难、c13 只扫 src/hooks 实测、H-34 行预授权出口；c14 演进已由 T12 承担故本任务无 c14 改动）。四机制：① H-03 `stopped-by-command` 首门（breaker 三阶段可判别测试）；② goal pause（CAS revision，非 active 不写，异常降级）；③ ralph 记差异（不承诺程序化取消）；④ 级联 `list({id:sessionId})` + `kill` + `ownerSession === sessionId` 围栏。跨插件：ctx.provide / 延迟 ctx.get / 服务名跨包相等断言 / R-5 真实注册链路测试。**双评审**：sub-agent REJECT→修复→APPROVE（MAJOR **级联空 caller 静默空转**——仲裁亲核 dsh-jobs-local:178-180/313-315 成立修复；NOTICES pending 列表）+ mcode 两轮 APPROVE（FINDINGS none）；12 条 findings 修复。门 2 = 1289、门 6 = 23/23。覆盖基线 H-34 行翻 ✅ 已落地（c14 豁免措辞，门 6 复验绿）。
 - **依赖**：P4-T3。**量级**：4 小时（实耗约 5 小时）。
 
-### [ ] P4-T9 — e2e：stop-continuation 场景
+### [x] P4-T9 — e2e：stop-continuation 场景
 
 - **产出**：`tests/e2e/` 新增 `stop-continuation-halts-todo` 场景。
 - **做法**：剧本 = 建 todo（未完）→ 回合收尾触发 H-03 steer 续行（对照，续行发生）→ 敲 `/stop-continuation` → 再造"todo 未完回合将停"→ 断言**不再 steer**（停止标记真实生效）+ `command/done` success；级联取消面有可沙箱化的路径则一并断言，无则记降级。
 - **判定**：✅ 门 3 绿；场景含"stop 前续行 / stop 后停续"双向断言。
-- **证据**：（待填）
-- **依赖**：P4-T8。**量级**：3 小时。
+- **证据**：commit `772ad2e`。`stop-continuation-halts-todo` **30 断言**（stop 前两边界 steer 文本相异防复读 / stop 后零 steer + 排除法四理由读日志：all-complete、goal-owns-continuation（noGoalAtPostStopBoundary）、circuit-breaker（formatCircuitBreakerLine 派生前缀）、projection-absent）；级联/goal 面沙箱化（后台 job `cancelled 1` / create_goal 后 `paused the active goal` + 0 新轮）；**幂等载体 = 守卫 stop 行**（`cancelled N` 降级为本次请求数——评审 MAJOR 竞态修正：stopping 非终态，再 kill 返回 `requested`）；`actions` 交织驱动路径（29 旧场景零变化，评审独立全量复跑实证）；**38 缺陷**各命中 + 两声明豁免（pluginLoaded、secondStopIsIdempotent——注释声明）。**双评审**：sub-agent REJECT→修复→APPROVE + mcode 两轮（次轮建议接受）；14 条 findings。证据件 `.omo/evidence/p4t9/stop-continuation.txt`（fresh run 重生成）。
+- **依赖**：P4-T8。**量级**：3 小时（实耗约 4 小时）。
 
 ---
 
@@ -166,13 +166,13 @@
 
 ## WP-7 hyperplan + ulw-plan（计划书 §4.4 C-03/C-04）
 
-### [ ] P4-T14 — 移植 `/hyperplan`（降级形态）
+### [x] P4-T14 — 移植 `/hyperplan`（降级形态）
 
 - **产出**：`src/commands/hyperplan.ts` + 模板常量 + 单测；hyperplan skill（S5-02）的加载指引段落地。
 - **做法**：模板语义移植（7 阶段工作流指引 + roster 契约段按 Phase 2 名册现实改写：`team_create`/category 成员引用 → DSH 名册与委派面的映射，缺席面明示）；**降级语义**：上游自带的"team-mode 不可用"指引段按 DSH 现实重写（无 `~/.omo/omo.jsonc`——指引文案改为 Phase 5 预告 + 当前可用的降级路径）；完整对抗评审环不移植（Phase 5）。
 - **判定**：✅ 单测覆盖：模板渲染、降级指引段在场、team 引用零硬编码死链；vitest 绿。
-- **证据**：（待填）
-- **依赖**：P4-T3、P4-T4（S5-02）。**量级**：3 小时。
+- **证据**：commit `97faf6f`。hyperplan.test **23 测试**（全量 1345）；降级指引段落地（team-mode 缺席明示 + Phase 5 预告 + 名册委派降级路径：plan-consultant/plan-reviewer 交叉质询、prometheus 接 Phase 6、回复明说 DEGRADED）；**零死链守卫按句切分**（提及 team_create/task_send/缺席角色须在否定句）+ 变异 falsify + 残余风险钉死（同句巧句可过——启发式非证明，注释声明）；description 双串（上游原文署名锚点 + 注册串降级后缀，常量+渲染产物双断言，NOTICES/manifest/注记三处登记）；7-phase 逐字恢复 + 7-vs-8 登记（SKILL 实为 Phase 0-7 八段）；Phases 2-4 `task_send` 替换明示（评审实测 Phases 5/6 零 task_send）；Provenance 块按席位计数非上游成员名；roster 映射 `ALL_AGENT_IDS` 派生 + 反检。vendor frontmatter 张力记录于 carrier note 第 8 条（skill 正文保真不改写，降级由命令指引承担，Phase 5 对接）。**双评审**：双 REJECT→修复→双 APPROVE（19 条 findings）。
+- **依赖**：P4-T3、P4-T4（S5-02）。**量级**：3 小时（实耗约 4.5 小时）。
 
 ### [ ] P4-T15 — `/ulw-plan` 命令面 + e2e
 
