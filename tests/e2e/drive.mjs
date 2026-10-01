@@ -2165,6 +2165,40 @@ async function sessionPrompt(boot, request) {
   return rpc(boot, 'session/prompt', { args: { request: { requestId: randomUUID(), ...request } } })
 }
 
+/**
+ * P4-T7: submit ONE slash-command line through the commands registry's own
+ * executor — the same entry the Web UI's composer uses
+ * (dsh-client-ui-commands/lib/client.js:796).
+ *
+ * `session/prompt` is NOT a substitute and must never be used as one: a slash
+ * line sent as a prompt is an ordinary user message, so it would exercise no
+ * admission, no `command/run` / `command/done` pair, and no handler.
+ *
+ * Wire names are the projection's own (`agentId` / `line` /
+ * `submittedAttachments` — dsh-commands/lib/typert.host.js:44-89); the registry
+ * resolves the agent from the session id, so this call needs no agent handle.
+ *
+ * Returns the settled execution `{commandId, result:{kind,text?}}`, or
+ * `undefined` when admission missed (syntax or unknown name) — a miss appends
+ * nothing at all (dsh-commands/lib/index.js:296-299,319-321), which is the
+ * 对照's measured semantics, not an error to be raised here.
+ *
+ * rc6-flat: there is NO measured flat counterpart (the flat surface predates the
+ * commands executor's remote projection), so that transport fails LOUDLY rather
+ * than guessing an endpoint name. The installed pin is 0.1.5-rc.1 = web-remote.
+ */
+async function commandExecute(boot, { sessionId, line }) {
+  if (boot.transport === 'rc6-flat') {
+    throw new Error(
+      `commands/execute: no measured rc6-flat endpoint for the command executor; `
+      + 'this driver speaks the web-remote projection only (installed dsh 0.1.5-rc.1)',
+    )
+  }
+  return rpc(boot, 'commands/execute', {
+    args: { agentId: sessionId, line, submittedAttachments: [] },
+  })
+}
+
 // ── dsh process management (cold-start.sh discipline) ───────────────────────
 
 function installPlugin(sandbox, env) {
@@ -8551,6 +8585,30 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P4-T7 command-channel pilot self-test. Both specs run the SAME defect
+  // list against their own fabricated good input: the channel properties under
+  // test (admission, the lifecycle pair, the own-turn wiring, the admission-miss
+  // zero-event semantics) are identical for an argument-bearing and a
+  // no-argument command, so the cases are stated once and applied twice.
+  for (const [scenarioName, spec] of Object.entries(COMMAND_CHANNEL_SPECS)) {
+    const analyze = (input) => analyzeCommandChannelDriven(input, spec, routes)
+    const good = analyze(fabricatedCommandChannelInput(spec, routes))
+    if (good.result !== 'PASS') {
+      problems.push(`fabricated GOOD ${scenarioName}-driven must PASS, got FAIL on: ${good.failed.join(', ')}`)
+    }
+    // NB the explicit call: an earlier scenario's `defectCases` is in the SAME
+    // function scope, so relying on the name would silently run hello's cases.
+    const defectCases = commandChannelDefectCases(spec)
+    for (const [label, mutate, expectedCheck] of defectCases) {
+      const input = fabricatedCommandChannelInput(spec, routes)
+      mutate(input)
+      const verdict = analyze(input)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated ${scenarioName}-driven defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   return problems
@@ -11080,6 +11138,445 @@ function fabricatedComboGoodInput(routes) {
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// P4-T7 — the COMMAND CHANNEL pilot scenarios (`handoff-summary-driven`,
+// `remove-ai-slops-driven`). This is the channel 打样 every later command
+// scenario copies, so the transport facts are recorded here once.
+//
+// ── HOW A COMMAND REACHES THE HOST (measured; NOT the prompt path) ──────────
+// A slash line is admitted by the commands registry's own executor, reached
+// over a DEDICATED rpc — never by `session/prompt`:
+//
+//   commands/execute(agentId, line, submittedAttachments)
+//     → dsh-commands/lib/typert.host.js:44-89 (service/namespace `commands`,
+//       method `execute`, wire names `agentId` / `line` /
+//       `submittedAttachments`, cancellation on `signal`)
+//     → dsh-commands/lib/index.js:316-345: `parseCommand` + registry lookup,
+//       then a `command/run` append, the handler, and a `command/done` append.
+//
+// The Web UI calls exactly this and only falls back to prompting when the
+// admission returned nothing (dsh-client-ui-commands/lib/client.js:796), which
+// is why the driver reproduces that fallback instead of inventing one.
+//
+// ── ADMISSION MISS IS ZERO EVENTS, NOT AN ERROR (the 对照's whole claim) ────
+// `execute` returns `undefined` for a syntax or unknown-name miss and appends
+// NOTHING: "Admission misses (syntax or unknown name) log nothing — they never
+// entered a handler" (dsh-commands/lib/index.js:296-299), and the paired miss
+// path is the same non-throwing early return (:319-321). So the control asserts
+// the ABSENCE of both lifecycle events plus the plain-prompt fallback — a
+// scenario that expected a native error would be asserting the opposite of the
+// measured behaviour.
+//
+// ── A HANDLED COMMAND OWNS ITS OWN TURN (why no kick prompt is needed) ─────
+// The ported handlers inject through `agent.followup(message)`, whose contract
+// is "Queue an ordinary follow-up turn and wake the driver. The item becomes the
+// sole ordinary message of its own turn"
+// (dsh-agent/lib/types/runtime-types.d.ts:186-192). So the injected instruction
+// opens a turn BY ITSELF: the driver's first model request already carries it,
+// and nothing has to nudge the loop. The scenario asserts exactly that ordering
+// (request index 0, not 1) so a future "wait for a prompt" wiring would fail
+// rather than silently pass.
+//
+// ── THE HEAD-HOLE THIS PILOT CLOSES ───────────────────────────────────────
+// If the command were never registered, the line would fall through to the
+// prompt path and the model would still "respond" — a scenario that only looked
+// for model prose would pass on a build with NO command support at all. Every
+// scenario therefore also pins the boot-log registration line
+// (`[omo-commands] command handoff registered`, formatter-derived from
+// patches/omo-dsh/omo-commands/src/boot-markers.ts), the way P3-T13 pins the
+// keyword detector's registration.
+const COMMAND_CHANNEL_UNKNOWN_LINE = '/definitely-not-a-command 用一句话说明这个仓库'
+const COMMAND_CHANNEL_CONTROL_REPLY =
+  'MOCK-COMMAND-CONTROL-7d31ab: 这一行不是已注册的命令，所以我按普通提问回答'
+// The ISO stamp the injected `<session-context>` carries. Asserted for SHAPE
+// only (`2026-…T…`) — never for a value: the runtime clock is not ours.
+const COMMAND_CHANNEL_TIMESTAMP_SHAPE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
+
+// MEASURED, and the leading space is the load-bearing part: `parseCommand` returns
+// `rawInput: line.slice(match[0].length)` with match[0] === '/handoff' and its own
+// JSDoc saying "Parse an exact slash command **without normalizing its trailing
+// input**" (dsh-commands/lib/types/index.js:67-82). So the separator space is part
+// of the args the registry logs and the handler renders. Transcribing it here is
+// the point: an expectation written without it would fail against the real host
+// (it did — that is how the shape was measured, not guessed).
+// LOCAL CONVENTION, NOT AN UPSTREAM ASSET (registered here so nobody cites it as
+// a port): upstream omo-opencode has NO command handler for these entries — its
+// slash commands are expanded into the model prompt by its auto-slash-command
+// executor, so upstream never produces a `command/done` payload at all. The
+// `kind` + `text` wording the port's handlers return ("<Name> instruction queued
+// (N chars…); it takes effect in the next turn.") was WRITTEN FOR THIS PORT
+// (patches/omo-dsh/omo-commands/src/commands/{handoff,remove-ai-slops}.ts) as a
+// local reporting convention, and the char count is checked here against the real
+// injected payload so the convention cannot drift into a fabricated number.
+const HANDOFF_COMMAND_ARGS = ' 完成 P4-T7 命令通道的 e2e 打样'
+// The goal as a human reads it — used only in the mock's summary prose, where the
+// model echoes the request rather than the wire string.
+const HANDOFF_COMMAND_GOAL = '完成 P4-T7 命令通道的 e2e 打样'
+const HANDOFF_COMMAND_LINE = `/handoff${HANDOFF_COMMAND_ARGS}`
+const HANDOFF_DESCRIPTION =
+  '(builtin) Create a detailed context summary for continuing work in a new session'
+// The template's OWN output-format block (patches/omo-dsh/omo-commands/src/
+// templates/handoff.ts:151-205, "Generate a handoff summary using this exact
+// format"). The mock obeys it, and the analyzer reads these section headers out
+// of the assistant message: the model acted on the injected template, it did not
+// just acknowledge it.
+const HANDOFF_OUTPUT_SECTION_HEADERS = [
+  'HANDOFF CONTEXT',
+  'USER REQUESTS (AS-IS)',
+  'GOAL',
+  'WORK COMPLETED',
+  'CURRENT STATE',
+  'PENDING TASKS',
+  'KEY FILES',
+  'IMPORTANT DECISIONS',
+  'EXPLICIT CONSTRAINTS',
+  'CONTEXT FOR CONTINUATION',
+]
+const HANDOFF_SUMMARY_TEXT = [
+  'MOCK-HANDOFF-SUMMARY-2f8a61: 按注入模板的格式输出交接摘要',
+  '',
+  'HANDOFF CONTEXT',
+  '===============',
+  '',
+  'USER REQUESTS (AS-IS)',
+  '---------------------',
+  `- ${HANDOFF_COMMAND_GOAL}`,
+  '',
+  'GOAL',
+  '----',
+  '打通命令通道并留下可判定的证据',
+  '',
+  'WORK COMPLETED',
+  '--------------',
+  '- 驱动发出 /handoff 命令行',
+  '- 模型收到 <command-instruction> 正文并按格式产出摘要',
+  '',
+  'CURRENT STATE',
+  '-------------',
+  '- 命令注册面可见，生命周期事件成对出现',
+  '',
+  'PENDING TASKS',
+  '-------------',
+  '- 其余命令场景复用同一条通道',
+  '',
+  'KEY FILES',
+  '---------',
+  '- tests/e2e/drive.mjs - 场景驱动',
+  '',
+  'IMPORTANT DECISIONS',
+  '-------------------',
+  '- 走 commands/execute 专用 rpc，而不是把命令行当 prompt 发',
+  '',
+  'EXPLICIT CONSTRAINTS',
+  '--------------------',
+  '- None',
+  '',
+  'CONTEXT FOR CONTINUATION',
+  '------------------------',
+  '- 通道已打通，下一条命令只需要换模板与断言锚点',
+].join('\n')
+
+const SLOPS_DESCRIPTION =
+  '(builtin) Remove AI-generated code smells from branch changes and critically review the results'
+// The template's OWN Output Format block (templates/remove-ai-slops.ts:137-155).
+const SLOPS_OUTPUT_ANCHORS = [
+  '## AI Slop Removal Summary',
+  '### Files Processed',
+  '### Critical Review Results',
+  '- Safety:',
+  '- Behavior:',
+  '- Quality:',
+  '### Issues Found & Fixed',
+  '### Final Status',
+]
+const SLOPS_SUMMARY_TEXT = [
+  'MOCK-REMOVE-AI-SLOPS-REPORT-c41d07: 按注入模板的 Output Format 输出',
+  '',
+  '## AI Slop Removal Summary',
+  '',
+  '### Files Processed',
+  '- src/example.py: 2 changes',
+  '',
+  '### Critical Review Results',
+  '- Safety: PASS',
+  '- Behavior: PASS',
+  '- Quality: PASS',
+  '',
+  '### Issues Found & Fixed',
+  '1. 冗余注释包裹代码 -> 删除注释',
+  '',
+  '### Final Status',
+  'CLEAN',
+].join('\n')
+
+/**
+ * One scenario's command-channel shape. `frameLines` is the 外框 transcribed as
+ * exact lines (render.ts `formatCommandTemplate`, ported from upstream
+ * `executor.ts:113-152`): each section carries a trailing `\n` and the sections
+ * are joined with `\n`, so every adjacent pair is separated by ONE blank line.
+ * Transcribed, never derived from the plugin, so the assertion cannot follow a
+ * regression in the thing under test.
+ */
+const COMMAND_CHANNEL_SPECS = {
+  handoff: {
+    commandId: 'handoff',
+    bootRegistrationLine: '[omo-commands] command handoff registered',
+    line: HANDOFF_COMMAND_LINE,
+    args: HANDOFF_COMMAND_ARGS,
+    description: HANDOFF_DESCRIPTION,
+    frameLines: [
+      '# /handoff Command',
+      `**Description**: ${HANDOFF_DESCRIPTION}`,
+      `**User Arguments**: ${HANDOFF_COMMAND_ARGS}`,
+      '**Scope**: builtin',
+      '---',
+      '## Command Instructions',
+    ],
+    // The instruction BODY's own landmarks (carrier note → template heading →
+    // the format phase the model is supposed to obey → the close of the
+    // `<command-instruction>` wrapper → the session-context/user-request tail).
+    bodyNeedles: [
+      '<command-instruction>',
+      '[oh-my-opendsh] Handoff carrier note',
+      '# Handoff Command',
+      '## Purpose',
+      '# PHASE 3: FORMAT OUTPUT',
+      '</command-instruction>',
+      '<session-context>',
+      '</session-context>',
+      '<user-request>',
+      '</user-request>',
+    ],
+    sessionContextExpected: true,
+    outputAnchors: HANDOFF_OUTPUT_SECTION_HEADERS,
+    summaryText: HANDOFF_SUMMARY_TEXT,
+    doneTextPattern: /^Handoff instruction queued \((\d+) chars, session ([^)]+)\); it takes effect in the next turn\.$/,
+  },
+  'remove-ai-slops': {
+    commandId: 'remove-ai-slops',
+    bootRegistrationLine: '[omo-commands] command remove-ai-slops registered',
+    // The NO-ARGUMENT variant: this row carries no argumentHint upstream
+    // (commands.ts:85-92), so its frame omits the `**User Arguments**` line
+    // entirely (upstream:117 `if (args)`).
+    line: '/remove-ai-slops',
+    args: '',
+    description: SLOPS_DESCRIPTION,
+    frameLines: [
+      '# /remove-ai-slops Command',
+      `**Description**: ${SLOPS_DESCRIPTION}`,
+      '**Scope**: builtin',
+      '---',
+      '## Command Instructions',
+    ],
+    bodyNeedles: [
+      '<command-instruction>',
+      '[oh-my-opendsh] Remove AI slops carrier note',
+      '# Remove AI Slops Command',
+      '## Output Format',
+      '</command-instruction>',
+      '<user-request>',
+      '</user-request>',
+    ],
+    // No `<session-context>` in this template (templates/remove-ai-slops.ts:188-191:
+    // only `$ARGUMENTS` is used upstream), so its render never needed a session id.
+    sessionContextExpected: false,
+    outputAnchors: SLOPS_OUTPUT_ANCHORS,
+    summaryText: SLOPS_SUMMARY_TEXT,
+    doneTextPattern: /^Remove-AI-slops instruction queued \((\d+) chars\); it takes effect in the next turn\.$/,
+  },
+}
+
+/** The mock script: turn 1 is the command's own follow-up turn, turn 2 the 对照. */
+function commandChannelScript(spec) {
+  return {
+    sisyphus: [
+      { type: 'text', text: spec.summaryText },
+      { type: 'text', text: COMMAND_CHANNEL_CONTROL_REPLY },
+    ],
+  }
+}
+
+/**
+ * The command-channel assertions. `commandResults` is what the driver observed
+ * on the wire for each line it submitted (the admission value or `undefined`),
+ * which is the one thing the session log cannot tell us.
+ */
+export function analyzeCommandChannelDriven({ log, requests, bootLog, commandResults }, spec, routes) {
+  const events = log?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const sessionId = String(log?.header?.id ?? '')
+  const admission = (commandResults ?? []).find((entry) => entry.line === spec.line)
+  const controlAdmission = (commandResults ?? []).find((entry) => entry.line === COMMAND_CHANNEL_UNKNOWN_LINE)
+
+  const runs = events.filter((event) => event.type === 'command/run')
+  const dones = events.filter((event) => event.type === 'command/done')
+  const run = runs.find((event) => event.data?.name === spec.commandId)
+  const done = dones.find((event) => event.data?.commandId === run?.data?.commandId)
+
+  // The injected instruction as a DURABLE carrier (the follow-up turn's own
+  // ordinary message), located by the frame header the ported render writes.
+  const injectedCarrier = events
+    .filter((event) => event.type === 'user/message')
+    .map((event) => ({ event, text: messageContentText(event.data) }))
+    .find((candidate) => candidate.text.includes(`# /${spec.commandId} Command`))
+  const injectedText = injectedCarrier?.text ?? ''
+
+  const frameLinePresent = spec.frameLines.every((line) => injectedText.includes(line))
+  const frameInOrder = spec.frameLines.every((line, index) =>
+    index === 0 || injectedText.indexOf(spec.frameLines[index - 1]) < injectedText.indexOf(line))
+  const noUserArgumentsLineWhenNoArgs = spec.args === ''
+    ? !injectedText.includes('**User Arguments**')
+    : injectedText.includes(`**User Arguments**: ${spec.args}`)
+  // Placeholders must be GONE (upstream substitutes them; leaving one would hand
+  // the model a literal `$ARGUMENTS`), and the substituted session id must be
+  // THIS session's — cross-checked against the log header, not against the
+  // command payload.
+  const noPlaceholderSurvived =
+    !/\$\{?user_message\}?|\$ARGUMENTS|\$TIMESTAMP|\$SESSION_ID/.test(injectedText)
+  // Symmetric on purpose: a spec whose template has NO <session-context> must not
+  // grow one. The old `? true` branch made that silent (a stray block would pass),
+  // and this scenario family owns both shapes — so both directions are checked.
+  const sessionContextSubstituted = spec.sessionContextExpected
+    ? new RegExp(`Session ID: ${sessionId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(injectedText)
+      && COMMAND_CHANNEL_TIMESTAMP_SHAPE.test(injectedText)
+    : !injectedText.includes('<session-context>')
+
+  // (d) the wire: the instruction rode the FIRST model request of the session —
+  // proof it opened its own turn instead of riding a later prompt.
+  const instructionRequestIndex = sisyphusRequests.findIndex((request) =>
+    requestMessagesContain(request, `# /${spec.commandId} Command`))
+  const controlRequestIndex = sisyphusRequests.findIndex((request) =>
+    requestMessagesContain(request, COMMAND_CHANNEL_UNKNOWN_LINE))
+
+  const summary = events.find(
+    (event) => event.type === 'assistant/message'
+      && messageContentText(event.data?.message ?? event.data).includes(spec.outputAnchors[0]),
+  )
+  const summaryText = summary === undefined ? '' : messageContentText(summary.data?.message ?? summary.data)
+  const controlReply = events.find(
+    (event) => event.type === 'assistant/message'
+      && messageContentText(event.data?.message ?? event.data).includes('MOCK-COMMAND-CONTROL-'),
+  )
+  const turnEnds = events.filter((event) => event.type === 'turn/end')
+
+  // The done text's char count must describe the payload that were really
+  // injected — the number is cross-checked against the carrier, not trusted.
+  const doneText = done?.data?.text ?? ''
+  const doneMatch = spec.doneTextPattern.exec(doneText)
+  // TWO booleans instead of one with a vacuous branch: the old `doneNamesThisSession`
+  // degraded to `true` whenever the no-argument spec matched, because a regex with
+  // one capture group makes `doneMatch.length === 2` constant. For that spec the
+  // real claim is the NEGATIVE one — its done text must NOT name a session at all,
+  // because that handler never received one in its text.
+  const doneMentionsThisSession = spec.sessionContextExpected
+    ? doneMatch !== null && doneMatch[2] === sessionId
+    : true
+  const doneOmitsSessionClause = spec.sessionContextExpected
+    ? true
+    : doneMatch !== null && !doneText.includes('session ')
+
+  // 对照: the unknown line produced NO lifecycle pair at all. Exactly one run and
+  // one done exist in the whole log, and both belong to this scenario's command.
+  const controlProducedNoEvents = runs.length === 1 && dones.length === 1
+    && runs[0]?.data?.name === spec.commandId
+  const controlWasNotAdmitted = controlAdmission !== undefined
+    && controlAdmission.matched === false
+    && controlAdmission.admission === undefined
+  const controlFellBackToPrompt = events.some(
+    (event) => event.type === 'user/message'
+      && messageContentText(event.data).includes(COMMAND_CHANNEL_UNKNOWN_LINE),
+  )
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    // The head-hole guard: without this line the whole scenario could pass on a
+    // build where the command was never registered at all.
+    commandRegisteredInBootLog: bootLog.includes(spec.bootRegistrationLine),
+    commandAdmissionMatched: admission !== undefined
+      && admission.matched === true
+      && admission.admission?.result?.kind === 'success',
+    commandRunRecordedWithArgsAndUserSource: run !== undefined
+      && run.data.name === spec.commandId
+      && run.data.args === spec.args
+      && run.data.source?.kind === 'user'
+      && typeof run.data.commandId === 'string'
+      && run.data.commandId.length > 0,
+    commandDonePairedAndSucceeded: done !== undefined
+      && done.data.kind === 'success'
+      && done.data.commandId === run?.data?.commandId
+      && run !== undefined
+      && run.seq < done.seq,
+    // Q-1's timing, MEASURED on this host (both commands, identical):
+    //   command/run seq 3 → command/done seq 7 → the injected carrier seq 10.
+    // The handler queues the follow-up INSIDE its own execution, yet that message
+    // is claimed only at the next-turn inbox boundary — strictly AFTER the
+    // `command/done` append the host writes as the handler settles. Asserting the
+    // measured pair-then-carrier order (rather than the order the code suggests)
+    // is what makes "the injection takes effect in the NEXT turn" a checked
+    // property instead of a comment.
+    injectedCarrierClaimedAfterCommandDone: injectedCarrier !== undefined
+      && done !== undefined
+      && done.seq < injectedCarrier.event.seq,
+    // The done text names the real payload size and the real session.
+    doneTextDescribesInjectedPayload: doneMatch !== null
+      && Number(doneMatch[1]) === injectedText.length,
+    doneSessionClauseMatchesTheCarrier: doneMentionsThisSession && doneOmitsSessionClause,
+    injectedInstructionCarriedAsUserMessage: injectedCarrier !== undefined
+      && injectedCarrier.event.data?.role === 'user'
+      && injectedCarrier.event.data?.source?.kind === 'user'
+      && typeof injectedCarrier.event.data?.id === 'string',
+    injectedInstructionFrameIsUpstreamShape: injectedText.length > 0
+      && frameLinePresent
+      && frameInOrder
+      && noUserArgumentsLineWhenNoArgs,
+    injectedInstructionBodyIsTheTemplateBody: spec.bodyNeedles.every((needle) => injectedText.includes(needle))
+      && noPlaceholderSurvived
+      && sessionContextSubstituted,
+    // The own-turn claim: request #0 of this session already carried it.
+    injectedInstructionReachedFirstModelRequest: instructionRequestIndex === 0,
+    modelFollowedTemplateOutputFormat: spec.outputAnchors.every((anchor) => summaryText.includes(anchor)),
+    commandTurnCompleted: turnEnds.length >= 1 && turnEndReasonKind(turnEnds[0]) === 'completed',
+    // 对照 (admission miss): zero events, no error, plain-prompt fallback.
+    controlUnknownLineAdmittedNothing: controlProducedNoEvents && controlWasNotAdmitted,
+    controlUnknownLineFellBackToPrompt: controlFellBackToPrompt && controlRequestIndex === 1,
+    controlTurnCompleted: turnEnds.length === 2 && turnEndReasonKind(turnEnds[1]) === 'completed'
+      && controlReply !== undefined,
+    mockSawExpectedRequestCount: sisyphusRequests.length === 2,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    commandLine: spec.line,
+    commandArgs: spec.args,
+    admission: admission?.admission ?? null,
+    controlAdmission: controlAdmission ?? null,
+    commandRun: run === undefined ? null : { seq: run.seq, data: run.data },
+    commandDone: done === undefined ? null : { seq: done.seq, data: done.data },
+    injectedInstructionChars: injectedText.length,
+    injectedInstructionSource: injectedCarrier?.event?.data?.source ?? null,
+    injectedInstructionHead: injectedText.split('\n').slice(0, 8),
+    instructionRequestIndex,
+    controlRequestIndex,
+    // The Q-1 timing claim, MEASURED rather than assumed, and ASSERTED by
+    // `injectedCarrierClaimedAfterCommandDone` above: the lifecycle pair is
+    // appended around the handler, but the follow-up the handler queued is
+    // claimed only at the next-turn inbox boundary — so the real order is
+    // pair-then-carrier (run → done → carrier), NOT the code order a reader
+    // would guess. Key order matches that sequence.
+    eventOrder: {
+      commandRun: run?.seq ?? null,
+      commandDone: done?.seq ?? null,
+      injectedCarrier: injectedCarrier?.event?.seq ?? null,
+    },
+    outputAnchorsMissing: spec.outputAnchors.filter((anchor) => !summaryText.includes(anchor)),
+    turnEndReasons: turnEnds.map((event) => ({ seq: event.seq, turn: event.data?.turn ?? null, kind: turnEndReasonKind(event) ?? null })),
+    commandRunCount: runs.length,
+    commandDoneCount: dones.length,
+    mockRequestCount: sisyphusRequests.length,
+    mockRequestModels: [...new Set(sisyphusRequests.map((request) => request.body?.model))],
+    sisyphusRoute: `${routes.sisyphus.provider}/${routes.sisyphus.model}`,
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
 const SCENARIOS = [
   {
     name: 'hello',
@@ -11517,6 +12014,42 @@ const SCENARIOS = [
     script: () => keywordTwoStepScript(COMBO_KEYWORD_SUMMARY),
     analyze: analyzeComboKeywordInjected,
   },
+  {
+    // P4-T7 — the COMMAND CHANNEL pilot (see the command-channel block above
+    // for the transport facts). `/handoff <args>`: the argument-bearing variant.
+    // Two turns on one session:
+    //   turn 1 — the command's own follow-up turn: admission → command/run →
+    //     command/done(success) → the injected instruction (the frame + the
+    //     template body + `<session-context>` with THIS session's id) → the
+    //     model's handoff summary in the template's own format.
+    //   turn 2 — 对照: an UNKNOWN command line, which must append no lifecycle
+    //     events at all and fall back to the prompt path.
+    name: 'handoff-summary-driven',
+    roles: ['sisyphus'],
+    commands: [
+      { line: HANDOFF_COMMAND_LINE },
+      { line: COMMAND_CHANNEL_UNKNOWN_LINE, submitAsPromptOnMiss: true },
+    ],
+    // `def.script` is CALLED by the driver (`startMockLlmServer({script: def.script(...)})`),
+    // so a spec-parameterised factory has to be wrapped — passing it directly is
+    // the `def.script is not a function` crash the hyperplan row already notes.
+    script: () => commandChannelScript(COMMAND_CHANNEL_SPECS.handoff),
+    analyze: (input, routes) => analyzeCommandChannelDriven(input, COMMAND_CHANNEL_SPECS.handoff, routes),
+  },
+  {
+    // P4-T7 — the same channel, the NO-ARGUMENT variant: `/remove-ai-slops`
+    // carries no argumentHint, so its frame omits `**User Arguments**` and its
+    // rendered `$ARGUMENTS` is empty. Same two-turn shape (command turn +
+    // unknown-line 对照).
+    name: 'remove-ai-slops-driven',
+    roles: ['sisyphus'],
+    commands: [
+      { line: COMMAND_CHANNEL_SPECS['remove-ai-slops'].line },
+      { line: COMMAND_CHANNEL_UNKNOWN_LINE, submitAsPromptOnMiss: true },
+    ],
+    script: () => commandChannelScript(COMMAND_CHANNEL_SPECS['remove-ai-slops']),
+    analyze: (input, routes) => analyzeCommandChannelDriven(input, COMMAND_CHANNEL_SPECS['remove-ai-slops'], routes),
+  },
 ]
 
 /**
@@ -11577,20 +12110,58 @@ async function runScenario(def, baseRoutes) {
     // P3-T9: a scenario may drive MORE than one turn on the same session (its
     // 对照 turn is a second prompt) — each prompt is awaited on its OWN
     // turn/end, so a later turn's arrival can never satisfy an earlier wait.
-    const prompts = [def.prompt, ...(def.followupPrompts ?? [])]
+    // P4-T7: the scenario's COMMAND lines run first, on the registry's own
+    // executor. A command whose handler injects opens its OWN turn
+    // (Agent#followup, dsh-agent/lib/types/runtime-types.d.ts:186-192), so each
+    // matched line is awaited here; an unmatched line is submitted as an ordinary
+    // prompt instead — the Web UI's own fallback
+    // (dsh-client-ui-commands/lib/client.js:796) — which becomes the 对照 turn.
+    const commandResults = []
+    const prompts = []
+    let turnsSeen = 0
     let log
-    for (const [index, prompt] of prompts.entries()) {
+    for (const action of def.commands ?? []) {
+      const admission = await commandExecute(boot, { sessionId: created.sessionId, line: action.line })
+      const matched = admission !== undefined && admission !== null
+      commandResults.push({ line: action.line, matched, admission })
+      console.error(
+        `drive: [${def.name}] command ${action.line} → ${matched ? `matched (${admission.result?.kind})` : 'NOT admitted'}`,
+      )
+      // Boundary (easy to break in a refactor, so it is stated here): `turnsSeen`
+      // counts turns ALREADY OBSERVED. It is incremented in exactly TWO places:
+      // the `if (matched)` increment right below (a command whose injection opened
+      // its own turn — that branch also `continue`s, so it is the only increment
+      // inside the command loop), and the single increment in the prompt `for`
+      // loop further down, after its own `awaitTurnEnd`. "Both prompt branches"
+      // was wrong: there is ONE prompt loop; its two increments are the two
+      // increments just listed. An admission miss contributes nothing here
+      // because it produced no turn; its line becomes a prompt, counted there.
+      if (matched) {
+        turnsSeen += 1
+        log = await awaitTurnEnd(sandbox, created.sessionId, turnsSeen)
+        continue
+      }
+      // unreachable when matched — the continue above guarantees it
+      if (action.submitAsPromptOnMiss === true) prompts.push(action.line)
+    }
+    // 回落到 prompt 的命令行排在场景自己的 prompt 之前（它们在命令循环里先被收集），
+    // 所以这里只需把 undefined 的 `def.prompt`（纯命令场景没有）滤掉。
+    const scenarioPrompts = [...prompts, def.prompt, ...(def.followupPrompts ?? [])]
+      .filter((line) => line !== undefined)
+    for (const [index, prompt] of scenarioPrompts.entries()) {
       await sessionPrompt(boot, {
         sessionId: created.sessionId,
         mode: 'queue',
         content: [{ type: 'text', text: prompt }],
       })
       console.error(
-        `drive: [${def.name}] prompt ${index + 1}/${prompts.length} accepted; `
+        `drive: [${def.name}] prompt ${index + 1}/${scenarioPrompts.length} accepted; `
         + 'awaiting its turn/end on the session JSONL',
       )
-      log = await awaitTurnEnd(sandbox, created.sessionId, index + 1)
+      turnsSeen += 1
+      log = await awaitTurnEnd(sandbox, created.sessionId, turnsSeen)
     }
+    console.error(`drive: [${def.name}] ${turnsSeen} turn(s) observed`)
     const logPath = log?.path
 
     // P3-T12: a scenario may need to observe work that happens AFTER its last
@@ -11624,6 +12195,7 @@ async function runScenario(def, baseRoutes) {
         providersJson,
         bootLog: boot.log(),
         markerLanding,
+        commandResults,
         ...(def.analysisInput?.(sandbox, setup) ?? {}),
       },
       routes,
@@ -11657,6 +12229,304 @@ async function runScenario(def, baseRoutes) {
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
+
+
+// ── P4-T7 command-channel defect cases (one list, TWO specs) ───────────────
+// Hoisted to module level so the self-test loop and the SELF-TEST OK banner read
+// the SAME list: a banner can therefore never name fewer defects than were run.
+//
+// COVERAGE POLICY (what a defect list owes the check list): 18 checks, 17 defect
+// cases, each check owning exactly one case; `pluginLoaded` is the single
+// declared exception and owns none (every scenario in this driver shares it, so no
+// single scenario can be the one to break it).
+//
+// SAME LABELS, SPEC-DEPENDENT MUTATORS: the labels below are identical for both
+// specs — they name a CHANNEL property, not a row — but three mutators close over
+// `spec`, and TWO of them flip direction by spec on purpose:
+//   · `command/run disagrees with the args the user typed` — blanks the args of
+//     the argument-bearing row, INVENTS them on the no-argument row;
+//   · `the done text names the wrong session …` — rewrites the session clause on
+//     the row that has one, APPENDS one to the row that must have none;
+//   · (third, single-direction) `a $ARGUMENTS placeholder survived the render` —
+//     rewrites the `<user-request>` block by REGEX because the two rows carry
+//     different text there, and the defect ("the placeholder reached the model
+//     unrendered") is independent of the arguments.
+// The first two inversions are the same defect class read from the other side
+// (a field disagreeing with what the user typed / must not claim). A reader must
+// not "simplify" that symmetry away.
+function commandChannelDefectCases(spec) {
+  return [
+    ['the command never registered (no boot-log registration line)', (input) => {
+      input.bootLog = input.bootLog.split('\n').filter((line) => line !== spec.bootRegistrationLine).join('\n')
+    }, 'commandRegisteredInBootLog'],
+    ['admission returned nothing for a known command', (input) => {
+      input.commandResults[0].matched = false
+      input.commandResults[0].admission = undefined
+    }, 'commandAdmissionMatched'],
+    // 参数侧缺陷按行取反义：有实参的行**丢了**实参，无实参的行**凭空多出**实参 ——
+    // 后者对 no-argument 变体才是同一类缺陷（`command/run` 谎报了用户没敲的东西）。
+    ['command/run disagrees with the args the user typed', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'command/run'
+          ? { ...event, data: { ...event.data, args: spec.args === '' ? 'fabricated-args' : '' } }
+          : event)
+    }, 'commandRunRecordedWithArgsAndUserSource'],
+    ['command/done paired with a different commandId', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'command/done' ? { ...event, data: { ...event.data, commandId: 'cmd-fabricated-other' } } : event)
+    }, 'commandDonePairedAndSucceeded'],
+    ['the done text claims a payload size the carrier does not have', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'command/done'
+          ? { ...event, data: { ...event.data, text: event.data.text.replace(/\(\d+ chars/, '(99999 chars') } }
+          : event)
+    }, 'doneTextDescribesInjectedPayload'],
+      ['the injected carrier was not an identified user message', (input) => {
+      // Covers `injectedInstructionCarriedAsUserMessage` — the carrier identity
+      // (role / source.kind / id). Dropping the id is the defect the handler's own
+      // fresh-uuid contract exists to prevent.
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'user/message' && typeof event.data?.id === 'string' && event.data.id.startsWith('fabricated-injected')
+          ? { ...event, data: { ...event.data, id: undefined } }
+          : event)
+    }, 'injectedInstructionCarriedAsUserMessage'],
+  ['the frame lost its **Scope**: builtin line', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'user/message' && typeof event.data?.id === 'string' && event.data.id.startsWith('fabricated-injected')
+          ? { ...event, data: { ...event.data, content: [{ type: 'text', text: messageContentText(event.data).replace('**Scope**: builtin', 'Scope: builtin') }] } }
+          : event)
+    }, 'injectedInstructionFrameIsUpstreamShape'],
+    ['a $ARGUMENTS placeholder survived the render', (input) => {
+      // 正则而非字面串：handoff 的 <user-request> 带实参、slops 的是空段，两者的
+      // 字面形态不同，而"占位符原样送到模型"这条缺陷与实参无关。
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'user/message' && typeof event.data?.id === 'string' && event.data.id.startsWith('fabricated-injected')
+          ? {
+            ...event,
+            data: {
+              ...event.data,
+              content: [{
+                type: 'text',
+                text: messageContentText(event.data).replace(
+                  /<user-request>\n[\s\S]*?<\/user-request>/,
+                  '<user-request>\n$ARGUMENTS\n</user-request>',
+                ),
+              }],
+            },
+          }
+          : event)
+    }, 'injectedInstructionBodyIsTheTemplateBody'],
+    ['the injected carrier was claimed BEFORE command/done settled (an order the host never produces)', (input) => {
+    const runEvent = input.log.events.find((event) => event.type === 'command/run')
+    const carrier = input.log.events.find((event) => event.type === 'user/message'
+      && typeof event.data?.id === 'string' && event.data.id.startsWith('fabricated-injected'))
+    input.log.events = [runEvent, carrier, ...input.log.events.filter((event) => event !== runEvent && event !== carrier)]
+      .map((event, index) => ({ ...event, seq: index + 1 }))
+  }, 'injectedCarrierClaimedAfterCommandDone'],
+  ['the injected turn ended with an error', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'turn/end' && event.data?.turn === 1
+          ? { ...event, data: { ...event.data, reason: { kind: 'error' } } }
+          : event)
+    }, 'commandTurnCompleted'],
+    // Swapping the two requests is the "the command needed a prompt to wake
+    // it" defect: BOTH index checks must react, and the self-test only
+    // requires the intended one to be among the failures.
+    ['the instruction rode the SECOND request (something had to kick the turn)', (input) => {
+      input.requests = [input.requests[1], input.requests[0]]
+    }, 'injectedInstructionReachedFirstModelRequest'],
+    ['the model ignored the template output format', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'assistant/message' && messageContentText(event.data?.message ?? event.data).includes('MOCK-')
+          && event.data?.turn === 1
+          ? { ...event, data: { ...event.data, message: { role: 'assistant', content: [{ type: 'text', text: 'sure, done' }] } } }
+          : event)
+    }, 'modelFollowedTemplateOutputFormat'],
+  // Spec-dependent by necessity: the session clause EXISTS in the argument-bearing
+  // row's done text and MUST NOT exist in the no-argument row's, so "wrong" is the
+  // opposite edit in each.
+  //
+  // What this case proves, stated per row rather than lumped: on the
+  // ARGUMENT-BEARING row only the session-clause check can react, because the
+  // char count is untouched. On the NO-ARGUMENT row the anchoring regex already
+  // forbids a session clause (its `doneTextPattern` has no such group, and
+  // `doneMatch.length === 2` is the constant the review caught), so the
+  // session-clause check there is a RESTATEMENT of that regex rather than an
+  // independent probe — a review that breaks the row's anchoring three ways finds
+  // both checks flip together, which is exactly why the anchor is spelled as two
+  // booleans instead of one with a vacuous branch.
+  ['the done text names the wrong session (or a session at all where there is none)', (input) => {
+    input.log.events = input.log.events.map((event) =>
+      event.type === 'command/done'
+        ? {
+          ...event,
+          data: {
+            ...event.data,
+            text: spec.sessionContextExpected
+              ? event.data.text.replace(/session [^)]+\)/, 'session session-fabricated-somebody-else)')
+              : event.data.text.replace(/\.$/, ', session session-fabricated-somebody-else.'),
+          },
+        }
+        : event)
+  }, 'doneSessionClauseMatchesTheCarrier'],
+  ['the control turn ended with an error instead of completing', (input) => {
+    input.log.events = input.log.events.map((event) =>
+      event.type === 'turn/end' && event.data?.turn === 2
+        ? { ...event, data: { ...event.data, reason: { kind: 'error' } } }
+        : event)
+  }, 'controlTurnCompleted'],
+  ['the unknown line produced lifecycle events (an error instead of zero events)', (input) => {
+      input.log.events = [
+        ...input.log.events,
+        { seq: 20, type: 'command/run', data: { commandId: 'cmd-fabricated-2', name: 'definitely-not-a-command', args: '', source: { kind: 'user' } } },
+        { seq: 21, type: 'command/done', data: { commandId: 'cmd-fabricated-2', kind: 'error', text: 'unknown command' } },
+      ]
+    }, 'controlUnknownLineAdmittedNothing'],
+    ['the unknown line never fell back to the prompt path', (input) => {
+      // 去掉回落到 prompt 的那条用户消息：命令未命中后 UI 把该行当普通提问提交，
+      // 这一环消失 = 用户输入凭空丢了（另一类缺陷"未命中却进了 handler"由上一条
+      // 的零事件断言覆盖）。
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'user/message'
+          && messageContentText(event.data).includes(COMMAND_CHANNEL_UNKNOWN_LINE)),
+      )
+    }, 'controlUnknownLineFellBackToPrompt'],
+    ['a third model request appeared', (input) => {
+      // 模型名取自已记录的请求，而不是闭包里的 `routes` —— 本函数是模块级的，
+      // 拿不到自检函数的参数（第一版就栽在这里，运行时报 ReferenceError）。
+      input.requests = [...input.requests, { role: 'sisyphus', body: { model: input.requests[0].body.model, messages: [] }, receivedAt: 30 }]
+    }, 'mockSawExpectedRequestCount'],
+  ]
+}
+
+// ── P4-T7 command-channel fabricated inputs + defect cases (self-test) ───────
+// The GOOD input mirrors the REAL runtime layout: the command's own follow-up
+// turn (the injected instruction as its sole ordinary user message → one model
+// step → turn/end completed), the lifecycle pair, then the 对照 turn (the unknown
+// line submitted as a prompt, because admission missed).
+//
+// The injected instruction is BUILT here rather than pasted whole: the real body
+// is 196 / 216 lines of template text, and a fabricated fixture that pasted it
+// all would be a second copy of the thing under test. What the fixture carries
+// is every NEEDLE the analyzer looks for (frame lines, body landmarks, the
+// substituted session id and an ISO timestamp, the empty-or-filled
+// `<user-request>`) in the real ORDER, and — critically — the `command/done`
+// char count is computed FROM that text, so the self-consistency check is real
+// here too.
+const FABRICATED_COMMAND_SESSION_ID = 'session-fabricated-command-channel'
+const FABRICATED_COMMAND_TIMESTAMP = '2026-10-01T09:15:00.000Z'
+const FABRICATED_COMMAND_ID = 'cmd-fabricated-1'
+
+function fabricatedCommandInstruction(spec, sessionId) {
+  const argsLine = spec.args === '' ? null : `**User Arguments**: ${spec.args}`
+  const frame = [
+    `# /${spec.commandId} Command`,
+    '',
+    `**Description**: ${spec.description}`,
+    ...(argsLine === null ? [] : ['', argsLine]),
+    '',
+    '**Scope**: builtin',
+    '',
+    '---',
+    '',
+    '## Command Instructions',
+    '',
+  ].join('\n')
+  const sessionContext = spec.sessionContextExpected
+    ? ['', '<session-context>', `Session ID: ${sessionId}`, `Timestamp: ${FABRICATED_COMMAND_TIMESTAMP}`, '</session-context>']
+    : []
+  const body = [
+    '<command-instruction>',
+    spec.bodyNeedles[1],
+    '',
+    '---',
+    '',
+    spec.bodyNeedles[2],
+    '',
+    '(…fabricated stand-in for the template body: it carries every NEEDLE the',
+    ' analyzer checks, in the real order — the real body is 196 / 216 lines…)',
+    ...spec.bodyNeedles.filter((needle) => needle.startsWith('#') || needle.startsWith('##')),
+    '</command-instruction>',
+    ...sessionContext,
+    '',
+    '<user-request>',
+    spec.args,
+    '</user-request>',
+  ].join('\n')
+  return `${frame}${body}`
+}
+
+function fabricatedCommandDoneText(spec, chars) {
+  return spec.sessionContextExpected
+    ? `Handoff instruction queued (${chars} chars, session ${FABRICATED_COMMAND_SESSION_ID}); it takes effect in the next turn.`
+    : `Remove-AI-slops instruction queued (${chars} chars); it takes effect in the next turn.`
+}
+
+// Only the load markers plus THIS scenario's registration line. A hand-typed
+// summary line ("manifest 6 entries (pending=4, ported=2)") was here first and is
+// deliberately gone: the real roster grows with every ported command, so the copy
+// would rot into a stale expectation that nobody notices — and nothing asserts it.
+// The registration line is the one fact this analyzer reads from the boot log.
+function fabricatedCommandBootLog(spec) {
+  return [FABRICATED_BOOT_LOG, spec.bootRegistrationLine].join('\n')
+}
+
+function fabricatedCommandChannelLog(spec) {
+  const instruction = fabricatedCommandInstruction(spec, FABRICATED_COMMAND_SESSION_ID)
+  const chars = instruction.length
+  const assistant = (seq, turn, step, text) => ({
+    seq,
+    type: 'assistant/message',
+    data: { turn, step, message: { role: 'assistant', content: [{ type: 'text', text }] } },
+  })
+  return {
+    path: `/fabricated/${spec.commandId}/session.jsonl`,
+    header: { type: 'session', id: FABRICATED_COMMAND_SESSION_ID },
+    events: [
+      // The MEASURED order (real run: run seq 3 → done seq 7 → carrier seq 10):
+      // the lifecycle pair is appended around the handler, and the follow-up the
+      // handler queued is claimed only at the next-turn inbox boundary — AFTER
+      // `command/done`. A fixture written the other way round would have taught
+      // the analyzer an order the host never produces.
+      { seq: 1, type: 'command/run', data: { commandId: FABRICATED_COMMAND_ID, name: spec.commandId, args: spec.args, source: { kind: 'user' } } },
+      { seq: 2, type: 'command/done', data: { commandId: FABRICATED_COMMAND_ID, kind: 'success', text: fabricatedCommandDoneText(spec, chars) } },
+      // turn 1 — the follow-up turn the injection opened BY ITSELF
+      { seq: 3, type: 'turn/start', data: { turn: 1 } },
+      fabricatedUserMessage(4, { id: 'fabricated-injected-1', role: 'user', content: [{ type: 'text', text: instruction }], source: { kind: 'user' } }),
+      { seq: 5, type: 'step/start', data: { turn: 1, step: 1 } },
+      assistant(6, 1, 1, spec.summaryText),
+      { seq: 7, type: 'step/end', data: { turn: 1, step: 1 } },
+      { seq: 8, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      // turn 2 — 对照: the unknown line, admitted nowhere, submitted as a prompt
+      fabricatedUserMessage(9, { id: 'fabricated-control-1', role: 'user', content: [{ type: 'text', text: COMMAND_CHANNEL_UNKNOWN_LINE }], source: { kind: 'user', rpcId: 'fabricated-rpc' } }),
+      { seq: 10, type: 'turn/start', data: { turn: 2 } },
+      assistant(11, 2, 1, COMMAND_CHANNEL_CONTROL_REPLY),
+      { seq: 12, type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedCommandChannelInput(spec, routes) {
+  const instruction = fabricatedCommandInstruction(spec, FABRICATED_COMMAND_SESSION_ID)
+  const model = routes.sisyphus.model
+  const messages = (...texts) => [
+    { role: 'system', content: 'MOCKROLE=sisyphus' },
+    ...texts.map((text) => ({ role: 'user', content: text })),
+  ]
+  return {
+    log: fabricatedCommandChannelLog(spec),
+    requests: [
+      { role: 'sisyphus', body: { model, messages: messages(instruction) }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model, messages: messages(COMMAND_CHANNEL_UNKNOWN_LINE) }, receivedAt: 20 },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: fabricatedCommandBootLog(spec),
+    commandResults: [
+      { line: spec.line, matched: true, admission: { commandId: FABRICATED_COMMAND_ID, result: { kind: 'success', text: 'queued' } } },
+      { line: COMMAND_CHANNEL_UNKNOWN_LINE, matched: false, admission: undefined },
+    ],
+  }
+}
 
 async function main() {
   const routes = resolveModelRoutes()
@@ -11754,7 +12624,20 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T13 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)`)
+    // P4-T7's own banner, built from the SAME defect-case list that ran — so the
+    // summary can never name fewer defects than were actually asserted.
+    // Labels are the same for both specs (see the factory header), so the banner
+    // reads them off ONE call rather than concatenating two copies. The non-empty
+    // guard is the T13 shape: an emptied list must FAIL the self-test, never
+    // print an empty "everything checked" banner.
+    const commandChannelCases = commandChannelDefectCases(COMMAND_CHANNEL_SPECS.handoff)
+    if (commandChannelCases.length === 0) {
+      problems.push('fabricated handoff-driven: the command-channel defect list is EMPTY — the banner would attest to nothing')
+    }
+    const COMMAND_CHANNEL_SELF_TEST_BANNER = commandChannelCases
+      .map(([label]) => label)
+      .join(', ')
+    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
