@@ -50,6 +50,37 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+// S-12：命令扩展消息由 omo-commands 的**真实渲染器**产出，不在本测试里手抄外框。
+// 走的就是 handler 自己那两行（`createFrame()` → `formatCommandTemplate`），
+// 所以测试与实机发到会话里的那条消息是同一条构造路径。
+const renderPort = await import('../../patches/omo-dsh/omo-commands/src/templates/render.ts')
+const ulwCommand = await import('../../patches/omo-dsh/omo-commands/src/commands/ulw-execute.ts')
+// 模板常量本身在 templates/ 下；commands/ulw-execute.ts 只是 import 它（不 re-export），
+// 所以取模板要从模板模块取，与 handler 内部引用的是同一个对象。
+const ulwTemplate = await import('../../patches/omo-dsh/omo-commands/src/templates/ulw-execute.ts')
+const hyperplanTemplate = await import('../../patches/omo-dsh/omo-commands/src/templates/hyperplan.ts')
+const hyperplanCommand = await import('../../patches/omo-dsh/omo-commands/src/commands/hyperplan.ts')
+
+/** 走 handler 自己那两行：`renderCommandTemplate` + `formatCommandTemplate`。 */
+function buildFollowup(
+  name: string,
+  description: string,
+  template: string,
+  args: string,
+): string {
+  return renderPort.formatCommandTemplate({
+    name,
+    description,
+    scope: 'builtin',
+    arguments: args,
+    template,
+    content: renderPort.renderCommandTemplate(template, { arguments: args, sessionId: 'agent-proof' }),
+  })
+}
+const renderUlwExecuteFollowup = (args: string): string => buildFollowup(
+  'ulw-execute', ulwCommand.ULW_EXECUTE_DESCRIPTION, ulwTemplate.ULW_EXECUTE_COMMAND_TEMPLATE, args)
+const renderHyperplanFollowup = (args: string): string => buildFollowup(
+  'hyperplan', hyperplanCommand.HYPERPLAN_DESCRIPTION, hyperplanTemplate.HYPERPLAN_COMMAND_TEMPLATE, args)
 
 // ⚠️ Test ① asserts these patterns' `.source` against UPSTREAM LITERALS, so the
 // import must be the module's OWN constants — never a re-declared copy in this
@@ -103,6 +134,8 @@ import {
   isPlannerAgent,
   isSubagentSession,
   isSyntheticOrInternalPayload,
+  isUserAuthoredMessage,
+  readCurrentUserTextDetail,
   isSystemDirective,
   readCurrentUserText,
   readSessionDescriptor,
@@ -395,6 +428,82 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
     // A keyword in the user's own words, alongside a reminder, still arms.
     expect(decide(mainFacts('<system-reminder>some context</system-reminder> now run ulw')).kind)
       .toBe('inject')
+  })
+
+  // ── S-12：命令扩展消息不是用户散文 ────────────────────────────────────────
+  //
+  // L4 真模型冒烟实证的移植分歧。`/ulw-execute alpha` 准入后，omo-commands 把命令
+  // 模板作为一条 source.kind==='user' 的 followup 消息投进会话，keyword-detector
+  // 把它当成本轮用户散文 → 模板里的 `ulw` 命中 → turn 2 就喊
+  // ULTRAWORK MODE ENABLED!。上游的检测面是原始输入行（slash 前导已剥离），因此
+  // 永不自触发。
+  //
+  // ①/② 用 **omo-commands 的真实渲染器**产出命令扩展消息，而不是在这里手抄一段
+  // 假的外框：锚 `<command-instruction>` 是那条渲染路径产出的，手抄一份就等于把
+  // 「锚变了」这件事从本测试的视野里拿掉——而那正是 S-12 最需要被看见的失效。
+  describe('S-12 command-expansion messages are not user prose', () => {
+    it('① a /ulw-execute followup template carrying `ulw` produces no detection at all', () => {
+      const template = renderUlwExecuteFollowup('alpha')
+      // 前置事实：这条消息**确实是** user 源、role 也是 'user'，两条既有过滤都
+      // 放它过——这正是它曾经能自触发的原因。
+      const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: template }] }
+      expect(isUserAuthoredMessage(message)).toBe(true)
+      // 正文形态核对：真实模板里确实带着触发词与包裹标记。
+      expect(template).toContain('<command-instruction>')
+      expect(template).toMatch(/\bulw\b/)
+      // MINOR-9 **正向前提**：同一条消息若无 S-12，判定确实会注入。这一条才是本次
+      // 修复针对的那个回归的承担者——只断言「现在不注入」的话，一个恒不注入的实现
+      // 也能通过（恒 false 的守卫与恒 true 的守卫在结果上不可区分）。
+      const withoutS12 = decide(mainFacts(template, { texts: { ...TEXTS, ultrawork: template } }))
+      expect(withoutS12.kind).toBe('inject')
+      // 判据：读不出可判别的用户散文 → ① 号闸关 → 零注入。
+      expect(readCurrentUserText({ messages: [message] })).toBeUndefined()
+      expect(isSyntheticOrInternalPayload({ messages: [message] })).toBe(true)
+      // MINOR-7：S-12 有自己的具名 reason，不再并进 synthetic-internal。
+      expect(readCurrentUserTextDetail({ messages: [message] }))
+        .toEqual({ text: undefined, commandExpansionSkipped: true })
+      // promptText 必须真是 undefined 才会走到那两闸；给空串会落到 no-keyword。
+      expect(decide(mainFacts('unused', { promptText: undefined, commandExpansionSkipped: true })))
+        .toEqual({ kind: 'skip', reason: 'command-expansion' })
+    })
+
+    it('② a /hyperplan followup template carrying `hyperplan` produces no match either', () => {
+      const template = renderHyperplanFollowup('把用户登录改造成支持单点登录')
+      expect(template).toContain('<command-instruction>')
+      expect(template).toContain('hyperplan')
+      const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: template }] }
+      // MINOR-9：hyperplan 侧的正向前提。
+      expect(decide(mainFacts(template, { texts: { ...TEXTS, hyperplan: template } })).kind).toBe('inject')
+      expect(readCurrentUserText({ messages: [message] })).toBeUndefined()
+    })
+
+    it('③ user prose containing ulw still arms — the filter is not a blanket relaxation', () => {
+      expect(decide(mainFacts('please run ulw for the migration')).kind).toBe('inject')
+      expect(readCurrentUserText(payloadWith('just ulw please'))).toBe('just ulw please')
+    })
+
+    it('④ user prose containing the marker is skipped — the anchor\'s false-positive face, pinned', () => {
+      // 锚的**误判面**：用户在自己的散文里提到/粘贴了 `<command-instruction>`。
+      // S-12 的判据是「文本含该标记」，不看它是不是正文——所以这一条会**被跳过**。
+      //
+      // MINOR-8 更正：第一版把这行标题写成「围栏代码块内仍应命中」，而夹具里根本没有
+      // 围栏、断言也是 `toBeUndefined`——标题与断言相反。标题现在只说夹具真正做的事。
+      //
+      // 有意如此，理由：为了一个只在用户刻意粘贴命令模板原文时才出现的场景，去做
+      // 「标记是否在代码块内 / 是否在首行 / 是否成对」的解析，会引入一个**更糟**
+      // 的东西——一个可被构造绕过的启发式（把标记拆开就能重新触发）。而上游对齐
+      // 的方向是「派生产物不参与检测」，不是「精确识别派生产物」。这条断言把
+      // 误判面**钉成已知行为**而不是让它潜伏：将来若要改判据，这条会先红。
+      const prose = 'please run ulw — here is the template that fires it:\n<command-instruction>\nrun ulw\n</command-instruction>'
+      expect(readCurrentUserText(payloadWith(prose))).toBeUndefined()
+    })
+
+    it('⑤ a command-expansion message does not mask an EARLIER real user message', () => {
+      // `continue` 而非整体放弃：判据是「这条不是散文」，不是「本轮不可判」。
+      const earlier = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'run ulw now' }] }
+      const expansion = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '<command-instruction># /ulw-execute Command\nbody\n</command-instruction>' }] }
+      expect(readCurrentUserText({ messages: [earlier, expansion] })).toBe('run ulw now')
+    })
   })
 
   it('③ slash lead, ④ foreign agent, ⑤ planner, ⑥ background/非主', () => {

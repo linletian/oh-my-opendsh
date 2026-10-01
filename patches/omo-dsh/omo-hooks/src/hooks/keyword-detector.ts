@@ -180,6 +180,21 @@
 //     ⚠️ **P4-T13 的 e2e 断言口径按此设计**：`ultrawork-keyword-injected` 场景
 //     不得断言"首个模型请求就带 `ULTRAWORK MODE ENABLED!`"（会红），应断言
 //     "本轮注入被记录进 session log，且**后续**某次模型请求带上了它"。
+// S-12 **检测面剥掉命令扩展消息**（L4 真模型冒烟实证的移植分歧，已修）。
+//     上游的检测面是**原始用户输入行**，匹配前先剥 slash 前导（`/ulw-execute
+//     alpha` → `alpha`），因此上游**永不自触发**。DSH 侧读的是会话消息流，命令
+//     准入后 omo-commands 会把命令模板作为一条 `source.kind==='user'` 的 followup
+//     消息投进会话——user 源过滤与 synthetic 过滤都放它过，于是**命令模板本身**
+//     被当成本轮用户散文送去匹配：实测 `/ulw-execute alpha` 触发了 ultrawork
+//     绑定（模型在 turn 2 就喊 `ULTRAWORK MODE ENABLED!`），`/hyperplan` 同形风险。
+//     修法：`readCurrentUserText` 跳过文本含 `<command-instruction>` 的消息——那是
+//     上游**命令条目的 `template` 字面量**首尾行（v4.19.4 commands.ts:43/45），
+//     本仓 `omo-commands/src/templates/*.ts` 逐字保留，两侧同锚。实测：外框不在
+//     `formatCommandTemplate` 里。与上游**同源**（上游剥原始行上的 slash 前导，我们剥扩展消息上的
+//     命令包裹，都是把派生产物从用户散文里摘出去）。`continue` 而非整体放弃，
+//     所以「本轮命令扩展 + 更早真实散文」时后者仍被检测。详见 filters.ts。
+//     `/ulw-plan` 手势不受影响：载体是 `<skill_content>`（source.kind ===
+//     'skill-invocation'），早已被 user 源过滤排除。
 //     另注：即使时点相同，S-6 的会话级一次性守卫也只会让它注入一次——所以
 //     "晚一步"是唯一的可观测差别，不要把它和幂等混成一个失败现象。
 //
@@ -218,7 +233,7 @@ import {
   isPlannerAgent,
   isSubagentSession,
   isSystemDirective,
-  readCurrentUserText,
+  readCurrentUserTextDetail,
   readPreStepSession,
   readSessionDescriptor,
   removeSystemReminders,
@@ -323,6 +338,8 @@ export function formatKeywordDetectorDegradedLine(reason: string): string {
 export type KeywordSkipReason =
   | 'no-inject-surface'
   | 'synthetic-internal'
+  /** MINOR-7：S-12 跳过了命令扩展消息——与「没有用户文本」分开命名，故它会记日志。 */
+  | 'command-expansion'
   | 'system-directive'
   | 'slash-command'
   | 'foreign-agent'
@@ -352,6 +369,8 @@ export interface KeywordStepFacts {
   readonly texts: InstructionTexts | undefined
   /** 本轮用户文本（已过 ① 闸；`undefined` 即 ① 号 skip）。 */
   readonly promptText: string | undefined
+  /** MINOR-7：本轮是否因为 S-12 跳过了一条命令扩展消息（故 `promptText` 为 undefined）。 */
+  readonly commandExpansionSkipped?: boolean
   readonly descriptor: SessionDescriptor
   /** 会话级一次性守卫的当前值。 */
   readonly alreadyInjected: boolean
@@ -383,6 +402,11 @@ export interface KeywordStepFacts {
 export function decideKeywordInjection(facts: KeywordStepFacts): KeywordDecision {
   if (!facts.hasInject) return { kind: 'skip', reason: 'no-inject-surface' }
   if (facts.texts === undefined) return { kind: 'skip', reason: 'vendor-texts-unavailable' }
+  // MINOR-7：`command-expansion` 必须排在 `synthetic-internal` **之前**——S-12 跳过后
+  // `promptText` 同样是 undefined，不先判就会被并进去，而并进去它就不记日志了。
+  if (facts.promptText === undefined && facts.commandExpansionSkipped === true) {
+    return { kind: 'skip', reason: 'command-expansion' }
+  }
   if (facts.promptText === undefined) return { kind: 'skip', reason: 'synthetic-internal' }
   if (isSystemDirective(facts.promptText)) return { kind: 'skip', reason: 'system-directive' }
   if (looksLikeSlashCommand(facts.promptText)) return { kind: 'skip', reason: 'slash-command' }
@@ -503,17 +527,24 @@ function runKeywordDetectorStep(
     // 具名 NOTE），每步再打一次只会刷屏。
     return
   }
+  const current = readCurrentUserTextDetail(payload)
   const decision = decideKeywordInjection(
     {
       hasInject: typeof agent.inject === 'function',
       texts: deps.texts,
-      promptText: readCurrentUserText(payload),
+      promptText: (current.commandExpansionSkipped === true && current.text === undefined
+        ? undefined
+        : current.text),
+      commandExpansionSkipped: current.commandExpansionSkipped,
       descriptor,
       alreadyInjected: session !== undefined && injectedSessions.has(session),
       config: deps.config,
     },
   )
   if (decision.kind === 'skip') {
+    // MINOR-7：只有 ① 号（`synthetic-internal`，绝大多数 pre-step 的常态）不记日志。
+    // `command-expansion` **要记**——它意味着命令面与关键词面发生过一次交互，是本
+    // 文件里最该留下痕迹的一条。
     if (decision.reason !== 'synthetic-internal') {
       // ① 号是绝大多数 pre-step 的常态（无用户文本），不记日志。
       logSafely(deps, formatKeywordDetectorLine(`skipped: ${decision.reason}`))

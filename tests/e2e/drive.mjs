@@ -8533,6 +8533,73 @@ async function runAnalysisSelfTest(routes) {
       input.log.events.find((event) => eventText(event).includes('control one')).data.content[0].text
         = 'e2e keyword control one: run ulw, first echo the step marker then summarize'
     }, 'controlOnePromptHasNoKeyword'],
+    // ── CONTROL ⑤'s sensitivity. This is THE case that makes the control
+    // falsifiable: it re-creates the S-12 defect by pushing a keyword-source
+    // ultrawork carrier into the command's turn. Two things about it are
+    // deliberate.
+    //
+    // (a) The carrier lands INSIDE the command's window — `(last prose turn/end
+    //     = 9, the wrap-up = 14]`, at seq 13 — because that is where a real
+    //     self-trigger sits: injected at the pre-step, claimed at the step
+    //     boundary, the model answering after it. Placing it EARLIER (inside the
+    //     three prose turns) would redden `noKeywordInjectedUserMessage` and
+    //     never exercise check ① — which is why this scenario needs its own
+    //     defect rather than reusing the first case.
+    //     ⚠️ The window is closed at BOTH ends on purpose. The first version was
+    //     `seq >= wrap-up.seq` (open at the left), and that passes the very defect
+    //     it exists to catch: an injection lands BEFORE the wrap-up, so an
+    //     open-left window excludes it by construction. The window and the fixture's
+    //     free seq slot exist because of that one direction.
+    // (b) It ALSO reddens `noKeywordInjectedUserMessage` and
+    //     `noKeywordBodyInTheLog`, because those scan the whole log. A self-test
+    //     demanding ONLY check ① would be asserting something unachievable: a real
+    //     self-trigger IS a keyword carrier in the log, and the generic negatives
+    //     are right to catch it. The expectation is the check unique to control
+    //     ⑤; the coupling is acknowledged.
+    ['the command template self-triggered the keyword detector', (input) => {
+      const injected = fabricatedKeywordInjection(buildExpectedInjectedText('ultrawork'))
+      // seq 13: after the frame (12), before the wrap-up (14) — the slot the
+      // fixture deliberately leaves free.
+      input.log.events.splice(12, 0, {
+        ...fabricatedKeywordInjectedEvent(buildExpectedInjectedText('ultrawork'), injected.source, injected.id),
+        seq: 13,
+      })
+    }, 'commandTemplateDidNotSelfTriggerKeywordDetector'],
+    // …and the SAME self-trigger in the OTHER projection, which is what makes ④'s
+    // scan-surface change load-bearing. A self-trigger is injected at the pre-step,
+    // so on a real run it can exist ONLY as the `agent/inbox/spliced` insertion
+    // before the step boundary claims it — there is no user/message for it yet.
+    // Scanned through the old `keywordCarriers` (user/message events) this defect
+    // is INVISIBLE: the scenario would pass while the hook armed. Kept as its own
+    // case precisely so a future "simplification" back to one projection reds.
+    ['the command template self-triggered via the inbox-splice projection', (input) => {
+      const injected = fabricatedKeywordInjection(buildExpectedInjectedText('ultrawork'))
+      input.log.events.splice(12, 0, {
+        seq: 13,
+        type: 'agent/inbox/spliced',
+        data: { target: 'next-step', inserted: [injected] },
+      })
+    }, 'commandTemplateDidNotSelfTriggerKeywordDetector'],
+    // …and the command's own premise: a build where `/ulw-execute` was never
+    // registered has no frame to self-trigger, so control ⑤ would be green for
+    // free. Stripping the registration line must redden it.
+    ['the ulw-execute command was never registered', (input) => {
+      input.bootLog = [
+        FABRICATED_BOOT_LOG,
+        omoHooksMarkers.formatHookRegisteredLine(
+          keywordDetectorModule.KEYWORD_DETECTOR_ID, 'agent/pre-step',
+        ),
+      ].join('\n')
+    }, 'commandTemplateActuallyRanAndLanded'],
+    // …and the command that never RAN: no lifecycle pair, no frame. Same reason —
+    // ① alone would stay true, so this proves ② is not decorative.
+    ['the ulw-execute command produced no frame at all', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => event.type !== 'command/run'
+          && event.type !== 'command/done'
+          && !messageContentText(event.data ?? {}).includes(KEYWORD_CONTROL_COMMAND_FRAME_HEAD),
+      )
+    }, 'commandTemplateActuallyRanAndLanded'],
   ]
   // The hyperplan scenario was self-test-invisible until P4-T13 review: no GOOD
   // input, no defect cases, so `analyzeHyperplanKeywordInjected` was never run
@@ -10642,6 +10709,11 @@ function keywordNegativeControlsScript() {
       { type: 'text', text: KEYWORD_CONTROL_SUMMARY },
       { type: 'text', text: KEYWORD_CONTROL_SUMMARY },
       { type: 'text', text: KEYWORD_CONTROL_SUMMARY },
+      // TURN 4 — control ⑤. `/ulw-execute alpha` queues a followup carrying the
+      // command's rendered frame, and that frame's arrival is what S-12 has to
+      // keep the keyword hook away. The mock answers it like any other turn; the
+      // wrap-up text is the check's premise that the turn really ran.
+      { type: 'text', text: KEYWORD_CONTROL_COMMAND_SUMMARY },
     ],
   }
 }
@@ -11016,6 +11088,60 @@ export function analyzeKeywordNegativeControls(input, routes) {
     new Error(failureSentinel),
   ).split(failureSentinel)[0]
 
+  // ── control ⑤'s derived facts ────────────────────────────────────────────
+  // The REAL injected text (with its trailing separator), read off the shipped
+  // messages module rather than reassembled — MAJOR-1 in T11: the short form
+  // `buildInjectionMessage(body).content[0].text` never equals a real injection.
+  const expectedUltraworkText = buildExpectedInjectedText('ultrawork')
+  // The command's followup turn, located BY ITS OWN WRAP-UP TEXT (not by index —
+  // index addressing silently shifts when a turn is added, which is how two
+  // checks once vanished from this file). `turnIndex` -1 means "that turn never
+  // ran", which check ② then reports.
+  const commandSummaryEvent = events.find(
+    (event) => event.type === 'assistant/message'
+      && eventText(event).includes(KEYWORD_CONTROL_COMMAND_SUMMARY),
+  )
+  //
+  // ⚠️ **THE WINDOW IS (last prose turn/end, the command's own wrap-up] — and
+  // it must be CLOSED at both ends.** The first version was `seq >=
+  // commandSummaryEvent.seq`, i.e. from the wrap-up onwards, and that is wrong in
+  // the one direction that matters: a self-trigger is injected BEFORE the model
+  // answers, so its carrier sits strictly BETWEEN the command's frame and the
+  // wrap-up. An open-left window `seq >= wrapup.seq` therefore passes the exact
+  // defect it exists to catch. The right end closes it so a later turn's legal
+  // keyword cannot be attributed to this command.
+  const lastProseTurnEnd = turnEnds[turnEnds.length - 2] ?? turnEnds[turnEnds.length - 1]
+  const commandWindowEnd = commandSummaryEvent?.seq ?? Number.MAX_SAFE_INTEGER
+  // Both shapes carry `seq` — a history claim's own event seq, and a splice's
+  // enclosing event seq — so one predicate serves both projections.
+  const inCommandWindow = (entry) => entry.seq > (lastProseTurnEnd?.seq ?? 0) && entry.seq <= commandWindowEnd
+  // ⚠️ Scanned through `keywordInjectedCarriers` — the SAME reader T11's carriers
+  // use — not through the `keywordCarriers` user/message array above. The two
+  // differ in exactly the way that matters here: a self-trigger is injected at
+  // `agent/pre-step`, so on a real run it can be in the inbox-splice projection
+  // (claimed at the next step boundary) **before** the history claim lands, and
+  // scanning user messages alone would miss the window entirely. The reader
+  // returns `{message, seq, projection}` per hit, and both projections are the
+  // same injection — hence the filter, not a count.
+  const commandKeywordCarriers = keywordInjectedCarriers(events, expectedUltraworkText.slice(0, 240))
+    .filter((entry) => inCommandWindow(entry))
+  // ⚠️ With no command wrap-up in the log the window's right end is
+  // `Number.MAX_SAFE_INTEGER` and its left end is the LAST turn/end — so an
+  // implementation that lost the turn entirely still gets an empty
+  // `commandKeywordCarriers` and check ① is true for free. That is deliberate:
+  // check ② is the one that reports the missing turn (it requires
+  // `commandFollowupTurnRan`), so such a run is red, not silently green. The
+  // empty window must never be papered over with a `|| true`.
+  const commandTurnEvents = events.filter(inCommandWindow)
+  const commandTurnFrameCarrierCount = commandTurnEvents.filter((event) =>
+    event.type === 'user/message' && messageContentText(event.data).includes(KEYWORD_CONTROL_COMMAND_FRAME_HEAD)).length
+  const commandRuns = events.filter((event) => event.type === 'command/run')
+  const commandRun = commandRuns.find((event) => event.data?.name === ULW_EXECUTE_COMMAND_NAME)
+  const commandDones = events.filter((event) => event.type === 'command/done')
+  const commandRegisteredLine = omoCommandsMarkers.formatCommandRegisteredLine(ULW_EXECUTE_COMMAND_NAME)
+  const commandFrameHeadLanded = events.some((event) =>
+    event.type === 'user/message' && messageContentText(event.data).includes(KEYWORD_CONTROL_COMMAND_FRAME_HEAD))
+
   const checks = {
     pluginLoaded: pluginsLoaded(input.bootLog),
     // THE premise: the hook under test is actually wired to the event. Without
@@ -11032,12 +11158,24 @@ export function analyzeKeywordNegativeControls(input, routes) {
       userTexts.some((text) => text.includes('control one'))
       && userTexts.some((text) => text.includes('control two'))
       && userTexts.some((text) => text.includes('control three')),
-    // …and the mock answered each of the three turns.
-    mockSawThreeControlTurns: sisyphusRequests.length === 3
+    // …and the mock answered each of the FOUR turns (3 prose controls + the
+    // command's followup turn). ⚠️ The names still say "Three": they are checked
+    // by COUNT, and the count they assert moved to 4 when control ⑤ landed.
+    // Renaming them would be churn on a check name two gates and the evidence
+    // trail already print; the numeral in the name is now the only thing about
+    // them that is stale, and it is correct as "the three prose controls".
+    mockSawThreeControlTurns: sisyphusRequests.length === 4
       && events.filter((event) =>
         event.type === 'assistant/message' && eventText(event).includes(KEYWORD_CONTROL_SUMMARY)).length === 3,
-    threeTurnsCompleted: turnEnds.length === 3
+    threeTurnsCompleted: turnEnds.length === 4
       && turnEnds.every((end) => turnEndReasonKind(end) === 'completed'),
+    // …and the PREMISE of check ②: the command's followup turn is the one turn
+    // that is NOT one of the three prose controls, so it is counted on its own
+    // wrap-up text. Without it, `threeTurnsCompleted: 4` could be satisfied by a
+    // fourth prose turn and control ⑤ would be asserting about a turn that never
+    // happened.
+    commandFollowupTurnRan: events.some((event) =>
+      event.type === 'assistant/message' && eventText(event).includes(KEYWORD_CONTROL_COMMAND_SUMMARY)),
     // CONTROL ① — no keyword in the message at all.
     controlOnePromptHasNoKeyword: (() => {
       const text = userTexts.find((candidate) => candidate.includes('control one'))
@@ -11066,6 +11204,42 @@ export function analyzeKeywordNegativeControls(input, routes) {
     noForeignPluginCarriedKeywordText: foreignCarriersWithKeywordText.length === 0,
     noKeywordBannerOnTheWire: !bannerOnWire,
     noKeywordBodyInTheLog: !bodyInLog && !bannerInLog,
+    // ── CONTROL ⑤ — the `/ulw-execute` command's own frame must not self-trigger
+    // the keyword detector (the S-12 fix), and the command must really have run.
+    //
+    // Order matters and is the other way round from how it reads: ② is checked
+    // first because ①'s subject is that frame. A session where the command was
+    // NOT admitted has no frame to trigger anything, so ① would be true for free
+    // — the exact vacuous-negative shape this analyzer already guards against for
+    // the three prose controls (`allThreeControlPromptsDelivered`).
+    //
+    // ① is scoped to the KEYWORD hook's producer triple via `isKeywordInjectionSource`
+    // over `keywordInjectedCarriers`, NOT to "the string appears nowhere": this
+    // command's template talks about ultrawork and control ③'s prompt says
+    // `ulw-execute`, so a log-wide string-absence assertion would be false by
+    // construction. The needle is the hook's own built text.
+    commandTemplateDidNotSelfTriggerKeywordDetector: commandKeywordCarriers.length === 0,
+    // ② — the positive premise, four independent facts, because each alone has a
+    // real failure mode: the boot line proves the command is REGISTERED (a build
+    // without the omo-commands row would otherwise pass), the single `command/run`
+    // PAIR proves THIS line executed exactly once as a command (a miss submitted
+    // as a prompt would leave no pair), the success `command/done` proves the
+    // handler settled rather than erroring, and the frame head + the turn's own
+    // wrap-up prove the handler's output reached the model-facing session.
+    commandTemplateActuallyRanAndLanded:
+      (input.bootLog ?? '').includes(commandRegisteredLine)
+      && commandRuns.length === 1
+      && commandRun?.data?.name === ULW_EXECUTE_COMMAND_NAME
+      && commandDones.length === 1
+      && commandDones[0].data?.kind === 'success'
+      && commandFrameHeadLanded
+      // The frame reached the session as a user message — the claim ① is scoped to.
+      // ⚠️ `commandSummaryEvent !== undefined`, NOT the `commandFollowupTurnRan`
+      // check name: a later entry in this object literal cannot read an earlier
+      // one, and writing the check name there is a `ReferenceError` at analysis
+      // time (caught by the self-test, not by any reader).
+      && commandSummaryEvent !== undefined
+      && commandTurnFrameCarrierCount >= 1,
   }
   const failed = Object.entries(checks)
     .filter(([, value]) => value !== true)
@@ -11081,6 +11255,10 @@ export function analyzeKeywordNegativeControls(input, routes) {
       pluginSourceCount: userMessages.filter((event) => event.data?.source?.kind === 'plugin').length,
       keywordCarrierCount: keywordCarriers.length,
       foreignCarriersWithKeywordText: foreignCarriersWithKeywordText.length,
+      commandKeywordCarrierCount: commandKeywordCarriers.length,
+      commandFrameCarrierCount: commandTurnFrameCarrierCount,
+      commandRunCount: commandRuns.length,
+      commandDoneCount: commandDones.length,
     },
   }
 }
@@ -11273,6 +11451,12 @@ function fabricatedHyperplanGoodInput(routes) {
 function fabricatedKeywordNegativeGoodInput(routes) {
   const controlTwoText = KEYWORD_CONTROL_CODE_BLOCK_PROMPT
   const controlThreeText = KEYWORD_CONTROL_SLASH_PROMPT
+  // Control ⑤'s frame, rendered by the SHIPPED renderer — the fixture never
+  // hand-writes the thing under test (same discipline as T11's
+  // FABRICATED_ULW_COMMAND_INSTRUCTION, and the reason `noKeywordBodyInTheLog`
+  // stays true here: the frame carries `ulw` but not the injected BODY, which is
+  // what the hook would have produced).
+  const commandFrame = KEYWORD_CONTROL_COMMAND_TEMPLATE_FRAME
   return {
     // The generic FABRICATED_BOOT_LOG carries only the three LOADED_MARKERS, but
     // this scenario's whole premise is that the hook is ALIVE — so the fixture
@@ -11284,11 +11468,16 @@ function fabricatedKeywordNegativeGoodInput(routes) {
     // (plain, without the registration line) winning and silently undoing the
     // first. The symptom was a GOOD input failing its own premise check, which
     // is the only thing that made the shadowing visible.
+    //
+    // Control ⑤ adds the SECOND registration line, for the command itself — also
+    // built through `omoCommandsMarkers`. Two `bootLog` keys in one literal is
+    // exactly the shadowing bug above, so this is ONE key carrying both lines.
     bootLog: [
       FABRICATED_BOOT_LOG,
       omoHooksMarkers.formatHookRegisteredLine(
         keywordDetectorModule.KEYWORD_DETECTOR_ID, 'agent/pre-step',
       ),
+      omoCommandsMarkers.formatCommandRegisteredLine(ULW_EXECUTE_COMMAND_NAME),
     ].join('\n'),
     log: {
       header: { id: 'fabricated-keyword-negatives' },
@@ -11302,12 +11491,35 @@ function fabricatedKeywordNegativeGoodInput(routes) {
         { seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: controlThreeText }], source: { kind: 'user' } } },
         { seq: 8, type: 'assistant/message', data: { text: KEYWORD_CONTROL_SUMMARY } },
         { seq: 9, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+        // ── TURN 4, control ⑤: the command's own lifecycle pair, then the frame
+        // it rendered as a follow-up user message, then the wrap-up that proves
+        // the turn ran. The frame's source is `{ kind: 'user' }` — that is the
+        // real shape (a queued followup is a user message), and it is exactly why
+        // the S-12 `<command-instruction>` skip had to exist: the detector sees
+        // this message, keyword text and all.
+        { seq: 10, type: 'command/run', data: { commandId: 'cmd-fabricated-keyword-1', name: ULW_EXECUTE_COMMAND_NAME, args: ' alpha', source: { kind: 'user' } } },
+        { seq: 11, type: 'command/done', data: { commandId: 'cmd-fabricated-keyword-1', kind: 'success', text: 'queued' } },
+        fabricatedUserMessage(12, {
+          id: 'fabricated-keyword-command-frame',
+          role: 'user',
+          content: [{ type: 'text', text: commandFrame }],
+          source: { kind: 'user' },
+        }),
+        // ⚠️ seqs 13 is LEFT FREE on purpose: a real self-trigger is injected at
+        // the pre-step of this turn, so its carrier sits strictly BETWEEN the
+        // frame (12) and the model's answer (14). The self-test's defect case
+        // splices one in there — with the fixture numbered 12→13 there would be
+        // no integer slot, and the case's own event would have collided with the
+        // wrap-up it is supposed to precede.
+        { seq: 14, type: 'assistant/message', data: { text: KEYWORD_CONTROL_COMMAND_SUMMARY } },
+        { seq: 15, type: 'turn/end', data: { reason: { kind: 'completed' } } },
       ],
     },
     requests: [
       { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: KEYWORD_CONTROL_NONE_PROMPT }] }] } },
       { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: controlTwoText }] }] } },
       { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: controlThreeText }] }] } },
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: [{ type: 'text', text: commandFrame }] }] } },
     ],
     providersJson: fabricatedProvidersJson(routes),
   }
@@ -13188,6 +13400,51 @@ function ulwExecuteCommandDiskFacts(sandbox) {
  *     anywhere, the marker-less control delegation injected nothing, and the
  *     conductor itself never receives an injection (by design, not a bug).
  */
+/**
+ * S-12 的判据推导 —— **本函数已于 P4-T13 收敛进 keyword-negative-controls 的控制组⑤
+ * （`commandTemplateDidNotSelfTriggerKeywordDetector`），故此删除**。
+ *
+ * 留档的是**判据为什么长这样**，因为 T13 那条检查的形状全由它决定：
+ *
+ *   * 判据必须是 **source**，不能是文本。裁决-2 之前的版本按「文本等于 ultrawork
+ *     正文」判，而插桩（授权-1）显示 T11 的 fabricated **父**会话里有一条
+ *     `source: 'user'` 的消息、文本**就等于** ultrawork 正文 —— 而且这是**正确的**：
+ *     那正是 `/ulw-execute` 的命令模板本身（它必须告诉模型开启 ultrawork）。于是任何
+ *     基于文本的扫描，在一次**正确的** `/ulw-execute` 运行上必然命中。好输入变红不是
+ *     回归，是判据选错了轴。
+ *   * needle 用 `buildExpectedInjectedText('ultrawork')`（MAJOR-1：那是**真实**注入
+ *     文本，带尾置分隔符；第一版用的 `buildInjectionMessage(body).content[0].text`
+ *     不带尾置，永不等于任何真实注入，证据链自证）。
+ *   * 扫描面用 `keywordInjectedCarriers`（MAJOR-1：覆盖 user/message 的历史认领**与**
+ *     `agent/inbox/spliced` 两种投影；只扫 user/message 的 content 会漏掉 splice 形态），
+ *     再用 `isKeywordInjectionSource` 收一道，把 user 源的命令模板挡在外面。
+ *
+ * ⚠️ 即便判据全对，这条检查当初也**不适合放在 T11**：那个场景的 baseline 天然携带
+ * ultrawork **文本**，且实跑证明它的用户散文含 `ulw` 时关键词面**正确地**注入 ——
+ * 「全日志零载体」在那里不是一个可断言的性质。T13 之所以能断言，是因为它的散文轴由
+ * 脚本逐轮固定，并且把窗口收在「命令自己那一轮」。
+ */
+
+/**
+ * MAJOR-2：atlas 子会话里**同时**断言两件事——marker 在（说明 S-12 的过滤没顺手
+ * 滤掉 H-32 的路径注入），而 ultrawork 正文**不在**（说明命令扩展消息没让关键词面
+ * 武装）。两条合起来才是「两类注入互不混淆」；只断言 marker 在的话，这条就是
+ * `injectedContextReachedTheAtlasChild` 的严格子集，没有诊断力增量。
+ *
+ * ⚠️ 两次扫描走**同一个**投影覆盖，只是针不同：第一版在**一次** ultrawork 针扫描里
+ * 同时找两样东西，而 marker 文本根本不是那根针的匹配项，于是 `markerSeen` 恒 false，
+ * 良性输入直接变红。
+ */
+function atlasChildInjectionCarries(ctx) {
+  const events = ctx.events ?? []
+  const ultraworkNeedle = buildExpectedInjectedText('ultrawork').slice(0, 240)
+  const markerSeen = keywordInjectedCarriers(events, E2E_ULW_CONTEXT_MARKER).length > 0
+  // keyword 源的 ultrawork 载体才算（H-32 的 atlas 上下文是 omo-hooks 另一个插件源）。
+  const ultraworkSeen = keywordInjectedCarriers(events, ultraworkNeedle)
+    .some((entry) => isKeywordInjectionSource(entry.message))
+  return { markerSeen, ultraworkSeen }
+}
+
 export function analyzeUlwExecuteCommandActivatesAtlas(
   {
     log,
@@ -13329,6 +13586,42 @@ export function analyzeUlwExecuteCommandActivatesAtlas(
     // BOTH R-10 markers, verbatim from constants.ts — the cross-package contract
     // this scenario exists to observe. A one-sided template would silently
     // deactivate H-32 without any error anywhere.
+    // ── S-12 对照：命令模板消息不得触发 keyword-detector ───────────────────
+    //
+    // 两类注入必须分得开，否则一个回归会被另一个的通过掩盖：
+    //   * H-32 的 atlas 上下文注入（`E2E_ULW_CONTEXT_MARKER`，路径注入，进子会话）
+    //   * keyword-detector 的 ultrawork **绑定**注入（本轮用户散文命中关键词）
+    //
+    // L4 真模型冒烟发现的正是混淆的后果：`/ulw-execute alpha` 的 followup 模板
+    // 文本含 `ulw`，而它是一条 source.kind==='user' 的消息 → 被当成用户散文 →
+    // ultrawork 绑定注入自发触发（模型 turn 2 就喊 ULTRAWORK MODE ENABLED!）。
+    // 上游的检测面是原始输入行（slash 前导已剥离），因此永不自触发。
+    //
+    // **最终状态（本场景只有 atlas 侧对照）**：`atlasContextInjectionSurvivedS12`，
+    // 它断言的是**这个子会话里**两类注入可区分（marker 在 ∧ keyword 正文不在）。
+    // keyword 侧的对照**不在这里**，在 T13 `keyword-negative-controls` 控制组⑤
+    // （`commandTemplateDidNotSelfTriggerKeywordDetector` + 其前提
+    // `commandTemplateActuallyRanAndLanded`）。
+    //
+    // **为什么这条不放这里 —— 一行**：真实运行里**存在合法的 keyword 注入**，所以
+    // 「全日志零载体」不是本场景可断言的性质（它把合法注入和模板自触发混进同一个
+    // 计数）。实测依据：本场景 fabricated 基准干净（`--self-test` PASS），**真实
+    // sandbox 实跑却红于 `keywordDetectorDidNotSelfTrigger`**——本场景有一轮用户散文
+    // 本身含 `ulw`，检测器**正确地**注入了。T13 能断言是因为它的散文轴由脚本逐轮固定，
+    // 且窗口收在「命令自己那一轮」两端封闭。
+    //
+    // MAJOR-2：不是 `injectedContextReachedTheAtlasChild` 的严格子集——marker 在
+    // **且** keyword 源的 ultrawork 正文不在。两条合起来才是「H-32 的注入还在，而
+    // keyword-detector 没跟着武装」。
+    //
+    // ⚠️ 这一版曾经**丢失**：`atlasChildInjectionCarries` 的定义在文件里、检查却还是
+    // 更早那个 marker-only 版本，于是 helper 从不被调用——泄漏缺陷只让全局那条红、
+    // atlas 这条恒绿。症状被误读成「投影不对」，实际是**接线断了**：定义与检查必须
+    // 同批落地，与缺陷用例同一个道理。
+    atlasContextInjectionSurvivedS12: (() => {
+      const seen = atlasChildInjectionCarries(triggerChild ?? { events: [] })
+      return seen.markerSeen && seen.ultraworkSeen === false
+    })(),
     instructionCarriesBothR10Markers:
       typeof instructionText === 'string'
       && hasCommandTemplateMarker(instructionText),
@@ -13895,12 +14188,27 @@ const SCENARIOS = [
   },
   {
     name: 'keyword-negative-controls',
-    // Controls ①②③ in three turns of one session. All three are negatives, so
-    // none of them ever arms the one-shot — sharing the session is safe here and
-    // makes the claim stronger (one stray injection fails all three).
-    prompt: KEYWORD_CONTROL_NONE_PROMPT,
-    followupPrompts: [KEYWORD_CONTROL_CODE_BLOCK_PROMPT, KEYWORD_CONTROL_SLASH_PROMPT],
+    // Controls ①②③⑤ in FOUR turns of one session. All four are negatives, so none
+    // of them ever arms the one-shot — sharing the session is safe here and makes
+    // the claim stronger (one stray injection fails all of them).
+    //
+    // ⚠️ `actions`, not `prompt` + `followupPrompts`: control ⑤ is a COMMAND, and
+    // the command must arrive as a 4th turn AFTER the three prose turns. The
+    // driver's pre-P4-T9 shape (`def.commands`) would run every command line
+    // FIRST and then the prompts, which is the opposite order — and since this
+    // scenario's claim is about the command's frame arriving in a session that has
+    // already proven it does not arm, order is part of the claim. `actions` also
+    // hands the command `commandOpensTurn: true` so the driver counts and awaits
+    // the followup turn the command opens (see the actions branch).
     roles: ['sisyphus'],
+    actions: [
+      { kind: 'prompt', text: KEYWORD_CONTROL_NONE_PROMPT },
+      { kind: 'prompt', text: KEYWORD_CONTROL_CODE_BLOCK_PROMPT },
+      { kind: 'prompt', text: KEYWORD_CONTROL_SLASH_PROMPT },
+      // Control ⑤. This command queues a followup (its done text says the
+      // instruction takes effect in the next turn), so it opens a turn.
+      { kind: 'command', line: ULW_EXECUTE_COMMAND_LINE, commandOpensTurn: true },
+    ],
     script: keywordNegativeControlsScript,
     analyze: analyzeKeywordNegativeControls,
   },
@@ -14640,7 +14948,76 @@ function ulwExecuteCommandDefectCases(routes) {
     }
     input.log.events = input.log.events.map((event) => (matches(event) ? rewrite(event) : event))
   }
+  // ── S-12 的三条缺陷 ────────────────────────────────────────────────────
+  //
+  // ⚠️ 检查与其非空性证明必须**同批**落地：这两条检查（零 keyword 源载体 /
+  // atlas marker 在且 ultrawork 不在）在没有缺陷用例时是**空的**——把 needle 换成
+  // 一段胡话它们照样 PASS（实测：`SELF-TEST OK`）。所以下面三条不是「补测试」，
+  // 是这两条检查能被称作检查的前提。
+  //
+  // 载体一律用 `buildInjectionMessage(body)` 的 source——它**就是** keyword 插件的
+  // 三元组 `{kind:'plugin', plugin: KEYWORD_DETECTOR_PLUGIN, form:'instructions'}`，
+  // 所以必须能过 `isKeywordInjectionSource` 那一道轴。若改成 user 源，检查会一直绿
+  // 而缺陷「看起来也注入了」——那正是本次插桩查出的那个错误轴，只是换了个方向。
+  const keywordCarrier = (id) => {
+    // ⚠️ 载体文本必须是 `buildExpectedInjectedText('ultrawork')`——即**真实**注入文本
+    //（含尾置 `---\n` 分隔符）。用 `buildInjectionMessage(body).content[0].text` 是
+    // 上一版的残留：那是**不带**分隔符的裸正文，于是这根载体能同时匹配「带分隔符」
+    // 和「不带分隔符」两种 needle——把 needle 换成不带尾置分隔符的版本，缺陷照样
+    // 咬得住（实测 `SELF-TEST OK`），MAJOR-1 的那半个修正就没有被证明。
+    // source 则取自 `buildInjectionMessage`，它**就是** keyword 插件的三元组。
+    const text = buildExpectedInjectedText('ultrawork')
+    const injected = keywordDetectorModule.buildInjectionMessage(text)
+    return fabricatedKeywordInjectedEvent(text, injected.source, id)
+  }
+
+  // 按 descriptor label 找子会话，**不**用 `allLogs[0]`。
+  //
+  // ⚠️ 实测：泄漏缺陷写进 `allLogs[0]` 时，它落到的不是分析器读的那个子会话——
+  // 判据 `atlasContextInjectionSurvivedS12` 读的是 `childByLabel.get(TRIGGER_LABEL)`。
+  // 于是缺陷只让全局那条 `keywordDetectorDidNotSelfTrigger` 变红，atlas 那条仍绿，
+  // self-test 报 `must FAIL with atlasContextInjectionSurvivedS12, got FAIL
+  // (keywordDetectorDidNotSelfTrigger)`——**缺陷没有落在它该落的检查上**。
+  // 「往哪条子会话推」必须由 label 决定，不能由数组下标决定。
+  const childLogByLabel = (input, label) => {
+    const parentId = input.log?.header?.id
+    // 必须**复刻分析器自己的过滤**（origin === 'subagent' 且 parentSession ===
+    // parentId）。只按 label 找会命中另一条同 label 的子会话，于是缺陷写进去的
+    // 载体分析器根本读不到——症状是「全局那条红了、atlas 那条仍绿」。
+    return input.allLogs.find((child) =>
+      child.header?.origin === 'subagent'
+      && String(child.header?.parentSession) === String(parentId)
+      && (child.events ?? []).some(
+        (event) => event.type === 'subagent/descriptor' && event.data?.label === label,
+      ))
+  }
+
+
   return [
+    // ── S-12：命令扩展消息触发 keyword-detector 自注入（L4 实证的移植分歧）──
+    [
+      // MAJOR-2 的一半：S-12 的过滤顺手把 H-32 的 atlas 上下文注入也滤掉了。
+      'the S-12 filter swallowed H-32 atlas context injection too',
+      (input) => {
+        mapEvent(input, (event) => event.type === 'user/message'
+          && (event.data?.content ?? []).some(
+            (block) => typeof block?.text === 'string' && block.text.includes(E2E_ULW_CONTEXT_MARKER),
+          ), (event) => ({ ...event, data: { ...event.data, content: [{ type: 'text', text: '(redacted)' }] } }))
+      },
+      'atlasContextInjectionSurvivedS12',
+    ],
+    [
+      // MAJOR-2 的另一半：ultrawork 正文**混进**了 atlas 子会话。上面那条涂改
+      // marker 时 marker 半就红了，这条 marker 半仍绿——只靠前者抓不到「两类注入
+      // 被混淆」的方向，两条都要。
+      'the keyword-detector ultrawork body leaked into the atlas child injection',
+      (input) => {
+        const child = childLogByLabel(input, ULW_EXECUTE_TRIGGER_LABEL)
+        if (child === undefined) throw new Error('S-12 leak defect: no trigger child to pollute')
+        child.events.push(keywordCarrier('s12-leak'))
+      },
+      'atlasContextInjectionSurvivedS12',
+    ],
     // ── the boot registration line ──
     ['the boot log never announced the command', (input) => {
       input.bootLog = input.bootLog
@@ -15286,6 +15663,66 @@ const FABRICATED_COMMAND_ID = 'cmd-fabricated-1'
 // for both — which made the run↔done pairing unverifiable, since a single id
 // "matches" both dones and the check could not fail.
 const FABRICATED_COMMAND_ID_2 = 'cmd-fabricated-2'
+
+// ── P4-T13 control ⑤: the `/ulw-execute` command template must NOT self-trigger
+// the keyword detector (the S-12 fix) ─────────────────────────────────────────
+//
+// ⚠️ **PLACEMENT IS LOAD-BEARING (TDZ).** This block sits AFTER both
+// `FABRICATED_COMMAND_TIMESTAMP` (above) and the `omoCommandsRender` import
+// (:11885), because `KEYWORD_CONTROL_COMMAND_TEMPLATE_FRAME` is rendered at module
+// evaluation from both. Declaring it before either one throws
+// "Cannot access '…' before initialization" at IMPORT time — which reads as a
+// driver crash, not as a declaration-order bug.
+//
+// WHAT CONTROL ⑤ IS. S-12 fixed a real self-trigger: `/ulw-execute`'s template
+// body talks about ultrawork, so when the command's followup frame reached the
+// session the detector saw a keyword in a user-sourced message and injected the
+// whole mode protocol a second time. The fix skips messages carrying
+// `<command-instruction>`. This control is that fix's e2e face: the command
+// really ran (check ②) AND the keyword hook's producer triple never armed on its
+// frame (check ①).
+//
+// ⚠️ WHY ① IS SCOPED TO THE PLUGIN TRIPLE AND NOT TO "no ultrawork text anywhere".
+// A real run's log legitimately contains ultrawork prose — this very command's
+// template carries it, and the scenario's control ③ prompt says `ulw-execute`.
+// So "the string is absent" is false by construction; the claim is "the KEYWORD
+// HOOK never produced a message", which is `isKeywordInjectionSource` + the
+// needle `buildExpectedInjectedText('ultrawork')` over `keywordInjectedCarriers`.
+// `noKeywordBodyInTheLog` above already asserts the log-wide absence of the BODY
+// — control ⑤ adds the wire-level claim for the command's own turn, and both
+// together are what makes "no self-trigger" falsifiable rather than undefined.
+//
+// 📌 **WHY ① CANNOT BE ASSERTED IN EVERY SCENARIO, AND WHAT THAT MEANS.** The
+// colleague's marker-note for this control originally said "零载体" as a general
+// property of the driver, and that is only true in scenarios whose prose is FIXED
+// in the script. `ultrawork-keyword-injected` runs the reverse assertion in the
+// same real harness with a LEGAL keyword injection present: there, carriers must
+// be non-zero. So the two are not contradictions, and neither can be checked in
+// the other scenario. Lesson recorded: **a negative carrier assertion is only
+// meaningful where the scenario's own text pins the axis it scans** — L4
+// evidence: a real run does contain keyword injections, it is the scenario that
+// decides which ones are legal.
+const KEYWORD_CONTROL_COMMAND_SESSION_ID = 'session-fabricated-keyword-command-control'
+// The command frame rendered by the SHIPPED renderer — the same builder
+// `/ulw-execute` itself uses. The needle asserted in the REAL run is only its
+// stable head line (the frame's `# /ulw-execute Command` header), because a real
+// rendering substitutes the live session id and timestamp; matching the whole
+// fabricated string would make check ② fail on every real run for a reason that
+// has nothing to do with the claim.
+const KEYWORD_CONTROL_COMMAND_TEMPLATE_FRAME = renderUlwExecuteInstructionFn({
+  rawInput: ' keyword-control',
+  agent: { id: KEYWORD_CONTROL_COMMAND_SESSION_ID },
+  scope: 'builtin',
+  name: ULW_EXECUTE_COMMAND_NAME,
+  description: ULW_EXECUTE_DESCRIPTION,
+}, () => FABRICATED_COMMAND_TIMESTAMP)
+/** The stable, substitution-free landmark of that frame. */
+const KEYWORD_CONTROL_COMMAND_FRAME_HEAD =
+  KEYWORD_CONTROL_COMMAND_TEMPLATE_FRAME.split('\n').find((line) => line.startsWith('# /')) ?? ''
+
+/** The mock's wrap-up for the command's followup turn (the 4th turn). */
+const KEYWORD_CONTROL_COMMAND_SUMMARY =
+  'MOCK-KEYWORD-COMMAND-CONTROL-3f8b2e: the command frame ran, the keyword hook stayed quiet'
 
 function fabricatedCommandInstruction(spec, sessionId) {
   const argsLine = spec.args === '' ? null : `**User Arguments**: ${spec.args}`

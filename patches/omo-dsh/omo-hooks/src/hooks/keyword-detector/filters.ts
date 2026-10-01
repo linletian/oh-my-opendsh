@@ -199,6 +199,72 @@ function textOfMessage(message: unknown): string {
 }
 
 /**
+ * S-12 的判据锚（v4.19.4 逐字）。
+ *
+ * MINOR-6 更正：归属**不是** `formatCommandTemplate`。实测（反跑时改 `render.ts`
+ * 里的标记，一个都没命中才定位到）：外框是**命令条目自己的 `template` 字面量**的
+ * 首尾两行——上游 `src/features/builtin-commands/commands.ts:43` 与 `:45`
+ * （`template: \`<command-instruction>` … `</command-instruction>\``），本仓
+ * `omo-commands/src/templates/*.ts` 逐字保留（如 `handoff.ts:280`）。
+ * 归属写错会让下一个改外框的人去改 render.ts，而那里根本没有它。
+ */
+export const COMMAND_INSTRUCTION_MARKER = '<command-instruction>'
+
+/**
+ * S-12：**命令扩展消息不是用户散文**，因此不参与关键词检测。
+ *
+ * 判据锚 = 消息文本含 `<command-instruction>`。实测（L4 反跑）：这个外框**不在**
+ * `formatCommandTemplate` 里，而在**命令条目自身的 `template` 字面量**里——上游
+ * v4.19.4 `src/features/builtin-commands/commands.ts:43/45`（`template:`
+ * 字面量首尾行），本仓 `omo-commands/src/templates/*.ts` 逐字保留（如
+ * `handoff.ts:280`）。所以两侧的锚是同一个字符串——不是我们另选的约定。
+ *
+ * （第一版把来源写成 `formatCommandTemplate`，反跑时改 `render.ts` 里的标记根本没
+ * 命中任何东西，才定位到真实出处。锚的归属写错，会让下一个改外框的人改错文件。）
+ *
+ * **为什么必须跳**（L4 真模型冒烟实证，非推测）。用户在会话里敲 `/ulw-execute
+ * alpha`：命令准入后，omo-commands 把命令模板作为**一条 source.kind==='user' 的
+ * followup 消息**投进会话。`isUserAuthoredMessage` 放它过（它确实是 user 源），
+ * `isSyntheticOrInternalMessage` 也放它过（`role` 是 'user'，无 synthetic 标记）
+ * ——于是 `readCurrentUserText` 把**命令模板本身**当成本轮用户散文交给检测面，
+ * 模板里的 `ulw` token 命中 ultrawork 规则，模型在 turn 2 就喊
+ * `ULTRAWORK MODE ENABLED!`。`/hyperplan` 同形：模板含 `hyperplan` token。
+ *
+ * **与上游的对齐关系**（这是本条属于「语义移植」而不是「多了一个过滤」的理由）：
+ * 上游的检测面是**原始用户输入行**，且在匹配前先剥掉 slash 前导（`/ulw-execute
+ * alpha` → `alpha`），因此上游**永不自触发**。DSH 侧没有「原始行」可读——本 hook
+ * 看到的是会话消息流，而 followup 模板是以 user 身份混在里面的**扩展产物**。
+ * 所以对齐动作是同源的：上游剥的是**原始行上的 slash 前导**，我们剥的是**扩展
+ * 消息上的命令包裹**。两者都在做同一件事——把「派生产物」从「用户手写的散文」里
+ * 摘出去，让检测面只面对用户真的敲下去的散文。
+ *
+ * `/ulw-plan` 手势不受影响：它的载体是 `<skill_content>`（source.kind ===
+ * 'skill-invocation'），早已被 user 源过滤排除，与本条无关。
+ *
+ * ── 采纳-12：自触发的 token 来自**帧头**，不是模板正文 ──────────────────
+ * 触发自触发的那处 `ulw` 是命令帧头 `# /ulw-execute Command` 里的 `ulw`——
+ * `-` 是词边界，故 `\bulw\b` 命中。模板**正文**（start-work 那套文案）本身并无
+ * `ulw` token。这解释了为什么上游永不自触发：上游剥掉 slash 前导后，检测面根本
+ * 看不到这个帧头；而帧头是**本移植新造**的（v5 改名把 `start-work` 改成
+ * `ulw-execute` 才产生它）——这条差异是改名造出来的，不是上游文本本来就带的。
+ *
+ * ── 采纳-11：评估过并**否决**「位置锚」方案 ──────────────────────────
+ * 备选：要求标记是首个非空 token、或落在帧头区（`# /name Command` 之后），而不是
+ * 任意位置出现即算。好处是保留「散文里顺口提到该标记」的保真度。否决理由：
+ *   1. 它不比 `includes` **更**难被构造击败——把标记挪到正文、或让帧头改名，位置锚
+ *      同样失效；而它对前导空行、缩进、markdown 包裹都敏感，是一类**假阴性**来源。
+ *   2. 它把判据从「这是命令面的派生产物」漂移成「这条消息长得像命令」——前者是
+ *      语义，后者是形状。S-12 要对齐的是上游的**语义**（派生产物不参与检测），
+ *      形状匹配恰好丢掉这个对齐理由。
+ *   3. 误判面已被单测 ④ **钉成已知行为**而非潜伏缺陷；要收紧时那条测试会先红。
+ * 维持 `includes`，把位置锚的收益与代价记在此处，便于日后重估。
+ */
+export function isCommandExpansionMessage(text: string): boolean {
+  return text.includes(COMMAND_INSTRUCTION_MARKER)
+}
+
+
+/**
  * 取**本轮**的用户文本（上游 `extractPromptText(output.parts)` 的 DSH 形状）。
  *
  * 取**最后**一条用户消息而非第一条（ulw-execute 取第一条，因为委派子会话
@@ -209,19 +275,47 @@ function textOfMessage(message: unknown): string {
  * 合成/内部消息（插件注入、非 user role、`synthetic`/`internal` 标记）一律
  * 不参与——这就是上游 ① 号闸在 DSH 上的落点。
  */
-export function readCurrentUserText(payload: unknown): string | undefined {
-  if (!isObject(payload)) return undefined
+export interface CurrentUserText {
+  readonly text: string | undefined
+  /**
+   * MINOR-7：S-12 跳过了一条**命令扩展消息**——这与「没有用户文本」是两件不同的事。
+   * 合并成同一个 `synthetic-internal` 会让本文件「每个 reason 对应一行日志」的
+   * 纪律破掉：① 号（绝大多数 pre-step 的常态）刻意不记日志，于是 S-12 也会跟着
+   * 静默——而 S-12 恰恰是**最该被看见**的一条（它意味着命令面与关键词面发生了
+   * 一次交互）。故单列具名 reason，调用方据此打日志。
+   */
+  readonly commandExpansionSkipped: boolean
+}
+
+export function readCurrentUserTextDetail(payload: unknown): CurrentUserText {
+  if (!isObject(payload)) return { text: undefined, commandExpansionSkipped: false }
   const messages = payload.messages
-  if (!Array.isArray(messages)) return undefined
+  if (!Array.isArray(messages)) return { text: undefined, commandExpansionSkipped: false }
+  let skippedExpansion = false
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
     if (!isUserAuthoredMessage(message)) continue
     if (isSyntheticOrInternalMessage(message)) continue
     const text = textOfMessage(message)
     if (text.length === 0) continue
-    return text
+    // S-12：命令模板消息是命令面的**扩展产物**，不是用户散文。见上。
+    //
+    // `continue` 而不是 `return undefined`：本轮可能既有命令扩展消息又有更早的
+    // 真实用户散文，后者仍应被检测——判据是「这条不是散文」，不是「本轮不可判」。
+    //
+    // ⚠️ 与上游的一处**方向差**（采纳-12 记录）：上游的检测面只看本轮输入行，
+    // 从不向更早的消息回看；这里回看，因为 DSH 的检测面是整条消息流，天然含有
+    // 历史。后果是：一条命令扩展消息之后，用户在**更早**那一轮敲的 `ulw` 仍会
+    // 武装模式。该差异被 S-6（一次性守卫 `alreadyInjected`）夹住——同一注入不会
+    // 重复发生，所以回看不会累积成多份指令。维持现状并登记。
+    if (isCommandExpansionMessage(text)) { skippedExpansion = true; continue }
+    return { text, commandExpansionSkipped: skippedExpansion }
   }
-  return undefined
+  return { text: undefined, commandExpansionSkipped: skippedExpansion }
+}
+
+export function readCurrentUserText(payload: unknown): string | undefined {
+  return readCurrentUserTextDetail(payload).text
 }
 
 /** ① 闸：没有可判别的真实用户文本（合成/内部/空）→ 不注入。 */
