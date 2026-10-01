@@ -569,9 +569,19 @@ const { WARNING_MESSAGE: BASH_GUARD_ADVISORY_TEXT, BASH_FILE_READ_GUARD_PLUGIN }
 // and only the module that mints it can say what "verbatim" means. The unit
 // suite pins the literal against upstream; this scenario pins that the literal
 // really reaches the model.
+// P4-T9: the stop command's own result formatter, imported for the SAME
+// single-source reason as the needles below — the fabricated fixture must
+// produce the text the command really produces, or the self-test would be
+// testing a paraphrase of it. The assertions still carry hand-transcribed
+// needles, so a drift between the two surfaces as a RED self-test.
+const { formatStopContinuationResult } = await import(
+  new URL('../../patches/omo-dsh/omo-commands/src/commands/stop-continuation.ts', import.meta.url).href
+)
 const {
   CONTINUATION_DIRECTIVE: TODO_CONTINUATION_DIRECTIVE,
   TODO_CONTINUATION_ENFORCER_PLUGIN,
+  TODO_CONTINUATION_ENFORCER_ID,
+  formatCircuitBreakerLine: todoContinuationCircuitBreakerLine,
   buildContinuationText: buildTodoContinuationText,
   getIncompleteCount: getTodoIncompleteCount,
 } = await import(
@@ -8585,6 +8595,28 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P4-T9 stop-continuation self-test: the good input must PASS, then every
+  // named defect must FAIL on its own named check.
+  {
+    const goodStop = analyzeStopContinuationHaltsTodo(fabricatedStopContinuationInput(routes), routes)
+    if (goodStop.result !== 'PASS') {
+      problems.push(`fabricated GOOD stop-continuation-halts-todo must PASS, got FAIL on: ${goodStop.failed.join(', ')}`)
+    }
+    const stopCases = stopContinuationDefectCases()
+    if (stopCases.length === 0) {
+      problems.push('fabricated stop-continuation-halts-todo: the defect list is EMPTY — the banner would attest to nothing')
+    }
+    for (const [label, mutate, expectedCheck] of stopCases) {
+      const input = fabricatedStopContinuationInput(routes)
+      mutate(input)
+      const verdict = analyzeStopContinuationHaltsTodo(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated stop-continuation-halts-todo defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+    }
+    STOP_SELF_TEST_ATTESTATION.push(...stopCases.map(([label]) => ['stop-continuation-halts-todo', label]))
+  }
+
   // ── P4-T7 command-channel pilot self-test. Both specs run the SAME defect
   // list against their own fabricated good input: the channel properties under
   // test (admission, the lifecycle pair, the own-turn wiring, the admission-miss
@@ -8627,6 +8659,8 @@ async function runAnalysisSelfTest(routes) {
  * and the banner renders from this list, so the two cannot disagree.
  */
 const KEYWORD_SELF_TEST_ATTESTATION = []
+// P4-T9's own attestation, same shape: filled by the self-test loop, read by the banner.
+const STOP_SELF_TEST_ATTESTATION = []
 
 // ══ P3-T17 ulw-execute: the A-mode activation scenarios (TWO) ════════════════
 //
@@ -11577,6 +11611,620 @@ export function analyzeCommandChannelDriven({ log, requests, bootLog, commandRes
   }
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
 }
+// ── P4-T9: stop-continuation-halts-todo — the /stop-continuation e2e ─────────
+// ONE session, FOUR prompts and THREE command calls, in this exact order (hence
+// the interleaved `actions` path — `commands` always run first, and this
+// scenario must stop continuation BETWEEN two turns):
+//
+//   prompt 1 (正向对照): todo_write {1 completed + 1 in_progress} → 收尾 ⇒ H-03
+//     STEERS (the continuation really happens) ⇒ the steered step completes the
+//     list ⇒ summary ⇒ turn/end completed.
+//   prompt 2 (正向对照 + arm the cascade): background `bash sleep` +
+//     todo_write {1 completed + 1 DIFFERENT in_progress} → 收尾 ⇒ H-03 STEERS
+//     AGAIN, on a different list. A SECOND positive is what makes the post-stop
+//     silence meaningful: it shows the enforcer was still steering for this
+//     session immediately before the command, on the same mechanism.
+//   `/stop-continuation` ×2 → each settles `command/done` success; the first
+//     also cancels the background job (the cascade face) and reports that there
+//     is no goal yet. The idempotence claim is carried by TWO checks, because
+//     the job count alone cannot carry it: `secondStopIsIdempotent` on the text
+//     (whose job count is undetermined between the two legitimate shapes) and
+//     `stopIdempotenceLeavesExactlyOneStopPerCall` on the guard's durable lines
+//     (exactly one stop per call, no clear line).
+//   prompt 3 (the claim under test): todo_write {1 completed + 1 in_progress} →
+//     收尾 ⇒ NO steer. Non-vacuous by construction: the list at that boundary is
+//     non-empty AND incomplete, no goal exists yet, and the breaker never armed
+//     (both steers PROGRESSED, which resets it). `stopped` is the FIRST gate in
+//     `decideTodoContinuation`, so silence under exactly those conditions can
+//     only be `stopped-by-command` — by elimination, because the listener does
+//     not log its skip reason (a difference registered in the report).
+//   prompt 4 (the goal face): create_goal (ACTIVE) → 收尾. The goal driver then
+//     opens rounds of its OWN — measured, not assumed — so this phase's turn
+//     count is deliberately NOT pinned; what IS pinned is the third
+//     `/stop-continuation`: it must report `paused the active goal (kept,
+//     resumable)` and NO further goal round may open afterwards. Whether a round
+//     was IN FLIGHT when the pause landed is a measured RACE (one run aborted
+//     such a round, another had none in flight), so it is reported, not asserted.
+//     Keeping the goal in the LAST phase is what contains that nondeterminism:
+//     nothing above can be disturbed by it.
+//
+// Measured facts the assertions are derived from (never guessed):
+//   * the command's name/description and the registration line come from the
+//     shipped `omo-commands` package and its `boot-markers.ts`;
+//   * the done text is `formatStopContinuationResult(effects)` in
+//     omo-commands/src/commands/stop-continuation.ts; its head/tail are stable
+//     and the two middle clauses vary with the measured effects;
+//   * the guard's boot line and the job counts are the guard module's own;
+//   * the steer carriers / text are read through the SHIPPED listener's
+//     `buildContinuationText`, exactly as the P3-T9 pilot does.
+const STOP_CONTINUATION_COMMAND_LINE = '/stop-continuation'
+const STOP_CONTINUATION_TASK_SETTLED = 'e2e stop-continuation task: record the audit trail 0x51a7'
+const STOP_CONTINUATION_TASK_OPEN_1 = 'e2e stop-continuation task: summarize the guard state 0xc0de'
+const STOP_CONTINUATION_TASK_OPEN_2 = 'e2e stop-continuation task: fold the cascade report 0xf00d'
+const STOP_CONTINUATION_TASK_OPEN_3 = 'e2e stop-continuation task: confirm the silence is real 0xbeef'
+const STOP_CONTINUATION_PROMPT_1 =
+  'e2e stop-continuation-halts-todo: track the two audit tasks in the todo list and report when they are done'
+const STOP_CONTINUATION_PROMPT_2 =
+  'e2e stop-continuation-halts-todo (second control): start a background sleep, then track the next audit task'
+const STOP_CONTINUATION_PROMPT_3 =
+  'e2e stop-continuation-halts-todo (after the stop): track the follow-up audit task and wrap up'
+const STOP_CONTINUATION_PROMPT_4 =
+  'e2e stop-continuation-halts-todo (goal face): open a goal for the guard state and wrap up'
+const STOP_CONTINUATION_WRAPUP_1 =
+  'MOCK-STOP-WRAPUP-1-4b7d1e: the audit tasks are logged, wrapping up here'
+const STOP_CONTINUATION_SUMMARY_1 =
+  'MOCK-STOP-SUMMARY-1-9f4a2c: the tracked tasks are all complete now'
+const STOP_CONTINUATION_WRAPUP_2 =
+  'MOCK-STOP-ARM-WRAPUP-2-3c9a17: background job started, wrapping up'
+const STOP_CONTINUATION_SUMMARY_2 =
+  'MOCK-STOP-SUMMARY-2-5a7e63: the cascade task is complete now'
+const STOP_CONTINUATION_WRAPUP_3 =
+  'MOCK-STOP-AFTER-WRAPUP-3-6e2b84: follow-up task tracked, nothing more to continue'
+const STOP_CONTINUATION_GOAL_WRAPUP =
+  'MOCK-STOP-GOAL-WRAPUP-4-1d3f77: goal opened for the guard state'
+// The background job the guard must cancel. `sleep` (not a mock delay) is what
+// keeps the job in `running` when the command lands: a job that had already
+// finished would exercise the `already finished` clause instead, which is a
+// different claim.
+const STOP_CONTINUATION_BACKGROUND_COMMAND = 'sleep 45'
+const STOP_CONTINUATION_BACKGROUND_LABEL = 'e2e stop-continuation background sleeper'
+const STOP_CONTINUATION_GOAL_OBJECTIVE =
+  'e2e stop-continuation: keep the guard state observable until the session ends'
+// The guard's own boot line (stable prefix + id from the shipped module).
+const STOP_CONTINUATION_GUARD_LOG_PREFIX = '[omo-hooks] stop-continuation-guard: continuation stopped for session '
+// The guard's CLEAR line (same module, `clear()`'s own log). Only ever asserted
+// ABSENT — see stopIdempotenceLeavesExactlyOneStopPerCall.
+const STOP_CONTINUATION_GUARD_CLEARED_PREFIX = '[omo-hooks] stop-continuation-guard: guard cleared for session '
+// The done text's stable head/tail, from `formatStopContinuationResult`:
+//   'Continuation stopped for session <id>; <jobs clause>; <goal clause>; todo
+//    continuation is stopped for this session until it is cleared or the session
+//    ends.' — only the two middle clauses vary with the measured effects.
+const STOP_CONTINUATION_DONE_PREFIX = 'Continuation stopped for session '
+const STOP_CONTINUATION_DONE_TAIL =
+  'todo continuation is stopped for this session until it is cleared or the session ends.'
+const STOP_CONTINUATION_JOBS_CLAUSE = 'running/stopping job(s)'
+const STOP_CONTINUATION_GOAL_PAUSED_CLAUSE = 'paused the active goal (kept, resumable)'
+const STOP_CONTINUATION_NO_GOAL_CLAUSE = 'no goal on this session'
+// The circuit-breaker line. It must NOT be in the boot log: an armed breaker
+// would give the post-stop silence an innocent cause and collapse the
+// scenario's whole claim. The line is BUILT from the shipped listener
+// (`formatCircuitBreakerLine`) at each use site rather than pinned as a literal
+// here — a NEGATIVE assertion is the most rot-prone kind (a renamed line would
+// make it pass forever), so it reads the module's own formatter and its own cap.
+
+// The goal driver's own message shape, used to count rounds (not to assert a
+// fixed number of them — that is deliberately open).
+const GOAL_ROUND_SOURCE_KIND = 'goal'
+
+/**
+ * stop-continuation-halts-todo script. THIRTEEN steps on the ONE role the
+ * scenario drives (MOCKROLE=sisyphus): 4 for prompt 1, 5 for prompt 2 (one of
+ * them only reachable as the STEERED step), 2 for prompt 3, 2 for prompt 4.
+ * Every `todo_write` sends the COMPLETE list (the tool's contract: "The COMPLETE
+ * task list, replacing any previous list").
+ *
+ * `create_goal` is a REAL tool call, not a config: the goal face is one of the
+ * three mechanisms `/stop-continuation` stops, and the only honest way to reach
+ * it is a goal that exists before the command. `max_goal_rounds` is left unset
+ * on purpose — a bounded goal would run out of rounds and stop being `active`,
+ * and the command would then honestly report `not-active` instead of pausing
+ * anything, which is a different claim than the one under test.
+ */
+function stopContinuationScript() {
+  return {
+    sisyphus: [
+      // ── prompt 1: the continuation chain
+      {
+        type: 'tool_call',
+        name: 'todo_write',
+        arguments: {
+          todos: [
+            { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+            { content: STOP_CONTINUATION_TASK_OPEN_1, status: 'in_progress' },
+          ],
+        },
+      },
+      { type: 'text', text: STOP_CONTINUATION_WRAPUP_1 },
+      // only reachable if the boundary steered:
+      {
+        type: 'tool_call',
+        name: 'todo_write',
+        arguments: {
+          todos: [
+            { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+            { content: STOP_CONTINUATION_TASK_OPEN_1, status: 'completed' },
+          ],
+        },
+      },
+      { type: 'text', text: STOP_CONTINUATION_SUMMARY_1 },
+      // ── prompt 2: arm the cascade, then reach a boundary with a DIFFERENT
+      // incomplete task (so the second steer's text cannot be the first's).
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: STOP_CONTINUATION_BACKGROUND_COMMAND,
+          description: STOP_CONTINUATION_BACKGROUND_LABEL,
+          run_in_background: true,
+        },
+      },
+      {
+        type: 'tool_call',
+        name: 'todo_write',
+        arguments: {
+          todos: [
+            { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+            { content: STOP_CONTINUATION_TASK_OPEN_2, status: 'in_progress' },
+          ],
+        },
+      },
+      { type: 'text', text: STOP_CONTINUATION_WRAPUP_2 },
+      {
+        type: 'tool_call',
+        name: 'todo_write',
+        arguments: {
+          todos: [
+            { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+            { content: STOP_CONTINUATION_TASK_OPEN_2, status: 'completed' },
+          ],
+        },
+      },
+      { type: 'text', text: STOP_CONTINUATION_SUMMARY_2 },
+      // ── prompt 3: the post-stop boundary. Nothing else — if the guard had not
+      // stopped continuation, this wrap-up would be followed by a steer + a step.
+      {
+        type: 'tool_call',
+        name: 'todo_write',
+        arguments: {
+          todos: [
+            { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+            { content: STOP_CONTINUATION_TASK_OPEN_3, status: 'in_progress' },
+          ],
+        },
+      },
+      { type: 'text', text: STOP_CONTINUATION_WRAPUP_3 },
+      // ── prompt 4: the goal face (the third stop pauses it).
+      {
+        type: 'tool_call',
+        name: 'create_goal',
+        arguments: { objective: STOP_CONTINUATION_GOAL_OBJECTIVE },
+      },
+      { type: 'text', text: STOP_CONTINUATION_GOAL_WRAPUP },
+    ],
+  }
+}
+
+/**
+ * The scenario's settle hook: after the third stop paused the goal, the goal
+ * driver must go quiet. This waits a bounded window for that silence and
+ * records whether a round still opened — the observation is REPORTED here and
+ * asserted in the analyzer (`noGoalRoundOpenedAfterThePause`), rather than being
+ * smuggled in as a sleep. A timeout is not fatal to the driver: the analysis
+ * still runs and reports the honest FAIL.
+ */
+// The driver calls every settle hook positionally as `settle(boot, sandbox,
+// sessionId)`, so the first parameter cannot simply be dropped. It is bound to
+// `_boot` BY NAME: this hook reads only the durable session JSONL (re-read on
+// every poll, because that file is written behind) and the boot log is frozen
+// later by `stopDsh`. An unused parameter named `boot` would read as "used".
+async function awaitGoalSilenceAfterStop(_boot, sandbox, sessionId, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs
+  // The window is run IN FULL unless a round actually appears. An early exit on
+  // "the goal went quiet" would be a claim about a log that may not have been
+  // flushed yet: the session JSONL is written behind, so at the first poll the
+  // three `command/done` events this scenario waits on may not all be on disk,
+  // and a "silence" measured against a not-yet-present boundary is vacuous.
+  let roundsAfterPause = -1
+  while (Date.now() < deadline) {
+    roundsAfterPause = countGoalRoundsAfterLastStop(sandbox, sessionId)
+    if (roundsAfterPause > 0) return roundsAfterPause
+    await sleep(250)
+  }
+  return countGoalRoundsAfterLastStop(sandbox, sessionId)
+}
+
+/**
+ * Goal rounds (`source.kind === 'goal'`) that landed after the last
+ * `command/done`, or `-1` while the log does not yet contain ALL THREE stops —
+ * the "not ready" signal the wait loop above treats as "keep waiting", so a
+ * half-flushed log can never be read as silence.
+ */
+function countGoalRoundsAfterLastStop(sandbox, sessionId) {
+  const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+  const log = logs.find((candidate) => String(candidate.header.id) === String(sessionId))
+  const events = log?.events ?? []
+  const dones = events.filter((event) => event.type === 'command/done')
+  if (dones.length < 3) return -1
+  const lastDoneSeq = dones[dones.length - 1].seq
+  return events.filter(
+    (event) => event.seq > lastDoneSeq
+      && event.type === 'user/message'
+      && event.data?.source?.kind === GOAL_ROUND_SOURCE_KIND,
+  ).length
+}
+
+/**
+ * The stop-continuation-halts-todo assertions (P4-T9). ONE session, FOUR
+ * prompts and THREE `/stop-continuation` calls; the claim is BIDIRECTIONAL and
+ * both halves are asserted from durable evidence:
+ *
+ *   before the stop — H-03 really steers, TWICE, on two different lists: both
+ *     durable carriers exist per boundary, carry the producer triple
+ *     {kind:'plugin', plugin:'omo-hooks', form:'instructions'} and the listener's
+ *     OWN text for the list that boundary saw, and each steer rides the request
+ *     right after its 收尾 step (the turn did not end).
+ *   the command — admitted every time, `command/run`/`command/done` paired per
+ *     call, `done.kind` success, each done naming THIS session and ending with
+ *     the "stopped … until it is cleared or the session ends" tail. The first
+ *     reports the cancelled background job; the third reports the paused goal.
+ *   after the stop — no steer, and NOT vacuously so: the list at that boundary
+ *     is non-empty and incomplete, no goal exists yet, and the breaker never
+ *     armed. `stopped` is the first gate in `decideTodoContinuation`, so silence
+ *     under exactly those conditions can only be `stopped-by-command`.
+ *
+ * `routes` carries the shared provider + route checks; `bootLog` carries the
+ * registration line, the guard's own lines and the breaker line.
+ */
+export function analyzeStopContinuationHaltsTodo(
+  { log, requests, providersJson, bootLog, commandResults },
+  routes,
+) {
+  const events = log?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const sessionId = log?.header?.id
+
+  // ── the three command calls, in log order ───────────────────────────────
+  const commandRunEvents = events.filter((event) => event.type === 'command/run')
+  const commandDoneEvents = events.filter((event) => event.type === 'command/done')
+  const doneTexts = commandDoneEvents.map((event) => event.data?.text ?? '')
+  const firstDoneText = doneTexts[0] ?? ''
+  const secondDoneText = doneTexts[1] ?? ''
+  const thirdDoneText = doneTexts[2] ?? ''
+  // Every run/done pair is matched by commandId, not by position.
+  const doneFor = (run) => run === undefined
+    ? undefined
+    : commandDoneEvents.find((event) => event.data?.commandId === run.data?.commandId)
+
+  // ── scoping: everything before the FIRST command/done is pre-stop ───────
+  const firstDone = commandDoneEvents[0]
+  const stopBoundarySeq = firstDone?.seq ?? Number.POSITIVE_INFINITY
+  const preStopEvents = events.filter((event) => event.seq < stopBoundarySeq)
+  const postStopEvents = events.filter((event) => event.seq > stopBoundarySeq)
+
+  // ── the two pre-stop continuations (正向对照) ────────────────────────────
+  const preSteerCarriers = pluginInjectedMessageCarriers(preStopEvents, TODO_CONTINUATION_DIRECTIVE)
+  const preSteerClaims = preSteerCarriers.userMessages
+  const preSteerSplices = preSteerCarriers.nextStepInsertions
+  // The text each boundary must have minted: the listener's own assembly for the
+  // list in force at THAT boundary (the most recent todo/write before the
+  // carrier), so the two boundaries are checked against their own lists instead
+  // of against one snapshot.
+  const expectedTextBefore = (event) => {
+    const priorSnapshots = todoWriteSnapshots(
+      preStopEvents.filter((candidate) => candidate.seq < event.seq),
+    )
+    return buildTodoContinuationText(todoSnapshotOf(priorSnapshots[priorSnapshots.length - 1]))
+  }
+  const preSteerWrapups = [STOP_CONTINUATION_WRAPUP_1, STOP_CONTINUATION_WRAPUP_2].map((text) =>
+    preStopEvents.find((event) => event.type === 'assistant/message' && eventText(event).includes(text)))
+  // The steer rides the request immediately after its boundary's 收尾 step. The
+  // expected index is DERIVED from the event order — count the model steps
+  // between the turn's start and the steer's splice — rather than typed as 2 and
+  // 7, so editing the script's step list cannot leave a stale expectation behind
+  // that only a re-run would expose.
+  const preSteerRequestIndices = preSteerClaims.map((claim) =>
+    sisyphusRequests.findIndex((request) => requestMessagesContain(request, messageContentText(claim.data))))
+  const expectedSteerRequestIndex = (splice) => {
+    // One model request per model STEP, and every step begins with an assistant
+    // message — so the request index a splice rides is exactly the number of
+    // assistant messages that precede it, counted across the WHOLE log (the
+    // index is absolute: turn 2's steered step is request #7, not step #3 of its
+    // turn). Deriving it from the event stream is what keeps it from going stale
+    // when the script's step list changes.
+    return preStopEvents.filter(
+      (event) => event.type === 'assistant/message' && event.seq < splice.seq,
+    ).length
+  }
+  const expectedSteerRequestIndices = preSteerSplices.map(({ event }) => expectedSteerRequestIndex(event))
+
+  // ── the post-stop boundary (the claim under test) ───────────────────────
+  // The boundary's list is the LAST `todo/write` BEFORE the wrap-up — the one
+  // the stopping boundary actually reads. Taking the FIRST after the stop was a
+  // weaker claim than it looked: any later write would have satisfied it while
+  // describing a list the boundary never saw. The single-write guard below keeps
+  // that honest, so a runtime that wrote a second list here cannot pass by
+  // having the LAST one happen to be incomplete.
+  const wrapup3Anchor = postStopEvents.find(
+    (event) => event.type === 'assistant/message' && eventText(event).includes(STOP_CONTINUATION_WRAPUP_3),
+  )
+  const postStopWritesBeforeWrapup = todoWriteSnapshots(
+    wrapup3Anchor === undefined
+      ? postStopEvents
+      : postStopEvents.filter((event) => event.seq < wrapup3Anchor.seq),
+  )
+  const postStopBoundarySnapshot = postStopWritesBeforeWrapup[postStopWritesBeforeWrapup.length - 1]
+  const postStopTodos = todoSnapshotOf(postStopBoundarySnapshot)
+  const postSteerCarriers = pluginInjectedMessageCarriers(postStopEvents, TODO_CONTINUATION_DIRECTIVE)
+  const postSteerCount = postSteerCarriers.userMessages.length
+    + postSteerCarriers.nextStepInsertions.length
+  const wrapup3 = wrapup3Anchor
+  // The turn that wrap-up closes: the FIRST turn/end after it (not the last — the
+  // goal rounds open turns of their own later in the log).
+  const postStopTurnEnd = wrapup3 === undefined
+    ? undefined
+    : events.find((event) => event.type === 'turn/end' && event.seq > wrapup3.seq)
+  // Nothing step-shaping may sit between wrap-up 3 and that turn/end: an
+  // injected message, an extra model step, a todo write, a request header.
+  const STEP_SHAPING_EVENTS = new Set([
+    'user/message',
+    'assistant/message',
+    'tool/call',
+    'tool/result',
+    'todo/write',
+    'request/header',
+    'agent/inbox/spliced',
+  ])
+  const postStopTail = wrapup3 === undefined || postStopTurnEnd === undefined
+    ? []
+    : postStopEvents.filter((event) => event.seq > wrapup3.seq && event.seq < postStopTurnEnd.seq)
+
+  // ── the goal face (the third stop) ──────────────────────────────────────
+  const toolCalls = events.filter((event) => event.type === 'tool/call')
+  const createGoalCall = toolCalls.find((event) => event.data?.name === 'create_goal')
+  const backgroundCall = toolCalls.find((event) => {
+    if (event.data?.name !== 'bash') return false
+    const args = toolCallArguments(event)
+    return args?.command === STOP_CONTINUATION_BACKGROUND_COMMAND
+  })
+  const thirdDone = commandDoneEvents[2]
+  // Goal rounds: the driver's own messages. Counted, not pinned — the pause is
+  // what must stop them.
+  const goalRoundMessages = events.filter(
+    (event) => event.type === 'user/message' && event.data?.source?.kind === GOAL_ROUND_SOURCE_KIND,
+  )
+  const goalRoundsAfterThirdDone = thirdDone === undefined
+    ? 0
+    : goalRoundMessages.filter((event) => event.seq > thirdDone.seq).length
+  // Whether a round happened to be IN FLIGHT when the pause landed. MEASURED as
+  // a race, not a contract: one run aborted such a round (turn/end `aborted`,
+  // reason `user`), another had none in flight and the pause was silent. So this
+  // is REPORTED in the bonus and never asserted — asserting it would make the
+  // scenario fail on timing, which is exactly the kind of flake a scenario that
+  // claims a mechanism must not have.
+  const abortedTurnsAfterGoal = createGoalCall === undefined
+    ? []
+    : events.filter((event) => event.type === 'turn/end'
+      && event.seq > createGoalCall.seq
+      && turnEndReasonKind(event) === 'aborted')
+      .map((event) => ({
+        seq: event.seq,
+        turn: event.data?.turn,
+        kind: turnEndReasonKind(event),
+        // The abort carries its own NESTED reason on this runtime; report it as
+        // data instead of describing it in prose, so a reader can tell 'aborted
+        // by a user prompt' from 'aborted by the pause' without trusting a
+        // comment.
+        cause: event.data?.reason?.reason?.kind ?? null,
+      }))
+
+  // The guard's own lines, read from the boot log with the session id bound in.
+  const guardStopLines = bootLog
+    .split('\n')
+    .filter((line) => line.startsWith(STOP_CONTINUATION_GUARD_LOG_PREFIX) && line.includes(String(sessionId)))
+
+  const doneIsWellFormed = (text) =>
+    text.startsWith(STOP_CONTINUATION_DONE_PREFIX)
+    && text.includes(String(sessionId))
+    && text.endsWith(STOP_CONTINUATION_DONE_TAIL)
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+    // Without this line the command would fall back to the prompt path and the
+    // scenario would "pass" on a build that ships no command at all (the T7
+    // head-hole, for this command).
+    stopContinuationRegisteredInBootLog:
+      bootLog.includes('[omo-commands] command stop-continuation registered'),
+    routeHeaderMatchesSisyphus: sisyphusRequests.length > 0
+      && sisyphusRequests.every((request) => request.body?.model === routes.sisyphus.model),
+    // ── BEFORE the stop: the continuation really happens, on both boundaries.
+    preStopContinuationHappenedTwice:
+      preSteerClaims.length === 2 && preSteerSplices.length === 2,
+    preStopContinuationCarrierSourceIsOmoHooks:
+      preSteerClaims.length === 2
+      && preSteerClaims.every((event) => isTodoContinuationSource(event.data))
+      && preSteerSplices.every(({ message }) => isTodoContinuationSource(message)),
+    preStopContinuationTextIsVerbatimListenerText:
+      preSteerClaims.length === 2
+      && preSteerClaims.every((event) => messageContentText(event.data) === expectedTextBefore(event))
+      && preSteerSplices.every(({ message, event }) =>
+        messageContentText(message) === expectedTextBefore(event)),
+    // One carrier pair per boundary, and the two boundaries' texts DIFFER (the
+    // second steered a different list — a check that would pass on a runtime
+    // that replayed one steer forever).
+    preStopContinuationInjectedExactlyOncePerBoundary:
+      preSteerClaims.length === 2
+      && preSteerSplices.length === 2
+      && preSteerClaims.every((event, index) => event.data?.id === preSteerSplices[index]?.message?.id)
+      && messageContentText(preSteerClaims[0]?.data) !== messageContentText(preSteerClaims[1]?.data),
+    preStopContinuationReachedNextModelRequest:
+      preSteerRequestIndices.length === 2
+      && expectedSteerRequestIndices.length === 2
+      && preSteerRequestIndices.every((index, position) =>
+        index === expectedSteerRequestIndices[position] && index > 0)
+      && preSteerWrapups.every((event) => event !== undefined)
+      && preSteerSplices.every(({ event }, index) =>
+        preSteerWrapups[index] !== undefined && preSteerWrapups[index].seq < event.seq),
+    // ── the command: admitted, logged as pairs, settled success.
+    stopCommandAdmittedThreeTimes: commandResults.length === 3
+      && commandResults.every((entry) => entry.matched === true
+        && entry.admission?.result?.kind === 'success'),
+    stopCommandRunsRecordedWithArgsAndUserSource:
+      commandRunEvents.length === 3
+      && commandRunEvents.every((event) => event.data?.name === 'stop-continuation'
+        // The line carries NO trailing text, so `parseCommand`'s unnormalized
+        // `rawInput` is the EMPTY string — a non-empty value would mean the
+        // driver sent arguments the user never typed.
+        && event.data.args === ''
+        && event.data.source?.kind === 'user')
+      && new Set(commandRunEvents.map((event) => event.data?.commandId)).size === 3,
+    stopCommandDonesPairedAndSucceeded:
+      commandRunEvents.every((run) => {
+        const done = doneFor(run)
+        return done?.data?.kind === 'success' && run.seq < done.seq
+      })
+      && commandDoneEvents.length === 3,
+    stopCommandDoneNamesThisSession: doneTexts.length === 3 && doneTexts.every(doneIsWellFormed),
+    // 幂等 in EFFECT, not byte-for-byte: the two first stops report the same
+    // head, the same session and the same tail, and both succeed — while the
+    // job counts legitimately differ (the second stop cancels nothing because
+    // the first already did). Pinning equality of the whole string would pin a
+    // lie.
+    // 幂等 in the DONE TEXT: the second call must still report this session as
+    // stopped, in one of the two job shapes a correct runtime can produce —
+    // `cancelled 0` (the first call already cancelled it) or `cancelled 1`
+    // (re-requested on a job still in `stopping`). The job COUNT is deliberately
+    // not pinned: `stopping` is NOT terminal here (the jobs service's terminal
+    // set is completed|killed|failed), so a kill issued while the first
+    // cancellation is still settling returns `requested` again and is counted
+    // afresh. Two back-to-back RPCs leave the job no time to settle, so both
+    // shapes are real — pinning one would be a flaky assertion about a race.
+    // The substantive idempotence claim is
+    // `stopIdempotenceLeavesExactlyOneStopPerCall`, on the guard's durable side,
+    // which has no such timing.
+    secondStopIsIdempotent: (secondDoneText.includes('cancelled 0 ')
+      || secondDoneText.includes('cancelled 1 '))
+      && doneIsWellFormed(secondDoneText),
+    // ── the guard's own durable lines (the writer side really ran, per call).
+    stopGuardLoggedForThisSession: guardStopLines.length === 3
+      && guardStopLines.every((line) => line.includes('jobs service present')),
+    // 幂等 ON THE GUARD SIDE — the carrier that has no `stopping` race: one stop
+    // line per call (three calls, three lines), and NO `guard cleared` line
+    // anywhere. "Naming THIS session" is not re-checked here: that binding
+    // already happened in the `guardStopLines` filter above, so a line for
+    // another session is not in the array at all and would fail the length.
+    // The absence of a clear is the substantive part: a stop that un-stopped
+    // itself (or cleared the session as a side effect) would leave exactly that
+    // line, and the post-stop silence would then be a fluke rather than the
+    // guard holding.
+    stopIdempotenceLeavesExactlyOneStopPerCall: guardStopLines.length === 3
+      && !bootLog.includes(STOP_CONTINUATION_GUARD_CLEARED_PREFIX),
+    // ── the cascade face: the background job really started (its call is in the
+    // log) and the first stop reports cancelling it.
+    backgroundJobReallyStarted: backgroundCall !== undefined,
+    firstStopCancelledTheBackgroundJob:
+      /^cancelled [1-9]\d* /.test(firstDoneText.split('; ')[1] ?? ''),
+    firstStopReportedNoGoalYet: firstDoneText.includes(STOP_CONTINUATION_NO_GOAL_CLAUSE),
+    // ── AFTER the stop: no steer, and NOT vacuously so.
+    postStopTodoBoundaryIsIncomplete: postStopBoundarySnapshot !== undefined
+      && postStopWritesBeforeWrapup.length === 1
+      && postStopTodos.length > 0
+      && incompleteTodoCount(postStopTodos) > 0,
+    // The `goal-owns-continuation` gate is ruled out by ORDER, read from the log
+    // rather than assumed: the goal is created in prompt 4, strictly AFTER the
+    // wrap-up of the boundary under test. Without this the post-stop silence
+    // could be that gate firing — the scenario would go green on a runtime whose
+    // stop flag was never read.
+    noGoalAtPostStopBoundary: createGoalCall !== undefined
+      && wrapup3 !== undefined
+      && createGoalCall.seq > wrapup3.seq,
+    postStopNoContinuationCarrier: postSteerCount === 0,
+    postStopTurnEndedWithoutExtraStep: wrapup3 !== undefined
+      && postStopTurnEnd !== undefined
+      && postStopTail.every((event) => !STEP_SHAPING_EVENTS.has(event.type)),
+    postStopTurnCompleted: postStopTurnEnd !== undefined
+      && turnEndReasonKind(postStopTurnEnd) === 'completed',
+    // ── the goal face: created for real, paused for real, and quiet afterwards.
+    goalReallyCreatedBeforeTheThirdStop: createGoalCall !== undefined
+      && thirdDone !== undefined
+      && createGoalCall.seq < thirdDone.seq,
+    thirdStopPausedTheActiveGoal: thirdDoneText.includes(STOP_CONTINUATION_GOAL_PAUSED_CLAUSE)
+      && doneIsWellFormed(thirdDoneText),
+    // The pause disarms the round driver: NO goal round may open after it. Every
+    // round that exists landed BEFORE the third stop — that is the claim, and it
+    // is the part that is stable across runs (the in-flight-round abort above is
+    // reported, not asserted).
+    noGoalRoundOpenedAfterThePause: goalRoundsAfterThirdDone === 0
+      && goalRoundMessages.length > 0,
+    // ── the breaker never armed, so the post-stop silence has no innocent cause.
+    circuitBreakerNeverArmed: !bootLog.includes(todoContinuationCircuitBreakerLine(5)),
+    // ── request accounting: COUNT and SEAT only. The name says so, because the
+    // check deliberately does not pin the exact total — prompt 4's active goal
+    // opens rounds of its own (measured: 4 per run), and how many open before
+    // the third stop lands is timing, not a contract. What IS pinned is that the
+    // thirteen scripted steps all happened (>= 13) and every one of them was
+    // served by this seat; the per-step ordering is asserted by the steer-index
+    // derivation instead, which reads the event stream.
+    mockSawThirteenScriptedStepsOnThisSeat: sisyphusRequests.length >= 13
+      && sisyphusRequests.every((request) => request.body?.model === routes.sisyphus.model),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    sessionId: sessionId === undefined ? null : sessionId,
+    commandLine: STOP_CONTINUATION_COMMAND_LINE,
+    admissions: commandResults.map((entry) => ({
+      line: entry.line,
+      matched: entry.matched,
+      result: entry.admission?.result ?? null,
+    })),
+    commandRuns: commandRunEvents.map((event) => ({ seq: event.seq, data: event.data })),
+    commandDones: commandDoneEvents.map((event) => ({ seq: event.seq, data: event.data })),
+    stopBoundarySeq: firstDone?.seq ?? null,
+    preStopSteerCarriers: preSteerClaims.map((event) => ({
+      seq: event.seq,
+      source: event.data?.source ?? null,
+      text: messageContentText(event.data),
+    })),
+    preSteerRequestIndices,
+    postStopSteerCount: postSteerCount,
+    postStopBoundaryTodos: postStopTodos,
+    postStopTailEventTypes: postStopTail.map((event) => event.type),
+    guardStopLines,
+    guardClearedLines: bootLog
+      .split('\n')
+      .filter((line) => line.startsWith(STOP_CONTINUATION_GUARD_CLEARED_PREFIX)),
+    circuitBreakerLineSeen: bootLog.includes(todoContinuationCircuitBreakerLine(5)),
+    goalRoundCount: goalRoundMessages.length,
+    goalRoundsAfterThirdDone,
+    abortedTurnsAfterGoal: abortedTurnsAfterGoal,
+    mockRequestCount: sisyphusRequests.length,
+    mockRequestModels: sisyphusRequests.map((request) => request.body?.model),
+    backgroundJobStarted: backgroundCall !== undefined,
+    goalCreated: createGoalCall !== undefined,
+    turnEndReasons: events
+      .filter((event) => event.type === 'turn/end')
+      .map((event) => ({
+        seq: event.seq,
+        turn: event.data?.turn,
+        kind: turnEndReasonKind(event),
+      })),
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', checks, failed, bonus }
+}
+
 const SCENARIOS = [
   {
     name: 'hello',
@@ -12050,6 +12698,32 @@ const SCENARIOS = [
     script: () => commandChannelScript(COMMAND_CHANNEL_SPECS['remove-ai-slops']),
     analyze: (input, routes) => analyzeCommandChannelDriven(input, COMMAND_CHANNEL_SPECS['remove-ai-slops'], routes),
   },
+  {
+    // P4-T9 — the /stop-continuation e2e. The ONLY scenario that drives the
+    // interleaved `actions` path: it must stop continuation BETWEEN two turns,
+    // which `commands`-then-`prompt` cannot express.
+    name: 'stop-continuation-halts-todo',
+    roles: ['sisyphus'],
+    actions: [
+      { kind: 'prompt', text: STOP_CONTINUATION_PROMPT_1 },
+      { kind: 'prompt', text: STOP_CONTINUATION_PROMPT_2 },
+      { kind: 'command', line: STOP_CONTINUATION_COMMAND_LINE },
+      // 幂等: the second call must settle success again and change nothing. The
+      // job-count clause legitimately differs between the two texts (the second
+      // cancels nothing because the first already did) — see secondStopIsIdempotent.
+      { kind: 'command', line: STOP_CONTINUATION_COMMAND_LINE },
+      { kind: 'prompt', text: STOP_CONTINUATION_PROMPT_3 },
+      // The goal face LAST: an active goal opens rounds of its own, and keeping
+      // that nondeterminism after every other claim keeps it from disturbing them.
+      { kind: 'prompt', text: STOP_CONTINUATION_PROMPT_4 },
+      { kind: 'command', line: STOP_CONTINUATION_COMMAND_LINE },
+    ],
+    script: stopContinuationScript,
+    // The goal driver must go quiet once the third stop paused it; the window
+    // runs BEFORE `stopDsh` freezes the logs.
+    settle: awaitGoalSilenceAfterStop,
+    analyze: analyzeStopContinuationHaltsTodo,
+  },
 ]
 
 /**
@@ -12117,32 +12791,85 @@ async function runScenario(def, baseRoutes) {
     // prompt instead — the Web UI's own fallback
     // (dsh-client-ui-commands/lib/client.js:796) — which becomes the 对照 turn.
     const commandResults = []
-    const prompts = []
     let turnsSeen = 0
     let log
-    for (const action of def.commands ?? []) {
-      const admission = await commandExecute(boot, { sessionId: created.sessionId, line: action.line })
-      const matched = admission !== undefined && admission !== null
-      commandResults.push({ line: action.line, matched, admission })
-      console.error(
-        `drive: [${def.name}] command ${action.line} → ${matched ? `matched (${admission.result?.kind})` : 'NOT admitted'}`,
-      )
-      // Boundary (easy to break in a refactor, so it is stated here): `turnsSeen`
-      // counts turns ALREADY OBSERVED. It is incremented in exactly TWO places:
-      // the `if (matched)` increment right below (a command whose injection opened
-      // its own turn — that branch also `continue`s, so it is the only increment
-      // inside the command loop), and the single increment in the prompt `for`
-      // loop further down, after its own `awaitTurnEnd`. "Both prompt branches"
-      // was wrong: there is ONE prompt loop; its two increments are the two
-      // increments just listed. An admission miss contributes nothing here
-      // because it produced no turn; its line becomes a prompt, counted there.
-      if (matched) {
-        turnsSeen += 1
-        log = await awaitTurnEnd(sandbox, created.sessionId, turnsSeen)
-        continue
+
+    // P4-T9: `actions` drives prompt/command steps IN ORDER, which `commands` +
+    // `prompt` + `followupPrompts` cannot express (those run every command
+    // first). A scenario that must stop continuation BETWEEN two turns needs the
+    // ordering, so the interleaved form is its own path; the pre-existing two
+    // fields keep their exact behaviour for the 29 scenarios that already pass.
+    if (Array.isArray(def.actions)) {
+      let actionOrdinal = 0
+      for (const action of def.actions) {
+        actionOrdinal += 1
+        if (action.kind === 'prompt') {
+          await sessionPrompt(boot, {
+            sessionId: created.sessionId,
+            mode: 'queue',
+            content: [{ type: 'text', text: action.text }],
+          })
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} prompt accepted; `
+            + 'awaiting its turn/end on the session JSONL',
+          )
+          turnsSeen += 1
+          log = await awaitTurnEnd(sandbox, created.sessionId, turnsSeen)
+          continue
+        }
+        if (action.kind === 'command') {
+          const admission = await commandExecute(boot, {
+            sessionId: created.sessionId,
+            line: action.line,
+          })
+          const matched = admission !== undefined && admission !== null
+          commandResults.push({ line: action.line, matched, admission })
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} command ${action.line} → `
+            + (matched ? `matched (${admission.result?.kind})` : 'NOT admitted'),
+          )
+          // A matched command that injects nothing opens NO turn (P4-T8:
+          // /stop-continuation deliberately does not followup), so this branch
+          // does NOT touch `turnsSeen` — it cannot wait for a turn that will
+          // never come. The command/log-only writes are still in the JSONL by
+          // the time the NEXT action awaits its turn/end, which is when the
+          // analysis reads them.
+          continue
+        }
+        throw new Error(`drive: [${def.name}] unknown action kind ${JSON.stringify(action.kind)}`)
       }
-      // unreachable when matched — the continue above guarantees it
-      if (action.submitAsPromptOnMiss === true) prompts.push(action.line)
+      // No `return`: the settle → stopDsh → analyze tail below is shared by both
+      // paths, so there is exactly ONE place where a scenario's observation
+      // window closes and its log is frozen.
+    } else {
+
+      // ── the pre-P4-T9 shape: every `commands` line first, then `prompt` +
+      // `followupPrompts` (an admission miss with `submitAsPromptOnMiss` joins the
+      // prompt queue, AHEAD of them, because the miss is only known at runtime).
+      const prompts = []
+      for (const action of def.commands ?? []) {
+        const admission = await commandExecute(boot, { sessionId: created.sessionId, line: action.line })
+        const matched = admission !== undefined && admission !== null
+        commandResults.push({ line: action.line, matched, admission })
+        console.error(
+          `drive: [${def.name}] command ${action.line} → ${matched ? `matched (${admission.result?.kind})` : 'NOT admitted'}`,
+        )
+        // Boundary (easy to break in a refactor, so it is stated here): `turnsSeen`
+        // counts turns ALREADY OBSERVED. It is incremented in exactly TWO places:
+        // the `if (matched)` increment right below (a command whose injection opened
+        // its own turn — that branch also `continue`s, so it is the only increment
+        // inside the command loop), and the single increment in the prompt `for`
+        // loop further down, after its own `awaitTurnEnd`. "Both prompt branches"
+        // was wrong: there is ONE prompt loop; its two increments are the two
+        // increments just listed. An admission miss contributes nothing here
+        // because it produced no turn; its line becomes a prompt, counted there.
+        if (matched) {
+          turnsSeen += 1
+          log = await awaitTurnEnd(sandbox, created.sessionId, turnsSeen)
+          continue
+        }
+        // unreachable when matched — the continue above guarantees it
+        if (action.submitAsPromptOnMiss === true) prompts.push(action.line)
     }
     // 回落到 prompt 的命令行排在场景自己的 prompt 之前（它们在命令循环里先被收集），
     // 所以这里只需把 undefined 的 `def.prompt`（纯命令场景没有）滤掉。
@@ -12160,6 +12887,7 @@ async function runScenario(def, baseRoutes) {
       )
       turnsSeen += 1
       log = await awaitTurnEnd(sandbox, created.sessionId, turnsSeen)
+    }
     }
     console.error(`drive: [${def.name}] ${turnsSeen} turn(s) observed`)
     const logPath = log?.path
@@ -12399,6 +13127,478 @@ function commandChannelDefectCases(spec) {
   ]
 }
 
+// ── P4-T9 stop-continuation fabricated inputs + defect cases (self-test) ───────
+const FABRICATED_STOP_SESSION_ID = 'session-fabricated-stop-continuation'
+const FABRICATED_STOP_GOAL_ID = 'goal-fabricated-stop-continuation'
+const FABRICATED_STOP_CALL_ID = 'mock-llm-tool-stop-1'
+
+/**
+ * The fabricated stop-continuation log (the REAL runtime layout, compact seqs):
+ * TWO pre-stop continuations (one per boundary, on two different lists), THREE
+ * `/stop-continuation` calls, the post-stop boundary that must stay silent, the
+ * goal face, and the aborted goal round the pause disarmed. The steer texts are
+ * BUILT with the shipped `buildContinuationText` from the lists the fixture
+ * writes — the same discipline as the P3-T9 pilot: "verbatim" means the
+ * listener's own text for the list the boundary saw, not a copy pasted here.
+ */
+function fabricatedStopContinuationLog() {
+  const todosAt = (open) => [
+    { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+    { content: open, status: 'in_progress' },
+  ]
+  const todosDone = (open) => [
+    { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+    { content: open, status: 'completed' },
+  ]
+  const events = []
+  let seq = 0
+  const push = (event) => {
+    seq += 1
+    events.push({ ...event, seq })
+    return seq
+  }
+  // One model STEP = one assistant message + whatever that step did (tool call,
+  // text). The runtime emits both halves for a tool-call step, and the request
+  // index a steer rides is derived from the assistant messages — so a fixture
+  // that omitted them would model a runtime that never happened.
+  const step = (turn, stepNo, content) => {
+    push({ type: 'step/start', data: { turn, step: stepNo } })
+    push({ type: 'assistant/message', data: { turn, step: stepNo, message: { role: 'assistant', content } } })
+  }
+  const textStep = (turn, stepNo, text) => step(turn, stepNo, [{ type: 'text', text }])
+  const toolStep = (turn, stepNo, name, args) => {
+    step(turn, stepNo, [{ type: 'tool-call', id: FABRICATED_STOP_CALL_ID, name, arguments: JSON.stringify(args) }])
+    push({ type: 'tool/call', data: { turn, step: stepNo, callId: FABRICATED_STOP_CALL_ID, name, arguments: JSON.stringify(args) } })
+  }
+  const prompt = (text) => fabricatedUserMessage(seq + 1, { role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'fabricated-rpc' } })
+  const steerPair = (todos, turn) => {
+    const text = buildTodoContinuationText(todos)
+    const message = {
+      id: `fabricated-steer-${turn}`,
+      role: 'user',
+      content: [{ type: 'text', text }],
+      source: { kind: 'plugin', plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
+    }
+    push({ type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [message] } })
+    push({ type: 'user/message', data: message })
+    return text
+  }
+  const goalRound = (round) => push({
+    type: 'user/message',
+    data: {
+      id: `fabricated-goal-round-${round}`,
+      role: 'user',
+      content: [{ type: 'text', text: `<goal_round>\nObjective: "${STOP_CONTINUATION_GOAL_OBJECTIVE}" round ${round}` }],
+      source: { kind: GOAL_ROUND_SOURCE_KIND, goalId: FABRICATED_STOP_GOAL_ID, revision: 1, round },
+    },
+  })
+
+  // ── prompt 1: the first continuation chain
+  push(prompt(STOP_CONTINUATION_PROMPT_1))
+  push({ type: 'turn/start', data: { turn: 1 } })
+  toolStep(1, 1, 'todo_write', { todos: todosAt(STOP_CONTINUATION_TASK_OPEN_1) })
+  push({ type: 'todo/write', data: { todos: todosAt(STOP_CONTINUATION_TASK_OPEN_1) } })
+  textStep(1, 2, STOP_CONTINUATION_WRAPUP_1)
+  steerPair(todosAt(STOP_CONTINUATION_TASK_OPEN_1), 1)
+  toolStep(1, 3, 'todo_write', { todos: todosDone(STOP_CONTINUATION_TASK_OPEN_1) })
+  push({ type: 'todo/write', data: { todos: todosDone(STOP_CONTINUATION_TASK_OPEN_1) } })
+  textStep(1, 4, STOP_CONTINUATION_SUMMARY_1)
+  push({ type: 'step/end', data: { turn: 1, step: 4 } })
+  push({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+
+  // ── prompt 2: the cascade face + the second continuation
+  push(prompt(STOP_CONTINUATION_PROMPT_2))
+  push({ type: 'turn/start', data: { turn: 2 } })
+  toolStep(2, 1, 'bash', {
+    command: STOP_CONTINUATION_BACKGROUND_COMMAND,
+    description: STOP_CONTINUATION_BACKGROUND_LABEL,
+    run_in_background: true,
+  })
+  toolStep(2, 2, 'todo_write', { todos: todosAt(STOP_CONTINUATION_TASK_OPEN_2) })
+  push({ type: 'todo/write', data: { todos: todosAt(STOP_CONTINUATION_TASK_OPEN_2) } })
+  textStep(2, 3, STOP_CONTINUATION_WRAPUP_2)
+  steerPair(todosAt(STOP_CONTINUATION_TASK_OPEN_2), 2)
+  toolStep(2, 4, 'todo_write', { todos: todosDone(STOP_CONTINUATION_TASK_OPEN_2) })
+  push({ type: 'todo/write', data: { todos: todosDone(STOP_CONTINUATION_TASK_OPEN_2) } })
+  textStep(2, 5, STOP_CONTINUATION_SUMMARY_2)
+  push({ type: 'step/end', data: { turn: 2, step: 5 } })
+  push({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+
+  // ── two stops: the first cancels the background job, the second is the
+  // idempotence probe (it cancels nothing because the first already did).
+  // Built by the SHIPPED command module's own formatter, not re-assembled here.
+  // The ASSERTION side keeps its hand-transcribed needles (the T7 precedent:
+  // expectations are written by hand, and the fixture is built by the code under
+  // test — so if the two ever disagree, the self-test is what turns red).
+  const doneText = (cancelled, goal) => formatStopContinuationResult({
+    guardAvailable: true,
+    sessionId: FABRICATED_STOP_SESSION_ID,
+    cancelledJobIds: Array.from({ length: cancelled }, (_, index) => `job-fabricated-${index}`),
+    alreadyFinishedJobIds: [],
+    jobsServicePresent: true,
+    goal,
+  })
+  push({ type: 'command/run', data: { commandId: 'cmd-fabricated-stop-1', name: 'stop-continuation', args: '', source: { kind: 'user' } } })
+  push({ type: 'command/done', data: { commandId: 'cmd-fabricated-stop-1', kind: 'success', text: doneText(1, 'absent') } })
+  push({ type: 'command/run', data: { commandId: 'cmd-fabricated-stop-2', name: 'stop-continuation', args: '', source: { kind: 'user' } } })
+  push({ type: 'command/done', data: { commandId: 'cmd-fabricated-stop-2', kind: 'success', text: doneText(0, 'absent') } })
+
+  // ── prompt 3: the post-stop boundary, which must stay silent
+  push(prompt(STOP_CONTINUATION_PROMPT_3))
+  push({ type: 'turn/start', data: { turn: 3 } })
+  toolStep(3, 1, 'todo_write', { todos: todosAt(STOP_CONTINUATION_TASK_OPEN_3) })
+  push({ type: 'todo/write', data: { todos: todosAt(STOP_CONTINUATION_TASK_OPEN_3) } })
+  textStep(3, 2, STOP_CONTINUATION_WRAPUP_3)
+  push({ type: 'step/end', data: { turn: 3, step: 2 } })
+  push({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+
+  // ── prompt 4: the goal face
+  push(prompt(STOP_CONTINUATION_PROMPT_4))
+  push({ type: 'turn/start', data: { turn: 4 } })
+  toolStep(4, 1, 'create_goal', { objective: STOP_CONTINUATION_GOAL_OBJECTIVE })
+  textStep(4, 2, STOP_CONTINUATION_GOAL_WRAPUP)
+  push({ type: 'step/end', data: { turn: 4, step: 2 } })
+  push({ type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
+  // A goal round is a whole turn of its own: the driver opens it, the session
+  // runs one step, it closes.
+  goalRound(1)
+  push({ type: 'turn/start', data: { turn: 5 } })
+  textStep(5, 1, STOP_CONTINUATION_GOAL_WRAPUP)
+  push({ type: 'step/end', data: { turn: 5, step: 1 } })
+  push({ type: 'turn/end', data: { turn: 5, reason: { kind: 'completed' } } })
+  goalRound(2)
+  push({ type: 'turn/start', data: { turn: 6 } })
+  textStep(6, 1, STOP_CONTINUATION_GOAL_WRAPUP)
+  push({ type: 'step/end', data: { turn: 6, step: 1 } })
+  push({ type: 'turn/end', data: { turn: 6, reason: { kind: 'completed' } } })
+
+  // ── the third stop: it pauses the goal and disarms the round driver, which
+  // aborts whatever round was in flight.
+  push({ type: 'command/run', data: { commandId: 'cmd-fabricated-stop-3', name: 'stop-continuation', args: '', source: { kind: 'user' } } })
+  push({ type: 'command/done', data: { commandId: 'cmd-fabricated-stop-3', kind: 'success', text: doneText(0, 'paused') } })
+  // An abort whose NESTED reason is `user`: the pause disarmed this round rather
+  // than a prompt cancelling it. The analyzer reports that nested kind as data.
+  push({ type: 'turn/end', data: { turn: 7, reason: { kind: 'aborted', reason: { kind: 'user' } } } })
+
+  return {
+    path: '/fabricated/stop-continuation/session.jsonl',
+    header: { type: 'session', id: FABRICATED_STOP_SESSION_ID },
+    events,
+  }
+}
+
+function fabricatedStopContinuationBootLog() {
+  const guard = (cancelled) => `${STOP_CONTINUATION_GUARD_LOG_PREFIX}${FABRICATED_STOP_SESSION_ID}`
+    + ` (cancelled ${cancelled}, already finished 0, jobs service present)`
+  return [
+    FABRICATED_BOOT_LOG,
+    '[omo-commands] command stop-continuation registered',
+    guard(1),
+    guard(0),
+    guard(0),
+  ].join('\n')
+}
+
+function fabricatedStopContinuationInput(routes) {
+  const model = routes.sisyphus.model
+  const message = (...texts) => [
+    { role: 'system', content: 'MOCKROLE=sisyphus' },
+    ...texts.map((text) => ({ role: 'user', content: text })),
+  ]
+  const steer1 = buildTodoContinuationText([
+    { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+    { content: STOP_CONTINUATION_TASK_OPEN_1, status: 'in_progress' },
+  ])
+  const steer2 = buildTodoContinuationText([
+    { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+    { content: STOP_CONTINUATION_TASK_OPEN_2, status: 'in_progress' },
+  ])
+  // The MEASURED request shape: 13 scripted steps + the 4 goal rounds the driver
+  // opened (real run: 17). The two steers sit at indices 2 and 7 because each
+  // prompt's steps are: prompt 1 → todo_write, wrap-up, STEERED step, summary;
+  // prompt 2 → bash, todo_write, wrap-up, STEERED step, summary. The total is
+  // deliberately NOT pinned by the analyzer (the goal rounds are timing), and the
+  // fixture keeps the same choice — only the steer indices are contract.
+  const request = (index, text) => ({
+    role: 'sisyphus',
+    body: { model, messages: message(text) },
+    receivedAt: 10 * (index + 1),
+  })
+  return {
+    log: fabricatedStopContinuationLog(),
+    requests: [
+      request(0, STOP_CONTINUATION_PROMPT_1),
+      request(1, STOP_CONTINUATION_WRAPUP_1),
+      request(2, steer1),
+      request(3, STOP_CONTINUATION_SUMMARY_1),
+      request(4, STOP_CONTINUATION_BACKGROUND_COMMAND),
+      request(5, STOP_CONTINUATION_PROMPT_2),
+      request(6, STOP_CONTINUATION_WRAPUP_2),
+      request(7, steer2),
+      request(8, STOP_CONTINUATION_SUMMARY_2),
+      request(9, STOP_CONTINUATION_PROMPT_3),
+      request(10, STOP_CONTINUATION_WRAPUP_3),
+      request(11, STOP_CONTINUATION_PROMPT_4),
+      request(12, STOP_CONTINUATION_GOAL_WRAPUP),
+      request(13, '<goal_round> 1'),
+      request(14, '<goal_round> 1'),
+      request(15, '<goal_round> 2'),
+      request(16, '<goal_round> 2'),
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: fabricatedStopContinuationBootLog(),
+    commandResults: [
+      { line: STOP_CONTINUATION_COMMAND_LINE, matched: true, admission: { result: { kind: 'success' } } },
+      { line: STOP_CONTINUATION_COMMAND_LINE, matched: true, admission: { result: { kind: 'success' } } },
+      { line: STOP_CONTINUATION_COMMAND_LINE, matched: true, admission: { result: { kind: 'success' } } },
+    ],
+  }
+}
+
+/**
+ * P4-T9 defect cases — one per named check.
+ *
+ * COVERAGE POLICY (inherited from T7, and counted the same way): 30 checks, 38
+ * defect cases, 28 distinct targets. `pluginLoaded` is the single declared
+ * exception and owns none (every scenario in this driver shares it, so no single
+ * scenario can be the one to break it); `secondStopIsIdempotent` is the second
+ * one, for a substantive reason rather than convenience: it accepts BOTH job
+ * clauses a correct runtime can produce (`cancelled 0` / `cancelled 1` on a
+ * still-`stopping` job), so no single-input mutation can pin it — the defects
+ * for the idempotence claim live on the guard side instead, where the evidence
+ * is race-free. Several checks own two cases on purpose: a gate with two
+ * independent ways to fail deserves a defect for each way.
+ */
+function stopContinuationDefectCases() {
+  const mapEvent = (input, predicate, mutate) => {
+    input.log.events = input.log.events.map((event) => (predicate(event) ? mutate(event) : event))
+  }
+  const dropAfter = (input, seq) => {
+    input.log.events = input.log.events.filter((event) => event.seq <= seq)
+  }
+  return [
+    ['the command never registered (no boot-log registration line)', (input) => {
+      input.bootLog = input.bootLog
+        .split('\n')
+        .filter((line) => line !== '[omo-commands] command stop-continuation registered')
+        .join('\n')
+    }, 'stopContinuationRegisteredInBootLog'],
+    ['the session log was never written', (input) => {
+      input.log = undefined
+    }, 'sessionLogFound'],
+    ['the sisyphus seat was inactive', (input) => {
+      // The provider id comes from the FIXTURE's own first entry, never from a
+      // closure over `routes`: this factory is module-level, so `routes` is not
+      // in scope (the T7 factory hit exactly this and blew up at run time).
+      // Parsed, not regexed over: key order is not what this check is about.
+      const parsed = JSON.parse(input.providersJson)
+      parsed.result.value.providers[0].active = false
+      input.providersJson = JSON.stringify(parsed)
+    }, 'sisyphusProviderActive'],
+    ['a model request left the sisyphus seat', (input) => {
+      input.requests[0] = { ...input.requests[0], body: { ...input.requests[0].body, model: 'some-other-seat-model' } }
+    }, 'routeHeaderMatchesSisyphus'],
+    ['the enforcer never steered before the stop', (input) => {
+      dropAfter(input, input.log.events.find((event) => event.type === 'todo/write' && event.data?.todos?.[1]?.status === 'in_progress').seq)
+      input.log.events.push(
+        { seq: 900, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      )
+    }, 'preStopContinuationHappenedTwice'],
+    ['only ONE of the two pre-stop boundaries steered', (input) => {
+      // Drop the SECOND steer pair (the one whose text carries task #2).
+      const second = input.log.events.filter(
+        (event) => event.type === 'user/message'
+          && messageContentText(event.data).includes(STOP_CONTINUATION_TASK_OPEN_2),
+      )
+      dropAfter(input, second[0].seq - 2)
+    }, 'preStopContinuationHappenedTwice'],
+    ['a steer carrier lost the omo-hooks producer triple', (input) => {
+      mapEvent(input, (event) => event.type === 'user/message'
+        && event.data?.source?.plugin === TODO_CONTINUATION_ENFORCER_PLUGIN,
+      (event) => ({ ...event, data: { ...event.data, source: { ...event.data.source, form: 'notice' } } }))
+    }, 'preStopContinuationCarrierSourceIsOmoHooks'],
+    ['a steer carrier carried text the listener never assembled', (input) => {
+      mapEvent(input, (event) => event.type === 'user/message'
+        && event.data?.source?.plugin === TODO_CONTINUATION_ENFORCER_PLUGIN,
+      (event) => ({ ...event, data: { ...event.data, content: [{ type: 'text', text: `${messageContentText(event.data)}\n- [pending] a task that was never in the list` }] } }))
+    }, 'preStopContinuationTextIsVerbatimListenerText'],
+    ['one boundary was steered TWICE (double-splice / duplicate claim)', (input) => {
+      const claim = input.log.events.find((event) => event.type === 'user/message'
+        && event.data?.source?.plugin === TODO_CONTINUATION_ENFORCER_PLUGIN)
+      input.log.events.splice(input.log.events.indexOf(claim) + 1, 0, { ...claim, seq: claim.seq + 0.5 })
+    }, 'preStopContinuationInjectedExactlyOncePerBoundary'],
+    ['both boundaries replayed the SAME steer text', (input) => {
+      const claims = input.log.events.filter((event) => event.type === 'user/message'
+        && event.data?.source?.plugin === TODO_CONTINUATION_ENFORCER_PLUGIN)
+      const first = messageContentText(claims[0].data)
+      mapEvent(input, (event) => event.type === 'user/message'
+        && event.data?.id === claims[1].data.id,
+      (event) => ({ ...event, data: { ...event.data, content: [{ type: 'text', text: first }] } }))
+    }, 'preStopContinuationInjectedExactlyOncePerBoundary'],
+    ['a steer rode a LATER model request than the step after its wrap-up', (input) => {
+      const steer = buildTodoContinuationText([
+        { content: STOP_CONTINUATION_TASK_SETTLED, status: 'completed' },
+        { content: STOP_CONTINUATION_TASK_OPEN_1, status: 'in_progress' },
+      ])
+      input.requests = input.requests.map((request, index) =>
+        index === 0 ? { ...request, body: { ...request.body, messages: [...request.body.messages, { role: 'user', content: steer }] } } : request)
+    }, 'preStopContinuationReachedNextModelRequest'],
+    ['one of the three command calls was not admitted', (input) => {
+      input.commandResults[1] = { line: STOP_CONTINUATION_COMMAND_LINE, matched: false, admission: undefined }
+    }, 'stopCommandAdmittedThreeTimes'],
+    ['a command/run disagreed with the line the user typed', (input) => {
+      mapEvent(input, (event) => event.type === 'command/run',
+        (event) => ({ ...event, data: { ...event.data, args: ' fabricated-args' } }))
+    }, 'stopCommandRunsRecordedWithArgsAndUserSource'],
+    ['two command/run events claimed the same commandId', (input) => {
+      const runs = input.log.events.filter((event) => event.type === 'command/run')
+      mapEvent(input, (event) => event.type === 'command/run',
+        (event) => (event.seq === runs[2].seq ? { ...event, data: { ...event.data, commandId: runs[0].data.commandId } } : event))
+    }, 'stopCommandRunsRecordedWithArgsAndUserSource'],
+    ['a command/done settled as an error', (input) => {
+      mapEvent(input, (event) => event.type === 'command/done',
+        (event) => ({ ...event, data: { ...event.data, kind: 'error' } }))
+    }, 'stopCommandDonesPairedAndSucceeded'],
+    ['a command/done was paired with no command/run', (input) => {
+      input.log.events = input.log.events.filter((event) => !(event.type === 'command/done' && event.data.commandId === 'cmd-fabricated-stop-2'))
+    }, 'stopCommandDonesPairedAndSucceeded'],
+    ['a done text named another session', (input) => {
+      mapEvent(input, (event) => event.type === 'command/done',
+        (event) => ({ ...event, data: { ...event.data, text: event.data.text.replace(FABRICATED_STOP_SESSION_ID, 'session-somebody-else') } }))
+    }, 'stopCommandDoneNamesThisSession'],
+    ['a done text dropped the "stopped until cleared" tail', (input) => {
+      mapEvent(input, (event) => event.type === 'command/done',
+        (event) => ({ ...event, data: { ...event.data, text: event.data.text.replace(`; ${STOP_CONTINUATION_DONE_TAIL}`, '') } }))
+    }, 'stopCommandDoneNamesThisSession'],
+    ['the second stop cleared the session (the marker did not stick)', (input) => {
+      input.bootLog += `\n${STOP_CONTINUATION_GUARD_CLEARED_PREFIX}${FABRICATED_STOP_SESSION_ID}`
+    }, 'stopIdempotenceLeavesExactlyOneStopPerCall'],
+    ['the idempotence probe logged no second stop line', (input) => {
+      // Three calls, two lines: the guard's own tally is what the claim rests on.
+      input.bootLog = input.bootLog
+        .split('\n')
+        .filter((line) => !line.startsWith(STOP_CONTINUATION_GUARD_LOG_PREFIX))
+        .concat(STOP_CONTINUATION_GUARD_LOG_PREFIX + FABRICATED_STOP_SESSION_ID)
+        .join('\n')
+    }, 'stopIdempotenceLeavesExactlyOneStopPerCall'],
+    ['the guard logged its stop for another session only', (input) => {
+      input.bootLog = input.bootLog.replaceAll(FABRICATED_STOP_SESSION_ID, 'session-somebody-else')
+    }, 'stopGuardLoggedForThisSession'],
+    ['the guard logged no jobs service', (input) => {
+      input.bootLog = input.bootLog.replaceAll('jobs service present', 'jobs service absent — nothing cancelled')
+    }, 'stopGuardLoggedForThisSession'],
+    ['the background job never started', (input) => {
+      input.log.events = input.log.events.filter((event) => !(event.type === 'tool/call' && event.data?.name === 'bash'))
+    }, 'backgroundJobReallyStarted'],
+    ['the first stop cancelled nothing', (input) => {
+      mapEvent(input, (event) => event.type === 'command/done',
+        (event) => (event.data.commandId === 'cmd-fabricated-stop-1'
+          ? { ...event, data: { ...event.data, text: event.data.text.replace('cancelled 1', 'cancelled 0') } }
+          : event))
+    }, 'firstStopCancelledTheBackgroundJob'],
+    ['the first stop claimed a goal that did not exist', (input) => {
+      mapEvent(input, (event) => event.type === 'command/done',
+        (event) => (event.data.commandId === 'cmd-fabricated-stop-1'
+          ? { ...event, data: { ...event.data, text: event.data.text.replace(STOP_CONTINUATION_NO_GOAL_CLAUSE, STOP_CONTINUATION_GOAL_PAUSED_CLAUSE) } }
+          : event))
+    }, 'firstStopReportedNoGoalYet'],
+    ['the post-stop boundary had nothing left to continue (all-complete)', (input) => {
+      mapEvent(input, (event) => event.type === 'todo/write'
+        && event.data?.todos?.some((todo) => todo.content === STOP_CONTINUATION_TASK_OPEN_3),
+      (event) => ({ ...event, data: { ...event.data, todos: event.data.todos.map((todo) => ({ ...todo, status: 'completed' })) } }))
+    }, 'postStopTodoBoundaryIsIncomplete'],
+    ['the boundary had no todo list at all', (input) => {
+      input.log.events = input.log.events.filter((event) => !(event.type === 'todo/write'
+        && event.data?.todos?.some((todo) => todo.content === STOP_CONTINUATION_TASK_OPEN_3)))
+    }, 'postStopTodoBoundaryIsIncomplete'],
+    ['the goal existed AT the post-stop boundary (goal-owns-continuation could explain the silence)', (input) => {
+      // Move the goal creation to BEFORE prompt 3's wrap-up: the silence would
+      // then be the goal gate firing, and the scenario must go red rather than
+      // pass on the wrong mechanism.
+      const wrapup = input.log.events.find((event) => event.type === 'assistant/message'
+        && eventText(event).includes(STOP_CONTINUATION_WRAPUP_3))
+      const goal = input.log.events.find((event) => event.type === 'tool/call' && event.data?.name === 'create_goal')
+      input.log.events = input.log.events.map((event) =>
+        event === goal ? { ...event, seq: wrapup.seq - 0.5 } : event)
+    }, 'noGoalAtPostStopBoundary'],
+    ['a SECOND todo list was written before the post-stop wrap-up', (input) => {
+      const wrapup = input.log.events.find((event) => event.type === 'assistant/message'
+        && eventText(event).includes(STOP_CONTINUATION_WRAPUP_3))
+      input.log.events.push({
+        seq: wrapup.seq - 0.25,
+        type: 'todo/write',
+        data: { todos: [{ content: 'fabricated later list', status: 'in_progress' }] },
+      })
+    }, 'postStopTodoBoundaryIsIncomplete'],
+    ['continuation was steered AFTER the stop (the guard did not hold)', (input) => {
+      const boundary = input.log.events.find((event) => event.type === 'todo/write'
+        && event.data?.todos?.some((todo) => todo.content === STOP_CONTINUATION_TASK_OPEN_3))
+      const todos = boundary.data.todos
+      const message = {
+        id: 'fabricated-steer-after-stop',
+        role: 'user',
+        content: [{ type: 'text', text: buildTodoContinuationText(todos) }],
+        source: { kind: 'plugin', plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
+      }
+      const at = boundary.seq + 1
+      input.log.events.push(
+        { seq: at, type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [message] } },
+        { seq: at + 1, type: 'user/message', data: message },
+      )
+    }, 'postStopNoContinuationCarrier'],
+    ['the post-stop turn ran another step after its wrap-up', (input) => {
+      const wrapup = input.log.events.find((event) => event.type === 'assistant/message'
+        && eventText(event).includes(STOP_CONTINUATION_WRAPUP_3))
+      input.log.events.push({
+        seq: wrapup.seq + 0.5,
+        type: 'todo/write',
+        data: { todos: [{ content: 'fabricated extra work', status: 'in_progress' }] },
+      })
+    }, 'postStopTurnEndedWithoutExtraStep'],
+    ['the post-stop turn ended with an error', (input) => {
+      mapEvent(input, (event) => event.type === 'turn/end' && event.data?.turn === 3,
+        (event) => ({ ...event, data: { ...event.data, reason: { kind: 'error' } } }))
+    }, 'postStopTurnCompleted'],
+    ['the goal was created AFTER the third stop', (input) => {
+      const thirdDone = input.log.events.find((event) => event.type === 'command/done' && event.data.commandId === 'cmd-fabricated-stop-3')
+      mapEvent(input, (event) => event.type === 'tool/call' && event.data?.name === 'create_goal',
+        (event) => ({ ...event, seq: thirdDone.seq + 1 }))
+    }, 'goalReallyCreatedBeforeTheThirdStop'],
+    ['the third stop left the goal alone', (input) => {
+      mapEvent(input, (event) => event.type === 'command/done',
+        (event) => (event.data.commandId === 'cmd-fabricated-stop-3'
+          ? { ...event, data: { ...event.data, text: event.data.text.replace(STOP_CONTINUATION_GOAL_PAUSED_CLAUSE, 'the session goal is not active, nothing to pause') } }
+          : event))
+    }, 'thirdStopPausedTheActiveGoal'],
+    ['the goal round driver kept opening rounds after the pause', (input) => {
+      const thirdDone = input.log.events.find((event) => event.type === 'command/done' && event.data.commandId === 'cmd-fabricated-stop-3')
+      input.log.events.push({
+        seq: thirdDone.seq + 1,
+        type: 'user/message',
+        data: {
+          id: 'fabricated-goal-round-after-pause',
+          role: 'user',
+          content: [{ type: 'text', text: '<goal_round>\nObjective: still running' }],
+          source: { kind: GOAL_ROUND_SOURCE_KIND, goalId: FABRICATED_STOP_GOAL_ID, revision: 1, round: 3 },
+        },
+      })
+    }, 'noGoalRoundOpenedAfterThePause'],
+    ['the goal driver never opened a round at all (the goal face was vacuous)', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'user/message' && event.data?.source?.kind === GOAL_ROUND_SOURCE_KIND),
+      )
+    }, 'noGoalRoundOpenedAfterThePause'],
+    ['the circuit breaker armed during the scenario', (input) => {
+      // Built by the shipped formatter, with the module's OWN cap — a fixture
+      // that hand-typed "(cap 3)" would test a line the runtime never emits.
+      input.bootLog += `\n${todoContinuationCircuitBreakerLine(5)}`
+    }, 'circuitBreakerNeverArmed'],
+    ['the scripted steps never all ran (requests truncated)', (input) => {
+      input.requests = input.requests.slice(0, 9)
+    }, 'mockSawThirteenScriptedStepsOnThisSeat'],
+  ]
+}
+
 // ── P4-T7 command-channel fabricated inputs + defect cases (self-test) ───────
 // The GOOD input mirrors the REAL runtime layout: the command's own follow-up
 // turn (the injected instruction as its sole ordinary user message → one model
@@ -12630,6 +13830,13 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     // reads them off ONE call rather than concatenating two copies. The non-empty
     // guard is the T13 shape: an emptied list must FAIL the self-test, never
     // print an empty "everything checked" banner.
+    const STOP_SELF_TEST_BANNER = [...STOP_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [scenario, label]) => {
+        byScenario.set(scenario, [...(byScenario.get(scenario) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([scenario, labels]) => `P4-T9 ${scenario}: ${labels.join(', ')}`)
+      .join('; ')
     const commandChannelCases = commandChannelDefectCases(COMMAND_CHANNEL_SPECS.handoff)
     if (commandChannelCases.length === 0) {
       problems.push('fabricated handoff-driven: the command-channel defect list is EMPTY — the banner would attest to nothing')
@@ -12637,7 +13844,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     const COMMAND_CHANNEL_SELF_TEST_BANNER = commandChannelCases
       .map(([label]) => label)
       .join(', ')
-    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)`)
+    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
