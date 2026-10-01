@@ -155,7 +155,7 @@ naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/man
 | webfetch-redirect-guard | src/hooks/webfetch-redirect-guard.ts | webfetch-redirect-guard/constants.ts, hook.ts, index.ts, redirect-resolution.ts（+ 1 上游测试文件作移植种子） | semantic port only |
 | prometheus-md-only | src/hooks/prometheus-md-only.ts | prometheus-md-only/agent-matcher.ts, agent-resolution.ts, constants.ts, hook.ts, index.ts, path-policy.ts（+ 1 上游测试文件作移植种子） | semantic port only |
 | ulw-execute（上游名 start-work，按 v5 命名锚点） | src/hooks/ulw-execute.ts + src/hooks/ulw-execute/（constants.ts, context-builder.ts, identity.ts, live-state.ts, parse-request.ts, plan-discovery.ts, worktree.ts） | start-work/context-info-builder.ts, context-info-formatters.ts, explicit-plan-context.ts, index.ts, notepad-scaffold.ts, parse-user-request.ts, plan-discovery-context.ts, plan-selection.ts, session-plan-affinity.ts, start-work-hook.ts, work-initializer.ts, worktree-block.ts, worktree-detector.ts（+ 7 上游测试文件作移植种子；命令面在 hooks/ 之外，属 Phase 4；boulder-state 依赖段跳过，逐条注记） | semantic port only |
-| keyword-detector | src/hooks/keyword-detector.ts + src/hooks/keyword-detector/（constants.ts, detector.ts, filters.ts, messages.ts） | config/schema/keyword-detector.ts, hooks/keyword-detector/constants.ts, detector.ts, hook.ts, index.ts, types.ts, hyperplan/default.ts, hyperplan/index.ts, team/default.ts, team/index.ts, ultrawork/default.ts, ultrawork/gemini.ts, ultrawork/glm.ts, ultrawork/gpt.ts, ultrawork/planner.ts, ultrawork/source-detector.ts, ultrawork/index.ts（+ 7 上游测试文件作移植种子） | semantic port only（**Phase 4 落地，Phase 3 的 S-06 顺延项**：上游在 `chat.message` 上判别 ultrawork / ulw / hyperplan / hpp 与 `hyperplan ulw` 组合词后注入整份模式指令，本移植形态 = 一个 `agent/pre-step` waterfall listener（模式 A），命中即 `agent.inject()` 并永远 `next()`；**注入正文改为引用本仓 vendor 的 ultrawork / hyperplan SKILL.md**（P4-T4），5+1 个上游模型变体收窄为单一名册感知文案，`team` 枚举位**预留不接线**（Phase 5 面），toast 收窄为审计行。逐文件处置注记于 `src/hooks/keyword-detector.ts` 文件头，上游目录 24 条目（16 实现 + 测试）的件数算术亦记于该处） |
+| keyword-detector | src/hooks/keyword-detector.ts + src/hooks/keyword-detector/（constants.ts, detector.ts, filters.ts, messages.ts） | config/schema/keyword-detector.ts, hooks/keyword-detector/constants.ts, detector.ts, hook.ts, index.ts, types.ts, hyperplan/default.ts, hyperplan/index.ts, team/default.ts, team/index.ts, ultrawork/default.ts, ultrawork/gemini.ts, ultrawork/glm.ts, ultrawork/gpt.ts, ultrawork/planner.ts, ultrawork/source-detector.ts, ultrawork/index.ts（+ 7 上游测试文件作移植种子） | semantic port only（**Phase 4 落地，Phase 3 的 S-06 顺延项**：上游在 `chat.message` 上判别 ultrawork / ulw / hyperplan / hpp 与 `hyperplan ulw` 组合词后注入整份模式指令，本移植形态 = 一个 `agent/pre-step` waterfall listener（模式 A），命中即 `agent.inject()` 并永远 `next()`；**注入正文改为引用本仓 vendor 的 ultrawork / hyperplan SKILL.md**（P4-T4），5+1 个上游模型变体收窄为单一名册感知文案，`team` 枚举位**预留不接线**（Phase 5 面），toast 收窄为审计行。逐文件处置注记于 `src/hooks/keyword-detector.ts` 文件头，上游目录 **24 条目 = 16 实现 + 7 测试 + 1 `AGENTS.md`**（`AGENTS.md` 按 N-03 不计入移植面；再加目录外的 `config/schema/keyword-detector.ts` → manifest 两列之和 `upstreamFiles` 17 + `upstreamTestFiles` 7 = 24，与覆盖文档 §1.2 的「25 文件」差 1 即此 `AGENTS.md` 口径）） |
 
 > Deliberately **not** listed as ported: the 47 hook modules with a terminal
 > skip/defer/excluded disposition (DSH-native coverage, no DSH seam, platform coupling,
@@ -165,7 +165,9 @@ naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/man
 **Counts:** Phase 3 derived listener files listed = **15 hook ids / 26 derived files**
 (15 top-level `src/hooks/*.ts` + 11 files in the `keyword-detector/` and
 `ulw-execute/` submodule directories). P4-T16: these two numbers were `14 / 21`
-and had been stale since P4-T8 added `keyword-detector/` — the file set moved
+and had been stale since P4-T12 added `keyword-detector/` (P4-T8 added the
+`stop-continuation-guard` service, which is NOT in this count — it lives in
+`src/services/`, outside the `src/hooks/` set) — the file set moved
 twice (P4-T10's ulw-execute submodules, P4-T12's keyword-detector) and the prose
 did not. A hand-written count in a notices file is a count nobody re-reads, so
 they are now **derived**: `scripts/verify-concerto-static.mjs` record c21
@@ -174,7 +176,7 @@ disagrees. Editing the number without moving a file is now impossible.
 
 No existing entry above this section was modified (additions only).
 
-**P4-T8 addition (add-only, and deliberately NOT one of the 14 manifest rows):**
+**P4-T8 addition (add-only, and deliberately NOT one of the 15 manifest rows):**
 
 | Derived file under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
 |---|---|---|

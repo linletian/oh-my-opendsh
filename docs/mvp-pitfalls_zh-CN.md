@@ -414,3 +414,62 @@ harness 某个字段的心智模型。它只在阶段自己的**正向**嵌套�
 | **修复** | 按先例重构（catch fail-open 调一次、正常路径 try 后调一次）+「next() 抛错」用例补**调用计数断言**（恰好一次）——盲区闭合经变异验证。 |
 | **可迁移的教训** | **fail-open 的 catch 只能兜「自有逻辑」的错**：把 delegate/next 放进 try 就等于把下游的错误也算进自己的失败域——注释自述的纪律必须有用例钉住（计数断言），否则自述与实现可以一起漂。 |
 
+## 13. P-31 ~ P-35（2026-10，Phase 4 命令面——移植 / e2e / 评审环里实测到的五处运行时契约坑）
+
+> 五处全部在 `omo-commands` 插件与其 mock-LLM e2e 场景落地过程中发现（逐任务证据块见 `docs/plans/phase4-dev/phase4-tasks.md`）。每处至少吃掉一整轮评审，而且**没有一处能被「fake 是普通对象」的单测发现**。
+
+### P-31 —— cordis `ctx` 是 `Proxy`：读**未声明**属性会抛，`ctx.get()` 才是安全的可选读——而普通对象 fake 会把它藏起来
+
+| 项 | 内容 |
+|---|---|
+| **症状** | 读从未声明（或尚不存在）的服务属性 `ctx.config` / `ctx.foo` 会在运行期抛 `cannot get property "foo" without inject`；同一段代码在手搓的普通对象上返回 `undefined` 并通过。单测因此只证明了 fake 可用，从未证明插件可用。 |
+| **证据** | `@deepseek-ai/cordis` 4.0.2 `src/reflect.ts:135-170`：`ReflectService.handler.get` 对任何「非特殊、不在 context 上、且 fiber 链上不可解析」的属性直接抛。Phase 4 踩了两次（一次 boot 标记读取、一次延迟 `ctx.get` 回退），两次都是「先改 fake」才改成运行期同意。 |
+| **根因** | context 是**服务解析代理**，不是一袋字段：`get` 陷阱本身就是声明检查；普通对象没有这层检查，所以 fake 结构上比运行期**更宽松**。 |
+| **为何没有门抓住** | 单测手搓 context（`{ … } as any`），代理行为只存在于真实运行期，也就是只存在于 e2e 启动 —— 于是首个症状是 e2e 红，不是测试红。 |
+| **修复** | 可选读一律走 **`ctx.get(name)`**（返回 `undefined`）；硬依赖写进插件的 `inject` 数组让 cordis 等它。Phase 4 各套件的 fake 都把 `get` 喂成真函数。 |
+| **状态** | 🔧 **已更正 + 已验证**（P4-T5/T7/T11；真实 context 下 e2e 绿）。 |
+| **可迁移的教训** | **比运行期更宽松的 fake 比没有 fake 更坏**：它把运行时契约变成只存在于测试里的虚构。当接缝是代理时，fake 必须复现代理的**失败模式**，而不只是它的顺利路径。 |
+
+### P-32 —— `agent.inject` 要完整 `UserMessage`，且 inbox 的 pending 唯一性按**消息身份**判——同一身份第二次注入即抛
+
+| 项 | 内容 |
+|---|---|
+| **症状** | 把 `inject` 当「字符串类」用（或构造消息时漏了 `id`），第二次注入就抛 `… is already pending` —— 一个**只在第二次调用才发作**的幂等守卫，恰好是所有单发测试都测不出来的那种形状。 |
+| **证据** | `@deepseek-ai/dsh-agent` 0.1.5-rc.1：`Agent.inject(message: UserMessage)`（`lib/types/runtime-types.d.ts:209`）要的是**完整 UserMessage**；而 `Inbox.append` / `prepend`（`lib/types/runtime-types.d.ts:53` / `:59`）的 JSDoc **只有两行 `@param`、没有 `@throws`** —— SDK 面**根本不记录**这个约束，读者只能去实现里找。找到了，而且有两处：`dsh-agent-loop/lib/index.js:194`（`ReactLoopInbox.mutate`，活路径）与 `:43`（`agent/inbox/spliced` 的 projection 重放，即重放时同一守卫会再跑一遍），两处都抛 `message "<id>" is already pending`。扫描跑在**两个 pending 列表的并集**上 —— `target === "next-turn" ? [...candidate, ...state["next-step"]] : [...state["next-turn"], ...candidate]` —— 即身份检查是**整个 inbox 全局**的，既非按调用、也非按列表：第二份副本落在哪个列表都会抛，而调用点对此一无所见。Phase 4 的 H-03 每个边界注入一次，P3-T9 的「双 claim」缺陷必须**故意**造第二个身份。 |
+| **根因** | pending 唯一性是**消息**的属性，不是调用点的属性：带同一身份的两个调用就是同一条消息被看了两次。 |
+| **修复** | 构造完整 `UserMessage`（role/content/**id**/source），并给每次「打算注入」各一个身份；幂等主张随后落在**我们自己的** marker（会话日志 / WeakMap）上，而不是 inbox 上。 |
+| **状态** | 🔧 **已更正 + 已验证**（P3-T9 / P4-T8；`double-steer-id-mismatch` 是对应的回归缺陷）。 |
+| **可迁移的教训** | **活在被调方消息身份上的幂等保证，护不住你插件的语义** —— 键要自己定，并按名字断言它。 |
+
+### P-33 —— `ctx.jobs.list()` 不传 `caller` **只回无主 job**，于是级联取消静默空转
+
+| 项 | 内容 |
+|---|---|
+| **症状** | `/stop-continuation` 的级联步骤在一个**确实有后台任务在跑**的沙箱里报 `cancelled 0 job(s)`。没有报错、没有告警 —— job 表里根本没有可匹配的行。 |
+| **证据** | `@deepseek-ai/dsh-jobs-local` 0.1.5-rc.1 `lib/index.js:178-180`：`list(caller)` 的过滤是 `job.owner === void 0 || job.owner.id === caller?.id`，不传 caller 就只剩无主子集；而 `kill(id, caller, reason)` 走 `assertAccess`，对别家会话的 job 直接抛（`lib/index.js:313-315`）。真实生产者一律带 owner（`dsh-tool-bash:416-417`）。评审 MAJOR（P4-T8）亲核成立。 |
+| **根因** | `caller` 是**围栏参数**，不是「过滤偏好」：省掉它不会放宽结果集，而是**收窄**到恰好你永远不会想要的那部分。 |
+| **修复** | 一律传 `caller: sessionId`，并在 kill 前再按 `ownerSession === sessionId` 收窄 —— 让爆炸半径是显式的，而不是默认的。 |
+| **状态** | 🔧 **已更正 + 已验证**（P4-T8；e2e 对真实 `sleep` 断言 `cancelled 1`）。 |
+| **可迁移的教训** | **静默收窄的过滤器才是危险的那种**：你以为可选的参数，决定了你**看得见什么**。读它的谓词，别读它的名字。 |
+
+### P-34 —— 场景 `settle` 钩子的签名是与**驱动**的契约；错位会让每个参数整体右移，观测窗口静默失效
+
+| 项 | 内容 |
+|---|---|
+| **症状** | `settle: awaitUlwExecuteCommandChildren`（声明为 `(sandbox, sessionId, timeoutMs)`），而驱动调用的是 `settle(boot, sandbox, sessionId)`：钩子把 `boot` 当成 sandbox、把 `undefined` 当成 session id、把 timeout 位置上的 session id 收成**字符串**。它的 `while (Date.now() < deadline)` 拿 `NaN` 比较，**循环体一次都没执行** —— 守卫是个空转，却仍返回了一个「成功」形状的值。 |
+| **证据** | P4-T11 评审 **BLOCKER-1**（驱动侧 `await def.settle?.(boot, sandbox, created.sessionId)`），发现时场景还在照样通过 —— 那份静默来自驱动，不是来自场景。 |
+| **根因** | 跨模块的位置参数调用是一份**无人检查**的契约；而一个「参数错了也照样正常返回」的钩子，与一个真的观测过的钩子无法区分。 |
+| **修复** | 在调用点包一层（`settle: (_boot, sandbox, sessionId) => hook(sandbox, sessionId)`）让驱动的元数显式化，**并且**让窗口可观测：settle 的判定随结果进入场景自身（`commandTurnTimeout`），于是「我们停止观测了」永远不会被读成「某条主张为假」。 |
+| **状态** | 🔧 **已更正 + 已验证**（P4-T11；25 条断言绿且 `commandTurnTimeout: false`）。 |
+| **可迁移的教训** | **任何等待 / 观测助手都必须报告自己是否真的观测到了** —— 而跨模块的位置参数调用值得一个显式包装层，而不是靠眼睛对齐签名。 |
+
+### P-35 —— 负对照必须先证明**主体存在**，再证明它没有作用
+
+| 项 | 内容 |
+|---|---|
+| **症状** | 「对照委派没有产生注入」在对照子会话**压根没跑**时会空洞通过 —— 没有会话、没有日志、也没有注入。断言与坏掉的 harness 不可区分。 |
+| **证据** | Phase 4 第一轮评审后按此形状重塑对照：`markerlessControlInjectedNothing` 先要求 `controlChild !== undefined` **且**该子会话带 atlas persona，再断言零注入；P4-T11 的对照是一条真实的 `run_in_background` 委派，带自己的脚本步。 |
+| **根因** | 「无作用」和「无主体」在日志里是同一片空；只有对主体的**存在性正向断言**能把两者分开。 |
+| **修复** | 每条对照断言都是合取：主体可观测（子会话日志 + 持久 descriptor/persona + 至少一步），**且**其作用计数为零。 |
+| **状态** | 🔧 **已更正 + 已验证**（P4-T11；对照子会话在缺陷用例里是可被移除的主体）。 |
+| **可迁移的教训** | **没有证据的「不存在」，需要「主体不存在」的证据**：在 harness 里「什么都没发生」是默认态，所以对照必须先自费买下自己的存在，才能声称沉默。 |

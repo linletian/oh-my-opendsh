@@ -487,3 +487,62 @@ itself, and its failure mode was a silently wrong artifact rather than a red gat
 | **Fix** | Restructured per the precedent (the catch fail-opens with one call, the normal path calls once after the try) + the "next() throws" case gained a **call-count assertion** (exactly once) — the blind spot closed with mutation verification. |
 | **Transferable lesson** | **A fail-open catch may only cover OWN-logic errors**: putting delegate/next inside the try folds downstream errors into your own failure domain — and a self-claimed discipline must be pinned by a test (a call-count assertion), or the claim and the implementation can drift together. |
 
+## 13. P-31 ~ P-35 (2026-10, Phase 4 command face — five runtime-contract pitfalls found in the port/e2e/review loops)
+
+> All five were found while landing the `omo-commands` plugin and its mock-LLM e2e scenarios (evidence: per-task evidence blocks in `docs/plans/phase4-dev/phase4-tasks.md`). Each cost at least one full review round, and none of them is visible in a unit test whose fakes are ordinary objects.
+
+### P-31 — cordis `ctx` is a `Proxy`: getting an UNDECLARED property throws, so `ctx.get()` is the only safe optional read — and a plain-object fake hides it
+
+| Item | Content |
+|---|---|
+| **Symptom** | Reading `ctx.config` / `ctx.foo` for a service that was never declared (or is not present yet) **throws** `cannot get property "foo" without inject` at runtime, while the same code against a hand-rolled plain object in a unit test returns `undefined` and passes. The unit suite therefore proves the *fake* works, never the plugin. |
+| **Evidence** | `@deepseek-ai/cordis` 4.0.2 `src/reflect.ts:135-170`: `ReflectService.handler.get` throws for any non-special property that is neither on the context nor resolvable through the fiber walk. Hit twice in Phase 4 (a boot-marker read and a late `ctx.get` fallback), both times "fixed" in the fake before the runtime agreed. |
+| **Root cause** | The context is a service-resolving proxy, not a bag of fields: the `get` trap is the *declaration check*. A plain object has no such check, so a fake is structurally more permissive than the runtime. |
+| **Why no gate caught it** | Unit tests build the context by hand (`{ … } as any`); the proxy behaviour only exists in the real runtime, i.e. only in the e2e boot — which is exactly why the first symptom is a red e2e, not a red test. |
+| **Fix** | Optional reads go through **`ctx.get(name)`** (returns `undefined`); a hard dependency goes in the plugin's `inject` array so cordis waits for it. Every fake in the Phase 4 suites feeds `get` as a real function. |
+| **Status** | 🔧 **Corrected + verified** (P4-T5/T7/T11; e2e green with the real context). |
+| **Transferable lesson** | **A fake that is more permissive than the runtime is worse than no fake**: it converts a runtime contract into a test-only fiction. When a seam is a proxy, the fake must model the proxy's failure mode, not just its happy path. |
+
+### P-32 — `agent.inject` takes a complete `UserMessage`, and the inbox's pending-uniqueness is by message identity — a second injection of the same identity throws
+
+| Item | Content |
+|---|---|
+| **Symptom** | Treating `inject` as string-ish (or building the message without an `id`) makes the second injection throw `… is already pending`, i.e. an idempotency guard that fails **loudly and only on the second call** — the shape that passes every single-shot test. |
+| **Evidence** | `@deepseek-ai/dsh-agent` 0.1.5-rc.1: `Agent.inject(message: UserMessage)` (`lib/types/runtime-types.d.ts:209`) takes a **full UserMessage**, and `Inbox.append` / `Inbox.prepend` (`lib/types/runtime-types.d.ts:53` / `:59`) document **only two `@param` lines and no `@throws`** — the SDK surface does not record the constraint at all, so the reader has to find it in the implementation. There it is, twice: `dsh-agent-loop/lib/index.js:194` (`ReactLoopInbox.mutate`, the live path) and `:43` (the `agent/inbox/spliced` projection replay, i.e. the same guard runs again on replay) both throw `message "<id>" is already pending`. The scan runs over the **union** of both pending lists — `target === "next-turn" ? [...candidate, ...state["next-step"]] : [...state["next-turn"], ...candidate]` — so the identity check is global to the inbox, not per-call and not per-list: a duplicate id throws no matter which list the second copy landed in, and nothing about that is visible from the call site. Phase 4's H-03 continuation injects once per boundary and the P3-T9 double-claim defect had to construct a second identity deliberately. |
+| **Root cause** | Pending uniqueness is a property of the **message**, not of the call site: two calls carrying one identity are one message seen twice. |
+| **Fix** | Build the full `UserMessage` (role/content/**id**/source) and give each intended injection its own identity; the idempotency claim is then a statement about *our* marker (session log / WeakMap), never about the inbox. |
+| **Status** | 🔧 **Corrected + verified** (P3-T9 / P4-T8; `double-steer-id-mismatch` is the regression defect). |
+| **Transferable lesson** | **An idempotency guarantee that lives in the callee's message identity will not protect your plugin's semantics** — decide the key yourself and assert it by name. |
+
+### P-33 — `ctx.jobs.list()` without `caller` returns **only ownerless jobs**, so a cascading cancel silently iterates nothing
+
+| Item | Content |
+|---|---|
+| **Symptom** | `/stop-continuation`'s cascade step reported `cancelled 0 job(s)` against a sandbox with a **running** background job. No error, no warning — the job table simply had nothing to match. |
+| **Evidence** | `@deepseek-ai/dsh-jobs-local` 0.1.5-rc.1 `lib/index.js:178-180`: `list(caller)` filters `job.owner === void 0 || job.owner.id === caller?.id`, so with no caller only the ownerless subset is returned; and `kill(id, caller, reason)` runs `assertAccess`, which throws for another session's job (`lib/index.js:313-315`). Real producers always carry an owner (`dsh-tool-bash:416-417`). Verified as review MAJOR (P4-T8). |
+| **Root cause** | `caller` is a **fencing argument, not a filter preference**: omitting it does not widen the result set, it *narrows* it to exactly the rows you never want. |
+| **Fix** | Always pass `caller: sessionId`, then fence on `ownerSession === sessionId` before killing — so the blast radius is explicit rather than implied. |
+| **Status** | 🔧 **Corrected + verified** (P4-T8; the e2e scenario asserts `cancelled 1` against a real `sleep`). |
+| **Transferable lesson** | **A silent narrowing filter is the dangerous kind**: an argument you think is optional decides what you see. Read the filter's predicate, not its name. |
+
+### P-34 — A scenario `settle` hook's signature is a contract with the **driver**; a mismatch shifts every argument and leaves the observation window silently vacuous
+
+| Item | Content |
+|---|---|
+| **Symptom** | `settle: awaitUlwExecuteCommandChildren` (declared `(sandbox, sessionId, timeoutMs)`) while the driver calls `settle(boot, sandbox, sessionId)`: the hook received `boot` as its sandbox, `undefined` as the session id, and `timeoutMs` as a **string session id**. Its `while (Date.now() < deadline)` compared against `NaN` and **never executed the loop body** — the guard was a no-op that still returned a "success"-shaped value. |
+| **Evidence** | Found as review **BLOCKER-1** on P4-T11 (driver: `await def.settle?.(boot, sandbox, created.sessionId)`), after the scenario passed anyway — the window's silence was the driver's, not the scenario's. |
+| **Root cause** | A positional call across a module boundary is an un-checked contract; a hook that "returns fine" on bad arguments cannot be distinguished from one that really observed. |
+| **Fix** | Wrap the hook at the call site (`settle: (_boot, sandbox, sessionId) => hook(sandbox, sessionId)`) so the driver's arity is explicit, **and** make the window observable: the settle verdict travels into the scenario's own result (`commandTurnTimeout`), so "we stopped looking" can never be read as "a claim is false". |
+| **Status** | 🔧 **Corrected + verified** (P4-T11; 25 checks green with `commandTurnTimeout: false`). |
+| **Transferable lesson** | **Any wait/observe helper must report whether it succeeded in observing** — and a cross-module positional call deserves one explicit wrapper, not a matching-by-eye signature. |
+
+### P-35 — A negative control must first prove the SUBJECT EXISTED, then prove it had no effect
+
+| Item | Content |
+|---|---|
+| **Symptom** | "The control delegation produced no injection" passes vacuously when the control **child never ran at all** — no session, no log, no injection. The assertion and a broken harness are indistinguishable. |
+| **Evidence** | Phase 4 shaped its controls this way after the first review round: `markerlessControlInjectedNothing` requires `controlChild !== undefined` **and** the child's atlas persona before it asserts zero injections; the P4-T11 control is a real `run_in_background` delegation with its own scripted step. |
+| **Root cause** | "No effect" and "no subject" are the same empty log; only a positive existence assertion on the subject separates them. |
+| **Fix** | Every control assertion is a conjunction: the subject is observable (child log + durable descriptor/persona + at least one step), **and** its effect count is zero. |
+| **Status** | 🔧 **Corrected + verified** (P4-T11; the control child is in the defect cases as a removable subject). |
+| **Transferable lesson** | **Absence of evidence needs evidence of absence-of-subject**: in a harness, "nothing happened" is the default state, so a control must pay for its own existence before it may claim silence. |
