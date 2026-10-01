@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **17/18**（P4-T1…T17 ✅——余 T18 退出标准核对 + L4）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **18/18 全部完成**（含 S-12 修复批次——L4 捕获的命令模板自触发关键词模式缺陷，commit `307e983`；退出标准核对表 a–e 全 ✅，见本文末尾）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -206,13 +206,13 @@
 - **证据**：commit `a97187a` + `d676aeb`（keyword-detector 补行随 T16 提交——评审逐文件核实准确）。门 7 **9/9**；三方一致：NOTICES hooks 表 **15 行** ↔ manifest 15 ported id（keyword-detector 补行——T12 交付的署名缺口，T17 发现并修复）、commands 表 **5 行** ↔ 5 ported（ulw-plan 正确不在表内）；21 个 e2eScenario 全部在 SCENARIOS（33）有真实声明；既有条目只增不改（评审 diff 核实）。README 中英 R-7 状态行（R-10 只属 /ulw-execute 拆句——评审更正）；CHANGELOG Phase 4 块（census 23→30/33 scenarios 复算无误）；pitfalls §13 **P-31~P-35**（cordis ctx Proxy throw/inject 完整 UserMessage 且 SDK 无 @throws——实现抛错在 dsh-agent-loop:194/:43 并集检查/jobs.list 空 caller 空转/settle 签名错位/负对照先证存活——全条目带版本锚+行号）。**双评审**：sub-agent REJECT→修复→APPROVE + mcode APPROVE；6 条 findings。**仲裁记录（虚构举证事件）**：编码方曾以 npx 缓存旧版 rc.6 的文件行号反驳评审 MAJOR-1——仲裁逐一直核 installed 0.1.5-rc.1 源码，评审三条全成立、编码方引用全假（inbox.d.ts 不存在），终裁更正并在 §13 全条目加版本锚；编码方认错并自查 P-31/P-33 行号一并修正。withoutScenario 终态 []（无残留豁免）。覆盖清单 §6 H-33 件数口径已对齐（25=24+1 目录外）。
 - **依赖**：P4-T16。**量级**：0.5 天（实耗约 0.6 天）。
 
-### [ ] P4-T18 — 退出标准核对 + L4 真模型冒烟
+### [x] P4-T18 — 退出标准核对 + L4 真模型冒烟
 
 - **产出**：退出标准 a/b + DoD c/d/e 逐条取证表（本文件末尾核对表全 ✅）；L4 手工冒烟证据（`.omo/evidence/`，gitignored）与结论回填。
 - **做法**：① 全部产出随 T2…T17 逐任务提交后，在已提交快照上复跑 `scripts/ci-local.sh` 全 8 门；② L4 真 key 手工 run（`scripts/smoke-real.mjs` 体例）：真实敲 `/handoff`、`/ulw-execute`、prompt 带 `ulw` 关键词——断言命令事件链、模板注入、atlas 激活（marker 路径）、ultrawork banner 在真实模型链路出现；③ 核对表逐条 ✅/❌ + 证据指针。
 - **判定**：✅ 8/8 门绿；L4 三场景各达到"真实链路可达"判定（机制正确性已由 mock e2e 钉死，L4 证明可达性——Phase 3 T21 注记口径）；核对表全 ✅。
-- **证据**：（待填）
-- **依赖**：P4-T17。**量级**：0.5 天。
+- **证据**：① 已提交快照（`a97187a` + S-12 批次 `307e983`）复跑 **8/8 PASS**（日志 `.omo/evidence/p4t18-final-gates{,-v2}.log`：门 2 = **1355 测试**、门 3 = **33 场景 0 FAIL**、门 5 = checked=56、门 6 = **30 断言**、门 8 = **7 proofs**、realDshUntouched=true）。② **L4 三腿全达"真实链路可达"**（`.omo/evidence/p4t18/l4-real-model.md` + `l4-session.jsonl` + `l4-boot.log` + 准入应答两件）：`/handoff`（准入 success + 真实模型 6524 字符 HANDOFF CONTEXT 格式遵循 + completed）；`/ulw-execute alpha`（双层 marker 抵达 + 模型启动 Atlas work session + goal 注册 + 委派面沙箱 seed 差异如实上报后按名册规则兜底完成，completed）；`ulw` prompt（**ULTRAWORK MODE ENABLED! 横幅真实出现** + `<ultrawork-mode>` 标签 + completed）。**L4 捕获真实缺陷**：命令模板（v5 改名后帧头含 `ulw` token）自触发 keyword-detector——上游检测面（原始输入行 slash 剥离）永不自触发；已修为 S-12（commit `307e983`，双评审 APPROVE），并派生 T11/T13 双层 e2e 对照。③ 核对表 a–e 全 ✅（下表）。
+- **依赖**：P4-T17。**量级**：0.5 天（实耗约 1 天，含 S-12 三轮修复）。
 
 ---
 
@@ -220,8 +220,8 @@
 
 | # | 标准 | 证据 | 状态 |
 |---|---|---|---|
-| a | 每条命令在脚本化场景中驱动预期 agent 行为 | （覆盖清单 §1 各行场景名 + 门 3 复跑结果 + 每场景对照断言 + L4 证据） | ⬜ |
-| b | skill 加载原样复用 `dsh-skill` | （catalog 场景 + `skill` 工具加载断言 + 零 patch 静态断言） | ⬜ |
-| c | 8 门全绿（只加严不放松） | （已提交快照复跑输出） | ⬜ |
-| d | 文档与实测无冲突 | （P4-T1 回填记录 + 各任务 DoD-d 注记） | ⬜ |
-| e | 署名完整、verify-licenses 计数有对应 | （NOTICES diff + 计数对账） | ⬜ |
+| a | 每条命令在脚本化场景中驱动预期 agent 行为 | 门 3 = **33/33 PASS**（已提交快照复跑，`realDshUntouched: true`）。逐命令场景：`handoff-summary-driven`（18 断言）· `remove-ai-slops-driven`（18）· `stop-continuation-halts-todo`（30）· `ulw-execute-command-activates-atlas`（25）· `hyperplan-degraded-noted`（28）· `ulw-plan-loads-prometheus-skill`（17，手势桥零命令事件对照）· `skills-catalog-visible`（13）· 关键词四场景（21/15/17/24）；每场景含对照断言（未知命令零事件回落 / stop 前续行 stop 后停续 / 二次注入幂等 / 无 marker 无意图不激活 / 手势 vs 命令反向注册事实）+ 缺陷各命中具名检查。L4：`/handoff`、`/ulw-execute`、`ulw` 三腿真实模型链路可达（`.omo/evidence/p4t18/l4-real-model.md`） | ✅ |
+| b | skill 加载原样复用 `dsh-skill` | `skills-catalog-visible` 场景 13 断言：19 裸名 catalog 恰可见（无 `shared/` 前缀、`ulw-execute` 在 `start-work` 不在）+ `skill` 工具经 `ctx.skills.get` 原生面返回正文（与 vendor 文件**逐字全文比对**）+ 未 vendor 名拒 + 引用文件经 `path` 可读；**对 `dsh-skill*` 包零 patch**（门 6 c19 静态锚三腿：文件名/目录名/包名匹配）+ c16 署名头覆盖 + c17/c18 manifest 一致性；手势桥经 dsh-tool-skill 原生面（`/ulw-plan` 场景注入 source `kind:"skill-invocation"`） | ✅ |
+| c | 8 门全绿（只加严不放松） | 已提交快照（`307e983`）复跑 `scripts/ci-local.sh` **8/8 PASS**（`.omo/evidence/p4t18-final-gates-v2.log`）：门 1 typecheck · 门 2 **1355 单测**（基线 976→1355，增量全部具名）· 门 3 **33 e2e**（22→33）· 门 4 doctor-lite（3 insert 行）· 门 5 `checked=56`（54→56，两条新增均有条目）· 门 6 **30 静态断言**（23→30，c15–c21 新增）· 门 7 docs 9/9 · 门 8 **7 proofs**（6→7）；全链变异自证（各任务 findings 反跑记录） | ✅ |
+| d | 文档与实测无冲突 | P4-T1 回填（Q-1…Q-7 逐字引用闭环，`6bb115e`）+ 实施期更正全部落文档：templates/ 计数 11→14（`8ef02e1`）、keyword-detector 24+1 件数（`84559d5`）、PRE-2 仲裁记录（v4.19.4 基线维持）、T5/T8/T12/T15 任务书按 Q-3/Q-4/Q-5 裁定改写、C-01…C-08/H-33/H-34 终态逐行翻转（c14 双侧同步）、§6 统计自洽（H-33 25=24+1 对齐）、S-12 注记（帧头 token 成因） | ✅ |
+| e | 署名完整、verify-licenses 计数有对应 | `THIRD_PARTY_NOTICES.md` 只增不改（评审 diff 核实）：Phase 4 skills vendoring 小节（291 行逐文件 = manifest files[] = 磁盘）+ omo-commands 语义移植表（5 ported 命令/14 派生文件）+ omo-hooks 表 15 行（keyword-detector 补行，T12 缺口 T17 修复）+ guard 行（fork ii 登记）；`verify-licenses` **checked=56 violations=0**（54→56 = shared-skills + omo-commands，各有 license 字段条目）；`VENDOR-MANIFEST.json` 291 条 sha256 + deviations 14（改名 40 处 token 双向锚）+ 漂移检测 `checked=320 violations=0`；c16 署名头两群体门（ported 三联 + native 声明 + upstreamSources 交叉核对） | ✅ |
