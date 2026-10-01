@@ -2394,6 +2394,46 @@ function sleep(ms) {
  * turn is a SECOND prompt on the SAME session, so the driver must wait for turn
  * 2's boundary rather than return at turn 1's).
  */
+/**
+ * Waits for the turn a followup-queuing command opened, and returns the NEW
+ * `turnsSeen` (the count of turn/end events actually on disk). It sets the
+ * counter from the LOG rather than `+= 1`, because a command that queues a
+ * followup opens exactly one turn but the count is the only thing the next
+ * `awaitTurnEnd` can be trusted against. On timeout it leaves the counter where
+ * it was and lets the caller continue: a missing turn is then a scenario FAIL
+ * with a named check, which is the honest failure mode — never a crash.
+ */
+async function awaitFollowupTurn(sandbox, sessionId, turnsSeen, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const observed = countCompletedTurns(sandbox, sessionId)
+    if (observed > turnsSeen) {
+      console.error(`drive: command queued a followup → turn ${observed} observed (turnsSeen ${turnsSeen} → ${observed})`)
+      return observed
+    }
+    await sleep(200)
+  }
+  console.error(`drive: command claimed a followup but no new turn/end appeared within ${timeoutMs}ms`)
+  return turnsSeen
+}
+
+/**
+ * How many `turn/end` events the session's own JSONL holds — counted for ANY
+ * reason, `canceled` included.
+ *
+ * REGISTERED RISK, not changed: a `canceled` turn would still advance the count,
+ * so in principle a canceled turn could satisfy an `awaitTurnEnd` and shift the
+ * numbering the next await targets. The兜底 is `lastTurnEndedOnItsOwnTerms`, which
+ * asserts the FINAL turn's reason is `completed`, so a teardown that canceled the
+ * last turn is red regardless of what the counter believed. Counting any reason is
+ * kept because a canceled turn is still a turn that happened.
+ */
+function countCompletedTurns(sandbox, sessionId) {
+  const log = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    .find((candidate) => String(candidate.header?.id) === String(sessionId))
+  return (log?.events ?? []).filter((event) => event.type === 'turn/end').length
+}
+
 async function awaitTurnEnd(sandbox, sessionId, expectedTurns = 1) {
   const deadline = Date.now() + SCENARIO_TIMEOUT_MS
   let found
@@ -6486,6 +6526,8 @@ function fabricatedTodoContinuationLog(routes) {
 }
 
 function fabricatedTodoContinuationInput(routes) {
+  // Read the model id off `routes` here (NOT closed over from the caller) — a
+  // module-level factory cannot see the self-test's local `routes`.
   const model = routes.sisyphus.model
   const messages = (text) => [
     { role: 'system', content: 'MOCKROLE=sisyphus' },
@@ -8617,6 +8659,79 @@ async function runAnalysisSelfTest(routes) {
     STOP_SELF_TEST_ATTESTATION.push(...stopCases.map(([label]) => ['stop-continuation-halts-todo', label]))
   }
 
+  // ── P4-T11 ulw-execute-command self-test: the good input must PASS, then every
+  // named defect must FAIL on its own named check.
+  {
+    const goodCommand = analyzeUlwExecuteCommandActivatesAtlas(fabricatedUlwCommandInput(routes), routes)
+    if (goodCommand.result !== 'PASS') {
+      problems.push(`fabricated GOOD ulw-execute-command-activates-atlas must PASS, got FAIL on: ${goodCommand.failed.join(', ')}`)
+    }
+    const commandCases = ulwExecuteCommandDefectCases(routes)
+    if (commandCases.length === 0) {
+      problems.push('fabricated ulw-execute-command-activates-atlas: the defect list is EMPTY — the banner would attest to nothing')
+    }
+    for (const [label, mutate, expectedCheck] of commandCases) {
+      const input = fabricatedUlwCommandInput(routes)
+      mutate(input)
+      const verdict = analyzeUlwExecuteCommandActivatesAtlas(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated ulw-execute-command-activates-atlas defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+    }
+    ULW_COMMAND_SELF_TEST_ATTESTATION.push(...commandCases.map(([label]) => ['ulw-execute-command-activates-atlas', label]))
+  }
+
+  // ── P4-T15 hyperplan-degraded-noted self-test: the good input must PASS, then
+  // every named defect must FAIL on its own named check.
+  //
+  // Defect counts, so a reader does not have to count: 18 for
+  // hyperplan-degraded-noted, 14 for ulw-plan-loads-prometheus-skill, 32 in total.
+  // The empty-list guard below is the real check on these numbers — if a case is
+  // deleted, the banner is generated from the live list, so the SELF-TEST OK line
+  // would silently shrink rather than fail. That is why the guard exists per
+  // scenario and not once for the pair.
+  {
+    const goodHyperplan = analyzeHyperplanDegradedNoted(fabricatedHyperplanInput(routes), routes)
+    if (goodHyperplan.result !== 'PASS') {
+      problems.push(`fabricated GOOD hyperplan-degraded-noted must PASS, got FAIL on: ${goodHyperplan.failed.join(', ')}`)
+    }
+    const hyperplanCases = hyperplanDegradedDefectCases()
+    if (hyperplanCases.length === 0) {
+      problems.push('fabricated hyperplan-degraded-noted: the defect list is EMPTY — the banner would attest to nothing')
+    }
+    for (const [label, mutate, expectedCheck] of hyperplanCases) {
+      const input = fabricatedHyperplanInput(routes)
+      mutate(input)
+      const verdict = analyzeHyperplanDegradedNoted(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated hyperplan-degraded-noted defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+    }
+    HYPERPLAN_SELF_TEST_ATTESTATION.push(...hyperplanCases.map(([label]) => ['hyperplan-degraded-noted', label]))
+  }
+
+  // ── P4-T15 ulw-plan-loads-prometheus-skill self-test. The good input must PASS,
+  // then every named defect must FAIL on its own named check.
+  {
+    const goodGesture = analyzeUlwPlanLoadsPrometheusSkill(fabricatedUlwPlanInput(routes), routes)
+    if (goodGesture.result !== 'PASS') {
+      problems.push(`fabricated GOOD ulw-plan-loads-prometheus-skill must PASS, got FAIL on: ${goodGesture.failed.join(', ')}`)
+    }
+    const gestureCases = ulwPlanGestureDefectCases()
+    if (gestureCases.length === 0) {
+      problems.push('fabricated ulw-plan-loads-prometheus-skill: the defect list is EMPTY — the banner would attest to nothing')
+    }
+    for (const [label, mutate, expectedCheck] of gestureCases) {
+      const input = fabricatedUlwPlanInput(routes)
+      mutate(input)
+      const verdict = analyzeUlwPlanLoadsPrometheusSkill(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated ulw-plan-loads-prometheus-skill defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+    }
+    ULW_PLAN_SELF_TEST_ATTESTATION.push(...gestureCases.map(([label]) => ['ulw-plan-loads-prometheus-skill', label]))
+  }
+
   // ── P4-T7 command-channel pilot self-test. Both specs run the SAME defect
   // list against their own fabricated good input: the channel properties under
   // test (admission, the lifecycle pair, the own-turn wiring, the admission-miss
@@ -8661,6 +8776,10 @@ async function runAnalysisSelfTest(routes) {
 const KEYWORD_SELF_TEST_ATTESTATION = []
 // P4-T9's own attestation, same shape: filled by the self-test loop, read by the banner.
 const STOP_SELF_TEST_ATTESTATION = []
+// P4-T11's, same shape: the banner is rendered FROM what ran, never hand-typed.
+const ULW_COMMAND_SELF_TEST_ATTESTATION = []
+const HYPERPLAN_SELF_TEST_ATTESTATION = []
+const ULW_PLAN_SELF_TEST_ATTESTATION = []
 
 // ══ P3-T17 ulw-execute: the A-mode activation scenarios (TWO) ════════════════
 //
@@ -8753,12 +8872,64 @@ const { AUTO_SELECTED_PLAN_HEADING } = await (async () => {
   // (`buildStaticTextBlocks().noPlansBlock`, ulw-execute/context-builder.ts:81/:98).
   return { AUTO_SELECTED_PLAN_HEADING: text.trim().split('\n')[0] }
 })()
+// P4-T11 adds the TEMPLATE side of the same R-10 contract, imported from the
+// SHIPPED omo-hooks module and the SHIPPED omo-commands template — so "the
+// marker" is one value read by both packages, and the driver never holds a
+// paraphrase of it. The cross-package equality the single suites pin is what
+// makes this legitimate; the scenario then observes the RUNTIME producing it.
 const {
   ULW_EXECUTE_CONTEXT_MARKER: E2E_ULW_CONTEXT_MARKER,
   ULW_EXECUTE_PLUGIN: E2E_ULW_PLUGIN,
+  ULW_EXECUTE_ID,
+  TEMPLATE_HEADER_MARKER: E2E_TEMPLATE_HEADER_MARKER,
+  NOTEPAD_FOOTER: E2E_ULW_NOTEPAD_FOOTER,
+  UPSTREAM_NOTEPAD_FOOTER: E2E_ULW_UPSTREAM_NOTEPAD_FOOTER,
+  TEMPLATE_SESSION_CONTEXT_OPEN: E2E_SESSION_CONTEXT_OPEN,
 } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute/constants.ts', import.meta.url).href
 )
+// P4-T11's fabricated context also comes from the REAL renderer, for the same
+// reason the P3-T17 sentinel did: the defect cases must mutate a line the
+// runtime produces, not a hand-written paraphrase of it.
+const { buildAutoSelectedPlanContextInfoOnly, planProgressFromMarkdown } = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute/plan-discovery.ts', import.meta.url).href
+)
+// H-32's own gate, so the scenario asserts the shipped function's verdict rather
+// than re-implementing the two-marker conjunction.
+const { hasCommandTemplateMarker } = await import(
+  new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute.ts', import.meta.url).href
+)
+const {
+  ULW_EXECUTE_DESCRIPTION,
+  renderUlwExecuteInstruction: renderUlwExecuteInstructionFn,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-commands/src/commands/ulw-execute.ts', import.meta.url).href
+)
+// The template and the hint live in the templates module; the command module
+// only CONSUMES them (it does not re-export), so the driver reads them where they
+// are defined rather than from a wrapper.
+const {
+  ULW_EXECUTE_COMMAND_TEMPLATE,
+  ULW_EXECUTE_ARGUMENT_HINT,
+} = await import(
+  new URL('../../patches/omo-dsh/omo-commands/src/templates/ulw-execute.ts', import.meta.url).href
+)
+const { renderCommandTemplate } = await import(
+  new URL('../../patches/omo-dsh/omo-commands/src/templates/render.ts', import.meta.url).href
+)
+// P4-T11: the command name the assertions spell out. Read from the SHIPPED naming
+// anchor rather than typed: `ULW_EXECUTE_ID` is the v5 name that R-10's whole
+// naming rests on (and H-32's hook id is an alias of it), so a rename upstream
+// would turn every assertion here red instead of silently testing a name nothing
+// registers. The omo-commands registry row carries the same string; there is no
+// exported constant for that row, so this anchor is the closest single source
+// that both packages already agree on.
+const ULW_EXECUTE_COMMAND_NAME = ULW_EXECUTE_ID
+// The marker task text the CONDUCTOR hands to atlas is built with THIS session
+// id and timestamp, so the fixture's own markers are substituted (a raw
+// `$SESSION_ID` would not be a template product).
+const ULW_EXECUTE_MARKER_SESSION_ID = 'session-fabricated-ulw-command-marker'
+const ULW_EXECUTE_MARKER_TIMESTAMP = '2026-10-01T09:15:00.000Z'
 
 /**
  * Scenario 1's script: ONE batch with the atlas TRIGGER and the explore 对照
@@ -11611,6 +11782,565 @@ export function analyzeCommandChannelDriven({ log, requests, bootLog, commandRes
   }
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
 }
+/** The request `/hyperplan` is asked to plan. A vague, interview-shaped ask. */
+const HYPERPLAN_REQUEST = '把用户登录改造成支持单点登录'
+
+// ── Shared helpers for the two P4-T15 scenarios ───────────────────────────────
+
+/**
+ * The MODEL-FACING body of a command frame: everything from the opening
+ * `<command-instruction>` to its own closing tag.
+ *
+ * The slice is open→close, and a MISSING tag THROWS. Both halves are load-bearing
+ * and both are inherited from T14's inverted-slice defect: slicing from the closing
+ * tag onward covers only the tail (so a guard built on it looked strict and was
+ * empty), and an `indexOf` of -1 would silently produce a `slice(0, -1)` — almost
+ * the whole string — turning a missing frame into a PASS. A fabricated fixture that
+ * drops the frame must blow up, not go green.
+ */
+function commandBody(text) {
+  const open = text.indexOf('<command-instruction>')
+  const close = text.indexOf('</command-instruction>')
+  if (open === -1 || close === -1) {
+    throw new Error(`frame not found: open=${open} close=${close}`)
+  }
+  // `close <= open` is its OWN check, not part of the -1 test above: a frame whose
+  // closing tag PRECEDES its opening tag yields `slice(open, close + len)` over a
+  // negative span, which JavaScript clamps to the empty string — so every
+  // `body.includes(...)` and `deadLinkFree('')` downstream would pass vacuously.
+  // This is the same failure class T14 already paid for in hyperplan.test.ts:184.
+  if (close <= open) {
+    throw new Error(`frame tags inverted: open=${open} close=${close}`)
+  }
+  return text.slice(open, close + '</command-instruction>'.length)
+}
+
+/**
+ * The full text of the assistant message carrying `marker`, or '' if none did.
+ *
+ * The '' fallback is deliberate and is NOT a silent pass: every caller turns a ''
+ * into a named check failing on content, so "the reply never arrived" reads as
+ * `modelDeclaredDegradedModeOutLoud: false` rather than a crash or a vacuous true.
+ */
+function findAssistantText(events, marker) {
+  const hit = events.find(
+    (event) => event.type === 'assistant/message'
+      && messageContentText(event.data?.message ?? event.data).includes(marker),
+  )
+  return hit === undefined ? '' : messageContentText(hit.data?.message ?? hit.data)
+}
+
+/** The request the ulw-plan gesture carries. Vague on purpose — that is the input
+ *  the skill's interview phase is built to handle, so a persona that skips straight
+ *  to a plan would be a real behavioural failure, not a formatting nit. */
+const ULW_PLAN_REQUEST = '给我们的报表系统做个改造方案'
+/** A sentinel from ulw-plan's BODY (not its frontmatter), so the "the injected body
+ *  really is this skill" check cannot be satisfied by a description-only match. */
+const ULW_PLAN_BODY_SENTINEL = '## INTENT ROUTING - pick ONE intent reference'
+
+// ── P4-T15: hyperplan-degraded-noted — the DEGRADED GUIDANCE really reaches the model
+// ONE session, TWO turns, ONE command. The transport is the P4-T7 command channel
+// (admission → `command/run` → `command/done` → the injected frame as a follow-up
+// user message), and this scenario adds the claims T14's rewrite exists for:
+//
+//   1. REGISTRATION — `/hyperplan` is a REAL command here, so the lifecycle pair
+//      exists at all. That is the same fact the `ulw-plan` scenario below pins from
+//      the OTHER side (no command → no lifecycle pair), and the pair of scenarios is
+//      what makes "a gesture is not a command" a checked contrast rather than a
+//      claim about one deployment's registry.
+//   2. THE DEGRADED GUIDANCE IS WHAT THE MODEL RECEIVES — asserted against the
+//      SHIPPED constants (`HYPERPLAN_DEGRADED_GUIDANCE`, `HYPERPLAN_ROSTER_CONTRACT`),
+//      imported below, never restated. A restated copy would let the e2e pass on a
+//      template that no longer says any of it.
+//   3. ZERO EXECUTABLE DEAD LINKS — T14's guard, spot-checked at the e2e layer: the
+//      model-facing body carries no filesystem path of any shape, and every mention of
+//      an absent team tool sits in a DENYING sentence. Reuse of the T14 rule, not a
+//      weaker second opinion: `deadLinkFree()` below is the same sentence-splitting
+//      predicate, so a T14 fix and this e2e cannot drift apart silently.
+//   4. THE DEGRADED SUFFIX IS IN THE FRAME'S DESCRIPTION LINE — the MAJOR-1
+//      commitment, checked where the model actually reads it.
+//   5. 对照 — the same command with NO argument. Upstream gives hyperplan an
+//      `argumentHint` (`[planning-request]`), so the argument-bearing turn's frame
+//      MUST carry a `**User Arguments**` line and the bare turn's frame MUST NOT.
+//      That asymmetry is the frame's own shape, asserted per turn rather than once.
+const omoCommandsHyperplan = await import('../../patches/omo-dsh/omo-commands/src/templates/hyperplan.ts')
+const omoCommandsHyperplanCommand = await import('../../patches/omo-dsh/omo-commands/src/commands/hyperplan.ts')
+// P4-T15: the render PAIR the fabricated frame is built with — the same two
+// functions the hyperplan handler itself calls, so a fixture frame is a real
+// product of the shipped renderer rather than a transcription of one.
+const omoCommandsRender = await import('../../patches/omo-dsh/omo-commands/src/templates/render.ts')
+
+const HYPERPLAN_COMMAND_LINE = `/hyperplan ${HYPERPLAN_REQUEST}`
+// MEASURED (0.1.5-rc.1, this scenario's own real run): the host's admission strips
+// the `/hyperplan` token but NOT the space after it, so `args` arrives as
+// `' 把用户登录…'` — leading space included — and the frame's `**User Arguments**`
+// line and `<user-request>` body carry that same leading space. Asserted as a
+// measurement, not absorbed: if the host ever trims, these checks go red and
+// someone investigates, which is the opposite of a test written to whatever the
+// runtime happened to emit.
+const HYPERPLAN_MEASURED_ARGS = ` ${HYPERPLAN_REQUEST}`
+// The bare variant: the SAME command with no argument, which is the 对照 for the
+// frame's `**User Arguments**` line. Not `/hyperplan` on its own — the driver
+// submits the line verbatim, and a bare `/hyperplan` is a legal admission.
+const HYPERPLAN_BARE_COMMAND_LINE = '/hyperplan'
+const HYPERPLAN_BOOT_REGISTRATION_LINE = '[omo-commands] command hyperplan registered'
+// The model's reply to the degraded instruction. It must SAY the mode out loud,
+// which is the one thing the guidance asks the model to do unconditionally
+// (item 6: "Say plainly, in your reply, that this ran in DEGRADED mode").
+const HYPERPLAN_DEGRADED_SUMMARY =
+  'MOCK-HYPERPLAN-DEGRADED-8e51c3: DEGRADED mode — no team-mode surface, so the adversarial roles ran as roster delegations.'
+const HYPERPLAN_BARE_SUMMARY =
+  'MOCK-HYPERPLAN-BARE-3d70a9: DEGRADED mode — no team-mode surface, so the adversarial roles ran as roster delegations.'
+
+/**
+ * T14's dead-link rule, in its e2e form. The unit suite keeps the identical rule as
+ * a `describe`-LOCAL function (tests/omo-commands/hyperplan.test.ts) — it is NOT
+ * exported, and this copy is not derived from it at runtime. That is the point: the
+ * e2e layer is an independent witness, so the two can disagree and the disagreement
+ * is visible. If they ever need to be unified, do it by moving the unit's rule into a
+ * shared module — NOT by importing it, which would leave one verdict behind both.
+ *
+ * Returns every violation found.
+ */
+function deadLinkFree(body) {
+  const found = []
+  for (const dead of ['team_create', 'task_send', 'team_delete']) {
+    for (const sentence of body.split(/(?<=[.;])|\n/).filter((part) => part.includes(dead))) {
+      if (!/\b(no|not|never|without|skip|absent|does not|do not|don'?t|cannot)\b/i.test(sentence)) {
+        found.push(`${dead} sits in a non-denying sentence: ${JSON.stringify(sentence.trim())}`)
+      }
+    }
+  }
+  const pathish = /omo\.jsonc|oh-my-opencode|~[/.]/.exec(body)
+  if (pathish !== null) found.push(`a filesystem path reached the model: ${pathish[0]}`)
+  for (const category of ['unspecified-low', 'unspecified-high', 'ultrabrain', 'artistry', 'deep']) {
+    if (body.includes(category)) found.push(`upstream category ${category} reached the model`)
+  }
+  return found
+}
+
+/**
+ * MINOR-7: the e2e copy of T14's rule is DISCRIMINATING, checked on this side too.
+ * T14's unit suite already falsifies its own copy against a cross-sentence
+ * laundering ("…no team_create exists. Then call team_create…"); a second,
+ * independent implementation of the same rule can easily be the laxer one, and the
+ * e2e is where a real regression would land. So the same attack is run here — if
+ * this copy would wave it through, the e2e layer is the weaker witness and the
+ * check below says so.
+ */
+/**
+ * `commandBody` REJECTS a frame whose closing tag precedes its opening tag.
+ *
+ * This exists because the `close <= open` guard was, on its own, not falsifiable:
+ * removing it changed nothing, because no case fed `commandBody` an inverted frame,
+ * and a fixture that did would THROW through the analyzer and abort the whole
+ * self-test rather than report one failed check. Exercised directly instead — the
+ * same shape as `e2eRuleCatchesCrossSentenceLaundering` — a regression here is a
+ * clean named failure instead of a crash.
+ */
+function commandBodyRejectsInvertedFrameTags() {
+  try {
+    commandBody('</command-instruction>\nbody\n<command-instruction>')
+    return false
+  } catch {
+    return true
+  }
+}
+
+function e2eRuleCatchesCrossSentenceLaundering() {
+  return deadLinkFree(
+    'There is no team_create here. Then call team_create with the roster members.',
+  ).some((finding) => finding.includes('non-denying sentence'))
+}
+
+/** hyperplan-degraded-noted script: the command turn, then the bare 对照 turn. */
+function hyperplanDegradedScript() {
+  return {
+    sisyphus: [
+      { type: 'text', text: HYPERPLAN_DEGRADED_SUMMARY },
+      { type: 'text', text: HYPERPLAN_BARE_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * The two injected frames, located the way the command channel locates them: by the
+ * frame header the ported render writes, so each is matched to its own turn rather
+ * than "whichever came first" — the two turns carry the same `# /hyperplan Command`
+ * header, and a `find` would read turn 1's body for turn 2's assertions.
+ */
+export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandResults }, routes) {
+  const events = log?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const sessionId = String(log?.header?.id ?? '')
+
+  const runs = events.filter((event) => event.type === 'command/run')
+  const dones = events.filter((event) => event.type === 'command/done')
+  const hyperplanRuns = runs.filter((event) => event.data?.name === 'hyperplan')
+
+  const carriers = events
+    .filter((event) => event.type === 'user/message')
+    .map((event) => ({ event, text: messageContentText(event.data) }))
+    .filter((candidate) => candidate.text.includes('# /hyperplan Command'))
+  // The two carriers are told apart BY THEIR OWN CONTENT, not by array position.
+  // Index-based `carriers[0]` / `carriers[1]` was wrong: if the first frame never
+  // arrived, the SECOND frame silently became `carriers[0]` and every first-frame
+  // check was answered by the bare frame's contents — `firstFrameCarrierArrived`
+  // stayed true and the miss was invisible. The argument-bearing frame is the one
+  // that carries a `**User Arguments**` line, which is the very asymmetry the 对照
+  // exists to test, so the locator and the claim are the same fact.
+  const first = carriers.find((candidate) => candidate.text.includes('**User Arguments**:'))
+  const second = carriers.find((candidate) => !candidate.text.includes('**User Arguments**:'))
+  // LAZY, and separately named. The first version called `commandBody(first?.text
+  // ?? '')` unconditionally, so a MISSING carrier made `commandBody` throw on its
+  // own guard; runScenario's catch then collapsed the whole verdict into an opaque
+  // crash string and all 23 named checks were lost. A missing carrier is a normal
+  // FAIL, not a crash — it now shows up as `firstFrameCarrierArrived` / 
+  // `bareFrameCarrierArrived` being false, with every other check readable.
+  const firstBody = first === undefined ? '' : commandBody(first.text)
+
+  const admissions = new Map((commandResults ?? []).map((entry) => [entry.line, entry]))
+  const admission = admissions.get(HYPERPLAN_COMMAND_LINE)
+  const bareAdmission = admissions.get(HYPERPLAN_BARE_COMMAND_LINE)
+
+  // The model must have SURRENDERED the request verbatim: the guidance's own item 6
+  // is a statement about what the reply must contain, so the reply is the evidence.
+  const firstSummary = findAssistantText(events, HYPERPLAN_DEGRADED_SUMMARY)
+  const secondSummary = findAssistantText(events, HYPERPLAN_BARE_SUMMARY)
+  const turnEnds = events.filter((event) => event.type === 'turn/end')
+  // Which model request each turn's frame rode in, located by the request's OWN
+  // content — the FULL frame text, not a prefix. A prefix is not distinguishing
+  // here: both frames open with the same 200 characters (the header and the
+  // Description line) and differ only further down, at the `**User Arguments**`
+  // line, so a prefix matched BOTH requests and the second index collapsed onto the
+  // first. Two linear scans over a handful of requests — O(N²) in principle,
+  // MEASURED at 3 requests here; not worth an index map, and the comment is here so
+  // nobody "optimises" it into a shared helper that changes which request matches.
+  const firstFrameRequestIndex = sisyphusRequests.findIndex(
+    (request) => first !== undefined && requestMessagesContain(request, first.text))
+  const secondFrameRequestIndex = sisyphusRequests.findIndex(
+    (request) => second !== undefined && requestMessagesContain(request, second.text))
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    // The head-hole guard: without this the whole scenario could pass on a build
+    // where `/hyperplan` was never registered at all.
+    commandRegisteredInBootLog: bootLog.includes(HYPERPLAN_BOOT_REGISTRATION_LINE),
+    // BOTH lines admitted, as real commands, each with its own lifecycle pair.
+    bothLinesAdmittedAsCommands: admission?.matched === true
+      && admission?.admission?.result?.kind === 'success'
+      && bareAdmission?.matched === true
+      && bareAdmission?.admission?.result?.kind === 'success',
+    // Paired BY commandId, not by count. Counting two runs and two dones proves
+    // only that two of each exist; the host mints a FRESH commandId per execute
+    // (measured: `cmd-7ae2db59-1` / `cmd-7ae2db59-2`), so the real claim is that
+    // each run has its OWN success done after it. The `seq` ordering that used to
+    // close this check was tautological — the two runs are filtered out of a
+    // seq-ordered event list, so `runs[0].seq < runs[1].seq` cannot fail.
+    //
+    // `dones.length === 2` is a WHOLE-LOG count, deliberately: on dsh a
+    // command's only lifecycle events are `command/run` and `command/done` (the
+    // scan of lib/index.js finds no third), so "two runs, two dones" is the
+    // complete-pair claim and a stray third event would have to be one of these two
+    // types. If a third command event type ever appears this count is the check
+    // that notices.
+    lifecyclePairPerLine: hyperplanRuns.length === 2
+      && dones.length === 2
+      && hyperplanRuns.every((run) => dones.some((done) =>
+        done.data?.commandId === run.data?.commandId
+        && done.data?.kind === 'success'
+        && run.seq < done.seq)),
+    // The carriers' EXISTENCE, named separately from their contents. Without these
+    // two, a run that produced no carrier at all would report every content check
+    // false with no statement that the carrier itself was missing.
+    firstFrameCarrierArrived: first !== undefined,
+    bareFrameCarrierArrived: second !== undefined,
+    // The FIRST line's args are what the user typed, the SECOND's are empty — the
+    // pair of admissions differs, so reading the wrong one is detectable.
+    firstLineCarriedTheRequestAsArgs: hyperplanRuns[0]?.data?.args === HYPERPLAN_MEASURED_ARGS,
+    secondLineCarriedNoArgs: hyperplanRuns[1]?.data?.args === '',
+    // ── the DEGRADED claims ──────────────────────────────────────────────────
+    degradedGuidanceReachedTheModel: first !== undefined
+      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE),
+    rosterContractReachedTheModel: first !== undefined
+      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_ROSTER_CONTRACT),
+    // The roster mapping T14 promised, read off the SHIPPED contract's own seats.
+    rosterSeatsNamedInTheModelText: ['plan-consultant', 'plan-reviewer', 'prometheus']
+      .every((seat) => first?.text.includes(seat) ?? false),
+    // The T14 fix, checked where it matters: the model may not be handed a path it
+    // could act on. The carrier note may quote the upstream paths (it must — the
+    // two-source inconsistency is required), so the scan is on the BODY only.
+    modelFacingBodyIsDeadLinkFree: first !== undefined && deadLinkFree(firstBody).length === 0,
+    // …and the copy of the rule doing that work is itself discriminating (MINOR-7).
+    deadLinkRuleIsDiscriminating: e2eRuleCatchesCrossSentenceLaundering(),
+    commandBodyRejectsInvertedFrameTags: commandBodyRejectsInvertedFrameTags(),
+    degradedModeAnnouncedInTheFrame: first !== undefined
+      && first.text.includes('DEGRADED MODE — this deployment has no team-mode surface'),
+    // MAJOR-1: the degraded suffix rides the frame's Description line, which is the
+    // text the model reads about the command it is executing.
+    degradedSuffixOnTheFrameDescriptionLine: first !== undefined
+      && first.text.includes(`**Description**: ${omoCommandsHyperplanCommand.HYPERPLAN_DESCRIPTION}`),
+    upstreamSentenceKeptVerbatimAheadOfTheSuffix: first !== undefined
+      && first.text.includes(`**Description**: ${omoCommandsHyperplanCommand.UPSTREAM_HYPERPLAN_DESCRIPTION} `),
+    // The skill is loaded BY NAME with the DSH call form — the rewritten link, and
+    // OMO's own `skill(name=…)` syntax must NOT reach the model.
+    skillLoadedByNameWithDshCallForm: first !== undefined
+      && first.text.includes(omoCommandsHyperplan.DSH_SKILL_CALL_FORM)
+      && !first.text.includes(omoCommandsHyperplan.UPSTREAM_SKILL_CALL_FORM),
+    // Upstream's 7-phase wording is kept verbatim (MAJOR-2), so this pins the
+    // attribution surface rather than a corrected count.
+    sevenPhaseWordingPreserved: first !== undefined
+      && first.text.includes('follow its 7-phase workflow EXACTLY using this user request'),
+    // The user request rode the frame verbatim, inside `<user-request>`.
+    userRequestRodeTheFrameVerbatim: first !== undefined
+      && first.text.includes(`<user-request>\n${HYPERPLAN_MEASURED_ARGS}\n</user-request>`),
+    // ── 对照: the bare line's frame omits the arguments line ─────────────────
+    bareFrameOmitsUserArgumentsLine: second !== undefined
+      && !second.text.includes('**User Arguments**'),
+    firstFrameCarriesUserArgumentsLine: first !== undefined
+      && first.text.includes(`**User Arguments**: ${HYPERPLAN_MEASURED_ARGS}`),
+    // The bare turn still gets the FULL degraded guidance — degradation is a
+    // property of the command, not of whether the user supplied an argument.
+    bareTurnAlsoCarriesTheDegradedGuidance: second !== undefined
+      && second.text.includes(omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE),
+    // ── the model obeyed ────────────────────────────────────────────────────
+    modelDeclaredDegradedModeOutLoud: firstSummary.includes('DEGRADED'),
+    controlTurnAlsoDeclaredDegradedMode: secondSummary.includes('DEGRADED'),
+    bothTurnsCompleted: turnEnds.length === 2
+      && turnEndReasonKind(turnEnds[0]) === 'completed'
+      && turnEndReasonKind(turnEnds[1]) === 'completed',
+    // NOT a request-count check. The measured run issues THREE model requests, not
+    // two: turn 1 takes two steps (the injected frame's step, then the step the
+    // follow-up opens) and turn 2 takes one. Hardcoding 2 would have been a
+    // transcription of a guess; the claim that actually matters is that each turn's
+    // frame reached the model, in two DIFFERENT requests.
+    eachFrameReachedAModelRequest: firstFrameRequestIndex >= 0
+      && secondFrameRequestIndex > firstFrameRequestIndex,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    commandLine: HYPERPLAN_COMMAND_LINE,
+    bootRegistrationPresent: bootLog.includes(HYPERPLAN_BOOT_REGISTRATION_LINE),
+    admissions: commandResults ?? [],
+    commandRunCount: runs.length,
+    commandRunData: hyperplanRuns.map((event) => ({ seq: event.seq, data: event.data })),
+    commandDoneCount: dones.length,
+    carriersFound: carriers.length,
+    frameHead: (first?.text ?? '').split('\n').slice(0, 6),
+    deadLinkFindings: first === undefined ? ['no carrier'] : deadLinkFree(firstBody),
+    turnEndReasons: turnEnds.map((event) => ({ seq: event.seq, turn: event.data?.turn ?? null, kind: turnEndReasonKind(event) ?? null })),
+    // ONE count, not two: `mockRequestCount` and the old `mockSawTwoRequests`
+    // restated each other. The request-count claim now lives entirely in
+    // `eachFrameReachedAModelRequest`, which is about the frames, not a number.
+    mockRequestCount: sisyphusRequests.length,
+    frameRequestIndices: { first: firstFrameRequestIndex, second: secondFrameRequestIndex },
+    sisyphusRoute: `${routes.sisyphus.provider}/${routes.sisyphus.model}`,
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
+// ── P4-T15: ulw-plan-loads-prometheus-skill — the GESTURE BRIDGE (no command at all)
+//
+// This is the Q-3 ruling turned into a measured run. `/ulw-plan` is the ONE manifest
+// row that stays `pending` FOREVER, because registering it as a command would shadow
+// the gesture bridge; the bridge works precisely because NO command of that name
+// exists. So the claim under test is a NEGATIVE one that is very easy to state and
+// easy to get wrong: the line must produce ZERO `command/run` and ZERO
+// `command/done`, and the skill must still reach the model.
+//
+// Four links, each observable only from outside the process:
+//
+//   1. GESTURE, NOT COMMAND — the line is submitted through the SAME admission path
+//      a command uses, misses (no same-name command), and falls back to a plain
+//      prompt. Asserted by name on the wire (`matched === false`) AND in the
+//      session log (zero lifecycle events), because either alone is weak: a
+//      `matched: false` with events present would mean something else admitted it.
+//   2. `<skill_content>` INJECTION — dsh-tool-skill's `agent/pre-step` hook scans
+//      the user text for `/name` gestures and, for a user-invocable skill, appends a
+//      user message whose `source.kind` is `skill-invocation`. The injection is
+//      exactly this (dsh-tool-skill/lib/index.js:165-196, 373-392; the `<skill_content
+//      name=…>` frame from dsh-skill/lib/index.js:57-69).
+//   3. THE USER'S OWN TEXT RIDES ALONG — the gesture scans the ORIGINAL user message,
+//      so the request must still be there verbatim beside the injected body. A
+//      bridge that swallowed the text would look identical on link 2 alone.
+//   4. THE PERSONA IS PROMETHEUS — ulw-plan's own body opens "You are **Prometheus**,
+//      a planning consultant", and its Phase 2 is an interview. The mock answers in
+//      that voice (interview questions written back), so the persona claim is
+//      behavioural rather than a string match on the injected body alone.
+//
+// 对照: the same skill invoked WITH an argument and the bare `/ulw-plan` gesture. The
+// bare form must still inject the body (the bridge keys on the name, not the args),
+// and its request text is the bare gesture itself.
+const ULW_PLAN_GESTURE_LINE = `/ulw-plan ${ULW_PLAN_REQUEST}`
+const ULW_PLAN_BARE_GESTURE_LINE = '/ulw-plan'
+// The mock answers as PROMETHEUS, in the interview voice ulw-plan's body prescribes
+// (Phase 2: turn the vague request into questions before planning). The markers make
+// the persona claim checkable: a generic "sure, here is a plan" reply fails both.
+const ULW_PLAN_PROMETHEUS_REPLY =
+  'MOCK-ULW-PLAN-PROMETHEUS-5c81f7: Before I plan, two questions. 1) Which users hit the slow path, and how do they notice? 2) What is the rollback if this is wrong?'
+const ULW_PLAN_BARE_PROMETHEUS_REPLY =
+  'MOCK-ULW-PLAN-BARE-PROMETHEUS-2a94bd: Which request did you mean? I have no target yet — name the one you want planned.'
+
+/** ulw-plan-loads-prometheus-skill script: the gesture turn, then the bare 对照 turn. */
+function ulwPlanGestureScript() {
+  return {
+    sisyphus: [
+      { type: 'text', text: ULW_PLAN_PROMETHEUS_REPLY },
+      { type: 'text', text: ULW_PLAN_BARE_PROMETHEUS_REPLY },
+    ],
+  }
+}
+
+export function analyzeUlwPlanLoadsPrometheusSkill({ log, requests, bootLog, commandResults }, routes) {
+  const events = log?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+
+  const runs = events.filter((event) => event.type === 'command/run')
+  const dones = events.filter((event) => event.type === 'command/done')
+
+  // The injected bodies, located by EXCLUSION: every `user/message` on the session
+  // that is not one of the two lines the driver submitted. Two earlier attempts
+  // each made a defect unlocatable — filtering on the `<skill_content …>` prefix
+  // meant a body that lost its frame stopped matching, and filtering on
+  // `source.kind === 'skill-invocation'` meant a body relabelled as a plain user
+  // message stopped matching. In both cases the defect the case was written to
+  // prove could not be the check that failed; it surfaced as some other check
+  // instead. Exclusion depends on neither, so every source/shape defect stays
+  // reachable and each check is independently falsifiable.
+  // The two OTHER injections a DSH session always carries — the runtime-context
+  // snapshot (`kind: 'plugin'`) and the skill-catalog `<system-reminder>`
+  // (`kind: 'skill-catalog'`). They are excluded by source KIND for a reason: the
+  // first real run located the runtime snapshot instead of the bridge's injection,
+  // because the locator took the first non-submitted message. Excluding by kind
+  // (rather than SELECTING `skill-invocation`) keeps a relabelled bridge injection
+  // locatable, so the source-contract check stays reachable.
+  const OTHER_INJECTION_KINDS = ['plugin', 'skill-catalog']
+  const submittedLines = [ULW_PLAN_GESTURE_LINE, ULW_PLAN_BARE_GESTURE_LINE]
+  const injectedCandidates = events
+    .filter((event) => event.type === 'user/message')
+    .map((event) => ({ event, text: messageContentText(event.data) }))
+    .filter((candidate) => !submittedLines.includes(candidate.text))
+    .filter((candidate) => !OTHER_INJECTION_KINDS.includes(candidate.event.data?.source?.kind))
+  const firstInjection = injectedCandidates[0]
+  const secondInjection = injectedCandidates[1]
+  const firstText = firstInjection?.text ?? ''
+  const carriesUlwPlanFrame = (candidate) =>
+    candidate?.text.startsWith('<skill_content name="ulw-plan">')
+    && candidate.text.includes('<skill_instructions>')
+    && candidate.text.trimEnd().endsWith('</skill_content>')
+
+  // The user's own messages, i.e. the ones the driver submitted as prompts.
+  const userLines = events
+    .filter((event) => event.type === 'user/message')
+    .map((event) => messageContentText(event.data))
+    .filter((text) => text === ULW_PLAN_GESTURE_LINE || text === ULW_PLAN_BARE_GESTURE_LINE)
+
+  const admissions = new Map((commandResults ?? []).map((entry) => [entry.line, entry]))
+  const gestureAdmission = admissions.get(ULW_PLAN_GESTURE_LINE)
+  const bareAdmission = admissions.get(ULW_PLAN_BARE_GESTURE_LINE)
+
+  // The skill's OWN body, read through the plugin's own reader — so "the injected
+  // body is the ulw-plan body" compares one delivery path against its source, the
+  // same comparison skills-catalog-visible already makes.
+  const ulwPlanEntry = vendoredSkillEntries().get('ulw-plan')
+  const ulwPlanBody = ulwPlanEntry?.document?.content ?? ''  // `content`, measured — `body` is undefined
+
+  const turnEnds = events.filter((event) => event.type === 'turn/end')
+  const firstReply = findAssistantText(events, 'MOCK-ULW-PLAN-PROMETHEUS-')
+  const secondReply = findAssistantText(events, 'MOCK-ULW-PLAN-BARE-PROMETHEUS-')
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    // ── link 1: a gesture is not a command ────────────────────────────────
+    // Named on the wire first. `ulw-plan` is the manifest row that must stay
+    // `pending` forever (registering it would shadow this very bridge), so an
+    // admission here would be the regression this scenario exists to catch.
+    ulwPlanWasNotAdmittedAsACommand: gestureAdmission?.matched === false
+      && gestureAdmission?.admission === undefined
+      && bareAdmission?.matched === false
+      && bareAdmission?.admission === undefined,
+    // …and named in the LOG, which is the half the wire cannot see: zero
+    // lifecycle events of any kind, not merely zero successful ones.
+    noCommandLifecycleEventsAtAll: runs.length === 0 && dones.length === 0,
+    bothGestureLinesFellBackToPrompts: userLines.length === 2
+      && userLines.includes(ULW_PLAN_GESTURE_LINE)
+      && userLines.includes(ULW_PLAN_BARE_GESTURE_LINE),
+    // ── link 2: the bridge injected the body ──────────────────────────────
+    // Two messages rode in that the driver never submitted — the bridge's own two
+    // injections. Counted as "everything else that arrived", so a relabelled or
+    // reframed body still shows up here and the shape check below stays reachable.
+    twoInjectedMessagesArrived: injectedCandidates.length === 2
+      && firstInjection !== undefined
+      && secondInjection !== undefined,
+    skillContentInjectedForBothLines: carriesUlwPlanFrame(firstInjection)
+      && carriesUlwPlanFrame(secondInjection),
+    injectionSourceIsSkillInvocation: firstInjection?.event?.data?.source?.kind === 'skill-invocation'
+      && firstInjection?.event?.data?.source?.name === 'ulw-plan'
+      && firstInjection?.event?.data?.source?.form === 'instructions',
+    injectionCarriedAsAnIdentifiedUserMessage: firstInjection !== undefined
+      && firstInjection.event.data?.role === 'user'
+      && typeof firstInjection.event.data?.id === 'string'
+      && firstInjection.event.data.id.length > 0,
+    // The full shipped frame, not a body-only substring: the `<skill_resources>`
+    // hint and the closing tags are part of what the model receives.
+    // The full shipped frame, not a body-only substring: the `<skill_resources>`
+    // hint and the closing tags are part of what the model receives.
+    injectionCarriesTheFullSkillFrame: firstText.startsWith('<skill_content name="ulw-plan">')
+      && firstText.includes('<skill_resources>')
+      && firstText.includes('<skill_instructions>')
+      && firstText.trimEnd().endsWith('</skill_content>'),
+    // The body really is ulw-plan's — a sentinel from the SKILL's own text, not
+    // from its frontmatter, so a description-only match cannot pass.
+    // Zero-drift: the WHOLE vendored body, read through the plugin's own reader, must
+    // be present. The old form compared two hand-picked lines, which says the injected
+    // text contains those two strings and nothing about the rest of the body. The
+    // body-not-frontmatter sentinel is kept as a separate check below so its purpose
+    // (a description-only match cannot pass) stays visible rather than being folded in.
+    injectedBodyIsTheUlwPlanBody: ulwPlanBody.length > 0 && firstText.includes(ulwPlanBody),
+    injectedBodySentinelComesFromTheBodyNotTheFrontmatter: firstText.includes('You are **Prometheus**, a planning consultant')
+      && firstText.includes(ULW_PLAN_BODY_SENTINEL),
+    // ── link 3: the user's own text rides along ───────────────────────────
+    // Scanned from the MODEL REQUEST, not the log: the bridge injects into the
+    // step's messages, so this is where "the request was not swallowed" is visible.
+    userRequestRodeTheFirstStep: sisyphusRequests.length > 0
+      && requestMessagesContain(sisyphusRequests[0], ULW_PLAN_GESTURE_LINE),
+    userRequestAndInjectionCoexistInOneStep: sisyphusRequests.length > 0
+      && requestMessagesContain(sisyphusRequests[0], ULW_PLAN_GESTURE_LINE)
+      && requestMessagesContain(sisyphusRequests[0], '<skill_content name="ulw-plan">'),
+    // ── link 4: the persona is prometheus, behaviourally ───────────────────
+    modelAnsweredAsPrometheusWithInterviewQuestions: firstReply.includes('questions')
+      && firstReply.includes('rollback'),
+    bareGestureAlsoInjectedTheBody: carriesUlwPlanFrame(secondInjection),
+    // MAJOR-1. The first version was `includes('Prometheus') || length > 0`, and BOTH
+    // halves were dead: the mock's marker reply is all-caps (`MOCK-ULW-PLAN-BARE-
+    // PROMETHEUS-…`), so the case-sensitive `Prometheus` never matched, and the
+    // `length > 0` fallback reduced the whole check to "some message is non-empty" —
+    // a review confirmed a reply with no interview content in it stayed green. The
+    // claim is now pinned on a CONTENT needle from the mock's own bare-gesture
+    // answer, with no fallback branch at all.
+    bareGestureAnsweredAsPrometheusToo: secondReply.includes('Which request did you mean'),
+    bothTurnsCompleted: turnEnds.length === 2
+      && turnEndReasonKind(turnEnds[0]) === 'completed'
+      && turnEndReasonKind(turnEnds[1]) === 'completed',
+    mockSawTwoRequests: sisyphusRequests.length === 2,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    gestureLine: ULW_PLAN_GESTURE_LINE,
+    admissions: commandResults ?? [],
+    commandRunCount: runs.length,
+    commandDoneCount: dones.length,
+    injectionsFound: injectedCandidates.length,
+    injectionSource: firstInjection?.event?.data?.source ?? null,
+    injectionHead: firstText.split('\n').slice(0, 6),
+    ulwPlanBodyChars: ulwPlanBody.length,
+    ulwPlanRegistered: ulwPlanEntry !== undefined,
+    turnEndReasons: turnEnds.map((event) => ({ seq: event.seq, turn: event.data?.turn ?? null, kind: turnEndReasonKind(event) ?? null })),
+    mockRequestCount: sisyphusRequests.length,
+    sisyphusRoute: `${routes.sisyphus.provider}/${routes.sisyphus.model}`,
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
 // ── P4-T9: stop-continuation-halts-todo — the /stop-continuation e2e ─────────
 // ONE session, FOUR prompts and THREE command calls, in this exact order (hence
 // the interleaved `actions` path — `commands` always run first, and this
@@ -12225,6 +12955,469 @@ export function analyzeStopContinuationHaltsTodo(
   return { result: failed.length === 0 ? 'PASS' : 'FAIL', checks, failed, bonus }
 }
 
+// ── P4-T11: ulw-execute-command-activates-atlas — the COMMAND (marker) path ────
+// ONE session, THREE prompts and TWO `/ulw-execute` calls, in exactly this order,
+// interleaved through the P4-T9 `actions` path (the command must land BETWEEN the
+// conductor's turns):
+//
+//   ① `/ulw-execute alpha` #1 → the template rides a followup into the CONDUCTOR
+//     session, and the conductor then delegates atlas with a task text that
+//     CARRIES the template (R-10's real link: the marker reaches H-32 through the
+//     delegation, not through the command line). The atlas child activates:
+//     H-32's injected context lands in the CHILD's own durable log.
+//   ② prompt 1: that trigger turn — delegate the work session to atlas, then
+//     summarize.
+//   ③ prompt 2 (对照 / control): a delegation whose task text carries NO marker
+//     and NO work-plan intent → H-32 stays silent. This is the negative control
+//     for the MARKER conjunct specifically.
+//   ④ `/ulw-execute alpha` #2 (幂等): the SAME command again, whose own followup
+//     opens the turn that ⑤ then uses. The atlas child has already been injected,
+//     so H-32's `already-injected` gate must hold — no second injection anywhere,
+//     and the conductor's own session still never receives one (the conductor is
+//     not an injection surface BY DESIGN).
+//   ⑤ prompt 2: that turn, which deliberately delegates nothing (a second work
+//     session would be the very thing the idempotence gate prevents).
+//
+// The action order in the scenario definition is the one above; it is written out
+// here rather than described because a header that drifts from the code is worse
+// than no header.
+//
+// WHY THE MARKER PATH IS A SEPARATE SCENARIO from P3-T17's two: P3-T17 proves
+// the INTENT path (a narrowed word list + word boundaries) and its negative
+// control. This one observes the MARKER CONTRACT end to end: the template the
+// command produced carries both R-10 markers, the delegation task text atlas
+// actually received carries them too, and both are decided by the SHIPPED
+// `hasCommandTemplateMarker` rather than by a re-implemented conjunction — so a
+// marker regression anywhere (template rendering, the hand-off, either constant)
+// turns a NAMED assertion red.
+//
+// WHAT THIS SCENARIO DOES NOT CLAIM (measured, not assumed): the delegation text
+// also trips FIVE entries of WORK_INTENT_MARKERS, so on a correct runtime BOTH
+// intent tracks are satisfied and this run cannot attribute the activation to
+// the marker gate alone. Attributing the gate needs a text that trips one and
+// not the other — and `hasCommandTemplateMarker` requires the full three-layer
+// template, which necessarily contains the intent words. That isolation belongs
+// to the unit suite (it can call either gate on a synthetic string); here the
+// contract surface is what is named and observed.
+//
+// Measured facts the assertions are derived from (never guessed):
+//   * the command name / description / argument hint and the template's three
+//     layers come from the shipped `omo-commands` package;
+//   * the two R-10 markers are `constants.ts`'s OWN exports, imported below, so
+//     "the template marker" means the module's value and not a copy;
+//   * the injection's source contract and context sentinel come from the same
+//     `constants.ts` the P3-T17 scenarios already read;
+//   * the registration line comes from `boot-markers.ts`.
+const ULW_EXECUTE_COMMAND_LINE = '/ulw-execute alpha'
+const ULW_EXECUTE_CONTROL_DELEGATION_TASK =
+  'summarize the repository layout in three sentences and report nothing else'
+const ULW_EXECUTE_COMMAND_PROMPT_1 =
+  'e2e ulw-execute-command: the instruction is above — delegate the work session to atlas with it, then summarize'
+const ULW_EXECUTE_CONTROL_PROMPT =
+  'e2e ulw-execute-command (control): delegate a plain summary to atlas, no marker and no work-plan intent'
+const ULW_EXECUTE_COMMAND_PROMPT_2 =
+  'e2e ulw-execute-command (idempotence): the instruction was queued again — do not start a second work session'
+const ULW_EXECUTE_COMMAND_CONDUCTOR_SUMMARY =
+  'MOCK-ULW-CMD-SUMMARY-4c81d2: handed the work session to atlas with the instruction text'
+const ULW_EXECUTE_CONTROL_CONDUCTOR_SUMMARY =
+  'MOCK-ULW-CMD-CONTROL-SUMMARY-7e30a5: delegated the plain summary'
+const ULW_EXECUTE_COMMAND_ATLAS_NOTE =
+  'MOCK-ULW-CMD-ATLAS-NOTE-1-5b90f2: executing the handed-over instruction'
+const ULW_EXECUTE_COMMAND_ATLAS_SECOND_NOTE =
+  'MOCK-ULW-CMD-ATLAS-NOTE-2-3d61a8: continuing with the injected plan context'
+const ULW_EXECUTE_CONTROL_ATLAS_NOTE =
+  'MOCK-ULW-CMD-CONTROL-ATLAS-NOTE-9a47c1: summarized the layout'
+const ULW_EXECUTE_TRIGGER_LABEL = 'Hand over the command work session'
+const ULW_EXECUTE_CONTROL_LABEL = 'Plain summary control'
+// The atlas delegation's task text for the trigger: the CONDUCTOR hands the
+// command's rendered instruction to atlas verbatim. The exact template bytes are
+// BUILT by the shipped renderer below rather than pasted, so what the child
+// receives is what the command really produced; the child's own copy is what the
+// assertions then read back out of its log.
+const ULW_EXECUTE_ATLAS_TRIGGER_TASK = renderCommandTemplate(ULW_EXECUTE_COMMAND_TEMPLATE, {
+  arguments: ULW_EXECUTE_PLAN_NAME,
+  sessionId: ULW_EXECUTE_MARKER_SESSION_ID,
+  now: () => ULW_EXECUTE_MARKER_TIMESTAMP,
+})
+
+/**
+ * ulw-execute-command-activates-atlas script. Two roles, two lanes:
+ *   sisyphus: the TRIGGER delegation (task = the command's rendered instruction)
+ *     → summary; then the 对照 delegation (task = a plain summary) → summary;
+ *     then the idempotence turn, which delegates NOTHING (a second work session
+ *     would be the very thing the idempotence gate prevents).
+ *   atlas: the trigger child takes TWO steps (the delegation prompt, then the
+ *     step opened by the injected context); the control child takes one (no
+ *     injection → no second step).
+ */
+function ulwExecuteCommandScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'atlas',
+        arguments: {
+          description: ULW_EXECUTE_TRIGGER_LABEL,
+          prompt: ULW_EXECUTE_ATLAS_TRIGGER_TASK,
+          run_in_background: true,
+        },
+      },
+      { type: 'text', text: ULW_EXECUTE_COMMAND_CONDUCTOR_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'atlas',
+        arguments: {
+          description: ULW_EXECUTE_CONTROL_LABEL,
+          prompt: ULW_EXECUTE_CONTROL_DELEGATION_TASK,
+          run_in_background: true,
+        },
+      },
+      { type: 'text', text: ULW_EXECUTE_CONTROL_CONDUCTOR_SUMMARY },
+      { type: 'text', text: ULW_EXECUTE_COMMAND_PROMPT_2 },
+    ],
+    atlas: [
+      { type: 'text', text: ULW_EXECUTE_COMMAND_ATLAS_NOTE },
+      { type: 'text', text: ULW_EXECUTE_COMMAND_ATLAS_SECOND_NOTE },
+      { type: 'text', text: ULW_EXECUTE_CONTROL_ATLAS_NOTE },
+    ],
+  }
+}
+
+/** The reason kind of the session's LAST `turn/end` (`undefined` if none). */
+function lastTurnReasonKind(events) {
+  const last = (events ?? []).filter((event) => event.type === 'turn/end').pop()
+  return last === undefined ? undefined : turnEndReasonKind(last)
+}
+
+/**
+ * The stop condition: BOTH children have run their turns and the notepad
+ * scaffold (the injection's side effect) has landed. A timeout returns false so
+ * the analysis reports the honest FAIL rather than the driver crashing.
+ */
+async function awaitUlwExecuteCommandChildren(sandbox, sessionId, timeoutMs = 30_000) {
+  // On timeout this DOES NOT throw: the analysis then reports the honest FAIL.
+  // `commandTurnTimeout` below records that the window ran out, so a scenario that
+  // went red because the observation window closed can never be misread as an
+  // assertion defect — the flag travels into the scenario's own result.
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    // ONE read per poll, reused by both conditions. The original read the logs
+    // twice per poll — once for the child and again for the scaffold branch — so
+    // the two conditions could be answering about DIFFERENT moments in time.
+    const child = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+      .find((candidate) => String(candidate.header?.parentSession) === String(sessionId))
+    if (child !== undefined && turnCompleted(child.events ?? [])) return true
+    // The scaffold can land before the child's turn closes, so it is a SECOND
+    // reason to keep waiting, never a substitute for the turn having ended.
+    if (existsSync(join(sandbox.project, '.omo', 'notepads', ULW_EXECUTE_PLAN_NAME, 'learnings.md'))) {
+      const reread = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+        .find((candidate) => String(candidate.header?.parentSession) === String(sessionId))
+      if (reread !== undefined && turnCompleted(reread.events ?? [])) return true
+    }
+    await sleep(250)
+  }
+  return false
+}
+
+/** The real sandbox disk facts, same shape the P3-T17 scenarios read. */
+function ulwExecuteCommandDiskFacts(sandbox) {
+  const notepadDir = join(sandbox.project, '.omo', 'notepads', ULW_EXECUTE_PLAN_NAME)
+  const notepadFiles = ['learnings.md', 'decisions.md', 'issues.md', 'problems.md']
+  const present = notepadFiles.filter((name) => existsSync(join(notepadDir, name)))
+  const learningsPath = join(notepadDir, 'learnings.md')
+  return {
+    planPath: join(sandbox.project, ULW_EXECUTE_PLAN_REL),
+    notepadDir,
+    notepadPresent: present,
+    notepadLearnings: existsSync(learningsPath) ? readFileSync(learningsPath, 'utf8') : undefined,
+  }
+}
+
+/**
+ * The ulw-execute-command-activates-atlas assertions (P4-T11). The claim is
+ * R-10's marker path, in FOUR separately named parts so a regression in one gate
+ * is distinguishable from a regression in another:
+ *   ① the COMMAND surface — admitted, `command/run`/`command/done` paired,
+ *     `done.kind` success, and the done text quotes the instruction's own char
+ *     count, this session, and the argument hint.
+ *   ② the TEMPLATE injection — the command's rendered instruction rides a
+ *     followup into the conductor's own durable log as a user message, carrying
+ *     the frame, the three template layers, both R-10 markers, and this
+ *     session's id + an ISO timestamp with NO unsubstituted placeholder.
+ *   ③ the MARKER path — the conductor delegated atlas with a task text carrying
+ *     BOTH markers, the child is the atlas row by its own durable persona, the
+ *     injected context landed in the CHILD's log with the producer triple, and
+ *     it reached that child's model request.
+ *   ④ 幂等 + the negative controls — the second command injected nothing new
+ *     anywhere, the marker-less control delegation injected nothing, and the
+ *     conductor itself never receives an injection (by design, not a bug).
+ */
+export function analyzeUlwExecuteCommandActivatesAtlas(
+  {
+    log,
+    allLogs,
+    requests,
+    providersJson,
+    bootLog,
+    planPath,
+    notepadPresent,
+    notepadLearnings,
+    settleReached,
+  },
+  routes,
+) {
+  const events = log?.events ?? []
+  const parentId = log?.header?.id
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const atlasRequests = requests.filter((request) => request.role === 'atlas')
+
+  // ── the two children, linked to their delegation by the descriptor label ──
+  const childLogs = Array.isArray(allLogs)
+    ? allLogs.filter(
+        (candidate) =>
+          candidate.header?.origin === 'subagent'
+          && String(candidate.header?.parentSession) === String(parentId),
+      )
+    : []
+  const childByLabel = new Map()
+  for (const child of childLogs) {
+    const descriptor = (child.events ?? []).find((event) => event.type === 'subagent/descriptor')
+    const label = descriptor?.data?.label
+    if (typeof label === 'string') childByLabel.set(label, child)
+  }
+  const triggerChild = childByLabel.get(ULW_EXECUTE_TRIGGER_LABEL)
+  const controlChild = childByLabel.get(ULW_EXECUTE_CONTROL_LABEL)
+
+  const childPersona = (child) => {
+    const descriptor = (child?.events ?? []).find((event) => event.type === 'subagent/descriptor')
+    const persona = descriptor?.data?.persona
+    return typeof persona === 'string' ? persona : undefined
+  }
+  // The child's own durable record of the delegation task text it received.
+  const childFirstUserText = (child) => {
+    const first = (child?.events ?? []).find(
+      (event) => event.type === 'user/message' && event.data?.source?.kind !== 'plugin',
+    )
+    return first === undefined ? undefined : messageContentText(first.data)
+  }
+  const injectedInto = (child) => (child?.events ?? []).filter(
+    (event) => event.type === 'user/message'
+      && (event.data?.content ?? []).some(
+        (block) => typeof block?.text === 'string' && block.text.includes(E2E_ULW_CONTEXT_MARKER),
+      ),
+  )
+  const triggerInjected = injectedInto(triggerChild)
+  const controlInjected = injectedInto(controlChild)
+  const triggerInjectionText = triggerInjected
+    .flatMap((event) => (event.data?.content ?? []).map((block) => block?.text ?? ''))
+    .join('\n')
+  const triggerInjectionSource = triggerInjected[0]?.data?.source
+
+  // ── ① the command surface ────────────────────────────────────────────────
+  const commandRuns = events.filter((event) => event.type === 'command/run')
+  const commandDones = events.filter((event) => event.type === 'command/done')
+  const doneFor = (run) => run === undefined
+    ? undefined
+    : commandDones.find((event) => event.data?.commandId === run.data?.commandId)
+  const firstDone = commandDones[0]
+  const firstDoneText = firstDone?.data?.text ?? ''
+
+  // ── ② the template injection into the CONDUCTOR's log ────────────────────
+  // The instruction is the conductor's own user message whose text carries the
+  // COMMAND FRAME — found by content rather than by position, because a followup
+  // claim lands at a turn boundary whose seq this analysis does not hard-code.
+  //
+  // Deliberately keyed on the frame head (`# /ulw-execute Command`) and NOT on
+  // the R-10 header marker. The benefit is ATTRIBUTION, not vacuity: a template
+  // that lost the marker would still be FOUND as a carrier, so its defect lands
+  // on `instructionCarriesBothR10Markers` — the gate that is actually broken —
+  // instead of reddening the carrier-count and the model-request checks and
+  // leaving the reader to guess which gate failed. (Keying on the marker would
+  // not make the marker check pass vacuously: the `typeof` guards would go red.
+  // It would just make the failure point a misleading one.)
+  const instructionCarriers = events.filter(
+    (event) => event.type === 'user/message'
+      && messageContentText(event.data).startsWith(`# /${ULW_EXECUTE_COMMAND_NAME} Command`),
+  )
+  const instructionText = instructionCarriers[0] === undefined
+    ? undefined
+    : messageContentText(instructionCarriers[0].data)
+  const instructionRequestIndex = instructionText === undefined
+    ? -1
+    : sisyphusRequests.findIndex((request) => requestMessagesContain(request, instructionText))
+
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    ulwExecuteRegisteredInBootLog:
+      bootLog.includes('[omo-commands] command ulw-execute registered'),
+    // ① the command event pair, twice (idempotence is a second real call).
+    commandAdmittedTwice: commandRuns.length === 2 && commandDones.length === 2
+      && commandRuns.every((run) => doneFor(run) !== undefined)
+      && commandDones.every((event) => event.data?.kind === 'success'),
+    commandRunsRecordedWithArgsAndUserSource: commandRuns.length === 2
+      && commandRuns.every((event) => event.data?.name === 'ulw-execute'
+        && event.data?.source?.kind === 'user'
+        // The argument is the plan name, WITH `parseCommand`'s unnormalized
+        // separator space in front of it (dsh-commands/lib/types/index.js:82).
+        && event.data.args === ` ${ULW_EXECUTE_PLAN_NAME}`)
+      && new Set(commandRuns.map((event) => event.data?.commandId)).size === 2,
+    // The done text quotes the instruction's own char count, this session, and
+    // the argument hint — three values the command could only know by rendering.
+    commandDoneNamesThisSessionAndThePayload:
+      firstDoneText.startsWith('Ulw-execute instruction queued (')
+      && firstDoneText.includes(`session ${parentId}`)
+      && firstDoneText.includes(ULW_EXECUTE_ARGUMENT_HINT)
+      && /^Ulw-execute instruction queued \(\d+ chars/.test(firstDoneText),
+    // ② the template injection into the conductor session.
+    // ONE carrier per admitted call (measured: two for the two `/ulw-execute`
+    // calls) — so this also pins that each call queued its OWN instruction
+    // instead of the second one being swallowed.
+    instructionCarriedIntoTheConductorSession: instructionCarriers.length === 2
+      && instructionCarriers.every((event) => event.data?.role === 'user')
+      && instructionCarriers.every((event) => event.data?.source?.kind === 'user'),
+    instructionFrameAndThreeLayersAreIntact:
+      typeof instructionText === 'string'
+      && instructionText.startsWith(`# /${ULW_EXECUTE_COMMAND_NAME} Command`)
+      && instructionText.includes(`**Description**: ${ULW_EXECUTE_DESCRIPTION}`)
+      // TWO spaces, measured: `parseCommand`'s `rawInput` keeps the separator
+      // space (`dsh-commands/lib/types/index.js:82`), and the frame adds its
+      // own — the same port difference the T7 scenario records verbatim.
+      && instructionText.includes(`**User Arguments**:  ${ULW_EXECUTE_PLAN_NAME}`)
+      && instructionText.includes('**Scope**: builtin')
+      && instructionText.includes('<command-instruction>')
+      && instructionText.includes('</command-instruction>')
+      && instructionText.includes(E2E_SESSION_CONTEXT_OPEN)
+      && instructionText.includes('</session-context>')
+      && instructionText.includes('<user-request>')
+      && instructionText.includes('</user-request>'),
+    // BOTH R-10 markers, verbatim from constants.ts — the cross-package contract
+    // this scenario exists to observe. A one-sided template would silently
+    // deactivate H-32 without any error anywhere.
+    instructionCarriesBothR10Markers:
+      typeof instructionText === 'string'
+      && hasCommandTemplateMarker(instructionText),
+    // `<session-context>` substituted with THIS session and an ISO timestamp; no
+    // placeholder survived the render.
+    sessionContextSubstitutedInTheInstruction:
+      typeof instructionText === 'string'
+      && instructionText.includes(`Session ID: ${parentId}`)
+      && /Timestamp: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(instructionText)
+      && !instructionText.includes('$SESSION_ID')
+      && !instructionText.includes('$TIMESTAMP')
+      && !instructionText.includes('$ARGUMENTS'),
+    // ... and it reached the conductor's model request (the followup opened its
+    // own turn, so it rides the FIRST request of that turn).
+    instructionReachedTheConductorModelRequest: instructionRequestIndex === 0,
+    // ③ the MARKER path.
+    // The conductor really delegated atlas with a task text carrying the
+    // template — the link R-10 names. Read from the CHILD's own log, so the
+    // assertion is about what atlas actually received.
+    atlasDelegationTaskCarriesTheTemplateMarker:
+      typeof childFirstUserText(triggerChild) === 'string'
+      && hasCommandTemplateMarker(childFirstUserText(triggerChild)),
+    triggerChildIsTheAtlasRow:
+      typeof childPersona(triggerChild) === 'string'
+      && childPersona(triggerChild).includes('omo-atlas'),
+    // The injection landed in the CHILD's own durable log, names the sandbox
+    // plan, and carries the producer triple.
+    injectedContextReachedTheAtlasChild:
+      triggerInjected.length === 1
+      && triggerInjectionText.includes(AUTO_SELECTED_PLAN_HEADING)
+      && triggerInjectionText.includes(`**Path**: ${planPath}`)
+      && triggerInjectionText.includes(`**Plan**: ${ULW_EXECUTE_PLAN_NAME}`),
+    injectionSourceContract:
+      triggerInjectionSource?.kind === 'plugin'
+      && triggerInjectionSource?.plugin === E2E_ULW_PLUGIN
+      && triggerInjectionSource?.form === 'instructions',
+    injectionReachedTheAtlasModelRequest: atlasRequests.some(
+      (request) => JSON.stringify(request.body ?? {}).includes(E2E_ULW_CONTEXT_MARKER),
+    ),
+    // The atlas lane really made MORE THAN ONE request. Named for what it can
+    // actually see: the mock cursor is per ROLE, so a request count cannot be
+    // attributed to ONE child — both children draw from the same `atlas` lane
+    // (measured: 4 in the real run; the fixture pins 3, and `>= 2` still pins
+    // the claim). What the injection adds is a step to whichever child it
+    // opened; the lane count is the only aggregate witness the parent side can
+    // see.
+    // (P3-T17's identically named check still claims the second step per child —
+    // the same overreach. Deliberately NOT changed here: that scenario's own
+    // evidence is its own business. Recorded for the T16 consistency sweep.)
+    atlasLaneMadeMoreThanOneRequest: atlasRequests.length >= 2,
+    // The scaffold side effect of the plan selection landed in the sandbox.
+    notepadScaffoldLanded: notepadPresent.length === 4,
+    // The scaffold's own footer is rewritten by the H-32 activation (the upstream
+    // `/start-work` reference is replaced). Presence alone would pass on an EMPTY
+    // scaffold, so the bytes are read off the real disk and pinned — the same shape
+    // as the P3-T17 assertion, which reads `notepadLearnings` the same way.
+    // The whole SHIPPED footer, not a hand-typed prefix of it. A prefix needle
+    // (`'Auto-scaffolded by ulw-execute'`) would also pass on a file whose footer
+    // was truncated halfway, so the surface this pins is narrowed to exactly what
+    // the activation is supposed to write.
+    notepadFooterRewrittenByTheActivation:
+      typeof notepadLearnings === 'string'
+      && notepadLearnings.includes(E2E_ULW_NOTEPAD_FOOTER)
+      && !notepadLearnings.includes('/start-work'),
+    // ④ 幂等: the second command added NO injection ANYWHERE — not in the
+    // already-injected child, not in the control child, not in any third child.
+    // Counted across every child log rather than as a request/step count: the
+    // mock's cursor is PER ROLE, so both children share one lane and the step
+    // count is a property of the fixture, not of H-32 (measured: 4 atlas
+    // requests for two children that should take 2 and 1 steps).
+    secondCommandInjectedNothingNew: triggerInjected.length === 1
+      && controlInjected.length === 0
+      && childLogs.reduce((total, child) => total + injectedInto(child).length, 0) === 1,
+    // 对照: a marker-less, intent-less delegation on the same atlas identity → silence.
+    markerlessControlInjectedNothing:
+      controlChild !== undefined
+      && typeof childPersona(controlChild) === 'string'
+      && controlInjected.length === 0,
+    // The CONDUCTOR is not an injection surface — by design (it has no atlas
+    // descriptor, so H-32 returns before the decision). Pinned so a future
+    // "fix" that widens the identity gate turns red here.
+    conductorNotInjected: !events.some(
+      (event) => event.type === 'user/message'
+        && (event.data?.content ?? []).some(
+          (block) => typeof block?.text === 'string' && block.text.includes(E2E_ULW_CONTEXT_MARKER),
+        ),
+    ),
+    turnCompleted: turnCompleted(events),
+    // The LAST turn really finished, on its own terms. `turnCompleted` above only
+    // asks whether a completed turn exists SOMEWHERE; this asks about the final
+    // one, because a driver that tore the session down early used to cancel it
+    // (`canceled`) while the scenario still passed on the earlier turns. With two
+    // commands that each queue a followup, the turn accounting has to be right for
+    // this to hold — the assertion is what proves it, not luck.
+    lastTurnEndedOnItsOwnTerms: lastTurnReasonKind(events) === 'completed',
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      parentId,
+      lastTurnReasonKind: lastTurnReasonKind(events),
+      // The settle hook's own verdict: `true` = the children ran and the scaffold
+      // landed; `false` = the observation window expired. Surfaced so a red run
+      // distinguishes "a claim is false" from "we stopped looking".
+      commandTurnTimeout: settleReached === false,
+      commandLine: ULW_EXECUTE_COMMAND_LINE,
+      commandRuns: commandRuns.map((event) => ({ seq: event.seq, data: event.data })),
+      commandDones: commandDones.map((event) => ({ seq: event.seq, data: event.data })),
+      instructionRequestIndex,
+      instructionTextChars: instructionText?.length ?? null,
+      triggerChildTaskChars: childFirstUserText(triggerChild)?.length ?? null,
+      childCount: childLogs.length,
+      triggerInjectionCount: triggerInjected.length,
+      controlInjectionCount: controlInjected.length,
+      atlasRequestCount: atlasRequests.length,
+      sisyphusRequestCount: sisyphusRequests.length,
+      notepadPresent,
+      triggerInjectionTail: triggerInjectionText.slice(-240),
+    },
+  }
+}
+
 const SCENARIOS = [
   {
     name: 'hello',
@@ -12527,6 +13720,35 @@ const SCENARIOS = [
     analyze: analyzeUlwExecuteNoIntent,
   },
   {
+    // P4-T11 (H-32 + R-10): the COMMAND (marker) path, complementary to the two
+    // P3-T17 scenarios that own the INTENT path. The command line lands the
+    // template in the CONDUCTOR session; the conductor hands it to atlas as the
+    // delegation task text; H-32 activates in the atlas CHILD. Interleaved
+    // through `actions` because the command must arrive BETWEEN the turns.
+    name: 'ulw-execute-command-activates-atlas',
+    roles: ['sisyphus', 'atlas'],
+    actions: [
+      // `commandOpensTurn`: this command QUEUES a followup (its done text says
+      // "it takes effect in the next turn"), so the driver must wait for that
+      // turn and count it — see the actions branch.
+      { kind: 'command', line: ULW_EXECUTE_COMMAND_LINE, commandOpensTurn: true },
+      { kind: 'prompt', text: ULW_EXECUTE_COMMAND_PROMPT_1 },
+      { kind: 'prompt', text: ULW_EXECUTE_CONTROL_PROMPT },
+      // 幂等: the same command again — the child is already injected, so nothing
+      // may be injected a second time.
+      { kind: 'command', line: ULW_EXECUTE_COMMAND_LINE, commandOpensTurn: true },
+      { kind: 'prompt', text: ULW_EXECUTE_COMMAND_PROMPT_2 },
+    ],
+    seed: (sandbox) => {
+      mkdirSync(join(sandbox.project, '.omo', 'plans'), { recursive: true })
+      writeFileSync(join(sandbox.project, ULW_EXECUTE_PLAN_REL), ULW_EXECUTE_PLAN_CONTENT)
+    },
+    script: ulwExecuteCommandScript,
+    settle: (_boot, sandbox, sessionId) => awaitUlwExecuteCommandChildren(sandbox, sessionId),
+    analysisInput: (sandbox) => ulwExecuteCommandDiskFacts(sandbox),
+    analyze: analyzeUlwExecuteCommandActivatesAtlas,
+  },
+  {
     // AC-6a (T20): the explore child hallucinates a write; the T12 deny
     // rejects it verbatim and no bytes land on disk.
     name: 'explore-write-denied',
@@ -12724,6 +13946,39 @@ const SCENARIOS = [
     settle: awaitGoalSilenceAfterStop,
     analyze: analyzeStopContinuationHaltsTodo,
   },
+  {
+    // P4-T15 — `/hyperplan` over the P4-T7 command channel, asserting the DEGRADED
+    // rewrite the model actually receives (the guidance段, the roster mapping, the
+    // Description-line suffix, and zero executable dead links).
+    name: 'hyperplan-degraded-noted',
+    roles: ['sisyphus'],
+    commands: [
+      { line: HYPERPLAN_COMMAND_LINE },
+      // 对照: the SAME command with no argument. hyperplan carries an
+      // `argumentHint` upstream, so the bare turn's frame must OMIT the
+      // `**User Arguments**` line while the argument-bearing turn's must not.
+      { line: HYPERPLAN_BARE_COMMAND_LINE },
+    ],
+    script: hyperplanDegradedScript,
+    analyze: analyzeHyperplanDegradedNoted,
+  },
+  {
+    // P4-T15 — `/ulw-plan` as a GESTURE, which is the opposite end of the same
+    // mechanism: `ulw-plan` is the one manifest row that stays `pending` forever
+    // precisely so no command shadows the bridge, so the run must show ZERO
+    // `command/run`/`command/done` and still deliver `<skill_content>`.
+    // Both lines use `submitAsPromptOnMiss`, which is the bridge's own
+    // precondition: the admission miss IS what hands the text to the prompt path
+    // where dsh-tool-skill's pre-step hook can scan it for the `/name` gesture.
+    name: 'ulw-plan-loads-prometheus-skill',
+    roles: ['sisyphus'],
+    commands: [
+      { line: ULW_PLAN_GESTURE_LINE, submitAsPromptOnMiss: true },
+      { line: ULW_PLAN_BARE_GESTURE_LINE, submitAsPromptOnMiss: true },
+    ],
+    script: ulwPlanGestureScript,
+    analyze: analyzeUlwPlanLoadsPrometheusSkill,
+  },
 ]
 
 /**
@@ -12828,12 +14083,21 @@ async function runScenario(def, baseRoutes) {
             `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} command ${action.line} → `
             + (matched ? `matched (${admission.result?.kind})` : 'NOT admitted'),
           )
-          // A matched command that injects nothing opens NO turn (P4-T8:
-          // /stop-continuation deliberately does not followup), so this branch
-          // does NOT touch `turnsSeen` — it cannot wait for a turn that will
-          // never come. The command/log-only writes are still in the JSONL by
-          // the time the NEXT action awaits its turn/end, which is when the
-          // analysis reads them.
+          // Whether a matched command opens a turn is a property of the COMMAND,
+          // not of the driver: /stop-continuation deliberately injects nothing
+          // (P4-T8) and so opens none, while /ulw-execute queues a followup that
+          // opens one. So the action DECLARES it (`commandOpensTurn`) and this
+          // branch acts on the declaration. Left undeclared, the assumption here
+          // silently mis-counted every later turn and the LAST one was still
+          // running when the driver tore the session down (measured: that turn's
+          // turn/end came back `canceled`) — "the window closed" was luck, not
+          // proof.
+          if (matched && action.commandOpensTurn === true) {
+            turnsSeen = await awaitFollowupTurn(sandbox, created.sessionId, turnsSeen)
+          }
+          // Otherwise the command/log-only writes are already in the JSONL by the
+          // time the NEXT action awaits its turn/end, which is when the analysis
+          // reads them.
           continue
         }
         throw new Error(`drive: [${def.name}] unknown action kind ${JSON.stringify(action.kind)}`)
@@ -12898,7 +14162,11 @@ async function runScenario(def, baseRoutes) {
     // `stopDsh` freezes the boot log, so the observation window is a
     // scenario-owned decision rather than a race; it receives the sandbox and
     // the session id so it can watch the durable session JSONL too (P3-T13).
-    await def.settle?.(boot, sandbox, created.sessionId)
+    // The settle hook's verdict is KEPT, not just awaited: a hook that returns
+    // `false` has run out of observation window rather than found its condition,
+    // and the analysis needs to be able to say so (P4-T11 `commandTurnTimeout`).
+    // `undefined` means the scenario has no settle hook at all.
+    const settleReached = await def.settle?.(boot, sandbox, created.sessionId)
 
     await stopDsh(child)
     child = undefined
@@ -12924,6 +14192,7 @@ async function runScenario(def, baseRoutes) {
         bootLog: boot.log(),
         markerLanding,
         commandResults,
+        settleReached,
         ...(def.analysisInput?.(sandbox, setup) ?? {}),
       },
       routes,
@@ -13124,6 +14393,365 @@ function commandChannelDefectCases(spec) {
       // 拿不到自检函数的参数（第一版就栽在这里，运行时报 ReferenceError）。
       input.requests = [...input.requests, { role: 'sisyphus', body: { model: input.requests[0].body.model, messages: [] }, receivedAt: 30 }]
     }, 'mockSawExpectedRequestCount'],
+  ]
+}
+
+// ── P4-T11 ulw-execute-command fabricated inputs + defect cases (self-test) ─────
+// A fabricated GOOD input MUST PASS every named check, and each defect MUST fail
+// exactly its own. Two shape rules, both learned the hard way:
+//   ① a module-level factory CANNOT close over the fixture's `routes` — read the
+//      model id back off the fixture itself (`input.providers[0]`), or the self-
+//      test dies with a ReferenceError instead of a red check;
+//   ② a module-level name is a SINGLE binding for the whole file (the last
+//      declaration wins), so every factory, analyzer and defect-case function of
+//      this scenario carries `ulwCommand` or `ulw-execute-command` in its name.
+//      A name shared with P3-T17 did not fail — it silently handed this scenario
+//      the OTHER scenario's fixture, and the defect cases then mutated data the
+//      analyzer never read.
+//
+// COVERAGE POLICY (the T7 shape, counted the same way): 21 checks, 33 defect
+// cases. Every check owns at least one case; `pluginLoaded` and
+// `sisyphusProviderActive` are the two shared givens this scenario inherits from
+// the driver's common block — the latter still owns a case here because the seat
+// is what this scenario's own requests carry. Eleven defects redden MORE than one
+// check, and that is honest coupling, not sloppy fixtures: a lost template marker
+// really does break the marker gate AND the hand-off AND the child activation at
+// once. Isolating them would require fixtures that cannot occur.
+const FABRICATED_ULW_COMMAND_SESSION_ID = 'session-fabricated-ulw-command'
+const FABRICATED_ULW_COMMAND_CHILD_TRIGGER = 'session-fabricated-ulw-child-trigger'
+const FABRICATED_ULW_COMMAND_CHILD_CONTROL = 'session-fabricated-ulw-child-control'
+const FABRICATED_ULW_COMMAND_TRIGGER_TASK = renderCommandTemplate(ULW_EXECUTE_COMMAND_TEMPLATE, {
+  arguments: ULW_EXECUTE_PLAN_NAME,
+  sessionId: FABRICATED_ULW_COMMAND_SESSION_ID,
+  now: () => ULW_EXECUTE_MARKER_TIMESTAMP,
+})
+// The conductor's instruction, rendered by the SHIPPED command renderer. The
+// first version hand-wrote the frame and had already drifted from the runtime by
+// two characters (an extra blank line after `<command-instruction>`), which is
+// the whole failure mode this file exists to catch — so the fixture now renders
+// exactly what `/ulw-execute` renders.
+const FABRICATED_ULW_COMMAND_INSTRUCTION = renderUlwExecuteInstructionFn({
+  rawInput: ` ${ULW_EXECUTE_PLAN_NAME}`,
+  agent: { id: FABRICATED_ULW_COMMAND_SESSION_ID },
+  scope: 'builtin',
+  name: ULW_EXECUTE_COMMAND_NAME,
+  description: ULW_EXECUTE_DESCRIPTION,
+}, () => ULW_EXECUTE_MARKER_TIMESTAMP)
+/** The context the REAL renderer mints, with this fixture's own plan. */
+const FABRICATED_ULW_CONTEXT = (() => {
+  const body = buildAutoSelectedPlanContextInfoOnly({
+    planPath: `/fabricated/${ULW_EXECUTE_PLAN_REL}`,
+    planProgress: planProgressFromMarkdown(ULW_EXECUTE_PLAN_CONTENT),
+    sessionId: FABRICATED_ULW_COMMAND_CHILD_TRIGGER,
+    timestamp: ULW_EXECUTE_MARKER_TIMESTAMP,
+    worktreeBlock: '',
+  })
+  return `${body}\n${E2E_ULW_CONTEXT_MARKER}\n`
+})()
+
+/** One child's durable log: descriptor, delegation task, optional injection. */
+function fabricatedUlwCommandChild(id, label, persona, taskText, injected) {
+  const events = [
+    { seq: 1, type: 'subagent/descriptor', data: { label, persona, parentId: FABRICATED_ULW_COMMAND_SESSION_ID } },
+    { seq: 2, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: taskText }], source: { kind: 'user' } } },
+    { seq: 3, type: 'assistant/message', data: { role: 'assistant', content: [{ type: 'text', text: 'MOCK-FABRICATED-ULW-CHILD-STEP' }] } },
+  ]
+  if (injected === true) {
+    events.push({
+      seq: 4,
+      type: 'user/message',
+      data: {
+        role: 'user',
+        content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }],
+        source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+      },
+    })
+    events.push({ seq: 5, type: 'assistant/message', data: { role: 'assistant', content: [{ type: 'text', text: 'MOCK-FABRICATED-ULW-CHILD-STEP-2' }] } })
+  }
+  events.push({ seq: 6, type: 'turn/end', data: { reason: { kind: 'completed' } } })
+  return { header: { id, parentSession: FABRICATED_ULW_COMMAND_SESSION_ID, origin: 'subagent' }, events }
+}
+
+/** The fabricated GOOD session log: the command pair, the instruction, two children. */
+function fabricatedUlwCommandLog() {
+  const events = [
+    {
+      seq: 1,
+      type: 'user/message',
+      data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_COMMAND_INSTRUCTION }], source: { kind: 'user' } },
+    },
+    {
+      seq: 2,
+      type: 'command/run',
+      data: { commandId: 'cmd-fab-ulw-1', name: ULW_EXECUTE_COMMAND_NAME, args: ` ${ULW_EXECUTE_PLAN_NAME}`, source: { kind: 'user' } },
+    },
+    {
+      seq: 3,
+      type: 'command/done',
+      data: {
+        commandId: 'cmd-fab-ulw-1',
+        kind: 'success',
+        text: `Ulw-execute instruction queued (${FABRICATED_ULW_COMMAND_INSTRUCTION.length} chars, session ${FABRICATED_ULW_COMMAND_SESSION_ID}); it takes effect in the next turn. The plan flags are ${ULW_EXECUTE_ARGUMENT_HINT}.`,
+      },
+    },
+    { seq: 4, type: 'assistant/message', data: { role: 'assistant', content: [{ type: 'text', text: 'MOCK-FABRICATED-ULW-CONDUCTOR-1' }] } },
+    { seq: 5, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+    {
+      seq: 6,
+      type: 'user/message',
+      data: { role: 'user', content: [{ type: 'text', text: ULW_EXECUTE_CONTROL_DELEGATION_TASK }], source: { kind: 'user' } },
+    },
+    { seq: 7, type: 'assistant/message', data: { role: 'assistant', content: [{ type: 'text', text: 'MOCK-FABRICATED-ULW-CONDUCTOR-2' }] } },
+    { seq: 8, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+    {
+      seq: 9,
+      type: 'command/run',
+      data: { commandId: 'cmd-fab-ulw-2', name: ULW_EXECUTE_COMMAND_NAME, args: ` ${ULW_EXECUTE_PLAN_NAME}`, source: { kind: 'user' } },
+    },
+    {
+      seq: 10,
+      type: 'command/done',
+      data: {
+        commandId: 'cmd-fab-ulw-2',
+        kind: 'success',
+        text: `Ulw-execute instruction queued (${FABRICATED_ULW_COMMAND_INSTRUCTION.length} chars, session ${FABRICATED_ULW_COMMAND_SESSION_ID}); it takes effect in the next turn. The plan flags are ${ULW_EXECUTE_ARGUMENT_HINT}.`,
+      },
+    },
+    { seq: 11, type: 'assistant/message', data: { role: 'assistant', content: [{ type: 'text', text: 'MOCK-FABRICATED-ULW-CONDUCTOR-3' }] } },
+    { seq: 12, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_COMMAND_INSTRUCTION }], source: { kind: 'user' } } },
+    { seq: 13, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+  ]
+  return { header: { id: FABRICATED_ULW_COMMAND_SESSION_ID }, events }
+}
+
+function fabricatedUlwCommandInput(routes) {
+  const triggerChild = fabricatedUlwCommandChild(
+    FABRICATED_ULW_COMMAND_CHILD_TRIGGER,
+    ULW_EXECUTE_TRIGGER_LABEL,
+    'omo-atlas',
+    FABRICATED_ULW_COMMAND_TRIGGER_TASK,
+    true,
+  )
+  const controlChild = fabricatedUlwCommandChild(
+    FABRICATED_ULW_COMMAND_CHILD_CONTROL,
+    ULW_EXECUTE_CONTROL_LABEL,
+    'omo-atlas',
+    ULW_EXECUTE_CONTROL_DELEGATION_TASK,
+    false,
+  )
+  const requests = [
+    { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ content: FABRICATED_ULW_COMMAND_INSTRUCTION }] } },
+    { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ content: ULW_EXECUTE_COMMAND_PROMPT_1 }] } },
+    { role: 'atlas', body: { model: routes.atlas.model, messages: [{ content: FABRICATED_ULW_CONTEXT }] } },
+    { role: 'atlas', body: { model: routes.atlas.model, messages: [{ content: ULW_EXECUTE_COMMAND_ATLAS_NOTE }] } },
+    { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ content: ULW_EXECUTE_CONTROL_PROMPT }] } },
+    { role: 'atlas', body: { model: routes.atlas.model, messages: [{ content: ULW_EXECUTE_CONTROL_ATLAS_NOTE }] } },
+    { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ content: ULW_EXECUTE_COMMAND_PROMPT_2 }] } },
+    { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ content: FABRICATED_ULW_COMMAND_INSTRUCTION }] } },
+  ]
+  return {
+    log: fabricatedUlwCommandLog(),
+    allLogs: [triggerChild, controlChild],
+    requests,
+    // The SHARED helpers, not hand-written stubs: `fabricatedProvidersJson` is the
+    // same string every other scenario's fixture uses, and `FABRICATED_BOOT_LOG`
+    // is the driver's own loaded-plugin marker set — a hand-typed one would miss
+    // the `pluginLoaded` given this analyzer shares with all 30 other scenarios.
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: [FABRICATED_BOOT_LOG, '[omo-commands] command ulw-execute registered'].join('\n'),
+    planPath: `/fabricated/${ULW_EXECUTE_PLAN_REL}`,
+    notepadPresent: ['learnings.md', 'decisions.md', 'issues.md', 'problems.md'],
+    notepadLearnings: `# Learnings\n\n${E2E_ULW_NOTEPAD_FOOTER}`,
+    // The fixture is a post-hoc snapshot, so its settle verdict is "reached" by
+    // construction — without it the timeout flag would be undefined, which the
+    // `=== false` comparison correctly treats as "no timeout reported".
+    settleReached: true,
+    routes,
+    defectCases: ulwExecuteCommandDefectCases(routes),
+  }
+}
+
+/**
+ * The fabricated defect cases. Each one must turn EXACTLY its own check red —
+ * that is the only evidence that a named check is load-bearing rather than
+ * decorative.
+ */
+function ulwExecuteCommandDefectCases(routes) {
+  // The mutation helper: rewrite every event that matches `predicate`, across the
+  // conductor log AND every child log (this scenario's analyzer reads both, so a
+  // helper that only touched one would silently leave the other untouched).
+  const mapEvent = (input, predicate, rewrite) => {
+    input.log.events = input.log.events.map((event) => (predicate(event) ? rewrite(event) : event))
+    for (const child of input.allLogs) {
+      child.events = child.events.map((event) => (predicate(event) ? rewrite(event) : event))
+    }
+  }
+  // `scope` says WHOSE copy of the text is a template regression: the conductor's
+  // own instruction (a `/ulw-execute` render fault) or every copy at once (a
+  // fault in the template source both surfaces share). Scoping matters because a
+  // defect that rewrites the child task as well reddens the marker-path checks
+  // too, and a defect list is only useful if each entry isolates one gate.
+  const replaceText = (input, eventType, from, to, scope = 'conductor') => {
+    const matches = (event) => event.type === eventType
+      && String(messageContentText(event.data) ?? '').includes(from)
+    const rewrite = (event) => ({
+      ...event,
+      data: { ...event.data, content: [{ type: 'text', text: String(messageContentText(event.data)).replace(from, to) }] },
+    })
+    if (scope === 'all') {
+      mapEvent(input, matches, rewrite)
+      return
+    }
+    input.log.events = input.log.events.map((event) => (matches(event) ? rewrite(event) : event))
+  }
+  return [
+    // ── the boot registration line ──
+    ['the boot log never announced the command', (input) => {
+      input.bootLog = input.bootLog
+        .split('\n')
+        .filter((line) => !line.includes('[omo-commands] command ulw-execute registered'))
+        .join('\n')
+    }, 'ulwExecuteRegisteredInBootLog'],
+    // ── the command event pair ──
+    ['the second /ulw-execute never reached the registry', (input) => {
+      mapEvent(input, (event) => event.type === 'command/run' && event.data?.commandId === 'cmd-fab-ulw-2', (event) => ({ ...event, data: { ...event.data, commandId: 'cmd-fab-ulw-other' } }))
+    }, 'commandAdmittedTwice'],
+    ['the second command settled as an error', (input) => {
+      mapEvent(input, (event) => event.type === 'command/done' && event.data?.commandId === 'cmd-fab-ulw-2', (event) => ({ ...event, data: { ...event.data, kind: 'error' } }))
+    }, 'commandAdmittedTwice'],
+    ['the command run carried no plan argument', (input) => {
+      mapEvent(input, (event) => event.type === 'command/run' && event.data?.commandId === 'cmd-fab-ulw-1', (event) => ({ ...event, data: { ...event.data, args: '' } }))
+    }, 'commandRunsRecordedWithArgsAndUserSource'],
+    ['the command run was not a user-sourced invocation', (input) => {
+      mapEvent(input, (event) => event.type === 'command/run' && event.data?.commandId === 'cmd-fab-ulw-1', (event) => ({ ...event, data: { ...event.data, source: { kind: 'agent' } } }))
+    }, 'commandRunsRecordedWithArgsAndUserSource'],
+    ['the done text quoted another session', (input) => {
+      mapEvent(input, (event) => event.type === 'command/done' && event.data?.commandId === 'cmd-fab-ulw-1', (event) => ({ ...event, data: { ...event.data, text: event.data.text.replace(FABRICATED_ULW_COMMAND_SESSION_ID, 'session-somebody-else') } }))
+    }, 'commandDoneNamesThisSessionAndThePayload'],
+    ['the done text lost the argument hint', (input) => {
+      mapEvent(input, (event) => event.type === 'command/done' && event.data?.commandId === 'cmd-fab-ulw-1', (event) => ({ ...event, data: { ...event.data, text: event.data.text.replace(ULW_EXECUTE_ARGUMENT_HINT, '') } }))
+    }, 'commandDoneNamesThisSessionAndThePayload'],
+    // ── the template injection into the conductor ──
+    ['the command never queued its instruction into the session', (input) => {
+      mapEvent(input, (event) => event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes('# /ulw-execute Command'), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin', plugin: 'other', form: 'instructions' } } }))
+    }, 'instructionCarriedIntoTheConductorSession'],
+    ['the second command queued no instruction of its own', (input) => {
+      // Located by ORDER (the carrier after the second command/run), never by a
+      // hard-coded `seq`: the fixture's numbering is an artifact of its own
+      // construction and would move the day anything above it changed.
+      const secondRunIndex = input.log.events.findIndex(
+        (event) => event.type === 'command/run' && event.data?.commandId === 'cmd-fab-ulw-2',
+      )
+      const carriersAfterIt = input.log.events
+        .map((event, index) => ({ event, index }))
+        .filter(({ event, index }) => index > secondRunIndex
+          && event.type === 'user/message'
+          && String(messageContentText(event.data) ?? '').startsWith('# /ulw-execute Command'))
+      const target = carriersAfterIt[0]
+      if (target === undefined) return
+      // The carrier is RETYPED rather than deleted, so the defect is "this second
+      // instruction never arrived as a user message" — a rename would have been a
+      // different claim (the event could still be in the log in another shape).
+      input.log.events[target.index] = { ...target.event, type: 'assistant/message' }
+    }, 'instructionCarriedIntoTheConductorSession'],
+    ['the instruction lost its command frame', (input) => {
+      replaceText(input, 'user/message', '# /ulw-execute Command', '# something else')
+    }, 'instructionFrameAndThreeLayersAreIntact'],
+    ['the instruction lost its session-context layer', (input) => {
+      replaceText(input, 'user/message', '<session-context>', '<session-contextual>')
+    }, 'instructionFrameAndThreeLayersAreIntact'],
+    ['the instruction lost its user-request layer', (input) => {
+      replaceText(input, 'user/message', '</user-request>', '')
+    }, 'instructionFrameAndThreeLayersAreIntact'],
+    ['the template dropped the R-10 header marker', (input) => {
+      replaceText(input, 'user/message', E2E_TEMPLATE_HEADER_MARKER, 'You may start an Atlas session.', 'all')
+    }, 'instructionCarriesBothR10Markers'],
+    ['the template dropped the R-10 session-context marker', (input) => {
+      replaceText(input, 'user/message', E2E_SESSION_CONTEXT_OPEN, '<ctx>', 'all')
+    }, 'instructionCarriesBothR10Markers'],
+    ['the rendered session-context kept its placeholder', (input) => {
+      replaceText(input, 'user/message', `Session ID: ${FABRICATED_ULW_COMMAND_SESSION_ID}`, 'Session ID: $SESSION_ID')
+    }, 'sessionContextSubstitutedInTheInstruction'],
+    ['the rendered timestamp was not ISO-shaped', (input) => {
+      replaceText(input, 'user/message', `Timestamp: ${ULW_EXECUTE_MARKER_TIMESTAMP}`, 'Timestamp: yesterday')
+    }, 'sessionContextSubstitutedInTheInstruction'],
+    ['the instruction never reached the model', (input) => {
+      input.requests = input.requests.map((request) => ({
+        ...request,
+        body: { ...request.body, messages: [{ content: ULW_EXECUTE_COMMAND_PROMPT_1 }] },
+      }))
+    }, 'instructionReachedTheConductorModelRequest'],
+    // ── the MARKER path ──
+    ['the conductor never delegated atlas with the marker', (input) => {
+      const trigger = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_TRIGGER)
+      trigger.events[1] = { ...trigger.events[1], data: { ...trigger.events[1].data, content: [{ type: 'text', text: ULW_EXECUTE_CONTROL_DELEGATION_TASK }] } }
+    }, 'atlasDelegationTaskCarriesTheTemplateMarker'],
+    ['the delegated child was not the atlas persona', (input) => {
+      const trigger = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_TRIGGER)
+      trigger.events[0] = { ...trigger.events[0], data: { ...trigger.events[0].data, persona: 'omo-explore' } }
+    }, 'triggerChildIsTheAtlasRow'],
+    ['the injected context never reached the atlas child', (input) => {
+      const trigger = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_TRIGGER)
+      trigger.events = trigger.events.filter((event) => event.data?.source?.kind !== 'plugin')
+    }, 'injectedContextReachedTheAtlasChild'],
+    ['the injected context named another plan', (input) => {
+      mapEvent(input, (event) => event.seq === 4 && event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes(E2E_ULW_CONTEXT_MARKER), (event) => ({ ...event, data: { ...event.data, content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT.replace(`**Plan**: ${ULW_EXECUTE_PLAN_NAME}`, '**Plan**: beta') }] } }))
+    }, 'injectedContextReachedTheAtlasChild'],
+    ['the injection carried the wrong producer', (input) => {
+      mapEvent(input, (event) => event.seq === 4 && event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes(E2E_ULW_CONTEXT_MARKER), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin', plugin: 'omo-commands', form: 'instructions' } } }))
+    }, 'injectionSourceContract'],
+    ['the injection never reached the atlas model request', (input) => {
+      input.requests = input.requests.map((request) => (request.role === 'atlas'
+        ? { ...request, body: { ...request.body, messages: [{ content: ULW_EXECUTE_COMMAND_ATLAS_NOTE }] } }
+        : request))
+    }, 'injectionReachedTheAtlasModelRequest'],
+    ['the atlas lane made only one request', (input) => {
+      input.requests = input.requests.filter((request) => request.role !== 'atlas')
+    }, 'atlasLaneMadeMoreThanOneRequest'],
+    ['the notepad scaffold never landed', (input) => {
+      input.notepadPresent = ['learnings.md']
+    }, 'notepadScaffoldLanded'],
+    // ── 幂等 + the controls ──
+    ['the trigger child received a second injection', (input) => {
+      const trigger = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_TRIGGER)
+      trigger.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
+    }, 'secondCommandInjectedNothingNew'],
+    ['the marker-less control delegation was injected anyway', (input) => {
+      const control = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_CONTROL)
+      control.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
+    }, 'markerlessControlInjectedNothing'],
+    ['the control child never existed', (input) => {
+      input.allLogs = input.allLogs.filter((child) => child.header.id !== FABRICATED_ULW_COMMAND_CHILD_CONTROL)
+    }, 'markerlessControlInjectedNothing'],
+    ['the conductor session itself was injected', (input) => {
+      input.log.events.push({
+        seq: 14,
+        type: 'user/message',
+        data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' } },
+      })
+    }, 'conductorNotInjected'],
+    ['the scaffold kept the upstream /start-work footer', (input) => {
+      // The scaffold landed, but with the upstream footer the activation is
+      // supposed to replace — presence-only evidence would pass on this.
+      input.notepadLearnings = `# Learnings\n\n${E2E_ULW_UPSTREAM_NOTEPAD_FOOTER}`
+    }, 'notepadFooterRewrittenByTheActivation'],
+    ['the conductor turn never completed', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'turn/end')
+    }, 'turnCompleted'],
+    // The driver tore the session down while the LAST turn was still running —
+    // the exact shape measured before the turn accounting was fixed, and the one
+    // `turnCompleted` (which only asks about SOME completed turn) cannot see.
+    ['the last turn was cancelled instead of completing', (input) => {
+      const last = input.log.events.filter((event) => event.type === 'turn/end').pop()
+      input.log.events = input.log.events.filter((event) => event !== last)
+      input.log.events.push({ ...last, data: { reason: { kind: 'canceled' } } })
+    }, 'lastTurnEndedOnItsOwnTerms'],
+    // ── the shared givens ──
+    ['the sisyphus seat was not active', (input) => {
+      const parsed = JSON.parse(input.providersJson)
+      parsed.result.value.providers[0].active = false
+      input.providersJson = JSON.stringify(parsed)
+    }, 'sisyphusProviderActive'],
   ]
 }
 
@@ -13616,6 +15244,12 @@ function stopContinuationDefectCases() {
 const FABRICATED_COMMAND_SESSION_ID = 'session-fabricated-command-channel'
 const FABRICATED_COMMAND_TIMESTAMP = '2026-10-01T09:15:00.000Z'
 const FABRICATED_COMMAND_ID = 'cmd-fabricated-1'
+// MAJOR-4: a SECOND id for the same fixture's second command execution. The host
+// mints a FRESH commandId per execute (measured on this host: `cmd-7ae2db59-1` and
+// `cmd-7ae2db59-2` for two `/hyperplan` lines), and the first fixture reused one id
+// for both — which made the run↔done pairing unverifiable, since a single id
+// "matches" both dones and the check could not fail.
+const FABRICATED_COMMAND_ID_2 = 'cmd-fabricated-2'
 
 function fabricatedCommandInstruction(spec, sessionId) {
   const argsLine = spec.args === '' ? null : `**User Arguments**: ${spec.args}`
@@ -13707,8 +15341,8 @@ function fabricatedCommandChannelLog(spec) {
 }
 
 function fabricatedCommandChannelInput(spec, routes) {
-  const instruction = fabricatedCommandInstruction(spec, FABRICATED_COMMAND_SESSION_ID)
   const model = routes.sisyphus.model
+  const instruction = fabricatedCommandInstruction(spec, FABRICATED_COMMAND_SESSION_ID)
   const messages = (...texts) => [
     { role: 'system', content: 'MOCKROLE=sisyphus' },
     ...texts.map((text) => ({ role: 'user', content: text })),
@@ -13726,6 +15360,400 @@ function fabricatedCommandChannelInput(spec, routes) {
       { line: COMMAND_CHANNEL_UNKNOWN_LINE, matched: false, admission: undefined },
     ],
   }
+}
+
+// ── P4-T15 fabricated inputs (must earn their PASS) ───────────────────────────
+//
+// Both fixtures are built from the SHIPPED modules, not from a transcription.
+// That is a deliberate departure from the P4-T7 command-channel fixture (which
+// transcribes needles so the analyzer cannot follow a regression in the template):
+// here the scenarios' whole claim is "the DEGRADED rewrite the model receives is
+// the rewrite T14 shipped". A transcription would make the GOOD fabricated input
+// pass while the real template said something else entirely — the self-test would
+// attest to a template the deployment does not ship. Consequence, stated so the
+// departure is not mistaken for sloppiness: a regression in T14's guidance text
+// now FAILS the self-test loudly, which is the behaviour this fixture family wants.
+
+function fabricatedHyperplanInstruction(args) {
+  // The SAME two shipped functions the command's own handler uses, in the same
+  // order: `renderCommandTemplate` substitutes the placeholders and produces the
+  // instruction body, `formatCommandTemplate` wraps it in the 外框. `sessionId` is
+  // `undefined` on purpose — hyperplan's template has no `$SESSION_ID` (T14), so
+  // passing one here would have the fixture render a frame the deployment never
+  // produces.
+  return omoCommandsRender.formatCommandTemplate({
+    name: 'hyperplan',
+    description: omoCommandsHyperplanCommand.HYPERPLAN_DESCRIPTION,
+    scope: 'builtin',
+    arguments: args,
+    template: omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE,
+    content: renderCommandTemplate(omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE, {
+      arguments: args,
+      sessionId: undefined,
+      now: () => FABRICATED_COMMAND_TIMESTAMP,
+    }),
+  })
+}
+
+function fabricatedHyperplanLog() {
+  const first = fabricatedHyperplanInstruction(HYPERPLAN_MEASURED_ARGS)
+  const second = fabricatedHyperplanInstruction('')
+  const assistant = (seq, turn, step, text) => ({
+    seq,
+    type: 'assistant/message',
+    data: { turn, step, message: { role: 'assistant', content: [{ type: 'text', text }] } },
+  })
+  return {
+    path: '/fabricated/hyperplan/session.jsonl',
+    header: { type: 'session', id: FABRICATED_COMMAND_SESSION_ID },
+    events: [
+      { seq: 1, type: 'command/run', data: { commandId: FABRICATED_COMMAND_ID, name: 'hyperplan', args: HYPERPLAN_MEASURED_ARGS, source: { kind: 'user' } } },
+      { seq: 2, type: 'command/done', data: { commandId: FABRICATED_COMMAND_ID, kind: 'success', text: 'queued' } },
+      fabricatedUserMessage(3, { id: 'fabricated-hyperplan-1', role: 'user', content: [{ type: 'text', text: first }], source: { kind: 'user' } }),
+      { seq: 4, type: 'turn/start', data: { turn: 1 } },
+      { seq: 5, type: 'step/start', data: { turn: 1, step: 1 } },
+      assistant(6, 1, 1, HYPERPLAN_DEGRADED_SUMMARY),
+      { seq: 7, type: 'step/end', data: { turn: 1, step: 1 } },
+      { seq: 8, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      // (turn 1 is modelled as ONE step here; the real run opens a SECOND step,
+      // which is why it issues three model requests — see `eachFrameReached…`.
+      // The fixture does not need that second step: nothing this analyzer reads
+      // depends on it, and adding one would have invented an event the checks
+      // never mention.)
+      // 对照: the bare line, admitted as its own command with NO args.
+      { seq: 9, type: 'command/run', data: { commandId: FABRICATED_COMMAND_ID_2, name: 'hyperplan', args: '', source: { kind: 'user' } } },
+      { seq: 10, type: 'command/done', data: { commandId: FABRICATED_COMMAND_ID_2, kind: 'success', text: 'queued' } },
+      fabricatedUserMessage(11, { id: 'fabricated-hyperplan-2', role: 'user', content: [{ type: 'text', text: second }], source: { kind: 'user' } }),
+      { seq: 12, type: 'turn/start', data: { turn: 2 } },
+      // step/start was missing for turn 2 in the first fixture — the real host emits
+      // it for every step, and a fixture that skips it teaches the analyzer a shape
+      // the host never produces.
+      { seq: 13, type: 'step/start', data: { turn: 2, step: 1 } },
+      assistant(14, 2, 1, HYPERPLAN_BARE_SUMMARY),
+      { seq: 15, type: 'step/end', data: { turn: 2, step: 1 } },
+      { seq: 16, type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedHyperplanInput(routes) {
+  const model = routes.sisyphus.model
+  const messages = (...texts) => [
+    { role: 'system', content: 'MOCKROLE=sisyphus' },
+    ...texts.map((text) => ({ role: 'user', content: text })),
+  ]
+  const first = fabricatedHyperplanInstruction(HYPERPLAN_MEASURED_ARGS)
+  const second = fabricatedHyperplanInstruction('')
+  return {
+    log: fabricatedHyperplanLog(),
+    requests: [
+      { role: 'sisyphus', body: { model, messages: messages(first) }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model, messages: messages(second) }, receivedAt: 20 },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: [FABRICATED_BOOT_LOG, HYPERPLAN_BOOT_REGISTRATION_LINE].join('\n'),
+    commandResults: [
+      { line: HYPERPLAN_COMMAND_LINE, matched: true, admission: { commandId: FABRICATED_COMMAND_ID, result: { kind: 'success', text: 'queued' } } },
+      { line: HYPERPLAN_BARE_COMMAND_LINE, matched: true, admission: { commandId: FABRICATED_COMMAND_ID, result: { kind: 'success', text: 'queued' } } },
+    ],
+  }
+}
+
+/** Rewrite the FIRST hyperplan carrier's text, in place. */
+function mutateHyperplanCarrierText(input, rewrite) {
+  const carrier = input.log.events.find(
+    (event) => event.type === 'user/message' && event.data?.id === 'fabricated-hyperplan-1',
+  )
+  carrier.data.content = [{ type: 'text', text: rewrite(messageContentText(carrier.data)) }]
+}
+
+function hyperplanDegradedDefectCases() {
+  return [
+    ['the command never registered (no boot-log registration line)', (input) => {
+      input.bootLog = input.bootLog.split('\n').filter((line) => line !== HYPERPLAN_BOOT_REGISTRATION_LINE).join('\n')
+    }, 'commandRegisteredInBootLog'],
+    ['the line was NOT admitted as a command', (input) => {
+      input.commandResults[0].matched = false
+      input.commandResults[0].admission = undefined
+    }, 'bothLinesAdmittedAsCommands'],
+    ['the second line was admitted but carried the first line\'s args', (input) => {
+      // The 对照's claim: the bare frame omits **User Arguments**. If the second
+      // run lied about its args, the frame and the payload disagree.
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'command/run' && event.data?.args === ''
+          ? { ...event, data: { ...event.data, args: HYPERPLAN_MEASURED_ARGS } }
+          : event)
+    }, 'secondLineCarriedNoArgs'],
+    ['the second line\'s command/done carried the FIRST line\'s commandId', (input) => {
+      // MAJOR-4's own defect. With one shared id in the fixture, run↔done pairing was
+      // unverifiable: a single id "matched" both dones, so a mispaired done could not
+      // fail anything. The fixture now mints two ids, and this case re-points the
+      // second done at the first run's id.
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'command/done' && event.data?.commandId === FABRICATED_COMMAND_ID_2
+          ? { ...event, data: { ...event.data, commandId: FABRICATED_COMMAND_ID } }
+          : event)
+    }, 'lifecyclePairPerLine'],
+    ['the first turn never received a frame at all', (input) => {
+      // MAJOR-3's own defect, and the only case that exercises the lazy body
+      // extraction: called unconditionally, a MISSING carrier makes the guard
+      // throw, the driver's catch collapses the verdict into an opaque crash
+      // string, and every named check is lost instead of one failing. The carrier
+      // check is what has to carry this — and because the two carriers are located
+      // BY CONTENT (the argument-bearing one carries a `**User Arguments**` line),
+      // dropping the first cannot silently re-label the second as the first.
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'user/message' && event.data?.id === 'fabricated-hyperplan-1'))
+    }, 'firstFrameCarrierArrived'],
+    ['the second line\'s command/done carried the FIRST line\'s commandId', (input) => {
+      // MAJOR-4's own defect. With one shared id in the fixture, run↔done pairing was
+      // unverifiable: a single id "matched" both dones, so a mispaired done could not
+      // fail anything. The fixture now mints two ids, as the host does.
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'command/done' && event.data?.commandId === FABRICATED_COMMAND_ID_2
+          ? { ...event, data: { ...event.data, commandId: FABRICATED_COMMAND_ID } }
+          : event)
+    }, 'lifecyclePairPerLine'],
+    ['the DEGRADED guidance was replaced by upstream\'s team-mode instruction', (input) => {
+      // The T14 regression this scenario exists for: the body goes back to telling
+      // the model to enable team-mode in a config file.
+      mutateHyperplanCarrierText(input, (text) => text.replace(
+        omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE,
+        'If team-mode is unavailable, instruct the user to set team_mode.enabled: true in ~/.omo/omo.jsonc and restart opencode.',
+      ))
+    }, 'modelFacingBodyIsDeadLinkFree'],
+    ['the DEGRADED guidance was dropped from the model-facing body', (input) => {
+      mutateHyperplanCarrierText(input, (text) => text.replace(
+        omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE, ''))
+    }, 'degradedGuidanceReachedTheModel'],
+    ['the roster contract was dropped', (input) => {
+      mutateHyperplanCarrierText(input, (text) => text.replace(
+        omoCommandsHyperplan.HYPERPLAN_ROSTER_CONTRACT, ''))
+    }, 'rosterContractReachedTheModel'],
+    ['a roster seat was renamed to something the deployment does not have', (input) => {
+      mutateHyperplanCarrierText(input, (text) => text.replaceAll('plan-reviewer', 'skeptic'))
+    }, 'rosterSeatsNamedInTheModelText'],
+    ['the description line lost the degraded suffix', (input) => {
+      mutateHyperplanCarrierText(input, (text) => text.replace(
+        omoCommandsHyperplanCommand.HYPERPLAN_DESCRIPTION,
+        omoCommandsHyperplanCommand.UPSTREAM_HYPERPLAN_DESCRIPTION,
+      ))
+    }, 'degradedSuffixOnTheFrameDescriptionLine'],
+    ['the upstream 7-phase wording was silently "corrected" to 8', (input) => {
+      // MAJOR-2's rule is attribution-first: the wording is kept verbatim and the
+      // discrepancy is recorded. A silent correction is the regression.
+      mutateHyperplanCarrierText(input, (text) => text.replace(
+        'follow its 7-phase workflow EXACTLY', 'follow its 8-phase workflow EXACTLY'))
+    }, 'sevenPhaseWordingPreserved'],
+    ['OMO\'s own skill(name=…) syntax reached the model', (input) => {
+      mutateHyperplanCarrierText(input, (text) => text.replace(
+        omoCommandsHyperplan.DSH_SKILL_CALL_FORM, omoCommandsHyperplan.UPSTREAM_SKILL_CALL_FORM))
+    }, 'skillLoadedByNameWithDshCallForm'],
+    ['the user request was not rendered into the frame', (input) => {
+      mutateHyperplanCarrierText(input, (text) => text.replace(
+        `<user-request>\n${HYPERPLAN_MEASURED_ARGS}\n</user-request>`, '<user-request>\n$ARGUMENTS\n</user-request>'))
+    }, 'userRequestRodeTheFrameVerbatim'],
+    ['the bare turn grew a **User Arguments** line it must not have', (input) => {
+      const carrier = input.log.events.find(
+        (event) => event.type === 'user/message' && event.data?.id === 'fabricated-hyperplan-2')
+      carrier.data.content = [{
+        type: 'text',
+        text: messageContentText(carrier.data).replace('**Scope**: builtin', '**User Arguments**: invented\n\n**Scope**: builtin'),
+      }]
+    }, 'bareFrameOmitsUserArgumentsLine'],
+    ['the bare turn lost the degraded guidance too', (input) => {
+      const carrier = input.log.events.find(
+        (event) => event.type === 'user/message' && event.data?.id === 'fabricated-hyperplan-2')
+      carrier.data.content = [{
+        type: 'text',
+        text: messageContentText(carrier.data).replace(omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE, ''),
+      }]
+    }, 'bareTurnAlsoCarriesTheDegradedGuidance'],
+    ['the model did not say the run was DEGRADED', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'assistant/message' && event.data?.turn === 1
+          ? { ...event, data: { ...event.data, message: { role: 'assistant', content: [{ type: 'text', text: 'Here is the plan you asked for.' }] } } }
+          : event)
+    }, 'modelDeclaredDegradedModeOutLoud'],
+    ['a turn ended with an error', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'turn/end' && event.data?.turn === 1
+          ? { ...event, data: { ...event.data, reason: { kind: 'error' } } }
+          : event)
+    }, 'bothTurnsCompleted'],
+  ]
+}
+
+function fabricatedUlwPlanInstruction() {
+  const entry = vendoredSkillEntries().get('ulw-plan')
+  return [
+    `<skill_content name="ulw-plan">`,
+    '<skill_resources>',
+    // The MEASURED branch (real run, 0.1.5-rc.1), not the `directory` one this
+    // fixture transcribed first. `renderResourceHint` has three shapes (dsh-skill/
+    // lib/index.js:71-76) and selects between them on `skill.resourceBase`; a skill
+    // registered by dsh-tool-skill with no resourceBase falls to the plain
+    // provider wording. Transcribing the wrong branch would have made the
+    // `injectionCarriesTheFullSkillFrame` check pass on a frame the deployment
+    // never emits — the check's own comment claims the resources hint is part of
+    // what the model receives, so the hint has to be the real one.
+    'Resources for this skill are managed by provider "runtime".',
+    'Load referenced resources only as needed.',
+    '</skill_resources>',
+    '',
+    '<skill_instructions>',
+    entry?.document?.content ?? '',
+    '</skill_instructions>',
+    '</skill_content>',
+  ].join('\n')
+}
+
+function fabricatedUlwPlanLog() {
+  const injected = fabricatedUlwPlanInstruction()
+  const assistant = (seq, turn, step, text) => ({
+    seq,
+    type: 'assistant/message',
+    data: { turn, step, message: { role: 'assistant', content: [{ type: 'text', text }] } },
+  })
+  return {
+    path: '/fabricated/ulw-plan/session.jsonl',
+    header: { type: 'session', id: FABRICATED_COMMAND_SESSION_ID },
+    events: [
+      fabricatedUserMessage(1, { id: 'fabricated-gesture-1', role: 'user', content: [{ type: 'text', text: ULW_PLAN_GESTURE_LINE }], source: { kind: 'user', rpcId: 'fabricated-rpc' } }),
+      { seq: 2, type: 'turn/start', data: { turn: 1 } },
+      { seq: 3, type: 'step/start', data: { turn: 1, step: 1 } },
+      // The injection: a user message whose source is the skill invocation, claimed
+      // INSIDE the step (pre-step appends to the step's own messages) and therefore
+      // also durable in the log. No `command/run` anywhere — that absence is the
+      // scenario's central claim and the fixture must model it honestly.
+      fabricatedUserMessage(4, { id: 'fabricated-injected-ulw-plan-1', role: 'user', content: [{ type: 'text', text: injected }], source: { kind: 'skill-invocation', name: 'ulw-plan', form: 'instructions' } }),
+      assistant(5, 1, 1, ULW_PLAN_PROMETHEUS_REPLY),
+      { seq: 6, type: 'step/end', data: { turn: 1, step: 1 } },
+      { seq: 7, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      // 对照: the bare gesture, same shape.
+      fabricatedUserMessage(8, { id: 'fabricated-gesture-2', role: 'user', content: [{ type: 'text', text: ULW_PLAN_BARE_GESTURE_LINE }], source: { kind: 'user', rpcId: 'fabricated-rpc' } }),
+      { seq: 9, type: 'turn/start', data: { turn: 2 } },
+      { seq: 10, type: 'step/start', data: { turn: 2, step: 1 } },
+      fabricatedUserMessage(11, { id: 'fabricated-injected-ulw-plan-2', role: 'user', content: [{ type: 'text', text: injected }], source: { kind: 'skill-invocation', name: 'ulw-plan', form: 'instructions' } }),
+      assistant(12, 2, 1, ULW_PLAN_BARE_PROMETHEUS_REPLY),
+      { seq: 13, type: 'step/end', data: { turn: 2, step: 1 } },
+      { seq: 14, type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } },
+    ],
+  }
+}
+
+function fabricatedUlwPlanInput(routes) {
+  const model = routes.sisyphus.model
+  const messages = (...texts) => [
+    { role: 'system', content: 'MOCKROLE=sisyphus' },
+    ...texts.map((text) => ({ role: 'user', content: text })),
+  ]
+  return {
+    log: fabricatedUlwPlanLog(),
+    requests: [
+      { role: 'sisyphus', body: { model, messages: messages(ULW_PLAN_GESTURE_LINE, fabricatedUlwPlanInstruction()) }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model, messages: messages(ULW_PLAN_BARE_GESTURE_LINE, fabricatedUlwPlanInstruction()) }, receivedAt: 20 },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: FABRICATED_BOOT_LOG,
+    commandResults: [
+      { line: ULW_PLAN_GESTURE_LINE, matched: false, admission: undefined },
+      { line: ULW_PLAN_BARE_GESTURE_LINE, matched: false, admission: undefined },
+    ],
+  }
+}
+
+/** Append or strip the lifecycle pair, the way a same-name command would. */
+function addCommandLifecycle(input) {
+  input.log.events = [
+    { seq: 0, type: 'command/run', data: { commandId: 'cmd-fabricated-ulw', name: 'ulw-plan', args: ULW_PLAN_REQUEST, source: { kind: 'user' } } },
+    { seq: 0.5, type: 'command/done', data: { commandId: 'cmd-fabricated-ulw', kind: 'success', text: 'queued' } },
+    ...input.log.events,
+  ]
+}
+
+function ulwPlanGestureDefectCases() {
+  return [
+    ['the gesture was ADMITTED as a command (the shadowing regression)', (input) => {
+      input.commandResults[0].matched = true
+      input.commandResults[0].admission = { commandId: 'cmd-fabricated-ulw', result: { kind: 'success', text: 'queued' } }
+    }, 'ulwPlanWasNotAdmittedAsACommand'],
+    ['the log carries a command/run + command/done pair for the gesture', (input) => {
+      addCommandLifecycle(input)
+    }, 'noCommandLifecycleEventsAtAll'],
+    ['the gesture never fell back to the prompt path', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'user/message' && event.data?.id === 'fabricated-gesture-1'))
+    }, 'bothGestureLinesFellBackToPrompts'],
+    ['the skill body was never injected', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'user/message' && event.data?.id === 'fabricated-injected-ulw-plan-1'))
+    }, 'skillContentInjectedForBothLines'],
+    ['the injection was labelled as an ordinary user message', (input) => {
+      // The source contract is what distinguishes "the bridge ran" from "something
+      // echoed the skill into the transcript" — a plain user message proves nothing.
+      const injected = input.log.events.find(
+        (event) => event.type === 'user/message' && event.data?.id === 'fabricated-injected-ulw-plan-1')
+      injected.data.source = { kind: 'user' }
+    }, 'injectionSourceIsSkillInvocation'],
+    ['the injection lost its message id', (input) => {
+      const injected = input.log.events.find(
+        (event) => event.type === 'user/message' && event.data?.id === 'fabricated-injected-ulw-plan-1')
+      injected.data.id = undefined
+    }, 'injectionCarriedAsAnIdentifiedUserMessage'],
+    ['the injection carried the body but not the shipped frame', (input) => {
+      const injected = input.log.events.find(
+        (event) => event.type === 'user/message' && event.data?.id === 'fabricated-injected-ulw-plan-1')
+      injected.data.content = [{ type: 'text', text: ulwPlanBodyText() }]
+    }, 'injectionCarriesTheFullSkillFrame'],
+    ['the injected body was some other skill\'s', (input) => {
+      const injected = input.log.events.find(
+        (event) => event.type === 'user/message' && event.data?.id === 'fabricated-injected-ulw-plan-1')
+      injected.data.content = [{
+        type: 'text',
+        text: injected.data.content[0].text.replace('You are **Prometheus**, a planning consultant', 'You are a general purpose assistant.'),
+      }]
+    }, 'injectedBodyIsTheUlwPlanBody'],
+    ['the bridge swallowed the user\'s own request', (input) => {
+      input.requests[0].body.messages = input.requests[0].body.messages.filter(
+        (message) => message.content !== ULW_PLAN_GESTURE_LINE)
+    }, 'userRequestRodeTheFirstStep'],
+    ['the injection and the request did not coexist in one step', (input) => {
+      input.requests[0].body.messages = input.requests[0].body.messages.filter(
+        (message) => !String(message.content).includes('<skill_content name="ulw-plan">'))
+    }, 'userRequestAndInjectionCoexistInOneStep'],
+    ['the model ignored the interview persona and answered with a plan', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'assistant/message' && event.data?.turn === 1
+          ? { ...event, data: { ...event.data, message: { role: 'assistant', content: [{ type: 'text', text: 'Step 1: add the module. Step 2: wire it up.' }] } } }
+          : event)
+    }, 'modelAnsweredAsPrometheusWithInterviewQuestions'],
+    ['the bare gesture did not inject the body', (input) => {
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'user/message' && event.data?.id === 'fabricated-injected-ulw-plan-2'))
+    }, 'bareGestureAlsoInjectedTheBody'],
+    ['the bare turn answered without the interview voice', (input) => {
+      // MAJOR-1's own defect. The previous check was `includes('Prometheus') ||
+      // length > 0` — the first term could never match the all-caps mock marker and
+      // the second accepted ANY non-empty reply, so a plain "done" answer stayed
+      // green. This case proves the tightened check bites.
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'assistant/message' && messageContentText(event.data?.message ?? event.data).includes('MOCK-ULW-PLAN-BARE-PROMETHEUS-')
+          ? { ...event, data: { ...event.data, message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } } }
+          : event)
+    }, 'bareGestureAnsweredAsPrometheusToo'],
+    ['a turn ended with an error', (input) => {
+      input.log.events = input.log.events.map((event) =>
+        event.type === 'turn/end' && event.data?.turn === 1
+          ? { ...event, data: { ...event.data, reason: { kind: 'error' } } }
+          : event)
+    }, 'bothTurnsCompleted'],
+  ]
+}
+
+/** ulw-plan's body on its own, without the shipped frame — the "body but not frame" defect. */
+function ulwPlanBodyText() {
+  return vendoredSkillEntries().get('ulw-plan')?.document?.content ?? ''
 }
 
 async function main() {
@@ -13837,6 +15865,16 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T9 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
+    if (ULW_COMMAND_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('P4-T11: the ulw-execute-command self-test banner is EMPTY — it would attest to nothing')
+    }
+    const ULW_COMMAND_SELF_TEST_BANNER = [...ULW_COMMAND_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [scenario, label]) => {
+        byScenario.set(scenario, [...(byScenario.get(scenario) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([scenario, labels]) => `P4-T11 ${scenario}: ${labels.join(', ')}`)
+      .join('; ')
     const commandChannelCases = commandChannelDefectCases(COMMAND_CHANNEL_SPECS.handoff)
     if (commandChannelCases.length === 0) {
       problems.push('fabricated handoff-driven: the command-channel defect list is EMPTY — the banner would attest to nothing')
@@ -13844,7 +15882,27 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     const COMMAND_CHANNEL_SELF_TEST_BANNER = commandChannelCases
       .map(([label]) => label)
       .join(', ')
-    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)`)
+    if (HYPERPLAN_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('P4-T15: the hyperplan-degraded-noted self-test banner is EMPTY — it would attest to nothing')
+    }
+    const HYPERPLAN_SELF_TEST_BANNER = [...HYPERPLAN_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [scenario, label]) => {
+        byScenario.set(scenario, [...(byScenario.get(scenario) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([scenario, labels]) => `P4-T15 ${scenario}: ${labels.join(', ')}`)
+      .join('; ')
+    if (ULW_PLAN_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('P4-T15: the ulw-plan-loads-prometheus-skill self-test banner is EMPTY — it would attest to nothing')
+    }
+    const ULW_PLAN_SELF_TEST_BANNER = [...ULW_PLAN_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [scenario, label]) => {
+        byScenario.set(scenario, [...(byScenario.get(scenario) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([scenario, labels]) => `P4-T15 ${scenario}: ${labels.join(', ')}`)
+      .join('; ')
+    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
