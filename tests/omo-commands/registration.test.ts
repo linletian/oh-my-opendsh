@@ -154,16 +154,20 @@ describe('P4-T3/T6/T8 the real mount: three commands register, the pending three
     // tests/omo-commands/skills.test.ts). The command surface's contribution is
     // still exactly ONE line.
     // Hand-transcribed, roster order (manifest.ts MANIFEST_ROWS):
-    //   ulw-execute, ulw-plan, hyperplan          → pending, silent
+    //   ulw-execute                               → ported, registered (P4-T10)
+    //   ulw-plan, hyperplan                       → pending, silent
     //   stop-continuation, handoff, remove-ai-slops → ported, registered
     // The two `skills:` lines are the OTHER mechanism's (P4-T5's summary) — they
     // are listed only to pin that the command surface contributes exactly one
     // summary line plus its own per-command lines, in that order.
     expect(logged).toEqual([
+      // P4-T10 added the first roster row; the registration order is ROSTER order,
+      // so `ulw-execute` is logged first even though it landed last.
+      '[omo-commands] command ulw-execute registered',
       '[omo-commands] command stop-continuation registered',
       '[omo-commands] command handoff registered',
       '[omo-commands] command remove-ai-slops registered',
-      '[omo-commands] loaded: manifest 6 entries (pending=3, ported=3) — 3/6 commands registered',
+      '[omo-commands] loaded: manifest 6 entries (pending=2, ported=4) — 4/6 commands registered',
       '[omo-commands] skills: 19/19 registered (runtime, vendor path)',
     ])
   })
@@ -177,6 +181,7 @@ describe('P4-T3/T6/T8 the real mount: three commands register, the pending three
     // message counting "command entries") must not be able to satisfy or break
     // this assertion.
     expect(lines.filter((line) => /^\[omo-commands\] command /.test(line))).toEqual([
+      '[omo-commands] command ulw-execute registered',
       '[omo-commands] command stop-continuation registered',
       '[omo-commands] command handoff registered',
       '[omo-commands] command remove-ai-slops registered',
@@ -186,24 +191,29 @@ describe('P4-T3/T6/T8 the real mount: three commands register, the pending three
     // and a failure for the same roster.
     expect(lines.filter((line) => line.includes('FAILED'))).toEqual([])
     expect(lines).toEqual([
+      '[omo-commands] command ulw-execute registered',
       '[omo-commands] command stop-continuation registered',
       '[omo-commands] command handoff registered',
       '[omo-commands] command remove-ai-slops registered',
-      '[omo-commands] loaded: manifest 6 entries (pending=3, ported=3) — 3/6 commands registered',
+      '[omo-commands] loaded: manifest 6 entries (pending=2, ported=4) — 4/6 commands registered',
     ])
   })
 
-  it('registers the three ported commands with their measured descriptions and hints', () => {
+  it('registers the four ported commands with their measured descriptions and hints', () => {
     // `input.hint` comes from the manifest row's `argumentHint` (one fact, one
     // place). `remove-ai-slops` has NO hint upstream (commands.ts:85-92) and so
     // no `input` member at all — asserted as `undefined`, not as an empty string.
     const { context } = runLoop(COMMAND_MANIFEST, COMMAND_REGISTRARS)
     expect(context.registered.map((entry) => [entry.name, entry.hint])).toEqual([
+      ['ulw-execute', '[plan-name] [--worktree <path>] [--make-pr] [--ship]'],
       ['stop-continuation', undefined],
       ['handoff', '[goal]'],
       ['remove-ai-slops', undefined],
     ])
     expect(context.registered.map((entry) => entry.description)).toEqual([
+      // ulw-execute's description is upstream commands.ts:62 verbatim; it is the
+      // ONLY ported command whose hint is non-undefined AND non-trivial.
+      '(builtin) Start Atlas work session from Prometheus plan',
       '(builtin) Stop all continuation mechanisms (ralph loop, todo continuation, boulder) for this session',
       '(builtin) Create a detailed context summary for continuing work in a new session',
       '(builtin) Remove AI-generated code smells from branch changes and critically review the results',
@@ -214,9 +224,14 @@ describe('P4-T3/T6/T8 the real mount: three commands register, the pending three
     // If this fails, the summary line in the test above is stale prose: a landed
     // command needs the hard-coded line updated in the SAME commit. Both halves
     // are named — the registry keys AND the statuses they correspond to.
-    expect(Object.keys(COMMAND_REGISTRARS)).toEqual(['stop-continuation', 'handoff', 'remove-ai-slops'])
+    expect(Object.keys(COMMAND_REGISTRARS)).toEqual([
+      'ulw-execute', 'stop-continuation', 'handoff', 'remove-ai-slops',
+    ])
     expect(COMMAND_MANIFEST.map((entry) => entry.status)).toEqual([
-      'pending', 'pending', 'pending', 'ported', 'ported', 'ported',
+      // Roster order: ulw-execute (T10) is row 0 and is ported; the two rows that
+      // remain pending are `ulw-plan` (must stay unregistered — it would shadow
+      // the skill gesture bridge) and `hyperplan` (not started).
+      'ported', 'pending', 'pending', 'ported', 'ported', 'ported',
     ])
   })
 

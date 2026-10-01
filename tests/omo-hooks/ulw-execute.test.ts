@@ -26,6 +26,9 @@ import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+// The REAL product of the omo-commands handler — see `commandMessage()` below
+// for why this cross-package import is legal in a test but not at runtime.
+import { renderUlwExecuteInstruction } from '../../patches/omo-dsh/omo-commands/src/commands/ulw-execute.ts'
 import { HOOK_MANIFEST, type HookManifestEntry } from '../../patches/omo-dsh/omo-hooks/src/manifest.ts'
 import type { HooksRegistrationContext } from '../../patches/omo-dsh/omo-hooks/src/index.ts'
 import {
@@ -43,6 +46,7 @@ import {
   formatUlwExecuteFailureLine,
   formatUlwExecuteLine,
   hasContextMarkerInSession,
+  hasCommandTemplateMarker,
   hasWorkIntent,
   planNameOf,
   readAgentSession,
@@ -1271,12 +1275,125 @@ describe('P3-T17 ulw-execute — 身份面（descriptor.persona 的 omo-atlas �
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ⑯ P4-T10 命令模板轨的**生产可达性**（穿过 createUlwExecuteListener）
+//
+// 上一节的纯函数用例只能证明判定函数的取值表，不能证明真实链路上轨 B 会被走到。
+// 本节用 omo-commands 的**真实渲染产物**当首条 user 消息，穿过真正的 listener，
+// 断言注入次数。
+//
+// ⚠️ 跨包 import 只在测试里合法：两个补丁包各自独立安装，运行期相互 import 会在
+// 对方缺席时炸掉整包加载。测试 import 缺失文件只是测试失败，不是坏安装。
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('P4-T10 ulw-execute — 命令模板轨穿过真实 listener（生产可达性）', () => {
+  /**
+   * The REAL product of `omo-commands`'s handler — same renderer the command
+   * calls, same fixed clock. Restating the template here would defeat the whole
+   * purpose: the point is that the *command's own output* reaches the hook, so a
+   * change to the template that breaks an R-10 marker turns THIS red.
+   */
+  function commandMessage(): string {
+    return renderUlwExecuteInstruction(
+      {
+        rawInput: 'alpha --ship',
+        agent: { id: 'session-conductor-1', followup: () => {} },
+      } as never,
+      () => '2026-05-11T00:00:00.000Z',
+    )
+  }
+
+  function withPlanDirectory<T>(body: (directory: string, listener: PreStepListener) => Promise<T>): Promise<T> {
+    const directory = join(tmpdir(), `ulw-execute-t10-${randomUUID()}`)
+    mkdirSync(join(directory, '.omo', 'plans'), { recursive: true })
+    writeFileSync(join(directory, '.omo', 'plans', 'alpha.md'), '## TODOS\n- [x] 1. First\n- [ ] 2. Second\n')
+    const { ctx, onCalls } = fakeContext()
+    registerUlwExecute(ctx, ulwExecuteRow())
+    const pre = onCalls.find((candidate) => candidate.event === 'agent/pre-step')
+    if (pre === undefined) throw new Error('registrar wiring incomplete')
+    return body(directory, pre.listener as PreStepListener).finally(() => {
+      rmSync(directory, { recursive: true, force: true })
+    })
+  }
+
+  it('atlas 子会话形态：首条 user 消息 = 命令模板真实产物 → 恰好注入一次', async () => {
+    await withPlanDirectory(async (directory, listener) => {
+      const { payload, injected } = injectingPayload(atlasSession(directory), [commandMessage()])
+      await listener(payload, nextDouble().next)
+      expect(injected).toHaveLength(1)
+      // 注入的不是模板原文，而是 H-32 构建的上下文文档 —— 命令消息是**信号**，
+      // 不是要喂回模型的内容。
+      const [message] = injected as [{ readonly content: readonly [{ readonly text: string }] }]
+      expect(message.content[0].text).not.toBe(commandMessage())
+      // …and it names the plan that is actually on disk, i.e. the context was
+      // BUILT rather than stubbed.
+      expect(message.content[0].text).toContain('alpha')
+    })
+  })
+
+  it('同会话第二 step：幂等，不再注入（共享幂等键的生产证据）', async () => {
+    await withPlanDirectory(async (directory, listener) => {
+      // ⚠️ 同一个 session **对象**贯穿两步：幂等键是 registrar 的会话级 WeakMap +
+      // 会话日志审计，两条都按会话记账。换一个新 session 对象等于换了一个会话，
+      // 那样第二步当然会再注入 —— 那测的是别的东西（本例第一次就是这么写错的）。
+      const session = atlasSession(directory)
+      const first = injectingPayload(session, [commandMessage()])
+      await listener(first.payload, nextDouble().next)
+      expect(first.injected).toHaveLength(1)
+
+      // 第二步是新 payload（新的 pre-step 事件），但会话没变。
+      const second = injectingPayload(session, [commandMessage()])
+      await listener(second.payload, nextDouble().next)
+      expect(second.injected).toHaveLength(0)
+    })
+  })
+
+  it('对照：指挥者会话形态（无 descriptor）**零注入**，且这是 by-design', async () => {
+    // 语义更正后的真实形态（BLOCKER-1）。指挥者会话没有 descriptor，
+    // `runUlwExecuteStep` 在 `!identity.found` 处早退 —— 与上游「没有命令 marker
+    // 时不激活」同形，属**设计如此**。命令行的激活发生在指挥者**委派 atlas**
+    // 之后（marker 作为委派任务文本抵达 atlas 子会话，见上一节）。
+    //
+    // 所以这一条**不是**缺陷断言，而是「不要试图靠放开身份门来让编排者会话激活」
+    // 的守卫。
+    //
+    // ⚠️ 守卫的**强度已实测**，别把它当更强的守卫读：把 `!identity.found` 早退
+    // 单独去掉，本例**仍然是绿的**。原因是人格门是**双份**的 —— 早退之外，
+    // `runUlwExecuteStep` 里 `built` 的三元式也按 `isAtlasPersona` 短路，于是
+    // 判定函数收到的是空 `contextText`，走 `no-context` 而不是注入，净结果不变。
+    // 必须**两处同时**去掉（早退 + 三元式 + 判定函数的 bypass）本例才会从 0 变 1
+    // 而变红（已实测）。这是纵深防御，但也意味着单点回归不会被这里抓到；R-10
+    // marker 漂移同样抓不到（两条轨重叠，词表仍然命中）—— 抓 marker 漂移的是
+    // tests/omo-commands/ulw-execute.test.ts 的跨包相等断言，不是本例。
+    await withPlanDirectory(async (directory, listener) => {
+      const noDescriptor = { header: { cwd: directory, id: 'ses_conductor' } }
+      const { payload, injected } = injectingPayload(noDescriptor, [commandMessage()])
+      await listener(payload, nextDouble().next)
+      expect(injected).toHaveLength(0)
+    })
+  })
+
+  it('atlas 子会话但任务文本**无 marker 无意图** → 不注入（轨 B 没把门开成永远真）', async () => {
+    await withPlanDirectory(async (directory, listener) => {
+      const { payload, injected } = injectingPayload(atlasSession(directory), ['please tidy the README wording'])
+      await listener(payload, nextDouble().next)
+      expect(injected).toHaveLength(0)
+    })
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ⑪ 激活检测（纯函数）—— 无上游对应（DSH 原生形态）
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('P3-T17 ulw-execute — 激活检测（纯函数，DSH 原生信号）', () => {
   const ATLAS = `You are **${ATLAS_PERSONA_ANCHOR}**, the master orchestrator.`
   const CONTEXT = '## Auto-Selected Plan\n**Plan**: alpha'
+  // ⚠️ The CLOSE tag is deliberately a local literal, not an R-10 constant. The
+  // frozen upstream check (start-work-hook.ts:170-175) matches the OPEN tag only —
+  // `text.includes('<session-context>')` — so the close tag is not part of the
+  // interface contract and `constants.ts` correctly does not register one. The
+  // omo-commands side declares it only because its template has to emit it.
+  const CLOSE = '</session-context>'
 
   it('⑪ 委派 atlas + 工作计划意图 + 有上下文 → inject', () => {
     const decision = decideUlwExecuteActivation({
@@ -1286,6 +1403,86 @@ describe('P3-T17 ulw-execute — 激活检测（纯函数，DSH 原生信号）'
       contextText: CONTEXT,
     })
     expect(decision).toEqual({ kind: 'inject', text: CONTEXT })
+  })
+
+  it('⑪ marker 是**合取**：只带一个 marker 的普通文本不算模板产物（防假阳性）', () => {
+    // 上游 start-work-hook.ts:170-175 是 `||` 提前 return，即两个 marker 都必须
+    // 命中。任一即可命中的话，一段恰好提到 `<session-context>` 的普通文本就算激活
+    // —— 那是激活门的假阳性，正是本 hook 明确不该有的方向（漏注入 ≠ 错注入）。
+    expect(hasCommandTemplateMarker(TEMPLATE_SESSION_CONTEXT_OPEN)).toBe(false)
+    expect(hasCommandTemplateMarker(TEMPLATE_HEADER_MARKER)).toBe(false)
+    expect(hasCommandTemplateMarker('the <session-context> block is optional here')).toBe(false)
+  })
+
+  it('⑪ 两条轨在真实模板上**重叠**（记录事实，不是缺陷）', () => {
+    // ⚠️ 这条断言最初写成「最小模板产物不命中词表，所以轨 B 确实替代了词表」——
+    // 它**是假的**。`TEMPLATE_HEADER_MARKER`（`You are starting an Atlas work
+    // session.`）自身就含 `atlas work session`，而那是 WORK_INTENT_MARKERS 的一
+    // 条。所以对**任何**真实的命令模板产物，词表也会命中，两条轨的门并不互斥。
+    //
+    // 后果要说清楚：**对真实模板产物，轨 B 与轨 A 的判定结果相同**。轨 B 的价值
+    // 在**纯 marker 文本**上（词表不命中、marker 命中），那才是两轨可区分的输入，
+    // 而那种文本在生产里是否出现取决于指挥者怎么委派 —— 不能断言。所以这里只钉
+    // 重叠这个事实本身，**不**断言"轨 B 不查词表"。
+    const templateProduct = `${TEMPLATE_HEADER_MARKER}\n${TEMPLATE_SESSION_CONTEXT_OPEN}\nSession ID: s\n${CLOSE}`
+    expect(hasWorkIntent(templateProduct)).toBe(true)
+    // 记录重叠的具体来源，而不是笼统地说"碰巧"：是 marker 文本里那句
+    // 'atlas work session' 命中了词表。若将来 marker 改写而词表没跟着改，这条
+    // 断言变红 —— 那正是需要重新评估两轨关系的时候。
+    // 大小写无关：marker 里是 "Atlas"，词表条目是全小写，而匹配带 `iu` 标志，
+    // 所以这里用小写化后的 toContain，否则会在正确状态上误红。
+    expect(templateProduct.toLowerCase()).toContain('atlas work session')
+    expect(WORK_INTENT_MARKERS).toContain('atlas work session')
+  })
+
+  it('⑪ 身份门是**两轨共享前提**，marker 不能替代它（BLOCKER-1 语义更正）', () => {
+    // 早一版把 `!viaCommandTemplate &&` 加在 `isAtlasPersona` 前面，理由写作
+    // 「命令跑在指挥者会话里、那里没有 atlas persona」。那个理由与监听器结构
+    // 矛盾：`runUlwExecuteStep` 在 `!identity.found` 处就 return，无 descriptor 的
+    // 指挥者会话**根本到不了**本函数。所以那条路径在生产里不可达，纯函数用例假装
+    // 它可达就是假证据。身份门恢复无条件，轨 B 只替代第 ④ 条意图门。
+    expect(decideUlwExecuteActivation({
+      persona: 'You are **omo-sisyphus**, the orchestrator.',
+      taskText: `${TEMPLATE_HEADER_MARKER}\n${TEMPLATE_SESSION_CONTEXT_OPEN}\nSession ID: s\n${CLOSE}`,
+      alreadyInjected: false,
+      contextText: CONTEXT,
+    })).toEqual({ kind: 'skip', reason: 'not-atlas' })
+    // 非 atlas 的普通会话同样如此（身份门没有被这次改动动过）。
+    expect(decideUlwExecuteActivation({
+      persona: 'You are **omo-explore**, a search agent.',
+      taskText: 'summarize the repository layout',
+      alreadyInjected: false,
+      contextText: CONTEXT,
+    })).toEqual({ kind: 'skip', reason: 'not-atlas' })
+  })
+
+  it('⑪ 幂等键两轨共享且位置不动（纯函数层）', () => {
+    // 回归守卫：两轨合流后读**同一个** `alreadyInjected` 输入，短路仍在
+    // 「身份 → 幂等 → 内容」的同一位置，跳过理由仍是既有那条，没有新分支。
+    const templateProduct = `${TEMPLATE_HEADER_MARKER}\n${TEMPLATE_SESSION_CONTEXT_OPEN}\nSession ID: s\n${CLOSE}`
+    expect(decideUlwExecuteActivation({
+      persona: ATLAS,
+      taskText: templateProduct,
+      alreadyInjected: true,
+      contextText: CONTEXT,
+    })).toEqual({ kind: 'skip', reason: 'already-injected' })
+    // 纯 marker 文本（词表不命中）+ 幂等 → 幂等先于内容，仍是 already-injected，
+    // 证明轨 B 没有把幂等挤到第 ④ 条之后。
+    expect(decideUlwExecuteActivation({
+      persona: ATLAS,
+      taskText: `${TEMPLATE_SESSION_CONTEXT_OPEN}\n${CLOSE}`,
+      alreadyInjected: true,
+      contextText: CONTEXT,
+    })).toEqual({ kind: 'skip', reason: 'already-injected' })
+  })
+
+  it('⑪ 轨 A 原生委派路径无回归', () => {
+    expect(decideUlwExecuteActivation({
+      persona: ATLAS,
+      taskText: 'start work on the plan',
+      alreadyInjected: false,
+      contextText: CONTEXT,
+    })).toEqual({ kind: 'inject', text: CONTEXT })
   })
 
   it('⑪ 非 atlas → not-atlas（即使任务含意图）', () => {

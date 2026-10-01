@@ -31,8 +31,12 @@
 //      （dsh-goal/lib/types/index.d.ts:96-98）—— 正是"停止续行"，而 upstream 的
 //      `clearGoal` 会让目标消失。改写为 pause 并在注记里说明「目标仍在，恢复即可」。
 //   ④ "Clear the boulder state for the current project" → **无对应面**：boulder
-//      state 属 `ulw-execute`（H-32），该行在本仓 manifest 仍是 `pending`，未移植；
-//      故本条删除，并在注记里说明它随 `ulw-execute` 一起接盘。
+//      state 属 `ulw-execute`（H-32），P4-T10 已把该命令行移植进来，但 **H-32 的
+//      存储面本身仍是 job**（`ctx.jobs`，kind `ulw-execute`）而非 boulder.json，
+//      且 work 状态投影恒为空（H-32 的 `EMPTY_BOULDER_VIEW`）；所以"清空 boulder
+//      state"在本部署**仍然没有对应面**，本条继续删除，注记第 5 条继续说明它随
+//      `ulw-execute` 一起接盘。（P4-T10 更新：此处的判断从「该行未移植」改为
+//      「该行已移植、但 H-32 的投影本身为空」—— 结论没变，理由变了。）
 //
 // §3 一条**新增**的诚实交代：本命令只做「停止续行」，不结束会话、不取消用户在
 // 别的窗口发起的工作；上游文案没有这句，但 DSH 的 handler 返回值会这么说，为了让
@@ -85,7 +89,7 @@ export const STOP_CONTINUATION_CARRIER_NOTE = `[oh-my-opendsh] Stop-continuation
 
 4. RALPH LOOP: not programmable here. This harness ships no ralph loop, so there is nothing for the command to cancel. If you started a loop-like process yourself, end it from your side; do not claim it was cancelled by this command.
 
-5. BOULDER STATE: absent. That state belongs to the ulw-execute command surface, which this deployment has not ported yet. Nothing to clear.
+5. BOULDER STATE: absent. That state belongs to the ulw-execute command surface, whose command row is ported (P4-T10) but whose work-state projection is still empty: a work session is a tracked job, not a boulder.json, and no active work is ever reported. So there is nothing for this command to clear.
 
 6. WHEN THE GUARD IS UNAVAILABLE: the command reports that the stop guard is unavailable and changes nothing. That happens only when the omo-hooks plugin is not mounted in this composition.`
 

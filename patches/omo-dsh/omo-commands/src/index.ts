@@ -64,6 +64,10 @@ import {
   createRemoveAiSlopsCommand,
 } from './commands/remove-ai-slops.ts'
 import {
+  ULW_EXECUTE_DESCRIPTION,
+  createUlwExecuteCommand,
+} from './commands/ulw-execute.ts'
+import {
   STOP_CONTINUATION_DESCRIPTION,
   createStopContinuationCommand,
 } from './commands/stop-continuation.ts'
@@ -200,12 +204,31 @@ export type CommandRegistrar = (
  * adding a registry entry reads it).
  */
 export const COMMAND_REGISTRARS: Record<string, CommandRegistrar> = {
+  // P4-T10 — the first command in ROSTER order, and the first one whose template
+  // carries the R-10 interface markers that omo-hooks H-32's activation detection
+  // matches verbatim. It sits first because this record is kept in MANIFEST ROSTER
+  // ORDER and the roster lists `ulw-execute` before the rest — the order is pinned
+  // by tests/omo-commands/registration.test.ts.
+  //
+  // It is a `ctx`-free registrar like handoff / remove-ai-slops: the handler needs
+  // no service, and H-32's activation is a LISTENER in the other plugin, not a call
+  // this command makes. The two plugins stay decoupled by exactly the contract R-10
+  // defines (the marker strings), which is why no cross-plugin import appears here.
+  //
+  // ⚠️ The decoupled path is INDIRECT, and the shape is easy to get wrong: this
+  // command queues an instruction into the CONDUCTOR's session; the conductor then
+  // delegates to atlas; only in that atlas CHILD session does H-32's listener see a
+  // descriptor and act. So the marker travels 指挥者 → atlas, not 指挥者 → hook.
+  'ulw-execute': (ctx, entry) => {
+    registerPortedCommand(ctx, entry, ULW_EXECUTE_DESCRIPTION, createUlwExecuteCommand())
+  },
   // P4-T8 — the ONLY command that talks to another plugin, and the only entry that
   // passes `ctx` itself instead of a command module's factory: the handler resolves
   // the guard through `ctx.get(...)` PER INVOCATION, never a handle captured at apply
-  // time (Q-5). It sits first because this record is kept in MANIFEST ROSTER ORDER and
-  // the roster lists `stop-continuation` before `handoff` /
-  // `remove-ai-slops` — tests/omo-commands/registration.test.ts pins that order.
+  // time (Q-5). It sits after `ulw-execute` (P4-T10) because this record is kept in
+  // MANIFEST ROSTER ORDER and the roster lists `stop-continuation` second — before
+  // `handoff` / `remove-ai-slops`. tests/omo-commands/registration.test.ts pins
+  // that order.
   'stop-continuation': (ctx, entry) => {
     registerPortedCommand(ctx, entry, STOP_CONTINUATION_DESCRIPTION, createStopContinuationCommand(ctx))
   },

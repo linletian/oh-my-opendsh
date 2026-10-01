@@ -541,18 +541,63 @@ describe('P4-T6 the semantic-port table registers both commands and both narrowi
     // 于是表格自己打自己的脸。这条断言让"列表 ⊆ 真的 pending"成为被测事实。
     // 从 omo-commands 那一节起算（omo-hooks 节有同名的引文，措辞相近），并只取引文
     // 本身 —— 下面的 **Counts** 段合法地列着 stop-continuation 的派生文件。
+    // The claim is about the pending LIST, not the paragraph around it, so the
+    // list line is taken directly: it is the quoted line that enumerates the ids
+    // (`> (\`a\`, \`b\`) — their per-row…`). Slicing "to the end of the quote" was
+    // wrong three times over — a line wrap splits the ids across lines, and a bare
+    // `>` line is a markdown paragraph break that `trim() === ''` does not catch.
+    // Targeting the enumerating line cannot be fooled by either, nor by the
+    // explanatory paragraph that follows (which legitimately mentions
+    // `ulw-execute` in order to say it left the pending set — a paragraph the
+    // earlier slice swept in, so the test passed for the wrong reason).
     const section = NOTICES.indexOf('| Command (manifest id) |')
     const start = NOTICES.indexOf('Deliberately **not** listed as ported', section)
-    const pendingBlock = NOTICES.slice(start, NOTICES.indexOf('**Counts:**', start))
-    expect(pendingBlock).not.toContain('stop-continuation')
-    for (const id of ['ulw-execute', 'ulw-plan', 'hyperplan']) expect(pendingBlock).toContain(id)
+    const pendingLine = NOTICES.slice(start).split('\n')
+      .find((line) => /^> \(/.test(line.trim()))
+    expect(pendingLine, 'the pending-rows quote no longer enumerates its ids').toBeDefined()
+    const pendingBlock = pendingLine ?? ''
+    // Named ported rows must be ABSENT from the pending list, in both directions.
+    for (const id of ['stop-continuation', 'handoff', 'remove-ai-slops', 'ulw-execute']) {
+      expect(pendingBlock, `${id} is ported but named among the pending rows`).not.toContain(id)
+    }
+    // …and the two rows that really are pending must be named.
+    for (const id of ['ulw-plan', 'hyperplan']) expect(pendingBlock).toContain(id)
   })
 
-  it('counts the derived files it lists (no stale count after P4-T8 landed)', () => {
-    expect(NOTICES).toContain('**3 command ids / 10 derived')
+  it('counts the derived files it lists (no stale count after P4-T10 landed)', () => {
+    expect(NOTICES).toContain('**4 command ids / 12 derived')
     for (const file of ['src/templates/render.ts', 'src/commands/errors.ts', 'src/commands/command-types.ts']) {
       expect(NOTICES).toContain(file)
     }
+  })
+
+  it('the count is DERIVED from the table, not only hand-typed (a new row cannot slip past it)', () => {
+    // The hand-typed count above is one number a reviewer has to notice changing.
+    // This one recomputes it from the table's own rows, so a command that landed
+    // without a count bump fails HERE even if the string above was updated
+    // wrongly. Both are needed: the hand-typed string pins the exact rendered
+    // count line, the derivation pins that it is consistent with the table.
+    const section = NOTICES.indexOf('| Command (manifest id) |')
+    const rows = NOTICES.slice(section).split('\n').filter((line) => line.startsWith('| ') && !line.startsWith('|---') && line.includes('semantic port only'))
+    // One row per ported command; `ulw-execute` is the fourth (P4-T10).
+    expect(rows).toHaveLength(4)
+    for (const id of ['ulw-execute', 'stop-continuation', 'handoff', 'remove-ai-slops']) {
+      expect(rows.some((row) => row.startsWith(`| ${id} |`)), `${id} has no semantic-port row`).toBe(true)
+    }
+    // …and the derived file list in the **Counts** paragraph covers every row's
+    // handler + template, counted from the real file set rather than retyped.
+    const countsBlock = NOTICES.slice(NOTICES.indexOf('**Counts:** Phase 4 derived command files'))
+    const listedTemplates = [...countsBlock.matchAll(/src\/templates\/\{([^}]+)\}/g)]
+      .flatMap((match) => match[1].split(',').map((name) => `src/templates/${name}.ts`))
+    const listedCommands = [...countsBlock.matchAll(/src\/commands\/\{([^}]+)\}/g)]
+      .flatMap((match) => match[1].split(',').map((name) => `src/commands/${name}.ts`))
+    const listed = [...listedTemplates, ...listedCommands]
+    // The four ported commands each contribute a handler; the four templates each
+    // contribute a template file (render.ts is shared infrastructure, not a
+    // command's own, and is listed too).
+    expect(listedCommands.filter((file) => ['handoff', 'remove-ai-slops', 'stop-continuation', 'ulw-execute', 'user-message', 'command-types', 'errors'].some((name) => file.endsWith(`${name}.ts`)))).toHaveLength(7)
+    expect(listedTemplates).toHaveLength(5)
+    expect(new Set(listed).size).toBe(listed.length)
   })
 })
 

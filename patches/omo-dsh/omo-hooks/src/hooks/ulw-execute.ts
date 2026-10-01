@@ -124,9 +124,39 @@
 //      T16 先例）。上游的「激活目标 = atlas」在 DSH 上就是「这个子会话是 atlas」。
 //   ② 意图：该子会话收到的**任务文本**命中 WORK_INTENT_MARKERS（constants.ts，
 //      含 Phase 4 模板的 marker 语义 + 上游模板的措辞 + `ultrawork|ulw` 关键词）。
-//      Phase 4 模板落地后，模板标头必然命中同一张表 —— 届时把
-//      TEMPLATE_HEADER_MARKER / TEMPLATE_SESSION_CONTEXT_OPEN 的**逐字**对接
-//      也接受（R-10 常量同步风险，见 constants.ts 的注释块）。
+//
+// ═══ P4-T10：上面的「只能有 Phase 4 模板产生」这句**已经兑现** ═══
+//
+// `omo-commands` 的 `/ulw-execute` 模板落地了（src/templates/ulw-execute.ts 的
+// ULW_EXECUTE_COMMAND_TEMPLATE），并逐字带上 R-10 的两个 marker：
+// wrapper 的 `<session-context>` 开标签 + 模板本体首行
+// `You are starting an Atlas work session.`。于是激活检测有**两条**轨，
+// 在 `decideUlwExecuteActivation` 里合流（双轨一见的详细论证见该函数注释）：
+//
+//   轨 A（本节描述的原生路径）：atlas 子会话 + 任务文本命中 WORK_INTENT_MARKERS；
+//   轨 B（命令路径，P4-T10）：   atlas 子会话 + 任务文本命中两个 R-10 marker 的
+//                              **合取**（`hasCommandTemplateMarker`，上游
+//                              start-work-hook.ts:170-175 的逐字口径）。
+//
+// **两条轨只差在第 ④ 条意图门，身份门是共享前提**（语义更正，2026-10）。轨 B 的
+// 判定面是 **atlas 子会话的委派任务文本**：命令模板经 `agent.followup` 进入
+// 指挥者会话，指挥者按模板行动并**委派 atlas**，marker 作为该委派的任务文本
+// 抵达 atlas 子会话（其首条 user 消息即委派任务）。
+//
+// **指挥者会话本身不是 H-32 的注入面** —— `runUlwExecuteStep` 在
+// `!identity.found` 处早退（无 descriptor），与上游「没有命令 marker 时不激活」
+// 同形，属**设计如此**。所以轨 B 不是「绕过身份」，也不该被写成一个绕过身份门的
+// 特例：那样写既与监听器结构矛盾（无 descriptor 时根本到不了判定函数），也会
+// 把一个纯函数用例抬成生产可达性的假证据。
+//
+// 两条轨**共享同一个幂等键**，且 `alreadyInjected` 在判定树里的位置没有移动 ——
+// 见该函数注释末段。生产可达性由「穿过 createUlwExecuteListener」的集成用例
+// 钉住（指挥者形态 = 零注入且由设计，atlas 子会话形态 = 恰好一次注入）。
+//
+// 跨包逐字一致性由 tests/omo-commands/ulw-execute.test.ts 的相等断言钉住
+// （同时 import 两个包的模块比较常量值），与 stop-continuation 的服务名
+// 跨包断言同一纪律：两个补丁包各自独立安装，**不能**跨包 import 源码，
+// 所以一致性只能靠单测保证。R-10 常量同步风险见 constants.ts 的注释块。
 //
 // 为什么不是「任何 atlas 委派都注入」：那会把本 listener 变成对 atlas 的**无差别
 // 噪音源**（每个 atlas 委派都收到一份计划上下文），而上游的 marker 门是**精确**
@@ -313,8 +343,54 @@ export interface ActivationInput {
 }
 
 /**
+ * 任务文本是否是 **Phase 4 命令模板的产物** —— 上游激活检测的逐字口径。
+ *
+ * 上游 `start-work-hook.ts:170-175`：
+ *     if (!promptText.includes("<session-context>")
+ *         || !promptText.includes(START_WORK_TEMPLATE_MARKER)) return
+ * 即**两个 marker 的合取**，缺一即不激活。本移植逐字沿用该合取，并把两个
+ * marker 从 `constants.ts` 取（R-10 接口常量），所以 `omo-commands` 的
+ * `/ulw-execute` 模板只要逐字带上它们，这条路径就会命中。
+ *
+ * 为什么是**合取**而不是"任一"：上游两个 marker 分别由 wrapper 的
+ * `<session-context>` 开标签与模板本体首行产生，只有两者同时出现才说明这条
+ * 文本确实来自命令模板的完整三层包裹（`<command-instruction>` +
+ * `<session-context>` + `<user-request>`）。任一即可命中的话，一段恰好提到
+ * `<session-context>` 的普通文本就会激活 —— 那是激活门的**假阳性**，正是
+ * 本 hook 明确不该有的方向。
+ *
+ * ⚠️ 与 `hasWorkIntent` 的分工：那条是 DSH 原生委派路径的意图面（收窄的
+ * 词表 + 词边界），本条是命令路径的**精确**门。两者都满足才算意图成立。
+ *
+ * ═══ 判定面（BLOCKER-1 的语义更正，2026-10）═══
+ *
+ * 本函数的输入是 `readDelegationTaskText` 抽出的**委派任务文本**，而
+ * `runUlwExecuteStep` 在 `!identity.found` 处就 return 了 —— 所以到达这里时
+ * **必然**已经是一个有 descriptor 的委派子会话。
+ *
+ * 也就是说：命令模板 marker 抵达本 hook 的路径是
+ * `指挥者会话 /ulw-execute → followup → 指挥者按模板行动 → 委派 atlas →
+ * marker 作为委派任务文本进入 atlas 子会话（该子会话的首条 user 消息就是
+ * 委派任务）`。**指挥者会话本身不是 H-32 的注入面**：它在没有 descriptor 的
+ * 情况下早退，这与上游「没有命令 marker 时不激活」是同一种形态，属于**设计
+ * 如此**，不是缺陷、更不是待修的漏洞。命令行的激活发生在指挥者**委派 atlas**
+ * 之后，评审探针 CASE 3 实测该路径 injected=1。
+ *
+ * ⚠️ 因此这里**不应**、也没有放宽身份门：身份是 atlas lane 的前提，不是命令
+ * 轨可以绕过的门。早一版曾把 `!viaCommandTemplate &&` 加在 `isAtlasPersona`
+ * 前面，理由写作「命令跑在指挥者会话里、那里没有 atlas persona」—— 那个理由
+ * 与上面的监听器结构矛盾（无 descriptor 时根本到不了判定函数），属于对注入面
+ * 的误判，现已删除。生产可达性由 tests/omo-hooks/ulw-execute.test.ts 的
+ * 「穿过 createUlwExecuteListener」集成用例钉住，而不是由纯函数用例假装。
+ */
+export function hasCommandTemplateMarker(text: string): boolean {
+  return text.includes(TEMPLATE_SESSION_CONTEXT_OPEN)
+    && text.includes(TEMPLATE_HEADER_MARKER)
+}
+
+/**
  * 激活判定，顺序固定（单测对每条理由断言）：
- *   ① 非子会话 / 不是 atlas → `not-a-delegated-child` / `not-atlas`
+ *   ① 不是 atlas → `not-atlas`
  *   ② 已有幂等记录 → `already-injected`
  *   ③ 任务文本为空 → `no-task-text`
  *   ④ 无工作计划意图 → `no-work-intent`
@@ -323,6 +399,27 @@ export interface ActivationInput {
  *
  * 顺序的理由：「身份」先于「内容」（不是 atlas 就根本不该看它的文本），
  * 「幂等」先于「意图」（已注入的会话每步都会再命中意图，必须短路）。
+ *
+ * ═══ P4-T10：第二条**意图**轨（命令模板路径），与原生轨在同一函数内并列 ═══
+ *
+ * Phase 3 只交付了原生轨，因为当时**没有命令模板**可认。P4-T10 落地
+ * `/ulw-execute` 后，上游那条唯一的激活路径（命令模板 marker）第一次在本部署
+ * 可用，于是有两条：
+ *
+ *   轨 A（DSH 原生，Phase 3）：`isAtlasPersona(persona) && hasWorkIntent(text)`
+ *   轨 B（命令模板，P4-T10）：  `isAtlasPersona(persona) && hasCommandTemplateMarker(text)`
+ *
+ * **两轨的差别只在第 ④ 条意图门，身份门是共享的前提。** 判定面见
+ * {@link hasCommandTemplateMarker} 的注释块：marker 经「指挥者 → atlas 委派」
+ * 抵达 atlas 子会话的委派任务文本，指挥者会话不是注入面。所以轨 B 不是「绕过
+ * 身份」，而是「用精确 marker 代替收窄词表来满足同一条意图门」。
+ *
+ * **幂等键共享**，且 `alreadyInjected` 的位置**没有移动** —— 这是本改动唯一的
+ * 回归风险点，也是它被单测逐条钉住的地方：两条轨之后都读同一个
+ * `alreadyInjected` 输入，短路仍在「身份 → 幂等 → 内容」的同一位置。
+ * `createUlwExecuteListener` 侧的会话级 `WeakMap` 与 `hasContextMarkerInSession`
+ * 审计都按**会话**而非按轨记账，故先由轨 A 注入过的会话不会因为随后收到一条
+ * 命令模板文本而二次注入，反之亦然。
  */
 export function decideUlwExecuteActivation(input: ActivationInput): ActivationDecision {
   const { persona, taskText, alreadyInjected, contextText } = input
@@ -335,7 +432,19 @@ export function decideUlwExecuteActivation(input: ActivationInput): ActivationDe
   if (taskText.length === 0) {
     return { kind: 'skip', reason: 'no-task-text' }
   }
-  if (!hasWorkIntent(taskText)) {
+  const viaCommandTemplate = hasCommandTemplateMarker(taskText)
+  // 轨 B 的意图面已由 marker 合取满足，不再要求词表命中（词表是为自由文本
+  // 收窄的；模板是精确产物，用词表去判它只会多一个可以漂移的耦合）。
+  //
+  // ⚠️ **但这个简化在真实模板上不可观测，如实登记**：`TEMPLATE_HEADER_MARKER`
+  // （`You are starting an Atlas work session.`）自身就含 `atlas work session`
+  //（大小写无关命中），而那是 `WORK_INTENT_MARKERS` 的一条 —— 所以对任何真实
+  // 命令模板产物，词表**也会**命中，两条轨的门并不互斥。本行的作用是「不把
+  // 一个可漂移的耦合加在精确路径上」，**不是**「与词表结果不同」。
+  // 换句话说：谁读到这里都不要以为删掉词表检查会改变行为；真要删，得先改 marker。
+  // 这条重叠由 tests/omo-hooks/ulw-execute.test.ts 的「两条轨在真实模板上重叠」
+  // 一例钉住（该例最初被我写反，断言"最小产物不命中词表"是假的）。
+  if (!viaCommandTemplate && !hasWorkIntent(taskText)) {
     return { kind: 'skip', reason: 'no-work-intent' }
   }
   if (contextText.length === 0) {

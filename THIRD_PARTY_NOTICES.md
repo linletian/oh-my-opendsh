@@ -584,17 +584,33 @@ deliberate zero-injection shape, not a used path.
 | handoff | src/commands/handoff.ts + src/commands/user-message.ts + src/commands/command-types.ts + src/commands/errors.ts + src/templates/handoff.ts + src/templates/render.ts | templates/handoff.ts, commands.ts（条目）, hooks/auto-slash-command/executor.ts（模板变量替换 + `formatCommandTemplate` 消息外框） | semantic port only（PHASE 0.5 的 `session_read` 调用收窄为指引文案：DSH 有近等价 service `@deepseek-ai/dsh-session-query` 但无现成模型工具；PHASE 1 的 `todoread()` / `Bash({command: …})` 拼写、`Suggested execution order` 代码块与 PHASE 3 的 `from todoread()` 后缀**按能力改写为散文指引**（DSH 无 todoread 面，bash 工具形态相近但拼写不同源，顺序内容保留）；PHASE 4 第 1 步补 DSH 会话面（Web GUI 新会话 / 再跑 `dsh`），OpenCode 写法留作括注 —— 三处收窄逐条注记于模板文件头 §1/§2/§3 与 `HANDOFF_CARRIER_NOTE` 第 1/2/3 条） |
 | remove-ai-slops | src/commands/remove-ai-slops.ts + src/templates/remove-ai-slops.ts（共用上面两个 structural-type / 渲染文件） | templates/remove-ai-slops.ts（正文 L1-114）、同文件 L116-216（team-mode addendum，**不移植**）、commands.ts（条目）, hooks/auto-slash-command/executor.ts | semantic port only（team-mode addendum 整段不移植，理由与恢复路径注记于文件头；`load_skills=["remove-ai-slops"]` / `$omo:remove-ai-slops` 的载体映射登记于 `REMOVE_AI_SLOPS_CARRIER_NOTE`，正文逐字保留） |
 | stop-continuation | src/commands/stop-continuation.ts + src/templates/stop-continuation.ts（共用上面三个 structural-type / 渲染 / 错误模块；服务名常量本地重述，与 omo-hooks 侧由跨包相等单测钉住） | templates/stop-continuation.ts, commands.ts（条目）, plugin/stop-continuation.ts（命令侧效果序列） | semantic port only（四机制逐条映射：todo 续行 = H-03 查 guard 停止标记（真）；goal = `ctx.goals.pause`（**pause 而非 upstream 的 clearGoal**，目标保留可恢复）；后台任务 = `ctx.jobs.list` + `kill`（真）；ralph = **无程序化 stop API**，模板改为用户层面指引不承诺取消；boulder state 无对应面，随 `ulw-execute` 接盘）。**本命令的模板不下发给模型**（刻意零注入，见该节前言）：命令做的事就是命令本身，把"我已经停好了"再当一条用户消息喂回去只会多一个回合） |
+| ulw-execute | src/commands/ulw-execute.ts + src/templates/ulw-execute.ts（共用上面四个 structural-type / 渲染 / user-message / 错误模块；R-10 的三个 marker 常量**本地重述**，与 omo-hooks 侧由跨包相等单测钉住） | templates/start-work.ts（正文 L1-120）、同文件 L1 标头 marker、commands.ts（条目 :61-76：agent 绑定 :62 / 三层 wrapper :63-74（session-context 段 :67-70）/ argumentHint :75）、start-work-agent.ts（`resolveStartWorkAgent` 的 atlas→sisyphus 两分支） | semantic port only（**R-10 双层携带**：wrapper 段在 commands.ts:63-74（session-context 段 :67-70）而不在模板本体，`<session-context>` 开标签 + `You are starting an Atlas work session.` 两个 marker 都必须逐字产出，缺一层则 H-32 激活门**静默失配**（不报错，只是不激活）—— 这是 H-32 constants.ts 登记的常量同步风险，跨包逐字相等由 tests/omo-commands/ulw-execute.test.ts 断言，且断言打在**渲染产物**上而不只是常量上；**boulder-state 段按 H-32 已登记收窄口径复用**（不重新判断）：① `.omo/boulder.json` 非本部署存储面，work session 落成**一个 `ctx.jobs` job**（kind `ulw-execute`，label 承载计划名，output 承载落地事实），故「hook pre-sets worktree_path in boulder.json」无落点，worktree 路径改由 session-context 承载；② `BoulderView` 恒为 `EMPTY_BOULDER_VIEW`（无活动 work 列表），故上游「多个活动 work → 问用户选哪个」分支**当前不可达** —— 正文**保留并标注**该分支而非删除（H-32 的 S-4 警告：接上非空投影时必须一并补回，否则显式计划名会错走「新建」而非「续接」）；③ `.omo/start-work/ledger.jsonl` 无对应面，同一目标改写入 goal 工具或 `.omo/notepads/<plan-name>/`；④ `create_goal` 本部署**恒真**，上游的条件式写法保留（能力面若收窄文案无需再改）；⑤ `agent: resolveStartWorkAgent(options)` **无 per-command agent 字段可落**（计划书 §4.2），绑定改为「模板身份明示 + 名册委派链」两处承载，**轨 B 相对轨 A 的实际增量**：两条轨的差别**只在第 ④ 条意图门**，身份门是共享前提，轨 B 不是独立激活路径 —— 在**真实模板产物**上两轨结果相同（`TEMPLATE_HEADER_MARKER` 自身含 `atlas work session`，而那是 `WORK_INTENT_MARKERS` 的一条，词表同样命中），故轨 B 的价值取决于**指挥者如何委派**：只有当委派任务文本是纯 marker 文本（不带词表词）时，两轨才给出不同结果，而那种输入在生产中能否出现不由本部署保证。判定面是 **atlas 子会话**的委派任务文本（marker 经「指挥者 → atlas 委派」抵达；指挥者会话无 descriptor，H-32 在 `!identity.found` 处早退，属**设计如此**，与上游「无命令 marker」形态对应）。且**上游的 sisyphus 回退分支在 DSH 不触发**（名册 atlas 为 Phase 2 常驻席位，不存在「atlas 未注册」这个部署形态）—— 如实登记而非假装移植，将来若名册允许 atlas 缺席，该回退需**重新实现**；**逐字保留**：命令首行（= R-10 标头 marker）、flags 语法 `[plan-name] [--worktree <path>] [--make-pr] [--ship]` 与四条 flag 语义、WHAT TO DO 六步骨架、OUTPUT FORMAT 三段样例、CRITICAL 五条、GOAL + TASK BREAKDOWN 两段强制要求、WORKTREE COMPLETION 六步 |
 
-> Deliberately **not** listed as ported: the three manifest rows still `pending`
-> (`ulw-execute`, `ulw-plan`, `hyperplan`) — their per-row
+> Deliberately **not** listed as ported: the two manifest rows still `pending`
+> (`ulw-plan`, `hyperplan`) — their per-row
 > reasons and ownership are the coverage authority:
 > `docs/plans/phase4-dev/phase4-commands.md` §1.2. `ulw-plan` in particular must
 > never become a registered command: it would shadow DSH's own skill gesture.
+>
+> `ulw-execute` left the `pending` set in P4-T10 (handler + template + unit tests
+> landed) and is listed above; its `e2eScenario` is still unimplemented, which is
+> the same deliberate exception the other ported command rows carry and why T11
+> exists.
 
-**Counts:** Phase 4 derived command files listed = **3 command ids / 10 derived
-files** (`src/templates/{handoff,remove-ai-slops,render,stop-continuation}.ts` +
-`src/commands/{handoff,remove-ai-slops,user-message,command-types,errors,stop-continuation}.ts`).
+**Counts:** Phase 4 derived command files listed = **4 command ids / 12 derived
+files** (`src/templates/{handoff,remove-ai-slops,render,stop-continuation,ulw-execute}.ts` +
+`src/commands/{handoff,remove-ai-slops,user-message,command-types,errors,stop-continuation,ulw-execute}.ts`).
 No existing entry above this section was modified (additions only).
+
+The P4-T10 row also changes the **omo-hooks** side: `ulw-execute.ts`'s activation
+detection gained a second track that matches the command-template markers
+(`hasCommandTemplateMarker`), unioned with the existing delegation path behind
+the same idempotency key. That file already has a row in the table above, so this
+is a **modification of an existing entry's subject matter** rather than a new
+entry — the narrowed storage face (`ctx.jobs` instead of `.omo/boulder.json`), the
+empty work-state projection, the no-ledger difference and the marker constants are
+all registered in `omo-hooks/src/hooks/ulw-execute.ts` + `ulw-execute/constants.ts`
+and are referenced, not restated, by the template's carrier note.
 
 ## oh-my-pi
 

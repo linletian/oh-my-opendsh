@@ -160,10 +160,29 @@ const MANIFEST_ROWS = [
     ],
     argumentHint: '[plan-name] [--worktree <path>] [--make-pr] [--ship]',
     agentBinding: 'atlas',
+    // ⚠️ 「编排者激活命令」是**错**的说法，已更正（语义更正，2026-10）。本命令
+    // 在**指挥者会话**里排指令，但 H-32 的注入面只有 **atlas 子会话**：指挥者按
+    // 模板行动并委派 atlas 之后，marker 才作为委派任务文本抵达 atlas 子会话，
+    // 那里才有 descriptor、首条 user 消息才是委派任务，激活才发生（评审探针
+    // CASE 3 实测 injected=1）。指挥者会话无 descriptor，H-32 在
+    // `!identity.found` 处早退 —— 与上游「没有命令 marker 时不激活」同形，
+    // **设计如此**，不是缺陷。
     effectSummary:
-      '编排者激活命令：模板 marker（<session-context> wrapper + You are starting an Atlas work session.）对接 omo-hooks H-32 激活检测',
+      '工作会话启动命令：模板 marker（<session-context> wrapper + You are starting an Atlas work session.）随指挥者→atlas 委派的任务文本对接 omo-hooks H-32 激活检测（注入面为 atlas 子会话）',
     e2eScenario: 'ulw-execute-command-activates-atlas',
-    status: 'pending',
+    // T10 翻转：handler + 单测已落地（src/commands/ulw-execute.ts、
+    // src/templates/ulw-execute.ts、tests/omo-commands/ulw-execute.test.ts、
+    // tests/omo-hooks/ulw-execute.test.ts 的 marker 轨用例），e2e 场景属 T11 ——
+    // 与 handoff / remove-ai-slops / stop-continuation 三行**同款有意的例外**，
+    // 理由逐字沿用那三行：本行声称 ported 时 `e2eScenario` 指向的场景尚不存在，
+    // 门 3 的套件与门 8 的 run-proofs 都按名字取场景，取不到即红。T11 的第一条
+    // 交付动作就是补 `ulw-execute-command-activates-atlas`，届时本行才是完整的。
+    //
+    // R-10 对接面（本行的实质交付面）：`agentBinding: 'atlas'` 不再是纸面声明 ——
+    // 模板首行 `You are starting an Atlas work session.` 与 wrapper 的
+    // `<session-context>` 是 H-32 激活检测的逐字判据，两侧常量相等由
+    // tests/omo-commands/ulw-execute.test.ts 的跨包断言钉住。
+    status: 'ported',
   },
   // C-03 → `/ulw-plan`（phase4-commands.md §1.1 C-03 行）。**非内建命令**——上游经
   // user-invocable skill 面暴露，commands.ts 无该条目。上游源 = shared-skill 目录
