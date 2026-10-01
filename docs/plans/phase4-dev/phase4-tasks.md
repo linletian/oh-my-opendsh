@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **15/18**（P4-T1…T15 ✅——余 T16/T17/T18）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **17/18**（P4-T1…T17 ✅——余 T18 退出标准核对 + L4）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -186,25 +186,25 @@
 
 ## WP-8 门扩展（计划书 §4.8）
 
-### [ ] P4-T16 — 静态门 c 组 / doctor-lite / probe / proofs 扩展
+### [x] P4-T16 — 静态门 c 组 / doctor-lite / probe / proofs 扩展
 
 - **产出**：`scripts/verify-concerto-static.mjs` 新增断言组（延续 c 编号）：三 insert 行、omo-commands 署名头覆盖（每实现文件含上游源标注 + 语义移植声明）、omo-commands manifest ↔ commands/templates 文件集合一致、omo-commands manifest ↔ 覆盖清单一致（一致性测试）、**vendor skills 的 NOTICES/manifest/license 条目存在性 + `dsh-skill*` 零 patch 断言**（退出标准 b 的静态锚）、改名一致性（ulw-execute 裸名，无 start-work/shared/ 残留——署名标注除外）；probe 全量 registered marker 断言（omo-commands 各行 + 汇总，同源派生）；prove 脚本：命令注册表在真实 composition 可见（stub 先例）+ 命令 handler throw 的 settle 形态钉死（P4-T1 Q-1 已闭环结论的 prove 化）。**c14 复验**（其两文档并集 + ported 过滤演进已随 T8/T12 首个 manifest 新增前置落地）：反跑变异验证断言强度不回退——① phase4-commands.md §1.2 已移植行删行即红；② manifest ported 条目缺基线行即红；③ pending 条目不破门（有意语义）。
 - **做法**：门扩展只加严不放松（DoD-c）；全部新断言配变异自证（反跑验证非真空）；ci.yml/ci-local.sh 注释计数同步。
 - **判定**：✅ 门 6/8 绿且断言数增加；三处变异反跑各具名 FAIL。
-- **证据**：（待填）
-- **依赖**：P4-T7、P4-T9、P4-T11、P4-T13、P4-T15（全部 e2e 落地后统一扩展）。**量级**：0.5 天。
+- **证据**：commit `d676aeb`。门 6 **23→30**（c15 insert 行包解析 / c16 署名头两群体——ported 三联 + 6 native 声明 + manifest upstreamSources 交叉核对双向 / c17 manifest↔commands+templates / c18 manifest↔覆盖清单（ulw-plan 具名豁免，滥用即红） / c19 vendor skills NOTICES⇔manifest⇔disk⇔count 四面 + license 面（package.json 字段⇔NOTICES 声明 + 单点声明）+ dsh-skill* 零 patch 三腿 / c20 改名一致机器可读面 / c21 NOTICES 计数派生化）；门 8 **6→7**（prove-command-registry：真实 cordis Context + 真实 CommandRuntime 注册可见 + handler throw settle 双钉——kind:'error' 且原样 re-throw 身份保持 + 下一条仍成功）；omo-hooks strip-only 普查（tests/strip-only/guard.ts 共享，参数属性规则收窄 + 反事实钉死）；P3-T17 断言名清扫；probe/run-proofs 派生化（第三手抄名册消除）；**c14 三变异复验**（删已移植行红/ported 缺基线红/pending 不破门——H-34 豁免被门反钉：翻「已移植」即红）。**双评审**：sub-agent REJECT（3 MAJOR：越界变量吞诊断/交叉核对不存在/c20 无记录——25 变异实证）→修复→APPROVE + mcode 两轮 APPROVE（FINDINGS none）；16 条 findings。
+- **依赖**：P4-T7、P4-T9、P4-T11、P4-T13、P4-T15（全部 e2e 落地后统一扩展）。**量级**：0.5 天（实耗约 0.7 天）。
 
 ---
 
 ## WP-9 收口
 
-### [ ] P4-T17 — 署名与文档收口
+### [x] P4-T17 — 署名与文档收口
 
 - **产出**：`THIRD_PARTY_NOTICES.md` Phase 4 小节终态（语义移植逐文件 + vendor 逐文件双层）；`README*.md` Phase 4 状态行（R-7 措辞：命令面 ≠ Team Mode ≠ 编辑面）；`CHANGELOG.md` Unreleased Phase 4 块；`docs/mvp-pitfalls*.md` 新坑（如有）；覆盖清单全部条目翻终态。
 - **做法**：署名既有条目只增不改（DoD-e）；覆盖清单 §6 统计口径与 §1–§4 行数自洽（Phase 3 T20 的 46/47 教训——三处计数同源派生）；一致性测试的 withoutScenario 终态 []。
 - **判定**：✅ 门 7（docs 一致性）绿；NOTICES 行数 ↔ manifest ↔ 清单三方一致。
-- **证据**：（待填）
-- **依赖**：P4-T16。**量级**：0.5 天。
+- **证据**：commit `a97187a` + `d676aeb`（keyword-detector 补行随 T16 提交——评审逐文件核实准确）。门 7 **9/9**；三方一致：NOTICES hooks 表 **15 行** ↔ manifest 15 ported id（keyword-detector 补行——T12 交付的署名缺口，T17 发现并修复）、commands 表 **5 行** ↔ 5 ported（ulw-plan 正确不在表内）；21 个 e2eScenario 全部在 SCENARIOS（33）有真实声明；既有条目只增不改（评审 diff 核实）。README 中英 R-7 状态行（R-10 只属 /ulw-execute 拆句——评审更正）；CHANGELOG Phase 4 块（census 23→30/33 scenarios 复算无误）；pitfalls §13 **P-31~P-35**（cordis ctx Proxy throw/inject 完整 UserMessage 且 SDK 无 @throws——实现抛错在 dsh-agent-loop:194/:43 并集检查/jobs.list 空 caller 空转/settle 签名错位/负对照先证存活——全条目带版本锚+行号）。**双评审**：sub-agent REJECT→修复→APPROVE + mcode APPROVE；6 条 findings。**仲裁记录（虚构举证事件）**：编码方曾以 npx 缓存旧版 rc.6 的文件行号反驳评审 MAJOR-1——仲裁逐一直核 installed 0.1.5-rc.1 源码，评审三条全成立、编码方引用全假（inbox.d.ts 不存在），终裁更正并在 §13 全条目加版本锚；编码方认错并自查 P-31/P-33 行号一并修正。withoutScenario 终态 []（无残留豁免）。覆盖清单 §6 H-33 件数口径已对齐（25=24+1 目录外）。
+- **依赖**：P4-T16。**量级**：0.5 天（实耗约 0.6 天）。
 
 ### [ ] P4-T18 — 退出标准核对 + L4 真模型冒烟
 
