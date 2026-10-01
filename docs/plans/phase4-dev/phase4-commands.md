@@ -91,6 +91,6 @@
 | 命令移植组（§1.1） | **6 条命令**（C-02…C-07；C-01 原生跳过） | P4-T1 实测锁定；C-03 形态 = 手势桥零代码 |
 | 关键词模式（§1.1 C-08） | **1**（非命令，单列） | ultrawork/hyperplan 关键词 → pre-step 注入 |
 | hook 接盘项（§1.2） | **2**（H-33/H-34） | Phase 3 S-06/S-37 终态化；H-33 实测 24+1 文件 |
-| skills vendor（§2+§3） | **19**（17 shared + 2 senpi） | P4-T1 实测 **288 文件**（286+2）锁定分母 |
+| skills vendor（§2+§3） | **19**（17 shared + 2 senpi） | P4-T1 实测 **288 文件**（286+2）锁定分母；H-33 件数口径：25 条 upstreamFiles = 24（16 实现 + 7 测试 + 1 AGENTS.md〈N-03 不计〉）+ 1 目录外 `config/schema/keyword-detector.ts`——与 manifest 的 17+7=24 登记算术已对齐（manifest.ts:840-856 差异登记） |
 | deferred / 排除（§4） | **6** | 每行终态理由齐备 |
 | 全树覆盖 | 命令面 + skill 面 + 接盘项全部条目 | 退出标准的完整性硬判定（P4-T1 已锁定分母） |
