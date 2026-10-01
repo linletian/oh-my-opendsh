@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每命令/skill 的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🔨 **9/18**（P4-T1…T6、T8、T12、T13 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：🔨 **11/18**（P4-T1…T8、T10、T12、T13 ✅）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **修订记录**：
 >
@@ -93,13 +93,13 @@
 - **证据**：commit `261c5ba`。tests/omo-commands **207 测试**（全量 1247）；remove-ai-slops 模板与上游**逐字节相同**（双评审 import 求值 diff 实证）；handoff 三处收窄登记（session_read 指引化/PHASE 1·3 散文/PHASE 4 DSH 会话面）；`formatCommandTemplate` 外框移植后与上游模拟**逐字节相同**（评审复刻实证）；followup 消息 = deepFreeze(structuredClone) 复刻 dsh-llm 三性质；NOTICES 语义移植表（2 命令/8 文件，只增不改）。**双评审**：sub-agent REJECT→修复→APPROVE（MAJOR：散文改写与登记说反话、PHASE 4 零登记）+ mcode 两轮 APPROVE（FINDINGS none）；共 12 条 findings 修复。仲裁新裁定：`$TIMESTAMP`=ISO（上游 executor.ts:95 实测）；外框移植；`resolveFileReferencesInText`/`resolveCommandsInText` 不移植记差异。覆盖基线 C-06/C-07 行已翻 ✅（e2e 随 T7）。
 - **依赖**：P4-T3、P4-T5（remove-ai-slops 的 skill 引用）。**量级**：4 小时（实耗约 5 小时）。
 
-### [ ] P4-T7 — e2e：命令通道打样场景
+### [x] P4-T7 — e2e：命令通道打样场景
 
 - **产出**：`tests/e2e/` 新增命令通道原语（drive.mjs 剧本发 `/name args` 行的能力）+ `handoff-summary-driven` 与 `remove-ai-slops-driven` 两场景（通道打样，后续命令场景复用）。
 - **做法**：mock 剧本 = 用户行敲命令 → 断言 `command/run`（name/args 结构化负载）+ `command/done`（kind success）事件对 + followup 注入的模板文本出现在下一模型请求（session JSONL 断言通道）+ 模型按模板行事的剧本回应；对照组：**未知命令行 = 无 `command/run`、无 `command/done`、无 error 结果，该行落回普通 prompt 路径**（DSH admission miss 零事件语义，dsh-commands lib:293-299/:319-321——**不是**"原生报错"）；无参数变体；变异 QA 体例沿用（各具名 FAIL）。
 - **判定**：✅ 门 3 绿；两场景 verdict JSON 含事件对 + 注入文本 + 对照断言。
-- **证据**：（待填）
-- **依赖**：P4-T6。**量级**：3 小时。
+- **证据**：commit（随 T10 后一提交）。**通道形态实测**：命令经专用 RPC `commands/execute(agentId, line, submittedAttachments)`（typert.host:44-89，不经 session/prompt；rc6-flat 大声抛错）；两场景各 **18 断言**（事件对 commandId 配对 + 注入载体 command/done 后下一回合——实测 run 3→done 7→carrier 10 + 外框/模板锚点 + done 文本字符数自洽 + boot 注册行防蒙混 + 未知行零事件回落对照）；**17 缺陷 × 2 spec** 各命中具名断言 + 覆盖口径登记（18 checks 17 cases，pluginLoaded 唯一豁免）。rawInput 前导空格直通（上游 executor 同不 trim——仲裁裁决照实记录）。**双评审**：sub-agent 两轮 APPROVE + mcode（首轮 BLOCKER wire 名说经仲裁亲核 typert.host.js:71-72 为事实错误驳回→次轮 FINDINGS none）；15 条 findings 修复。
+- **依赖**：P4-T6。**量级**：3 小时（实耗约 4 小时）。
 
 ---
 
@@ -126,13 +126,13 @@
 
 ## WP-5 `/ulw-execute` 命令（计划书 §4.7；R-10 闭环）
 
-### [ ] P4-T10 — 移植 `/ulw-execute` 模板 + R-10 marker 对接
+### [x] P4-T10 — 移植 `/ulw-execute` 模板 + R-10 marker 对接
 
 - **产出**：`src/commands/ulw-execute.ts` + `src/templates/ulw-execute.ts`（模板 marker `<session-context>` + `You are starting an Atlas work session.` 与上游逐字）+ omo-hooks H-32 激活检测的 **marker 识别增强**（同 commit 跨插件改动）+ 单测。
 - **做法**：模板主体语义移植（编排者纪律、闸门验证、flags 语法）；boulder-state/ledger 引用段按 Phase 3 H-32 已登记收窄口径处理（复用其差异清单）；H-32 增强 = 激活检测新增"命令模板 marker 命中"路径，与既有 DSH 原生路径（委派 + 意图检测）双轨合一、共享幂等键（already-injected 语义不回归）；R-10 常量同步钉测（omo-commands 模板常量 ↔ omo-hooks 检测常量的跨包一致性单测——同源派生或逐字对照断言）；atlas 绑定 = 模板身份明示 + 名册委派链（Phase 2 就位）。
 - **判定**：✅ 单测覆盖：模板渲染、marker 常量跨包一致、H-32 marker 命中路径激活 + 幂等、委派路径不回归；vitest 绿。
-- **证据**：（待填）
-- **依赖**：P4-T3。**量级**：4 小时。
+- **证据**：commit `df6e08c`。双层 marker 逐字携带（`<session-context>` wrapper `commands.ts:63-74` + 本体首行）；R-10 跨包一致性断言**打在渲染产物上**（常量漂移/模板停产/判定改写/`||`退化四变异各红）；H-32 双轨：marker 轨判定面 = **atlas 子会话委派任务文本**（评审 BLOCKER「轨 B 在编排者会话不可达」经仲裁裁定为**语义更正非开门**——H-32 注入面本就只属于 atlas lane，评审探针 CASE 3 实证 atlas 子会话 injected=1）；listener 集成测试（真实模板产物 → inject 一次/二次幂等/编排者形态零注入 by-design/无 marker 零注入）；110 既有 H-32 测试零改动。**双评审**：sub-agent REJECT→修复→APPROVE + mcode 两轮 APPROVE（10 条 findings：resume 分支原文入注记/CRITICAL 五条/hint 单源/wrapper 行号/条件式→断言式表述）。
+- **依赖**：P4-T3。**量级**：4 小时（实耗约 5 小时）。
 
 ### [ ] P4-T11 — e2e：ulw-execute 命令场景
 
