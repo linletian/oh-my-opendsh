@@ -77,7 +77,7 @@
   2. **协奏 preset 注册**（核心功能）：sentinel 渲染管线保留，写文件出口替换为 `ctx.agentPresets.register({id:'concerto', …, plugins})`——并**持有返回的 disposer** 以供 HMR/卸载；roster 词汇去掉 `trust`；探针与 e2e 断言改指 registry roster 与已组合 agent 树。
   3. **安装器交付线**（已发布的那条）：`scripts/install-concerto.sh` 把静态 1+1 preset 写进同一条被删的发现路径，而 `agentPresets.register()` 承载不了 curl 拉取的静态产物（进程内、disposer 持有）。该线改写为**声明式**路径——在 profile 自己的 `cordis.patch.yml`（或某个 bundle 层）写一行 `@deepseek-ai/dsh-agent-preset`（`PresetDefinition`），由安装器落笔——或刻意重定范围并记录理由（复核 §2.4）。
   4. **会话日志 v4 观测通道**：沙箱 profile 维持 `compression: none`（本即是设计）；驱动伪造条目与日志解析器迁到 v4 `tool/result` 形状（`role:'tool'` + 顶层 `toolCallId`/`isError`）。
-  5. **延后对齐项**：`source:{kind:'plugin'}` → 声明式专属 source kind（插件源码内 13 处；已废弃惯用法，非活断裂）。
+  5. **延后对齐项**：`source:{kind:'plugin'}` → 声明式专属 source kind（插件源码内 13 处——10 处代码、3 处注释，无运行时过滤器需迁移；已废弃惯用法，非活断裂）。
   6. **pin 机器，刻意最后**：ci.yml `DSH_VERSION` + `--before` 截止（走 `scripts/bump-dsh.sh`）、doctor-lite 的 D7 semver 断言、兼容矩阵行——仅在下面这条证据链于 0.2.x 全绿之后。
 - **退出标准**：(a) L1 全链在 pin 的 0.2.x 运行时上转绿——单测、doctor-lite（含名册语义闸）、`verify-concerto-static`、`check-docs-consistency`、e2e 驱动、`run-proofs.sh`；(b) L2 真机验证在 0.2.x 重跑并产新证据文件，0.2.x 矩阵行以 `tested` 登记；(c) roster 重新出现 `concerto`，且一次脚本化委派往返真实落在它上面；(d) `/stop-continuation` 级联 e2e 证明 job 确实被取消（静默跳过的金丝雀）；(e) 安装器线的 0.2.x 状态有了结——全新安装能注册出 `concerto`，或该线被重定范围并记录理由；(f) D7 pin 的翻转与绿色证据同一次变更交付。
 - **明确不在范围**：新的 OMO 能力移植（Phase 5–7 的事）；采用超出适配所需的 0.2.x *新特性*（每个候选日后单独过"DSH 原生优先"检查）；任何 OMO 侧变动（D14 不动）。

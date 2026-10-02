@@ -101,7 +101,7 @@ Zstandard 压缩**不是** 0.2.0 的变化：`DEFAULT_COMPRESSION = 'zstd'` 在 
 
 | 变化 | 证据 | 对本项目的意义 |
 |---|---|---|
-| `MessageSourceMap` 删除兜底 `plugin` kind；生产者经 `declare module '@deepseek-ai/dsh-llm'` 声明专属 kind（上游范例：`time-context`） | `llm/src/message.ts:110-115` | 插件源码内 13 处用 `source:{kind:'plugin'}`（5 个发射点，含 hard-blocks 注入与 todo 续行 steer；5 处类型声明；1 处注释；1 处运行时过滤；1 处护栏常量）。运行时消费者对未知 kind fall-through，且本项目的生产方/过滤方自洽，注入仍会落地——但该惯用法在上游已废弃；Phase 4.5 应迁到专属 kind |
+| `MessageSourceMap` 删除兜底 `plugin` kind；生产者经 `declare module '@deepseek-ai/dsh-llm'` 声明专属 kind（上游范例：`time-context`） | `llm/src/message.ts:110-115` | 插件源码内 13 处带该惯用法（5 个发射点，含 hard-blocks 注入与 todo 续行 steer；5 处类型声明；3 处注释提及）。其中 **10 处代码**是迁移工作量，3 处注释随行同步即可。**不存在需要迁移的运行时 `plugin` kind 过滤器**——插件源码内唯一的 source kind 比较是 `filters.ts:239` 的 `source.kind === 'user'`，属反向过滤，上游变更不触及。运行时消费者对未知 kind fall-through，且本项目的生产方/过滤方自洽，注入仍会落地——但该惯用法在上游已废弃；Phase 4.5 应迁到专属 kind |
 | `agent/session-start` 移除，并入 serial 化 `agent/created` | `core/agent/src/runtime-types.ts:261` | 本项目无任何订阅——无影响 |
 | `tools/pre-execute` 决策增 `{kind:'cancel'}`、`deny.info`、`ask.displayReason`；`turn/end` 增 `forked` 变体 | `core/tools/src/index.ts:596-611`；`core/session/src/types.ts:228` | 纯增量；护栏的排除式分类不受影响 |
 | `tool-subagent` 的 `maxDepth` 删 `.default(3)` | `subagent/tool-subagent/src/index.ts:130` | 十个委派行全部显式 `maxDepth: 2`——无影响 |
@@ -145,5 +145,5 @@ Zstandard 压缩**不是** 0.2.0 的变化：`DEFAULT_COMPRESSION = 'zstd'` 在 
 | 协奏 preset 改走 `agentPresets.register()` | 中 | sentinel 管线保留，写文件出口替换；返回的 disposer 持有以供 HMR/卸载；roster/探针断言去 `trust`、改指 registry roster 与已组合 agent 树 |
 | 安装器交付线 → 声明式 `PresetDefinition` | 中 | 已发布 curl 安装器的静态 preset 路径是同一条被删发现路径（§2.4）；改写为 profile/bundle YAML 中的 `@deepseek-ai/dsh-agent-preset` 行——`register()` 承载不了静态产物 |
 | 会话日志 v4 信封 | 中 | 测试 profile 维持 `compression: none`；驱动伪造条目与解析器迁到 v4 `tool/result` 形状 |
-| `kind:'plugin'` → 专属 source kind | 小（可延后） | 插件源码内 13 处；已废弃惯用法，非活断裂 |
+| `kind:'plugin'` → 专属 source kind | 小（可延后） | 插件源码内 13 处（10 处代码、3 处注释），其中没有运行时过滤器；已废弃惯用法，非活断裂 |
 | pin 机器（ci.yml `DSH_VERSION`、`bump-dsh.sh` 的 0.1.x 假设、doctor-lite 的 D7 semver 断言、兼容矩阵行） | 小 | 刻意**最后**做——在 0.2.0 上证据链全绿之后 |
