@@ -66,6 +66,22 @@
 - **范围**：命令注册 + shared-skills 内容（17 个 skill，裸名——无 `shared/` 前缀，按 §16）。
 - **退出标准**：每条命令在脚本化场景中驱动预期 agent 行为；skill 加载原样复用 `dsh-skill`。
 
+### Phase 4.5 —— DSH 0.2.x 运行时适配
+
+> 2026-10-02 插入，位于 Team Mode 之前。刻意编号 4.5：给 Phase 5–7 重排号会让每一处既有引用（README 状态、计划目录、R-8 注记）无谓翻动，语义收益为零。范围与证据见 [`dsh-0.2.0-rc.2-review_zh-CN.md`](./dsh-0.2.0-rc.2-review_zh-CN.md)（静态源码实证；尚未跑运行时门）。
+
+- **目标**：让 overlay——协奏 preset、hooks、commands——在已发布的 dsh 0.2.x 线上（按 `0.2.0-rc.2` 复核）完整可用、全门转绿，然后翻 D7 pin。本阶段结项前，CI pin 保持 `0.1.5-rc.1`，0.2.x 是矩阵里已登记的 `untested` 行，不是受支持的运行时。
+- **为何是现在**：上游交付的三次重写正中本项目的承重层，且**三者全部静默失效**——agent-preset 重架构删掉了 `syncConcertoPreset` 所物化的 `$DSH_HOME/.agent-presets/` 文件发现（协奏模式干脆不注册）；`ctx.jobs` 重写让三个 jobs 触点无一抛出地失效；会话日志格式 v4 重构了 e2e 驱动伪造与解析的 `tool/result` 信封。Team Mode（Phase 5）直接建在 `ctx.jobs` + `ctx.subagents` 之上，所以先适配不是可选的排序偏好，而是依赖关系。
+- **范围**（按复核推导的强制顺序——先修功能所站立的面，再修功能，pin 最后）：
+  1. **`ctx.jobs` 适配**（小、孤立）：`background-notification.ts` → `jobs.events.subscribe({owners:'scope'})` 并以 `settled.awaited` 去重；`stop-continuation-guard.ts` → `SessionId` caller + `JobView.owner`；`ulw-execute/live-state.ts` → 新 `JobSpec`（`owner: SessionId`、`run(job: JobHandle)`、`result`）。
+  2. **协奏 preset 注册**（核心功能）：sentinel 渲染管线保留，写文件出口替换为 `ctx.agentPresets.register({id:'concerto', …, plugins})`；roster 词汇去掉 `trust`；探针与 e2e 断言改指 registry roster 与已组合 agent 树。
+  3. **会话日志 v4 观测通道**：沙箱 profile 维持 `compression: none`（本即是设计）；驱动伪造条目与日志解析器迁到 v4 `tool/result` 形状（`role:'tool'` + 顶层 `toolCallId`/`isError`）。
+  4. **延后对齐项**：`source:{kind:'plugin'}` → 声明式专属 source kind（13 处；已废弃惯用法，非活断裂）。
+  5. **pin 机器，刻意最后**：ci.yml `DSH_VERSION` + `--before` 截止（走 `scripts/bump-dsh.sh`）、doctor-lite 的 D7 semver 断言、兼容矩阵行——仅在下面这条证据链于 0.2.x 全绿之后。
+- **退出标准**：(a) L1 全链在 pin 的 0.2.x 运行时上转绿——单测、doctor-lite（含名册语义闸）、`verify-concerto-static`、`check-docs-consistency`、e2e 驱动、`run-proofs.sh`；(b) L2 真机验证在 0.2.x 重跑并产新证据文件，0.2.x 矩阵行以 `tested` 登记；(c) roster 重新出现 `concerto`，且一次脚本化委派往返真实落在它上面；(d) `/stop-continuation` 级联 e2e 证明 job 确实被取消（静默跳过的金丝雀）；(e) D7 pin 的翻转与绿色证据同一次变更交付。
+- **明确不在范围**：新的 OMO 能力移植（Phase 5–7 的事）；采用超出适配所需的 0.2.x *新特性*（每个候选日后单独过"DSH 原生优先"检查）；任何 OMO 侧变动（D14 不动）。
+- **观察**：0.2.0 是 rc 线——适配以执行时当前的 0.2.x rc 为 pin，复核报告的 tag 级引用对它的再验证列为第一阶段任务。
+
 ### Phase 5 —— Team Mode（v5 模型，DSH 原生）
 
 - **目标**：DSH 上的并行多 agent 协作——**当前会话即 lead**，成员 = category worker（按 category 模型/技能开新 subagent 会话）与用户自定义 agent；mailbox 式协调。
@@ -99,4 +115,4 @@
 
 ## 7. 估算
 
-§10 的工量数字（含全量移植约 16 周的粗估，R3：无 buffer、非承诺）仍为参照。v5 调查带来两处修正：Team Mode（Phase 5）**下调**（v5 模型天然是 DSH 形状）；vendor 验证（Phase 1）是**新增但很小**的一步，为后续每个阶段去风险。
+§10 的工量数字（含全量移植约 16 周的粗估，R3：无 buffer、非承诺）仍为参照。v5 调查带来两处修正：Team Mode（Phase 5）**下调**（v5 模型天然是 DSH 形状）；vendor 验证（Phase 1）是**新增但很小**的一步，为后续每个阶段去风险。0.2.x 复核（2026-10-02）带来第三处修正：Phase 4.5 体量**小到中**（两个小项、两个中项、一个可延后的对齐项——§4 Phase 4.5 范围）但**闸住其后一切**，因为它的面全部静默失效，只有完整证据链能证明修复。
