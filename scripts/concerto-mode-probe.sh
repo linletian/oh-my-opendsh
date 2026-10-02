@@ -46,14 +46,15 @@
 #                 like the hooks half (registered lines = ported ids ∩
 #                 COMMAND_REGISTRARS keys; a ported row with no registrar fails
 #                 the derivation, so an emptied registry cannot shrink the
-#                 expectation to zero and leave the probe green). At P4-T3 all
-#                 rows that are 'ported'. P4-T16: this comment still said "all six
-#                 rows are 'pending'" and "zero registered lines" — true at P4-T3,
-#                 false from T6 on, and wrong about the *present* (5 of 6 are
-#                 ported, so 5 registered lines). The derivation never broke; the
-#                 PROSE went stale, which is the failure c21 now guards for the
-#                 notices counts. The live numbers are derived below and printed
-#                 in the PASS line. Both FAILED forms
+#                 expectation to zero and leave the probe green). At P4-T3 every
+#                 row was 'pending' and the registered set was empty. P4-T16:
+#                 this comment still said "all six rows are 'pending'" and "zero
+#                 registered lines" — true at P4-T3, false from T6 on, and wrong
+#                 about the *then-present* (as of P4-T16: 5 of 6 were ported, so 5
+#                 registered lines). The derivation never broke; the PROSE went
+#                 stale, which is the failure c21 now guards for the notices
+#                 counts. The live numbers are derived below and printed in the
+#                 PASS line. Both FAILED forms
 #                 (`command … FAILED`, `manifest validation FAILED`) are
 #                 asserted ABSENT.
 #   P4-T5 skills — the skill DELIVERY mechanism's summary marker

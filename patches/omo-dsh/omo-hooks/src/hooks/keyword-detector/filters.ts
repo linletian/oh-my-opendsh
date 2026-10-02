@@ -272,8 +272,11 @@ function textOfMessage(message: unknown): string {
  * （`template: \`<command-instruction>` … `</command-instruction>\``），本仓
  * `omo-commands/src/templates/*.ts` 逐字保留（如 `handoff.ts:280`）。
  * 归属写错会让下一个改外框的人去改 render.ts，而那里根本没有它。
+ *
+ * ⚠️ **模块内叶子**（PR #10 复审 n-7c 普查）：export 已去掉，唯一消费者是本文件
+ * `isCommandExpansionMessage` 的 `includes`（:334），全仓零外部引用。
  */
-export const COMMAND_INSTRUCTION_MARKER = '<command-instruction>'
+const COMMAND_INSTRUCTION_MARKER = '<command-instruction>'
 
 /**
  * S-12：**命令扩展消息不是用户散文**，因此不参与关键词检测。
@@ -323,8 +326,11 @@ export const COMMAND_INSTRUCTION_MARKER = '<command-instruction>'
  *      形状匹配恰好丢掉这个对齐理由。
  *   3. 误判面已被单测 ④ **钉成已知行为**而非潜伏缺陷；要收紧时那条测试会先红。
  * 维持 `includes`，把位置锚的收益与代价记在此处，便于日后重估。
+ *
+ * ⚠️ **模块内叶子**（PR #10 复审 n-7c 普查）：export 已去掉，唯一消费者是本文件
+ * `readCurrentUserTextsDetail` 的逐条判定（:397），全仓零外部引用。
  */
-export function isCommandExpansionMessage(text: string): boolean {
+function isCommandExpansionMessage(text: string): boolean {
   return text.includes(COMMAND_INSTRUCTION_MARKER)
 }
 
@@ -394,33 +400,27 @@ export function readCurrentUserTextsDetail(payload: unknown): CurrentUserTexts {
   return { texts, commandExpansionSkipped: skippedExpansion }
 }
 
-/**
- * 最后一条候选（沿用旧名与旧语义，供只需要单值的读面使用）。
- *
- * ⚠️ **判定面不得再用它**：`decideKeywordInjection` 消费的是
- * {@link readCurrentUserTextsDetail} 的**全部**候选（评审 A-7）。这里保留单值
- * 版本是因为 `isSyntheticOrInternalPayload` 只问「有没有散文」，单测也用它做
- * 最小断言；它不再是武装与否的判定面。
- */
-export function readCurrentUserTextDetail(payload: unknown): {
-  readonly text: string | undefined
-  readonly commandExpansionSkipped: boolean
-} {
-  const detail = readCurrentUserTextsDetail(payload)
-  return {
-    text: detail.texts[detail.texts.length - 1],
-    commandExpansionSkipped: detail.commandExpansionSkipped,
-  }
-}
-
-export function readCurrentUserText(payload: unknown): string | undefined {
-  return readCurrentUserTextDetail(payload).text
-}
-
-/** ① 闸：没有可判别的真实用户文本（合成/内部/空）→ 不注入。 */
-export function isSyntheticOrInternalPayload(payload: unknown): boolean {
-  return readCurrentUserText(payload) === undefined
-}
+// ⚠️ **PR #10 复审 n-7c：本文件曾有三段单值读面**——`readCurrentUserTextDetail` /
+// `readCurrentUserText` / `isSyntheticOrInternalPayload`，分别回答「最后一条散文是
+// 什么」与「有没有散文」。PR #10 的 A-7 把判定面改成消费
+// {@link readCurrentUserTextsDetail} 的**全部**候选之后，它们在生产上**没有任何
+// 消费者**，只剩单测在用。本仓纪律：一个不导出、也没有其他可达路径的读面就是死
+// 代码，而死代码比没有代码更糟——它看起来在工作。故三个导出与引用它们的注释一并
+// 删除，原有断言改走 `readCurrentUserTextsDetail`（同一批测试，
+// tests/omo-hooks/keyword-detector.test.ts）。
+//
+// ① 号闸本身**没有**因此消失：它的判据就是 {@link readCurrentUserTextsDetail}
+// 返回的空 `texts`，而判定与具名 reason 在调用方（`decideKeywordInjection` 的
+// `promptTexts.length === 0` → `synthetic-internal`）。删掉的是三条走不到的读面，
+// 不是那道闸。
+//
+// **同纪律下的全文件普查（同一裁决一并做完，避免再留尾巴）**：本文件其余导出逐一
+// 看过消费者——`COMMAND_INSTRUCTION_MARKER` 与 `isCommandExpansionMessage` 是**模块内
+// 叶子**（唯一消费者在本文件内：前者的 `includes`、后者的逐条判定），export 已随之
+// 去除；`CurrentUserTexts` 是 `readCurrentUserTextsDetail` 的**公开返回类型**（调用方
+// `keyword-detector.ts` 消费其字段），**保留 export**。证伪命令：
+// `grep -rn "COMMAND_INSTRUCTION_MARKER\|isCommandExpansionMessage" patches/ tests/ scripts/`
+// → 只命中本文件。
 
 // ── ② system directive（上游 hook.ts:76-79） ──────────────────────────────
 

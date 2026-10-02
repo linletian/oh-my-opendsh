@@ -143,13 +143,10 @@ import {
   isPlannerAgent,
   isSubagentIdentityUndecidable,
   isSubagentSession,
-  isSyntheticOrInternalPayload,
   isUserAuthoredMessage,
-  readCurrentUserTextDetail,
   readCurrentUserTextsDetail,
   readSessionOrigin,
   isSystemDirective,
-  readCurrentUserText,
   readSessionDescriptor,
   removeSystemReminders,
   resolveRosterSeat,
@@ -432,14 +429,20 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
       texts: [],
       commandExpansionSkipped: false,
     })
-    expect(readCurrentUserText({ messages: [{ role: 'user', content: [{ type: 'text', text: 'ulw' }] }] }))
-      .toBeUndefined() // no `source` = hand-built/foreign payload, not a user turn
-    expect(readCurrentUserText({
+    // The three exclusions are asserted on `texts`, i.e. on the whole-batch
+    // reader the decision actually consumes. (PR #10 n-7c: the single-value
+    // wrappers `readCurrentUserText*` / `isSyntheticOrInternalPayload` were
+    // deleted as dead code — an unused read face is worse than none, because it
+    // looks like it is working.)
+    expect(readCurrentUserTextsDetail({
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'ulw' }] }],
+    }).texts).toEqual([]) // no `source` = hand-built/foreign payload, not a user turn
+    expect(readCurrentUserTextsDetail({
       messages: [{ role: 'user', source: { kind: 'user' }, synthetic: true, content: [{ type: 'text', text: 'ulw' }] }],
-    })).toBeUndefined()
-    expect(readCurrentUserText({
+    }).texts).toEqual([])
+    expect(readCurrentUserTextsDetail({
       messages: [{ role: 'assistant', source: { kind: 'user' }, content: [{ type: 'text', text: 'ulw' }] }],
-    })).toBeUndefined()
+    }).texts).toEqual([])
     // ⚠️ The payload is the CLAIMED BATCH, not the session history (PR #10 A-5:
     // `inbox.claim` destructively splices the batch out, dsh-agent-loop
     // lib:104-111), so "the last user message wins" was never a rule about
@@ -450,12 +453,15 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
       texts: ['ulw earlier', 'now something else'],
       commandExpansionSkipped: false,
     })
-    // The named gate predicate (upstream's `isSyntheticOrInternalOnlyTextParts`)
-    // agrees with the reader, and the decision short-circuits on it with its own
-    // reason rather than falling through to 'no-keyword'.
-    expect(isSyntheticOrInternalPayload(payloadWith('ulw go'))).toBe(false)
-    expect(isSyntheticOrInternalPayload({ messages: [] })).toBe(true)
-    expect(isSyntheticOrInternalPayload({})).toBe(true)
+    // Gate ①'s PREDICATE — "is there any judgeable user prose at all?" — is
+    // `texts.length > 0` on the very reader the decision consumes (upstream's
+    // named `isSyntheticOrInternalOnlyTextParts` keeps no separate export here;
+    // it went with the other two single-value readers, n-7c). The decision
+    // short-circuits on it with its own named reason rather than falling
+    // through to 'no-keyword'.
+    expect(readCurrentUserTextsDetail(payloadWith('ulw go')).texts.length > 0).toBe(true)
+    expect(readCurrentUserTextsDetail({ messages: [] }).texts.length > 0).toBe(false)
+    expect(readCurrentUserTextsDetail({}).texts.length > 0).toBe(false)
     expect(decide(mainFacts('ulw go', { promptTexts: [] }))).toEqual({
       kind: 'skip',
       reason: 'synthetic-internal',
@@ -513,11 +519,11 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
       const withoutS12 = decide(mainFacts(template, { texts: { ...TEXTS, ultrawork: template } }))
       expect(withoutS12.kind).toBe('inject')
       // 判据：读不出可判别的用户散文 → ① 号闸关 → 零注入。
-      expect(readCurrentUserText({ messages: [message] })).toBeUndefined()
-      expect(isSyntheticOrInternalPayload({ messages: [message] })).toBe(true)
-      // MINOR-7：S-12 有自己的具名 reason，不再并进 synthetic-internal。
-      expect(readCurrentUserTextDetail({ messages: [message] }))
-        .toEqual({ text: undefined, commandExpansionSkipped: true })
+      // MINOR-7：S-12 有自己的具名 reason，不再并进 synthetic-internal——所以这条
+      // 消息不产出 `texts`，而是产出 `commandExpansionSkipped: true`（n-7c：改用
+      // `readCurrentUserTextsDetail` 的整个结果断言，比单值读面更强）。
+      expect(readCurrentUserTextsDetail({ messages: [message] }))
+        .toEqual({ texts: [], commandExpansionSkipped: true })
       // promptTexts 必须真是空数组才会走到那两闸；塞一条散文会落到 no-keyword。
       expect(decide(mainFacts('unused', { promptTexts: [], commandExpansionSkipped: true })))
         .toEqual({ kind: 'skip', reason: 'command-expansion' })
@@ -530,12 +536,12 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
       const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: template }] }
       // MINOR-9：hyperplan 侧的正向前提。
       expect(decide(mainFacts(template, { texts: { ...TEXTS, hyperplan: template } })).kind).toBe('inject')
-      expect(readCurrentUserText({ messages: [message] })).toBeUndefined()
+      expect(readCurrentUserTextsDetail({ messages: [message] }).texts).toEqual([])
     })
 
     it('③ user prose containing ulw still arms — the filter is not a blanket relaxation', () => {
       expect(decide(mainFacts('please run ulw for the migration')).kind).toBe('inject')
-      expect(readCurrentUserText(payloadWith('just ulw please'))).toBe('just ulw please')
+      expect(readCurrentUserTextsDetail(payloadWith('just ulw please')).texts).toEqual(['just ulw please'])
     })
 
     it('④ user prose containing the marker is skipped — the anchor\'s false-positive face, pinned', () => {
@@ -543,7 +549,9 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
       // S-12 的判据是「文本含该标记」，不看它是不是正文——所以这一条会**被跳过**。
       //
       // MINOR-8 更正：第一版把这行标题写成「围栏代码块内仍应命中」，而夹具里根本没有
-      // 围栏、断言也是 `toBeUndefined`——标题与断言相反。标题现在只说夹具真正做的事。
+      // 围栏、断言也是「读不出散文」（`texts` 为空）——标题与断言相反。标题现在只说
+      // 夹具真正做的事。n-7c 把断言从 `readCurrentUserText(...)` 的 `toBeUndefined`
+      // 换成 `readCurrentUserTextsDetail(...).texts` 的 `toEqual([])`，语义不变。
       //
       // 有意如此，理由：为了一个只在用户刻意粘贴命令模板原文时才出现的场景，去做
       // 「标记是否在代码块内 / 是否在首行 / 是否成对」的解析，会引入一个**更糟**
@@ -551,7 +559,7 @@ describe('P4-T12 ③ the six input gates, one DSH mapping each', () => {
       // 的方向是「派生产物不参与检测」，不是「精确识别派生产物」。这条断言把
       // 误判面**钉成已知行为**而不是让它潜伏：将来若要改判据，这条会先红。
       const prose = 'please run ulw — here is the template that fires it:\n<command-instruction>\nrun ulw\n</command-instruction>'
-      expect(readCurrentUserText(payloadWith(prose))).toBeUndefined()
+      expect(readCurrentUserTextsDetail(payloadWith(prose)).texts).toEqual([])
     })
 
     it('⑤ a command-expansion message does not mask a REAL user message in the same batch', () => {

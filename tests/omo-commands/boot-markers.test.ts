@@ -33,13 +33,28 @@ import {
 } from '../../patches/omo-dsh/omo-commands/src/boot-markers.ts'
 
 /**
- * The exact summary line a real boot logs TODAY, transcribed by hand: 6 manifest
- * rows, all 'pending' (P4-T2 shipped the roster; P4-T3 ships the mount with an
- * empty implementation registry), 0 registered. The status field order is
- * COMMAND_MANIFEST_STATUSES = pending, ported. If a row flips to 'ported' or a
- * registrar lands, THIS file must be edited in the same commit — that is the
- * intended friction, and scripts/concerto-mode-probe.sh re-derives the same
- * line from the plugin's own modules at probe time.
+ * The exact summary line a real boot logs, transcribed by hand.
+ *
+ * WHY THE CENSUS IS NOT REPEATED HERE. How the rows split between the two
+ * statuses, and how many registrars landed, are DERIVED at boot — the first from
+ * COMMAND_MANIFEST, the second from the registration loop's own outcome
+ * (patches/omo-dsh/omo-commands/src/boot-markers.ts, called by index.ts), and the
+ * whole rendered line is re-derived from the plugin's own modules by
+ * scripts/concerto-mode-probe.sh at probe time. Restating them in prose is what
+ * this paragraph used to do: it froze the P4-T3-era split here and the drift
+ * outlived the claim, while the derivation it was standing in for never broke.
+ * The literal BELOW is the census — it is hand-placed here precisely so that a
+ * flip has to turn it red in the same commit.
+ *
+ * What IS an invariant and is therefore named: the status field ORDER is
+ * COMMAND_MANIFEST_STATUSES = pending, ported (manifest.ts), so the line stays
+ * diffable across boots.
+ *
+ * If a row flips or a registrar lands, THIS file must be edited in the same
+ * commit — that is the intended friction. Transcribing by hand rather than
+ * deriving is what buys it: an expectation derived from the formatter would
+ * share its source with the code under test and be true by construction, i.e.
+ * it would prove nothing at all.
  */
 // P4-T14 更新：第五条命令落地后本行随之改写（pending=1, ported=5, 5/6 registered）。
 // 逐字手打而非由 manifest 派生，正是这条断言的价值：派生会让它与被测对象同源，

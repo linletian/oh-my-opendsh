@@ -39,10 +39,15 @@
   narrowed difference) + a per-vendor-skill section in `THIRD_PARTY_NOTICES.md`, **add-only** over the
   pre-existing Phase 2/3 entries; the missing attribution row for the `keyword-detector` listener added
   so the table agrees with the derived 15 hook ids / 26 derived files that static gate c21 recomputes
-- test(gates): static gate c15–c21 extended (census 23→30) — cordis.yml insert rows resolve to real
+- test(gates): static gate c15–c22 extended (census 23→31) — cordis.yml insert rows resolve to real
   published packages, per-file signature headers, manifest ↔ src file set, manifest ↔ coverage baseline,
   the vendor skills' manifest/NOTICES/disk three-way agreement with `EXPECTED_VENDOR_SKILL_COUNT`, v5
-  rename consistency, and the **derived** NOTICES hook counts; e2e driver grew to 33 mock-LLM scenarios
+  rename consistency, the **derived** NOTICES hook counts, and **c22** (PR #10 review round 1): every
+  status cell in the Phase 4 coverage baseline's §1.1/§1.2/§2/§3 must be terminal — those four tables
+  list terminal dispositions only, so none may carry a forward-looking marker (「待 vendor」/「待 P4-Tn」
+  /📋/⏳); work that has not landed belongs in §4 (the deferred table, deliberately out of scope), and a
+  row stuck in a pending cell is precisely the failure c14 cannot see (c14 only reads rows already
+  marked ported); e2e driver grew to 33 mock-LLM scenarios
 - ⚠️ Scope honesty (R-7, unchanged by this landing): the command face is **not** OMO's whole
   orchestration surface. Team Mode (`team_create`, the adversarial review loop, `team` keywords) is
   Phase 5; the editing face (`/refactor`, LSP/ast-grep) is Phase 6; `/hyperplan` is a **degraded

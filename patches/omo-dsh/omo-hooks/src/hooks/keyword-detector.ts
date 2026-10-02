@@ -525,7 +525,24 @@ export function decideKeywordInjection(facts: KeywordStepFacts): KeywordDecision
     if (looksLikeSlashCommand(text)) { blocked ??= 'slash-command'; continue }
     proseTexts.push(text)
   }
-  if (proseTexts.length === 0) return { kind: 'skip', reason: blocked ?? 'synthetic-internal' }
+  if (proseTexts.length === 0) {
+    // ⚠️ **原式是 `blocked ?? 'synthetic-internal'`，那个 fallback 是死分支**（复审
+    // n-7d）。可证：`:518` 已拦掉 `promptTexts` 为空的情形，故循环至少跑一次；
+    // 每条候选只有三条出路——② 拦、③ 拦、或进 `proseTexts`。`proseTexts` 为空 ⟺
+    // 前两条至少发生过一次 ⟹ `blocked` 必有值。留着 `??` 会让读者以为「还有第三
+    // 条没有具名 reason 的路」，而它永远取不到。
+    //
+    // 不变量破了就**显式崩**，不静默换一个 reason：崩在本 listener 内被 :687-692
+    // 的 try/catch 接住，记一条 `listener failed` 失败行后照常 `next()`（纪律②，
+    // pre-step 抛错不得让整步失败）。这条分支今天不可达，保留它是为了让「②/③ 的
+    // 判据被改成不设 reason」这种未来的改动**响**，而不是悄悄换成一个错的 reason。
+    if (blocked === undefined) {
+      throw new Error(
+        'keyword-detector invariant: no prose left AND no gate reason — a candidate was neither prose nor blocked',
+      )
+    }
+    return { kind: 'skip', reason: blocked }
+  }
 
   // S-13 ③：子会话但身份不可判定 → 整跳。这一闸排在 ④/⑤/⑥a **之前**，因为
   // 它的输入（descriptor 是否落盘、mode）就是后三者判据的**前提**。
@@ -572,6 +589,13 @@ export function decideKeywordInjection(facts: KeywordStepFacts): KeywordDecision
   // ⚠️ **可达性（S-13 ④）**：continuable 被 ⑥a 整跳、one-shot 被 S-13③ 整跳，
   // 所以今天能走到这里的只有 origin=subagent 的残余路径。按**防御层**保留，
   // 不静默删除——它是上游 hook.ts:150-152 的非主会话类型收窄登记。
+  // 具名 reason `subagent-keyword-filtered` **同属这套防御层**：它只在本闸真的滤空
+  // hits 时发射，而本闸唯一的残余可达路径是「origin=subagent + descriptor found +
+  // mode 不可识别」——`readSessionDescriptor`（filters.ts:155，mode 归一化在 :177）
+  // 把非两个字面量的 mode 归一为 `undefined`，于是 `isSubagentIdentityUndecidable`
+  // （filters.ts:542）不成立、`isBackgroundSession`（filters.ts:504）也不成立，
+  // 才落到这里。`descriptor.js` 今天只产 continuable/one-shot，故生产上这条路
+  // 同样走不到；它防的是宿主格式变化，而不是当前形态下的任何行为。
   if (isSubagentSession(facts.sessionOrigin)) {
     hits = hits.filter((hit) => SUBAGENT_ALLOWED_TYPES.includes(hit.type))
     if (hits.length === 0) return { kind: 'skip', reason: 'subagent-keyword-filtered' }
@@ -585,6 +609,16 @@ export function decideKeywordInjection(facts: KeywordStepFacts): KeywordDecision
   // 结果相同，但下一个编辑者很容易把它误读成「边遍历边改」。
   const surviving = hits
   const keptTypes = new Set<KeywordType>()
+  // ⚠️ **这次 `suppressComboStandalones` 可证为 no-op（PR #10 复审 n-7a）**，按
+  // ⑥b 段的纪律**保留为防御层**，不静默删除。两句证明 + 一句保留理由：
+  //   (1) 它只**删**独立类型、不新增（detector.ts:128-131），故后置条件「组合命中
+  //       在场 ⟹ ultrawork/hyperplan 独立命中不在场」幂等成立；① 段的逐条过滤与
+  //       按 type 去重同样只删不增，造不出「独立类型与组合并存」的集合。第一次调用
+  //       （上方）已建立该后置条件，⑥b 也只删不加，故本次输入必满足后置条件、
+  //       输出恒等于输入。
+  //   (2) 仍保留：第一处是**可被未来编辑改动**的（换顺序、删掉、或让 ⑥b 之后新增
+  //       命中），而「合并后再抑制」是上游 hook.ts:157-161 的不变量本身。在这里再
+  //       钉一遍，比赌上一个编辑者记得回头改更便宜。
   hits = suppressComboStandalones(
     cleanTexts
       .flatMap((text) => filterAlreadyInjectedKeywords(surviving, text))
@@ -735,8 +769,16 @@ function runKeywordDetectorStep(
  * （`dsh-tool-subagent` 的工具入参）——**调用方可控的散文**，模型/用户都能写。
  * 未清洗时它可以把 `\n`、`\r`、`\x1b` 带进诊断流：伪造整行日志（下游 grep 锚
  * `[omo-hooks] keyword-detector:` 会被骗）、把光标移到行首覆盖既有输出、用 CSI
- * 序列改终端颜色。评审已逐条排除其他注入面——**只有这一行**把 label 拼进日志；
- * 注入正文走 `agent.inject()` 的结构化载荷，不经字符串拼接。
+ * 序列改终端颜色。评审已逐条排除其他注入面——**label 只有一个日志面**：注入正文
+ * 走 `agent.inject()` 的结构化载荷，不经字符串拼接。
+ *
+ * ⚠️ **相邻的另一处未转义插值，如实登记而不是一并声称清白**（复审 n-8）：
+ * `formatKeywordDetectorFailureLine`（:416-419）把 `err.message`（非 Error 时是
+ * `String(err)`）原样拼进行内。它**不是 label**，控制面低得多——唯一调用点是
+ * listener 的 catch（:689-690），err 由本 listener 自己抛出、不是调用方散文；但它
+ * 仍可能经宿主实现（`agent.inject()` 之类抛出的 message）间接带上载荷文本。故本
+ * 注释只声称「label 的日志面唯一」，**不**声称「诊断流全干净」；要收口的话下一处
+ * 就是那一行（清洗可复用本函数的同一套正则），不是本处。
  *
  * 做法：删掉 C0 控制区（`U+0000–U+001F`）与 DEL（`U+007F`），并把 C1 的 CSI
  * 序列起点 `U+009B` 换成一个可见的中点——只删 C0 会漏掉 8-bit 转义（`\x9b` 是
