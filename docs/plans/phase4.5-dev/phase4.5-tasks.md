@@ -8,6 +8,8 @@
 >
 > **修订记录**：
 >
+> - **2026-10-02 环境现实修订（工程师反馈，实测成立）**：PRE-1 拆分重写——本机二进制 = 0.2.x 而 ci-local 门 3/4/8 消费环境 dsh 二进制，原「0.1.5 pin 下退出 0」在本机不成立。PRE-1a = 0.1.5 侧基线取 develop 最近 CI 绿（权威侧）；PRE-1b = 本机 0.2.x 基线，判定改为**红的位置与形态成文记录**（P0 的 before 证据，与 PRE-5 互为表里）；PRE-1c（可选）= throwaway-prefix 0.1.5 本机腿（T11 机制通道之一）。T11 补机制注记（0.1.5 侧 = CI 或 prefix 腿，证据文件注明实际通道与二进制来源）。
+>
 > - **2026-10-02 计划期评审修复（第 3 轮）**（评审：[`phase4.5-review-3.md`](./phase4.5-review-3.md)，新发现 3 项全部采纳，无阻塞——复审确认第 2 轮 5 项落实正确）——T1 的 Q-4 补裁定输入指针（`boot-markers.test.ts` 的 `apply()` harness 重写成本，R3-I1）；其余落计划书（重心序列「门 2 仅增量」、§4.6 增量清单补结构断言、`registry.ts:300-301` 行号）。
 >
 > - **2026-10-02 计划期评审修复（第 2 轮）**（评审：[`phase4.5-review-2.md`](./phase4.5-review-2.md)，新发现 5 项全部采纳——复审确认第 1 轮 14 项落实正确、2 项驳回成立）——R2-B1：T6 单测侧改「**保持不动 + 仅新增** `renderConcertoComposition()` 纯函数用例」（原「路径契约测试改写为 read 文档断言」不可执行——单测无 RPC 能力，且会删掉 B4 写盘契约的唯一自动化保护；read 文档锚点断言归位 probe/drive.mjs 运行时面）；R2-I1：T5 做法段的时机结构断言改写为「`omo-agents` **不在被注册组合的行集内**」（结构性不变量，替代被证伪的「inject 异步」说法）+ Q-4 的 Service.init + yield 候选若经 T1 裁定采用由 T5 一并落地；R2-N1/N2 随计划书同步（§8 三行与「双模更正」措辞）。**评审方附带正面确认**：安装器 (A) 三前提全部有上游先例（见计划书 §4.4 修订记录）。
@@ -20,7 +22,9 @@
 
 | # | 条件 | 判定 | 复核结果 |
 |---|---|---|---|
-| PRE-1 | `develop` 基线绿：`scripts/ci-local.sh` 8 门全绿（0.1.5-rc.1 pin 下） | 退出 0；记录基线快照（门 2 测试数、门 3 场景数、门 6 断言数、门 7 检查数、门 8 proofs 数） | ⬜ 待跑 |
+| PRE-1a | **0.1.5 侧基线（权威 = CI）**：`develop` 最近一次 CI 绿（CI pin 本来在 `0.1.5-rc.1`，`ci.yml:102`） | `gh run list --branch develop --workflow ci.yml --limit 1` 取最近绿 run（无 gh 时记 CI 页面快照）；记录快照数字（门 2 测试数、门 3 场景数、门 6 断言数、门 7 检查数、门 8 proofs 数） | ⬜ 待跑 |
+| PRE-1b | **本机 0.2.x 基线 = P0 的 before 实证**（工程师反馈修订——`scripts/ci-local.sh` 的**门 3（e2e）/门 4（doctor-lite）/门 8（proofs）消费环境 dsh 二进制**（drive.mjs 沙箱 boot / `dsh --version` 对 D7 / prove-*.mjs boot），门 1/2/5/6/7 不碰；本机二进制 = 0.2.x，「0.1.5 pin 下退出 0」在本机不成立） | 本机跑 `scripts/ci-local.sh`；**判定 = 红的位置与形态成文记录**（预期：门 3 红于 P0-1 roster 缺席、门 4 红于 `dsh-version` 对 D7、门 8 红于物化 preset 依赖；门 1/2 应绿）——**不是退出 0**；与 PRE-5 的冷启动记录互为表里 | ⬜ 待跑 |
+| PRE-1c（可选） | **本机 0.1.5 腿**（需要本地双腿验证时，含 T11 的 0.1.5 侧本机通道） | throwaway-prefix 安装：`npm install --global --prefix <dir> @deepseek-ai/dsh@0.1.5-rc.1 --before=2026-09-10T09:05:02.041Z`（dsh-0.1.5-rc.1-review 先例 + D7 截止，d09 同源）→ `PATH="<dir>/bin:$PATH" scripts/ci-local.sh` 8 门绿；采用与否记修订记录 | ⬜ 可选 |
 | PRE-2 | 本机 dsh = 0.2.x（0.2.0-rc.2 或 T1 Q-1 选定的 rc）；本地镜像两 tag 只读可用 | `dsh --version`；`git -C ~/GithubRepo/deepseek-harness tag -l 'dsh-v0.1.5-rc.1' 'dsh-v0.2.0-*'` 非空 | ⬜ 待跑（立项时实测 = `0.2.0-rc.2`，两 tag 在列） |
 | PRE-3 | 复核报告与 ROADMAP Phase 4.5 已在 develop（PR #11 合并态，含 `1803790` 的 13 处分解更正） | `git log --oneline develop -3` 含 `98d5e10`；`develop:docs/dsh-0.2.0-rc.2-review_zh-CN.md` 可读 | ✅ 立项已核 |
 | PRE-4 | CI pin 未动：`ci.yml` `DSH_VERSION: 0.1.5-rc.1` 且 `--before` 截止与 compat-probe.yml 一致 | d09 门绿 | ⬜ 待跑（随 PRE-1） |
@@ -144,7 +148,7 @@
 ### [ ] P4.5-T11 — 双运行时全链复跑 + 级联金丝雀 + roster 往返
 
 - **产出**：0.1.5-rc.1 与 0.2.x 两侧的 `scripts/ci-local.sh` 8 门完整记录；`/stop-continuation` 级联金丝雀场景在 0.2.x 的 verdict（退出标准 d 承载）；roster 含 `concerto` + explore 委派往返场景在 0.2.x 的 verdict（退出标准 c 承载）。
-- **做法**：金丝雀场景可复用/扩展现有 `stop-continuation-halts-todo`（断言 `cancelledJobIds` 非空 + 目标 job 消失 + 未触达降级 marker 的反向断言）；roster 往返复用现有委派场景；两侧记录进 `.omo/evidence/`；发现的残余断裂回本任务清单插新任务（不改结论改计划，DoD-d）。
+- **做法**：金丝雀场景可复用/扩展现有 `stop-continuation-halts-todo`（断言 `cancelledJobIds` 非空 + 目标 job 消失 + 未触达降级 marker 的反向断言）；roster 往返复用现有委派场景；两侧记录进 `.omo/evidence/`；发现的残余断裂回本任务清单插新任务（不改结论改计划，DoD-d）。**机制注记（工程师反馈修订）**：门 3/4/8 消费环境 dsh 二进制（门 1/2/5/6/7 不碰）——0.2.x 侧 = 本机环境二进制直跑；0.1.5 侧 = **CI（权威）** 或 **PRE-1c 的 throwaway-prefix 本机腿**（`PATH=<prefix>/bin:$PATH scripts/ci-local.sh`）——证据文件必须注明 0.1.5 侧实际所用通道与二进制来源。
 - **判定**：✅ 双运行时 8 门绿；退出标准 (c)(d) 的 verdict 文件落盘。
 - **证据**：⬜ 待填
 - **依赖**：P4.5-T2、T3、T4、T5、T6、**T7（安装器线——退出标准 e 不得被 pin 翻转越过，评审 R1-I5 显式枚举）**、T8、P4.5-T10。**量级**：4 小时。
