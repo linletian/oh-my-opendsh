@@ -31,7 +31,7 @@ Status legend: ✅ tested · 🔬 untested · ❌ broken · 🪦 dropped.
 
 | dsh | omo | since | note |
 |---|---|---|---|
-| 0.2.0-rc.2 | 4.19.4 | 2026-10-02 | static review done (docs/dsh-0.2.0-rc.2-review.md): three P0 surfaces, ALL silent — agent-preset re-architecture deletes the .agent-presets file discovery (concerto never registers), ctx.jobs rewrite (caller Agent->SessionId, ownerSession->owner, onJobDone->events.subscribe) invalidates 3 touch points, session-log v4 restructures the tool/result envelope; cordis core + 15 subscribed events + all 20 composition packages stable. Adaptation = roadmap Phase 4.5; the D7 pin flip is its last step, gated on L1+L2 evidence |
+| 0.2.0-rc.2 | 4.19.4 | 2026-10-02 | static review done (docs/dsh-0.2.0-rc.2-review.md): two P0 surfaces, both silent, plus one P1 (test infrastructure) — agent-preset re-architecture deletes the .agent-presets file discovery (concerto never registers; the released installer's static-preset line is hit by the same deletion), ctx.jobs rewrite (caller Agent->SessionId, ownerSession->owner, onJobDone->events.subscribe) invalidates 3 touch points, session-log v4 restructures the tool/result envelope; cordis core (vendor/cordis/src/{context,registry,service}.ts zero-diff) + 15 subscribed events + all 20 composition packages stable. Adaptation = roadmap Phase 4.5; the D7 pin flip is its last step, gated on L1+L2 evidence |
 | 0.1.2-rc.1 | 4.19.4 | 2026-09-05 | static review done (docs/archived/dsh-0.1.2-review); runtime probe pending via scripts/compat-probe.sh; gates the D7 CI pin flip (PRD §12) — SUPERSEDED by 0.1.5-rc.1, retained as the historical record |
 
 ## How to update

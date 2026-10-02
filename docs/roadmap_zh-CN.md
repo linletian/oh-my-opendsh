@@ -68,17 +68,18 @@
 
 ### Phase 4.5 —— DSH 0.2.x 运行时适配
 
-> 2026-10-02 插入，位于 Team Mode 之前。刻意编号 4.5：给 Phase 5–7 重排号会让每一处既有引用（README 状态、计划目录、R-8 注记）无谓翻动，语义收益为零。范围与证据见 [`dsh-0.2.0-rc.2-review_zh-CN.md`](./dsh-0.2.0-rc.2-review_zh-CN.md)（静态源码实证；尚未跑运行时门）。
+> 2026-10-02 插入，位于 Team Mode 之前。刻意编号 4.5：给 Phase 5–7 重排号会让每一处既有引用（README 状态、计划目录、README 的 R-8 注记——`docs/plans/phase2-dev/phase2-plan.md` §6）无谓翻动，语义收益为零。范围与证据见 [`dsh-0.2.0-rc.2-review_zh-CN.md`](./dsh-0.2.0-rc.2-review_zh-CN.md)（静态源码实证；尚未跑运行时门）。
 
 - **目标**：让 overlay——协奏 preset、hooks、commands——在已发布的 dsh 0.2.x 线上（按 `0.2.0-rc.2` 复核）完整可用、全门转绿，然后翻 D7 pin。本阶段结项前，CI pin 保持 `0.1.5-rc.1`，0.2.x 是矩阵里已登记的 `untested` 行，不是受支持的运行时。
-- **为何是现在**：上游交付的三次重写正中本项目的承重层，且**三者全部静默失效**——agent-preset 重架构删掉了 `syncConcertoPreset` 所物化的 `$DSH_HOME/.agent-presets/` 文件发现（协奏模式干脆不注册）；`ctx.jobs` 重写让三个 jobs 触点无一抛出地失效；会话日志格式 v4 重构了 e2e 驱动伪造与解析的 `tool/result` 信封。Team Mode（Phase 5）直接建在 `ctx.jobs` + `ctx.subagents` 之上，所以先适配不是可选的排序偏好，而是依赖关系。
+- **为何是现在**：上游交付的三次重写正中本项目的承重层，且**三者全部静默失效**——其中两次打断**运行时**：agent-preset 重架构删掉了 `syncConcertoPreset` 所物化的 `$DSH_HOME/.agent-presets/` 文件发现（协奏模式干脆不注册——已发布的 curl 安装器写的静态 preset 也落在同一条被删路径上），`ctx.jobs` 重写让三个 jobs 触点无一抛出地失效；第三次打断**测试基础设施**：会话日志格式 v4 重构了 e2e 驱动伪造与解析的 `tool/result` 信封。Team Mode（Phase 5）直接建在 `ctx.jobs` + `ctx.subagents` 之上，所以先适配不是可选的排序偏好，而是依赖关系。
 - **范围**（按复核推导的强制顺序——先修功能所站立的面，再修功能，pin 最后）：
   1. **`ctx.jobs` 适配**（小、孤立）：`background-notification.ts` → `jobs.events.subscribe({owners:'scope'})` 并以 `settled.awaited` 去重；`stop-continuation-guard.ts` → `SessionId` caller + `JobView.owner`；`ulw-execute/live-state.ts` → 新 `JobSpec`（`owner: SessionId`、`run(job: JobHandle)`、`result`）。
-  2. **协奏 preset 注册**（核心功能）：sentinel 渲染管线保留，写文件出口替换为 `ctx.agentPresets.register({id:'concerto', …, plugins})`；roster 词汇去掉 `trust`；探针与 e2e 断言改指 registry roster 与已组合 agent 树。
-  3. **会话日志 v4 观测通道**：沙箱 profile 维持 `compression: none`（本即是设计）；驱动伪造条目与日志解析器迁到 v4 `tool/result` 形状（`role:'tool'` + 顶层 `toolCallId`/`isError`）。
-  4. **延后对齐项**：`source:{kind:'plugin'}` → 声明式专属 source kind（13 处；已废弃惯用法，非活断裂）。
-  5. **pin 机器，刻意最后**：ci.yml `DSH_VERSION` + `--before` 截止（走 `scripts/bump-dsh.sh`）、doctor-lite 的 D7 semver 断言、兼容矩阵行——仅在下面这条证据链于 0.2.x 全绿之后。
-- **退出标准**：(a) L1 全链在 pin 的 0.2.x 运行时上转绿——单测、doctor-lite（含名册语义闸）、`verify-concerto-static`、`check-docs-consistency`、e2e 驱动、`run-proofs.sh`；(b) L2 真机验证在 0.2.x 重跑并产新证据文件，0.2.x 矩阵行以 `tested` 登记；(c) roster 重新出现 `concerto`，且一次脚本化委派往返真实落在它上面；(d) `/stop-continuation` 级联 e2e 证明 job 确实被取消（静默跳过的金丝雀）；(e) D7 pin 的翻转与绿色证据同一次变更交付。
+  2. **协奏 preset 注册**（核心功能）：sentinel 渲染管线保留，写文件出口替换为 `ctx.agentPresets.register({id:'concerto', …, plugins})`——并**持有返回的 disposer** 以供 HMR/卸载；roster 词汇去掉 `trust`；探针与 e2e 断言改指 registry roster 与已组合 agent 树。
+  3. **安装器交付线**（已发布的那条）：`scripts/install-concerto.sh` 把静态 1+1 preset 写进同一条被删的发现路径，而 `agentPresets.register()` 承载不了 curl 拉取的静态产物（进程内、disposer 持有）。该线改写为**声明式**路径——在 profile 自己的 `cordis.patch.yml`（或某个 bundle 层）写一行 `@deepseek-ai/dsh-agent-preset`（`PresetDefinition`），由安装器落笔——或刻意重定范围并记录理由（复核 §2.4）。
+  4. **会话日志 v4 观测通道**：沙箱 profile 维持 `compression: none`（本即是设计）；驱动伪造条目与日志解析器迁到 v4 `tool/result` 形状（`role:'tool'` + 顶层 `toolCallId`/`isError`）。
+  5. **延后对齐项**：`source:{kind:'plugin'}` → 声明式专属 source kind（插件源码内 13 处；已废弃惯用法，非活断裂）。
+  6. **pin 机器，刻意最后**：ci.yml `DSH_VERSION` + `--before` 截止（走 `scripts/bump-dsh.sh`）、doctor-lite 的 D7 semver 断言、兼容矩阵行——仅在下面这条证据链于 0.2.x 全绿之后。
+- **退出标准**：(a) L1 全链在 pin 的 0.2.x 运行时上转绿——单测、doctor-lite（含名册语义闸）、`verify-concerto-static`、`check-docs-consistency`、e2e 驱动、`run-proofs.sh`；(b) L2 真机验证在 0.2.x 重跑并产新证据文件，0.2.x 矩阵行以 `tested` 登记；(c) roster 重新出现 `concerto`，且一次脚本化委派往返真实落在它上面；(d) `/stop-continuation` 级联 e2e 证明 job 确实被取消（静默跳过的金丝雀）；(e) 安装器线的 0.2.x 状态有了结——全新安装能注册出 `concerto`，或该线被重定范围并记录理由；(f) D7 pin 的翻转与绿色证据同一次变更交付。
 - **明确不在范围**：新的 OMO 能力移植（Phase 5–7 的事）；采用超出适配所需的 0.2.x *新特性*（每个候选日后单独过"DSH 原生优先"检查）；任何 OMO 侧变动（D14 不动）。
 - **观察**：0.2.0 是 rc 线——适配以执行时当前的 0.2.x rc 为 pin，复核报告的 tag 级引用对它的再验证列为第一阶段任务。
 

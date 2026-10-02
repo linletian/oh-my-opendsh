@@ -31,7 +31,7 @@
 
 | dsh | omo | 登记于 | 说明 |
 |---|---|---|---|
-| 0.2.0-rc.2 | 4.19.4 | 2026-10-02 | 静态复核已完成（docs/dsh-0.2.0-rc.2-review_zh-CN.md）：三个 P0 面，全部静默——agent-preset 重架构删除 .agent-presets 文件发现（协奏不注册）；ctx.jobs 重写（caller Agent->SessionId、ownerSession->owner、onJobDone->events.subscribe）使 3 处触点失效；会话日志 v4 重构 tool/result 信封。cordis 核心 + 15 个订阅事件 + 20 个组合包均稳定。适配 = ROADMAP Phase 4.5；D7 pin 翻转是其最后一步，以 L1+L2 证据为门 |
+| 0.2.0-rc.2 | 4.19.4 | 2026-10-02 | 静态复核已完成（docs/dsh-0.2.0-rc.2-review_zh-CN.md）：两个 P0 面，全部静默，外加一个 P1（测试基础设施）——agent-preset 重架构删除 .agent-presets 文件发现（协奏不注册；已发布安装器的静态 preset 线同源受损）；ctx.jobs 重写（caller Agent->SessionId、ownerSession->owner、onJobDone->events.subscribe）使 3 处触点失效；会话日志 v4 重构 tool/result 信封。cordis 核心（vendor/cordis/src/{context,registry,service}.ts 零 diff）+ 15 个订阅事件 + 20 个组合包均稳定。适配 = ROADMAP Phase 4.5；D7 pin 翻转是其最后一步，以 L1+L2 证据为门 |
 | 0.1.2-rc.1 | 4.19.4 | 2026-09-05 | 静态复核已完成（docs/archived/dsh-0.1.2-review_zh-CN）；运行时探测待 scripts/compat-probe.sh；D7 的 CI pin 翻转以此行为门（PRD §12）——已被 0.1.5-rc.1 取代，保留为历史记录 |
 
 ## 如何更新
