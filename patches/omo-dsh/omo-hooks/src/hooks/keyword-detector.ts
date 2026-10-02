@@ -617,8 +617,9 @@ export function decideKeywordInjection(facts: KeywordStepFacts): KeywordDecision
   //       （上方）已建立该后置条件，⑥b 也只删不加，故本次输入必满足后置条件、
   //       输出恒等于输入。
   //   (2) 仍保留：第一处是**可被未来编辑改动**的（换顺序、删掉、或让 ⑥b 之后新增
-  //       命中），而「合并后再抑制」是上游 hook.ts:157-161 的不变量本身。在这里再
-  //       钉一遍，比赌上一个编辑者记得回头改更便宜。
+  //       命中），而「合并后再抑制」是上游 hook.ts:25-29 的不变量本身（该段即
+  //       `suppressComboStandalones` 的定义与 filter 行，与 detector.ts:124 的
+  //       逐字引用同源）。在这里再钉一遍，比赌上一个编辑者记得回头改更便宜。
   hits = suppressComboStandalones(
     cleanTexts
       .flatMap((text) => filterAlreadyInjectedKeywords(surviving, text))
