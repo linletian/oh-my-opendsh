@@ -14,12 +14,14 @@ import {
 
 describe('P3-T3 collectInsertRowIds — the mount-order id list', () => {
   it('① collects one row per top-level insert entry, in patch order', () => {
-    // The shipped shape: two separate `- insert:` entries, one row each.
+    // The shipped shape: three separate `- insert:` entries, one row each
+    // (omo-commands added by P4-T3).
     const rows = [
       { insert: [{ id: 'omo-agents', name: '@oh-my-opendsh/omo-agents' }] },
       { insert: [{ id: 'omo-hooks', name: '@oh-my-opendsh/omo-hooks' }] },
+      { insert: [{ id: 'omo-commands', name: '@oh-my-opendsh/omo-commands' }] },
     ]
-    expect(collectInsertRowIds(rows)).toEqual(['omo-agents', 'omo-hooks'])
+    expect(collectInsertRowIds(rows)).toEqual(['omo-agents', 'omo-hooks', 'omo-commands'])
   })
 
   it('② also collects several rows inside ONE insert entry', () => {
@@ -52,9 +54,14 @@ describe('P3-T3 collectInsertRowIds — the mount-order id list', () => {
   })
 
   it('⑤ pins the expected row list the check compares against', () => {
-    // Transcribed by hand from the root cordis.yml (P3-T3): a manifest of which
-    // packages a sandbox profile must install. If a row is added to the overlay,
-    // THIS list and the install sites must move together.
-    expect([...EXPECTED_INSERT_ROW_IDS]).toEqual(['omo-agents', 'omo-hooks'])
+    // Transcribed by hand from the root cordis.yml (P3-T3; third row by P4-T3):
+    // a manifest of which packages a sandbox profile must install. If a row is
+    // added to the overlay, THIS list, the constant itself and every install
+    // site (cold-start.sh / drive.mjs / concerto-mode-probe.sh / smoke-real.mjs)
+    // must move together — the constant alone would leave this pin red, which is
+    // the intended friction.
+    expect([...EXPECTED_INSERT_ROW_IDS]).toEqual([
+      'omo-agents', 'omo-hooks', 'omo-commands',
+    ])
   })
 })

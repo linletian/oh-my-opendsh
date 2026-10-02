@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+### Phase 4 (2026-10) — command face + vendored skills (no version bump in this change; the next release heading is assigned at release time)
+
+- feat(omo-commands): new host-only plugin `patches/omo-dsh/omo-commands/` (`@oh-my-opendsh/omo-commands`)
+  — 5 builtin commands registered as semantic ports, `src/manifest.ts` as the single source of truth
+  (6 declared rows: 5 ported + 1 `pending`), boot markers (`[omo-commands] loaded` + per-command
+  `registered` lines). **Semantic port, not vendored code and not a copy**: the upstream instruction
+  body is reproduced, the command entry and the injection path are DSH-native
+- feat(commands): `/ulw-execute`, `/handoff`, `/remove-ai-slops`, `/stop-continuation`, `/hyperplan`,
+  each with per-file upstream attribution headers, unit tests and a mock-LLM e2e scenario
+  (`ulw-execute-command-activates-atlas`, `handoff-summary-driven`, `remove-ai-slops-driven`,
+  `stop-continuation-halts-todo`, `hyperplan-degraded-noted`)
+- feat(ulw-execute): the R-10 closure — the command template produces both marker constants verbatim
+  (`<session-context>` + `You are starting an Atlas work session.`), the conductor session receives the
+  instruction as a followup, and the marker reaches the Phase 3 `ulw-execute` listener through the
+  delegation task text, where H-32 activates in the **atlas child** (the conductor session is not an
+  injection surface by design — it has no atlas descriptor, so the listener returns before the decision).
+  Cross-package constant equality is pinned on the **rendered product**, not on the constants, because a
+  template that stopped emitting one marker would silently deactivate H-32 without any error
+- feat(keyword-detector): the 15th `omo-hooks` manifest row (H-33 / Phase 3 S-06) — an `agent/pre-step`
+  waterfall listener detecting `ultrawork` / `ulw` / `hyperplan` / `hpp` and the `hyperplan ulw`
+  combination, then injecting the mode instruction via `agent.inject()`; the injected body quotes this
+  repo's **vendored** skill text, 5+1 upstream model variants are narrowed to one roster-aware text, the
+  `team` enum slot is reserved but unwired (Phase 5), and toast is narrowed to an audit line
+- feat(skills): 19 OMO instruction skills **vendored** (content, not ported) under
+  `patches/omo-dsh/vendor/shared-skills/skills/` and registered in the catalog, with per-skill licence
+  statements in `THIRD_PARTY_NOTICES.md`
+- feat(stop-continuation): a cross-plugin service (`omoStopContinuation`, provided by `omo-hooks`,
+  consumed by `/stop-continuation`) with four mechanisms — the todo-continuation stop marker read as
+  H-03's **first** skip gate, `ctx.goals.pause` (**pause**, not upstream's clearGoal, so the goal is
+  kept and resumable), a cascading `ctx.jobs.list(caller)` + `kill` fenced on `ownerSession === sessionId`
+  (**the caller argument is load-bearing**: `list` without it returns only ownerless jobs, so a real
+  producer's jobs would be silently skipped), and ralph — which has **no programmable stop API** on this
+  runtime, so the template says so instead of promising cancellation
+- docs(omo-commands): per-command semantic-port table (upstream file lists, dispositions and every
+  narrowed difference) + a per-vendor-skill section in `THIRD_PARTY_NOTICES.md`, **add-only** over the
+  pre-existing Phase 2/3 entries; the missing attribution row for the `keyword-detector` listener added
+  so the table agrees with the derived 15 hook ids / 26 derived files that static gate c21 recomputes
+- test(gates): static gate c15–c22 extended (census 23→31) — cordis.yml insert rows resolve to real
+  published packages, per-file signature headers, manifest ↔ src file set, manifest ↔ coverage baseline,
+  the vendor skills' manifest/NOTICES/disk three-way agreement with `EXPECTED_VENDOR_SKILL_COUNT`, v5
+  rename consistency, the **derived** NOTICES hook counts, and **c22** (PR #10 review round 1): every
+  status cell in the Phase 4 coverage baseline's §1.1/§1.2/§2/§3 must be terminal — those four tables
+  list terminal dispositions only, so none may carry a forward-looking marker (「待 vendor」/「待 P4-Tn」
+  /📋/⏳); work that has not landed belongs in §4 (the deferred table, deliberately out of scope), and a
+  row stuck in a pending cell is precisely the failure c14 cannot see (c14 only reads rows already
+  marked ported); e2e driver grew to 33 mock-LLM scenarios
+- ⚠️ Scope honesty (R-7, unchanged by this landing): the command face is **not** OMO's whole
+  orchestration surface. Team Mode (`team_create`, the adversarial review loop, `team` keywords) is
+  Phase 5; the editing face (`/refactor`, LSP/ast-grep) is Phase 6; `/hyperplan` is a **degraded
+  form** (roster delegation replaces `team_*`) and must declare the degradation in its reply; `/ulw-plan`
+  is a **zero-code gesture bridge** and must never become a registered command (it would shadow DSH's
+  own skill gesture); `session_read` is narrowed to guidance prose
+
 ### Phase 3 (2026-09-21) — hook listener port (no version bump in this change; the next release heading is assigned at release time)
 
 - feat(omo-hooks): new host-only plugin `patches/omo-dsh/omo-hooks/` (`@oh-my-opendsh/omo-hooks`)

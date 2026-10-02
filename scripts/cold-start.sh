@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # scripts/cold-start.sh — sandboxed dsh cold-start smoke for the omo-agents
-# plugin (AC-1) and, since P3-T3, the omo-hooks plugin too. Creates a throwaway
-# sandbox with HOME / XDG_CONFIG_HOME / DSH_HOME / DSH_AGENTS_HOME redirected
-# into it (the developer's real ~/.dsh and ~/.config are never touched),
-# installs BOTH packages into a fresh web profile (the root cordis.yml inserts
-# one row per package — see its header), boots `dsh --profile web --patch
-# ./cordis.yml`, waits for the readiness line, terminates with SIGTERM, and
-# greps the captured log for the two load markers
-# (`[omo-agents] loaded` / `[omo-hooks] loaded`) and for plugin load errors.
-# Exits 0 only if every check is clean.
+# plugin (AC-1), the omo-hooks plugin (P3-T3) and the omo-commands plugin
+# (P4-T3). Creates a throwaway sandbox with HOME / XDG_CONFIG_HOME / DSH_HOME /
+# DSH_AGENTS_HOME redirected into it (the developer's real ~/.dsh and ~/.config
+# are never touched), installs ALL THREE packages into a fresh web profile (the
+# root cordis.yml inserts one row per package — see its header), boots
+# `dsh --profile web --patch ./cordis.yml`, waits for the readiness line,
+# terminates with SIGTERM, and greps the captured log for the load markers
+# (`[omo-agents] loaded` / `[omo-hooks] loaded` / `[omo-commands] loaded` /
+# `[omo-commands] skills:`) and for plugin load errors. Exits 0 only if every
+# check is clean.
 #
 # Learned flags (P-8): `--profile <name>` is required; `--patch` is a ROOT
 # flag and must precede app flags (e.g. `--port`) — once the app's own flags
@@ -52,10 +53,11 @@ echo "cold-start: sandbox: $SANDBOX"
 echo "cold-start: dsh binary: $(command -v dsh)"
 dsh --version || fail "dsh --version failed"
 
-# Stage 0: fresh profile + install BOTH plugins into it (forwards to pnpm in
-# the sandbox profile dir; writes stay inside the sandbox). Two `plugin add`
-# calls since P3-T3: the cordis.yml overlay carries one insert row per package,
-# so a profile with only one of them cannot compose the other.
+# Stage 0: fresh profile + install ALL THREE plugins into it (forwards to pnpm
+# in the sandbox profile dir; writes stay inside the sandbox). Three `plugin
+# add` calls (two since P3-T3, the third added by P4-T3): the cordis.yml overlay
+# carries one insert row per package, so a profile missing any one of them cannot
+# compose the overlay at all — the boot fails naming THAT package's row.
 echo "cold-start: installing @oh-my-opendsh/omo-agents into sandbox profile '$PROFILE'"
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-agents" >"$ADD_LOG" 2>&1 \
@@ -64,6 +66,10 @@ echo "cold-start: installing @oh-my-opendsh/omo-hooks into sandbox profile '$PRO
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-hooks" >>"$ADD_LOG" 2>&1 \
   || fail "dsh plugin add (omo-hooks) failed (see $ADD_LOG)"
+echo "cold-start: installing @oh-my-opendsh/omo-commands into sandbox profile '$PROFILE'"
+timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
+  "$REPO_ROOT/patches/omo-dsh/omo-commands" >>"$ADD_LOG" 2>&1 \
+  || fail "dsh plugin add (omo-commands) failed (see $ADD_LOG)"
 
 # Stage A: composition check (no boot). --dump-config prints the composed
 # tree and surfaces unmatched-patch warnings on stderr.
@@ -76,6 +82,10 @@ grep -q "name: '@oh-my-opendsh/omo-agents'" "$DUMP_OUT" \
 # are only mounted when this row resolves from the profile directory.
 grep -q "name: '@oh-my-opendsh/omo-hooks'" "$DUMP_OUT" \
   || fail "composed tree does not contain the omo-hooks row (patch silently skipped?)"
+# P4-T3: and so must the third — the command surface only mounts when its row
+# resolves (the composition-level half; the boot-marker grep below is the other).
+grep -q "name: '@oh-my-opendsh/omo-commands'" "$DUMP_OUT" \
+  || fail "composed tree does not contain the omo-commands row (patch silently skipped?)"
 # T14: both built-in LLM adapters our dual routing depends on (Q-3) must be
 # part of the composed tree — the composition-level half of the adapter gate
 # (the runtime-registration half lives in scripts/concerto-mode-probe.sh).
@@ -137,13 +147,33 @@ boot_exit=$?
 
 # Positive signal: our plugins actually loaded (T6 dropped the "(no-op)"
 # suffix — the plugin now performs concerto preset registration). P3-T3 adds the
-# hooks half: `[omo-hooks] loaded: manifest 14 entries (…)` is the summary boot
-# marker emitted after validateManifest accepted the roster (14 since P3-T5
-# removed H-01; P3-T5 also made it emit one `registered` line).
+# hooks half: `[omo-hooks] loaded: manifest <N> entries (…)` is the summary boot
+# marker emitted after validateManifest accepted the roster. P4-T3 adds the
+# command half: `[omo-commands] loaded: manifest <N> entries (pending=<n>,
+# ported=<n>) — <r>/<N> commands registered`, where the manifest declares 6 rows
+# and every count in that line is computed from COMMAND_MANIFEST at boot (the
+# line is assembled by `formatLoadedSummaryLine` in
+# patches/omo-dsh/omo-commands/src/boot-markers.ts).
+#
+# ⚠️ The greps below are on the PREFIX only, deliberately, and that is why no
+# count is written into this comment: the counts evolve per task, so a copy
+# pasted here is a value with no reader and no test — the one this file used to
+# carry (`pending=6, ported=0 — 0/6`) went stale at the first landed command and
+# never came back. scripts/concerto-mode-probe.sh is the place that pins the
+# full line, re-derived from the plugin's own manifest.ts + boot-markers.ts, and
+# tests/omo-commands/boot-markers.test.ts pins the exact rendered string.
 grep -q "\[omo-agents\] loaded" "$BOOT_LOG" \
   || fail "plugin load marker missing from boot log (plugin never mounted?)"
 grep -q "\[omo-hooks\] loaded" "$BOOT_LOG" \
   || fail "omo-hooks load marker missing from boot log (hooks plugin never mounted?)"
+grep -q "\[omo-commands\] loaded" "$BOOT_LOG" \
+  || fail "omo-commands load marker missing from boot log (command plugin never mounted?)"
+# P4-T5: the skill delivery mechanism's own summary line. Prefix-only grep again
+# — the counts move as vendored skills change, and
+# scripts/concerto-mode-probe.sh is where the full line is pinned (derived from
+# the plugin's own modules).
+grep -q "\[omo-commands\] skills:" "$BOOT_LOG" \
+  || fail "omo-commands skills marker missing from boot log (skill sweep never ran?)"
 
 # Negative signal: no plugin load errors anywhere in the log.
 # NB: the generic words error/fatal/failed are scoped to plugin context

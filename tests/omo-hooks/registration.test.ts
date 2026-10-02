@@ -46,14 +46,18 @@ import {
 
 /**
  * The exact summary line a real boot logs, transcribed from the manifest by
- * hand (14 rows: 1 pre-step, 2 pre-execute, 8 post-execute, 1 turn-stopping,
- * 2 session/event, 0 status, in SUMMARY_EVENT_FIELDS order). It is 14, not 15,
- * because P3-T5 removed the H-01 write-existing-file-guard row (WP-2
- * arbitration: dsh-fs-observation-policy covers it natively), which is also why
- * pre-execute moved 3 → 2.
+ * hand (15 rows: 2 pre-step, 2 pre-execute, 8 post-execute, 1 turn-stopping,
+ * 2 session/event, 0 status, in SUMMARY_EVENT_FIELDS order).
+ *
+ * Two arithmetic notes, both historical. Phase 3 landed 14 rows: P3-T5 removed
+ * the H-01 write-existing-file-guard row (WP-2 arbitration: dsh-fs-observation-
+ * policy covers it natively), which is also why pre-execute moved 3 → 2. P4-T12
+ * added H-33 `keyword-detector`, the roster's SECOND `agent/pre-step` row
+ * (pre-step 1 → 2) — the counts here are DERIVED by the formatter, so this
+ * string is transcribed to pin them.
  */
 const EXPECTED_SUMMARY_LINE =
-  '[omo-hooks] loaded: manifest 14 entries (pre-step=1, pre-execute=2, '
+  '[omo-hooks] loaded: manifest 15 entries (pre-step=2, pre-execute=2, '
   + 'post-execute=8, turn-stopping=1, session/event=2, status=0)'
 
 /** One recorded `ctx.on` call — the loop-wiring observable. */
@@ -309,7 +313,7 @@ describe('P3-T3 registration loop — loud-but-non-fatal', () => {
     })
     expect(lines).toHaveLength(1)
     expect(lines[0]).toContain('[omo-hooks] manifest validation FAILED: ')
-    expect(lines[0]).toContain('expected 14 hook entries, got 1')
+    expect(lines[0]).toContain('expected 15 hook entries, got 1')
     // No summary line: a count from an untrusted roster must not read as a mount.
     expect(lines.some((line) => line.startsWith('[omo-hooks] loaded'))).toBe(false)
     expect(onCalls).toEqual([])
@@ -321,13 +325,14 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     vi.restoreAllMocks()
   })
 
-  it('① mounts with the real registry: summary + the fourteen registered listeners', () => {
+  it('① mounts with the real registry: summary + the fifteen registered listeners', () => {
     // P3-T12 filled the registry with the F-mode notification pair, P3-T14 with
     // the 批 A D-mode trio, P3-T15 with the 批 B trio, P3-T16 with the 批 C
-    // B+D pair and P3-T17 with the LAST row (H-32 `ulw-execute`, the roster's
-    // only A-mode pre-step listener), so a real boot logs the summary line AND
-    // **fourteen** `registered` lines, and wires the listeners in roster order —
-    // every manifest row now has an implementation.
+    // B+D pair, P3-T17 with H-32 `ulw-execute`, and P4-T12 with the FIRST Phase
+    // 4 row (H-33 `keyword-detector`, the roster's second A-mode pre-step
+    // listener), so a real boot logs the summary line AND **fifteen**
+    // `registered` lines, and wires the listeners in roster order — every
+    // manifest row now has an implementation.
     // 'session-notification' registers TWO surfaces (its primary manifest event
     // plus the auxiliary `agent/status`), which is why the onCalls list below is
     // longer than the registered-line list.
@@ -360,6 +365,16 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       '[omo-hooks] hook prometheus-md-only registered on tools/pre-execute',
       '[omo-hooks] ulw-execute NOTE: jobs service never appeared; work-session registration degraded to the notepad scaffold only',
       '[omo-hooks] hook ulw-execute registered on agent/pre-step',
+      // P4-T12: the vendored instruction bodies are read from disk at apply
+      // time, so a real boot logs one loaded line naming both SKILL.md paths
+      // and their char counts. The counts are VENDOR BYTES — pinned by
+      // VENDOR-MANIFEST.json (P4-T4) and re-asserted by keyword-detector.test.ts
+      // — so this array pins the prefix, not the numbers.
+      expect.stringContaining(
+        '[omo-hooks] keyword-detector: instruction texts loaded: '
+        + 'ultrawork=patches/omo-dsh/vendor/shared-skills/skills/ultrawork/SKILL.md (',
+      ),
+      '[omo-hooks] hook keyword-detector registered on agent/pre-step',
     ])
     expect(onCalls.map((call) => call.event)).toEqual([
       'tools/post-execute',
@@ -392,10 +407,14 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       'tools/pre-execute',
       'tools/post-execute',
       'session/disposed',
-      // P3-T17: 'ulw-execute' is the roster's ONLY agent/pre-step row (pattern A)
-      // plus the session/disposed guard-cleanup fallback (index discipline ⑤).
+      // P3-T17: 'ulw-execute' is the roster's FIRST agent/pre-step row (pattern
+      // A) plus the session/disposed guard-cleanup fallback (index ⑤).
       'agent/pre-step',
       'session/disposed',
+      // P4-T12: 'keyword-detector' is the SECOND agent/pre-step row and owns
+      // exactly ONE surface (its session-level one-shot guard is a WeakSet in
+      // the listener closure, so there is no dispose hook to register).
+      'agent/pre-step',
     ])
   })
 
@@ -403,14 +422,15 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     // apply() has no injection seam on purpose (it is the one-argument cordis
     // entry point), so this test saves/restores a real registry entry around the
     // call instead of leaking a permanent fake into sibling tests. The other
-    // twelve real entries stay in place, so the expected log carries all
-    // thirteen registered lines in roster order (bash-file-read-guard is row 1,
+    // fourteen real entries stay in place, so the expected log carries all
+    // fifteen registered lines in roster order (bash-file-read-guard is row 1,
     // todo-continuation-enforcer row 2, empty-task-response-detector row 3,
     // session-notification row 4, background-notification row 5,
     // edit-error-recovery row 6, json-error-recovery row 7,
     // tool-output-truncator row 8, directory-readme-injector row 9,
     // agent-usage-reminder row 10, task-resume-info row 11,
-    // webfetch-redirect-guard row 12, prometheus-md-only row 13).
+    // webfetch-redirect-guard row 12, prometheus-md-only row 13,
+    // ulw-execute row 14, keyword-detector row 15).
     const id = 'todo-continuation-enforcer'
     expect(HOOK_IDS).toContain(id)
     const previous = HOOK_REGISTRARS[id]
@@ -450,6 +470,10 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       // session/disposed cleanup fallback.
       'agent/pre-step',
       'session/disposed',
+      // P4-T12: 'keyword-detector' — ONE `agent/pre-step` listener, no
+      // lifecycle registration (its session-level one-shot guard is a WeakSet
+      // in the listener closure, so there is nothing to clean up).
+      'agent/pre-step',
     ])
     expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
       EXPECTED_SUMMARY_LINE,
@@ -472,6 +496,16 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       // P3-T17: the same degraded-capability NOTE for the new row.
       '[omo-hooks] ulw-execute NOTE: jobs service never appeared; work-session registration degraded to the notepad scaffold only',
       '[omo-hooks] hook ulw-execute registered on agent/pre-step',
+      // P4-T12: the vendored instruction bodies are read from disk once at
+      // apply time, so a real boot logs one loaded line naming both SKILL.md
+      // paths and their char counts. The counts are VENDOR BYTES — pinned by
+      // VENDOR-MANIFEST.json (P4-T4) and re-asserted by keyword-detector.test.ts
+      // — so this array pins the prefix, not the numbers.
+      expect.stringContaining(
+        '[omo-hooks] keyword-detector: instruction texts loaded: '
+        + 'ultrawork=patches/omo-dsh/vendor/shared-skills/skills/ultrawork/SKILL.md (',
+      ),
+      '[omo-hooks] hook keyword-detector registered on agent/pre-step',
     ])
   })
 

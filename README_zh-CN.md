@@ -53,8 +53,9 @@ preset 携带 **11-agent 名册**：指挥 **sisyphus** + **10 个委派目标**
 | `sisyphus-junior` | worker | 快座 — `deepseek` / `deepseek-v4-flash` |
 | `prometheus` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 
-> ⚠️ **名册完整 ≠ 完整的 OMO 编排面**（风险 R-8，见 docs/plans/phase2-dev/phase2-plan.md §6）。具体分三件事：11-agent 名册完整
-> **≠** `/ulw-*` 命令面（Phase 4）**≠** Team Mode 的成员语义（Phase 5）。本仓库今日不对后两者作任何宣称。
+> ⚠️ **名册完整 ≠ 完整的 OMO 编排面**（风险 R-8，见 docs/plans/phase2-dev/phase2-plan.md §6）。那句话点名了另外两件事，其中一件已经关闭
+> ——`/ulw-*` 命令面（Phase 4）**已在本仓库落地**（R-7；见下方「Phase 4 命令面已落地」）。另一件仍然成立：Team Mode 的成员语义（Phase 5）
+> ——**本仓库今日不作此宣称**。
 
 - **一行命令**（推荐）：
 
@@ -125,6 +126,7 @@ env 对逐 agent 覆盖，因此模型链留在配置里，而不在代码里。
   快速安装见 [`docs/install-concerto_zh-CN.md`](./docs/install-concerto_zh-CN.md)
 - ✅ 版本管理与发布流程已落地（决策 D13：三方兼容矩阵 + `scripts/release.sh` 六步发行 + 每周上游探测哨兵；「release 通知」「升级节奏」两个开放维度就此关闭）——见 [`docs/release-process_zh-CN.md`](./docs/release-process_zh-CN.md)
 - ✅ **Phase 3 hook listener 移植已落地**（2026-09-21，分支 `feature/phase3-dev`）——`omo-hooks` 插件把 OMO 的行为护栏 hook 移植到 DSH 事件：14 个模块已移植（文件读取劝导、todo 续行、会话/后台通知、错误恢复、输出截断、README 注入、使用提醒、webfetch/prometheus 门、ulw-execute 工作激活），每模块带 mock-LLM e2e；另有 47 个模块带成文的跳过/deferred 判定（含 DSH 原生覆盖——`fs-observation-policy`/`dsh-goal`/`dsh-compaction`——与 Phase 4/5/6/7 归属）。逐模块权威 = 覆盖基线 [`docs/plans/phase3-dev/`](./docs/plans/phase3-dev/)。⚠️ **护栏层 ≠ 命令面**（R-7）：hook 层完整 **≠** `/ulw-*` 命令（Phase 4）**≠** Team Mode（Phase 5）
+- ✅ **Phase 4 命令面已落地**（2026-10，分支 `feature/phase4-dev`）——`omo-commands` 插件注册 **5 条内建命令**，均为 OMO 内建命令的语义移植（`/ulw-execute`、`/handoff`、`/remove-ai-slops`、`/stop-continuation`、`/hyperplan`），每条带逐文件上游出处与一条 mock-LLM e2e 场景；**其中 `/ulw-execute` 另带接入 Phase 3 `ulw-execute` 监听器的 R-10 marker 闭环**（其余四条无 `$SESSION_ID`、无 `<session-context>` 外框，R-10 对它们不适用）；`/ulw-plan` 以**零代码手势桥**落地（DSH 自有 skill 手势），且**刻意不注册**同名命令。另 vendor 19 个 OMO 指令 skill（**属 vendored 内容，非移植**），`keyword-detector`（H-33）监听器在 `agent/pre-step` 上落地。逐行权威是覆盖基线 [`docs/plans/phase4-dev/`](./docs/plans/phase4-dev/)，署名见 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)。⚠️ **命令面 ≠ OMO 编排全流程可用**（R-7，本次落地不改变该判断）：命令面已落地 **≠** Team Mode（`team_create`、对抗评审环、`team` 关键词——属 Phase 5）**≠** 编辑面（`/refactor`、LSP/ast-grep——属 Phase 6）；`/hyperplan` 是**降级形态**（以名册委派替代 `team_*`），且必须在回复中声明该降级；`ralph` 在本运行时**无可编程停止 API**（如实登记为差异，不承诺可取消）；`session_read` 收窄为指引文案。
 - ⏳ 2 个开放维度待决策（npm 命名、telemetry；详见决策记录"开放维度"——OMO core 包引进策略已由 D14 关闭）
 - ⏳ 工作量粗估：~16 周（一人主力）
 

@@ -25,12 +25,16 @@
 // the first implementation; P3-T7 landed the P1 todo/goal executor pair; P3-T12
 // landed the P3 session-notification family; P3-T14 landed the WP-6 批 A D-mode
 // trio; P3-T15 landed the 批 B injection/reminder trio; P3-T16 landed the 批 C
-// **B-mode pair**; P3-T17 (this revision) lands the LAST row, H-32
+// **B-mode pair**; P3-T17 landed H-32
 // **'ulw-execute'** (the start-work hook semantics: activation detection, plan
-// discovery, work-context construction and the notepad/jobs scaffold). apply()
+// discovery, work-context construction and the notepad/jobs scaffold);
+// **P4-T12 (this revision) lands the FIRST Phase 4 row, H-33
+// **'keyword-detector'** (the ultrawork / hyperplan keyword modes: shell
+// stripping, six input gates, dual idempotency and the vendored instruction
+// bodies). apply()
 // validates the manifest, logs the summary boot marker, and runs the per-hook
 // registration loop; the loop's implementation registry (HOOK_REGISTRARS) now
-// carries **FOURTEEN** entries — 'bash-file-read-guard' (the C-mode pilot),
+// carries **FIFTEEN** entries — 'bash-file-read-guard' (the C-mode pilot),
 // 'todo-continuation-enforcer' (E mode), 'empty-task-response-detector' (D
 // mode), 'session-notification' (F mode, the completion/error observer + the
 // platform backend abstraction), 'background-notification' (F mode, the
@@ -38,19 +42,24 @@
 // NotifierBackend), the P3-T14 D-mode trio 'edit-error-recovery' /
 // 'json-error-recovery' / 'tool-output-truncator', the P3-T15 批 B trio
 // 'directory-readme-injector' / 'agent-usage-reminder' / 'task-resume-info', the
-// P3-T16 批 C B+D pair 'webfetch-redirect-guard' / 'prometheus-md-only', and the
-// P3-T17 A-mode row 'ulw-execute' — so exactly fourteen `registered` lines are
-// logged after the summary and the roster has no unimplemented row left.
+// P3-T16 批 C B+D pair 'webfetch-redirect-guard' / 'prometheus-md-only', the
+// P3-T17 A-mode row 'ulw-execute', and the P4-T12 A-mode row
+// 'keyword-detector' — so exactly fifteen `registered` lines are logged after
+// the summary.
 //
-// Note the roster is 14 entries, not 15: P3-T5's other half is the WP-2
-// arbitration that REMOVED H-01 (write-existing-file-guard) from the port group
-// — dsh-fs-observation-policy already covers "overwrite an unread file" natively
-// and strictly more (manifest.ts header; plan revision 2026-09-19).
+// Two count notes, both historical. The roster was 14 rows until P4-T12: P3-T5's
+// other half is the WP-2 arbitration that REMOVED H-01 (write-existing-file-guard)
+// from the port group — dsh-fs-observation-policy already covers "overwrite an
+// unread file" natively and strictly more (manifest.ts header; plan revision
+// 2026-09-19). And `keyword-detector` is the one row whose `status` is **'pending'**
+// rather than 'ported': its listener + unit tests landed with P4-T12, its e2e
+// scenario (`ultrawork-keyword-injected`) is P4-T13. The row is registered and live
+// either way — `status` records the port ledger, not whether a listener exists.
 //
 // BOOT-MARKER CONTRACT (probe / cold-start assertion anchors; the pure
 // formatters live in boot-markers.ts, whose header carries the full grammar —
 // KEEP THESE FORMATS STABLE and extend the probe, never the format):
-//   * `[omo-hooks] loaded: manifest 14 entries (pre-step=<n>, pre-execute=<n>,
+//   * `[omo-hooks] loaded: manifest 15 entries (pre-step=<n>, pre-execute=<n>,
 //      post-execute=<n>, turn-stopping=<n>, session/event=<n>, status=<n>)`
 //     — ONE line per boot, AFTER validateManifest accepted the roster. Every
 //       count is DERIVED from HOOK_MANIFEST (boot-markers.ts), never hard-coded.
@@ -116,6 +125,14 @@ import {
   formatLoadedSummaryLine,
   formatManifestValidationFailedLine,
 } from './boot-markers.ts'
+import {
+  STOP_CONTINUATION_GUARD_DISPOSED_EVENT,
+  STOP_CONTINUATION_GUARD_ID,
+  STOP_CONTINUATION_SERVICE,
+  createStopContinuationGuard,
+  handleSessionDisposed,
+  type StopContinuationJobsLike,
+} from './services/stop-continuation-guard.ts'
 import { registerBashFileReadGuard } from './hooks/bash-file-read-guard.ts'
 import { registerTodoContinuationEnforcer } from './hooks/todo-continuation-enforcer.ts'
 import { registerEmptyTaskResponseDetector } from './hooks/empty-task-response-detector.ts'
@@ -130,6 +147,7 @@ import { registerTaskResumeInfo } from './hooks/task-resume-info.ts'
 import { registerWebfetchRedirectGuard } from './hooks/webfetch-redirect-guard.ts'
 import { registerPrometheusMdOnly } from './hooks/prometheus-md-only.ts'
 import { registerUlwExecute } from './hooks/ulw-execute.ts'
+import { registerKeywordDetector } from './hooks/keyword-detector.ts'
 
 export const name = 'omo-hooks'
 
@@ -162,6 +180,21 @@ export type HookDisposer = () => void
 export interface HooksRegistrationContext {
   on(event: string, listener: (...args: readonly unknown[]) => unknown): unknown
   effect?(execute: () => HookDisposer | void): unknown
+  /**
+   * Cordis's service PUBLISH form (`Context#provide(name, value, check?)`, verbatim
+   * `cordis/lib/index.js:792-826`): registers a service owned by the CALLING fiber
+   * and returns the disposer that unregisters it.
+   *
+   * P4-T8 added it for the stop-continuation guard — the one surface this plugin
+   * provides for ANOTHER plugin to consume (`omoStopContinuation`; the fork
+   * decision and full rationale live in services/stop-continuation-guard.ts).
+   * Declared OPTIONAL for the same reason `get` is: a context without it (the unit
+   * fakes, a minimal host) means "this build cannot publish", which
+   * {@link provideStopContinuationGuard} reports loudly on `console.warn` and then
+   * degrades to — it never throws, because a boot failure here would take down
+   * fifteen listeners that have nothing to do with the guard.
+   */
+  provide?(name: string, value: unknown): unknown
   /**
    * Cordis's optional service lookup (`Context#get(name)`), used by the hooks
    * that must read a DSH service rather than only observe events — the E-mode
@@ -450,6 +483,35 @@ export type HookRegistrar = (
  *     always `return next()`). FILTER NOTE: it short-circuits on "no descriptor"
  *     (a non-delegated session), so on the conductor's own pre-steps it does one
  *     in-memory `ownEvents()` scan and delegates — the same read H-26 performs.
+ *
+ * P4-T12 added the FIRST Phase 4 entry — H-33 `keyword-detector`, the roster's
+ * SECOND A-mode (pre-step) row:
+ *   'keyword-detector': registerKeywordDetector (hooks/keyword-detector.ts) — ONE
+ *     `agent/pre-step` waterfall listener that reads this turn's user text,
+ *     passes it through the six input gates (synthetic/internal, system
+ *     directive, slash lead, foreign agent, planner seat, background session),
+ *     shell-strips code, matches ultrawork / ulw / hyperplan / hpp / the strict
+ *     `hyperplan ulw` combo, applies both idempotency guards, and then
+ *     `agent.inject()`s the mode instruction bodies read from the P4-T4 vendored
+ *     `skills/{ultrawork,hyperplan}/SKILL.md`. Its two pre-step siblings order
+ *     as: `ulw-execute` (row 14) then `keyword-detector` (row 15) — there is NO
+ *     collision and no intended interaction between them:
+ *       * `ulw-execute` injects the PLAN CONTEXT (it only fires for a delegated
+ *         `omo-atlas` child whose task text hits work-intent markers, and it
+ *         short-circuits on "no descriptor");
+ *       * `keyword-detector` injects the MODE DIRECTIVE (it only fires for a
+ *         user-authored keyword in the turn's own text).
+ *     A delegated `omo-atlas` child whose task text carries "ultrawork" is the
+ *     one shape where both can fire in the same step; their injections are
+ *     disjoint documents (plan context vs mode directive) and both are
+ *     `agent.inject()` appends, so the row order affects only which lands first
+ *     in the queue. ACCEPTED as benign; no merge, no preemption.
+ *     DEGRADED-CAPABILITY NOTE (unique to this row): the instruction bodies are
+ *     read from disk ONCE at apply time; if the vendored SKILL.md files are
+ *     absent the hook logs one named NOTE per missing file and injects NOTHING
+ *     for the rest of the process lifetime — it never substitutes hand-written
+ *     instruction text (hooks/keyword-detector.ts header; keyword-detector/
+ *     messages.ts).
  */
 export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'bash-file-read-guard': registerBashFileReadGuard,
@@ -466,6 +528,7 @@ export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'webfetch-redirect-guard': registerWebfetchRedirectGuard,
   'prometheus-md-only': registerPrometheusMdOnly,
   'ulw-execute': registerUlwExecute,
+  'keyword-detector': registerKeywordDetector,
 }
 
 /**
@@ -531,7 +594,72 @@ export function runHookRegistrations(
  * assembly and the markers cannot drift from their tests.
  */
 export function apply(ctx: HooksRegistrationContext): void {
+  // P4-T8: the guard is published BEFORE the registration loop, so a registrar
+  // (H-03 reads it) — and the omo-commands plugin, whenever it mounts — can already
+  // resolve it while listeners are being wired.
+  provideStopContinuationGuard(ctx)
   runHookRegistrations(ctx, HOOK_MANIFEST, HOOK_REGISTRARS, (line) => {
     console.log(line)
   })
+}
+
+/**
+ * P4-T8 — publish the `omoStopContinuation` service plus its `session/disposed`
+ * cleanup listener as one fiber-owned unit.
+ *
+ * **WHY THERE IS NO MANIFEST ROW FOR THIS** (the P4-T8 fork): a manifest row is
+ * "one listener owns one event", and this unit has neither a primary event (its only
+ * listener is the `session/disposed` cleanup; its real consumer is ANOTHER plugin's
+ * command) nor an honest `status` to write — 'ported' would need a docs/plans flip I
+ * cannot make, and 'pending' would have the roster contradicting shipped code. It
+ * therefore lives at `src/services/stop-continuation-guard.ts`, outside the `src/hooks/`
+ * scan that c13 reconciles. The full argument is in that file's module header §1; this
+ * is only the pointer (the omo-commands manifest row points here the same way).
+ *
+ * WHY `console.warn` AND NOT A BOOT MARKER: apply()'s boot line array is pinned
+ * verbatim by tests/omo-hooks/registration.test.ts (a file outside this task's
+ * scope), so a new `console.log` line here would fail that suite. The degraded path
+ * warns — and it is genuinely a warning: a host without `provide` cannot offer the
+ * guard at all, which silently disables `/stop-continuation`'s primary effect.
+ * Everything else is observable through the service itself
+ * (`ctx.get('omoStopContinuation')`) and the guard's own `console.warn` lines.
+ */
+function provideStopContinuationGuard(ctx: HooksRegistrationContext): void {
+  const log = (line: string): void => {
+    console.warn(line)
+  }
+  if (typeof ctx.provide !== 'function') {
+    log(`[omo-hooks] ${STOP_CONTINUATION_GUARD_ID} NOTE: this host exposes no ctx.provide; the ${STOP_CONTINUATION_SERVICE} service is NOT published and /stop-continuation will report the guard as unavailable`)
+    return
+  }
+  const guard = createStopContinuationGuard({
+    // LAZY, never cached: the jobs service is read at the moment a stop happens, so
+    // a service that mounts after this fiber — or a profile that never mounts one —
+    // is handled correctly in both directions. The H-11 deferred-get precedent.
+    readJobs: () => readJobsService(ctx),
+    log,
+  })
+  // REVERSIBILITY: both registrations are fiber-owned by construction, so nothing
+  // is collected by hand. Measured: `ctx.provide` stores the impl on the CALLING
+  // fiber and returns its disposer (cordis/lib/index.js:792-826), and `ctx.on` ends
+  // in `this.register(label, hooks, listener, options)` (cordis :371-380), which
+  // registers on the same fiber. Stopping the fiber unpublishes the service AND
+  // unhooks the listener; because `stoppedSessions` lives in this fiber's closure,
+  // the stop state dies with it too.
+  ctx.provide(STOP_CONTINUATION_SERVICE, guard)
+  ctx.on(STOP_CONTINUATION_GUARD_DISPOSED_EVENT, (session) => {
+    handleSessionDisposed(guard, session, log)
+  })
+}
+
+/**
+ * 解析 jobs 服务（可选能力）。返回 `undefined` = 未挂载/未激活，而不是错误：级联取消
+ * 是「有就做」，没有就如实报零（guard 的 `stop()` 会把这件事写进返回值与日志）。
+ */
+function readJobsService(ctx: HooksRegistrationContext): StopContinuationJobsLike | undefined {
+  const jobs = ctx.get?.('jobs')
+  if (typeof jobs !== 'object' || jobs === null) return undefined
+  const candidate = jobs as Partial<StopContinuationJobsLike>
+  if (typeof candidate.list !== 'function' || typeof candidate.kill !== 'function') return undefined
+  return candidate as StopContinuationJobsLike
 }

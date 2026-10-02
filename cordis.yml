@@ -9,18 +9,29 @@
 # ($DSH_HOME/profiles/<name>/), so the bare package name requires the package
 # to be installed into that profile (`dsh plugin --profile <name> add <dir>`).
 #
-# TWO insert rows since P3-T3 — one per plugin, in mount order. omo-agents owns
+# THREE insert rows since P4-T3 — one per plugin, in mount order. omo-agents owns
 # the roster / persona / model-route / hard-blocks layer; omo-hooks owns the
-# Phase 3 behaviour-guardrail listeners (patches/omo-dsh/omo-hooks). They are
-# separate packages on purpose (plan §4.1: folding the hooks into omo-agents
-# would turn the roster plugin into a junk drawer), so a profile must install
-# BOTH (`dsh plugin --profile web add <dir>` twice — scripts/cold-start.sh,
-# tests/e2e/drive.mjs, scripts/concerto-mode-probe.sh, scripts/smoke-real.mjs).
+# Phase 3 behaviour-guardrail listeners (patches/omo-dsh/omo-hooks);
+# omo-commands owns the Phase 4 slash-command surface
+# (patches/omo-dsh/omo-commands). They are separate packages on purpose
+# (plan §4.1: folding the hooks into omo-agents — or the commands into either —
+# would turn a roster plugin / guardrail plugin into a junk drawer), so a profile
+# must install ALL THREE (`dsh plugin --profile web add <dir>` three times —
+# scripts/cold-start.sh, tests/e2e/drive.mjs, scripts/concerto-mode-probe.sh,
+# scripts/smoke-real.mjs).
 # Measured (dsh 0.1.5-rc.1): a profile missing one package fails the whole boot
 # naming that package's own row — `plugin tree failed to load: failed to import
 # loader entry omo-hooks (@oh-my-opendsh/omo-hooks): Cannot find package …`
 # (ERR_MODULE_NOT_FOUND) — never a half-mounted overlay.
-# scripts/doctor-lite.mjs check `cordis-plugins` pins exactly these two ids.
+# scripts/doctor-lite.mjs check `cordis-plugins` pins exactly these three ids.
+#
+# ⚠️ COUNT COUPLING NET (2 → 3). Adding or removing a row here is not a
+# one-file edit: every sandbox boot site installs one package per row, and three
+# places restate the list or its count — scripts/doctor-lite-core.ts
+# `EXPECTED_INSERT_ROW_IDS` (the single source the doctor check AND the static
+# gate's c11 both read), tests/omo-hooks/cordis-inserts.test.ts (hand-transcribed
+# pin) and this header. Miss one and the failure is a red gate, not a silent
+# skip — which is the point of the net.
 
 - insert:
     - id: omo-agents
@@ -29,3 +40,24 @@
 - insert:
     - id: omo-hooks
       name: '@oh-my-opendsh/omo-hooks'
+
+# P4-T3: the Phase 4 command surface. Its `inject: ['commands']` declares the
+# dsh-commands registry as a hard dependency, and the base bundle mounts that
+# service (dsh-base/cordis.patch.yml inserts `id: commands`), so this row
+# activates in every profile that can boot the overlay. The plugin logs ONE line
+# per boot — `[omo-commands] loaded: manifest <N> entries (pending=<n>,
+# ported=<n>) — <r>/<N> commands registered` — and that is still all it logs.
+#
+# ⚠️ NO CENSUS NUMBERS HERE, AND THAT IS THE RULE. The invariant is only: the
+# manifest declares 6 rows; the pending/ported split is computed from
+# COMMAND_MANIFEST at boot and the summary line is assembled by
+# `formatLoadedSummaryLine` (patches/omo-dsh/omo-commands/src/boot-markers.ts).
+# Both numbers move as rows land, and nothing reads a hand-copied census from
+# this file — the earlier comment that pasted them went stale the moment the
+# first command landed and survived the entire Phase 4 landing still saying
+# "every manifest row is still pending". The authoritative values are the
+# plugin's own rendered line, pinned by tests/omo-commands/boot-markers.test.ts
+# and re-derived in scripts/concerto-mode-probe.sh.
+- insert:
+    - id: omo-commands
+      name: '@oh-my-opendsh/omo-commands'

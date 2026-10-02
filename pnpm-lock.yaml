@@ -20,6 +20,8 @@ importers:
 
   patches/omo-dsh/omo-agents: {}
 
+  patches/omo-dsh/omo-commands: {}
+
   patches/omo-dsh/omo-hooks:
     dependencies:
       undici:
@@ -31,6 +33,8 @@ importers:
       diff:
         specifier: ^9.0.0
         version: 9.0.0
+
+  patches/omo-dsh/vendor/shared-skills: {}
 
 packages:
 

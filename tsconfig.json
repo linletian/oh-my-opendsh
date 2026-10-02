@@ -9,5 +9,8 @@
     "noEmit": true
   },
   "include": ["patches", "scripts", "tests", "vitest.config.ts"],
-  "exclude": ["patches/omo-dsh/vendor/**/*.test.ts"]
+  "exclude": [
+    "patches/omo-dsh/vendor/**/*.test.ts",
+    "patches/omo-dsh/vendor/shared-skills/**/*.ts"
+  ]
 }

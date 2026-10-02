@@ -1,0 +1,11 @@
+{
+  "name": "@oh-my-opendsh/omo-commands",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OMO slash-command semantics as a DSH cordis plugin (Phase 4).",
+  "license": "MIT OR SUL-1.0",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

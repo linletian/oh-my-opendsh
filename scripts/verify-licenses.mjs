@@ -99,6 +99,28 @@ export const SUL_ALLOWED_NAME = /(^|[^a-z])omo([^a-z]|$)|oh-my-openagent|oh-my-o
 /** Dirs the in-repo walk never descends into (incl. `.codegraph` symlink). */
 const EXCLUDED_DIRS = new Set(['node_modules', '.git', '.omo', '.codegraph', 'dist']);
 
+/**
+ * `patches/omo-dsh/vendor/` holds vendored third-party packages. Each one has
+ * its own `package.json`, and that manifest IS checked (D15 ¶1 added the
+ * `license` field; D16 opened the `oh-my-opencode` name gate for it). What is
+ * NOT checked is anything deeper inside the package: a vendored package can
+ * legitimately ship third-party *content* that is not a package of this repo.
+ *
+ * Concrete case measured 2026-09-30 (P4-T4): the vendored
+ * `shared-skills/skills/ultimate-browsing/engine/templates/package.json`
+ * (`insane-search-templates`) is a Playwright helper manifest that the skill
+ * tells the *user* to copy into their own project and `npm install` there. It
+ * has no `license` field upstream, and this repo neither publishes it nor
+ * resolves it — scoring it MISSING was a false positive that turned the gate
+ * red. Its licensing is discharged instead by the vendor package's own
+ * manifest, its `NOTICE.md`, its `VENDOR-MANIFEST.json` and the per-file
+ * THIRD_PARTY_NOTICES.md rows.
+ *
+ * So: for a direct child of the vendor root, read `package.json` and do not
+ * descend. Everything else in the walk is unchanged.
+ */
+const VENDOR_ROOT_SEGMENTS = ['patches', 'omo-dsh', 'vendor'];
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -249,16 +271,49 @@ function collectNodeModules(nmRoot, out) {
   }
 }
 
-function walkRepoPackageFiles(dir, out) {
-  for (const entry of safeReaddir(dir)) {
-    if (EXCLUDED_DIRS.has(entry)) continue;
-    const full = join(dir, entry);
-    if (!isDir(full)) {
-      if (entry === 'package.json') collectManifest(full, out);
-      continue;
+/**
+ * Every in-repo `package.json` this gate scores, as absolute paths, in walk
+ * order. Exported so a test can pin the vendor-content rule above (P4-T4)
+ * without duplicating the traversal.
+ *
+ * Every returned path is a file that exists: the general branch sees
+ * `package.json` as a real directory entry, and the vendor branch below is
+ * guarded by existsSync. Consumers can treat the return as `string[]` and
+ * read the files without re-checking — a missing path here would otherwise
+ * reach them as a silent trap.
+ */
+export function repoManifestFiles(root) {
+  const out = [];
+  const walk = (dir, segments) => {
+    for (const entry of safeReaddir(dir)) {
+      if (EXCLUDED_DIRS.has(entry)) continue;
+      const full = join(dir, entry);
+      if (!isDir(full)) {
+        if (entry === 'package.json') out.push(full);
+        continue;
+      }
+      const childSegments = [...segments, entry];
+      // A direct child of the vendor root is a vendored package: take its own
+      // manifest, never its vendored content (see VENDOR_ROOT_SEGMENTS). The
+      // existsSync guard matters even though today's two vendor packages both
+      // have one: the inner readManifest() swallows ENOENT and returns null, so
+      // an unguarded push would hand a consumer a path it cannot read, and the
+      // `string[]` return type carries no "may not exist" signal to warn it.
+      if (segments.length === VENDOR_ROOT_SEGMENTS.length
+        && segments.every((s, i) => childSegments[i] === VENDOR_ROOT_SEGMENTS[i])) {
+        const manifest = join(full, 'package.json')
+        if (existsSync(manifest)) out.push(manifest)
+        continue
+      }
+      walk(full, childSegments)
     }
-    walkRepoPackageFiles(full, out);
   }
+  walk(root, [])
+  return out
+}
+
+function walkRepoPackageFiles(dir, out) {
+  for (const file of repoManifestFiles(dir)) collectManifest(file, out);
 }
 
 // ---------------------------------------------------------------------------

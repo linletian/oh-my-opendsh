@@ -17,11 +17,12 @@
 //                      plain `- id:` row silently skips, so rows without
 //                      `insert:` downgrade the check to WARN).
 //   2b. cordis-plugins cordis.yml inserts EXACTLY the plugin rows P3-T3 names
-//                      (EXPECTED_INSERT_ROW_IDS: omo-agents then omo-hooks, in
-//                      mount order) — the fact every sandbox boot site installs
-//                      a package for. A dropped / renamed / reordered / extra
-//                      plugin row fails here instead of surfacing as a plugin
-//                      that silently never mounted. Skipped when check 2 could
+//                      (EXPECTED_INSERT_ROW_IDS: omo-agents, then omo-hooks, then
+//                      omo-commands since P4-T3 — in mount order), the fact every
+//                      sandbox boot site installs a package for. A dropped /
+//                      renamed / reordered / extra plugin row fails here instead
+//                      of surfacing as a plugin that silently never mounted.
+//                      Skipped when check 2 could
 //                      not produce a parsed row list (cascade honesty).
 //   3. llm-adapters    both LLM adapter rows visible in the composed config —
 //                      `dsh --profile web --dump-config --patch <cordis>`,
@@ -291,11 +292,14 @@ async function checkCordis(cordisPath) {
   )
 }
 
-// ── check 2b: cordis.yml mounts exactly the two plugin rows (P3-T3) ─────────
+// ── check 2b: cordis.yml mounts exactly the three plugin rows (P3-T3; P4-T3 +1) ─
 
 /**
- * P3-T3's mount assertion: the patch overlay must insert exactly the two plugin
- * rows EXPECTED_INSERT_ROW_IDS names, in mount order. A NEW check rather than
+ * P3-T3's mount assertion: the patch overlay must insert exactly the plugin
+ * rows EXPECTED_INSERT_ROW_IDS names (two at P3-T3, three since P4-T3 mounted
+ * omo-commands), in mount order. The COUNT is never restated here — it comes
+ * from the shared constant, which scripts/verify-concerto-static.mjs's c11 also
+ * reads. A NEW check rather than
  * more conditions inside check 2: check 2 owns the P-8 parse question ("does
  * every top-level row use the insert form"), while this one owns "which plugins
  * are mounted" — the fact every sandbox boot site (scripts/cold-start.sh,
@@ -348,7 +352,8 @@ async function checkCordisPlugins(cordisPath, check1, check2) {
       'fail',
       `cordis.yml inserts ${observed.length} plugin row${observed.length === 1 ? '' : 's'} [${observed.join(', ')}] — expected exactly ${expected.length} in mount order [${expected.join(', ')}]`,
       [
-        'the root overlay mounts @oh-my-opendsh/omo-agents then @oh-my-opendsh/omo-hooks (P3-T3); '
+        'the root overlay mounts @oh-my-opendsh/omo-agents, then @oh-my-opendsh/omo-hooks '
+        + '(P3-T3), then @oh-my-opendsh/omo-commands (P4-T3); '
         + 'each row needs its own `dsh plugin --profile web add <dir>` at every sandbox boot site',
       ],
     )

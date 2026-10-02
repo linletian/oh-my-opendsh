@@ -49,11 +49,22 @@ export const ULW_EXECUTE_PLUGIN = 'omo-hooks'
 //     export const START_WORK_TEMPLATE = `You are starting an Atlas work session.
 //   features/builtin-commands/commands.ts:63-74 的
 //     `<command-instruction>…<session-context>…<user-request>` 三层包裹。
-// 本阶段（Phase 3）**不写任何 `<session-context>` / 模板 marker 的产生面**
-// （那是 Phase 4 的 slash 命令）；下面两个常量是**登记在案的接口契约**：
-// Phase 4 的模板落地时，其产物的 marker 必须与这两个常量逐字一致，否则幂等
-// 守卫（见 @see ULW_EXECUTE_CONTEXT_MARKER）静默失效 —— 这正是计划书 §6
-// R-10 与 P3-T1 §4 记录的常量同步风险。
+// **产生面已于 P4-T10 落地**（纠正一句已过时的登记）：早期这里写的是「Phase 3
+// 不写任何 `<session-context>` / 模板 marker 的产生面（那是 Phase 4 的 slash
+// 命令）」。它现在**有**了 —— `omo-commands/src/templates/ulw-execute.ts` 的
+// `ULW_EXECUTE_COMMAND_TEMPLATE` 逐字产出下面这两个 marker。下面两个常量因此
+// 不再只是「登记在案的契约」，而是**跨包接口常量**：任何一侧漂移都会让
+// `hasCommandTemplateMarker` 静默失配（不报错，只是不激活）。
+//
+// 一致性**只能**靠单测保证：两个补丁包各自独立安装（`dsh plugin add` 各自
+// link），跨包相对路径 import 会在对方缺席时炸掉整包加载，所以运行期没有、也
+// 不该有任何跨包引用。钉住它的是 tests/omo-commands/ulw-execute.test.ts 的
+// 跨包相等断言（测试 import 两个包的模块比较常量值，且断言打在**渲染产物**上 —
+// 两个常量相等但模板不再产出其中一个，那种漂移只有产物断言抓得到）。
+//
+// 即便如此，幂等守卫（见 @see ULW_EXECUTE_CONTEXT_MARKER）依赖的仍是会话日志
+// 里的 marker 而非这两个常量，所以上文的常量同步风险（计划书 §6 R-10 与
+// P3-T1 §4）并未因产生面落地而消失，只是现在**有了自动守卫**。
 
 /** Phase 4 模板标头 marker（上游 START_WORK_TEMPLATE_MARKER，逐字）。 */
 export const TEMPLATE_HEADER_MARKER = 'You are starting an Atlas work session.'

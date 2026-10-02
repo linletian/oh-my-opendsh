@@ -137,7 +137,7 @@ tag `v4.19.4` (commit `b072d279110bdda2c6ac2525d0d24dc54d16148a`, under
 naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/manifest.ts`
 (per-file machine-readable lists), not this table, are the per-file authority.
 
-#### Phase 3 additions (14 ported hook listeners)
+#### Phase 3 additions (15 ported hook listeners — the 15th, `keyword-detector`, landed in Phase 4)
 
 | Hook (manifest id) | Derived file(s) under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
 |---|---|---|---|
@@ -155,15 +155,486 @@ naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/man
 | webfetch-redirect-guard | src/hooks/webfetch-redirect-guard.ts | webfetch-redirect-guard/constants.ts, hook.ts, index.ts, redirect-resolution.ts（+ 1 上游测试文件作移植种子） | semantic port only |
 | prometheus-md-only | src/hooks/prometheus-md-only.ts | prometheus-md-only/agent-matcher.ts, agent-resolution.ts, constants.ts, hook.ts, index.ts, path-policy.ts（+ 1 上游测试文件作移植种子） | semantic port only |
 | ulw-execute（上游名 start-work，按 v5 命名锚点） | src/hooks/ulw-execute.ts + src/hooks/ulw-execute/（constants.ts, context-builder.ts, identity.ts, live-state.ts, parse-request.ts, plan-discovery.ts, worktree.ts） | start-work/context-info-builder.ts, context-info-formatters.ts, explicit-plan-context.ts, index.ts, notepad-scaffold.ts, parse-user-request.ts, plan-discovery-context.ts, plan-selection.ts, session-plan-affinity.ts, start-work-hook.ts, work-initializer.ts, worktree-block.ts, worktree-detector.ts（+ 7 上游测试文件作移植种子；命令面在 hooks/ 之外，属 Phase 4；boulder-state 依赖段跳过，逐条注记） | semantic port only |
+| keyword-detector | src/hooks/keyword-detector.ts + src/hooks/keyword-detector/（constants.ts, detector.ts, filters.ts, messages.ts） | config/schema/keyword-detector.ts, hooks/keyword-detector/constants.ts, detector.ts, hook.ts, index.ts, types.ts, hyperplan/default.ts, hyperplan/index.ts, team/default.ts, team/index.ts, ultrawork/default.ts, ultrawork/gemini.ts, ultrawork/glm.ts, ultrawork/gpt.ts, ultrawork/planner.ts, ultrawork/source-detector.ts, ultrawork/index.ts（+ 7 上游测试文件作移植种子） | semantic port only（**Phase 4 落地，Phase 3 的 S-06 顺延项**：上游在 `chat.message` 上判别 ultrawork / ulw / hyperplan / hpp 与 `hyperplan ulw` 组合词后注入整份模式指令，本移植形态 = 一个 `agent/pre-step` waterfall listener（模式 A），命中即 `agent.inject()` 并永远 `next()`；**注入正文改为引用本仓 vendor 的 ultrawork / hyperplan SKILL.md**（P4-T4），5+1 个上游模型变体收窄为单一名册感知文案，`team` 枚举位**预留不接线**（Phase 5 面），toast 收窄为审计行。逐文件处置注记于 `src/hooks/keyword-detector.ts` 文件头，上游目录 **24 条目 = 16 实现 + 7 测试 + 1 `AGENTS.md`**（`AGENTS.md` 按 N-03 不计入移植面；再加目录外的 `config/schema/keyword-detector.ts` → manifest 两列之和 `upstreamFiles` 17 + `upstreamTestFiles` 7 = 24，与覆盖文档 §1.2 的「25 文件」差 1 即此 `AGENTS.md` 口径）） |
 
 > Deliberately **not** listed as ported: the 47 hook modules with a terminal
 > skip/defer/excluded disposition (DSH-native coverage, no DSH seam, platform coupling,
 > later-phase ownership, upstream-dead) — the per-module reasons are the coverage
 > authority: `docs/plans/phase3-dev/phase3-hooks.md` §2.
 
-**Counts:** Phase 3 derived listener files listed = **14 hook ids / 21 derived files**
-(14 `src/hooks/*.ts` + 7 `src/hooks/ulw-execute/` 子模块). No existing entry above this
-section was modified (additions only).
+**Counts:** Phase 3 derived listener files listed = **15 hook ids / 26 derived files**
+(15 top-level `src/hooks/*.ts` + 11 files in the `keyword-detector/` and
+`ulw-execute/` submodule directories). P4-T16: these two numbers were `14 / 21`
+and had been stale since P4-T12 added `keyword-detector/` (P4-T8 added the
+`stop-continuation-guard` service, which is NOT in this count — it lives in
+`src/services/`, outside the `src/hooks/` set) — the file set moved
+twice (P4-T10's ulw-execute submodules, P4-T12's keyword-detector) and the prose
+did not. A hand-written count in a notices file is a count nobody re-reads, so
+they are now **derived**: `scripts/verify-concerto-static.mjs` record c21
+recomputes both from `manifest.ts` and the filesystem and fails if this paragraph
+disagrees. Editing the number without moving a file is now impossible.
+
+No existing entry above this section was modified (additions only).
+
+**P4-T8 addition (add-only, and deliberately NOT one of the 15 manifest rows):**
+
+| Derived file under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
+|---|---|---|
+| `src/services/stop-continuation-guard.ts`（**无 manifest 条目** —— 它是 cordis **服务提供方**，发布 `omoStopContinuation` 供 `omo-commands` 的 `/stop-continuation` 消费，H-03 在同一插件内经 `ctx.get` 读取） | hooks/stop-continuation-guard/hook.ts, index.ts, index.test.ts（12 its 作移植种子）, plugin/stop-continuation.ts（命令侧四机制调用序列） | semantic port only（continuation marker 文件不移植：本仓无该读写面；后台级联改为 `ctx.jobs.list(caller)` + 同步 `kill(id, caller, reason)`—— **caller 必须传**：`list` 对无 caller 只回无主 job，而真实生产者一律带 owner（实测 dsh-jobs-local:178-180、dsh-tool-bash:416-417），不传会真机静默空转；再按 `ownerSession === sessionId` 收窄到本会话，对齐上游 `getAllDescendantTasks`；状态词表 `running｜stopping` —— DSH 无上游的 `pending`；`session.deleted` → `session/disposed`；**不入 c13 文件集核对**（`src/services/` 不在 `src/hooks/`），故 15 ids / 26 files 的计数不含它） |
+
+### Phase 4 skills vendoring
+
+The 19 instruction skills of Phase 4 are **vendored content**, not a port: every
+`SKILL.md` (and its reference files, scripts and templates) is copied
+byte-for-byte from the frozen tag. What an agent is told to do is upstream's
+text, so the file bodies are treated as copyright content under SUL-1.0 and
+disclosed here file by file, exactly as decision D15 ¶2 requires — 291 rows is
+large, which is why the directory-level inventory comes first and the
+per-file enumeration follows as the auditable expansion.
+
+- **Source repository:** https://github.com/code-yeongyu/oh-my-openagent
+- **Tag:** `v4.19.4`
+- **Commit:** `b072d279110bdda2c6ac2525d0d24dc54d16148a`
+- **Upstream paths:** `packages/shared-skills/skills/` (17 skills, 286 files) +
+  `packages/omo-senpi/skills/ultrawork/SKILL.md` and
+  `packages/omo-senpi/skills/hyperplan/SKILL.md` (2 skills, 1 file each, the
+  senpi command-instruction content consumed by the keyword mode and
+  `/hyperplan`) — **288 skill files** in total.
+- **License:** SUL-1.0 ([LICENSES/oh-my-openagent.LICENSE.md](LICENSES/oh-my-openagent.LICENSE.md)).
+  The upstream package manifest carries no `license` field; the license is the
+  OMO repository-root `LICENSE.md`, already vendored byte-for-byte in phase 1
+  (sha256 `b61ac928f152d13517328263e6bee9175b928f9ab696a2d2ca2b6cfd961ddc32`).
+- **Vendored into this repository at:** [`patches/omo-dsh/vendor/shared-skills`](patches/omo-dsh/vendor/shared-skills)
+  (a pnpm workspace package; the upstream package name
+  `@oh-my-opencode/shared-skills@0.1.0` is kept unchanged as the provenance
+  anchor, so the D16 name gate releases its `SUL-1.0` field).
+
+> ⚠️ **MODIFIED COPY — prominent notice required by SUL-1.0 "Notices".**
+> This project has **modified** the vendored copy of `shared-skills`. The
+> modifications are declared in the package-root
+> [`NOTICE.md`](patches/omo-dsh/vendor/shared-skills/NOTICE.md) and itemized,
+> with per-file sha256 and reasons, in
+> [`VENDOR-MANIFEST.json`](patches/omo-dsh/vendor/shared-skills/VENDOR-MANIFEST.json)
+> (`deviations[]`, 14 entries: 12 modifications, 2 project additions). All 12
+> modifications are one of exactly two kinds: the `license` field added to
+> `package.json`, and the `start-work` → `ulw-execute` naming-anchor rename
+> (11 files, 40 token renames). No skill body was semantically rewritten, and
+> no carrier-narrowing note was inserted into skill text.
+> Copyright in the upstream work remains with the original author
+> (code-yeongyu); this project claims only its modifications. No commercial use
+> or distribution is authorized.
+
+#### Directory-level inventory (19 skill directories — 288 files)
+
+| Skill (bare name) | Upstream path at `v4.19.4` | Files | Disposition |
+|---|---|---|---|
+| `ast-grep` | `packages/shared-skills/skills/ast-grep/` | 17 | all verbatim |
+| `coding-agent-sessions` | `packages/shared-skills/skills/coding-agent-sessions/` | 33 | all verbatim |
+| `data-scientist` | `packages/shared-skills/skills/data-scientist/` | 9 | all verbatim |
+| `debugging` | `packages/shared-skills/skills/debugging/` | 20 | all verbatim |
+| `frontend` | `packages/shared-skills/skills/frontend/` | 26 | 19 verbatim + 7 renamed |
+| `git-master` | `packages/shared-skills/skills/git-master/` | 2 | all verbatim |
+| `hyperplan` | `packages/omo-senpi/skills/hyperplan/` | 1 | all verbatim |
+| `init-deep` | `packages/shared-skills/skills/init-deep/` | 1 | all verbatim |
+| `lsp-setup` | `packages/shared-skills/skills/lsp-setup/` | 25 | all verbatim |
+| `programming` | `packages/shared-skills/skills/programming/` | 75 | all verbatim |
+| `refactor` | `packages/shared-skills/skills/refactor/` | 1 | all verbatim |
+| `remove-ai-slops` | `packages/shared-skills/skills/remove-ai-slops/` | 1 | all verbatim |
+| `review-work` | `packages/shared-skills/skills/review-work/` | 1 | all verbatim |
+| `ulw-execute` | `packages/shared-skills/skills/start-work/` → **renamed to `ulw-execute/`** (v5 naming anchor) | 1 | 0 verbatim + 1 renamed |
+| `ultimate-browsing` | `packages/shared-skills/skills/ultimate-browsing/` | 48 | all verbatim |
+| `ultrawork` | `packages/omo-senpi/skills/ultrawork/` | 1 | all verbatim |
+| `ulw-plan` | `packages/shared-skills/skills/ulw-plan/` | 6 | 3 verbatim + 3 renamed |
+| `ulw-research` | `packages/shared-skills/skills/ulw-research/` | 2 | all verbatim |
+| `visual-qa` | `packages/shared-skills/skills/visual-qa/` | 18 | all verbatim |
+| `package.json` (package root) | `packages/shared-skills/package.json` | 1 | `已修改` (license field) |
+| `NOTICE.md` (package root) | — not upstream | 1 | `本项目新增` |
+| `VENDOR-MANIFEST.json` (package root) | — not upstream | 1 | `本项目新增` |
+
+#### Per-file enumeration (291 rows = `VENDOR-MANIFEST.json` `files[]` = `find patches/omo-dsh/vendor/shared-skills -type f | wc -l`)
+
+The `Disposition` column mirrors the manifest's per-file `origin`:
+`verbatim` → `verbatim`, `modified` → `已修改`, `project-new` → `本项目新增`
+(**277 / 12 / 2** —
+**291 files** total, aligned one-to-one with the manifest). Per-file
+sha256 values live in the manifest and are not duplicated here; the pre-rename
+upstream sha256 of every renamed file is likewise recorded there
+(`upstreamSha256`, the R-8 two-way anchor), so a targeted upstream intake can
+still address the original bytes.
+
+| # | File (relative to package root) | Disposition | Notes |
+|---|---|---|---|
+| 1 | `skills/ast-grep/.gitignore` | `verbatim` | — |
+| 2 | `skills/ast-grep/LICENSE` | `verbatim` | — |
+| 3 | `skills/ast-grep/README.md` | `verbatim` | — |
+| 4 | `skills/ast-grep/SKILL.md` | `verbatim` | — |
+| 5 | `skills/ast-grep/SOURCE` | `verbatim` | — |
+| 6 | `skills/ast-grep/install.ps1` | `verbatim` | — |
+| 7 | `skills/ast-grep/install.sh` | `verbatim` | — |
+| 8 | `skills/ast-grep/references/cli.md` | `verbatim` | — |
+| 9 | `skills/ast-grep/references/install.md` | `verbatim` | — |
+| 10 | `skills/ast-grep/references/patterns.md` | `verbatim` | — |
+| 11 | `skills/ast-grep/references/pitfalls.md` | `verbatim` | — |
+| 12 | `skills/ast-grep/references/recipes.md` | `verbatim` | — |
+| 13 | `skills/ast-grep/references/sgconfig.md` | `verbatim` | — |
+| 14 | `skills/ast-grep/references/yaml-rules.md` | `verbatim` | — |
+| 15 | `skills/ast-grep/scripts/ast_grep_helper.py` | `verbatim` | — |
+| 16 | `skills/ast-grep/tests/smoke.ps1` | `verbatim` | — |
+| 17 | `skills/ast-grep/tests/smoke.sh` | `verbatim` | — |
+| 18 | `skills/coding-agent-sessions/.gitignore` | `verbatim` | — |
+| 19 | `skills/coding-agent-sessions/.npmignore` | `verbatim` | — |
+| 20 | `skills/coding-agent-sessions/SKILL.md` | `verbatim` | — |
+| 21 | `skills/coding-agent-sessions/agents/openai.yaml` | `verbatim` | — |
+| 22 | `skills/coding-agent-sessions/pyrightconfig.json` | `verbatim` | — |
+| 23 | `skills/coding-agent-sessions/references/all-platforms.md` | `verbatim` | — |
+| 24 | `skills/coding-agent-sessions/references/claude.md` | `verbatim` | — |
+| 25 | `skills/coding-agent-sessions/references/codex.md` | `verbatim` | — |
+| 26 | `skills/coding-agent-sessions/references/opencode.md` | `verbatim` | — |
+| 27 | `skills/coding-agent-sessions/references/senpi.md` | `verbatim` | — |
+| 28 | `skills/coding-agent-sessions/scripts/agent_sessions/__init__.py` | `verbatim` | — |
+| 29 | `skills/coding-agent-sessions/scripts/agent_sessions/aside_scanner.py` | `verbatim` | — |
+| 30 | `skills/coding-agent-sessions/scripts/agent_sessions/claude.py` | `verbatim` | — |
+| 31 | `skills/coding-agent-sessions/scripts/agent_sessions/cli.py` | `verbatim` | — |
+| 32 | `skills/coding-agent-sessions/scripts/agent_sessions/codex.py` | `verbatim` | — |
+| 33 | `skills/coding-agent-sessions/scripts/agent_sessions/file_scanners.py` | `verbatim` | — |
+| 34 | `skills/coding-agent-sessions/scripts/agent_sessions/jsonio.py` | `verbatim` | — |
+| 35 | `skills/coding-agent-sessions/scripts/agent_sessions/kiro_scanner.py` | `verbatim` | — |
+| 36 | `skills/coding-agent-sessions/scripts/agent_sessions/opencode.py` | `verbatim` | — |
+| 37 | `skills/coding-agent-sessions/scripts/agent_sessions/pi_family.py` | `verbatim` | — |
+| 38 | `skills/coding-agent-sessions/scripts/agent_sessions/scanners.py` | `verbatim` | — |
+| 39 | `skills/coding-agent-sessions/scripts/agent_sessions/sqlite_optional_scanners.py` | `verbatim` | — |
+| 40 | `skills/coding-agent-sessions/scripts/agent_sessions/sqlite_scanners.py` | `verbatim` | — |
+| 41 | `skills/coding-agent-sessions/scripts/agent_sessions/timeparse.py` | `verbatim` | — |
+| 42 | `skills/coding-agent-sessions/scripts/agent_sessions/transcript.py` | `verbatim` | — |
+| 43 | `skills/coding-agent-sessions/scripts/agent_sessions/types.py` | `verbatim` | — |
+| 44 | `skills/coding-agent-sessions/scripts/find-agent-sessions.py` | `verbatim` | — |
+| 45 | `skills/coding-agent-sessions/scripts/tests/test_agent_sessions.py` | `verbatim` | — |
+| 46 | `skills/coding-agent-sessions/scripts/tests/test_aside_scanner.py` | `verbatim` | — |
+| 47 | `skills/coding-agent-sessions/scripts/tests/test_cli_contract.py` | `verbatim` | — |
+| 48 | `skills/coding-agent-sessions/scripts/tests/test_extended_scanners.py` | `verbatim` | — |
+| 49 | `skills/coding-agent-sessions/scripts/tests/test_optional_sqlite_scanners.py` | `verbatim` | — |
+| 50 | `skills/coding-agent-sessions/scripts/tests/test_pi_family_scanners.py` | `verbatim` | — |
+| 51 | `skills/data-scientist/SKILL.md` | `verbatim` | — |
+| 52 | `skills/data-scientist/references/common-scenarios.md` | `verbatim` | — |
+| 53 | `skills/data-scientist/references/execution-templates.md` | `verbatim` | — |
+| 54 | `skills/data-scientist/references/integration-patterns.md` | `verbatim` | — |
+| 55 | `skills/data-scientist/references/performance-benchmarks.md` | `verbatim` | — |
+| 56 | `skills/data-scientist/references/uv-setup.md` | `verbatim` | — |
+| 57 | `skills/data-scientist/scripts/quick-query.py` | `verbatim` | — |
+| 58 | `skills/data-scientist/scripts/setup-uv.ps1` | `verbatim` | — |
+| 59 | `skills/data-scientist/scripts/setup-uv.sh` | `verbatim` | — |
+| 60 | `skills/debugging/SKILL.md` | `verbatim` | — |
+| 61 | `skills/debugging/references/methodology/00-setup.md` | `verbatim` | — |
+| 62 | `skills/debugging/references/methodology/02-investigate.md` | `verbatim` | — |
+| 63 | `skills/debugging/references/methodology/03-flaky-triage.md` | `verbatim` | — |
+| 64 | `skills/debugging/references/methodology/04-oracle-triple.md` | `verbatim` | — |
+| 65 | `skills/debugging/references/methodology/05-escalate.md` | `verbatim` | — |
+| 66 | `skills/debugging/references/methodology/06-fix.md` | `verbatim` | — |
+| 67 | `skills/debugging/references/methodology/08-qa.md` | `verbatim` | — |
+| 68 | `skills/debugging/references/methodology/09-cleanup.md` | `verbatim` | — |
+| 69 | `skills/debugging/references/methodology/partial-runtime-evidence.md` | `verbatim` | — |
+| 70 | `skills/debugging/references/runtimes/bundled-js-binary.md` | `verbatim` | — |
+| 71 | `skills/debugging/references/runtimes/go.md` | `verbatim` | — |
+| 72 | `skills/debugging/references/runtimes/native-binary.md` | `verbatim` | — |
+| 73 | `skills/debugging/references/runtimes/node.md` | `verbatim` | — |
+| 74 | `skills/debugging/references/runtimes/python.md` | `verbatim` | — |
+| 75 | `skills/debugging/references/runtimes/rust.md` | `verbatim` | — |
+| 76 | `skills/debugging/references/tools/ghidra.md` | `verbatim` | — |
+| 77 | `skills/debugging/references/tools/playwright-cli.md` | `verbatim` | — |
+| 78 | `skills/debugging/references/tools/pwndbg.md` | `verbatim` | — |
+| 79 | `skills/debugging/references/tools/pwntools.md` | `verbatim` | — |
+| 80 | `skills/frontend/.gitignore` | `verbatim` | — |
+| 81 | `skills/frontend/.npmignore` | `verbatim` | — |
+| 82 | `skills/frontend/ATTRIBUTION.md` | `verbatim` | — |
+| 83 | `skills/frontend/LICENSE-Apache-2.0.txt` | `verbatim` | — |
+| 84 | `skills/frontend/SKILL.md` | `已修改` | **Renamed:** 1 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 85 | `skills/frontend/references/design/README.md` | `verbatim` | — |
+| 86 | `skills/frontend/references/design/_INDEX.md` | `verbatim` | — |
+| 87 | `skills/frontend/references/design/aside.md` | `verbatim` | — |
+| 88 | `skills/frontend/references/design/clone-from-url.md` | `verbatim` | — |
+| 89 | `skills/frontend/references/design/design-system-architecture.md` | `verbatim` | — |
+| 90 | `skills/frontend/references/design/interaction-skill.md` | `verbatim` | — |
+| 91 | `skills/frontend/references/design/layout-skill.md` | `verbatim` | — |
+| 92 | `skills/frontend/references/design/lazyweb.md` | `verbatim` | — |
+| 93 | `skills/frontend/references/design/react-dev-tooling-skill.md` | `verbatim` | — |
+| 94 | `skills/frontend/references/designpowers/EVIDENCE.md` | `verbatim` | — |
+| 95 | `skills/frontend/references/designpowers/README.md` | `已修改` | **Renamed:** 1 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 96 | `skills/frontend/references/designpowers/UPSTREAM.md` | `verbatim` | — |
+| 97 | `skills/frontend/references/designpowers/lane-a-direction.md` | `已修改` | **Renamed:** 1 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 98 | `skills/frontend/references/designpowers/lane-b-execution.md` | `已修改` | **Renamed:** 11 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 99 | `skills/frontend/references/designpowers/lane-c-review.md` | `verbatim` | — |
+| 100 | `skills/frontend/references/designpowers/lane-d-memory.md` | `已修改` | **Renamed:** 3 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 101 | `skills/frontend/references/designpowers/orchestration.md` | `已修改` | **Renamed:** 1 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 102 | `skills/frontend/references/designpowers/routing.md` | `已修改` | **Renamed:** 5 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 103 | `skills/frontend/references/perfection/README.md` | `verbatim` | — |
+| 104 | `skills/frontend/references/perfection/react-perf-tooling.md` | `verbatim` | — |
+| 105 | `skills/frontend/scripts/perfection/lighthouse-audit.py` | `verbatim` | — |
+| 106 | `skills/git-master/SKILL.md` | `verbatim` | — |
+| 107 | `skills/git-master/agents/openai.yaml` | `verbatim` | — |
+| 108 | `skills/hyperplan/SKILL.md` | `verbatim` | Vendored from the **senpi** package path (`packages/omo-senpi/skills/…`), not from `packages/shared-skills` — it is the command-instruction content for the keyword-mode / `/hyperplan` surfaces |
+| 109 | `skills/init-deep/SKILL.md` | `verbatim` | — |
+| 110 | `skills/lsp-setup/SKILL.md` | `verbatim` | — |
+| 111 | `skills/lsp-setup/references/bash/README.md` | `verbatim` | — |
+| 112 | `skills/lsp-setup/references/c-cpp/README.md` | `verbatim` | — |
+| 113 | `skills/lsp-setup/references/csharp/README.md` | `verbatim` | — |
+| 114 | `skills/lsp-setup/references/dart/README.md` | `verbatim` | — |
+| 115 | `skills/lsp-setup/references/elixir/README.md` | `verbatim` | — |
+| 116 | `skills/lsp-setup/references/go/README.md` | `verbatim` | — |
+| 117 | `skills/lsp-setup/references/haskell/README.md` | `verbatim` | — |
+| 118 | `skills/lsp-setup/references/java/README.md` | `verbatim` | — |
+| 119 | `skills/lsp-setup/references/julia/README.md` | `verbatim` | — |
+| 120 | `skills/lsp-setup/references/kotlin/README.md` | `verbatim` | — |
+| 121 | `skills/lsp-setup/references/lua/README.md` | `verbatim` | — |
+| 122 | `skills/lsp-setup/references/php/README.md` | `verbatim` | — |
+| 123 | `skills/lsp-setup/references/python/README.md` | `verbatim` | — |
+| 124 | `skills/lsp-setup/references/ruby/README.md` | `verbatim` | — |
+| 125 | `skills/lsp-setup/references/rust/README.md` | `verbatim` | — |
+| 126 | `skills/lsp-setup/references/swift/README.md` | `verbatim` | — |
+| 127 | `skills/lsp-setup/references/terraform/README.md` | `verbatim` | — |
+| 128 | `skills/lsp-setup/references/typescript/README.md` | `verbatim` | — |
+| 129 | `skills/lsp-setup/references/yaml/README.md` | `verbatim` | — |
+| 130 | `skills/lsp-setup/references/zig/README.md` | `verbatim` | — |
+| 131 | `skills/lsp-setup/scripts/detect-lsp.ts` | `verbatim` | — |
+| 132 | `skills/lsp-setup/scripts/lsp-server-table.ts` | `verbatim` | — |
+| 133 | `skills/lsp-setup/scripts/tsconfig.json` | `verbatim` | — |
+| 134 | `skills/lsp-setup/scripts/verify-lsp.ts` | `verbatim` | — |
+| 135 | `skills/programming/SKILL.md` | `verbatim` | — |
+| 136 | `skills/programming/references/code-smells.md` | `verbatim` | — |
+| 137 | `skills/programming/references/go/README.md` | `verbatim` | — |
+| 138 | `skills/programming/references/go/backend-stack.md` | `verbatim` | — |
+| 139 | `skills/programming/references/go/bootstrap.md` | `verbatim` | — |
+| 140 | `skills/programming/references/go/bubbletea-v2.md` | `verbatim` | — |
+| 141 | `skills/programming/references/go/cobra-stack.md` | `verbatim` | — |
+| 142 | `skills/programming/references/go/concurrency.md` | `verbatim` | — |
+| 143 | `skills/programming/references/go/data-modeling.md` | `verbatim` | — |
+| 144 | `skills/programming/references/go/error-handling.md` | `verbatim` | — |
+| 145 | `skills/programming/references/go/golangci-strict.md` | `verbatim` | — |
+| 146 | `skills/programming/references/go/grpc-connect.md` | `verbatim` | — |
+| 147 | `skills/programming/references/go/libraries.md` | `verbatim` | — |
+| 148 | `skills/programming/references/go/one-liners.md` | `verbatim` | — |
+| 149 | `skills/programming/references/go/sqlc-pgx.md` | `verbatim` | — |
+| 150 | `skills/programming/references/go/testing.md` | `verbatim` | — |
+| 151 | `skills/programming/references/go/type-patterns.md` | `verbatim` | — |
+| 152 | `skills/programming/references/logging.md` | `verbatim` | — |
+| 153 | `skills/programming/references/python/README.md` | `verbatim` | — |
+| 154 | `skills/programming/references/python/async-anyio.md` | `verbatim` | — |
+| 155 | `skills/programming/references/python/data-modeling.md` | `verbatim` | — |
+| 156 | `skills/programming/references/python/data-processing.md` | `verbatim` | — |
+| 157 | `skills/programming/references/python/error-handling.md` | `verbatim` | — |
+| 158 | `skills/programming/references/python/fastapi-stack.md` | `verbatim` | — |
+| 159 | `skills/programming/references/python/httpx2-optimization.md` | `verbatim` | — |
+| 160 | `skills/programming/references/python/libraries.md` | `verbatim` | — |
+| 161 | `skills/programming/references/python/one-liners.md` | `verbatim` | — |
+| 162 | `skills/programming/references/python/orjson-stack.md` | `verbatim` | — |
+| 163 | `skills/programming/references/python/pydantic-ai.md` | `verbatim` | — |
+| 164 | `skills/programming/references/python/pyproject-strict.md` | `verbatim` | — |
+| 165 | `skills/programming/references/python/textual-tui.md` | `verbatim` | — |
+| 166 | `skills/programming/references/python/type-patterns.md` | `verbatim` | — |
+| 167 | `skills/programming/references/rust/README.md` | `verbatim` | — |
+| 168 | `skills/programming/references/rust/async-tokio.md` | `verbatim` | — |
+| 169 | `skills/programming/references/rust/axum-stack.md` | `verbatim` | — |
+| 170 | `skills/programming/references/rust/cargo-strict.md` | `verbatim` | — |
+| 171 | `skills/programming/references/rust/clap-stack.md` | `verbatim` | — |
+| 172 | `skills/programming/references/rust/concurrency.md` | `verbatim` | — |
+| 173 | `skills/programming/references/rust/libraries.md` | `verbatim` | — |
+| 174 | `skills/programming/references/rust/one-liners.md` | `verbatim` | — |
+| 175 | `skills/programming/references/rust/proptest-insta.md` | `verbatim` | — |
+| 176 | `skills/programming/references/rust/type-state.md` | `verbatim` | — |
+| 177 | `skills/programming/references/rust/unsafe-discipline.md` | `verbatim` | — |
+| 178 | `skills/programming/references/rust/zero-cost-safety.md` | `verbatim` | — |
+| 179 | `skills/programming/references/rust-ub/README.md` | `verbatim` | — |
+| 180 | `skills/programming/references/rust-ub/miri-sanitizers-loom.md` | `verbatim` | — |
+| 181 | `skills/programming/references/rust-ub/ub-taxonomy.md` | `verbatim` | — |
+| 182 | `skills/programming/references/typescript/README.md` | `verbatim` | — |
+| 183 | `skills/programming/references/typescript/backend-hono.md` | `verbatim` | — |
+| 184 | `skills/programming/references/typescript/bootstrap.md` | `verbatim` | — |
+| 185 | `skills/programming/references/typescript/data-modeling.md` | `verbatim` | — |
+| 186 | `skills/programming/references/typescript/error-handling.md` | `verbatim` | — |
+| 187 | `skills/programming/references/typescript/tsconfig-strict.md` | `verbatim` | — |
+| 188 | `skills/programming/references/typescript/type-patterns.md` | `verbatim` | — |
+| 189 | `skills/programming/scripts/go/check-no-excuse-rules.sh` | `verbatim` | — |
+| 190 | `skills/programming/scripts/go/new-project.py` | `verbatim` | — |
+| 191 | `skills/programming/scripts/go/templates/.editorconfig` | `verbatim` | — |
+| 192 | `skills/programming/scripts/go/templates/.golangci.yml` | `verbatim` | — |
+| 193 | `skills/programming/scripts/go/templates/AGENTS.md.tmpl` | `verbatim` | — |
+| 194 | `skills/programming/scripts/go/templates/README.md.tmpl` | `verbatim` | — |
+| 195 | `skills/programming/scripts/go/templates/Taskfile.yml` | `verbatim` | — |
+| 196 | `skills/programming/scripts/go/templates/ci.yml` | `verbatim` | — |
+| 197 | `skills/programming/scripts/go/templates/config.go` | `verbatim` | — |
+| 198 | `skills/programming/scripts/go/templates/gitignore` | `verbatim` | — |
+| 199 | `skills/programming/scripts/go/templates/main.go.tmpl` | `verbatim` | — |
+| 200 | `skills/programming/scripts/go/templates/run.go` | `verbatim` | — |
+| 201 | `skills/programming/scripts/python/check-no-excuse-rules.py` | `verbatim` | — |
+| 202 | `skills/programming/scripts/python/new-project.py` | `verbatim` | — |
+| 203 | `skills/programming/scripts/python/new-script.py` | `verbatim` | — |
+| 204 | `skills/programming/scripts/rust/check-no-excuse-rules.py` | `verbatim` | — |
+| 205 | `skills/programming/scripts/rust/check-no-excuse-rules.sh` | `verbatim` | — |
+| 206 | `skills/programming/scripts/rust/new-project.py` | `verbatim` | — |
+| 207 | `skills/programming/scripts/typescript/check-no-excuse-rules.test.ts` | `verbatim` | — |
+| 208 | `skills/programming/scripts/typescript/check-no-excuse-rules.ts` | `verbatim` | — |
+| 209 | `skills/programming/scripts/typescript/new-project.ts` | `verbatim` | — |
+| 210 | `skills/refactor/SKILL.md` | `verbatim` | — |
+| 211 | `skills/remove-ai-slops/SKILL.md` | `verbatim` | — |
+| 212 | `skills/review-work/SKILL.md` | `verbatim` | — |
+| 213 | `skills/ultimate-browsing/.gitignore` | `verbatim` | — |
+| 214 | `skills/ultimate-browsing/ATTRIBUTION.md` | `verbatim` | — |
+| 215 | `skills/ultimate-browsing/SKILL.md` | `verbatim` | — |
+| 216 | `skills/ultimate-browsing/engine/__init__.py` | `verbatim` | — |
+| 217 | `skills/ultimate-browsing/engine/__main__.py` | `verbatim` | — |
+| 218 | `skills/ultimate-browsing/engine/bias_check.py` | `verbatim` | — |
+| 219 | `skills/ultimate-browsing/engine/curl_probe.py` | `verbatim` | — |
+| 220 | `skills/ultimate-browsing/engine/executor.py` | `verbatim` | — |
+| 221 | `skills/ultimate-browsing/engine/fetch_chain.py` | `verbatim` | — |
+| 222 | `skills/ultimate-browsing/engine/referers.py` | `verbatim` | — |
+| 223 | `skills/ultimate-browsing/engine/result_schema.py` | `verbatim` | — |
+| 224 | `skills/ultimate-browsing/engine/summary.py` | `verbatim` | — |
+| 225 | `skills/ultimate-browsing/engine/templates/package.json` | `verbatim` | — |
+| 226 | `skills/ultimate-browsing/engine/templates/playwright_mobile_chrome.js` | `verbatim` | — |
+| 227 | `skills/ultimate-browsing/engine/templates/playwright_real_chrome.js` | `verbatim` | — |
+| 228 | `skills/ultimate-browsing/engine/tests/test_fetch_chain.py` | `verbatim` | — |
+| 229 | `skills/ultimate-browsing/engine/tests/test_playwright_templates.py` | `verbatim` | — |
+| 230 | `skills/ultimate-browsing/engine/url_transforms.py` | `verbatim` | — |
+| 231 | `skills/ultimate-browsing/engine/validators.py` | `verbatim` | — |
+| 232 | `skills/ultimate-browsing/engine/waf_detector.py` | `verbatim` | — |
+| 233 | `skills/ultimate-browsing/engine/waf_profiles.yaml` | `verbatim` | — |
+| 234 | `skills/ultimate-browsing/references/agent-reach/README.md` | `verbatim` | — |
+| 235 | `skills/ultimate-browsing/references/agent-reach/career.md` | `verbatim` | — |
+| 236 | `skills/ultimate-browsing/references/agent-reach/dev.md` | `verbatim` | — |
+| 237 | `skills/ultimate-browsing/references/agent-reach/search.md` | `verbatim` | — |
+| 238 | `skills/ultimate-browsing/references/agent-reach/social.md` | `verbatim` | — |
+| 239 | `skills/ultimate-browsing/references/agent-reach/video.md` | `verbatim` | — |
+| 240 | `skills/ultimate-browsing/references/agent-reach/web.md` | `verbatim` | — |
+| 241 | `skills/ultimate-browsing/references/chrome-stealth.md` | `verbatim` | — |
+| 242 | `skills/ultimate-browsing/references/insane-search/README.md` | `verbatim` | — |
+| 243 | `skills/ultimate-browsing/references/insane-search/cache-archive.md` | `verbatim` | — |
+| 244 | `skills/ultimate-browsing/references/insane-search/fallback.md` | `verbatim` | — |
+| 245 | `skills/ultimate-browsing/references/insane-search/jina.md` | `verbatim` | — |
+| 246 | `skills/ultimate-browsing/references/insane-search/json-api.md` | `verbatim` | — |
+| 247 | `skills/ultimate-browsing/references/insane-search/media.md` | `verbatim` | — |
+| 248 | `skills/ultimate-browsing/references/insane-search/metadata.md` | `verbatim` | — |
+| 249 | `skills/ultimate-browsing/references/insane-search/naver.md` | `verbatim` | — |
+| 250 | `skills/ultimate-browsing/references/insane-search/playwright.md` | `verbatim` | — |
+| 251 | `skills/ultimate-browsing/references/insane-search/public-api.md` | `verbatim` | — |
+| 252 | `skills/ultimate-browsing/references/insane-search/rss.md` | `verbatim` | — |
+| 253 | `skills/ultimate-browsing/references/insane-search/tls-impersonate.md` | `verbatim` | — |
+| 254 | `skills/ultimate-browsing/references/insane-search/twitter.md` | `verbatim` | — |
+| 255 | `skills/ultimate-browsing/scripts/cookie_crypto.py` | `verbatim` | — |
+| 256 | `skills/ultimate-browsing/scripts/cookie_domains.py` | `verbatim` | — |
+| 257 | `skills/ultimate-browsing/scripts/cookie_paths.py` | `verbatim` | — |
+| 258 | `skills/ultimate-browsing/scripts/extract_cookies.py` | `verbatim` | — |
+| 259 | `skills/ultimate-browsing/scripts/tests/test_cookie_domain_filter.py` | `verbatim` | — |
+| 260 | `skills/ultimate-browsing/scripts/tests/test_extract_cookies.py` | `verbatim` | — |
+| 261 | `skills/ultrawork/SKILL.md` | `verbatim` | Vendored from the **senpi** package path (`packages/omo-senpi/skills/…`), not from `packages/shared-skills` — it is the command-instruction content for the keyword-mode / `/hyperplan` surfaces |
+| 262 | `skills/ulw-execute/SKILL.md` | `已修改` | **Renamed skill** (upstream `start-work/`): frontmatter `name:`, body heading, and 2 gesture references now say `ulw-execute`; the two OMO carrier paths (`.omo/start-work/ledger.jsonl`, `components/start-work-continuation`) are kept verbatim on purpose — see the package `NOTICE.md` and `VENDOR-MANIFEST.json` `renames[]` |
+| 263 | `skills/ulw-plan/SKILL.md` | `已修改` | **Renamed:** 4 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 264 | `skills/ulw-plan/agents/openai.yaml` | `verbatim` | — |
+| 265 | `skills/ulw-plan/references/full-workflow.md` | `已修改` | **Renamed:** 6 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 266 | `skills/ulw-plan/references/intent-clear.md` | `verbatim` | — |
+| 267 | `skills/ulw-plan/references/intent-unclear.md` | `已修改` | **Renamed:** 3 `start-work` → `ulw-execute` reference(s) rewritten to the v5 naming anchor; no other byte changed |
+| 268 | `skills/ulw-plan/scripts/scaffold-plan.mjs` | `verbatim` | — |
+| 269 | `skills/ulw-research/ATTRIBUTION.md` | `verbatim` | — |
+| 270 | `skills/ulw-research/SKILL.md` | `verbatim` | — |
+| 271 | `skills/visual-qa/SKILL.md` | `verbatim` | — |
+| 272 | `skills/visual-qa/references/agent-browser-setup.md` | `verbatim` | — |
+| 273 | `skills/visual-qa/scripts/ansi.test.ts` | `verbatim` | — |
+| 274 | `skills/visual-qa/scripts/ansi.ts` | `verbatim` | — |
+| 275 | `skills/visual-qa/scripts/cli.test.ts` | `verbatim` | — |
+| 276 | `skills/visual-qa/scripts/cli.ts` | `verbatim` | — |
+| 277 | `skills/visual-qa/scripts/east-asian-width.test.ts` | `verbatim` | — |
+| 278 | `skills/visual-qa/scripts/east-asian-width.ts` | `verbatim` | — |
+| 279 | `skills/visual-qa/scripts/image-diff.test.ts` | `verbatim` | — |
+| 280 | `skills/visual-qa/scripts/image-diff.ts` | `verbatim` | — |
+| 281 | `skills/visual-qa/scripts/png-crc.ts` | `verbatim` | — |
+| 282 | `skills/visual-qa/scripts/png-decode.test.ts` | `verbatim` | — |
+| 283 | `skills/visual-qa/scripts/png-decode.ts` | `verbatim` | — |
+| 284 | `skills/visual-qa/scripts/png-synth.ts` | `verbatim` | — |
+| 285 | `skills/visual-qa/scripts/tui-grid.test.ts` | `verbatim` | — |
+| 286 | `skills/visual-qa/scripts/tui-grid.ts` | `verbatim` | — |
+| 287 | `skills/visual-qa/scripts/types.ts` | `verbatim` | — |
+| 288 | `skills/visual-qa/scripts/visual-qa.mjs` | `verbatim` | — |
+| 289 | `package.json` | `已修改` | Added `license: "SUL-1.0"` (D15 ¶1) — the only change; upstream `exports`/`types`/`files` kept as-is (dangling `./index.mjs` is playbook M-3: recorded, not rewritten) |
+| 290 | `NOTICE.md` | `本项目新增` | **Not upstream content:** the prominent "modified" notice required by SUL-1.0 (D15 ¶3, N-1) |
+| 291 | `VENDOR-MANIFEST.json` | `本项目新增` | **Not upstream content:** source tag/commit + per-file sha256 + `deviations[]` |
+
+**Totals:** 277 `verbatim` + 12 `已修改` + 2 `本项目新增` = **291 files**
+(286 from `packages/shared-skills/skills` + 2 from `packages/omo-senpi/skills` + 3 package-root files).
+Drift detection for this package (and for `hashline-core`) is mechanical:
+`node scripts/vendor-manifest.mjs` re-hashes every entry and fails on any
+mismatch, a file on disk that the manifest does not list, or a manifest entry
+with no file.
+
+> Deliberately **not** changed: the two OMO carrier paths named after the old
+> skill — `.omo/start-work/ledger.jsonl` and `components/start-work-continuation`
+> in `skills/ulw-execute/SKILL.md` — stay verbatim. They are runtime paths of
+> the upstream harness, not references to the skill's name; renaming them would
+> repoint an instruction at paths this project never creates. The carrier gap is
+> tracked by the `omo-hooks` H-32 port (phase 3, risk R-6), not inside skill
+> bodies.
+
+### Phase 4 commands semantic porting (add-only)
+
+The `omo-commands` plugin's command definitions are **not vendored code and not a
+copy**: each one is an independent DSH semantic port of an OMO builtin command —
+the instruction body (upstream's own prose, the part an agent reads) is
+reproduced, while the command entry and the injection path are DSH-native.
+**Semantic port only**, the same discipline as the Phase 3 `omo-hooks` listeners
+above. Every upstream path below is pinned to OMO tag `v4.19.4` (commit
+`b072d279110bdda2c6ac2525d0d24dc54d16148a`, under
+`packages/omo-opencode/src/features/builtin-commands/`); each derived file carries
+its own attribution header naming the same sources — those headers and
+`patches/omo-dsh/omo-commands/src/manifest.ts` (per-file machine-readable lists),
+not this table, are the per-file authority.
+
+`src/templates/stop-continuation.ts` is the one template in this section that is
+**never handed to the model**: `/stop-continuation` performs its effect and reports
+the real outcome (see the row below), so `renderStopContinuationInstruction()` is a
+deliberate zero-injection shape, not a used path.
+
+| Command (manifest id) | Derived file(s) under `patches/omo-dsh/omo-commands/` | Upstream source file(s) at `v4.19.4` | Disposition |
+|---|---|---|---|
+| handoff | src/commands/handoff.ts + src/commands/user-message.ts + src/commands/command-types.ts + src/commands/errors.ts + src/templates/handoff.ts + src/templates/render.ts | templates/handoff.ts, commands.ts（条目）, hooks/auto-slash-command/executor.ts（模板变量替换 + `formatCommandTemplate` 消息外框） | semantic port only（PHASE 0.5 的 `session_read` 调用收窄为指引文案：DSH 有近等价 service `@deepseek-ai/dsh-session-query` 但无现成模型工具；PHASE 1 的 `todoread()` / `Bash({command: …})` 拼写、`Suggested execution order` 代码块与 PHASE 3 的 `from todoread()` 后缀**按能力改写为散文指引**（DSH 无 todoread 面，bash 工具形态相近但拼写不同源，顺序内容保留）；PHASE 4 第 1 步补 DSH 会话面（Web GUI 新会话 / 再跑 `dsh`），OpenCode 写法留作括注 —— 三处收窄逐条注记于模板文件头 §1/§2/§3 与 `HANDOFF_CARRIER_NOTE` 第 1/2/3 条） |
+| remove-ai-slops | src/commands/remove-ai-slops.ts + src/templates/remove-ai-slops.ts（共用上面两个 structural-type / 渲染文件） | templates/remove-ai-slops.ts（正文 L1-114）、同文件 L116-216（team-mode addendum，**不移植**）、commands.ts（条目）, hooks/auto-slash-command/executor.ts | semantic port only（team-mode addendum 整段不移植，理由与恢复路径注记于文件头；`load_skills=["remove-ai-slops"]` / `$omo:remove-ai-slops` 的载体映射登记于 `REMOVE_AI_SLOPS_CARRIER_NOTE`，正文逐字保留） |
+| stop-continuation | src/commands/stop-continuation.ts + src/templates/stop-continuation.ts（共用上面三个 structural-type / 渲染 / 错误模块；服务名常量本地重述，与 omo-hooks 侧由跨包相等单测钉住） | templates/stop-continuation.ts, commands.ts（条目）, plugin/stop-continuation.ts（命令侧效果序列） | semantic port only（四机制逐条映射：todo 续行 = H-03 查 guard 停止标记（真）；goal = `ctx.goals.pause`（**pause 而非 upstream 的 clearGoal**，目标保留可恢复）；后台任务 = `ctx.jobs.list` + `kill`（真）；ralph = **无程序化 stop API**，模板改为用户层面指引不承诺取消；boulder state 无对应面，随 `ulw-execute` 接盘）。**本命令的模板不下发给模型**（刻意零注入，见该节前言）：命令做的事就是命令本身，把"我已经停好了"再当一条用户消息喂回去只会多一个回合） |
+| ulw-execute | src/commands/ulw-execute.ts + src/templates/ulw-execute.ts（共用上面四个 structural-type / 渲染 / user-message / 错误模块；R-10 的三个 marker 常量**本地重述**，与 omo-hooks 侧由跨包相等单测钉住） | templates/start-work.ts（正文 L1-120）、同文件 L1 标头 marker、commands.ts（条目 :61-76：agent 绑定 :62 / 三层 wrapper :63-74（session-context 段 :67-70）/ argumentHint :75）、start-work-agent.ts（`resolveStartWorkAgent` 的 atlas→sisyphus 两分支） | semantic port only（**R-10 双层携带**：wrapper 段在 commands.ts:63-74（session-context 段 :67-70）而不在模板本体，`<session-context>` 开标签 + `You are starting an Atlas work session.` 两个 marker 都必须逐字产出，缺一层则 H-32 激活门**静默失配**（不报错，只是不激活）—— 这是 H-32 constants.ts 登记的常量同步风险，跨包逐字相等由 tests/omo-commands/ulw-execute.test.ts 断言，且断言打在**渲染产物**上而不只是常量上；**boulder-state 段按 H-32 已登记收窄口径复用**（不重新判断）：① `.omo/boulder.json` 非本部署存储面，work session 落成**一个 `ctx.jobs` job**（kind `ulw-execute`，label 承载计划名，output 承载落地事实），故「hook pre-sets worktree_path in boulder.json」无落点，worktree 路径改由 session-context 承载；② `BoulderView` 恒为 `EMPTY_BOULDER_VIEW`（无活动 work 列表），故上游「多个活动 work → 问用户选哪个」分支**当前不可达** —— 正文**保留并标注**该分支而非删除（H-32 的 S-4 警告：接上非空投影时必须一并补回，否则显式计划名会错走「新建」而非「续接」）；③ `.omo/start-work/ledger.jsonl` 无对应面，同一目标改写入 goal 工具或 `.omo/notepads/<plan-name>/`；④ `create_goal` 本部署**恒真**，上游的条件式写法保留（能力面若收窄文案无需再改）；⑤ `agent: resolveStartWorkAgent(options)` **无 per-command agent 字段可落**（计划书 §4.2），绑定改为「模板身份明示 + 名册委派链」两处承载，**轨 B 相对轨 A 的实际增量**：两条轨的差别**只在第 ④ 条意图门**，身份门是共享前提，轨 B 不是独立激活路径 —— 在**真实模板产物**上两轨结果相同（`TEMPLATE_HEADER_MARKER` 自身含 `atlas work session`，而那是 `WORK_INTENT_MARKERS` 的一条，词表同样命中），故轨 B 的价值取决于**指挥者如何委派**：只有当委派任务文本是纯 marker 文本（不带词表词）时，两轨才给出不同结果，而那种输入在生产中能否出现不由本部署保证。判定面是 **atlas 子会话**的委派任务文本（marker 经「指挥者 → atlas 委派」抵达；指挥者会话无 descriptor，H-32 在 `!identity.found` 处早退，属**设计如此**，与上游「无命令 marker」形态对应）。且**上游的 sisyphus 回退分支在 DSH 不触发**（名册 atlas 为 Phase 2 常驻席位，不存在「atlas 未注册」这个部署形态）—— 如实登记而非假装移植，将来若名册允许 atlas 缺席，该回退需**重新实现**；**逐字保留**：命令首行（= R-10 标头 marker）、flags 语法 `[plan-name] [--worktree <path>] [--make-pr] [--ship]` 与四条 flag 语义、WHAT TO DO 六步骨架、OUTPUT FORMAT 三段样例、CRITICAL 五条、GOAL + TASK BREAKDOWN 两段强制要求、WORKTREE COMPLETION 六步 |
+| hyperplan | src/commands/hyperplan.ts + src/templates/hyperplan.ts（共用上面四个 structural-type / 渲染 / user-message / 错误模块） | templates/hyperplan.ts（全文 17 行）、commands.ts（条目 :109-115：description :110 / `<command-instruction>` 外框 :111-113 / argumentHint `[planning-request]` :114）、packages/omo-senpi/skills/hyperplan/SKILL.md（自称 7-phase、标题实为 8 段 Phase 0–7 的 460 行正文，本仓已 vendor 于 vendor/shared-skills/skills/hyperplan/ 并由 T5 注册进 catalog） | semantic port only（**降级形态**）：① **无 team-mode 面** —— 上游建于 `team_create` + category 成员（`unspecified-low` / `unspecified-high` / `ultrabrain` / `artistry` / 可选 `deep`）+ `task_send` + `team_delete`，本部署全无；roster 契约段按 Phase 2 的 11 名册改写为 `plan-consultant`（≈上游 validator 角色）/ `plan-reviewer`（≈architect 角色）/ `prometheus`（接管 Phase 6 的 plan 角色），**上游 5 个成员角色中 3 个（skeptic / researcher / creative）无专属席位且被显式声明为缺席**而非静默删除（无「每 category 一个席位」机制 —— team-mode 才是那个机制）—— **零硬编码死链**由 tests/omo-commands/hyperplan.test.ts 按「可执行形式」判定（模型可见正文内不得出现配置路径 / `team_mode.enabled` / `restart opencode`，且 `team_create` / `team_delete` 的每次出现都必须处在「不存在/跳过」的否定句中）；② **完整对抗评审环不移植**（Phase 5 面），降级路径 = 多席位并行独立分析 → 交叉质询 → 一轮精修，并**要求模型在回复中声明降级**、不得把降级产物当作完整对抗环；③ **降级指引段为重写而非移植**：上游让用户「set `team_mode.enabled: true` in `~/.omo/omo.jsonc` and restart opencode」—— 本部署既无该 flag 也无该文件，照搬等于给用户一个「看起来能改、其实什么都不会变」的死链；**上游两处出处不一致如实登记**：命令模板 hyperplan.ts:17 写 `~/.omo/omo.jsonc`，而 prompts/mode/hyperplan.md 写 `~/.config/opencode/oh-my-opencode.jsonc` —— **两处均不在模型可执行面上复现**（原文引文与不一致记录只留在载体注记里，面向读者的注记需要原文，面向模型的指引需要没有死链）；④ **上游自身 “7-phase” 与 SKILL 的实际阶段数不一致**（SKILL 标题为 Phase 0…Phase 7 共 8 段），正文保留上游措辞、实际段数登记于载体注记第 4 条，以免日后按「7」核对而误判 vendor 文件被截断；⑤ **skill 调用形态改写、名字逐字保留**：上游 `skill(name="hyperplan")` 是 OMO 自有工具语法，本移植改为 dsh-tool-skill 模型面，而 skill 名 `hyperplan` 作为署名锚点不变（catalog 中的注册由 T5 与 skills 单测负责）；⑥ **无 session id** —— 上游 hyperplan 模板**不含** `$SESSION_ID` 也无 `<session-context>` 外框（其 `$ARGUMENTS` 就在模板本体的 `<user-request>` 里），故渲染器不会为它抛 `MissingCommandSessionIDError`，与 `/ulw-execute` 相反并有单测钉住；⑦ `agentBinding: null` —— 上游该条目**无 `agent:` 字段**（对比 start-work 的 `agent: resolveStartWorkAgent`），不假造绑定；⑧ **与 R-10 无关**：本模板不产 marker，H-32 的激活检测对 `/hyperplan` 无意义，它是纯 followup 指令而非激活面 | 降级语义为改写而非逐字：上游原话 description 逐字保留于 `UPSTREAM_HYPERPLAN_DESCRIPTION`，注册串在其后追加降级后缀（模型可见外框同串）。
+
+> Deliberately **not** listed as ported: the one manifest row still `pending`
+> (`ulw-plan`) — its per-row
+> reasons and ownership are the coverage authority:
+> `docs/plans/phase4-dev/phase4-commands.md` §1.2. `ulw-plan` in particular must
+> never become a registered command: it would shadow DSH's own skill gesture.
+>
+> `ulw-execute` left the `pending` set in P4-T10 (handler + template + unit tests
+> landed) and is listed above; its declared `e2eScenario`
+> (`ulw-execute-command-activates-atlas`) landed with P4-T11, so that row is
+> terminal on all three faces — manifest, coverage baseline and a real mock-LLM
+> e2e scenario.
+>
+> Every ported command row now names a scenario that exists:
+> `ulw-execute` → `ulw-execute-command-activates-atlas`,
+> `handoff` → `handoff-summary-driven`,
+> `remove-ai-slops` → `remove-ai-slops-driven`,
+> `stop-continuation` → `stop-continuation-halts-todo`,
+> `hyperplan` → `hyperplan-degraded-noted`. The one remaining `pending` row is
+> `ulw-plan`, and its pendingness is a **permanent ruling, not unfinished work**
+> (Q-3: registering a command of that name would shadow DSH's own skill gesture
+> bridge). Its declared scenario `ulw-plan-loads-prometheus-skill` names the
+> zero-code gesture path that was delivered in its place.
+
+**Counts:** Phase 4 derived command files listed = **5 command ids / 14 derived
+files** (`src/templates/{handoff,hyperplan,remove-ai-slops,render,stop-continuation,ulw-execute}.ts` +
+`src/commands/{handoff,hyperplan,remove-ai-slops,user-message,command-types,errors,stop-continuation,ulw-execute}.ts`).
+No existing entry above this section was modified (additions only).
+
+The P4-T10 row also changes the **omo-hooks** side: `ulw-execute.ts`'s activation
+detection gained a second track that matches the command-template markers
+(`hasCommandTemplateMarker`), unioned with the existing delegation path behind
+the same idempotency key. That file already has a row in the table above, so this
+is a **modification of an existing entry's subject matter** rather than a new
+entry — the narrowed storage face (`ctx.jobs` instead of `.omo/boulder.json`), the
+empty work-state projection, the no-ledger difference and the marker constants are
+all registered in `omo-hooks/src/hooks/ulw-execute.ts` + `ulw-execute/constants.ts`
+and are referenced, not restated, by the template's carrier note.
 
 ## oh-my-pi
 

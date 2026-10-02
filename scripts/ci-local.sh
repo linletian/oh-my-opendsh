@@ -19,7 +19,7 @@
 #   7. docs consistency (version tokens / matrix render / installer pin)
 #   8. session-free proofs (T12 toolFilter / T13 maxDepth / T15 dual-route
 #      logging / P3-T19 guardrail deny path + R-9 / P3-T19 C+E mode mechanisms
-#      / N6 bump-dsh --self-test)
+#      / N6 bump-dsh --self-test / P4-T16 command registry + handler-throw settle)
 #      — added 2026-09-10 because these were manual-only and rotted; the
 #      P3-T19 pair added 2026-09-20 (plan §4.7 门 8); the D7 two-token pin's
 #      hermetic self-test added 2026-09-28 (PR #9 round 2, N6);

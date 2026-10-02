@@ -52,6 +52,8 @@
 // The `.ts` extension in the import path is load-bearing (Node 24 type-stripping
 // does no specifier resolution; see index.ts's header).
 import { readFileSync } from 'node:fs'
+import { dirname, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   EXPECTED_HOOK_COUNT,
@@ -62,10 +64,17 @@ import {
 
 // ── the two authored halves ──────────────────────────────────────────────────
 
-const COVERAGE_BASELINE_PATH = new URL(
-  '../../docs/plans/phase3-dev/phase3-hooks.md',
-  import.meta.url,
-)
+/**
+ * P4-T12: the coverage baseline is now a TWO-DOCUMENT union, mirroring the c14
+ * evolution in scripts/verify-concerto-static.mjs. Phase 4 owns the H-33/H-34
+ * rows (phase4-commands.md §1.2, per its own 编号声明), so a Phase 4 row's
+ * human-readable half is NOT in phase3-hooks.md §1. One document would make the
+ * id-set equality structurally unsatisfiable for every Phase 4 row.
+ */
+const COVERAGE_BASELINE_PATHS: readonly URL[] = [
+  new URL('../../docs/plans/phase3-dev/phase3-hooks.md', import.meta.url),
+  new URL('../../docs/plans/phase4-dev/phase4-commands.md', import.meta.url),
+]
 const E2E_DRIVER_PATH = new URL('../e2e/drive.mjs', import.meta.url)
 
 /**
@@ -84,14 +93,31 @@ const E2E_DRIVER_PATH = new URL('../e2e/drive.mjs', import.meta.url)
  *     and the doc is edited FIRST (manifest.ts's ONE-WAY SYNC DISCIPLINE).
  *   * Any OTHER status value (`'pending'`, or a future term) has NO coverage-list
  *     counterpart today: §1 only ever carries a terminal「已移植」row per port
- *     module, because a not-yet-ported module is not listed in §1 at all. The
- *     test below therefore pins BOTH halves: every §1 已移植 row is 'ported' in
- *     the manifest, and every manifest row is 'ported' (so a future non-'ported'
- *     value cannot be introduced silently — it must extend this mapping, which
- *     means extending the coverage-list vocabulary, which is an arbiter decision).
+ *   * `'pending'` ⟺ a §1 row whose status cell is a NON-terminal term. P4-T12
+ *     introduced the first such row: H-33 `keyword-detector` in
+ *     `docs/plans/phase4-dev/phase4-commands.md` §1.2, whose status cell reads
+ *     「📋 代码已落地…；ported 翻转随 P4-T13 e2e 与 manifest status 同 commit
+ *     双侧同步（c14 契约）」. P4-T13 delivered that e2e
+ *     (`ultrawork-keyword-injected` + three siblings), but the STATUS is still
+ *     `pending` on both sides because the flip is a 双侧同步 commit whose doc
+ *     half the arbiter owns — so this row remains the one non-terminal row, and
+ *     'pending' still means what it says: its e2e shipped, its ledger row has
+ *     not been flipped yet.
+ *     Both sides are therefore filtered symmetrically: the id equality, the
+ *     scenario equality and the drive.mjs membership check all run over the
+ *     PORTED side only, and a separate assertion (below) requires every pending
+ *     manifest row to have a documented non-ported row, so the eventual
+ *     pending → ported flip always has an auditable anchor on the doc side.
+ *   * Any FURTHER status value (a third term) must extend this mapping, which
+ *     means extending the coverage-list vocabulary, which is an arbiter
+ *     decision. The vocabulary test below pins the SET, so a new term cannot
+ *     arrive silently.
  */
 const PORTED_STATUS = 'ported'
+const PENDING_STATUS = 'pending'
 const BASELINE_PORTED_MARKER = '已移植'
+/** The baseline's non-terminal status term (phase4-commands.md §1.2 H-33 cell). */
+const BASELINE_PENDING_MARKER = '待移植'
 
 /**
  * The ONE hand-written rename: the coverage baseline's 模块 name is the upstream
@@ -114,6 +140,13 @@ interface BaselineRow {
   readonly moduleName: string
   /** `moduleName` after {@link BASELINE_ID_RENAMES} — the manifest id. */
   readonly id: string
+  /**
+   * true when the STATUS CELL carries the mapped ported term (已移植). P4-T12:
+   * the parser no longer drops non-ported rows — a §1 row can be a
+   * 「📋 待移植」row (H-33 in phase4-commands.md §1.2) — so the flag is carried
+   * explicitly and every assertion below picks the side it means.
+   */
+  readonly ported: boolean
   /** The FULL status cell (not the whole line — see the parser-provenance note). */
   readonly statusCell: string
   /**
@@ -157,8 +190,18 @@ const FABRICATED_MARKER_QUOTING_DOC = [
   '## 2. 跳过组',
 ].join('\n')
 
-/** `phase3-hooks.md` §1 (移植组) as parsed rows — the human-readable half. */
-function parseBaselinePortGroup(
+/**
+ * `phase3-hooks.md` §1 (移植组) as parsed rows — the human-readable half.
+ *
+ * P4-T12: the parser now returns **every** `| H-xx |` row of §1 with a
+ * `ported` flag, not only the 已移植 ones. That is what lets the SAME parse feed
+ * both sides of the new vocabulary mapping (ported ⟺ 已移植, pending ⟺ a
+ * non-已移植 status cell) without a second pass over the markdown — and it is
+ * what makes the "every pending manifest row has a documented row" check
+ * possible at all. The status matcher is still injected, so the two control
+ * tests below keep their bite (they filter on `ported`).
+ */
+function parseBaselineRows(
   markdown: string,
   matchesPorted: PortedStatusMatcher = cellScopedPorted,
 ): BaselineRow[] {
@@ -185,7 +228,7 @@ function parseBaselinePortGroup(
     // changeset), so a 跳过 row quoting 已移植 cannot phantom-match in either
     // record. The matcher is injectable so the control test can re-run this exact
     // body under the pre-fix LINE-scoped form and show the fixture discriminates.
-    if (!matchesPorted(statusCell, line)) continue
+    const ported = matchesPorted(statusCell, line)
     const spans = [...moduleCell.matchAll(/`([^`]+)`/g)].map((match) => match[1])
     const rawModule = spans[0]
     if (rawModule === undefined) {
@@ -196,6 +239,7 @@ function parseBaselinePortGroup(
       heading: heading[1],
       moduleName,
       id: BASELINE_ID_RENAMES.get(moduleName) ?? moduleName,
+      ported,
       statusCell,
       // Scenario names are the kebab-case code spans; the TASK/PHASE references
       // the same cells carry (`P3-T5`, `P3-T14 listener+单测+e2e`, `commit 3e6903d+`)
@@ -209,8 +253,15 @@ function parseBaselinePortGroup(
   return rows
 }
 
-const baselineMarkdown = readFileSync(COVERAGE_BASELINE_PATH, 'utf8')
-const baselineRows = parseBaselinePortGroup(baselineMarkdown)
+const baselineDocuments = COVERAGE_BASELINE_PATHS.map((url) => ({
+  label: relative(dirname(fileURLToPath(url)), fileURLToPath(url)),
+  markdown: readFileSync(url, 'utf8'),
+}))
+const baselineMarkdown = baselineDocuments.map((doc) => doc.markdown).join('\n')
+/** Every `| H-xx |` row of §1 across the union (P4-T12). */
+const allBaselineRows = baselineDocuments.flatMap((doc) => parseBaselineRows(doc.markdown))
+/** The 已移植 subset — the PORT GROUP, the set the id equality is about. */
+const baselineRows = allBaselineRows.filter((row) => row.ported)
 
 /**
  * `tests/e2e/drive.mjs` as TEXT. The driver is a node script whose top level
@@ -222,11 +273,39 @@ const baselineRows = parseBaselinePortGroup(baselineMarkdown)
 const e2eDriverSource = readFileSync(E2E_DRIVER_PATH, 'utf8')
 
 /**
+ * Scenario names a row may name BEFORE drive.mjs declares them.
+ *
+ * A `pending` manifest row is allowed to name a not-yet-written scenario — that
+ * is precisely what 'pending' records — but the allowance is registered here so
+ * it is auditable rather than silent, and the test BELOW forces an entry out of
+ * this set the moment the scenario it promises is actually declared. So the set
+ * is a TODO list with a self-clearing rule, not a permanent exemption.
+ *
+ * ⚠️ Currently EMPTY, and that is the correct state, not an oversight: H-33's
+ * forward promise was `keyword-mode-ultrawork`, and P4-T13 delivered
+ * `ultrawork-keyword-injected` instead, so the promise was discharged by being
+ * replaced.
+ *
+ * What the emptiness does and does not buy, stated exactly:
+ *   * rule 1 (a delivered promise must be struck from the set) is VACUOUS today
+ *     — it filters an empty set and therefore proves nothing. It is retained
+ *     because it is the rule that keeps the set honest the moment a future
+ *     `pending` row adds an entry, and it costs one line; but it is not, today,
+ *     evidence of anything.
+ *   * rule 2 (the retired name must never reappear) is NOT vacuous: it names
+ *     `keyword-mode-ultrawork` literally, so it runs whether or not the set has
+ *     entries. That single assertion is what keeps this from being an empty
+ *     shell, and it is the one to look at first if the set is ever questioned.
+ */
+const FORWARD_PROMISE_SCENARIOS = new Set<string>()
+
+/**
  * The `SCENARIOS = [ … ]` array literal's source text, from its opening bracket
  * to the closer. Fragility note (P3-T20 review NIT-1): the depth counter reads
  * raw `[`/`]` and does NOT skip string literals, so it assumes the brackets
  * inside scenario strings stay net-balanced. Today they are — the scan lands on
- * the real closer (drive.mjs:9777) and yields all 22 names — but an unbalanced
+ * the real closer and yields all 27 names (23 pre-P4-T13 + 4 keyword) — but an
+ * unbalanced
  * `]` in a future scenario string would truncate early (a false red) and an
  * unbalanced `[` would over-read (silent only while no `name: '` follows the
  * array). A string-aware scanner would remove the assumption; left as-is to keep
@@ -282,43 +361,165 @@ function scenarioMismatches(
 }
 
 describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', () => {
-  it('every manifest row is exactly the one mapped term (`ported` ⟺ 已移植)', () => {
-    // If a new status term appears, this list changes and the mapping comment
-    // above must be extended in the same commit — the point of pinning the SET,
-    // not just the count.
-    const statuses = [...new Set(HOOK_MANIFEST.map((row) => row.status))]
-    expect(statuses).toEqual([PORTED_STATUS])
-  })
-
-  it('no manifest row is left in the pre-flip state', () => {
-    // The other direction: 'pending' is the term manifest.ts documents for an
-    // unflipped row, and §1 has no vocabulary for it — so a roster still holding
-    // one would be a row the coverage list cannot express.
-    expect(rowsWithStatus(HOOK_MANIFEST, 'pending')).toEqual([])
-    expect(rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).map((row) => row.id)).toEqual([...HOOK_IDS])
-  })
-
-  it('the baseline parser sees the same 14 已移植 rows (non-vacuity)', () => {
-    // A table-format change that made the parser see 0 rows must be LOUD here,
-    // not silently green (the c14 vacuity guard's sibling).
-    expect(baselineRows.length).toBe(EXPECTED_HOOK_COUNT)
-    expect(baselineRows.length).toBe(HOOK_MANIFEST.length)
-    // Every parsed row really carries the mapped marker in its STATUS CELL — the
-    // cell-scoped contract with c14, asserted directly rather than inferred from
-    // the row count.
-    for (const row of baselineRows) {
-      expect(row.statusCell, row.heading).toContain(BASELINE_PORTED_MARKER)
+  it('the roster uses exactly the two mapped terms (`ported` ⟺ 已移植, `pending` ⟺ 待移植)', () => {
+    // If a third term appears, this list changes and the mapping comment above
+    // must be extended in the same commit — the point is pinning the SET, not
+    // just the count.
+    // The SET of terms the roster actually uses, checked as a SUBSET of the legal
+    // vocabulary — NOT as an equality against both terms. The roster is now fully
+    // `ported` (P4-T13 flipped H-33, closing the last `pending` row), so it does
+    // NOT contain both terms any more; requiring the equality would fail today
+    // and would encode "a pending row must always exist" into what is only a
+    // vocabulary check. The subset form states the real claim — no term outside
+    // the two is in use — and the non-vacuity assertion below keeps it from
+    // passing on an empty roster.
+    //
+    // STATE THIS DOES CLAIM (terminal, and pinned by the it-block below): every
+    // roster row is `ported`, and `pendingIds` is empty. That emptiness is not
+    // "unasserted" — the next it-block pairs it with the ported-side identity and
+    // with `keyword-detector` (H-33) appearing on that side, so a roster that had
+    // merely LOST rows would not pass. The double-sided flip itself was c14's
+    // contract: the §1.2 status cell and the manifest status moved in the same
+    // commit, which is why the emptiness below is a state and not a wish.
+    const statuses = [...new Set(HOOK_MANIFEST.map((row) => row.status))].sort()
+    for (const status of statuses) {
+      expect([PENDING_STATUS, PORTED_STATUS]).toContain(status)
     }
+    // Non-vacuous: the roster is not empty, so the subset check saw something.
+    expect(statuses.length).toBeGreaterThan(0)
+    expect(HOOK_MANIFEST.length).toBeGreaterThan(0)
+  })
+
+  it('the two halves partition — the ported side IS the baseline 已移植 set', () => {
+    const pendingIds = rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((row) => row.id)
+    const portedIds = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).map((row) => row.id)
+    // The ported side equals the baseline's 已移植 set, in the SAME order (the
+    // manifest is authored in priority order and the baseline mirrors it).
+    expect(portedIds).toEqual(baselineRows.map((row) => row.id))
+    // The pending side is pinned to the EMPTY set, since P4-T13's flip closed the
+    // roster's last pending row. Pinned explicitly (rather than left unasserted)
+    // because an empty expectation is the easiest kind to satisfy by accident: a
+    // manifest that had LOST its rows, or one where a new row arrived already
+    // 'ported', would both leave this green. So the emptiness is paired with the
+    // two assertions below, which say WHERE the rows went instead.
+    expect(pendingIds).toEqual([])
+    // …H-33 specifically is on the ported side now, and it is the row whose flip
+    // this change is about — a typo in the id, or a flip of the wrong row, breaks
+    // here rather than passing on an empty pending set.
+    expect(portedIds).toContain('keyword-detector')
+    // …and the doc side must agree, or the manifest would claim a port the
+    // coverage baseline has not recorded. (This is c14's `missing` direction, at
+    // unit level: it goes red until the doc cell is flipped in the same commit.)
+    expect(baselineRows.map((row) => row.id)).toContain('keyword-detector')
+    // The partition is real: no id on both sides, and nothing falls through.
+    expect(pendingIds.filter((id) => portedIds.includes(id))).toEqual([])
+    expect(pendingIds.length + portedIds.length).toBe(HOOK_MANIFEST.length)
+  })
+
+  it('every pending manifest row HAS a documented non-ported row (the flip anchor)', () => {
+    // P4-T12's addition. A 'pending' manifest row with NO doc row is a row whose
+    // eventual pending → ported flip has nothing to edit on the human-readable
+    // side — the two-halves discipline would silently end there. This is the
+    // assertion that makes "flip both sides in one commit" enforceable rather
+    // than merely documented in manifest.ts's row comment.
+    const documentedPending = allBaselineRows.filter((row) => !row.ported)
+    const pendingIds = rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((row) => row.id)
+    const portedIds = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).map((row) => row.id)
+    // The pairing claim: every pending manifest row must have a non-ported
+    // baseline row, so its flip has a doc cell to change.
+    //
+    // ⚠️ The loop below is now VACUOUS: P4-T13's flip emptied the pending set on
+    // both sides, so it has no iterations and proves nothing today. It is kept
+    // because it is the rule that keeps the next `pending` row honest, and the
+    // emptiness is asserted explicitly below so a reader is never misled into
+    // thinking this test is currently load-bearing.
+    //
+    // ⚠️ `documentedPending` is deliberately NOT asserted empty. It is the set of
+    // baseline rows the parser reads as non-ported, and it is legitimately
+    // non-empty for rows that have no manifest counterpart at all — the
+    // design-internal skips (H-08/H-09/H-10), whose status cell is empty
+    // (`statusCell: ""`). Those rows are absent from the manifest by design, not
+    // by omission, so demanding the doc's non-ported set be empty would fail on
+    // a correct state — and an earlier attempt to assert it that way did exactly
+    // that. The skips' cells are not merely non-ported, they are EMPTY
+    // (`statusCell: ""`), so even the weaker "no non-ported row lost its status
+    // cell" form is false here too. The pairing claim is therefore
+    // one-directional BY DESIGN: every pending MANIFEST row has a doc row
+    // (asserted below), never the converse. The skips have their own sibling
+    // test (a 跳过 row quoting 已移植 in its REASON is not a §1 port row), so
+    // they are not left uncovered — just not by this one.
+    expect(pendingIds).toEqual([])
+    for (const id of pendingIds) {
+      const doc = documentedPending.find((row) => row.id === id)
+      expect(doc, `pending manifest row ${id} has no non-ported baseline row`).toBeDefined()
+      // What happened to the bare `待移植` assertion that used to live here, and
+      // why: commit e552cad rewrote H-33's status cell to a more precise
+      // NON-ported state — `📋 代码已落地（P4-T12，commit 988a547）；ported 翻转随
+      // P4-T13 e2e 与 manifest status 同 commit 双侧同步（c14 契约）`. It no longer
+      // contains the literal 待移植, while still being (correctly) classified
+      // non-ported by the parser, because c14's port group is keyed on the
+      // POSITIVE 已移植 marker. So the `toContain(BASELINE_PENDING_MARKER)`
+      // assertion was deleted as unsatisfiable, and what replaced it is the
+      // claim that actually matters for a flip: the cell is non-empty AND the
+      // parser still classifies the row as not-ported. That is strictly stronger
+      // against the failure this guards — a silently collapsed non-ported side —
+      // while surviving the legitimate reworded cell.
+      expect(doc?.statusCell, `pending row ${id} has an empty status cell`).not.toBe('')
+      expect(doc?.ported, `pending row ${id} parsed as ported`).toBe(false)
+    }
+    // And the reverse: a non-ported doc row whose manifest row is already
+    // 'ported' is a doc that was never flipped (or was flipped late).
+    expect(documentedPending.filter((row) => portedIds.includes(row.id))).toEqual([])
+  })
+
+  it('the baseline parser sees every manifest row, ported or not (non-vacuity)', () => {
+    // A table-format change that made the parser see 0 rows must be LOUD here,
+    // not silently green (the c14 vacuity guard's sibling). BOTH halves of the
+    // union must contribute: a document whose §1 table drifted away would leave
+    // the union silently carried by the other one.
+    //
+    // The parsed row count is deliberately NOT EXPECTED_HOOK_COUNT: §1 of a
+    // baseline also lists 跳过 rows (phase3-hooks.md H-08 / H-09 carry a
+    // 跳过 disposition and no status cell at all). The manifest only ever
+    // carries port-group rows, so the count identity that matters is
+    // "every manifest id is documented exactly once" — asserted below.
+    for (const doc of baselineDocuments) {
+      const own = parseBaselineRows(doc.markdown)
+      expect(own.length, `${doc.label} contributed no §1 rows`).toBeGreaterThan(0)
+    }
+    const documentedIds = allBaselineRows.map((row) => row.id)
+    expect(new Set(documentedIds).size, 'a §1 row is documented twice').toBe(documentedIds.length)
+    expect(HOOK_IDS.filter((id) => !documentedIds.includes(id))).toEqual([])
+    // Every parsed ported row really carries the mapped marker in its STATUS
+    // CELL — the cell-scoped contract with c14, asserted directly rather than
+    // inferred from the row count.
+    for (const row of allBaselineRows) {
+      if (row.ported) expect(row.statusCell, row.heading).toContain(BASELINE_PORTED_MARKER)
+    }
+    // Anti-vacuity for the port group itself: the 已移植 set is not empty, and
+    // it is NOT the whole §1 set (a matcher that accepted every row would make
+    // the equality tests below agree with anything).
+    expect(baselineRows.length).toBeGreaterThan(0)
+    expect(baselineRows.length).toBeLessThan(allBaselineRows.length)
   })
 })
 
-describe('P3-T20 consistency — manifest 14 rows ⟺ phase3-hooks.md §1 14 rows', () => {
-  it('the id sets agree in BOTH directions (with the one documented v5 rename)', () => {
+describe('P3-T20 consistency — the ported manifest rows ⟺ the baseline union 已移植 rows', () => {
+  it('the ported id sets agree in BOTH directions (with the one documented v5 rename)', () => {
+    // The ported side of the manifest vs the 已移植 side of the union. The
+    // `pending` row is excluded on BOTH sides symmetrically (the P4-T12
+    // evolution, mirroring c14): a row is 'ported' here exactly when its
+    // baseline status cell says 已移植.
     const baselineIds = baselineRows.map((row) => row.id)
+    const portedIds = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).map((row) => row.id)
     expect(new Set(baselineIds).size).toBe(baselineIds.length)
-    expect(baselineIds).toEqual([...HOOK_IDS])
-    expect([...HOOK_IDS].filter((id) => !baselineIds.includes(id))).toEqual([])
-    expect(baselineIds.filter((id) => !HOOK_IDS.includes(id))).toEqual([])
+    expect(baselineIds).toEqual(portedIds)
+    expect(portedIds.filter((id) => !baselineIds.includes(id))).toEqual([])
+    expect(baselineIds.filter((id) => !portedIds.includes(id))).toEqual([])
+    // The two sides together still account for the WHOLE roster: nothing is
+    // unaccounted for, and nothing is double-counted.
+    expect([...baselineIds, ...rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((r) => r.id)].sort())
+      .toEqual([...HOOK_IDS].sort())
   })
 
   it('the baseline 模块 names match the manifest upstream paths', () => {
@@ -361,11 +562,17 @@ describe('P3-T20 consistency — manifest 14 rows ⟺ phase3-hooks.md §1 14 row
       .filter((row) => row.scenarioNames.length === 0)
       .map((row) => row.heading)
     expect(withoutScenario).toEqual([])
-    // Anti-vacuity, against both ways that `[]` could lie: the parser must still
-    // see all 14 rows (an empty row set is trivially []), and every row's
-    // scenarioNames must be non-empty (a lost scenario column or an over-tight
-    // SCENARIO_TOKEN must not shrink the check to nothing).
-    expect(baselineRows.length).toBe(EXPECTED_HOOK_COUNT)
+    // ⚠️ This runs over the PORTED rows only, and must keep doing so. A 'pending'
+    // row's `e2eScenario` may be a not-yet-written scenario (a later task's
+    // deliverable), so demanding a declared scenario of it would encode "pending
+    // is impossible" into the suite. The 'pending' side is covered separately, by
+    // the forward-promise registry test below — which is where the exemption now
+    // lives, and where it is forced to be registered rather than implicit.
+    // Anti-vacuity, against both ways that `[]` could lie: the parser must
+    // still see every ported row (an empty row set is trivially []), and every
+    // row's scenarioNames must be non-empty (a lost scenario column or an
+    // over-tight SCENARIO_TOKEN must not shrink the check to nothing).
+    expect(baselineRows.length).toBe(rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).length)
     for (const row of baselineRows) {
       expect(row.scenarioNames, row.heading).not.toEqual([])
     }
@@ -381,13 +588,61 @@ describe('P3-T20 consistency — manifest 14 rows ⟺ phase3-hooks.md §1 14 row
     expect(declaredScenarios.length).toBeGreaterThan(0)
     expect([...new Set(declaredScenarios)].length).toBe(declaredScenarios.length)
     const baselineScenarios = baselineRows.flatMap((row) => row.scenarioNames)
-    const wantScenarios = [...HOOK_MANIFEST.map((row) => row.e2eScenario), ...baselineScenarios]
+    // ⚠️ The manifest side is the PORTED rows only, and must keep doing so: a
+    // 'pending' row may name a scenario drive.mjs has not declared yet, so
+    // including it here would make the suite red for a correct intermediate
+    // state. The 'pending' side is not left unchecked — it is the
+    // forward-promise registry test below, which requires such a name to be
+    // either declared or registered in FORWARD_PROMISE_SCENARIOS, so it can
+    // never be lost, misspelled, or quietly forgotten.
+    const portedRows = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS)
+    const wantScenarios = [...portedRows.map((row) => row.e2eScenario), ...baselineScenarios]
     const missing = [...new Set(wantScenarios)].filter((scenario) => !declaredScenarios.includes(scenario))
     expect(missing).toEqual([])
-    // 14 distinct manifest scenarios, all present: the count is the second half
+    // Every ported manifest scenario is distinct: the count is the second half
     // of the "no duplicate-name collision" guard.
-    expect(new Set(HOOK_MANIFEST.map((row) => row.e2eScenario)).size).toBe(EXPECTED_HOOK_COUNT)
+    expect(new Set(portedRows.map((row) => row.e2eScenario)).size).toBe(portedRows.length)
     expect(new Set(baselineScenarios).size).toBe(baselineScenarios.length)
+  })
+
+  it('every row names a REAL drive.mjs scenario, or a registered forward promise', () => {
+    // A `pending` row is allowed to name a scenario that does not exist yet —
+    // that IS what 'pending' means (its e2e is a later task's deliverable), and
+    // demanding a declared scenario of it would encode "pending is impossible"
+    // into the suite. But the exemption must be EXPLICIT and self-discharging,
+    // not a silent hole: a promise that is not registered here is a failure, and
+    // a registered promise disappears from the set the moment the scenario ships
+    // (asserted below), so the exemption cannot rot into a permanent blind spot.
+    const undeclared = HOOK_MANIFEST
+      .filter((row) => !declaredScenarios.includes(row.e2eScenario)
+        && !FORWARD_PROMISE_SCENARIOS.has(row.e2eScenario))
+      .map((row) => `${row.id} -> ${row.e2eScenario}`)
+    expect(undeclared).toEqual([])
+
+    // Anti-rot, rule 1: a promise that HAS been delivered must be struck from
+    // the set. Keeping it would re-open the hole above for a scenario that now
+    // exists, and a later regression in that scenario would no longer be caught.
+    const discharged = [...FORWARD_PROMISE_SCENARIOS].filter((name) => declaredScenarios.includes(name))
+    expect(discharged).toEqual([])
+
+    // Anti-rot, rule 2: the only promise this suite has ever carried is struck
+    // out, and it must never come back. P4-T12 named `keyword-mode-ultrawork`
+    // for H-33; P4-T13 shipped `ultrawork-keyword-injected` instead, so the old
+    // name was never written and must not be resurrected on either side.
+    expect(FORWARD_PROMISE_SCENARIOS.has('keyword-mode-ultrawork')).toBe(false)
+    expect(declaredScenarios).not.toContain('keyword-mode-ultrawork')
+    expect(HOOK_MANIFEST.map((row) => row.e2eScenario)).not.toContain('keyword-mode-ultrawork')
+    // The keyword row points at the primary of the four P4-T13 scenarios; the
+    // three siblings are one per keyword type plus the negative controls. (The
+    // original reason — "the session one-shot (S-6) makes 'injected' and
+    // 'injected again' mutually exclusive" — was struck in PR #10's review: that
+    // gate was deleted, so a session can now arm twice. The scenarios still do
+    // not share a session, but because each asserts about its OWN injected text.)
+    const keyword = HOOK_MANIFEST.find((row) => row.id === 'keyword-detector')
+    expect(keyword?.e2eScenario).toBe('ultrawork-keyword-injected')
+    for (const sibling of ['keyword-negative-controls', 'hyperplan-keyword-injected', 'combo-keyword-injected']) {
+      expect(declaredScenarios, sibling).toContain(sibling)
+    }
   })
 })
 
@@ -399,9 +654,13 @@ describe('P3-T20 parser — the shared cell-scoped status contract', () => {
     // reached the status-cell check at all: the `^\|\s*(H-\d+)\s*\|` heading
     // anchor rejected it first, which made this control vacuous (P3-T20 review
     // MAJOR-2). With `H-99` the row is actually tested against the matcher.
-    const parsed = parseBaselinePortGroup(FABRICATED_MARKER_QUOTING_DOC)
+    const parsed = parseBaselineRows(FABRICATED_MARKER_QUOTING_DOC).filter((row) => row.ported)
     expect(parsed.map((row) => row.id)).toEqual(['bash-file-read-guard'])
     expect(parsed[0]?.scenarioNames).toEqual(['bash-read-guard-warned'])
+    // And the drop is on the STATUS-CELL rule, not on the heading anchor: the
+    // fabricated H-99 row IS parsed, it is just not ported.
+    expect(parseBaselineRows(FABRICATED_MARKER_QUOTING_DOC).map((row) => row.id))
+      .toEqual(['ghost-hook', 'bash-file-read-guard'])
   })
 
   it('the H-99 control really bites: a LINE-scoped matcher phantom-matches it', () => {
@@ -412,10 +671,10 @@ describe('P3-T20 parser — the shared cell-scoped status contract', () => {
     // the control's expectation from ['bash-file-read-guard'] to
     // ['ghost-hook', 'bash-file-read-guard']. So if a future edit re-loosens this
     // parser's default matcher, the control test above turns red.
-    const loosened = parseBaselinePortGroup(
+    const loosened = parseBaselineRows(
       FABRICATED_MARKER_QUOTING_DOC,
       (_statusCell, line) => line.includes(BASELINE_PORTED_MARKER),
-    )
+    ).filter((row) => row.ported)
     expect(loosened.map((row) => row.id)).toEqual(['ghost-hook', 'bash-file-read-guard'])
     // And the discrimination is real on BOTH sides: the skip row's status cell
     // does NOT carry the marker (so any cell-scoped matcher skips it) while its
@@ -445,10 +704,15 @@ describe('P3-T20 mutation sensitivity — the assertions above really bite', () 
   })
 
   it('changing ONE manifest scenario name breaks the drive.mjs membership check', () => {
+    // Mutate row 0 (a PORTED row) so the membership check above is the one
+    // under test — mutating the pending row instead would prove nothing, since
+    // that check deliberately skips pending scenarios (P4-T12).
+    expect(HOOK_MANIFEST[0]?.status).toBe(PORTED_STATUS)
     const mutated = HOOK_MANIFEST.map((row, index) => (
       index === 0 ? { ...row, e2eScenario: 'bash-read-guard-warned-TYPO' } : row
     ))
-    const missing = mutated
+    const ported = mutated.filter((row) => row.status === PORTED_STATUS)
+    const missing = ported
       .map((row) => row.e2eScenario)
       .filter((scenario) => !declaredScenarios.includes(scenario))
     expect(missing).toEqual(['bash-read-guard-warned-TYPO'])
@@ -471,7 +735,7 @@ describe('P3-T20 mutation sensitivity — the assertions above really bite', () 
     const mutatedScenario = `${recorded}-x`
     const mutatedDoc = baselineMarkdown.replace(`\`${recorded}\``, `\`${mutatedScenario}\``)
     expect(mutatedDoc).not.toBe(baselineMarkdown)
-    const mutatedRows = parseBaselinePortGroup(mutatedDoc)
+    const mutatedRows = parseBaselineRows(mutatedDoc).filter((entry) => entry.ported)
     expect(scenarioMismatches(mutatedRows, HOOK_MANIFEST)).toEqual([
       `H-02 records '${mutatedScenario}' but manifest says '${manifestScenario}'`,
     ])
