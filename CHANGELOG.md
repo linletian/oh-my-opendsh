@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Phase 4.5 kickoff (2026-10-02) — adaptation plan (docs-only; no code, no pin flip)
+
+- docs(plan): `docs/plans/phase4.5-dev/` — the Phase 4.5 development plan + task list (13 tasks, 8 WPs,
+  ~8.5 person-days), implementing ROADMAP Phase 4.5 against the 0.2.0-rc.2 review. Core strategy:
+  **dual-runtime adaptivity** — every adaptation site carries a capability probe so the same code keeps
+  working on the CI-pinned 0.1.5-rc.1 *and* the locally installed 0.2.x (the repo's feature-probe
+  tradition: `--no-open`, `isSessionLogName`, transport-adaptive T9, the jobs three-tier probe), keeping
+  branch CI green mid-phase; the D7 pin flips only in the closing change, together with the green
+  evidence (exit criterion f). Task order follows the review's forced sequence: jobs surfaces → concerto
+  preset registration (`agentPresets.register()` + held disposer) → installer delivery line (declarative
+  `PresetDefinition` or documented re-scope) → session-log v4 observation channel → (deferrable) source
+  kinds → pin machinery last
+
 ### dsh 0.2.x adaptation docs (2026-10-02) — review + roadmap Phase 4.5 (docs-only; no code, no pin flip)
 
 - docs(review): `docs/dsh-0.2.0-rc.2-review.md` / `_zh-CN.md` — a static, source-verified analysis of the

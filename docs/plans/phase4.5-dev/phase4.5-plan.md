@@ -1,0 +1,222 @@
+# Phase 4.5 开发计划：DSH 0.2.x 运行时适配
+
+> **本目录**：[`docs/plans/phase4.5-dev/`](./) —— ROADMAP **Phase 4.5**（DSH 0.2.x 运行时适配）的实施计划。
+>
+> **上游依据**：[ROADMAP（中文）](../../roadmap_zh-CN.md) §4 Phase 4.5 · [dsh 0.2.0-rc.2 复核报告](../../dsh-0.2.0-rc.2-review_zh-CN.md)（**面权威**——每个适配点的证据与行号以它为准，本文不复制其论证）· [决策 D7](../../decisions_zh-CN.md)（pin 刻意升级机制）· [决策记录 2026-10-02 条目](../../decisions_zh-CN.md) · [mvp-prd §12](../../mvp-prd_zh-CN.md)（pin bump 跟踪项）
+>
+> **配套文档**：[任务清单](./phase4.5-tasks.md)
+>
+> **状态**：🚧 立项（2026-10-02，分支 `feature/phase4.5-dev`，基线 `develop` = 98d5e10）。逐任务证据与退出标准核对见[任务清单](./phase4.5-tasks.md)。
+>
+> **修订记录**：（空——计划期评审后启用）
+
+---
+
+## 1. 目标
+
+**让 overlay——协奏 preset、hooks、commands——在已发布的 dsh 0.2.x 线上（复核基线 `0.2.0-rc.2`）完整可用、全门转绿，然后翻 D7 pin。本阶段结项前，CI pin 保持 `0.1.5-rc.1`；0.2.x 是矩阵里已登记的 `untested` 行，不是受支持的运行时。**
+
+ROADMAP §4 Phase 4.5 原文的退出标准（逐条落到 §5 的证据映射）：
+
+- (a) L1 全链在 pin 的 0.2.x 运行时上转绿——单测、doctor-lite（含名册语义闸）、`verify-concerto-static`、`check-docs-consistency`、e2e 驱动、`run-proofs.sh`；
+- (b) L2 真机验证在 0.2.x 重跑并产新证据文件，0.2.x 矩阵行以 `tested` 登记；
+- (c) roster 重新出现 `concerto`，且一次脚本化委派往返真实落在它上面；
+- (d) `/stop-continuation` 级联 e2e 证明 job 确实被取消（静默跳过的金丝雀）；
+- (e) 安装器线的 0.2.x 状态有了结——全新安装能注册出 `concerto`，或该线被重定范围并记录理由；
+- (f) D7 pin 的翻转与绿色证据同一次变更交付。
+
+本阶段的成功标志不是"能 boot"，而是：**两个 P0 静默断裂面各自有了会叫的金丝雀——协奏在 0.2.x 的 roster 里真实出现且可委派、`/stop-continuation` 真实取消 job——全套既有门在新运行时上原样转绿，且 pin 翻转与证据同 commit 交付。**
+
+## 2. 不可协商约束
+
+本阶段受 ROADMAP §2/§3 同等约束，另加本阶段特有的五条，全部同等效力：
+
+| 约束 | 来源 | 本阶段的具体含义 |
+|---|---|---|
+| **不移植新 OMO 能力** | ROADMAP Phase 4.5「明确不在范围」 | 本阶段只动**适配**——凡是"顺便把某 OMO 能力补上"的冲动一律记 deferred 转 Phase 5+；`team` 关键词、Team Mode、编辑面的既有归属不动 |
+| **不采用超出适配所需的 0.2.x 特性** | 同上 | 0.2.x 的新能力（ declarative preset 之外的 API 新面、`developer/message` 等）只有在适配点**必须**时才消费；每个候选日后单独过"DSH 原生优先"检查 |
+| **OMO 侧零变动** | D14 | 本阶段与 OMO 基线无关——vendored 内容、署名、NOTICES 一律不碰；`verify-licenses` 的 `checked` 计数预期**不变**（唯一例外：§4.3 的 YAML 解析依赖若引入新 npm 包，走 D12 先例过 license 白名单） |
+| **pin 纪律（D7）** | 决策 D7 / PRD §12 | `ci.yml` 的 `DSH_VERSION` 与 `--before` 截止在本阶段**最后**一个任务翻；中途任何 commit 不得动它；pin 翻转与绿色证据同 commit（退出标准 f） |
+| **静默失效类必配金丝雀** | 复核 §7 | 每个适配点的验收断言必须能**区分**「修好了」与「静默降级了」——不接受 boot 绿作为证据；优先复用既有的具名降级 marker（`degraded: true`、`alreadyFinishedJobIds` 等）做反向断言 |
+| **研究/实施分离** | 两轮评审确立的惯例 | 复核报告是面权威（研究），本目录是实施计划；T1 复核任务只**再验证**复核的引用（对执行时的 0.2.x rc），不重开分析 |
+| **门只加严不放松** | Phase 1–4 惯例 | 8 门链全绿维持；适配如需改门，只能是断言随面迁移（如 roster 断言从 `trust:user` 改指 registry），不得降低强度；**不加新门、不绕过旧门** |
+| **双语同步** | docs 惯例 | 交付文档（README/CHANGELOG/decisions/review 订正）en + zh 同 commit；本目录为纯中文工作文档（plans 惯例） |
+
+## 3. 现状盘点（立项基线）
+
+| 构件 | 现状 | 本阶段的影响面 |
+|---|---|---|
+| **dsh 双运行时** | 本机已安装 `@deepseek-ai/dsh@0.2.0-rc.2`（`dsh --version` 实测）；CI pin `0.1.5-rc.1`（`ci.yml:102` + `--before` 截止，d09 门钉死）；本地镜像 `~/GithubRepo/deepseek-harness`（两 tag 只读可用） | 开发期 = **双运行时并行**：本机沙箱跑 0.2.0-rc.2，CI 跑 0.1.5-rc.1——§4.1 的双模策略由此强制 |
+| **复核报告（面权威）** | `docs/dsh-0.2.0-rc.2-review{,_zh-CN}.md` 已合并（PR #11）：两个 P0（preset 重架构、jobs 重写）+ 一个 P1（日志 v4）+ P2 登记项 + §8 范围草估；13 处 `kind:'plugin'` 分解已更正为 **10 代码 + 3 注释、无运行时过滤器**（commit `1803790`） | 全部适配点的枚举与证据；T1 的再验证清单 = 其 tag 级引用 |
+| **三个插件** | `omo-agents`（名册 + 协奏 preset 物化 `syncConcertoPreset` → `$DSH_HOME/.agent-presets/concerto/`）、`omo-hooks`（15 hook 条目 + stop-continuation-guard 服务 + ulw-execute/live-state）、`omo-commands`（6 manifest 行：5 ported + 1 pending） | P0-1 触 omo-agents；P0-2 触 omo-hooks 三文件；omo-commands 本身无 jobs/preset 直接触点（其 `/stop-continuation` 经跨插件服务间接受益于 guard 修复） |
+| **jobs 三触点（P0-2）** | `background-notification.ts`（`onJobDone` 探测 + 预留 pull 降级路径 + `reported` 读取）、`stop-continuation-guard.ts`（caller `{id}` 构造 :264 + `ownerSession` 围栏）、`ulw-execute/live-state.ts:293`（`start({owner: agent, run: () => ...})` + try/catch 吞降级） | 全部要改；**每一个都有既有的静默失效形态**，适配必须保持降级 marker 可区分（§2 金丝雀约束） |
+| **两条交付线（P0-1）** | 插件线（`syncConcertoPreset` 物化 + 运行时探测）与安装器线（`scripts/install-concerto.sh:24,42-43` curl 静态 preset 落 `$DSH_HOME/.agent-presets/concerto/`，omo-agents-current 系 1+1 preset）；`compat.yaml` tested 注记与 PRD §12 登记两线 | 插件线迁 `agentPresets.register()`（§4.3）；安装器线迁声明式 `PresetDefinition`（§4.4）或重定范围 |
+| **e2e/观测基础设施** | `tests/e2e/drive.mjs`（33 场景；v3 信封伪造 9+ 处；物化文件锚点断言 :2463/:2510/:2546；sandbox persistence overlay `compression: none` :2015）、`scripts/smoke-real.mjs`（文件名正则已版本自适应 :785；`compression: none` :524）、`scripts/prove-*.mjs`（日志内容断言）、`scripts/concerto-mode-probe.sh`（`trust:user` 词汇） | P1（v4 信封）与 P0-1 的断言迁移面；**物化文件锚点断言**与 **`trust` 词汇**是两只先死的金丝雀，须迁到 registry roster / 已组合树 |
+| **门链** | `scripts/ci-local.sh` 8 门（基线快照：门 2 = 1366 测试、门 6 = 31 断言 c01–c22、门 7 d01–d09、门 8 = proofs）；doctor-lite 名册语义闸读**渲染后**组合 | 全绿维持；门不新增，断言随面迁移（§4.6） |
+| **pin 机器** | `scripts/bump-dsh.sh`（safe_point 时间序、`apply_bump` 双 workflow 原子改、`family_verdict` 锁文件族判定）、`doctor-lite.mjs:211` 的 D7 semver 断言（"pinned 0.1.x" 字样）、`release.sh`/probe 的 0.1.x 假设注释 | §4.7：bump-dsh.sh 是既定工具，本阶段只在其 0.1.x 假设处做最小适配 |
+| **0.2.x 已核实的稳定面** | cordis 三文件零 diff；15 事件全在；`agent.inject()`/`goals.pause`/`sessionProjections`/`commands`/`skills`/`subagents.start` 签名不变；`tool-subagent` Config 全字段保留；Web 传输与 RPC 形态不变；`--patch`/`insert:` 语义保持（applyEntryPatches 重构但 P-8 warn 点已核） | 这些面**不得**出现在适配 diff 里——出现即说明范围蔓延 |
+
+## 4. 方案设计
+
+### 4.1 总体策略：双运行时自适应期 → pin 翻转收口
+
+**核心决策**：本阶段全程保持**同一代码在 0.1.5-rc.1 与 0.2.x 上都可工作**（双模），pin 翻转是最后一个任务（退出标准 f）。理由：
+
+- CI pin 在阶段中途不动（§2 D7 约束）——若适配代码只能在 0.2.x 工作，特性分支的 CI（0.1.5-rc.1）自第一个适配 commit 起全程红，违背「门链全绿维持」；
+- 本仓既有传统就是**能力探测而非版本判断**：`--no-open` 的 feature-probe（cold-start:103-116）、`isSessionLogName` 的版本自适应正则、concerto-probe 的 transport-adaptive T9、`background-notification` 的 `typeof jobs.onJobDone === 'function'` 三态探测——双模是既有模式的推广，不是新发明；
+- 双模的探针本身构成「0.1.5 上没有静默退化」的证据：0.1.5 走旧路径（行为不变），0.2.x 走新路径（修复生效），两条路径各自有断言。
+
+**每个适配点的探针形态**（实施期逐点定案，T1 复核）：
+
+| 适配点 | 能力探针 | 0.1.5 路径（保持） | 0.2.x 路径（新增） |
+|---|---|---|---|
+| background-notification | `typeof jobs.events?.subscribe === 'function'` 优先，回退 `onJobDone`，再回退既有 pull 降级 | `onJobDone` 推送 + pull 降级 | `events.subscribe` + `settled.awaited` 去重 |
+| stop-continuation-guard | `jobs.events !== undefined`（0.2.0 注册表持有 `abstract readonly events`）判定 caller/字段形状 | caller `{id: sessionId}` + `ownerSession` 围栏 | caller `sessionId` 字符串 + `owner` 围栏 |
+| live-state | 同上探针判定 `start()` spec 形状 | `JobStart{owner: agent, run: () => JobHooks}` | `JobSpec{owner: sessionId, run(job: JobHandle)}`，outcome 读 `result ?? output` |
+| 协奏 preset | `typeof agentPresets.register === 'function'`（`ctx.inject(['agentPresets'])` 回调内判定） | `syncConcertoPreset` 物化文件 | 内存渲染 + `register()` + 持有 disposer |
+| drive.mjs 伪造夹具 | 按沙箱实际 boot 的运行时（会话日志 header 的 format 版本）选择信封形状 | v3 信封（现状） | v4 信封（`role:'tool'` + 顶层 `toolCallId`/`isError`） |
+
+**pin 翻转后双模路径的去留**：默认**保留探针与双路径**（探测成本近零，且是本仓的可观测性传统），除非某路径在 0.2.x 上结构性不可达（如文件发现已删除，0.2.x 的物化文件路径成为死代码）——死路径在 pin 翻转 commit 一并删除并记 CHANGELOG。逐点裁定记任务清单。
+
+### 4.2 `ctx.jobs` 适配（P0-2，复核 §3 为权威）
+
+- **background-notification.ts**：订阅面改为三级探测（§4.1 表）；`settled` 事件的 `awaited` 布尔替代被删的 `reported` 去重语义（0.2.0 `types.ts:194-217`）；`{owners:'scope'}` 的投递范围必须与 0.1.5 `onJobDone` 的实际投递集合一致（**T1 Q-5 钉测**——host-plane 插件的 'scope' 听到哪些 owner；若不等价，用 `{owners:'all'}` 并记录理由）；subscribe 返回的 disposer 按 cordis effect 纪律持有。
+- **stop-continuation-guard.ts**：caller 构造（:264）按探针分叉；`owner`/`ownerSession` 双读（`view.owner ?? view.ownerSession`，结构类型同时声明两键为可选）；`kill` 的 `already-finished` 判定不变；`StopContinuationCallerLike` 接口保留为 0.1.5 分支的形状，0.2.x 分支直接用 `SessionId` 字符串；级联的会话围栏语义不变（无主 job 跳过）。
+- **live-state.ts**：`start()` 的 spec 按探针分叉；0.2.x 的 `owner` 要求是**当前注册在册的活 Agent 的 SessionId**（`JobSpec.owner` 文档，与 0.1.5 的 preflight 同源）——既有 try/catch 降级纪律保留，但 0.2.x 分支必须把「preflight 拒绝」与「真实启动失败」在日志上区分开（复核 §3.2-3 的「日志依旧干净」正是病灶）；outcome 读 `result ?? output`。
+- **单测**：三文件各自的结构式 mock 按双形状参数化（0.1.5 形状 / 0.2.0 形状各一轮）；金丝雀断言 = 「0.2.0 形状下，目标行为真实发生（通知推送/级联取消/job 启动），而非静默降级」。
+
+### 4.3 协奏 preset 注册迁移（P0-1 插件线，复核 §2 为权威）
+
+- **出口改造（`concerto-preset.ts`）**：sentinel 渲染管线原样保留（29 个 sentinel  census 与防残留闸不动）；渲染产物今日是 YAML 文本（模板 `concerto/agent.cordis.yml` + 字符串替换）。`register()` 需要**对象形态**的 `PresetDefinition.plugins`——在探针命中 0.2.x 时，把渲染后的 YAML 解析为对象再注册。**解析路径（T1 Q-2 定案）**：首选为 `@oh-my-opendsh/omo-agents` 声明 `yaml` 依赖（profile 安装即得，版本入 pnpm-lock，license 走 `verify-licenses` 白名单——D12 先例；MIT 预期直接过）；否决「自造迷你解析器」（组合含 `!!js`、嵌套 group、块标量，迷你解析器必然失真）；`!!js` 表达式在 `PresetDefinition.plugins` 中**按 loader 惯例保留为表达式**（`dsh-agent-preset` 以 `EntryGroup.key` 保留子表达式至子插件激活——复核 §2.3，T1 Q-3 实证）。
+- **YAML 模板文件保留为单一事实源**：不把组合改写为 TS 结构——既有锚点生态（drive.mjs:2510 行锚断言、doctor-lite 渲染组合校验、verify-concerto-static 锚点）全部读这份 YAML/其渲染产物，改写会把适配阶段拖成生态重写；渲染 → 解析的双路径由「渲染产物与模板锚点逐字一致」的既有测试继续钉死。
+- **disposer 持有**：`register()` 返回 `Promise<() => Promise<void>>`（registry :80）；插件在模块级槽位持有，在 cordis effect/dispose 路径释放（**T1 Q-4 钉测接线先例**——plain `apply()` 插件的 effect 挂法；HMR/重载泄漏是本项的验收点）。
+- **roster 词汇迁移**：`RosterEntry` 结构类型去 `trust`（或保留可选读取但断言不再消费）；boot roster 打印行的 `preset.trust ?? '?'` 改为 registry 实际字段（`isDefault`/`broken`）；`concerto-mode-probe.sh` 的 `trust:user` 断言改指 registry roster（`id: concerto` 在列 + `name`/`description` 与 preset.yml 单源一致 + `isDefault: false`）；drive.mjs 的物化文件锚点断言（:2463/:2510/:2546）迁移为 **registry 文档断言**（`agentPresets/read` 远程面返回的组合 YAML 含全部渲染锚点——0.1.5 无此远程面，0.1.5 分支保留物化文件断言，双模断言各自归位）。
+- **兼容死代码**：0.2.x 上物化文件路径无读取方——`syncConcertoPreset` 在 0.2.x 分支不再写盘（或写盘仅作诊断快照，T5 任务书定案）；pin 翻转 commit 删除纯 0.1.5 的物化出口（§4.1 去留裁定）。
+
+### 4.4 安装器交付线（P0-1 安装器线，复核 §2.4 为权威）
+
+**默认方向（A）声明式迁移**，**降级方向（B）重定范围**——T7 任务书含 T1 Q-7 实证后的 fork 裁定：
+
+- **（A）声明式迁移**：`install-concerto.sh` 不再写 `$DSH_HOME/.agent-presets/concerto/`，改为向目标 profile 的 **`$DSH_HOME/profiles/<name>/cordis.patch.yml`** 写入一行 `- insert: [{id: preset-concerto, name: '@deepseek-ai/dsh-agent-preset', config: {…PresetDefinition…}}]`——config 内嵌完整的渲染后组合（omo-agents-current 的 1+1 组合 + 可选 env 覆盖渲染，与今日两文件的语义等价）。纪律：① **幂等行替换**——按行 id `preset-concerto` 整行重写（profile patch 的 last-write-wins-per-id 语义），绝不盲 append；② **用户文件零破坏**——profile patch 是用户自己的文件，installer 只 touch 自己的那一行，写入前备份（`.bak` + 时间戳）；③ **registry 前提**——目标 profile 必须已挂载 `agent-preset-registry` 行（web profile 经 dsh-web-app bundle 自带，T1 Q-7 实证断言缺席时响亮报错并指引）；④ `!!js` 与平台门（tool-bash/tool-pwsh）在 config 中按表达式保留（同 §4.3）；⑤ 安装验证 = 真实 `dsh web` boot + roster RPC 断言 `concerto` 在列（复用 concerto-mode-probe 的传输自适应通道）。
+- **（B）重定范围**：若 Q-7 实证（A）在 0.2.x 上有结构性障碍（如 profile patch 的 `config.plugins` 校验拒绝既有组合形状、registry 行不在安装目标 profile），按 ROADMAP 许可把安装器线**显式重定范围**——安装器在 0.2.x 上响亮拒绝安装并指引插件线，理由写入 `docs/install-concerto{,_zh-CN}.md` 与 CHANGELOG，退出标准 (e) 以此形态了 结。**（B）是裁定结果不是失败**——但必须由 T1 证据驱动，不得默认滑入。
+- **两条线的 1+1/11-agent 关系不变**：安装器线仍是 1+1 preset（README 📌 通道说明的口径不变），本阶段不改变下发内容，只改变承载机制。
+
+### 4.5 会话日志 v4 观测通道（P1，复核 §4 为权威）
+
+- **夹具形状迁移（drive.mjs）**：9+ 处 v3 形伪造条目（:5201/:5278/:5328/:5680/:5728/:5859/:6501/:6525/:6686 等）按 §4.1 探针分叉——沙箱 boot 后从真实会话日志 header 读 format 版本（v3/v4），伪造与解析用同一形状；`tool/result` 的 v4 形 = `role:'tool'` + 顶层 `toolCallId`/`isError`（**T1 Q-8 从真实 0.2.0 沙箱会话抓取逐字形状**，禁止按文档想象）。
+- **运行时读取面分类**：先分类每处伪造是「运行时消费」（v4 准入断言会拒绝错形状）还是「自有解析器消费」（只需解析器双语义）——分类清单进 T8 任务书；准入断言的定义面（`session-format-v3-to-v4/src/codec.ts:62`）只作证据引用，不消费。
+- **prove 脚本与 smoke**：`prove-route-logging.mjs` 等读日志内容的脚本核对信封读取点（`role`/`content` 块词汇），同样双形状；文件名面（`session.v\d+.jsonl` 正则）与 `compression: none` 已是现状，零改动（复核 §4.3 封死的幻影工作项不得复活）。
+- **零产物承诺**：本项只动测试基础设施——运行时插件代码若出现 v4 相关 diff，即为范围蔓延信号（复核 §4 的 P1 定性）。
+
+### 4.6 门与断言迁移（不加新门）
+
+| 门 | 迁移内容 |
+|---|---|
+| **门 2 单测** | jobs 三触点的双形状参数化用例；preset 注册的结构式 mock（`agentPresets.register` 在场/缺席）；YAML 渲染↔模板锚点既有测试不动 |
+| **门 3 e2e** | drive.mjs 双形状夹具；roster 断言迁移（§4.3）；**stop-continuation 级联金丝雀**——0.2.x 上 `/stop-continuation` 后 `cancelledJobIds` 非空且目标 job 消失（退出标准 d 的承载场景，可复用/扩展现有 `stop-continuation-halts-todo`） |
+| **门 4 doctor-lite** | 名册语义闸继续校验**渲染产物**（单一事实源未变则零改动）；若 T5 改出口导致渲染产物形态变化，闸的输入面同步（同 commit） |
+| **门 6 静态门** | 锚点断言随 §4.3 迁移（registry 文档 vs 物化文件的双模）；c 组不断言 0.1.5 死路径 |
+| **门 7 docs-consistency** | 零改动预期（d01–d09 均与本阶段面无关）；pin 翻转时 d09 的 `--before` 截止由 bump-dsh.sh 原子更新 |
+| **门 8 proofs** | `run-proofs.sh` 在双运行时各跑一轮（0.1.5 旧路径 + 0.2.x 新路径）；probe 的 `trust` 词汇迁移（§4.3） |
+
+### 4.7 pin 机器（最后一个工作包）
+
+`scripts/bump-dsh.sh <0.2.x-rc>` 既定流程执行：safe_point 时间序选定 `--before` 截止 → `apply_bump` 原子改 `ci.yml` + `compat-probe.yml`（d09 门复验）→ `family_verdict` 锁文件族判定。配套同步（同 commit）：`doctor-lite.mjs:211` 的 D7 semver 断言文案（"pinned 0.1.x" → 0.2.x 口径）；bump-dsh.sh / release.sh / probe 注释中的 0.1.x 假设（只改会误导的下一次执行处，历史记录不动）；`.omo/compat.yaml` 的 0.2.x 行在 L2 证据落地后由 `untested` → `tested`（release-process 既定机制，`our:` 按 §2a 纪律处理）+ 矩阵重渲染。
+
+### 4.8 延后对齐项（可整体 defer 出本阶段）
+
+`source:{kind:'plugin'}` → 专属 source kind：**插件源码内 13 处 = 10 代码 + 3 注释，无运行时过滤器**（`1803790` 终态口径）。形态 = 各生产方改用自己的 kind 字符串（如 `omo-hard-blocks`、`omo-todo-continuation`），结构类型同步；**不需要** `declare module '@deepseek-ai/dsh-llm'`（本仓无 dsh 类型依赖，上游的模块合并是类型层仪式，运行时 source 只是数据）。触发条件 = 仅当 T1 或实施期发现 0.2.x 的某消费者（UI 折叠、notice 归并）对未知 kind 有实际误行为；否则记 deferred 出阶段，任务书（T9）保持 `pending-deferrable`。
+
+### 4.9 署名与合规
+
+- 本阶段零 vendor、零 NOTICES 变动（OMO 侧零变动约束）；适配代码文件的署名头只在**新写文件**上需要（预期无——全部是既有文件改造）。
+- 唯一可能的新 npm 依赖 = §4.3 的 `yaml`（T1 Q-2 定案后）：`verify-licenses` 白名单核对 + `checked` 计数变化记 CHANGELOG；pnpm-lock 更新入同一 commit。
+
+## 5. 退出标准与证据
+
+| # | ROADMAP 原文 | 证据（本计划的关键判定） |
+|---|---|---|
+| **a** | L1 全链在 pin 的 0.2.x 运行时上转绿 | `scripts/ci-local.sh` 8 门在 0.2.x pin 下全绿（pin 翻转 commit 的 CI 与本地复跑双记录）；**且**阶段中途每个 commit 在 0.1.5-rc.1 CI 保持绿（双模证据） |
+| **b** | L2 真机验证在 0.2.x 重跑并产新证据文件，矩阵行 `tested` | `.omo/evidence/concerto-verify-dsh-<0.2.x-rc>.md`（沿用 0.1.5-rc.1 证据文件的 17 项核对骨架重推导）；`.omo/compat.yaml` 行翻转 + 矩阵重渲染 |
+| **c** | roster 重新出现 `concerto`，脚本化委派往返落上 | concerto-mode-probe（传输自适应通道）断言 roster 含 `concerto` + drive.mjs 委派场景（explore 往返）在 0.2.x 绿 |
+| **d** | `/stop-continuation` 级联 e2e 证明 job 确实被取消 | 级联金丝雀场景在 0.2.x 的 verdict：`cancelledJobIds` 非空 + 目标 job 消失 + 反向断言（未触达降级 marker）；0.1.5 同场景保持绿（双模） |
+| **e** | 安装器线 0.2.x 状态有了结 | （A）形态：沙箱全新安装 → `dsh web` boot → roster RPC 含 `concerto`；（B）形态：重定范围文档 + 安装器响亮拒绝 + 理由成文。两形态都要有实证记录 |
+| **f** | D7 pin 翻转与绿色证据同一次变更交付 | pin 翻转 commit 同时含：ci.yml/compat-probe.yml 新 pin + 0.2.x 全链绿记录 + 矩阵行 `tested` + CHANGELOG；PRD §12 该项翻 [x]，decisions.md 带日期行 |
+
+**DoD 补充**（沿用 Phase 1–4 的 c/d/e）：
+
+- **c**：`scripts/ci-local.sh` 全 8 门绿（中途 = 0.1.5 pin 下；收口 = 0.2.x pin 下），门扩展只加严不放松。
+- **d**：本计划目录文档与实测无冲突——凡 T1 复核推翻计划假设处（如 Q-5 的 subscribe 投递范围、Q-7 的安装器路径可行性），改文档而不是改结论（修订记录成文）。
+- **e**：未移除任何既有署名；`verify-licenses` 计数变化（若有 `yaml` 依赖）全部有对应条目。
+
+**明确不属于退出标准**（范围蔓延护栏）：
+
+- ❌ 新 OMO 能力移植（Phase 5–7 的事）；0.2.x 新特性的采用（各候选日后单独过检）；
+- ❌ `kind:'plugin'` → 专属 kind 的迁移（§4.8，deferrable，除非证据拉入）；
+- ❌ 安装器线下发内容的升级（1+1 → 11-agent 名册的下发决策属 Phase 7 发布节奏，README 📌 口径不动）；
+- ❌ 0.1.5 死路径的提前删除（pin 翻转 commit 才删，§4.1 去留裁定）；
+- ❌ 对 0.2.0-rc.2 之后更新的 0.2.x rc 的追新（T1 Q-1 一次选定执行目标，阶段中途不换靶）。
+
+## 6. 风险与开放问题
+
+| # | 风险 / 问题 | 影响 | 处置 |
+|---|---|---|---|
+| **R-1** | **双模漂移**：某适配点在 0.2.x 修复生效、在 0.1.5 静默退化（探针分叉写反、双读漏键），而 CI 只跑 0.1.5——0.2.x 侧失真直到 T11 才暴露 | 高 | 每个适配任务的证据栏**必须**含 0.2.x 本地全链记录（不只 0.1.5 CI）；T11 双运行时复跑兜底；探针分叉点全部进单测（双形状参数化，§4.2） |
+| **R-2** | **`register()` 校验拒绝既有组合**：`PresetDefinition.plugins` 的校验（entryListProblem）或 mount 期 audit 拒绝 `!!js`/`cordis:group`/isolate realm 形状 | 高 | T1 Q-3 实证先行；若拒绝 = 收窄组合形状（偏离登记进覆盖文档）或退回物化诊断 + 上报差异，不得静默改写组合语义 |
+| **R-3** | **disposer/HMR 泄漏**：register 后插件重载（hmr 在 base bundle，`root: []` 默认不看模块根，但 profile 配置重载会重放）导致重复注册 | 中 | T1 Q-4 钉测 effect 接线；泄漏检测 = boot 后 roster 无重复 id（registry 对同 id 的语义由 Q-3 一并钉测）；单测模拟双注册 |
+| **R-4** | **安装器破坏用户 profile patch**：幂等行替换实现有误时会 clobber 用户自己的 `cordis.patch.yml` 行 | 中 | §4.4 纪律（按 id 整行重写 + 时间戳备份 + 只 touch 自有行）；e2e 对照 = 预置含用户行的 profile patch，安装后用户行逐字保留 |
+| **R-5** | **v4 形状按文档想象**：伪造夹具凭复核描述写，与真实 0.2.0 运行时的准入断言不吻合 | 中 | T1 Q-8 强制真实沙箱抓取；伪造生成器与解析器共用同一形状常量（单源） |
+| **R-6** | **0.2.x rc 线漂移**：阶段中途上游发新 rc，复核引用失锚 | 低 | T1 Q-1 一次选定执行目标并记录；阶段中途不换靶（§5 护栏）；复核的 tag 级引用对选定 rc 的再验证是 T1 第一项 |
+| **R-7** | **jobs `events.subscribe` 投递范围不等价**：`{owners:'scope'}` 在 host-plane 插件上听到的集合 ≠ 0.1.5 `onJobDone` 的投递集合 → 后台通知漏/滥 | 中 | T1 Q-5 钉测三态（scope/all/owner 具体值）逐字记录；不等价时选等价的 filter 并记理由；e2e 通知场景双运行时复跑 |
+| **R-8** | **范围误读**：产出被理解为"0.2.x 已全面支持"（实际仅适配点收口，0.2.x 新特性未消费、安装器线可能是 (B) 形态） | 低（沟通） | README/CHANGELOG 写明：pin 翻转 = 适配点全绿，≠ 0.2.x 特性消费，≠ 安装器线必然 (A) |
+
+### 开放问题（T1 复核清单——全部以真实 0.2.x 运行时/源码钉测闭环）
+
+| # | 问题 | 关闭判据 |
+|---|---|---|
+| Q-1 | 执行期 pin 目标 = 哪个 0.2.x rc | npm time-ordered（bump-dsh.sh safe_point 逻辑）选定并记录；复核引用对它再验证 ✅ |
+| Q-2 | 渲染 YAML → 对象的解析路径 | `yaml` 依赖可行性（版本/license/安装路径）定案；否决自造解析器 |
+| Q-3 | `agentPresets.register()` 的运行时契约 | 真实 boot 实证：校验接受既有组合形状（含 `!!js`/group/isolate）、roster 出现、同 id 重复注册语义、`broken` 字段行为、session/create 组合成功 |
+| Q-4 | plain `apply()` 插件的 disposer/effect 接线 | 接线先例定案；重载后无泄漏实证 |
+| Q-5 | `jobs.events.subscribe` 三态 filter 的投递集合 | `{owner}`/`{owners:'scope'}`/`{owners:'all'}` 各自听到什么（host-plane 订阅者视角），与 0.1.5 `onJobDone` 投递集合的等价比对；`settled.awaited` 语义逐字引用 |
+| Q-6 | jobs caller/view 形状实跑 | `list(sessionId)` 返回 owned+unowned、`kill(id, sessionId)` 判 定、`JobView.owner` 在场性、owner preflight（活 Agent 在册要求）——全部实跑非文档 |
+| Q-7 | 安装器声明式路径可行性 | profile patch 行真实 mount + 组合成功；registry 行在目标 profile 的在场性；幂等重写协议实证；（A）/(B) fork 裁定 |
+| Q-8 | v4 信封逐字形状 | 真实 0.2.0 沙箱会话（compression:none）抓取的 `tool/result` 事件全文；drive.mjs 伪造点分类（运行时消费 vs 解析器消费）清单 |
+
+## 7. 工作包与估算
+
+按 ROADMAP §7 的定性惯例（无 buffer、非承诺，R3），仅给工作量级：
+
+| 工作包 | 内容 | 任务 | 量级 |
+|---|---|---|---|
+| **WP-0 调研核对** | 0.2.x 机制逐件钉测（Q-1…Q-8）+ 复核引用再验证 → 任务书按实测修正（DoD-d） | P4.5-T1 | ~1 天 |
+| **WP-1 ctx.jobs 适配** | background-notification / stop-continuation-guard / live-state 三触点双模改造 + 单测 | P4.5-T2 … P4.5-T4 | ~1 天 |
+| **WP-2 协奏 preset 注册** | 出口双模（register() + disposer + YAML 解析依赖）+ roster 词汇与断言迁移 | P4.5-T5 … P4.5-T6 | ~1.5 天 |
+| **WP-3 安装器交付线** | 声明式迁移（或重定范围）+ 安装验证 + 安装文档双语 | P4.5-T7 | ~1 天 |
+| **WP-4 v4 观测通道** | drive.mjs 双形状夹具 + prove/smoke 信封读取点核对 | P4.5-T8 | ~1 天 |
+| **WP-5 延后对齐（deferrable）** | 专属 source kind（仅当证据拉入） | P4.5-T9 | ~0.5 天（可 defer） |
+| **WP-6 门与双运行时复跑** | 门断言迁移 + 双运行时全链 + 级联金丝雀 + roster 往返 | P4.5-T10 … P4.5-T11 | ~1 天 |
+| **WP-7 pin 与收口** | bump-dsh + D7 断言 + L2 重验证 + 矩阵行翻转 + 文档收口 | P4.5-T12 … P4.5-T13 | ~1.5 天 |
+
+**合计 ≈ 8.5 人日**（T1 实测后按 DoD-d 修正；T9 defer 则 −0.5）。体量主体在 WP-2（注册迁移 + 断言生态）与 WP-7（证据链）。
+
+## 8. 交付物清单
+
+| 交付物 | 路径 | 类型 |
+|---|---|---|
+| jobs 三触点适配 | `patches/omo-dsh/omo-hooks/src/hooks/background-notification.ts` · `src/services/stop-continuation-guard.ts` · `src/hooks/ulw-execute/live-state.ts`（双模） | 代码 |
+| 协奏 preset 注册 | `patches/omo-dsh/omo-agents/src/concerto-preset.ts`（双模出口 + disposer）· `src/index.ts`（roster 词汇）·（预期）`package.json` + `yaml` 依赖 | 代码 |
+| 安装器线 | `scripts/install-concerto.sh`（声明式迁移或响亮拒绝）· `docs/install-concerto{,_zh-CN}.md` | 代码 + 文档 |
+| v4 观测通道 | `tests/e2e/drive.mjs`（双形状夹具 + 断言迁移）· prove/smoke 信封读取点 | 测试 |
+| 断言/门迁移 | concerto-mode-probe.sh（registry 词汇）· doctor-lite/静态门随面迁移（同 commit） | 配置 |
+| pin 机器 | `ci.yml` / `compat-probe.yml`（bump-dsh.sh 原子改）· `doctor-lite.mjs:211` 文案 | 配置 |
+| 证据 | `.omo/evidence/p45t1/`（Q 组）· `.omo/evidence/concerto-verify-dsh-<rc>.md`（L2）· 矩阵行翻转 | 证据 |
+| 文档收口 | README 状态行翻转 · CHANGELOG · decisions 带日期行 · PRD §12 [x] · 矩阵双语 | 文档 |
+| **本计划目录** | `docs/plans/phase4.5-dev/phase4.5-plan.md`（本文）· [`phase4.5-tasks.md`](./phase4.5-tasks.md) | 文档 |
+
+## 9. 与前后阶段的关系
+
+- **对 Phase 0–4 的回馈**：两个 P0 面是 Phase 0–4 资产在新运行时上的存续问题，不是新功能；适配完成后，Phase 2 名册、Phase 3 hooks、Phase 4 命令面在 0.2.x 上恢复全部既有语义——本阶段的验收就是它们的既有 e2e 在新运行时上原样转绿。
+- **Phase 5（Team Mode）**：其设计直接建在 `ctx.jobs` + `ctx.subagents` 之上——本阶段 jobs 适配的双模面（`events.subscribe`/`JobView.owner`）就是 Phase 5 将要消费的形状；Phase 5 启动时 pin 已在 0.2.x，jobs 双模的 0.1.5 分支届时按「pin 翻转后去留」裁定清理。
+- **Phase 6/7**：pin 机器（bump-dsh.sh）的 0.2.x 假设更新后，后续版本的 bump 回到既定哨兵节奏；安装器线的 (A)/(B) 终态影响 Phase 7 的发布矩阵行。
+- **对复核报告的回馈**：实施期凡实测与复核引用不符处（R-6 之外的实质性出入），订正回复核报告（双语），并在该报告补上「实施期订正」节——研究产物随实施证据更新，而不是留在原地失真。
