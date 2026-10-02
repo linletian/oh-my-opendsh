@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### dsh 0.2.x adaptation docs (2026-10-02) — review + roadmap Phase 4.5 (docs-only; no code, no pin flip)
+
+- docs(review): `docs/dsh-0.2.0-rc.2-review.md` / `_zh-CN.md` — a static, source-verified analysis of the
+  published dsh 0.2.x line (`dsh-v0.1.5-rc.1..dsh-v0.2.0-rc.2`, 4102 commits) against every upstream surface
+  this project touches. Verdict: **two P0 surfaces, both silent, plus one P1 that breaks the test
+  infrastructure** — the agent-preset re-architecture deletes the `$DSH_HOME/.agent-presets/` file discovery
+  `syncConcertoPreset` targets (concerto never registers on 0.2.x; roster `trust` field gone; the
+  declarative `agentPresets.register()` path replaces it; **the released curl installer's static-preset
+  line is hit by the same deletion** — review §2.4, scoped as its own Phase 4.5 work item), the `ctx.jobs`
+  rewrite (`caller: Agent → SessionId`, `ownerSession → owner`, `onJobDone` → `jobs.events.subscribe`,
+  `JobSpec` reshaped) invalidates all three job touch points without a throw, and session-log **format v4**
+  restructures the `tool/result` envelope the e2e driver fabricates and parses. The cordis core
+  (`vendor/cordis/src/{context,registry,service}.ts` zero-diff), all 15 subscribed events, `agent.inject()`,
+  `goals.pause`, `sessionProjections`, `commands`/`skills` registries, and the concerto composition's 20
+  upstream packages are verified stable. zstd log compression is recorded as **not new** (default since
+  0.1.5-rc.1; sandbox profiles already pin `compression: none`) to foreclose a phantom work item. Two
+  review rounds against this report were adjudicated and the fixes landed in the same change: P0-count
+  wording (3 → 2 P0 + 1 P1), the installer delivery line added to scope, `decisions.md` / PRD §12
+  registration, four over-strong "zero-diff / line-identical" claims narrowed, the §2.1 Remote baseline
+  completed (`read`/`select` predate 0.2.0), and citation-precision corrections throughout; two findings
+  were rebutted with evidence (the "R-8" reference is **not** dangling — it lives in
+  `docs/plans/phase2-dev/phase2-plan.md` §6 — and the `kind:'plugin'` count is exactly 13 in the plugin
+  sources, site-listed in the rebuttal)
+- docs(roadmap): **Phase 4.5 — DSH 0.2.x runtime adaptation** inserted ahead of Team Mode (numbered 4.5 so
+  Phases 5–7 keep every existing reference). Team Mode builds on `ctx.jobs` + `ctx.subagents`, so the
+  adaptation is a dependency, not a sequencing preference. Scope in the review's forced order — jobs
+  surfaces → concerto preset registration (disposer held for HMR/unload) → **installer delivery line**
+  (declarative `PresetDefinition` in profile/bundle YAML) → v4 observation channel → (deferrable) dedicated
+  message-source kinds → pin machinery **deliberately last**; exit criteria demand the full L1 chain green
+  on 0.2.x, L2 re-verified, the roster carrying `concerto` again, the `/stop-continuation` cascade e2e
+  proving jobs are actually cancelled (the silent-skip canary), and the installer line's 0.2.x status
+  resolved before the D7 pin flips
+- docs(readme): both READMEs' Current Status carry the 0.2.x review row (🔬) and the key-facts DSH row now
+  names 0.2.0-rc.2 as reviewed-but-unpinned — **the CI pin stays `0.1.5-rc.1` until Phase 4.5 closes**
+- chore(compat): `0.2.0-rc.2` registered as an `untested` matrix row (`.omo/compat.yaml`, matrix
+  re-rendered) — the standing "upstream published a new version" mechanism; **no `tested` row moves**
+
 ### Phase 4 (2026-10) — command face + vendored skills (no version bump in this change; the next release heading is assigned at release time)
 
 - feat(omo-commands): new host-only plugin `patches/omo-dsh/omo-commands/` (`@oh-my-opendsh/omo-commands`)
