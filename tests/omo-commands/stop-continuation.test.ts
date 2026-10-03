@@ -27,6 +27,15 @@
 // R-5 覆盖：最后两个 describe 用一个**同时装载两侧**的假宿主演示
 // `omo-hooks` provide → `omo-commands` get 的真实链路，包括"消费方晚于提供方挂载"
 // 与"提供方缺席"两种顺序。
+//
+// P4.5-T3 — 双形状参数化：本文件的级联场景从 T3 起在 **v1 面**（0.1.5：caller
+// `{ id }`、快照 `ownerSession`、face 带 `onJobDone`、无 `events`）与 **v2 面**
+// （0.2.x：caller 为 `sessionId` 字符串、快照 `owner`、face 带 `events`）各跑
+// 一遍（`describe.each(['v1','v2'])`）。分叉信号是共享的 `dshRuntimeShape`
+// （patches/…/src/dsh-runtime-shape.ts，身份标记非能力探针）。既有 v1 用例**一条
+// 未删、语义未改**——fakeJobs 的 v1 围栏原样保留，只是 caller 取值改经
+// `callerSessionOf(caller, 'v1')`：它对错误形状当场抛，所以「caller 形状写反」
+// 在本文件里不可能静默通过（这是 §5.2 的承重断言，不是装饰）。
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -38,9 +47,12 @@ import {
   STOP_CANCELLATION_REASON,
   createStopContinuationGuard,
   handleSessionDisposed,
+  type StopContinuationCaller,
   type StopContinuationGuard,
   type StopContinuationJobsLike,
+  type StopContinuationJobSnapshotLike,
 } from '../../patches/omo-dsh/omo-hooks/src/services/stop-continuation-guard.ts'
+import { dshRuntimeShape } from '../../patches/omo-dsh/omo-hooks/src/dsh-runtime-shape.ts'
 import {
   STOP_CONTINUATION_SERVICE as COMMANDS_SIDE_SERVICE_NAME,
   createStopContinuationCommand,
@@ -57,33 +69,98 @@ function job(id: string, status: string): { readonly id: string; readonly status
   return { id, status }
 }
 
+/** P4.5-T3: the two jobs-face generations this file now runs every cascade scenario on. */
+type Shape = 'v1' | 'v2'
+
+/** A fake job row: BOTH generations' owner keys, both optional (mirrors the guard's structural type). */
+type FakeJob = {
+  readonly id: string
+  readonly status: string
+  /** **[0.1.5]** fence key of `JobSnapshot`. */
+  readonly ownerSession?: string
+  /** **[0.2.x]** fence key of `JobView` (view.ts:76-77). */
+  readonly owner?: string
+}
+
+/**
+ * P4.5-T3 承重件：按世代从 caller 里取会话身份，**遇到另一代的形状就当场抛**。
+ * v1 caller = `{ id }`（Agent-like）；v2 caller = `sessionId` 字符串（SessionId 的
+ * 结构等价）。假围栏用它取 caller ⇒ caller 形状写反不可能静默通过：kill 会抛，
+ * 被计入 `alreadyFinishedJobIds`，canary 断言当场红（任务书 §5.2）。
+ */
+function callerSessionOf(caller: StopContinuationCaller, shape: Shape): string {
+  if (shape === 'v2') {
+    if (typeof caller !== 'string') {
+      throw new TypeError(`v2 caller must be the SessionId string, got ${JSON.stringify(caller)}`)
+    }
+    return caller
+  }
+  if (typeof caller !== 'object' || caller === null || typeof (caller as { id?: unknown }).id !== 'string') {
+    throw new TypeError(`v1 caller must be the { id } Agent-like object, got ${JSON.stringify(caller)}`)
+  }
+  return (caller as { id: string }).id
+}
+
 /**
  * 上游 `createMockBackgroundManager` 的 DSH 形态，但**按实测的围栏建模**（不是随手
  * 的"返回全部"）：`list(caller)` 只回「caller 自己的 + 无主的」
- * （dsh-jobs-local/lib/index.js:178-180），`kill` 对有主 job 做同样的 assertAccess
- * 并在不符时抛（:313-315）。建模这一层是 MAJOR-1 的关键：先前那个"永远返回全部、
+ * （**[0.1.5]** dsh-jobs-local/lib/index.js:178-180 — P3-T8-era 读数，H2 本轮未复核），
+ * `kill` 对有主 job 做同样的 assertAccess 并在不符时抛（:313-315；**[0.2.x]**
+ * `expect(id, caller)` → `assertAccess`，jobs-local/src/index.ts:328-330/:394-411，
+ * 已在镜像复核）。建模这一层是 MAJOR-1 的关键：先前那个"永远返回全部、
  * kill 永不抛"的假实现正好把真机上的空转藏了起来。
+ *
+ * P4.5-T3：加 `shape` 形参，默认 `'v1'` —— **既有 v1 调用点的围栏语义逐字不变**
+ * （同一个键 `ownerSession`、同一个过滤、同一句抛错）。v2 面换成 `owner` 键 +
+ * 字符串 caller（caller 形状经 `callerSessionOf` 硬校验）。face 同时带上各自世代
+ * 的 push 面成员（v1 `onJobDone` / v2 `events`）作**忠实建模**：guard 不消费它们，
+ * `dshRuntimeShape` 只看 `events` 的有无——face 谎报形状会被
+ * 「形状自证」用例当场抓出。
  */
-function fakeJobs(tasks: readonly { readonly id: string; readonly status: string; readonly ownerSession?: string }[]): {
+function fakeJobs(
+  tasks: readonly FakeJob[],
+  shape: Shape = 'v1',
+): {
   jobs: StopContinuationJobsLike
   kills: { id: string; caller: unknown; reason: string | undefined }[]
+  pushFaceCalls: unknown[][]
 } {
   const kills: { id: string; caller: unknown; reason: string | undefined }[] = []
-  return {
-    kills,
-    jobs: {
-      list: (caller) => tasks.filter((task) => task.ownerSession === undefined || task.ownerSession === caller.id),
-      kill: (id, caller, reason) => {
-        const target = tasks.find((task) => task.id === id)
-        if (target === undefined) throw new Error(`unknown job ${id}`)
-        if (target.ownerSession !== undefined && target.ownerSession !== caller.id) {
-          throw new Error(`job ${id} belongs to another session`)
+  const pushFaceCalls: unknown[][] = []
+  const fenceOf = (task: FakeJob): string | undefined => (shape === 'v2' ? task.owner : task.ownerSession)
+  const jobs = {
+    ...(shape === 'v2'
+      ? {
+          events: {
+            subscribe: (filter: unknown, listener: unknown) => {
+              pushFaceCalls.push([filter, listener])
+              return () => undefined
+            },
+          },
         }
-        kills.push({ id, caller, reason })
-        return 'requested'
-      },
+      : {
+          onJobDone: (listener: unknown) => {
+            pushFaceCalls.push([listener])
+            return () => undefined
+          },
+        }),
+    list: (caller: StopContinuationCaller): readonly StopContinuationJobSnapshotLike[] => {
+      const callerSession = callerSessionOf(caller, shape)
+      return tasks.filter((task) => fenceOf(task) === undefined || fenceOf(task) === callerSession)
+    },
+    kill: (id: string, caller: StopContinuationCaller, reason?: string): string => {
+      const callerSession = callerSessionOf(caller, shape)
+      const target = tasks.find((task) => task.id === id)
+      if (target === undefined) throw new Error(`unknown job ${id}`)
+      const owner = fenceOf(target)
+      if (owner !== undefined && owner !== callerSession) {
+        throw new Error(`job ${id} belongs to another session`)
+      }
+      kills.push({ id, caller, reason })
+      return 'requested'
     },
   }
+  return { jobs, kills, pushFaceCalls }
 }
 
 /** 一个不会真的 followup 的 agent：本命令不注入任何消息（见 handler 文件头）。 */
@@ -296,7 +373,8 @@ describe('P4-T8 the background cascade — upstream ⑫ (cancel only running|pen
       { id: 'already-done', status: 'completed', ownerSession: owner },
     ]
     const jobs: StopContinuationJobsLike = {
-      list: (caller) => tasks.filter((task) => task.ownerSession === caller.id),
+      // P4.5-T3 类型适配（语义不变）：caller 改经 v1 形状硬校验取值。
+      list: (caller) => tasks.filter((task) => task.ownerSession === callerSessionOf(caller, 'v1')),
       kill: (id) => {
         const target = tasks.find((task) => task.id === id)
         if (target === undefined) throw new Error(`unknown job ${id}`)
@@ -403,6 +481,178 @@ describe('P4-T8 the background cascade — upstream ⑫ (cancel only running|pen
   })
 })
 
+describe.each(['v1', 'v2'] as const)('P4.5-T3 the %s-shaped cascade — the same matrix on both generations', (shape) => {
+  const session = `t3-cascade-${shape}`
+  const owned = (id: string, status: string, owner = session): FakeJob =>
+    shape === 'v2' ? { ...job(id, status), owner } : { ...job(id, status), ownerSession: owner }
+
+  it(`${shape}: the mock's identity is what dshRuntimeShape says, and the guard NEVER touches the push face`, () => {
+    // 形状自证：v1 face = 有 onJobDone / 无 events，v2 face = 有 events——若 fake
+    // 谎报形状，整条矩阵测的就不是它声称的那一代。同时钉死：guard 把 `events` /
+    // `onJobDone` 只当**身份信号**（dshRuntimeShape 读其有无），一次都不调用——
+    // 身份标记不是能力探针（../dsh-runtime-shape.ts 头）。
+    const { jobs, pushFaceCalls } = fakeJobs([owned('self-id', 'running')], shape)
+    expect(dshRuntimeShape(jobs)).toBe(shape)
+    expect('events' in jobs).toBe(shape === 'v2')
+    const outcome = makeGuard(jobs).guard.stop(session)
+    expect(outcome.jobsServicePresent).toBe(true)
+    expect(pushFaceCalls).toEqual([])
+  })
+
+  it(`${shape}: cancels this session's running+stopping jobs; skips foreign, unowned and terminal ones (§5.1)`, () => {
+    const { jobs, kills } = fakeJobs([
+      owned('mine-running', 'running'),
+      owned('mine-stopping', 'stopping'),
+      owned('theirs-running', 'running', 'other-session'),
+      job('unowned-running', 'running'),
+      owned('mine-completed', 'completed'),
+      owned('mine-killed', 'killed'),
+      owned('mine-failed', 'failed'),
+    ], shape)
+    const outcome = makeGuard(jobs).guard.stop(session)
+    expect(outcome.jobsServicePresent).toBe(true)
+    // 外会话 job 连 list 都出不来（服务围栏），无主的被 guard 围栏跳过，
+    // 终态的被状态过滤跳过——只有本会话的 running|stopping 被 kill。
+    expect(kills.map((call) => call.id)).toEqual(['mine-running', 'mine-stopping'])
+    expect(outcome.cancelledJobIds).toEqual(['mine-running', 'mine-stopping'])
+    expect(outcome.alreadyFinishedJobIds).toEqual([])
+    // §6：reason 逐字，两分支同值。
+    expect(kills.every((call) => call.reason === STOP_CANCELLATION_REASON)).toBe(true)
+    expect(CANCELLABLE_JOB_STATUSES).toEqual(['running', 'stopping'])
+  })
+
+  it(`${shape}: the caller handed to kill is EXACTLY the ${shape} shape (B2, the load-bearing §5.2 pin)`, () => {
+    // 承重断言：v1 逐字 `{ id: sessionId }`，v2 逐字 sessionId 字符串。fake 的
+    // 围栏对错误形状当场抛（callerSessionOf），所以这条红 = 形状错 = 真机上
+    // 0.2.x 会被 fence 成空转——错误不可能静默通过。
+    const { jobs, kills } = fakeJobs([owned('caller-shape', 'running')], shape)
+    makeGuard(jobs).guard.stop(session)
+    expect(kills).toHaveLength(1)
+    if (shape === 'v2') {
+      expect(typeof kills[0].caller).toBe('string')
+      expect(kills[0].caller).toBe(session)
+    } else {
+      expect(typeof kills[0].caller).toBe('object')
+      expect(kills[0].caller).toEqual({ id: session })
+    }
+  })
+
+  it(`${shape}: CANARY — the cascade REALLY cancels: cancelledJobIds carries the target id, not an empty list (§5.3)`, () => {
+    // 任务书点名的可分辨判定：「级联真的取消了」≠「静默空转」。空转的样子是
+    // cancelledJobIds=[] 且 alreadyFinishedJobIds=[]（一个 job 都没碰），这里必须
+    // 含目标 id 且不在 alreadyFinished 里。
+    const { jobs, kills } = fakeJobs([owned('canary-target', 'running')], shape)
+    const outcome = makeGuard(jobs).guard.stop(session)
+    expect(outcome.cancelledJobIds).toContain('canary-target')
+    expect(outcome.cancelledJobIds).not.toEqual([])
+    expect(outcome.alreadyFinishedJobIds).toEqual([])
+    expect(outcome.jobsServicePresent).toBe(true)
+    expect(kills.map((call) => call.id)).toEqual(['canary-target'])
+  })
+
+  it(`${shape}: an all-foreign/unowned/terminal result is IDLE-but-PRESENT, distinguishable from an absent service (§5.4)`, () => {
+    const { jobs, kills } = fakeJobs([
+      owned('theirs', 'running', 'other-session'),
+      job('unowned', 'running'),
+      owned('mine-done', 'completed'),
+    ], shape)
+    const outcome = makeGuard(jobs).guard.stop(session)
+    expect(outcome.cancelledJobIds).toEqual([])
+    expect(kills).toEqual([])
+    // 空转 ≠ 缺席：present 为 true，而服务缺席那条是 false。
+    expect(outcome.jobsServicePresent).toBe(true)
+    const absent = makeGuard().guard.stop(session)
+    expect(absent.jobsServicePresent).toBe(false)
+    expect(absent.cancelledJobIds).toEqual([])
+  })
+
+  it(`${shape}: verdict tristate — requested→cancelled, already-finished→alreadyFinished, throw→alreadyFinished+log+continue (§7)`, () => {
+    const logs: string[] = []
+    const tasks = [owned('v-live', 'running'), owned('v-late', 'running'), owned('v-boom', 'running')]
+    const jobs: StopContinuationJobsLike = {
+      ...(shape === 'v2' ? { events: { subscribe: () => () => undefined } } : {}),
+      list: (caller) => {
+        callerSessionOf(caller, shape)
+        return tasks
+      },
+      kill: (id, caller) => {
+        callerSessionOf(caller, shape)
+        if (id === 'v-boom') throw new Error('kill rejected')
+        return id === 'v-late' ? 'already-finished' : 'requested'
+      },
+    }
+    const guard = createStopContinuationGuard({ readJobs: () => jobs, log: (line) => logs.push(line) })
+    const outcome = guard.stop(session)
+    expect(outcome.cancelledJobIds).toEqual(['v-live'])
+    expect(outcome.alreadyFinishedJobIds).toEqual(['v-late', 'v-boom'])
+    expect(logs.some((line) => line.includes('kill v-boom failed: kill rejected'))).toBe(true)
+    // 抛错不放弃其余：v-boom 之后没有更多 job 了，但顺序证明 v-late/v-boom 都被尝试。
+    expect(guard.isStopped(session)).toBe(true)
+  })
+})
+
+describe('P4.5-T3 the owner double-read — `owner ?? ownerSession` priority pinned (B3, §5.5)', () => {
+  // 宽容 list face：list **全部返回**（含外会话行）。真实 dsh 的 list 已按 caller
+  // 过滤外会话行；宽容面建模"被装饰/被重载的服务"，把裁决逼到 guard 自己的围栏上，
+  // 钉死键优先级——`owner` 赢，两键都无 = 无主 = 跳过。
+  function lenientFace(tasks: readonly FakeJob[], shape: Shape): {
+    jobs: StopContinuationJobsLike
+    kills: string[]
+  } {
+    const kills: string[] = []
+    const jobs: StopContinuationJobsLike = {
+      ...(shape === 'v2' ? { events: { subscribe: () => () => undefined } } : {}),
+      list: (caller) => {
+        callerSessionOf(caller, shape)
+        return tasks
+      },
+      kill: (id, caller) => {
+        callerSessionOf(caller, shape)
+        kills.push(id)
+        return 'requested'
+      },
+    }
+    return { jobs, kills }
+  }
+
+  it('only `owner` present and mine → cancelled (v2 key fences IN)', () => {
+    const { jobs, kills } = lenientFace([{ ...job('owner-in', 'running'), owner: 's' }], 'v2')
+    const outcome = makeGuard(jobs).guard.stop('s')
+    expect(kills).toEqual(['owner-in'])
+    expect(outcome.cancelledJobIds).toEqual(['owner-in'])
+  })
+
+  it('only `ownerSession` present and mine → cancelled (v1 key fences IN)', () => {
+    const { jobs, kills } = lenientFace([{ ...job('owner-session-in', 'running'), ownerSession: 's' }], 'v1')
+    const outcome = makeGuard(jobs).guard.stop('s')
+    expect(kills).toEqual(['owner-session-in'])
+    expect(outcome.cancelledJobIds).toEqual(['owner-session-in'])
+  })
+
+  it('both keys present: `owner` WINS — IN when owner is mine, SKIPPED when it is foreign, on BOTH faces', () => {
+    for (const shape of ['v1', 'v2'] as const) {
+      const mineOwner = lenientFace([{ ...job('both-in', 'running'), owner: 's', ownerSession: 'foreign' }], shape)
+      makeGuard(mineOwner.jobs).guard.stop('s')
+      expect(mineOwner.kills, `owner mine must win on the ${shape} face`).toEqual(['both-in'])
+      const foreignOwner = lenientFace([{ ...job('both-out', 'running'), owner: 'foreign', ownerSession: 's' }], shape)
+      const outcome = makeGuard(foreignOwner.jobs).guard.stop('s')
+      expect(foreignOwner.kills, `a foreign owner must fence OUT on the ${shape} face`).toEqual([])
+      expect(outcome.cancelledJobIds).toEqual([])
+    }
+  })
+
+  it('NEITHER key present → unowned → skipped on BOTH faces (the fence never touches unowned jobs)', () => {
+    for (const shape of ['v1', 'v2'] as const) {
+      const { jobs, kills } = lenientFace([job('unowned', 'running')], shape)
+      const outcome = makeGuard(jobs).guard.stop('s')
+      expect(kills, `unowned must be skipped on the ${shape} face`).toEqual([])
+      expect(outcome.cancelledJobIds).toEqual([])
+      // 与"服务缺席"仍可分辨：围栏跳过是 present=true 的空转。
+      expect(outcome.jobsServicePresent).toBe(true)
+    }
+  })
+})
+
 describe('P4-T8 R-5 cross-plugin visibility — the real apply() path, both mount orders', () => {
   /**
    * 一个假宿主：cordis 的 `provide` / `get` / `on` 语义按实测契约建模
@@ -414,7 +664,8 @@ describe('P4-T8 R-5 cross-plugin visibility — the real apply() path, both moun
     const listeners = new Map<string, ((...args: readonly unknown[]) => unknown)[]>()
     const published: string[] = []
     // 命令注册面按真形状建模：register 收的是 `{name, description, handler, input?}`
-    // （index.ts:234-239），handler 是被 adaptHandler 包过的那个，所以 MINOR-4 能
+    // （omo-commands/src/index.ts:279-284，P4.5-T3 复核修正——原引 `index.ts:234-239`
+    // 早已被后续改动移出该范围），handler 是被 adaptHandler 包过的那个，所以 MINOR-4 能
     // 拿到**经注册表那条路**的 handler，而不是直接调工厂。
     const definitions: { name: string; handler: (invocation: unknown) => unknown }[] = []
     const ctx = {
