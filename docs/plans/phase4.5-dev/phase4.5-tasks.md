@@ -8,6 +8,8 @@
 >
 > **修订记录**：
 >
+> - **2026-10-04 实施期修订（T2 落地，双评审裁决后成文）**：T2 的实施期裁定已成文，**T3/T4 直接继承**（先读这段再开工）——① **共享探针已落**：`patches/omo-dsh/omo-hooks/src/dsh-runtime-shape.ts`（`src/` **根**，不在 `src/hooks/`——c13 会把无 manifest id 的 `.ts` 判 orphan、`verify-concerto-static.mjs:828-831`；c21 由同一目录推导 NOTICES 计数）。**新增 `src/` 根文件必须同时登记进 `tests/omo-hooks/strip-only.test.ts` 的双向等值 roster，否则门 2 红**（T2 已登记 `dsh-runtime-shape.ts`；T3/T4 若再加文件同样要登记）。② **T3/T4 必须 import 这一个 `dshRuntimeShape`，不得各自再写一份判定**（T2 内 `hasPushFace` 与 `adoptJobs` 各判一次同一谓词已是上限，评审 A 已记录为观察项）。③ **ADR-2 兜底已用**：0.2.x filter = `{ owners: 'all' }`，理由与「直接比对未测成（Q5 §4.1）」的限定写在 `background-notification.ts` 文件头——T3/T4 的注释引用同一份论证，不要各自重写。④ **ADR-5 的包装器**：`wrapDisposer`（先翻 push verdict → 最多调用一次服务 disposer）两代共用；它对 0.1.5 分支是**唯一的非措辞语义变化**（改造前重复调用会重复执行服务 disposer），已成文。⑤ **顺序**：Q-6 尚未闭环，故 T3/T4 不与 T2 并行开工（R-10 精神），按 T2 → T3 → T4 串行；**§4.2 的「三触点在同一 mock 下取同一 `dshRuntimeShape()` 值」一致性断言落在 T4**（需 T3/T5 的分支已存在才有意义）。⑥ 门 3/门 8 在本机 0.2.x 上因 P0-1 已知红，WP-1 三任务一律**不跑**这两门，证据里写明「未跑 + 原因」。⑦ **T2 双评审暴露的三条流程缺口，T3/T4 开工即生效**（两路评审独立指出，仲裁采纳）：⑴ **修复轮前必须打可比对基线**——T2 未提交、无 stash，`git diff` 只有「对 HEAD 的合并视图」，导致「修复轮未改任何可执行行」这一声明**两路评审都明确回答「无法独立证实」**（只能给无反证）；T3/T4 起，编码 agent 在**收到修复轮之前**先 `git stash create` 存一份悬空提交并在报告里给出 SHA，使修复 diff 可被逐行比对（`git stash create` 不动工作树/索引/HEAD）。⑵ **引用全量回查必须覆盖测试文件**——T2 的 F0 只扫了两个源文件，MAJOR 的第 4 处（测试文件里的同一处错误区间）是**碰巧**捞到的，不是系统性扫出来的。⑶ **一次性环境里的行号读数必须归档原文**——0.1.5 腿在 throwaway prefix 上核的约 22 条行号，因 prefix 已删而**永久不可复核**，而安装日志只证明「装上了」、不证明「读到了哪几行」；T3/T4 若再需要一次性环境核行号，必须把 `awk`/`sed` 的**输出原文**与安装日志一起归档（或不删 prefix）。
+>
 > - **2026-10-02 环境现实修订（工程师反馈，实测成立）**：PRE-1 拆分重写——本机二进制 = 0.2.x 而 ci-local 门 3/4/8 消费环境 dsh 二进制，原「0.1.5 pin 下退出 0」在本机不成立。PRE-1a = 0.1.5 侧基线取 develop 最近 CI 绿（权威侧）；PRE-1b = 本机 0.2.x 基线，判定改为**红的位置与形态成文记录**（P0 的 before 证据，与 PRE-5 互为表里）；PRE-1c（可选）= throwaway-prefix 0.1.5 本机腿（T11 机制通道之一）。T11 补机制注记（0.1.5 侧 = CI 或 prefix 腿，证据文件注明实际通道与二进制来源）。
 >
 > - **2026-10-02 计划期评审修复（第 3 轮）**（评审：[`phase4.5-review-3.md`](./phase4.5-review-3.md)，新发现 3 项全部采纳，无阻塞——复审确认第 2 轮 5 项落实正确）——T1 的 Q-4 补裁定输入指针（`boot-markers.test.ts` 的 `apply()` harness 重写成本，R3-I1）；其余落计划书（重心序列「门 2 仅增量」、§4.6 增量清单补结构断言、`registry.ts:300-301` 行号）。
@@ -54,12 +56,12 @@
 
 ## WP-1 `ctx.jobs` 适配（计划书 §4.2；复核 §3 为权威）
 
-### [ ] P4.5-T2 — background-notification：events.subscribe 三级探测改造
+### [x] P4.5-T2 — background-notification：events.subscribe 三级探测改造
 
 - **产出**：`background-notification.ts` 双模改造（`jobs.events?.subscribe` 优先 → `onJobDone` 回退 → 既有 pull 降级）；`settled.awaited` 替代 `reported` 去重；双形状参数化单测。
 - **做法**：filter 按 T1 Q-5 结论选定（等价性理由写入代码注释）；subscribe disposer 按 Q-4 接线纪律持有；结构类型声明 0.2.0 形状（`events`/`JobView`）与 0.1.5 形状并存为可选；boot marker 的三态可区分（`push path live (events)` / `push path live (onJobDone)` / `degraded pull path`）——marker 措辞变更进测试与 probe 同步网。
 - **判定**：✅ 单测双形状各一轮（订阅建立、事件去重、降级切换）；0.2.x 本地场景中后台 job 完成通知真实到达（非降级路径）；0.1.5 CI 绿。
-- **证据**：⬜ 待填
+- **证据**：✅ `.omo/evidence/p45t2/T2-background-notification.md`（+ `logs/` 17 份；`.omo/` 被 gitignore，证据留本地不入库）——门 1/2/5/6/7 全绿：`typecheck` exit 0；`vitest` **56 files / 1392 tests**（基线 55/1366，**+1 文件 / +26 用例，只增不减**）；`verify-concerto-static` **31/31**；`check-docs-consistency` **9/9**；`verify-licenses` `checked=56 · violations=0`（零新依赖，计数未变）；门 4 `doctor-lite` exit 1 红点 = `{dsh-version, llm-adapters}`，与 PRE-1b **同形**（0.2.x 本机 vs D7 pin 0.1.x，非本任务引入）；门 3/8 **NOT RUN**（消费环境 dsh 二进制 + P0-1 已知红，非本任务面）。**场景级 0.2.x 证据**：真 `dsh 0.2.0-rc.2` throwaway 沙箱两条腿（immediate + 真实 `ctx.inject` 延迟腿），3 个真实 job → **2 条锚点、缺失的恰是 `awaited:true` 的那个**（ADR-3 金丝雀在真机可分辨，非 boot 绿）；断言边界诚实：判据是「无 FAILED 行」而非「观察到桌面通知」。**0.1.5 腿**：本机无 0.1.5 二进制故未跑，**权威侧 = CI（D7 pin 0.1.5-rc.1）**，裁定落在本任务提交的那次 CI run 上。双评审：第 1 轮 A=REJECT（1 MAJOR+3 MINOR+4 NIT）/ B=APPROVE；修复轮后**双 APPROVE**，原 MAJOR 闭合。
 - **依赖**：P4.5-T1。**量级**：3 小时。
 
 ### [ ] P4.5-T3 — stop-continuation-guard：SessionId caller + owner 围栏双模

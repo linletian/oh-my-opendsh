@@ -56,6 +56,13 @@ describe('P4-T16 the omo-hooks sources are loadable by Node strip-only type eras
     // at all, and a flat scan would have missed it.
     expect(sources.map((entry) => entry.file)).toEqual([
       'boot-markers.ts',
+      // P4.5-T2 — the second file outside src/hooks/. It is the SHARED jobs
+      // runtime-identity marker (`src/dsh-runtime-shape.ts`), placed at `src/`
+      // root precisely so gate 6's c13 orphan scan over `src/hooks/` cannot see
+      // it (it has no manifest id — it is not a listener); THIS roster is the
+      // guard that makes sure "invisible to c13" does not also mean "uncovered
+      // by everything", which is the failure mode the P4-T8 note above describes.
+      'dsh-runtime-shape.ts',
       'hooks/agent-usage-reminder.ts',
       'hooks/background-notification.ts',
       'hooks/bash-file-read-guard.ts',

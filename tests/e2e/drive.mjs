@@ -6751,11 +6751,20 @@ function fabricatedBackgroundNotificationInput(routes) {
     bootLog: [
       FABRICATED_BOOT_LOG,
       '[omo-hooks] hook background-notification registered on session/event',
-      // The deferred-acquisition NOTE a real boot carries (the loader race
-      // usually loses the strict read) — present here so the fixture exercises
-      // the same log shape, and counted by nothing.
+      // FABRICATED boot log inside this scenario fixture. The log AS A WHOLE IS
+      // consumed by the scenario (`pluginsLoaded(bootLog)` at :2690/:2779/:2908,
+      // the anchor scan at :1462, the NOTE census at :5087), but THESE TWO NOTE
+      // LINES are asserted by nothing — `notificationNoteLines` at :5087 is
+      // assigned into the record and never read, and no assertion reads these two
+      // strings. They are here so the
+      // fixture's log SHAPE matches what a real boot carries — the wording is
+      // copied from the production NOTE constants, NOT transcribed from a real
+      // boot of this scenario. P4.5-T2 made the registrar dual-mode, so the
+      // second line now names the GENERATION: this fixture stands for the
+      // CI-pinned 0.1.5-rc.1 surface, hence the v1 wording below verbatim from
+      // `BACKGROUND_NOTE_SUBSCRIBED_ONJOB_DONE`.
       `${BACKGROUND_NOTIFICATION_NOTE_PREFIX}jobs service not active at apply; ctx.inject(["jobs"]) armed (degraded pull path active until it appears)`,
-      `${BACKGROUND_NOTIFICATION_NOTE_PREFIX}jobs service observed; ctx.jobs.onJobDone subscribed (push path live)`,
+      `${BACKGROUND_NOTIFICATION_NOTE_PREFIX}jobs service observed (v1 shape); ctx.jobs.onJobDone subscribed (push path live (onJobDone))`,
       BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR,
       // NOTE: NO session-notification anchor here. The measured shape of this
       // scenario is zero on that channel: the parent is woken by the job's own
