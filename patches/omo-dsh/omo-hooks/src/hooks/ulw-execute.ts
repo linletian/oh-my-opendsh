@@ -1033,17 +1033,36 @@ function runPlanSelection(
       directory: cwd,
       planName,
       sessionId,
-      // `dsh-jobs` 的 `JobStart.owner` 要求的是**活 Agent 实例**（"The instance
-      // must be the one currently registered under its agent id"），不是它的
-      // session；传错对象会被 registry 预检拒绝并降级（startWorkJob 吞掉），
-      // 那样 job 面就永远不生效。
+      // `owner` 的形状由 `startWorkJob` 内部按共享身份标记 `dshRuntimeShape(jobs)`
+      // 分叉（P4.5-T4 **C2**）；调用点两个值都照旧提供、零判断：
+      //   * **[0.1.5]** 用这里的 `agent` —— `JobStart.owner` 要求**活 Agent 实例**
+      //     （"The instance must be the one currently registered under its agent
+      //     id"，dsh-jobs/lib/types/types.d.ts:48-55 — P3-T17-era reading, H2
+      //     unre-verified），不是它的 session；传 session 会被预检拒绝；
+      //   * **[0.2.x]** 用上面的 `sessionId` 字符串 —— `JobSpec.owner?: SessionId`
+      //     （packages/jobs/jobs/src/types.ts:131-137）要的就是会话 id，registry
+      //     自己拿它去 `agents.get(session)` 找活实例
+      //     （packages/jobs/jobs-local/src/index.ts:357-367）；传 Agent 对象反而
+      //     查不到 → `:365` 预检拒绝 → 永久降级。
+      // 两代各自传错都会静默失效，所以形状由 live-state 的测试逐字钉死。
       agent,
+      // 诊断汇（P4.5-T4 **C4**）：`StartWorkJobResult` 被 **C5** 冻结成三个字段，
+      // 「服务缺席 / 预检拒绝 / 真实启动失败」三态在返回值上只剩两比特，分不出
+      // 后两者——不传这个汇，复核 §3.2-3 点名的「日志依旧干净」病灶就还在。
+      log: (line) => logSafely(deps, line),
     })
+    // `[jobs absent]` 只在服务**真的不在**时说；在场但被拒/真失败时改说
+    // `[degraded]`，否则这一行会把「registry 拒了我的声明」报成「没装 jobs」——
+    // 那正是 §3.2-3 的病灶。既有 v1 降级用例断言的 `[jobs absent]` 语义不变
+    // （那条用例的 jobs 本来就是 undefined）。
+    const degradedNote = result.degraded
+      ? (jobs === undefined ? ' [jobs absent]' : ' [degraded: see the startWorkJob line above]')
+      : ''
     logSafely(deps, formatUlwExecuteLine(
       `work session ${result.jobId ?? '(no jobs)'} plan=${planName}`
       + ` notepad=${result.scaffold.created.length} created`
       + `/${result.scaffold.skipped.length} skipped`
-      + (result.degraded ? ' [jobs absent]' : '')
+      + degradedNote
       + (workLabel !== undefined ? ` label="${workLabel}"` : ''),
     ))
   } catch (err) {
