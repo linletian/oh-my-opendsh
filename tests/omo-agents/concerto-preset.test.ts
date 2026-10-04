@@ -23,17 +23,21 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  CONCERTO_BROKEN_ABSENT,
   CONCERTO_PRESET_FILES,
   CONCERTO_PRESET_ID,
   CONCERTO_REGISTER_FACE_ABSENT_LINE,
+  CONCERTO_ROSTER_EMPTY,
   CONCERTO_TEMPLATE_DIR,
   EXPLORE_AGENT_OPTIONS_SENTINEL,
   EXPLORE_PERSONA_SENTINEL,
   agentSentinelName,
   compositionStringDisabledProblem,
   concertoPresetDir,
+  formatBrokenVerdict,
   formatConcertoRegisterFailedLine,
   formatConcertoRegisteredLine,
+  formatConcertoRosterLine,
   hasAgentPresetsRegisterFace,
   heldConcertoRegistration,
   parseCompositionInLoaderDialect,
@@ -798,5 +802,134 @@ describe('R-9 structural invariant — omo-agents is NOT a row of what it regist
     const rootCordis = readFileSync(join(repoRoot, 'cordis.yml'), 'utf8')
     expect(rootCordis).toContain('- id: omo-agents')
     expect(rootCordis).toContain(`name: '@oh-my-opendsh/omo-agents'`)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P4.5-T6 — the roster vocabulary, and the shape the `agentPresets/read` face
+// actually answers with.
+//
+// Why these exist: pre-T6 the roster print was `${id}:${trust ?? '?'}`. On
+// 0.1.5 `trust` was a real roster key; on 0.2.x it is not a key of a preset
+// row at all (the row is built by one literal at
+// agent-preset-registry/src/index.ts:156-162 @ dsh-v0.2.0-rc.2 — id/name/
+// description/order/broken), so every row printed `?` and the gate that grepped
+// for `concerto:` still went green on a line that asserted nothing. These tests
+// pin the replacement vocabulary AND the reason the old one was worse than
+// nothing.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('P4.5-T6 — roster vocabulary: broken-verdict, not trust (WP-2)', () => {
+  it('absent is the token for a row that carries no `broken` key', () => {
+    // NOT health evidence — a token meaning "this runtime told me nothing is
+    // broken because it has nothing to say". The honesty lives in the probe
+    // narrative; the token itself must stay stable so the gate can grep it.
+    expect(formatBrokenVerdict(undefined)).toBe(CONCERTO_BROKEN_ABSENT)
+    expect(CONCERTO_BROKEN_ABSENT).toBe('absent')
+  })
+
+  it('a real `broken` message is flattened onto one line, never dropped', () => {
+    // One line because the roster print is a single boot-log line: a message
+    // carrying a newline would split the roster line and let the probe's
+    // line-anchored greps match nothing.
+    const verdict = formatBrokenVerdict('schema failed,\nat row 3,\nsecond failure')
+    expect(verdict).not.toContain('\n')
+    expect(verdict).not.toContain(',')
+    expect(verdict).toContain('schema failed')
+    expect(verdict).toContain('second failure')
+    expect(verdict).not.toBe(CONCERTO_BROKEN_ABSENT)
+  })
+
+  it('an EMPTY roster prints the EMPTY token, never a bare prefix', () => {
+    // The pre-T6 bug this closes: `prefix + [].join(',')` is just the prefix,
+    // and `grep -q "\[omo-agents\] concerto roster: "` passed on it. The very
+    // first list() can legitimately be [] (T1 Q-4: the inject callback lands
+    // after apply()), so a silent-empty line was a live false PASS.
+    const line = formatConcertoRosterLine([])
+    expect(line).toBe(`[omo-agents] concerto roster: ${CONCERTO_ROSTER_EMPTY}`)
+    expect(line.trim()).not.toBe('[omo-agents] concerto roster:')
+  })
+
+  it('rows print id:broken=<verdict>, and the dead trust vocabulary never appears', () => {
+    const line = formatConcertoRosterLine([
+      { id: 'standard' },
+      { id: 'concerto' },
+      { id: 'broken-one', broken: 'no such package' },
+    ])
+    expect(line).toContain('standard:broken=absent')
+    expect(line).toContain('concerto:broken=absent')
+    expect(line).toContain('broken-one:broken=no such package')
+    // Negative half, on the SHIPPED formatter: the placeholder `:?` and the
+    // 0.1.5 trust tokens are what made the old gate vacuous.
+    expect(line).not.toMatch(/:\?/)
+    expect(line).not.toMatch(/:user\b/)
+    expect(line).not.toMatch(/:system\b/)
+  })
+
+  it('the trust vocabulary is DEAD on every shipped EXECUTABLE surface (两处同删)', () => {
+    // The deletion is what makes re-introduction fail. `RosterEntry` no longer
+    // declares `trust`, so any `preset.trust` read is a TS2339 at compile time
+    // (measured under mutation M3a: `error TS2339: Property 'trust' does not
+    // exist on type 'RosterEntry'`). This is the text-level companion.
+    //
+    // SCOPE: comment lines are EXEMPT and must stay — 纪律⑫ says the record of
+    // "what was wrong at the time" belongs in the code that replaced it, so
+    // index.ts and preset.yml deliberately NARRATE the dead vocabulary. What may
+    // not survive is the vocabulary on a line the runtime ACTS on: a declared
+    // field, a YAML key, a printed token.
+    const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+    // ANCHORED on every alternative. The first draft wrote /
+    // ^\s*\/\/|\/\*|^\s*\*/ — the middle alternative had NO anchor, so any LIVE
+    // line that merely contained `/*` anywhere (e.g. `const p = /*path*/ x`)
+    // was discarded as a comment, opening a hole in the one text-level defence
+    // that remains once someone bypasses TS2339 with an `as` cast (MINOR-3).
+    // Trailing `// …` is also stripped, because narrative after live code must
+    // not turn a real violation into a false RED.
+    const surfaces: Array<[string, RegExp, boolean]> = [
+      ['patches/omo-dsh/omo-agents/src/index.ts', /^\s*(\/\/|\/\*|\*)/, true],
+      ['patches/omo-dsh/omo-agents/concerto/preset.yml', /^\s*#/, false],
+    ]
+    for (const [rel, commentPattern, stripTrailingLineComment] of surfaces) {
+      const live = readFileSync(join(repoRoot, rel), 'utf8')
+        .split('\n')
+        .filter((line) => !commentPattern.test(line))
+        .map((line) => (stripTrailingLineComment ? line.replace(/\/\/.*$/, '') : line))
+        .join('\n')
+      expect(live, `${rel} still carries the trust vocabulary on a live line`).not.toMatch(/\btrust\b/)
+    }
+    // And the narrative that must NOT be erased, pinned so a future "cleanup"
+    // cannot quietly delete the record:
+    expect(readFileSync(join(repoRoot, surfaces[0][0]), 'utf8')).toContain('trust')
+    expect(readFileSync(join(repoRoot, surfaces[1][0]), 'utf8')).toContain('trust')
+  })
+
+  it('the parsed composition matches src/roster.ts ELEMENT-WISE on both faces', async () => {
+    // The §2.4 finding: `agentPresets/read` `content` is a yaml.dump() of the
+    // parsed entry list, so flow sequences expand to block sequences and
+    // redundant quotes drop. Verbatim line greps of the materialized file are
+    // therefore WRONG on the read face — they are sensitive to cosmetics and
+    // blind to meaning. Parsing and comparing element-wise is correct on BOTH
+    // faces, which is what this test measures: the same expectation passes
+    // against the rendered materialized text here, and against the real
+    // 0.2.0-rc.2 read content in the sandbox scenario.
+    const composition = renderConcertoComposition(EXPECTED_TEMPLATE_DIR)
+    const rows = await parseCompositionInLoaderDialect(composition)
+    const group = delegationGroup(rows)
+    for (const entry of DELEGATION_ENTRIES) {
+      const row = toolRow(group, entry.id)
+      const wantDeny = denyToolNamesFor(entry)
+      const wantAllow = allowToolNamesFor(entry)
+      if (wantDeny !== undefined) {
+        expect(row.config?.toolFilter?.deny, `${entry.id} deny`).toEqual(wantDeny)
+      }
+      if (wantAllow !== undefined) {
+        expect(row.config?.toolFilter?.allow, `${entry.id} allow`).toEqual(wantAllow)
+      }
+      expect(row.config?.maxDepth, `${entry.id} maxDepth`).toBe(entry.maxDepth)
+      expect(row.config?.toolName, `${entry.id} toolName`).toBe(entry.id)
+    }
+    // And the cosmetic difference the migration is about, recorded as fact:
+    // this face is flow-style and quoted, the read face is block-style and not.
+    expect(composition).toMatch(/deny: \[/)
+    expect(composition).toContain('provider: "deepseek"')
   })
 })

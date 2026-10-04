@@ -93,6 +93,7 @@
 import {
   CONCERTO_TEMPLATE_DIR,
   concertoPresetDir,
+  formatConcertoRosterLine,
   registerConcertoPreset,
   syncConcertoPreset,
   type ConcertoSyncOutcome,
@@ -125,12 +126,22 @@ export const name = 'omo-agents'
 // P4.5-T5 shape extension: 0.2.x `agent-preset-registry` rows carry
 // `broken?: string` — ABSENT is the normal form (`...(broken === undefined
 // ? {} : { broken })`, agent-preset-registry/src/index.ts:161 @
-// dsh-v0.2.0-rc.2), so the readback asserts absence, never a value. The
-// `trust` field is 0.1.5-only vocabulary; its migration is P4.5-T6's face
-// (arbitration 边界A: T5 keeps the declaration and the print vocabulary).
+// dsh-v0.2.0-rc.2), so the readback asserts absence, never a value.
+//
+// P4.5-T6: `trust` is GONE from this declaration. The 0.2.x roster row is
+// built by one object literal (agent-preset-registry/src/index.ts:156-162 @
+// dsh-v0.2.0-rc.2) whose ONLY keys are id/name/description/order/broken —
+// `trust` was 0.1.5-only vocabulary, so a field left declared here would be
+// an invitation to read a key that can never exist (it printed `concerto:?`
+// at boot, which is what the probe used to assert). Deleting the key makes
+// the vocabulary DEAD in this repo: any re-introduced `preset.trust` read
+// fails `pnpm typecheck`, so the regression cannot come back silently.
+// `isDefault` is deliberately NOT declared here either: it is NOT a `list()`
+// key — only `remoteExportList()` adds it (:173), and the print line below
+// reads `list()`. Asserting `isDefault` belongs to the roster RPC face in
+// scripts/concerto-mode-probe.sh, never to this in-process row.
 interface RosterEntry {
   id: string
-  trust?: string
   name?: string
   broken?: string
 }
@@ -303,11 +314,26 @@ export function apply(ctx: InjectingContext): void {
         console.log(`[omo-agents] concerto preset register FAILED: ${describeError(err)}`)
       }
       try {
-        const roster = await injected.agentPresets.list()
-        console.log(
-          '[omo-agents] concerto roster: '
-          + roster.map((preset) => `${preset.id}:${preset.trust ?? '?'}`).join(','),
-        )
+        // P4.5-T6. A first `list()` can come back EMPTY at the instant the
+        // inject callback fires (T1 Q-3 §1.4, reproduced twice: rows land on
+        // the next microtask). Printing that as a roster line would hand the
+        // probe a prefix-only match on `concerto roster: ` with no rows —
+        // exactly the vacuity the arbitration assigned to T6 — so read once
+        // more after a tick before declaring it empty, and print an explicit
+        // EMPTY token when it really is empty. No wait/retry loop: one
+        // settle re-read, then the honest token (arbitration: 不得设计等待).
+        let roster = await injected.agentPresets.list()
+        if (roster.length === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          roster = await injected.agentPresets.list()
+        }
+        // Vocabulary: the pre-T6 line printed `${id}:${trust ?? '?'}`, and
+        // `trust` is not a 0.2.x roster key at all, so EVERY row printed a
+        // naked `?` (`concerto:?`) — a placeholder dressed as a verdict. The
+        // shipped helper now prints the field the registry really produces
+        // (`broken`, absent on a healthy row) and refuses to invent
+        // `isDefault`, which only `remoteExportList()` returns.
+        console.log(formatConcertoRosterLine(roster))
       } catch (err) {
         console.log(`[omo-agents] concerto roster FAILED: ${describeError(err)}`)
       }

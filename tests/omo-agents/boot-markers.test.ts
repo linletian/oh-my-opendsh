@@ -701,8 +701,15 @@ describe('P4.5-T5 apply() wiring — registration outlet', () => {
     expect(logs).toContain('[omo-agents] concerto preset register face absent, materialized path only')
     expect(logs.some((line) => line.includes('registered: id=concerto'))).toBe(false)
     expect(logs.some((line) => line.includes('register FAILED'))).toBe(false)
-    // The pre-T5 roster print vocabulary is T6's face — still exact here.
-    expect(logs).toContain('[omo-agents] concerto roster: standard:system,concerto:user')
+    // P4.5-T6: the roster print no longer consumes `trust`. The mock keeps
+    // the 0.1.5 ROW shape (trust present, no `broken` key — that IS what
+    // 0.1.5 hands back), and the assertion checks the printed vocabulary:
+    // every row prints `id:broken=<verdict>`, and on 0.1.5 that verdict can
+    // only ever be `absent` because the row carries no `broken` field at all.
+    // The pre-T6 line was `standard:system,concerto:user`; a `trust` token
+    // reaching the boot log again is a vocabulary regression, asserted dead.
+    expect(logs).toContain('[omo-agents] concerto roster: standard:broken=absent,concerto:broken=absent')
+    expect(logs.some((line) => /:system|:user|:\?/.test(line))).toBe(false)
   })
 
   it('a broken readback surfaces the FAILED marker through the real apply() wiring', async () => {

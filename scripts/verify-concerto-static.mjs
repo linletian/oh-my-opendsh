@@ -1717,6 +1717,81 @@ async function run() {
       `the status-cell check could not run: ${String(e.message ?? e)}`))
   }
 
+  // c23 — the read-face validator's argument contract, pinned across ALL of its
+  // consumers.规约⑭: when a shared API changes shape, every consumer must change
+  // in the same round, and the consumer COUNT must be asserted statically.
+  // Last round the validator grew a 6th parameter (`expected !!js count`) and only
+  // the validator and the probe were updated; tests/e2e/drive.mjs kept passing 5,
+  // so `Number(undefined)` = NaN tripped the validator's own integer guard and the
+  // gate-3 read-face assertion was RED by construction — invisible on a machine
+  // that cannot run gate 3. A comment claiming the consumers agree is not evidence;
+  // this check is.
+  try {
+    const C23_VALIDATOR = join(REPO_ROOT, 'scripts', 'assert-concerto-read-face.mjs')
+    const C23_CONSUMERS = [
+      ['scripts/concerto-mode-probe.sh', 'shell'],
+      ['tests/e2e/drive.mjs', 'js'],
+    ]
+    const vSrc = readFileSync(C23_VALIDATOR, 'utf8')
+    const destructure = vSrc.match(/const \[([^\]]*)\] = process\.argv\.slice\(2\)/)
+    const c23Problems = []
+    if (!destructure) {
+      c23Problems.push('cannot find the `const [...] = process.argv.slice(2)` signature in the validator')
+    }
+    const arity = destructure ? destructure[1].split(',').map((s) => s.trim()).filter(Boolean).length : -1
+
+    for (const [rel, kind] of C23_CONSUMERS) {
+      const src = readFileSync(join(REPO_ROOT, rel), 'utf8')
+      let passed = -1
+      if (kind === 'shell') {
+        const line = src.split('\n').find((l) => l.includes('node "$ASSERT_READ_FACE_MJS"'))
+        if (!line) {
+          c23Problems.push(`${rel}: no ` + '`node "$ASSERT_READ_FACE_MJS"`' + ' invocation found')
+          continue
+        }
+        passed = (line.match(/"[^"]*"/g) ?? []).length - 1
+      } else {
+        const lines = src.split('\n')
+        const start = lines.findIndex((l) => l.includes('const readFace = spawnSync('))
+        if (start < 0) {
+          c23Problems.push(`${rel}: no \`const readFace = spawnSync(\` invocation found`)
+          continue
+        }
+        let depth = 0
+        let open = -1
+        for (let i = start; i < lines.length && passed < 0; i += 1) {
+          for (const ch of lines[i]) {
+            if (ch === '[') { if (depth === 0) open = i; depth += 1 } else if (ch === ']') {
+              depth -= 1
+              if (depth === 0) {
+                // Same convention as the shell side: the first element is the
+                // script path, the validator sees the REST via argv.slice(2).
+                passed = lines.slice(open + 1, i).map((s) => s.trim()).filter(Boolean).length - 1
+                break
+              }
+            }
+          }
+        }
+      }
+      if (passed !== arity) {
+        c23Problems.push(`${rel} passes ${passed} argument(s) but the validator declares ${arity}`)
+      }
+    }
+    if (arity < 6) {
+      c23Problems.push(`the validator declares only ${arity} parameters — the \`!!js\` expectation argument is gone`)
+    }
+    results.push(check('c23', 'read-face validator arity matches every consumer',
+      c23Problems.length === 0,
+      c23Problems.length > 0
+        ? c23Problems.join('; ')
+        : `validator declares ${arity} parameters and all ${C23_CONSUMERS.length} consumers `
+          + `(${C23_CONSUMERS.map(([rel]) => rel).join(', ')}) pass exactly ${arity} — `
+          + 'signature drift across consumers fails here, at gate 6, instead of at the unrunnable gate 3'))
+  } catch (e) {
+    results.push(check('c23', 'read-face validator arity matches every consumer', false,
+      `the arity check could not run: ${String(e.message ?? e)}`))
+  }
+
   // Report.
   const json = process.argv.includes('--json')
   if (json) {

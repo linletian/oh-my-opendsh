@@ -345,12 +345,27 @@ export type ConcertoRenderInputs = AgentSentinelInputs
  * `syncConcertoPreset` writes to `agent.cordis.yml`. It is NOT the
  * `agentPresets/read` document `content`: that one is a `yaml.dump()` of the
  * PARSED object (agent-preset-registry/src/index.ts:200-205 @
- * dsh-v0.2.0-rc.2), whose text form differs — flow sequences expand to block
- * sequences, redundant quotes drop, and a real `!!js` tag becomes a two-line
- * `__jsExpr` map. The two forms are NOT interchangeable as assertion inputs
- * (.omo/evidence/p45t5/ARBITRATION-primary-source-verification.md §6); the
- * P4.5-T6 `read`-face anchors must be derived from the dump form, never
- * copy-pasted from this text's anchors.
+ * dsh-v0.2.0-rc.2), whose text form differs in TWO measured ways — flow
+ * sequences expand to block sequences (`deny: ["a", "b"]` → `deny:` + one
+ * `- a` per line), and redundant quotes drop (`provider: "spawn"` →
+ * `provider: spawn`). Those two are why a verbatim line-equality grep of a
+ * flow sequence or a quoted scalar goes RED against `content`.
+ *
+ * `!!js` is NOT one of the differences, and an earlier draft of this note
+ * said it was: it claimed a real `!!js` tag dumps as a two-line `__jsExpr`
+ * map. That was a flawed simulation, not the real `content` — the upstream
+ * `JsExpr` type declares `represent` (vendor/include/src/index.ts:9-15 @
+ * dsh-v0.2.0-rc.2, `represent: (data) => data['__jsExpr']`), and
+ * `represent` is the SERIALIZE hook `dump` uses, so `content` carries
+ * `disabled: !!js process.platform === 'win32'` on ONE line, text-identical
+ * to this rendered form. Our own `makeJsExprType` has no `represent` and is
+ * used only to PARSE; never let it become the dump dialect of an assertion.
+ *
+ * So: derive the P4.5-T6 `read`-face flow-sequence and quoted-scalar
+ * assertions from the dump form (parse `content` and compare the parsed
+ * values), never by copy-pasting this text's line anchors. Block scalars
+ * (`prefix: |-`, `persona: |-`), row/indent anchors and `!!js` lines hold on
+ * both faces.
  *
  * @param personaPrompt rendered into the conductor persona sentinel (T8).
  * @param inputs the P2-T15 per-agent overrides; defaults build from the same
@@ -699,6 +714,70 @@ export function formatConcertoRegisteredLine(): string {
 /** Marker: loud-but-non-fatal registration failure (probe :939 negative grep). */
 export function formatConcertoRegisterFailedLine(reason: string): string {
   return `[omo-agents] concerto preset register FAILED: ${reason}`
+}
+
+/**
+ * The word a HEALTHY roster row prints for `broken`.
+ *
+ * P4.5-T6 (roster vocabulary migration). Until T6 the boot roster line printed
+ * `${id}:${trust ?? '?'}`; on 0.2.x `trust` is not a roster key at all
+ * (agent-preset-registry/src/index.ts:156-162 @ dsh-v0.2.0-rc.2 lists only
+ * id/name/description/order/broken), so every row printed a naked `?` —
+ * `concerto:?` — a placeholder that asserted nothing while looking like a
+ * verdict. This module owns the replacement vocabulary so the probe can DERIVE
+ * the expected line from the shipped module instead of restating a literal.
+ */
+export const CONCERTO_BROKEN_ABSENT = 'absent'
+
+/**
+ * Render ONE roster row's `broken` verdict: the literal
+ * CONCERTO_BROKEN_ABSENT when the roster row carried no `broken` key, else
+ * the registry's own message flattened onto one line.
+ *
+ * Flattening is not cosmetic: the roster prints as ONE comma-separated line,
+ * so a comma or newline inside a real mount-failure message would make the
+ * row count of that line lie.
+ *
+ * ⚠️ READ THE TOKEN FOR WHAT IT IS, per runtime:
+ *   * 0.2.x — `broken` is written ONLY when activation threw
+ *     (agent-preset-registry/src/index.ts:161 `...(broken === undefined ? {}
+ *     : { broken })`), so `broken=absent` genuinely IS the healthy form, and
+ *     this is the readback the T5 success marker depends on.
+ *   * 0.1.5 — the roster row has no `broken` field AT ALL, so the same token
+ *     here means only "this runtime never reported a verdict". It is NOT
+ *     evidence of health on 0.1.5; the 0.1.5 leg's evidence is the
+ *     materialized file. Do not let one token read as a health claim on a
+ *     runtime that cannot make it.
+ */
+export function formatBrokenVerdict(broken: string | undefined): string {
+  if (broken === undefined) return CONCERTO_BROKEN_ABSENT
+  return broken.replace(/[\r\n]+/g, ' ').replace(/,/g, ';').trim()
+}
+
+/**
+ * The full boot roster line, derived from the rows `list()` actually returned.
+ *
+ * An empty row set prints the CONCERTO_ROSTER_EMPTY token instead of a bare
+ * prefix. That is the point of this helper: a bare `concerto roster: ` line is
+ * matched by any prefix grep and therefore reports success on a boot that read
+ * nothing (T1 Q-3 §1.4 measured that a first `list()` can be empty at the
+ * inject instant). The token makes the empty case LOUD and greppable, so the
+ * probe can require rows instead of accidentally accepting whitespace.
+ *
+ * `isDefault` is NEVER part of this line: `list()` structurally does not
+ * return it (only `remoteExportList()` adds it, :173), so anything printing
+ * it from a `list()` row would be fabricating. `isDefault` is asserted over
+ * the roster RPC face, not here.
+ */
+export const CONCERTO_ROSTER_EMPTY = 'EMPTY'
+
+export function formatConcertoRosterLine(
+  rows: readonly { id: string; broken?: string }[],
+): string {
+  const prefix = '[omo-agents] concerto roster: '
+  if (rows.length === 0) return `${prefix}${CONCERTO_ROSTER_EMPTY}`
+  return prefix
+    + rows.map((row) => `${row.id}:broken=${formatBrokenVerdict(row.broken)}`).join(',')
 }
 
 /**

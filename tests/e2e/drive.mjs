@@ -496,6 +496,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -556,7 +557,17 @@ const { resolveModelRoutes } = await import(
 // P2-T19 additionally consumes DELEGATION_TOOL_NAMES: the read-only child's
 // "all ten delegation tools are physically absent" claim and atlas's "keeps
 // all ten" claim both have to be the roster's own list, never a restatement.
-const { CONDUCTOR_ID, DELEGATION_ENTRIES, DELEGATION_TOOL_NAMES } = await import(
+// P4.5-T6: denyToolNamesFor/allowToolNamesFor join this import because the
+// read-face assertion derives its expectations from src/roster.ts here — the
+// same single-source discipline, so the e2e never restates a deny list that
+// could drift from the roster it is supposed to be checking.
+const {
+  CONDUCTOR_ID,
+  DELEGATION_ENTRIES,
+  DELEGATION_TOOL_NAMES,
+  allowToolNamesFor,
+  denyToolNamesFor,
+} = await import(
   new URL('../../patches/omo-dsh/omo-agents/src/roster.ts', import.meta.url).href
 )
 // P3-T6: the bash-read advisory under test, read from the SHIPPED listener
@@ -2091,6 +2102,124 @@ async function rpc(boot, method, payload) {
     throw new Error(`rpc ${method} failed: ${JSON.stringify(result ?? body).slice(0, 400)}`)
   }
   return result.value
+}
+
+/**
+ * P4.5-T6 — the `agentPresets/read` face: the single assertion face for preset
+ * CONTENT on both runtimes.
+ *
+ * Two measured facts (dsh 0.2.0-rc.2; artifacts in .omo/evidence/p45t6/logs/):
+ *
+ *  1. `remoteExportList()` — what `@Remote('list')` answers — returns an
+ *     ENVELOPE `{ presets: [...] }`, NOT an array
+ *     (dsh-agent-preset-registry/src/index.ts:171-174 @ dsh-v0.2.0-rc.2),
+ *     while the in-process `list()` DOES return a real array. Same name, two
+ *     shapes — measured side by side in the T6 sandbox scenario
+ *     (.omo/evidence/p45t6/logs/scenario-B-boot.log: `list-shape=array`,
+ *     `remoteExportList-shape=envelope`, `envelope-keys=["presets"]`).
+ *     This driver never calls the roster RPC, so it deliberately ships NO
+ *     shape resolver for a face it does not consume: an exported
+ *     `presetRosterRows` with zero call sites is decoration, and decoration in
+ *     a gate file is later trusted without ever being exercised (MINOR-1 —
+ *     removed rather than left to rot).
+ *  2. The read document's `content` is a `yaml.dump()` of the PARSED entry
+ *     list — `agent-preset-registry/src/index.ts:202` @ dsh-v0.2.0-rc.2
+ *     (`dump(plugins, { schema: entryListSchema, noRefs: true, lineWidth: -1 })`,
+ *     inside readDocument() which opens at :194; the file is 366 lines long, so
+ *     the `:620-631` this comment used to carry was a range that does not exist).
+ *     Flow sequences therefore come back as block sequences and
+ *     redundant quotes drop. Verbatim line greps written against the
+ *     materialized file are therefore WRONG here. The content check delegates
+ *     to scripts/assert-concerto-read-face.mjs — the SAME file the probe runs.
+ *     That delegation is NOT what keeps the consumers in step: last round this
+ *     call site kept passing 5 arguments after the validator grew a 6th, and the
+ *     comment below claiming they "cannot drift" was sitting right there while
+ *     they did. scripts/verify-concerto-static.mjs c23 now pins the arity of
+ *     every consumer statically — that is the evidence — which parses the content and compares
+ *     every delegation row ELEMENT-WISE against src/roster.ts.
+ *
+ * NO FALLBACK: if the read face is unavailable this throws. Falling back to
+ * `$DSH_HOME/.agent-presets/concerto/agent.cordis.yml` would assert bytes the
+ * 0.2.x host never reads — the 0.2.x registry has no `.agent-presets` reader at
+ * all (grep of the shipped dsh-agent-preset-registry/lib/index.js for
+ * `agent-presets|readdir|discover` is empty) — i.e. a gate that passes while
+ * proving nothing.
+ */
+async function readPresetDocument(boot, agentPreset) {
+  // Transport-adaptive, mirroring the roster call sites: rc6-flat exposes the
+  // flat `agentPreset.read`; the token/cookie transport exposes the Remote
+  // gateway path `agentPresets/read` with its {args:{…}} envelope.
+  const flat = boot.transport === 'rc6-flat'
+  const method = flat ? 'agentPreset.read' : 'agentPresets/read'
+  const payload = flat ? { agentPreset } : { args: { agentPreset } }
+  const value = await rpc(boot, method, payload)
+  if (value === null || typeof value !== 'object' || typeof value.content !== 'string') {
+    throw new Error(
+      `${method}: no string \`content\` on the read document (keys `
+        + `${JSON.stringify(Object.keys(value ?? {}))}) — NO fallback to the materialized file is permitted`,
+    )
+  }
+  if (value.agentPreset !== agentPreset) {
+    throw new Error(
+      `${method}: document is for ${JSON.stringify(value.agentPreset)}, not ${agentPreset}`,
+    )
+  }
+  return value
+}
+
+/**
+ * The directory holding `js-yaml` for the INSTALLED dsh — the validator loads
+ * js-yaml from here so it parses in the same dialect the host does. Walks up
+ * from the realpath of the `dsh` binary (npm global trees hoist to different
+ * depths), then the repo's own node_modules as a last candidate. Throws if none
+ * carries js-yaml: a validator that silently skipped its parse is the flickering
+ * gate this task exists to remove.
+ */
+function resolveDshNodeModules() {
+  const candidates = []
+  const which = spawnSync('sh', ['-c', 'command -v dsh'], { encoding: 'utf8' })
+  if (which.status === 0 && which.stdout.trim() !== '') {
+    // `command -v dsh` yields the SYMLINK (`~/.npm-global/bin/dsh`), and a
+    // `bin/node_modules` layout NEVER exists for a global npm install: walking
+    // up from the symlink's own directory misses on every hop and this resolver
+    // throws on a machine where js-yaml is installed and working. `realpathSync`
+    // lands on the real entry (`…/@deepseek-ai/dsh/lib/bin.js`), and the walk
+    // up from THERE hits `…/dsh/node_modules` immediately.
+    //
+    // This is the THIRD resolver in this repo. doctor-lite.mjs:119 and T5's
+    // concerto-preset.ts:558 both realpath; only this one did not — three
+    // implementations of one fact, silently divergent, and the comment claiming
+    // they matched was not evidence. Same root cause as the missing 6th spawnSync
+    // argument: a shared contract changed in one place and its other consumers
+    // were not aligned in the same round.
+    let startDir = dirname(which.stdout.trim())
+    try {
+      startDir = dirname(realpathSync(which.stdout.trim()))
+    } catch {
+      // Keep the symlink directory as the start so the tried-list still records
+      // what was attempted; the throw below stays honest about the failure.
+    }
+    let dir = startDir
+    for (let hop = 0; hop < 8; hop += 1) {
+      candidates.push(join(dir, 'node_modules'))
+      const parent = dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+    // Sibling of the real bin.js: the package layout when node_modules sits
+    // beside lib/ rather than above it.
+    candidates.push(join(startDir, 'node_modules'))
+  }
+  candidates.push(join(REPO_ROOT, 'node_modules'))
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, 'js-yaml', 'dist', 'js-yaml.mjs'))) return candidate
+  }
+  // The throw is deliberate and stays: an unresolvable js-yaml must not degrade
+  // the read-face assertion into a silent skip. Only the STARTING POINT was wrong.
+  throw new Error(
+    `cannot locate js-yaml for the read-face validator; tried ${JSON.stringify(candidates)}`
+      + ' — the read-face assertion must not be skipped silently',
+  )
 }
 
 /**
@@ -14578,6 +14707,100 @@ async function runScenario(def, baseRoutes) {
     // by the background scenario to reach the one-shot background job path the
     // shipped `continuable` rows cannot produce; loud on drift (it throws).
     def.augmentMaterialized?.(sandbox)
+
+    // P4.5-T6 — the composition ASSERTION face. Everything above this line
+    // MUTATES the sandbox's materialized file (appendMockRoleMarker /
+    // augmentMaterialized) or verifies WHERE a marker landed inside that file
+    // (verifyMockRoleMarkerLanding, which needs line numbers — a read RPC gives
+    // no line numbers). Those are fixture mechanics, not content assertions,
+    // and `agentPresets/read` has no write face, so they stay on the file.
+    // What the SESSION is actually about to compose from, though, is asserted
+    // here over the READ face — the bytes the running host can see — with no
+    // fallback to the file. See readPresetDocument for the two measured shapes.
+    const readDoc = await readPresetDocument(boot, CONCERTO_PRESET_ID)
+    const readFaceDir = join(sandbox.root, 'read-face')
+    mkdirSync(readFaceDir, { recursive: true })
+    const readContentPath = join(readFaceDir, 'agentPresets-read-content.yml')
+    const readExpectPath = join(readFaceDir, 'roster-expectations.json')
+    writeFileSync(readContentPath, readDoc.content)
+    writeFileSync(readExpectPath, JSON.stringify({
+      rows: DELEGATION_ENTRIES.map((entry) => ({
+        id: entry.id,
+        deny: denyToolNamesFor(entry) ?? null,
+        allow: allowToolNamesFor(entry) ?? null,
+        maxDepth: entry.maxDepth,
+      })),
+      // Derived, never transcribed: the roster's own uniform cap. If the
+      // roster ever stops being uniform, this throws rather than letting the
+      // validator compare against a stale constant.
+      uniformMaxDepth: (() => {
+        const depths = [...new Set(DELEGATION_ENTRIES.map((entry) => entry.maxDepth))]
+        if (depths.length !== 1) {
+          throw new Error(
+            `[${def.name}] the roster maxDepth is not uniform (${JSON.stringify(depths)})`
+              + ' — the read-face expectation has to be re-derived, not guessed',
+          )
+        }
+        return depths[0]
+      })(),
+    }))
+    const readFaceRoutes = resolveModelRoutes()
+    // The expected `!!js` gate count comes from the WRITE face — the same
+    // materialized file the probe derives it from — NEVER off the bytes under
+    // assertion. Self-counting cannot catch silent degradation: dropping a tag
+    // lowers both sides of the reader's own tally at once (MINOR-2, measured
+    // green under a self-referential check).
+    //
+    // This is the SECOND consumer of assert-concerto-read-face.mjs; the first is
+    // scripts/concerto-mode-probe.sh. When the validator grew its 6th argument
+    // last round, only the validator and the probe were updated and THIS call
+    // site kept passing 5 — `Number(undefined)` is NaN, which trips the
+    // validator's own integer guard, so the read-face assertion was RED by
+    // construction on every run. A comment in the probe claiming the consumers
+    // stay in step is not evidence: scripts/verify-concerto-static.mjs now
+    // asserts the arity of this spawnSync, so signature drift goes red at gate 6
+    // instead of surfacing at gate 3 (which this machine cannot run).
+    const readFaceWritePath = materializedCompositionPath(sandbox)
+    const expectedJsCount = (() => {
+      const count = readFileSync(readFaceWritePath, 'utf8')
+        .split('\n')
+        .filter((line) => line.includes('!!js ')).length
+      if (count === 0) {
+        throw new Error(
+          `[${def.name}] the write face ${readFaceWritePath} declares ZERO \`!!js\` gates — `
+            + 'the render changed, so the read-face expectation must be re-derived, not asserted',
+        )
+      }
+      return count
+    })()
+    console.log(
+      `drive: [${def.name}] read-face expected \`!!js\` gates from the write face: ${expectedJsCount}`,
+    )
+    const readFace = spawnSync(
+      process.execPath,
+      [
+        join(REPO_ROOT, 'scripts', 'assert-concerto-read-face.mjs'),
+        resolveDshNodeModules(),
+        readContentPath,
+        readExpectPath,
+        readFaceRoutes.explore.provider,
+        readFaceRoutes.explore.model,
+        String(expectedJsCount),
+      ],
+      { encoding: 'utf8', timeout: 60_000 },
+    )
+    if (readFace.status !== 0) {
+      throw new Error(
+        `[${def.name}] the agentPresets/read content failed the shared read-face validator`
+          + ` (exit ${readFace.status}): ${(readFace.stdout ?? '') + (readFace.stderr ?? '')}`
+          + ' — NO fallback to the materialized file is permitted',
+      )
+    }
+    console.error(
+      `drive: [${def.name}] read-face asserted ${readDoc.content.split('\n').length} lines`
+        + ` / ${Buffer.byteLength(readDoc.content)} bytes of agentPresets/read content`
+        + ` (name ${JSON.stringify(readDoc.name)})`,
+    )
 
     // Wiring proof for BOTH adapters (transport-adaptive; same contract).
     const providers = await listProvidersJoined(boot)
