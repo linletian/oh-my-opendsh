@@ -288,8 +288,14 @@ ROUTES_ENV="$(node --input-type=module -e "
       console.log('DELEGATION_MAXDEPTH=' + entry.id + '=' + String(entry.maxDepth))
       const deny = roster.denyToolNamesFor(entry)
       const allow = roster.allowToolNamesFor(entry)
+      // TWO independent emissions, not if/else-if: a row that carries BOTH a
+      // deny and an allow list used to report only its deny, and the consumer
+      // below then read the missing allow as 'the roster declares none' and
+      // asserted its ABSENCE on a row that legitimately has one (review A
+      // MINOR-C). Today's roster happens to have no such row, which is exactly
+      // the kind of luck a gate must not depend on.
       if (deny !== undefined) console.log('DELEGATION_DENY=' + entry.id + '=' + JSON.stringify(deny))
-      else if (allow !== undefined) console.log('DELEGATION_ALLOW_PLAIN=' + entry.id + '=' + allow.join(', '))
+      if (allow !== undefined) console.log('DELEGATION_ALLOW_PLAIN=' + entry.id + '=' + allow.join(', '))
     }
   })
 ")" || fail "model-routes/roster module resolution failed: $ROUTES_ENV"
@@ -375,7 +381,12 @@ node -e '
     maxDepth: Number(depths.get(id)),
   }))
   if (rows.length === 0) { console.error("empty roster expectation set — the read-face comparison would be vacuous"); process.exit(1) }
-  fs.writeFileSync(outFile, JSON.stringify({ rows, uniformMaxDepth: Number(uniform) }, null, 2))
+  // `sandboxEdits` is REQUIRED by the validator contract (WP2 MAJOR-1). This
+  // probe declares [] because it edits NOTHING on the composition face it
+  // asserts: it reads $materialized with grep/awk/node and never writes it —
+  // scripts/verify-concerto-static.mjs c24 asserts exactly that, so this empty
+  // list is a checked fact here, not a claim of convenience.
+  fs.writeFileSync(outFile, JSON.stringify({ rows, uniformMaxDepth: Number(uniform), sandboxEdits: [] }, null, 2))
 ' "$ROSTER_EXPECTATIONS_JSON" "$DELEGATION_IDS" "$DELEGATION_DENIES" "$DELEGATION_ALLOWS" "$DELEGATION_MAXDEPTHS" "$UNIFORM_MAXDEPTH" \
   || fail "could not serialize the roster-derived expectations for the read face"
 [[ -s "$ROSTER_EXPECTATIONS_JSON" ]] \
@@ -1369,7 +1380,7 @@ boot_once() {
     # no literal roster list is restated in this script. The explore row is
     # checked twice (here and by the explicit T11 greps above) by design: the
     # named explore assertions stay as the pinned T11 evidence.
-    local delegation_id row_maxdepth row_deny_json row_allow_plain row_deny_sequence
+    local delegation_id row_maxdepth row_deny_json row_allow_plain row_deny_sequence row_block
     while IFS= read -r delegation_id; do
       [[ -n "$delegation_id" ]] || continue
       grep -q "^    - id: tool-subagent-$delegation_id$" "$materialized" \
@@ -1380,17 +1391,49 @@ boot_once() {
       [[ -n "$row_maxdepth" ]] || fail "[$label] no roster maxDepth expectation for delegation row '$delegation_id'"
       grep -q "^        maxDepth: $row_maxdepth$" "$materialized" \
         || fail "[$label] materialized row '$delegation_id' maxDepth != roster value $row_maxdepth"
+      # WP2 MINOR-1 + review A MINOR-C/NIT-3, same round as the validator's
+      # else branches. Two defects lived here: the greps only fired when the
+      # roster DECLARED a list, so for the orchestrator (`atlas`) and the
+      # allowlist class (`multimodal-looker`) they asserted nothing at all; and
+      # the absence net matched only the flow-sequence shape (`deny: [`), while
+      # its span was the WHOLE row — so a persona line at the same 10-space
+      # indent that merely begins `deny: [read]` was reported as an injected
+      # filter (measured: review A FA7), and an injected block-style
+      # `deny:` + `- read` was invisible.
+      # Now: the span is the row's `toolFilter` SUB-block (the 8-space key's
+      # children, nothing else), both shapes are recognised, and the positive
+      # greps are row-scoped too — a deny list on some OTHER row used to
+      # satisfy them.
+      row_block="$(awk -v id="    - id: tool-subagent-$delegation_id" \
+        'index($0,id)==1{f=1;next} f&&/^    - id: /{exit} f{print}' "$materialized")"
+      [[ -n "$row_block" ]] \
+        || fail "[$label] FACE A: the materialized span of row '$delegation_id' is empty — every absence assertion below would be vacuous"
+      filter_block="$(printf '%s\n' "$row_block" | awk '/^        toolFilter:/{f=1;next} f&&/^        [^ ]/{exit} f{print}')"
+      row_has_deny="$(printf '%s\n' "$filter_block" | grep -c '^          deny:' || true)"
+      row_has_allow="$(printf '%s\n' "$filter_block" | grep -c '^          allow:' || true)"
       row_deny_json="$(printf '%s\n' "$DELEGATION_DENIES" | grep "^$delegation_id=" | cut -d= -f2- || true)"
       if [[ -n "$row_deny_json" ]]; then
+        [[ -n "$filter_block" ]] \
+          || fail "[$label] FACE A: row '$delegation_id' renders NO toolFilter sub-block at all, but the roster declares a deny list for it"
         row_deny_sequence="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).map((n) => JSON.stringify(n)).join(", "))' "$row_deny_json")" \
           || fail "[$label] could not build the rendered deny sequence for '$delegation_id' from $row_deny_json"
-        grep -qxF -- "          deny: [$row_deny_sequence]" "$materialized" \
-          || fail "[$label] materialized row '$delegation_id' deny list missing or not the roster-computed sequence (want deny: [$row_deny_sequence])"
+        printf '%s\n' "$filter_block" | grep -qxF -- "          deny: [$row_deny_sequence]" \
+          || fail "[$label] materialized row '$delegation_id' deny list missing or not the roster-computed sequence (want deny: [$row_deny_sequence] inside this row's toolFilter block)"
+      elif [[ "$row_has_deny" != "0" ]]; then
+        fail "[$label] FACE A: row '$delegation_id' carries a deny list (flow or block) the roster does not declare — the roster gives this class NO toolFilter.deny, so the key must be ABSENT from this row's toolFilter block"
       fi
       row_allow_plain="$(printf '%s\n' "$DELEGATION_ALLOWS" | grep "^$delegation_id=" | cut -d= -f2- || true)"
       if [[ -n "$row_allow_plain" ]]; then
-        grep -qxF -- "          allow: [$row_allow_plain]" "$materialized" \
-          || fail "[$label] materialized row '$delegation_id' allow list missing or not the roster-derived list (want allow: [$row_allow_plain])"
+        [[ -n "$filter_block" ]] \
+          || fail "[$label] FACE A: row '$delegation_id' renders NO toolFilter sub-block at all, but the roster declares an allow list for it"
+        printf '%s\n' "$filter_block" | grep -qxF -- "          allow: [$row_allow_plain]" \
+          || fail "[$label] materialized row '$delegation_id' allow list missing or not the roster-derived list (want allow: [$row_allow_plain] inside this row's toolFilter block)"
+      elif [[ "$row_has_allow" != "0" ]]; then
+        fail "[$label] FACE A: row '$delegation_id' carries an allow list (flow or block) the roster does not declare — only the allowlist class renders toolFilter.allow"
+      fi
+      if [[ -z "$row_deny_json" && -z "$row_allow_plain" ]] \
+        && printf '%s\n' "$row_block" | grep -q '^        toolFilter:'; then
+        fail "[$label] FACE A: row '$delegation_id' renders a toolFilter block the roster declares none of (orchestrator rows carry no filter key at all)"
       fi
     done <<< "$DELEGATION_IDS"
     # Uniform maxDepth: exactly one maxDepth line per delegation row, all equal

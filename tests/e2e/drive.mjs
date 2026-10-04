@@ -1426,6 +1426,12 @@ function enableOneShotBackgroundExplore(sandbox) {
   }
   lines[modeIndex] = '        backgroundMode: one-shot'
   writeFileSync(compositionPath, lines.join('\n'))
+  // WP2 MAJOR-1: an `augmentMaterialized` fixture RETURNS what it changed. On a
+  // 0.1.5 file-supplied `agentPresets/read` this row reads `one-shot` while
+  // src/roster.ts still says `continuable`; on 0.2.x register() renders the
+  // template and the edit never reaches the face. The declaration is how the
+  // assertion knows which world it is in — see `declaredSandboxEdits`.
+  return [{ row: BACKGROUND_NOTIFICATION_EXPECTED_LABEL, key: 'backgroundMode', after: 'one-shot' }]
 }
 
 /**
@@ -2165,6 +2171,80 @@ async function readPresetDocument(boot, agentPreset) {
     )
   }
   return value
+}
+
+/**
+ * WP2 MAJOR-1 — the contract every `augmentMaterialized` fixture must satisfy.
+ *
+ * A fixture that edits the sandbox's materialized preset edits ONE face and not
+ * the other, and which one depends on the runtime: 0.1.5 serves
+ * `agentPresets/read` from FILE DISCOVERY (the edit lands on the face), 0.2.x
+ * serves it from register() (the edit never reaches it). An undeclared edit is
+ * therefore a coin toss between 'red on 0.1.5' and 'silently unasserted' — the
+ * exact cross-face same-source assumption this round exists to remove. So the
+ * fixture returns the (row, key, after) triples it changed, this function
+ * rejects anything that is not that shape (loudly, at the call site, naming the
+ * scenario), and the list rides to scripts/assert-concerto-read-face.mjs as
+ * `sandboxEdits`, where it turns one roster expectation into a TWO-VALUE
+ * accepted set for exactly those keys. `[]` is a legal answer and means the
+ * scenario edits nothing on the face.
+ *
+ * Keys must be LEAF paths. The vocabulary itself lives in
+ * scripts/assert-concerto-read-face.mjs (`DECLARATION_KEYS`) and is enforced
+ * there — one source, not a copy here — and scripts/verify-concerto-static.mjs
+ * c24 reconciles each fixture's declared keys against that parsed list. What
+ * this function adds is the shape check plus the ancestor check: declaring both
+ * `toolFilter` and `toolFilter.deny` (or any key and something beneath it)
+ * means the declarations disagree about one cell, so it throws.
+ *
+ * Trust boundary, because this is where a lie could live: `after` is typed by
+ * the fixture and is not anchored to any external source — on 0.1.5 the face
+ * under assertion IS the file the fixture edited. c24 checks the fixture body
+ * really writes what it declares; it cannot prove the intent. Changes to an
+ * `augmentMaterialized` fixture therefore go through dual review.
+ */
+function declaredSandboxEdits(def, declared) {
+  if (!Array.isArray(declared)) {
+    throw new Error(
+      `[${def.name}] \`augmentMaterialized\` edited the sandbox materialized preset and returned `
+        + `${JSON.stringify(declared ?? null)} instead of an array of \`{ row, key, after }\` triples — `
+        + 'the read face is FILE-supplied on 0.1.5 and register()-supplied on 0.2.x, so an undeclared '
+        + 'edit either breaks the roster comparison or escapes it, and neither may be decided by luck',
+    )
+  }
+  for (const [index, edit] of declared.entries()) {
+    if (!edit || typeof edit !== 'object' || typeof edit.row !== 'string' || edit.row === ''
+        || typeof edit.key !== 'string' || edit.key === '' || !('after' in edit)) {
+      throw new Error(
+        `[${def.name}] sandbox edit declaration ${index} is not a \`{ row, key, after }\` triple: ${JSON.stringify(edit ?? null)}`,
+      )
+    }
+    const matches = DELEGATION_ENTRIES.filter((entry) => entry.id === edit.row)
+    if (matches.length !== 1) {
+      throw new Error(
+        `[${def.name}] sandbox edit declares row ${JSON.stringify(edit.row)}, which is not exactly one `
+          + `roster delegation id (${DELEGATION_ENTRIES.map((entry) => entry.id).join(', ')})`,
+      )
+    }
+    if (edit.key.startsWith('.') || edit.key.endsWith('.') || edit.key.includes('..')) {
+      throw new Error(
+        `[${def.name}] sandbox edit declaration ${index} has a malformed key path ${JSON.stringify(edit.key)}`,
+      )
+    }
+    // Two declarations that nest inside each other disagree about one cell, and
+    // the outer one is the container that widens the accepted set — the shape
+    // this round removed from the validator's vocabulary.
+    for (const [otherIndex, other] of declared.entries()) {
+      if (otherIndex === index || !other || typeof other.key !== 'string') continue
+      if (edit.row === other.row && (other.key === edit.key || other.key.startsWith(`${edit.key}.`))) {
+        throw new Error(
+          `[${def.name}] sandbox edit declaration ${index} names ${JSON.stringify(edit.key)} while declaration `
+            + `${otherIndex} names ${JSON.stringify(other.key)} beneath it — declare LEAF paths, one per cell`,
+        )
+      }
+    }
+  }
+  return declared
 }
 
 /**
@@ -9740,7 +9820,16 @@ function fabricatedUlwExecuteNoIntentInput(routes) {
 // AFTER boot and BEFORE the session is created, for a scenario that must adjust
 // the sandbox-owned materialized preset the session composes from
 // ('background-notification-log' flips one delegation row to the one-shot
-// background mode); `settle(boot, sandbox, sessionId)` runs after the last
+// background mode). Since WP2 MAJOR-1 it MUST RETURN an array of
+// `{ row, key, after }` triples naming every change it made (`after: null` =
+// the key is gone) — see declaredSandboxEdits; returning nothing throws. `key`
+// must be a LEAF path the validator owns (toolName / maxDepth /
+// toolFilter.deny / toolFilter.allow / backgroundMode): a container key such as
+// `toolFilter` is rejected, because one container declaration would exempt every
+// cell beneath it from a single `after`. The list becomes the `sandboxEdits`
+// field of the read-face expectations, which is what lets one assertion hold on
+// both the 0.1.5 file-supplied face and the 0.2.x register()-supplied face;
+// `settle(boot, sandbox, sessionId)` runs after the last
 // turn/end and before `stopDsh` freezes the observations.
 //
 // ── P3-T16: THE 批 C B-MODE PAIR (plan §4.2 模式 B pilot + D) ─────────────────
@@ -9969,6 +10058,10 @@ const PROMETHEUS_PLANS_CONTENT = '# plan\nMOCK-PROMETHEUS-PLAN-BODY-3e7d51\n'
 const PROMETHEUS_DRAFTS_CONTENT = '# note\nMOCK-PROMETHEUS-DRAFT-BODY-9a02bf\n'
 const PROMETHEUS_CONDUCTOR_CONTENT = 'MOCK-CONDUCTOR-NOTES-BODY-6d1c48\n'
 
+// The roster id this fixture's row belongs to — ONE source for the row anchor
+// below and for the read-face edit declaration it returns.
+const PROMETHEUS_ROW_ID = 'prometheus'
+
 /**
  * Lift THIS scenario's sandbox copy of the materialized preset's prometheus
  * row's `toolFilter`. WHY A FIXTURE EDIT IS REQUIRED: the row is
@@ -9984,7 +10077,7 @@ const PROMETHEUS_CONDUCTOR_CONTENT = 'MOCK-CONDUCTOR-NOTES-BODY-6d1c48\n'
 function enablePrometheusWriteTools(sandbox) {
   const compositionPath = materializedCompositionPath(sandbox)
   const lines = readFileSync(compositionPath, 'utf8').split('\n')
-  const rowAnchor = '    - id: tool-subagent-prometheus'
+  const rowAnchor = `    - id: tool-subagent-${PROMETHEUS_ROW_ID}`
   const anchors = lines
     .map((line, index) => (line === rowAnchor ? index : -1))
     .filter((index) => index >= 0)
@@ -10013,6 +10106,23 @@ function enablePrometheusWriteTools(sandbox) {
   }
   lines.splice(filterIndex, 2)
   writeFileSync(compositionPath, lines.join('\n'))
+  // WP2 MAJOR-1 — THE declaration, not a comment. This is the edit that turned
+  // gate 3 red on dsh 0.1.5: that runtime answers `agentPresets/read` from FILE
+  // DISCOVERY, so the face the assertion reads is THIS file, prometheus row
+  // without `toolFilter`, while the expectation kept coming from the untouched
+  // src/roster.ts. Returning `{ row, key, after }` is how the fixture tells the
+  // assertion the fact it cannot infer; `after: null` means the key is gone.
+  //
+  // LEAF KEY, not the container (review B attack 2 / review A A1j): naming
+  // `toolFilter` would exempt BOTH `toolFilter.deny` and `toolFilter.allow` on
+  // one `after`, so a single sloppy value would silently cover half of what the
+  // declaration claims. The splice above removes `toolFilter:` plus its `deny:`
+  // line and nothing else, and src/roster.ts gives prometheus no allow list, so
+  // the only compared cell this edit can move on any face is `toolFilter.deny`.
+  // If the roster ever hands prometheus an allow list, this splice leaves an
+  // orphan `allow:` line and c24's declared-vs-written reconciliation goes red —
+  // which is the right place to discover that.
+  return [{ row: PROMETHEUS_ROW_ID, key: 'toolFilter.deny', after: null }]
 }
 
 /**
@@ -14706,17 +14816,44 @@ async function runScenario(def, baseRoutes) {
     // already prove the file is read at session composition, not at boot). Used
     // by the background scenario to reach the one-shot background job path the
     // shipped `continuable` rows cannot produce; loud on drift (it throws).
-    def.augmentMaterialized?.(sandbox)
+    // WP2 MAJOR-1: the fixture's RETURN VALUE is now part of the contract — it
+    // names every (row, key, after) it changed, and a fixture that returns
+    // nothing throws HERE instead of letting its edit collide with the roster
+    // expectation 40 lines later.
+    const declaredEdits = def.augmentMaterialized === undefined
+      ? []
+      : declaredSandboxEdits(def, def.augmentMaterialized(sandbox))
+    const renderEdit = (edit) => `${edit.row}.${edit.key}→${edit.after === null ? '<absent>' : JSON.stringify(edit.after)}`
+    console.error(
+      `drive: [${def.name}] read-face sandbox edits declared by this scenario: `
+      + `${declaredEdits.length === 0 ? 'none (the scenario edits nothing)' : declaredEdits.map(renderEdit).join(', ')}`,
+    )
 
-    // P4.5-T6 — the composition ASSERTION face. Everything above this line
-    // MUTATES the sandbox's materialized file (appendMockRoleMarker /
-    // augmentMaterialized) or verifies WHERE a marker landed inside that file
-    // (verifyMockRoleMarkerLanding, which needs line numbers — a read RPC gives
-    // no line numbers). Those are fixture mechanics, not content assertions,
-    // and `agentPresets/read` has no write face, so they stay on the file.
-    // What the SESSION is actually about to compose from, though, is asserted
-    // here over the READ face — the bytes the running host can see — with no
-    // fallback to the file. See readPresetDocument for the two measured shapes.
+    // P4.5-T6 — the composition ASSERTION face.
+    //
+    // WP2 MAJOR-1 CORRECTION to the comment that sat here: it claimed 'what the
+    // session is about to compose from is asserted here over the READ face' and
+    // that was TRUE ON HALF THE RUNTIMES. The two hosts do not answer
+    // `agentPresets/read` from the same place:
+    //   • 0.2.x answers from register(), which rendered the REPO TEMPLATE — the
+    //     edits above (appendMockRoleMarker / augmentMaterialized) are NOT on
+    //     this face;
+    //   • 0.1.5 answers from FILE DISCOVERY — this sandbox's own materialized
+    //     file, MOCKROLE markers and all — so those edits ARE on this face.
+    // So the read face is not one thing. What holds on both: every value
+    // asserted here is derived from src/roster.ts (the write face's source) or
+    // from the scenario's own declared edit list above — never read off the
+    // bytes under assertion — and a (row, key) the scenario declared it edited
+    // accepts EXACTLY two values, roster ∪ post-edit, so a degraded list matches
+    // neither. The roster half of that set is anchored in src/roster.ts; the
+    // post-edit half is typed by the fixture and has NO external anchor, because
+    // on 0.1.5 the bytes under assertion ARE the file the fixture wrote. That
+    // residual trust boundary is why c24 reconciles each declared `after` against
+    // what the fixture body actually writes, and why fixture edits need review —
+    // stated here so nobody reads this as airtight when it is not.
+    // Fixture mechanics stay on the file (they need write access, or line
+    // numbers a read RPC cannot give); the assertion path below never reads the
+    // file, and NO fallback to it is permitted.
     const readDoc = await readPresetDocument(boot, CONCERTO_PRESET_ID)
     const readFaceDir = join(sandbox.root, 'read-face')
     mkdirSync(readFaceDir, { recursive: true })
@@ -14730,6 +14867,10 @@ async function runScenario(def, baseRoutes) {
         allow: allowToolNamesFor(entry) ?? null,
         maxDepth: entry.maxDepth,
       })),
+      // REQUIRED by the validator's contract, and it is the SCENARIO's own
+      // declaration captured above — not a literal, not derived from the face.
+      // `[]` is a real statement: this scenario edited nothing.
+      sandboxEdits: declaredEdits,
       // Derived, never transcribed: the roster's own uniform cap. If the
       // roster ever stops being uniform, this throws rather than letting the
       // validator compare against a stale constant.
@@ -14751,15 +14892,16 @@ async function runScenario(def, baseRoutes) {
     // lowers both sides of the reader's own tally at once (MINOR-2, measured
     // green under a self-referential check).
     //
-    // This is the SECOND consumer of assert-concerto-read-face.mjs; the first is
-    // scripts/concerto-mode-probe.sh. When the validator grew its 6th argument
-    // last round, only the validator and the probe were updated and THIS call
-    // site kept passing 5 — `Number(undefined)` is NaN, which trips the
-    // validator's own integer guard, so the read-face assertion was RED by
-    // construction on every run. A comment in the probe claiming the consumers
-    // stay in step is not evidence: scripts/verify-concerto-static.mjs now
-    // asserts the arity of this spawnSync, so signature drift goes red at gate 6
-    // instead of surfacing at gate 3 (which this machine cannot run).
+    // One of the validator's consumers — WHICH ones is not a fact this comment
+    // gets to state: scripts/verify-concerto-static.mjs c23 DISCOVERS the call
+    // sites by scanning scripts/ and tests/ for executable invocations of
+    // assert-concerto-read-face.mjs, pins each one's arity against the
+    // validator's own destructuring, and fails on any mention it cannot
+    // classify. When the validator grew its 6th argument, only the validator and
+    // the probe were updated and THIS call site kept passing 5 —
+    // `Number(undefined)` is NaN, which trips the validator's own integer guard,
+    // so the read-face assertion was RED by construction on every run. A comment
+    // claiming the consumers stay in step is not evidence; the scan is.
     const readFaceWritePath = materializedCompositionPath(sandbox)
     const expectedJsCount = (() => {
       const count = readFileSync(readFaceWritePath, 'utf8')
@@ -14773,7 +14915,12 @@ async function runScenario(def, baseRoutes) {
       }
       return count
     })()
-    console.log(
+    // stderr, NOT stdout: this driver's stdout is the machine-readable channel
+    // (the final JSON at the foot of main(), plus `SELF-TEST OK`). A progress
+    // line here made `node tests/e2e/drive.mjs > out.json | jq` fail on its
+    // first line. Pre-existing since 51e6ba0 (T6); every neighbouring progress
+    // line already goes through console.error.
+    console.error(
       `drive: [${def.name}] read-face expected \`!!js\` gates from the write face: ${expectedJsCount}`,
     )
     const readFace = spawnSync(
@@ -14796,6 +14943,14 @@ async function runScenario(def, baseRoutes) {
           + ' — NO fallback to the materialized file is permitted',
       )
     }
+    // The validator's own accounting goes to the gate log: how many row-keys it
+    // compared, and which of them resolved against THIS scenario's declared
+    // sandbox edit. That line is the machine-readable answer to 'did this
+    // scenario really compare, or did it skip' — visible per scenario in the
+    // gate-3 log instead of reconstructable only from the source.
+    console.error(
+      `drive: [${def.name}] read-face validator: ${(readFace.stdout ?? '').trim()}`,
+    )
     console.error(
       `drive: [${def.name}] read-face asserted ${readDoc.content.split('\n').length} lines`
         + ` / ${Buffer.byteLength(readDoc.content)} bytes of agentPresets/read content`
