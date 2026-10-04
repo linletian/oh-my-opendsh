@@ -945,6 +945,23 @@ boot_once() {
     || fail "[$label] roster line missing (inject callback never ran?)"
   grep -q "concerto:user" "$boot_log" \
     || fail "[$label] plugin-side roster does not list concerto as a user preset"
+  # P4.5-T5: the registration outlet must be observable in EXACTLY ONE of its
+  # two shapes — the 0.2.x readback-proven success (whole-line -F grep: the
+  # marker carries the id AND the verdict, so an empty roster or a prefix-only
+  # match cannot satisfy it — arbitration 边界B), or the 0.1.5 face-absent
+  # fallback where the materialized path owns the registration. A silent third
+  # outcome — the inject callback never reaching the outlet — fails here. The
+  # register FAILED form is already asserted ABSENT by the `concerto .* FAILED`
+  # grep above; the two positive forms are mutually exclusive below (both in
+  # one boot would mean the capability probe and the outcome disagree).
+  if grep -qF "[omo-agents] concerto preset registered: id=concerto broken=absent" "$boot_log"; then
+    if grep -qF "[omo-agents] concerto preset register face absent, materialized path only" "$boot_log"; then
+      fail "[$label] BOTH registration shapes logged — face probe and outcome disagree"
+    fi
+  else
+    grep -qF "[omo-agents] concerto preset register face absent, materialized path only" "$boot_log" \
+      || fail "[$label] T5 registration outlet not observable (neither success nor face-absent marker)"
+  fi
 
   # External assertions: the RPC roster lists all 5 presets — the official 4 at
   # system trust plus concerto at user trust, i.e. the SAME roster level — and

@@ -74,14 +74,29 @@
 //   * `[omo-agents] route provider check FAILED: <describeError>` /
 //     `[omo-agents] llm inject FAILED: <describeError>`
 //     — unexpected-error discipline shared with every sibling boot block.
+//   * P4.5-T5 registration outlet (three forms, built by concerto-preset.ts):
+//     `[omo-agents] concerto preset registered: id=concerto broken=absent`
+//     — the ONLY success form: register resolved AND the roster read back
+//     the entry with `broken` ABSENT (arbitration ②: "register did not
+//     throw" is not evidence — mount failures never reject). The line names
+//     the id and the verdict; the probe greps it whole (-qF), never as a
+//     prefix.
+//     `[omo-agents] concerto preset register face absent, materialized path
+//     only` — the 0.1.5 shape: no register member on the service, the
+//     materialized write above owns the registration.
+//     `[omo-agents] concerto preset register FAILED: <reason>` — loud-but-
+//     non-fatal; already inside the probe's existing negative grep
+//     `\[omo-agents\] concerto .* FAILED` (scripts/concerto-mode-probe.sh:939).
 
 // The `.ts` extension is load-bearing: Node 24 type-stripping (P-8.6) does no
 // specifier resolution, and there is no bundler to rewrite it.
 import {
   CONCERTO_TEMPLATE_DIR,
   concertoPresetDir,
+  registerConcertoPreset,
   syncConcertoPreset,
   type ConcertoSyncOutcome,
+  type PresetDisposer,
 } from './concerto-preset.ts'
 import { SISYPHUS_SECTION_ORDER, buildSisyphusSystemPrompt } from './system-prompt.ts'
 import { resolveModelRoutesWithWarnings, type ModelRoutes } from './model-routes.ts'
@@ -107,14 +122,32 @@ export const name = 'omo-agents'
 // Minimal structural typings — this workspace has no cordis dependency, so
 // the plugin declares only the shape it touches (keeps `pnpm typecheck`
 // honest without importing DSH types).
+// P4.5-T5 shape extension: 0.2.x `agent-preset-registry` rows carry
+// `broken?: string` — ABSENT is the normal form (`...(broken === undefined
+// ? {} : { broken })`, agent-preset-registry/src/index.ts:161 @
+// dsh-v0.2.0-rc.2), so the readback asserts absence, never a value. The
+// `trust` field is 0.1.5-only vocabulary; its migration is P4.5-T6's face
+// (arbitration 边界A: T5 keeps the declaration and the print vocabulary).
 interface RosterEntry {
   id: string
   trust?: string
   name?: string
+  broken?: string
 }
 
+// P4.5-T5: `register` is OPTIONAL on purpose — its presence IS the 0.2.x
+// capability probe's answer (0.1.5's agent-presets service has no register
+// member; the probe is concerto-preset.ts `hasAgentPresetsRegisterFace`,
+// which reads the runtime handle, not this type).
 interface AgentPresetsLike {
   list(): Promise<RosterEntry[]>
+  register?(definition: {
+    id: string
+    name?: string
+    description?: string
+    order?: number
+    plugins: readonly Record<string, unknown>[]
+  }): Promise<PresetDisposer>
 }
 
 /**
@@ -232,6 +265,43 @@ export function apply(ctx: InjectingContext): void {
 
   try {
     ctx.inject(['agentPresets'], async (injected) => {
+      // P4.5-T5: the registration outlet runs INSIDE this inject callback —
+      // the ONLY call site where the agentPresets handle is measured present
+      // (apply()'s synchronous stretch reads `undefined` 100% of the time,
+      // T1 Q-3 §3.1; registry :126-127 forbids register() inside a Host
+      // row's own activation, and the structural invariant that keeps that
+      // safe is `omo-agents` NOT being a row of the composition it
+      // registers — it is the host insert row cordis.yml:36-38). The
+      // callback RETURNS the disposer so cordis collects it as the injected
+      // child fiber's disposal (fiber.ts:373-374); it is idempotent, so no
+      // once guard is added. On 0.1.5 the face probe says no and the
+      // materialized path above stays the whole story.
+      //
+      // ⚠️ COST REGISTERED (arbitration #4, 2026-10-04): `inject`'s official
+      // signature is `Plugin.Function<void>` (vendor/cordis/src/registry.ts:300
+      // @ dsh-v0.2.0-rc.2) — the callback is TYPED to return void. Returning
+      // the disposer is RUNTIME-EFFECTIVE but TYPE-LAYER OVER REACH: it rides
+      // cordis's implementation convention that a function plugin's return
+      // value is treated as an effect (fiber.ts:366, :373-374 → safeCollect
+      // :359-361 → collect :230-232 → child-fiber disposal :265-297, chain
+      // one-hand verifiable), NOT its API contract. A cordis upgrade that
+      // stops collecting function returns silently un-holds this disposer —
+      // that is the price of the convention, kept visible here. The local
+      // `let disposer` + return REPLACES the plan's original "module-level
+      // slot" wording (arbitration: cordis collection is automatic; a slot
+      // would be human-memory burden instead).
+      let disposer: PresetDisposer | undefined
+      try {
+        disposer = await registerConcertoPreset(
+          injected.agentPresets,
+          console.log,
+          CONCERTO_TEMPLATE_DIR,
+        )
+      } catch (err) {
+        // registerConcertoPreset is loud-but-non-fatal by contract; reaching
+        // here means something outside its catch surfaced — same discipline.
+        console.log(`[omo-agents] concerto preset register FAILED: ${describeError(err)}`)
+      }
       try {
         const roster = await injected.agentPresets.list()
         console.log(
@@ -241,6 +311,7 @@ export function apply(ctx: InjectingContext): void {
       } catch (err) {
         console.log(`[omo-agents] concerto roster FAILED: ${describeError(err)}`)
       }
+      return disposer
     })
   } catch (err) {
     console.log(`[omo-agents] agentPresets inject FAILED: ${describeError(err)}`)

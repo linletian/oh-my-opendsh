@@ -17,24 +17,34 @@
 // already requires the installed dsh (the workflow installs it before the
 // gate chain), and `loadYamlDialect` fails loudly with code NO_PARSER rather
 // than silently skipping.
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   CONCERTO_PRESET_FILES,
   CONCERTO_PRESET_ID,
+  CONCERTO_REGISTER_FACE_ABSENT_LINE,
   CONCERTO_TEMPLATE_DIR,
   EXPLORE_AGENT_OPTIONS_SENTINEL,
   EXPLORE_PERSONA_SENTINEL,
   agentSentinelName,
+  compositionStringDisabledProblem,
   concertoPresetDir,
+  formatConcertoRegisterFailedLine,
+  formatConcertoRegisteredLine,
+  hasAgentPresetsRegisterFace,
+  heldConcertoRegistration,
+  parseCompositionInLoaderDialect,
+  registerConcertoPreset,
   renderAgentDenyIntoComposition,
   renderAgentOptionsIntoComposition,
   renderAgentPersonaIntoComposition,
+  renderConcertoComposition,
   renderExploreAgentOptionsIntoComposition,
   renderExplorePersonaIntoComposition,
+  releaseConcertoRegistration,
   resolveDshHome,
   syncConcertoPreset,
 } from '../../patches/omo-dsh/omo-agents/src/concerto-preset'
@@ -485,5 +495,308 @@ describe('concerto sentinel renderers — injection and guard (P2-T15)', () => {
     expect(composition).toContain(
       `deny: [${['write', 'edit', ...DELEGATION_ORDER].map((name) => JSON.stringify(name)).join(', ')}]`,
     )
+  })
+})
+
+// ═════════════════ P4.5-T5 — render outlet + registration outlet ═════════════════
+//
+// The registration-outlet tests drive the REAL registerConcertoPreset against a
+// FAKE agentPresets service (no dsh boot): the fake mirrors the measured 0.2.x
+// registry contract (T1 Q-3/Q-4) — register resolves with an id-capturing
+// disposer, mount failure NEVER rejects and only shows up as `broken` on the
+// roster row, and the first list() may be empty. The YAML inside the tests is
+// parsed by the installed dsh's js-yaml through the same dialect helper the
+// plugin uses. Two of these tests are the MUTATION PAIRS (P0 evidence): the
+// broken-readback test and the string-disabled guard test each have a sibling
+// that corrupts the input (roster broken / quoted "!!js" template) and proves
+// the success-side assertion actually goes red.
+
+/** A disposable fake of the 0.2.x agent-preset-registry service face. */
+function makeV2PresetService(options: {
+  /** list() answers `broken` on this id (the mount-failure form). */
+  brokenOn?: string
+  /** list() answers [] for its first N calls (the Q-3 §1.4 empty-first-read). */
+  emptyFirstReads?: number
+} = {}) {
+  const definitions = new Map<string, { id: string; definition: any }>()
+  const service = {
+    registerCalls: [] as any[],
+    listCalls: 0,
+    async list(): Promise<Array<{ id: string; broken?: string }>> {
+      service.listCalls += 1
+      if (service.listCalls <= (options.emptyFirstReads ?? 0)) return []
+      return [...definitions.values()].map(({ id }) => ({
+        id,
+        ...(id === options.brokenOn ? { broken: 'fake: q3-does-not-exist-package never started' } : {}),
+      }))
+    },
+    async register(definition: { id: string }): Promise<() => Promise<void>> {
+      service.registerCalls.push(definition)
+      if (definitions.has(definition.id)) {
+        throw new Error(`Duplicate agent preset: ${definition.id}`)
+      }
+      const record = { id: definition.id, definition }
+      definitions.set(definition.id, record)
+      let disposed = false
+      const disposer = async (): Promise<void> => {
+        if (disposed) return
+        disposed = true
+        // Identity check: a stale disposer must never clobber a NEWER
+        // registration of the same id (the anti-crosstalk half of the
+        // double-registration disposer test).
+        if (definitions.get(definition.id) === record) definitions.delete(definition.id)
+      }
+      return disposer
+    },
+  }
+  return service
+}
+
+/** The 0.1.5 shape: list exists, register does NOT (capability probe answers no). */
+function makeV1PresetService() {
+  return {
+    registerCalls: [] as any[],
+    async list(): Promise<Array<{ id: string; trust?: string }>> {
+      return [{ id: 'concerto', trust: 'user' }]
+    },
+  }
+}
+
+describe('renderConcertoComposition — the pure render outlet (P4.5-T5)', () => {
+  it('renders the full anchor set with ZERO sentinel residue and writes nothing', () => {
+    const sandbox = makeSandbox()
+    // DEFAULT conductor prompt — the section headings ARE the prompt content
+    // rendered into the persona sentinel; a stub would erase them and make the
+    // anchor assertions vacuous in the other direction.
+    const composition = renderConcertoComposition(EXPECTED_TEMPLATE_DIR)
+    // All render anchors the materialized file carries (probe §T8/T11 set):
+    expect(composition).toContain('prefix: |-')
+    expect(composition).toContain('# Orchestrator Role')
+    expect(composition).toContain('# Delegation Discipline')
+    expect(composition).toContain('## Hard Blocks')
+    expect(composition).toContain('          # Explore: Read-Only Retrieval Agent')
+    expect(composition).toContain('          provider: "deepseek"')
+    expect(composition).not.toContain('__OMO_')
+    // Pure = no filesystem side effect: the sandbox stays EMPTY.
+    expect(readdirSync(sandbox)).toEqual([])
+  })
+
+  it('is the SAME bytes syncConcertoPreset writes (single render implementation)', () => {
+    const target = join(makeSandbox(), '.agent-presets', 'concerto')
+    expect(syncConcertoPreset(target)).toBe('materialized')
+    const written = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
+    expect(renderConcertoComposition()).toBe(written)
+  })
+})
+
+describe('hasAgentPresetsRegisterFace — the capability probe (P4.5-T5)', () => {
+  it('answers YES only for a function-valued register member', () => {
+    expect(hasAgentPresetsRegisterFace({ list: async () => [], register: async () => async () => {} }))
+      .toBe(true)
+  })
+
+  it('answers NO for the 0.1.5 shape and every non-object', () => {
+    expect(hasAgentPresetsRegisterFace(makeV1PresetService())).toBe(false)
+    expect(hasAgentPresetsRegisterFace(undefined)).toBe(false)
+    expect(hasAgentPresetsRegisterFace(null)).toBe(false)
+    expect(hasAgentPresetsRegisterFace('register')).toBe(false)
+    expect(hasAgentPresetsRegisterFace({ register: 'not-a-function' })).toBe(false)
+  })
+})
+
+describe('compositionStringDisabledProblem — the bare-string disabled guard (P4.5-T5)', () => {
+  it('passes the REAL rendered composition (real !!js tags parse to objects)', async () => {
+    const rows = await parseCompositionInLoaderDialect(renderConcertoComposition())
+    expect(Array.isArray(rows)).toBe(true)
+    expect(compositionStringDisabledProblem(rows)).toBeUndefined()
+    // Positive control: the guard has rows to look at — the real composition
+    // carries TWO real-tag platform gates (tool-bash/tool-pwsh).
+    const flat = JSON.stringify(rows)
+    expect(flat).toContain('__jsExpr')
+  })
+
+  it('names the first bare-string disabled row, nested groups included', () => {
+    expect(compositionStringDisabledProblem([
+      { id: 'a', name: 'x' },
+      { id: 'tool-bash', name: 'y', disabled: '!!js process.platform === \'win32\'' },
+    ])).toContain('row 2 (id=tool-bash)')
+
+    expect(compositionStringDisabledProblem([
+      { id: 'g', name: 'cordis:group', group: true, config: [
+        { id: 'inner', name: 'z', disabled: '!!js true' },
+      ] },
+    ])).toContain('row 1 group row 1 (id=inner)')
+
+    // Real-tag objects and plain booleans pass.
+    expect(compositionStringDisabledProblem([
+      { id: 'a', name: 'x', disabled: { __jsExpr: 'process.platform' } },
+      { id: 'b', name: 'y', disabled: false },
+      { id: 'c', name: 'z' },
+    ])).toBeUndefined()
+  })
+})
+
+describe('registerConcertoPreset — the 0.2.x registration outlet (P4.5-T5)', () => {
+  const logs: string[] = []
+  const log = (line: string): void => { logs.push(line) }
+
+  beforeEach(() => { logs.length = 0 })
+
+  it('0.1.5 shape: face absent → the face-absent marker, ZERO register calls', async () => {
+    const svc = makeV1PresetService()
+    const disposer = await registerConcertoPreset(svc, log, EXPECTED_TEMPLATE_DIR, 'T5-STUB')
+    expect(disposer).toBeUndefined()
+    expect(logs).toContain(CONCERTO_REGISTER_FACE_ABSENT_LINE)
+    expect(svc.registerCalls).toHaveLength(0)
+    expect(logs.some((line) => line.includes('register FAILED'))).toBe(false)
+  })
+
+  it('0.2.x shape: parses, registers, READS BACK broken-absent, holds the disposer', async () => {
+    const svc = makeV2PresetService()
+    const disposer = await registerConcertoPreset(svc, log, EXPECTED_TEMPLATE_DIR, 'T5-STUB')
+    expect(svc.registerCalls).toHaveLength(1)
+    const definition = svc.registerCalls[0]
+    expect(definition.id).toBe(CONCERTO_PRESET_ID)
+    expect(Array.isArray(definition.plugins)).toBe(true)
+    expect(definition.plugins.length).toBeGreaterThan(0)
+    // Display identity rides from the SAME preset.yml the materialized path ships.
+    expect(definition.name).toContain('协奏')
+    expect(definition.order).toBe(5)
+    // The success marker is the readback verdict, not the non-throw.
+    expect(logs).toContain(formatConcertoRegisteredLine())
+    expect(logs.some((line) => line.includes('register FAILED'))).toBe(false)
+    // Disposer contract (T1 Q-3 §2.3/§3.4): arity 0, held in the slot.
+    expect(typeof disposer).toBe('function')
+    expect(disposer!).toHaveLength(0)
+    expect(heldConcertoRegistration()).toBe(disposer)
+    // Roster readback shows concerto.
+    const roster = await svc.list()
+    expect(roster.map((row) => row.id)).toContain(CONCERTO_PRESET_ID)
+    // Releasing through the slot removes it; a second release is a 0ms no-op.
+    await releaseConcertoRegistration()
+    expect((await svc.list()).map((row) => row.id)).not.toContain(CONCERTO_PRESET_ID)
+    await expect(releaseConcertoRegistration()).resolves.toBeUndefined()
+  })
+
+  it('survives the empty first read (Q-3 §1.4): settles, then marks success', async () => {
+    const svc = makeV2PresetService({ emptyFirstReads: 1 })
+    const disposer = await registerConcertoPreset(svc, log, EXPECTED_TEMPLATE_DIR, 'T5-STUB')
+    expect(typeof disposer).toBe('function')
+    expect(logs).toContain(formatConcertoRegisteredLine())
+    expect(svc.listCalls).toBeGreaterThanOrEqual(2)
+  })
+
+  it('double registration: two disposers, each releases its OWN registration only', async () => {
+    const svc = makeV2PresetService()
+    const disposer1 = await registerConcertoPreset(svc, log, EXPECTED_TEMPLATE_DIR, 'T5-STUB')
+    expect(typeof disposer1).toBe('function')
+    await disposer1!()
+    expect((await svc.list()).map((row) => row.id)).not.toContain(CONCERTO_PRESET_ID)
+
+    // Re-register after release: a NEW disposer for a NEW registration.
+    const disposer2 = await registerConcertoPreset(svc, log, EXPECTED_TEMPLATE_DIR, 'T5-STUB')
+    expect(typeof disposer2).toBe('function')
+    expect(disposer2).not.toBe(disposer1)
+
+    // The STALE disposer must not clobber the live registration.
+    await disposer1!()
+    expect((await svc.list()).map((row) => row.id)).toContain(CONCERTO_PRESET_ID)
+
+    // The live disposer releases it; repeat is idempotent.
+    await disposer2!()
+    expect((await svc.list()).map((row) => row.id)).not.toContain(CONCERTO_PRESET_ID)
+    await expect(disposer2!()).resolves.toBeUndefined()
+  })
+
+  it('MUTATION pair: a broken roster row turns the success marker into FAILED', async () => {
+    // The fake answers every readback with `broken` present (the measured
+    // mount-failure form, Q-3 §2.4: register resolves, roster carries broken).
+    const svc = makeV2PresetService({ brokenOn: CONCERTO_PRESET_ID })
+    const disposer = await registerConcertoPreset(svc, log, EXPECTED_TEMPLATE_DIR, 'T5-STUB')
+    // register() itself still resolved (mount failure never rejects)…
+    expect(svc.registerCalls).toHaveLength(1)
+    expect(typeof disposer).toBe('function')
+    // …but the SUCCESS marker must NOT appear and the FAILED marker must.
+    expect(logs).not.toContain(formatConcertoRegisteredLine())
+    expect(logs.filter((line) => line.startsWith('[omo-agents] concerto preset register FAILED: ')))
+      .toHaveLength(1)
+    expect(logs[logs.length - 1]).toContain('broken')
+  })
+
+  it('MUTATION pair: a quoted "!!js …" template row trips the string-disabled guard', async () => {
+    const dir = makeSandbox()
+    // Corrupt the template the way the silent failure actually happens: the
+    // real tag quoted into a string (Q-2 §4.2 B-case).
+    for (const file of CONCERTO_PRESET_FILES) {
+      writeFileSync(join(dir, file), readFileSync(join(EXPECTED_TEMPLATE_DIR, file), 'utf8'), 'utf8')
+    }
+    const tampered = readFileSync(join(dir, 'agent.cordis.yml'), 'utf8')
+      .replace(`disabled: !!js process.platform === 'win32'`, `disabled: "!!js process.platform === 'win32'"`)
+    expect(tampered).toContain(`disabled: "!!js process.platform === 'win32'"`)
+    writeFileSync(join(dir, 'agent.cordis.yml'), tampered, 'utf8')
+
+    const svc = makeV2PresetService()
+    const disposer = await registerConcertoPreset(svc, log, dir, 'T5-STUB')
+    expect(disposer).toBeUndefined()
+    expect(svc.registerCalls).toHaveLength(0)
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toContain('STRING disabled')
+    expect(logs[0]).toContain('tool-bash')
+  })
+
+  it('duplicate id: register rejects loudly, nothing is held, host survives', async () => {
+    const svc = makeV2PresetService()
+    const first = await registerConcertoPreset(svc, log, EXPECTED_TEMPLATE_DIR, 'T5-STUB')
+    expect(typeof first).toBe('function')
+    logs.length = 0
+    const second = await registerConcertoPreset(svc, log, EXPECTED_TEMPLATE_DIR, 'T5-STUB')
+    expect(second).toBeUndefined()
+    expect(logs.filter((line) => line.startsWith('[omo-agents] concerto preset register FAILED: ')))
+      .toHaveLength(1)
+    expect(logs[0]).toContain('Duplicate agent preset')
+    expect(logs).not.toContain(formatConcertoRegisteredLine())
+  })
+})
+
+describe('R-9 structural invariant — omo-agents is NOT a row of what it registers (P4.5-T5)', () => {
+  /** Recursive id/name census of a parsed row list (nested groups included). */
+  function census(rows: unknown): { ids: string[]; names: string[] } {
+    const ids: string[] = []
+    const names: string[] = []
+    const walk = (list: unknown): void => {
+      if (!Array.isArray(list)) return
+      for (const row of list) {
+        if (typeof row !== 'object' || row === null) continue
+        const record = row as { id?: unknown; name?: unknown; group?: unknown; config?: unknown }
+        if (typeof record.id === 'string') ids.push(record.id)
+        if (typeof record.name === 'string') names.push(record.name)
+        if (record.group === true) walk(record.config)
+      }
+    }
+    walk(rows)
+    return { ids, names }
+  }
+
+  it('the registered composition has NO omo-agents row (deadlock canary)', async () => {
+    const rows = await parseCompositionInLoaderDialect(renderConcertoComposition())
+    const { ids, names } = census(rows)
+    expect(ids.length).toBeGreaterThan(0)
+    expect(names.length).toBeGreaterThan(0)
+    expect(ids).not.toContain('omo-agents')
+    expect(names).not.toContain('@oh-my-opendsh/omo-agents')
+    // And the census is not vacuously empty by shape: the delegation group and
+    // its nested rows ARE inside it (the walk reaches depth 2+).
+    expect(ids).toContain('delegation')
+    expect(ids).toContain('tool-subagent-explore')
+  })
+
+  it('the plugin itself rides the repo-root cordis.yml host insert row', () => {
+    // The other half of the invariant: omo-agents is a HOST row (its own
+    // insert), never a row of the preset the plugin registers. REPO_ROOT is
+    // two levels up from tests/omo-agents (doctor-lite.mjs:91 same shape).
+    const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+    const rootCordis = readFileSync(join(repoRoot, 'cordis.yml'), 'utf8')
+    expect(rootCordis).toContain('- id: omo-agents')
+    expect(rootCordis).toContain(`name: '@oh-my-opendsh/omo-agents'`)
   })
 })

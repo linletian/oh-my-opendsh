@@ -449,15 +449,34 @@ interface FakeCtxOptions {
   throwInListProviders?: boolean
   /** Make ctx.inject itself throw for the llm dependency. */
   throwOnLlmInject?: boolean
+  /**
+   * P4.5-T5: fire ctx.inject(['agentPresets']) with this service double.
+   * Absent (every pre-T5 test): the callback is registered but never fired —
+   * the pre-T5 behavior of this harness, byte-for-byte.
+   */
+  agentPresets?: {
+    list(): Promise<unknown[]>
+    register?(definition: unknown): Promise<() => Promise<void>>
+  }
 }
 
 function makeCtx(options: FakeCtxOptions = {}) {
   const injectCalls: string[][] = []
   const listeners: Array<{ event: string; listener: () => void }> = []
+  // P4.5-T5: the agentPresets callback's RETURN value — the disposer cordis
+  // collects from a function plugin's return (fiber.ts:366, :373-374 @
+  // dsh-v0.2.0-rc.2) — captured so the wiring test pins the CARRIER, not
+  // just the log line.
+  const agentPresetsResults: unknown[] = []
   const ctx = {
     on: () => () => true,
     inject: (deps: readonly string[], cb: (injected: any) => unknown): void => {
       injectCalls.push([...deps])
+      if (deps[0] === 'agentPresets') {
+        if (options.agentPresets === undefined) return
+        agentPresetsResults.push(cb({ agentPresets: options.agentPresets }))
+        return
+      }
       if (deps[0] !== 'llm') return
       if (options.throwOnLlmInject) throw new Error('llm inject refused')
       if (!options.invokeLlm) return
@@ -478,6 +497,7 @@ function makeCtx(options: FakeCtxOptions = {}) {
   return {
     ctx: ctx as unknown as ApplyContext,
     injectCalls,
+    agentPresetsResults,
     emit: (event: string): void => {
       for (const entry of listeners) if (entry.event === event) entry.listener()
     },
@@ -600,5 +620,106 @@ describe('P2-T16 apply() wiring', () => {
     expect(injectCalls).not.toContainEqual(['llm'])
     // The persona loop still ran: it is independent of route resolution.
     expect(logs.filter((line) => line.includes(' persona assembled: '))).toHaveLength(10)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// P4.5-T5 apply() wiring — the registration outlet fires ONLY inside the
+// agentPresets inject callback, and the callback RETURNS the disposer to
+// cordis (the type-layer-over-reach carrier of arbitration #4: inject's
+// official signature is Plugin.Function<void>, registry.ts:300; the return
+// value rides the effect convention of fiber.ts:366-374 — pinned HERE at the
+// wiring layer so a refactor that drops the `return` goes red without a boot).
+// ---------------------------------------------------------------------------
+
+describe('P4.5-T5 apply() wiring — registration outlet', () => {
+  const logs: string[] = []
+  let sandbox: string
+
+  beforeEach(() => {
+    logs.length = 0
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map((arg) => String(arg)).join(' '))
+    })
+    // apply() materializes the concerto preset under $DSH_HOME — hermetic.
+    sandbox = mkdtempSync(join(tmpdir(), 'omo-boot-markers-t5.'))
+    vi.stubEnv('DSH_HOME', sandbox)
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+    rmSync(sandbox, { recursive: true, force: true })
+  })
+
+  it('0.2.x shape: outlet registers inside the inject callback and returns the disposer', async () => {
+    const definitions: any[] = []
+    let released = 0
+    const service = {
+      async list() {
+        return definitions.map((d) => ({ id: d.id }))
+      },
+      async register(definition: any) {
+        definitions.push(definition)
+        const unregister = async (): Promise<void> => {
+          released += 1
+          definitions.splice(definitions.indexOf(definition), 1)
+        }
+        return unregister
+      },
+    }
+    const { ctx, injectCalls, agentPresetsResults } = makeCtx({ agentPresets: service })
+    expect(() => apply(ctx)).not.toThrow()
+    // The callback is registered under exactly ['agentPresets'] (the ONLY
+    // sanctioned call site — not a synchronous ctx.get in apply()).
+    expect(injectCalls).toContainEqual(['agentPresets'])
+    // The outlet ran to success inside the callback: register saw concerto…
+    await expect(Promise.all(agentPresetsResults)).resolves.toHaveLength(1)
+    expect(definitions.map((d) => d.id)).toContain('concerto')
+    // …and the READBACK marker — the success evidence, whole-line.
+    expect(logs).toContain('[omo-agents] concerto preset registered: id=concerto broken=absent')
+    expect(logs.some((line) => line.includes('register FAILED'))).toBe(false)
+    // The callback RETURNED the disposer (the carrier the plan's slot wording
+    // was replaced by).
+    const returned = await (agentPresetsResults[0] as Promise<unknown>)
+    expect(typeof returned).toBe('function')
+    await (returned as () => Promise<void>)()
+    expect(released).toBe(1)
+    expect(definitions).toHaveLength(0)
+  })
+
+  it('0.1.5 shape: face absent → face-absent marker, no register, roster line unchanged', async () => {
+    const service = {
+      async list() {
+        return [{ id: 'standard', trust: 'system' }, { id: 'concerto', trust: 'user' }]
+      },
+    }
+    const { ctx, agentPresetsResults } = makeCtx({ agentPresets: service })
+    expect(() => apply(ctx)).not.toThrow()
+    const returned = await (agentPresetsResults[0] as Promise<unknown>)
+    expect(returned).toBeUndefined()
+    expect(logs).toContain('[omo-agents] concerto preset register face absent, materialized path only')
+    expect(logs.some((line) => line.includes('registered: id=concerto'))).toBe(false)
+    expect(logs.some((line) => line.includes('register FAILED'))).toBe(false)
+    // The pre-T5 roster print vocabulary is T6's face — still exact here.
+    expect(logs).toContain('[omo-agents] concerto roster: standard:system,concerto:user')
+  })
+
+  it('a broken readback surfaces the FAILED marker through the real apply() wiring', async () => {
+    const service = {
+      async list() {
+        return [{ id: 'concerto', broken: 'q3-does-not-exist-package: never started' }]
+      },
+      async register(definition: any) {
+        void definition
+        return async (): Promise<void> => {}
+      },
+    }
+    const { ctx, agentPresetsResults } = makeCtx({ agentPresets: service })
+    expect(() => apply(ctx)).not.toThrow()
+    const returned = await (agentPresetsResults[0] as Promise<unknown>)
+    expect(typeof returned).toBe('function')
+    expect(logs.some((line) => line.startsWith('[omo-agents] concerto preset register FAILED: '))).toBe(true)
+    expect(logs).not.toContain('[omo-agents] concerto preset registered: id=concerto broken=absent')
   })
 })
