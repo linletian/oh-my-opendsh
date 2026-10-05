@@ -212,6 +212,37 @@
 >
 >   证据 .omo/evidence/p45t8/ARB-four-theatre-lessons.md。门 7 9/9 PASS。
 >
+>   ulw 夹具切片收口时提出一条**在它范围内无法解决的遗留**，仲裁者核实后**接受并转为本片的验收项**：
+>
+>   > **`tool-jobs` 的 `source.kind` 在本仓内目前没有任何门。**
+>
+>   **为什么它落到本片而不是留在原地**：
+>   - `tests/omo-hooks/ulw-execute.test.ts` **不是 kind 轴的门**——那里的白名单
+>     （`ulw-execute.ts:668-672`，`kind === 'user'`）**无法分辨非 user 的 kind 取值**，
+>     编码方的全局装置如实报告「一致改回旧契约」在该文件里**结构上抓不到**（按设计如此）。
+>   - `omo-hard-blocks` 那一侧**有门**：`tests/omo-agents/hard-blocks-injection.test.ts:122-124`
+>     从**真实 producer** 的 `agent.inject.mock.calls[0][0]` 捕获后断言——
+>     装置证明改 producer 的 kind 会红。
+>   - 而 dsh 自己的 `tool-jobs` **住在已安装的 npm 包里，仓内单测根本观察不到**。
+>
+>   ⇒ **诚实且唯一的归宿就是 e2e**：在 `drive.mjs` 里对**捕获到的 v4 行**做断言。
+>
+>   ## 因此本片的验收里必须包含这一条
+>
+>   - **AC7（新增）**：对一条**真实捕获到的** tool-jobs notice 行，断言其 `source.kind === 'tool-jobs'`
+>     **且**不带 `plugin` 键（已装包 `dsh-tool-jobs/lib/index.js:277-281` 的活体形态）；
+>     并证明**把该行的 kind 改掉会让这条断言变红**（不是靠定点改单侧）。
+>
+>   ## 一条更一般的纪律（⑲j）
+>
+>   **当一条性质的正确归属地在一个「仓内不可观测」的外部包里时，不要在仓内造一个近似物来顶替。**
+>   编码方在 ulw 切片里**明确拒绝**为 `tool-jobs` 建本地替代门，并在注释与报告里写明
+>   「正确归宿是对捕获 v4 行做断言的 e2e」——**这是本阶段第一次由编码方主动拒绝「造个能过的门」**。
+>
+>   ⇒ **⑲j**：**拒绝造近似门，要在报告里点名正确归宿在哪。**
+>   一个诚实的「这里没有门，正确的门在 X」**优于**一个在本地能过、但对真实运行时无效的门。
+>
+>
 >
 >   **四之十一、第三次「改了仍然不会失败」的断言（2026-10-06 07:05）**：
 >   `readDelegationTaskText` 用的是**正向白名单**（`patches/omo-dsh/omo-hooks/src/hooks/ulw-execute.ts:668-672`，
