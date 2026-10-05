@@ -4,10 +4,19 @@
 >
 > **用法**：这是**唯一**记录 Phase 4.5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，复核报告给出"每个面断在哪"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🚧 **4/13**（T2–T6；WP-2 收口 + 跨面同源回归已修）（`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消；T9 为 deferrable 项，defer 不算未完成）
+> **状态**：🚧 **5/13**（T2–T7；WP-3 安装器交付线已落地并经四轮双评审收口，提交 `e588ea2`）（`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消；T9 为 deferrable 项，defer 不算未完成）
 >
 > **修订记录**：
 >
+> - **2026-10-05 WP-3 / P4.5-T7 收口（提交 `e588ea2`）——安装器声明式迁移落地 + 四轮双评审 + 新增规约⑳⑲⑳b**
+>
+> **一、fork 裁定 = (A)**：依据四条互相独立的事实（F1 旧安装器在 0.2.x 上零读取方 / F2 (A) 的形状被四个 shipped preset 验证过四次 / F3 P0-1 反面对照 / F4 `dsh-agent-preset` 全文 29 行的承重链），(B) 被排除。**Q-7 从未做过，仲裁者先补了一手调研**（两个调研 agent 长时间零产出被中断，改用仓库归档的既有 boot 日志 + 一手源码完成裁定）。
+> **二、真 boot 腿成立**：dsh 0.2.0-rc.2 沙箱 + **联网**安装器 + 真 `dsh web` → roster 5 条含 `concerto`（`broken` 键**全文件零命中**，是缺席不是空值）+ `session/create{agentPreset:"concerto"}` → `ok:true`。
+> **三、四轮双评审**：轮 1 双 REJECT · 轮 2 A REJECT/B APPROVE · 轮 3 A REJECT/B APPROVE · 轮 4 A REJECT/B APPROVE ⇒ 轮 5 由仲裁者按两路共识收口（A 明确「只剩一个布尔项，不要开第 5 轮」），**最终零 BLOCKER/MAJOR**。六份 verdict 全部落盘 + sha256 清单。
+> **四、规约⑳（本阶段最贵的一条）**：「**台账/报告说已闭合，但代码里不是那样**」本阶段发生**两次**——① 栽在「**缺断言**」（F2′：两路都以为代码里是 `json.dumps`，仲裁者自查发现**代码里根本没有**，且修复轮前的基线也已是裸拼接 ⇒ 是分段交付期间**并发改写**丢的；一份**完全合法**的 `preset.yml` 含 ASCII `": "` 就会让安装器 exit 1，仓内当时侥幸用全角 `：` 才没暴露）；② 栽在「**断言在但判定式错**」（`group is True` 严格窄于上游 `dsh-app-boot/lib/index.js:2100` 的三分支并集，`name: cordis:group` 那条**最规范**的写法照样溜过去 ⇒ 安装器 exit 0 + 产物两条活 preset row ⇒ 下次 boot `Duplicate agent preset: concerto`）。⇒ **闭合判据必须写成可执行形式**（形如「拒绝覆盖 `:2100` 的三个分支并各有一个用例」），**要能对着上游源码逐条对账，不能对着自己的实现自洽**。
+> **五、并发写同一文件的代价（一次真实事故）**：分段交付期间两个 agent 同时改 `install-concerto.sh`，`json.dumps` 被覆盖丢失且**无人察觉**（两路评审的变异都是「改回裸拼接仍全绿」，因为它当时已经是裸的了）。⇒ **同一时刻只允许一个 agent 写同一个文件**；修复轮基线用 `git stash create` 打好以便逐行比对。
+> **六、门禁闪烁与「观测值不是保证值」**：T7 的 58 个用例每个显式 60s（它们 fork 真实子进程，vitest 默认 5s 在负载机器上是抛硬币；「门禁若自己会闪烁，比没有门禁更坏」）。⚠️ 但**全量门 2 仍不是确定性绿的**——评审 A 测出 `tests/omo-hooks/background-notification.test.ts`（**不在 T7 diff 里**）吃默认 5s、负载下随机红 1 条 ⇒ 归 T2 线后续修缮，**不改 T7 结论**；本文件里所有「门 N 全绿」均应读作**观测值**。
+> **七、本文件自身的三处订正**（DoD-d：改文档不改结论）：① 本文件 T7「做法」段原写「复用 concerto-mode-probe 的传输自适应通道」——**不适用**，probe 读的是 0.2.x 上零读取方的物化面；② 计划书 §4.4 `:561-566` → **`:561-565`**（实测 `wc -l` = 565，566 不存在）；③ 计划书 §4.4 (B) 的两个假想障碍**实测都不成立**、纪律⑤ 的路由与认证说明**跨代已变**（真名 `POST /api/agentPresets/list` 且**需要认证**，与 probe 注释记的 rc.6 免认证形态不同代）。
 > - **2026-10-05 WP-2 收口复核：仲裁者补做 0.1.5 腿 ⇒ 抓出一条双评审都放过的 MAJOR，修完 CI 全绿（`de68919` / run `37220817614`）**——本条同时**订正本文件三处失真陈述**，并新增规约⑮–⑲。
 >   **① 缺的那条腿**：T5/T6 的判定项都写着「0.1.5 CI 绿」，但 **WP-2 的五个提交从未推送** ⇒ CI 里根本没有它们的 run（`gh run list` 上 WP-1 的 T2/T3/T4 有绿 run，WP-2 一个都没有）。仲裁者 fast-forward 推送（`977f813..fdc7e47`）触发 CI ⇒ **run `37200076805` 门 3 红**，且**重跑后 attempt 2 仍红 ⇒ 确定性回归，不是 flake**。门 1/2 绿、门 4–8 skipped。
 >   **② 定位方法（本阶段最可复用的一条）**：drive 的摘要是一行超长 JSON，被 GitHub 日志采集器在 ~65 KB 处截断 ⇒ **拿不到失败场景名**。改用**跨 run 的逐场景 stderr 差分**（绿基线 `37150775008` vs 候选 `37200076805`）：33 个场景**全部 +2 行**（新增的 read-face 两行），**唯独 `prometheus-md-only-denied` 是 −2**，且它停在 `read-face expected …: 2` 之后**再无输出** ⇒ 校验器在该场景抛异常、场景被中止。
@@ -136,12 +145,33 @@
 
 ## WP-3 安装器交付线（计划书 §4.4；复核 §2.4 为权威）
 
-### [ ] P4.5-T7 — 安装器声明式迁移（或重定范围）+ 安装验证
+### [x] P4.5-T7 — 安装器声明式迁移（或重定范围）+ 安装验证
 
 - **产出**：按 T1 Q-7 fork 裁定落地——（A）：`install-concerto.sh` 改写为 profile patch 行注入（幂等行替换 + 时间戳备份 + registry 前提断言 + 响亮报错指引）+ 沙箱全新安装验证；（B）：安装器在 0.2.x 探测到文件发现缺席时响亮拒绝 + 指引插件线 + 理由成文。两形态均含 `docs/install-concerto{,_zh-CN}.md` 双语更新。
 - **做法**：（A）形态——`PresetDefinition` 的 config 由 omo-agents-current 组合 + env 覆盖渲染生成（与今日两文件语义等价的核对单测）；profile patch 写入器只 touch `preset-concerto` 行（对照测试：预置用户行的 patch 文件安装后用户行逐字保留，R-4）；安装验证 = 真实 boot + roster RPC 含 `concerto`（复用 probe 传输自适应通道）。（B）形态——探测逻辑（registry 缺席/文件发现缺席）+ 拒绝文案 + 指引。
 - **判定**：✅（A）：沙箱全新安装后 roster 含 `concerto` 且 session/create 组合成功；二次安装幂等（无重复行、用户行无损）；0.1.5 安装路径不回归（双模或探针分流）。（B）：拒绝行为与指引文案的实证记录。**退出标准 (e) 的承载任务**。
-- **证据**：⬜ 待填
+- **fork 裁定（2026-10-05 仲裁成文）：选 (A)，(B) 被排除。** 依据四条互相独立的事实（任意一条单排即足以排除 (B)）：**F1** 全量 grep 整个 0.2.x 安装，`.agent-presets` **仅 1 处命中**，是上游自带技能文档 `dsh-agent-preset/skills/editing-cordis-compositions/SKILL.md:70`，逐字「**Nothing reads that directory any more.**」⇒ 旧安装器在 0.2.x 上是静默空操作；**F2** (A) 的形状在本机已被四个 shipped preset 验证过四次（`standard`/`ptc`/`minimal`/`cordis` 全来自 `dsh-web-app/presets/*.patch.yml` 的声明行，且都真实出现在 0.2.0-rc.2 的 roster 里、`broken` 全缺席）；**F3** 反面对照在案：P0-1 的 before 记录 `agent-preset/not-found`、`available = ["standard","ptc","minimal","cordis"]` —— 可用的四个**恰好**就是那四个声明行；**F4** 承重机制源码级钉死：`dsh-agent-preset/lib/index.js` **全文 29 行**，`:10` `static inject = ["agentPresets"]`、`:24-26` `async *[Service.init]() { yield await this.ctx.agentPresets.register(this.config) }`。
+- **⚠️ 同时订正本任务书「做法」段的一处失真**：原文写「安装验证 = 真实 boot + roster RPC 含 `concerto`（复用 **probe 传输自适应通道**）」——**该通道不适用于本任务**：`scripts/concerto-mode-probe.sh:842` 读的是**物化/`.agent-presets` 面**，而 0.2.x 上那张面零读取方。本任务的验证通道是**真 `dsh web` boot + 独立的 roster RPC 探测**，两者不是同一条路。真相见下方证据的「真 boot 腿」小节。
+- **证据**：✅ `.omo/evidence/p45t7/`（`T7-installer.md` 交付报告 + `T7-boot-leg.md` 真 boot 腿 + `artifacts/` 12 份原始件 + `review-A/verdict{1,2,3,4}.txt` 与 `review-B/verdict{,2,3,4}.txt` 六份落盘 verdict 及其 sha256 清单 + 仲裁者一手台账 `ARBITRATION-primary-source-verification.md`（R1–R17 + 17 份 `arb-*.txt` 上游源码归档）+ 逐轮裁决 `ARBITRATION-review1-findings.md` / `ARBITRATION-review2-verdictB.md`；`.omo/` 被 gitignore，证据留本地不入库）——**四轮双评审**：轮 1 双 REJECT · 轮 2 A REJECT / B APPROVE · 轮 3 A REJECT / B APPROVE · 轮 4 A REJECT（1 MAJOR + 3 MINOR + 1 NIT）/ B APPROVE（1 MINOR + 1 NIT）⇒ **轮 5 仲裁者按两路共识收口**（A 明确「只剩一个布尔项挡着，不要开第 5 轮」），最终零 BLOCKER/MAJOR。
+
+  **提交**：`e588ea2`（脚本 100 → **1034** 行；新增 `tests/omo-agents/installer-declaration-face.test.ts` **2461 行 / 58 用例**；两份 install 文档 EN 255 / ZH 223 行）。仲裁者**提交前独立复跑**并落盘 `ARB-gates-final.log`：**门 1 `tsc` exit 0 · 门 2 `59 files / 1550 tests`（基线 58 files / 1492 tests，**只增不减**）· 门 5 `checked=56 · violations=0`（**零新增依赖**，`package.json`/`pnpm-lock.yaml` 零 diff）· 门 6 `33/33` · 门 7 `9/9`**；`bash -n`/`dash -n`/`sh -n` 三过；`TAG="${CONCERTO_TAG:-v0.2}"` 仍在 `:27` 行首（门 7 `d02` 与 `release-bump.mjs` 的消费面）；`docs/plans/` 零越界改动。**门 3 / 门 4 / 门 8 = NOT RUN**（消费环境 dsh 二进制 + P0-1 已知红；门 4 与本任务无关）。
+
+  **判定项逐条**：
+  - **① 沙箱全新安装后 roster 含 `concerto` 且 `session/create` 组合成功 = 成立（真机腿）**。dsh 0.2.0-rc.2 沙箱、`mktemp -d` 的 `DSH_HOME`、**联网**跑真实安装器（未替换成离线副本）；真起 `dsh --profile web --port 0 --no-open`，20s 内就绪。原始件：`artifacts/roster.raw.json`（`presets` 5 条，`concerto` 在列、带 `name`/`description`，`grep -o broken` 全文**零命中**——是**键不存在**而非空值）、`artifacts/session-create.{request,response}.json`（`{"args":{"request":{…,"agentPreset":"concerto"}}}` → `ok:true`、`agentPreset` 回显 `concerto`）、`artifacts/session.v4.jsonl` 首行 `agentPreset":"concerto"`、`artifacts/cordis.patch.yml.installed`（317 行）、`artifacts/dump-config.out`（组成树第 1260 行的层标记正是该 patch 文件、1261 行是本 row、`plugins:` 下 16 条齐全、`disabled: !!js process.platform …` 按表达式存活）。
+  - **② 二次安装幂等 = 成立**。仲裁者**亲手**离线三连跑（`curl`→`cp`、`dsh`→版本 shim）：`preset-concerto` **1 次**；**run1 == run2 == run3 逐字节相同**；用户行是结果文件的**精确字节前缀**（含注释与空行）。四层独立钉子：T3 幂等 / T4 用户行保全 / T5 两种形态识别 / T19 备份只留最新 3 份且异前缀哨兵存活。
+  - **③ 0.1.5 安装路径不回归 = 桩验证成立，真机 NOT RUN**。0.1.x 面用 `dsh --version` shim 桩成 `0.1.5-rc.1`：只建两个旧文件、与仓源**逐字节相同**、`profiles/` 不存在（评审 A 另跑 `diff -r` 与 HEAD 版产物逐字节相同，含 EXPLORE 覆盖版）。**权威通道 = CI**：`scripts/compat-probe.sh:70-73` 用**空 `DSH_HOME`** 真跑本安装器（`NO_PIAI=1 EXPLORE_PROVIDER=… EXPLORE_MODEL=…`）。**在 CI 跑绿之前不得声称 0.1.5 腿已验证。**
+  - **④ 双语文档同 commit = 成立**。两份各六段 + 三处后续订正（python3/PyYAML 前置条件、卸载 `2>/dev/null` 与「首次安装不产生备份」、嵌套声明行拒绝段）；门 7 `d08` 的 8 条 raw URL 全部 `/v0.2/`。
+  - **⑤ 卸载路径 = 成立**。0.1.x 面 `rm -rf ${DEST}`；0.2.x 面改为「只删 `preset-concerto` 那一行 / 还原最新的**安装器**备份（glob 收紧为 `.bak.[0-9]*`）」并明写**不要 `rm -rf` 整个 patch 文件**。T15 双向断言。
+  - **⑥ registry 前提断言 = 成立**。写入**任何字节之前**读 `profiles/web/package.json` 的 `dsh.profile.bundles`：缺席 → 放行并打印首启模板提示；含 `@deepseek-ai/dsh-web-app` → 放行且 `package.json` 逐字节不变；不含 → **响亮拒绝、退出码非 0、stderr 点名实际 bundles、patch 文件 Buffer 比对逐字节未写、无 `.bak`**（T16 三分支）。
+
+  **真 boot 腿是否需要重跑（两路独立收敛「不需要」）**：A 与 B **各自**把当前 `render_patch_block` 的 `PYRENDER` 段原样抠出喂仓内两份 yml，**各自算出同一 sha256** `92695521d05a0a19318aa5dd6c03618736286164afc46f77d3fb9de77a4bf866`、**18262 字节**，与 `artifacts/cordis.patch.yml.installed` **同值同长、diff 0 行**（仲裁者提交前**再算一遍**并 `cmp` 确认）。⇒ 16:34 那条腿挂载进去的东西**一个字节都没变**，此后所有改动都在 `write_patch_row`、shell 前置闸与文档里。**此后记 sha256，不记 mtime。**
+
+  **变异记录（仲裁者亲手做 M1–M4，两路评审另做 A–L / M1–M10，每次变异前先用 `grep -F` 确认变异点存在）**：仲裁者 M1 缩进 8→4 ⇒ **10 红**；M2 禁用形态① 删除 ⇒ 1 红；M3 禁用形态② 删除 ⇒ 2 红；M4 `json.dumps`→裸拼接 ⇒ T11 红（`ScannerError: mapping values are not allowed here`）。评审 A 轮 4 的 11 条、评审 B 轮 4 的 5 条**全部被杀**（唯一存活的 M10 经二次验证是冗余无害的纵深防御）。
+
+  **仲裁者自查抓出、两路评审都判错性质的一条（F2′，本阶段最贵的一条）**：两路都把「R15 引号化」当成**缺断言**，其中一路明写「代码本身是对的」。**错——代码里当时根本没有 `json.dumps`**：`scripts/install-concerto.sh:147-148` 是裸拼接，且**修复轮前的基线也已是裸拼接** ⇒ 不是修复轮弄丢的，是分段交付期间该文件被**并发改写**时丢的。复现：一份**完全合法**的 `preset.yml`（description 含 ASCII `": "`）⇒ `ScannerError` ⇒ 安装器 exit 1。仓内当时的 `preset.yml` 侥幸用**全角 `：`**所以没暴露。已恢复 `json.dumps(..., ensure_ascii=False)` + 往返自检（含 U+0085 折叠）+ 敌意 fixture。
+
+  **本阶段对全局有价值的产出 —— 规约⑳（见头部修订记录）**：本阶段「**台账/报告说已闭合，但代码里不是那样**」发生**两次**：一次栽在「**缺断言**」，一次栽在「**断言在但判定式错**」（`group is True` 严格窄于上游 `dsh-app-boot/lib/index.js:2100` 的三分支并集，`name: cordis:group` 那条**最规范**的写法照样溜过去，安装器 exit 0 + 两条活 preset row）。⇒ **每条 finding 的闭合判据必须写成可执行形式**（形如「拒绝覆盖 `:2100` 的三个分支并各有一个用例」），**要能对着上游源码逐条对账，不能对着自己的实现自洽**。
+- **遗留观察（按 DoD-d 回填，不在 T7 修）**：评审 A 测出 `tests/omo-hooks/background-notification.test.ts`（**不在 T7 diff 里**）吃 vitest 默认 5s `testTimeout`，负载下会随机红 1 条（`Test timed out in 5000ms`，T13 ⑨；单独复跑 3 次全绿）。**这正是 T7 自己那份文件修掉的同种闪烁**（每用例显式 60s）。⇒ 归 T2 线的后续修缮，**不改 T7 结论**。台账里「门 6 全绿」须注明是**观测值不是保证值**。
 - **依赖**：P4.5-T1（fork 裁定）、P4.5-T5（渲染产物复用）。**量级**：1 天。
 
 ---
