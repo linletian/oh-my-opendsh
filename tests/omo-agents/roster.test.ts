@@ -52,7 +52,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     delegation: true,
     writeCapable: false,
     allowTools: undefined,
-    defaultRoute: { provider: 'deepseek', model: 'deepseek-flash' },
+    defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
     routeEnvVars: { provider: 'OMO_EXPLORE_PROVIDER', model: 'OMO_EXPLORE_MODEL' },
   },
   {
@@ -85,7 +85,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     delegation: true,
     writeCapable: false,
     allowTools: undefined,
-    defaultRoute: { provider: 'deepseek', model: 'deepseek-flash' },
+    defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
     routeEnvVars: { provider: 'OMO_LIBRARIAN_PROVIDER', model: 'OMO_LIBRARIAN_MODEL' },
   },
   {
@@ -135,7 +135,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     delegation: true,
     writeCapable: false,
     allowTools: ['read', 'read_image'],
-    defaultRoute: { provider: 'deepseek-official', model: 'deepseek-flash' },
+    defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' },
     routeEnvVars: {
       provider: 'OMO_MULTIMODAL_LOOKER_PROVIDER',
       model: 'OMO_MULTIMODAL_LOOKER_MODEL',
@@ -149,7 +149,7 @@ const EXPECTED: readonly ExpectedEntry[] = [
     delegation: true,
     writeCapable: true,
     allowTools: undefined,
-    defaultRoute: { provider: 'deepseek', model: 'deepseek-flash' },
+    defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
     routeEnvVars: {
       provider: 'OMO_SISYPHUS_JUNIOR_PROVIDER',
       model: 'OMO_SISYPHUS_JUNIOR_MODEL',

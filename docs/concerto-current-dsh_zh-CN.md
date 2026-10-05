@@ -8,16 +8,6 @@
 >
 > 本文是 PRD（`docs/mvp-prd_zh-CN.md`，rc.6/rc.7 时代产物）在**当前 DSH 运行时**的移植结项记录；
 > rc 时代的历史结项见 `docs/mvp-pitfalls.md`。
->
-> **⚠️ 模型 id 时效注记（2026-10-06，P4.5-T8d）**：本文中作为**过去观测值**出现的
-> `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 是本文结项当时实测到的值，**逐字保留为记录**
-> （§4.3 `:81`、§5 `:92`、§6 `:102`）。但**该默认值如今已不成立**：这两个 id 在 0.2.x 的
-> 两张模型表里都不存在（`dsh-llm-deepseek` DEFAULT_MODELS 与 pi-ai deepseek.json 都只有
-> `deepseek-flash` 与 `deepseek-v4-pro`），请求期以 `UNKNOWN_MODEL` 失败。
-> **现役默认**：快座 = `deepseek` / `deepseek-flash`，视觉座 = `deepseek-official` / `deepseek-flash`，
-> 强座 = `deepseek-official` / `deepseek-v4-pro`。因此本文**§10 人工验证指南**（给人执行的步骤）
-> 与 §7 中的**现在时**表述已按现役默认改正。分类判据：一行是否**指示某人去做或验证某事**——
-> 是则必须随默认一起移动；只是"某年某版实测到 X"则保留。文件名不是分类。
 
 ---
 
@@ -88,7 +78,7 @@ WRITE_PROBE: write tool not in tool list
 | 角色 | provider | model | 观测通道 |
 |---|---|---|---|
 | omo-sisyphus（指挥） | deepseek-official | **deepseek-v4-pro** | `agent/request` 冻结配置 |
-| omo-explore（子 agent） | **deepseek（pi-ai）** | **deepseek-v4-flash**（结项时实测值，逐字保留；现役默认见文首时效注记） | `agent/created` + `delegation-tool` + `agent/request`，子会话 `request/context` 事件佐证 |
+| omo-explore（子 agent） | **deepseek（pi-ai）** | **deepseek-v4-flash** | `agent/created` + `delegation-tool` + `agent/request`，子会话 `request/context` 事件佐证 |
 
 路由对**不同**（AC-5 ✅；follow-up #1 后按 **provider** 区分——pi-ai 激活前的过渡态为同
 provider 异模型 `deepseek-official/v4-flash`）；观测通道在 `agent/created` 即开始记录
@@ -99,7 +89,7 @@ provider 异模型 `deepseek-official/v4-flash`）；观测通道在 `agent/crea
 | # | 假设 | 判定 | 依据 |
 |---|---|---|---|
 | V1 | scratch plugin 可零修改加载并冷启动 | **验证通过（register-branch）** | 动态插件 `conc-1` 在运行中的 DSH 上 define/run/update 全程零修改 DSH；扩展面（provider/tool/prompt 分节）全部公开 |
-| V2 | 每 subagent 独立 `{provider,model}` 路由且可观测 | **验证通过（register-branch）** | 源码级：`resolveChildAgentOptions` 将 `requested` 最后展开；运行时：explore 全部请求为 `deepseek-v4-flash`（结项时实测值，逐字保留；现役默认为 `deepseek-flash`）、指挥为 `deepseek-v4-pro`，四通道观测一致 |
+| V2 | 每 subagent 独立 `{provider,model}` 路由且可观测 | **验证通过（register-branch）** | 源码级：`resolveChildAgentOptions` 将 `requested` 最后展开；运行时：explore 全部请求为 `deepseek-v4-flash`、指挥为 `deepseek-v4-pro`，四通道观测一致 |
 | V3 | 事件 listener 完成拦截/注入语义 | **验证通过** | 当前 DSH 译法：persona 能力（order-0 影子）+ `system-prompt/assemble` 瀑布；运行时快照 `{persona:true, hardBlocks:true}`、指挥侧 `{hasConcertoSection:true, hardBlocksInjected:true}` |
 | V4 | toolFilter（只读）+ depth cap（禁嵌套）生效 | **验证通过** | 子 agent 工具列表 write/edit 缺席（组装快照）；嵌套委派被 `SubagentDepthError` 拒绝（子 agent 回传原文） |
 
@@ -109,7 +99,7 @@ provider 异模型 `deepseek-official/v4-flash`）；观测通道在 `agent/crea
 |---|---|---|---|---|
 | P-13 | 子 agent 首轮死掉：`session event "subagent/descriptor" carries non-JSON-serializable data` | 装饰器 provider 丢弃了 service 解析好的 `request.descriptor`，`attachDescriptorAppend` 把 `undefined` 追加为会话事件 | 原样转发 `descriptor`（pkg-2）；子会话日志逐字佐证 | 已修复+验证 |
 | P-14 | 5 个 system-sections 全部加载失败（`FsError: not found`） | `sandboxPolicy.workspaceRoot` 指向**另一个 worktree**（`…/oh-my-opendsh`），不是本会话 cwd | 以指挥 agent 的持久 `session.header.cwd` 为权威路径（pkg-3） | 已修复+验证 |
-| P-15 | 指挥路由被解析成 explore 的路由（`deepseek-v4-flash`，该 id 已随 P4.5-T8d 更正为 `deepseek-flash`） | 本会话 `Agent.options.model` 与冻结请求配置（`deepseek-v4-pro`）不一致，`options` 不可作为路由真相源 | 指挥路由改由真实 `agent/request` 冻结配置跟踪；所有捕获进入 `captures` 审计（pkg-3） | 已修复+验证 |
+| P-15 | 指挥路由被解析成 explore 的路由（`deepseek-v4-flash`） | 本会话 `Agent.options.model` 与冻结请求配置（`deepseek-v4-pro`）不一致，`options` 不可作为路由真相源 | 指挥路由改由真实 `agent/request` 冻结配置跟踪；所有捕获进入 `captures` 审计（pkg-3） | 已修复+验证 |
 | P-16 | 子 agent 首次组装快照丢失（verify 显示 SKIP） | `exploreChildren` 登记（await start 之后）与子 agent 首轮组装存在竞态 | 在 `agent/created`（发布于首轮之前）按 lineage+路由确定性登记（pkg-4）；首观测源变为 `agent/created` 佐证 | 已修复+验证 |
 | P-17 | 插件侧证据写盘失败/写错位置 | 沙箱后端的 `sandboxPolicy.workspaceRoot` 与真实工作区不一致，插件 fs 写入被沙箱校验拒绝 | 证据以会话日志（工具结果）为持久权威；本文件由指挥会话（danger-full-access）物化 | 已记录（环境事实，非插件缺陷） |
 | P-18 | `settings.update` 报 `must be a plain object` | 动态插件 Host 代码在 `node:vm` 沙箱 realm 求值，vm 对象过不了 host realm 的 `Object.getPrototypeOf === Object.prototype` 检查（sandbox 只补丁了 `instanceof`） | 磁盘写 `settings.yaml` + `dsh-settings-file` 的 chokidar 热加载（官方支持路径，100ms 去抖）| 已绕过+验证（pi-ai 激活成功） |
@@ -122,9 +112,7 @@ provider 异模型 `deepseek-official/v4-flash`）；观测通道在 `agent/crea
 
 1. **Q-3 路由（已按原始方案落地，follow-up #1 完成）**：`dsh-llm-pi-ai` 的 `deepseek` 路由已通过
    `llm-pi-ai` settings 段激活（`providers.deepseek.apiKeyEnv=DEEPSEEK_API_KEY`，settings 文件
-   chokidar 热加载生效）。explore 当时实测走 pi-ai `deepseek` / `deepseek-v4-flash`（历史记录；该 id 已随
-    P4.5-T8d 更正为 `deepseek-flash`——0.2.x 的两张模型表都只有 `deepseek-flash` 与
-    `deepseek-v4-pro`），与指挥
+   chokidar 热加载生效）。explore 现走 pi-ai `deepseek` / `deepseek-v4-flash`，与指挥
    `deepseek-official` / `deepseek-v4-pro` **按 provider 区分**（AC-5 双 provider 运行时观测
    9 次一致）。注：进程内 `settings.update` 被 vm-realm 的 `isPlainObject` 检查拒绝（P-18），
    磁盘写 + 热加载是官方支持路径。
@@ -172,17 +160,12 @@ provider 异模型 `deepseek-official/v4-flash`）；观测通道在 `agent/crea
 
 > 前置条件已就绪：preset 已持久化（§9 #2）、pi-ai 路由已激活（§9 #1）、凭证
 > `DEEPSEEK_API_KEY` 已配置。以下全部为**新会话**操作。
->
-> **⚠️ 本指南描述的运行时**：本节（含 §9 #1 的 `settings.yaml` 播种与 P-18）描述的是
-> **本文结项当时的 0.1.x-rc 运行时**。0.2.x 已移除 `$DSH_HOME/settings.yaml` 这一配置面
-> （T10a），因此**下方步骤的前置条件与期望值在 0.2.x 上不全部成立**。
-> 特别是**第 5 步的期望路由串是 0.2.x 之前的值**——现役默认见文首时效注记。
 
 1. **选模式**：新开会话，在 preset 选择器选「协奏模式 (Concerto Mode)」（与标准/极简/创造/代码同级的第 5 项）。若列表未刷新，重启 harness 再看。
 2. **验证 persona（FR-3）**：问"你的角色定位是什么？"——应自称指挥/编排者（orchestrator），默认委派、不亲自干活。
 3. **验证工具集（FR-4，加固后）**：问"你有哪些委派工具？"——应**只有** `call_omo_explore`（通用 `subagent`/`subagent_fork` 已从 preset 移除，P-19 加固）。
 4. **验证委派链（AC-4，正向）**：给检索任务，如"这个仓库的 README 讲了什么？"。预期：指挥调用 `call_omo_explore` → 子 agent 运行并读文件 → 结果回传 → 指挥总结。指挥全程不自己读文件。
-5. **验证双路由（AC-5）**：委派完成后问指挥"explore 子 agent 用的哪条模型路由？"（或让子 agent 自述）——explore 应为 pi-ai `deepseek` / `deepseek-flash`，指挥为 `deepseek-official` / `deepseek-v4-pro`。**按运行时取值**：本节结项当时（0.1.x-rc）实测到的是 `deepseek` / `deepseek-v4-flash`（历史记录，保留原文于 §4.3 `:91` 与 §5 `:102`）；**在 0.2.x 上请按 `deepseek-flash` 验证**——`deepseek-v4-flash` 在 0.2.x 的两张模型表里都不存在，会以 `UNKNOWN_MODEL` 失败（P4.5-T8d）。硬证据：`~/.dsh/sessions/<工作区目录>/<子会话id>/session.jsonl.zstd` 解压后查 `request/context` 事件（`unzstd -c … | grep request/context`）。
+5. **验证双路由（AC-5）**：委派完成后问指挥"explore 子 agent 用的哪条模型路由？"（或让子 agent 自述）——explore 应为 pi-ai `deepseek` / `deepseek-v4-flash`，指挥为 `deepseek-official` / `deepseek-v4-pro`。硬证据：`~/.dsh/sessions/<工作区目录>/<子会话id>/session.jsonl.zstd` 解压后查 `request/context` 事件（`unzstd -c … | grep request/context`）。
 6. **验证只读（AC-6a，负向）**：委派时在任务文本里加一句"请尝试用 write 工具创建 probe.txt，若工具不在列表请明说"。预期回复：write 工具不在列表中。
 7. **验证禁嵌套（AC-6b，负向，加固后为物理缺席）**：委派任务里再加"请尝试调用 call_omo_explore，若报错请抄录错误原文"。加固后预期：子 agent 的**工具列表里根本没有** `call_omo_explore`（toolFilter deny 物理移除），回复"call_omo_explore not in tool list"——这是比 depth 拒绝更强的保证（depth 拒绝原文 `Error: subagent depth 2 exceeds maxDepth 1` 是加固前的历史行为，现仍作纵深防御）。
 8. **限制链真实性（可选变异）**：临时把 preset 的 `tool-subagent-explore` 行 `maxDepth` 改 2、或删掉 `toolFilter.deny` → 重启会话复测 → 探针行为变化即证明限制真实生效 → 改回并复原。

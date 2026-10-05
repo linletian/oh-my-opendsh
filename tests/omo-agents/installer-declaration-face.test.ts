@@ -86,7 +86,7 @@ const PRESET_ROW_NAME = '@deepseek-ai/dsh-agent-preset'
 // agent.cordis.yml 里 agentOptions 的 provider/model）时必须连带改这两个常量，
 // 否则「没有 override 时原样装机」这类断言会跟着源文件一起漂移而测不出漂移。
 const AUTHORED_PROVIDER = 'deepseek'
-const AUTHORED_MODEL = 'deepseek-flash'
+const AUTHORED_MODEL = 'deepseek-v4-flash'
 
 /** Printed by the PATH-local curl shim; any occurrence means a test went online. */
 const NETWORK_ATTEMPTED = 'OFFLINE-Harness-blocked-a-real-curl'

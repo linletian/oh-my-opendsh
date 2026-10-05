@@ -55,9 +55,8 @@
 #       --question "请委派 oracle 读这个项目并给出架构层面的风险清单，然后总结。"
 #     # multimodal-looker — VISION seat. The question must name the seeded
 #     # smoke-fixture.png (relative to the sandboxed project = the child's cwd)
-#     # and the deepseek-official/deepseek-flash route must be
-#     # live for your key (deepseek-flash is that catalog's vision-capable entry,
-#     # inputModalities ["text","image"]); ask it to relate the image to README.md so link 2
+#     # and the deepseek-official/deepseek-v4-flash-vision-exp route must be
+#     # live for your key; ask it to relate the image to README.md so link 2
 #     # also sees the README sentinel:
 #     scripts/smoke-real.sh --agent multimodal-looker \
 #       --question "请委派 multimodal-looker 看 smoke-fixture.png，并结合 README.md 说明这个项目，然后总结。"
@@ -68,7 +67,7 @@
 #     (dsh-llm-deepseek DEFAULT_API_KEY_ENV); production endpoint
 #     https://api.deepseek.com is the adapter default when no baseURL is set.
 #   - the chosen agent's seat. For agents on the llm-pi-ai catalog route
-#     (explore/librarian/sisyphus-junior → deepseek/deepseek-flash) the
+#     (explore/librarian/sisyphus-junior → deepseek/deepseek-v4-flash) the
 #     sandbox settings.yaml seeds llm-pi-ai.providers.deepseek.apiKeyEnv=
 #     DEEPSEEK_API_KEY (same seed as scripts/concerto-mode-probe.sh); the
 #     pi-ai catalog's deepseek baseUrl is https://api.deepseek.com, used when

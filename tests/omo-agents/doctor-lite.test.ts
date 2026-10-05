@@ -142,7 +142,7 @@ describe('expectedDelegationRowContract (P2-T20 per-row contract builder)', () =
 })
 
 describe('delegationRowContractProblems (P2-T20 per-row contract checker)', () => {
-  const route = { provider: 'deepseek', model: 'deepseek-flash' }
+  const route = { provider: 'deepseek', model: 'deepseek-v4-flash' }
   const contractFor = (shape: { deny?: string[]; allow?: string[]; className?: string }): DelegationRowContract =>
     expectedDelegationRowContract(
       {
@@ -163,7 +163,7 @@ describe('delegationRowContractProblems (P2-T20 per-row contract checker)', () =
     backgroundMode: 'continuable',
     maxDepth: 2,
     toolFilter: { deny: ['write', 'edit', 'explore'] },
-    agentOptions: { provider: 'deepseek', model: 'deepseek-flash' },
+    agentOptions: { provider: 'deepseek', model: 'deepseek-v4-flash' },
     persona: '# Explore: Read-Only Retrieval Agent\n…',
   })
 
@@ -220,7 +220,7 @@ describe('delegationRowContractProblems (P2-T20 per-row contract checker)', () =
       readOnlyContract(),
     )
     expect(problems).toHaveLength(1)
-    expect(problems[0]).toContain('want "deepseek"/"deepseek-flash"')
+    expect(problems[0]).toContain('want "deepseek"/"deepseek-v4-flash"')
   })
 
   it('flags a missing, empty or non-string persona (unrendered sentinel)', () => {

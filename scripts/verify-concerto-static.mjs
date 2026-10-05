@@ -10,7 +10,7 @@
 // Checks:
 //   c01 preset YAML parses  (agent.cordis.yml + preset.yml, dsh dialect)
 //   c02 explore binding     (provider spawn / toolName call_omo_explore /
-//       backgroundMode one-shot / agentOptions = pi-ai deepseek/deepseek-flash /
+//       backgroundMode one-shot / agentOptions = the pi-ai deepseek route /
 //       toolFilter.deny ⊇ [write, edit, call_omo_explore] / maxDepth 1)
 //   c03 single delegation path (no generic subagent/subagent_fork rows, no
 //       codex/claude-code product rows; delegation group = exactly 3 rows)
@@ -369,20 +369,14 @@ async function run() {
       const problems = []
       if (cfg.provider !== 'spawn') problems.push(`provider=${cfg.provider} (want spawn)`)
       if (cfg.backgroundMode !== 'one-shot') problems.push(`backgroundMode=${cfg.backgroundMode} (want one-shot)`)
-      // The pinned model id must be one the pi-ai `deepseek` catalog really
-      // serves. Verified first-source against the installed artifact
-      // @earendil-works/pi-ai@0.87.1 dist/providers/data/deepseek.json (api
-      // openai-completions), whose keys are exactly deepseek-flash and
-      // deepseek-v4-pro — `deepseek-v4-flash` was fictional on this route and
-      // failed the request with UNKNOWN_MODEL (P4.5-T8d).
-      if (!(cfg.agentOptions && cfg.agentOptions.provider === 'deepseek' && cfg.agentOptions.model === 'deepseek-flash')) {
-        problems.push(`agentOptions=${JSON.stringify(cfg.agentOptions)} (want pi-ai deepseek route: provider deepseek, model deepseek-flash)`)
+      if (!(cfg.agentOptions && cfg.agentOptions.provider === 'deepseek' && cfg.agentOptions.model === 'deepseek-v4-flash')) {
+        problems.push(`agentOptions=${JSON.stringify(cfg.agentOptions)} (want pi-ai deepseek route: provider deepseek, model deepseek-v4-flash)`)
       }
       for (const t of ['write', 'edit', 'call_omo_explore']) {
         if (!deny.includes(t)) problems.push(`toolFilter.deny missing "${t}"`)
       }
       if (cfg.maxDepth !== 1) problems.push(`maxDepth=${cfg.maxDepth} (want 1)`)
-      results.push(check('c02', 'explore binding row', problems.length === 0, problems.join('; ') || 'spawn / one-shot / pi-ai route deepseek/deepseek-flash / deny [write, edit, call_omo_explore] / maxDepth 1'))
+      results.push(check('c02', 'explore binding row', problems.length === 0, problems.join('; ') || 'spawn / one-shot / pi-ai route / deny [write, edit, call_omo_explore] / maxDepth 1'))
     }
 
     // c03 — call_omo_explore is the ONLY delegation path (AC-6 hardening).

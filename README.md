@@ -43,15 +43,15 @@ targets**, each on its own route binding.
 
 | Delegation target | Class | Seat (default provider / model) |
 |---|---|---|
-| `explore` | read-only | fast — `deepseek` / `deepseek-flash` |
+| `explore` | read-only | fast — `deepseek` / `deepseek-v4-flash` |
 | `hephaestus` | worker | strong — `deepseek-official` / `deepseek-v4-pro` |
 | `oracle` | read-only | strong — `deepseek-official` / `deepseek-v4-pro` |
-| `librarian` | read-only | fast — `deepseek` / `deepseek-flash` |
+| `librarian` | read-only | fast — `deepseek` / `deepseek-v4-flash` |
 | `plan-consultant` | read-only | strong — `deepseek-official` / `deepseek-v4-pro` |
 | `plan-reviewer` | read-only | strong — `deepseek-official` / `deepseek-v4-pro` |
 | `atlas` | orchestrator | strong — `deepseek-official` / `deepseek-v4-pro` |
-| `multimodal-looker` | allowlist (`read`, `read_image`) | vision — `deepseek-official` / `deepseek-flash` |
-| `sisyphus-junior` | worker | fast — `deepseek` / `deepseek-flash` |
+| `multimodal-looker` | allowlist (`read`, `read_image`) | vision — `deepseek-official` / `deepseek-v4-flash-vision-exp` |
+| `sisyphus-junior` | worker | fast — `deepseek` / `deepseek-v4-flash` |
 | `prometheus` | read-only | strong — `deepseek-official` / `deepseek-v4-pro` |
 
 > ⚠️ **A complete roster is not a complete OMO orchestration surface**
@@ -89,15 +89,15 @@ rather than in code.
 | # | Agent | Class | `maxDepth` | Seat | Default `provider` / `model` | Env override pair |
 |---|---|---|---|---|---|---|
 | 1 | `sisyphus` (conductor — route only, not a delegation tool) | — | — | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL` |
-| 2 | `explore` | read-only | 2 | fast | `deepseek` / `deepseek-flash` | `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL` |
+| 2 | `explore` | read-only | 2 | fast | `deepseek` / `deepseek-v4-flash` | `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL` |
 | 3 | `hephaestus` | worker | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_HEPHAESTUS_PROVIDER` / `OMO_HEPHAESTUS_MODEL` |
 | 4 | `oracle` | read-only | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_ORACLE_PROVIDER` / `OMO_ORACLE_MODEL` |
-| 5 | `librarian` | read-only | 2 | fast | `deepseek` / `deepseek-flash` | `OMO_LIBRARIAN_PROVIDER` / `OMO_LIBRARIAN_MODEL` |
+| 5 | `librarian` | read-only | 2 | fast | `deepseek` / `deepseek-v4-flash` | `OMO_LIBRARIAN_PROVIDER` / `OMO_LIBRARIAN_MODEL` |
 | 6 | `plan-consultant` | read-only | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_CONSULTANT_PROVIDER` / `OMO_PLAN_CONSULTANT_MODEL` |
 | 7 | `plan-reviewer` | read-only | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_REVIEWER_PROVIDER` / `OMO_PLAN_REVIEWER_MODEL` |
 | 8 | `atlas` | orchestrator | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_ATLAS_PROVIDER` / `OMO_ATLAS_MODEL` |
-| 9 | `multimodal-looker` | allowlist | 2 | vision | `deepseek-official` / `deepseek-flash` | `OMO_MULTIMODAL_LOOKER_PROVIDER` / `OMO_MULTIMODAL_LOOKER_MODEL` |
-| 10 | `sisyphus-junior` | worker | 2 | fast | `deepseek` / `deepseek-flash` | `OMO_SISYPHUS_JUNIOR_PROVIDER` / `OMO_SISYPHUS_JUNIOR_MODEL` |
+| 9 | `multimodal-looker` | allowlist | 2 | vision | `deepseek-official` / `deepseek-v4-flash-vision-exp` | `OMO_MULTIMODAL_LOOKER_PROVIDER` / `OMO_MULTIMODAL_LOOKER_MODEL` |
+| 10 | `sisyphus-junior` | worker | 2 | fast | `deepseek` / `deepseek-v4-flash` | `OMO_SISYPHUS_JUNIOR_PROVIDER` / `OMO_SISYPHUS_JUNIOR_MODEL` |
 | 11 | `prometheus` | read-only | 2 | strong | `deepseek-official` / `deepseek-v4-pro` | `OMO_PROMETHEUS_PROVIDER` / `OMO_PROMETHEUS_MODEL` |
 
 - **Hard precheck (AC-5):** the conductor route and the `explore` route must **differ**. An

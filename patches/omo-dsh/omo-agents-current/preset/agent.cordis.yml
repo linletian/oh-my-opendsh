@@ -185,11 +185,7 @@
     # `call_omo_explore`: read-only (toolFilter deny write/edit — T12 verdict,
     # plus call_omo_explore itself so the child cannot physically delegate,
     # AC-6b hardening), its own route (agentOptions = the pi-ai `deepseek`
-    # route, PRD Q-3; model deepseek-flash — the flash id the pi-ai deepseek
-    # catalog really ships: @earendil-works/pi-ai dist/providers/data/
-    # deepseek.json @0.87.1 has exactly deepseek-flash and deepseek-v4-pro, and
-    # any other id fails the request with UNKNOWN_MODEL), cannot delegate
-    # further (maxDepth 1, T13, kept as
+    # route, PRD Q-3), cannot delegate further (maxDepth 1, T13, kept as
     # defense-in-depth), and carries the explore persona + hard blocks as its
     # persona shadow.
     - id: tool-subagent-explore
@@ -278,7 +274,7 @@
           - **Oracle**: Delivering answer without collecting Oracle results
         agentOptions:
           provider: deepseek
-          model: deepseek-flash
+          model: deepseek-v4-flash
         toolFilter:
           deny: [write, edit, call_omo_explore]
         maxDepth: 1

@@ -42,15 +42,15 @@ preset 携带 **11-agent 名册**：指挥 **sisyphus** + **10 个委派目标**
 
 | 委派目标 | 类 | 席位（默认 provider / model） |
 |---|---|---|
-| `explore` | 只读 | 快座 — `deepseek` / `deepseek-flash` |
+| `explore` | 只读 | 快座 — `deepseek` / `deepseek-v4-flash` |
 | `hephaestus` | worker | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 | `oracle` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
-| `librarian` | 只读 | 快座 — `deepseek` / `deepseek-flash` |
+| `librarian` | 只读 | 快座 — `deepseek` / `deepseek-v4-flash` |
 | `plan-consultant` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 | `plan-reviewer` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 | `atlas` | orchestrator | 强座 — `deepseek-official` / `deepseek-v4-pro` |
-| `multimodal-looker` | allowlist（`read`、`read_image`） | 视觉座 — `deepseek-official` / `deepseek-flash` |
-| `sisyphus-junior` | worker | 快座 — `deepseek` / `deepseek-flash` |
+| `multimodal-looker` | allowlist（`read`、`read_image`） | 视觉座 — `deepseek-official` / `deepseek-v4-flash-vision-exp` |
+| `sisyphus-junior` | worker | 快座 — `deepseek` / `deepseek-v4-flash` |
 | `prometheus` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 
 > ⚠️ **名册完整 ≠ 完整的 OMO 编排面**（风险 R-8，见 docs/plans/phase2-dev/phase2-plan.md §6）。那句话点名了另外两件事，其中一件已经关闭
@@ -84,15 +84,15 @@ env 对逐 agent 覆盖，因此模型链留在配置里，而不在代码里。
 | # | Agent | 类 | `maxDepth` | 席位 | 默认 `provider` / `model` | env 覆盖对 |
 |---|---|---|---|---|---|---|
 | 1 | `sisyphus`（指挥——只持路由，不是委派工具） | — | — | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL` |
-| 2 | `explore` | 只读 | 2 | 快座 | `deepseek` / `deepseek-flash` | `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL` |
+| 2 | `explore` | 只读 | 2 | 快座 | `deepseek` / `deepseek-v4-flash` | `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL` |
 | 3 | `hephaestus` | worker | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_HEPHAESTUS_PROVIDER` / `OMO_HEPHAESTUS_MODEL` |
 | 4 | `oracle` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_ORACLE_PROVIDER` / `OMO_ORACLE_MODEL` |
-| 5 | `librarian` | 只读 | 2 | 快座 | `deepseek` / `deepseek-flash` | `OMO_LIBRARIAN_PROVIDER` / `OMO_LIBRARIAN_MODEL` |
+| 5 | `librarian` | 只读 | 2 | 快座 | `deepseek` / `deepseek-v4-flash` | `OMO_LIBRARIAN_PROVIDER` / `OMO_LIBRARIAN_MODEL` |
 | 6 | `plan-consultant` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_CONSULTANT_PROVIDER` / `OMO_PLAN_CONSULTANT_MODEL` |
 | 7 | `plan-reviewer` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_REVIEWER_PROVIDER` / `OMO_PLAN_REVIEWER_MODEL` |
 | 8 | `atlas` | orchestrator | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_ATLAS_PROVIDER` / `OMO_ATLAS_MODEL` |
-| 9 | `multimodal-looker` | allowlist | 2 | 视觉座 | `deepseek-official` / `deepseek-flash` | `OMO_MULTIMODAL_LOOKER_PROVIDER` / `OMO_MULTIMODAL_LOOKER_MODEL` |
-| 10 | `sisyphus-junior` | worker | 2 | 快座 | `deepseek` / `deepseek-flash` | `OMO_SISYPHUS_JUNIOR_PROVIDER` / `OMO_SISYPHUS_JUNIOR_MODEL` |
+| 9 | `multimodal-looker` | allowlist | 2 | 视觉座 | `deepseek-official` / `deepseek-v4-flash-vision-exp` | `OMO_MULTIMODAL_LOOKER_PROVIDER` / `OMO_MULTIMODAL_LOOKER_MODEL` |
+| 10 | `sisyphus-junior` | worker | 2 | 快座 | `deepseek` / `deepseek-v4-flash` | `OMO_SISYPHUS_JUNIOR_PROVIDER` / `OMO_SISYPHUS_JUNIOR_MODEL` |
 | 11 | `prometheus` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_PROMETHEUS_PROVIDER` / `OMO_PROMETHEUS_MODEL` |
 
 - **硬预检（AC-5）**：指挥路由与 `explore` 路由必须**不同**。两者相同会在 apply 时**响亮致命报错**，
