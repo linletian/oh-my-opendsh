@@ -292,7 +292,8 @@
   - **`deepseek-official` 路由**（仲裁者上轮标为「未核」的那条）`dsh-llm-deepseek/lib/index.js:42-54` 的 `DEFAULT_MODELS` **也只有** `deepseek-flash`（`inputModalities: ["text","image"]`）与 `deepseek-v4-pro`
     ⇒ **`deepseek-v4-flash-vision-exp` 同样是虚构的**，先前「可能只坏一条路由」的顾虑不成立，**两条路由都坏**。
   - ⇒ **可用的替代 id 唯一且两侧通用**：`deepseek-flash`（两条路由的表里都在，且**都接受图像输入**）⇒ **视觉席也能用它**，不必另找。
-  - **文件归属拆分（避免与在飞的 T8b 抢同一个文件）**：本片改 **出货码 + 门 + 安装期 env + 双语 README**；`drive.mjs` 里的席位表（`:919`/`:922`/`:926`/`:927`）**归 T8**（下一个占 `drive.mjs` 的任务）。**两处必须同批落地**——只改出货码而留 drive 的旧 id，门 3 仍会以 `UNKNOWN_MODEL` 红。
+  - **⚠️ 仲裁者实施中发现的漏项（已发更正）**：`roster.ts` **不是**用户拿到的默认值——`scripts/verify-concerto-static.mjs:107` 的 `AGENT_YML` 与 `install-concerto.sh` 嵌入的**都是** `patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml`，该模板第 277 行仍写着 `model: deepseek-v4-flash`。**只改 `roster.ts` 是空操作**（这也是「改 `roster.ts` 而门 6 仍绿」的原因：c02 读的是模板不是 TS）。全仓 `grep -rl deepseek-v4-flash` 共 **35 个文件**：1 个出货模板 + 9 个测试/快照 + 4 个脚本 + 21 个文档，其中 **21 个文档绝大多数是历史记录**（0.1.5 复核报告、可行性报告、mvp-pitfalls、phase2 计划等）——**过去某次复核在 0.1.5 上测到 `deepseek-v4-flash` 是「当时为真」的记录，一个字不动**；**活的文档**（README 双语、`install-concerto` 双语、`manual-testing` 双语）必须跟着改，因为它们告诉用户某席用哪个模型。
+  - **文件归属拆分（避免与在飞的 T8b 抢同一个文件）**：本片改 **出货码 + 出货模板 + 门 + 单测/快照 + 脚本 + 双语 README/install/manual-testing**；`drive.mjs` 里的席位表（`:919`/`:922`/`:926`/`:927`）**归 T8**（下一个占 `drive.mjs` 的任务）。**两处必须同批落地**——只改出货码而留 drive 的旧 id，门 3 仍会以 `UNKNOWN_MODEL` 红。
 - **依赖**：无（与 T8b/T8c 无文件冲突；`drive.mjs` 那半归 T8）。**量级**：0.5 天 → **上修 1 天**（行数更多）。
 
 ### [ ] P4.5-T8 — drive.mjs 双形状夹具 + 信封读取点核对
