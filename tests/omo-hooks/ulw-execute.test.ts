@@ -1583,7 +1583,7 @@ describe('P3-T17 ulw-execute — 激活检测（纯函数，DSH 原生信号）'
     expect(message.role).toBe('user')
     expect(message.content).toEqual([{ type: 'text', text: buildInjectionText('BODY') }])
     expect(message.source).toEqual({
-      kind: 'plugin',
+      kind: 'omo-ulw-execute',
       plugin: ULW_EXECUTE_PLUGIN,
       form: 'instructions',
     })

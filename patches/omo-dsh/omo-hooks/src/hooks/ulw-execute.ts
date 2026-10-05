@@ -296,9 +296,25 @@ export interface InjectedTextBlock {
   readonly text: string
 }
 
-/** 注入消息的 source（`form: 'instructions'` = 「这段内容在指导模型」）。 */
+/**
+ * 注入消息的 **producer 归属**。
+ *
+ * `kind` 是 `omo-ulw-execute`，**不再是 `plugin`**：0.2.x 的 v4 native admission
+ * 在每个持久消息槽位上都拒绝 `kind === 'plugin'`，注入会在落盘前被拒。此结论一手
+ * 读自已安装的 npm 包 `@deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2`
+ * （`lib/index.js:124-127`；写侧由 `encodeEvent` `:1092-1099` 经
+ * `assertV4RowAdmission` `:1107` 走到 `assertV4SourceRowAdmission` `:142-152`）：
+ * 全部规则只有三条——`source` 必须是对象、`kind` 必须是非空字符串、**`kind` 不能
+ * 是 `'plugin'`**。`source` 上的其它键不受任何约束 ⇒ `plugin` 与 `form` 原样保留。
+ *
+ * `omo-` 前缀是**取舍，不是规定**：v4 对厂商前缀既不要求也不禁止，上游自有生产者
+ * 一律无前缀（`tool-jobs` —— 已装 `dsh-tool-jobs/lib/index.js:278`）。完整理由见
+ * hard-blocks-injection.ts 的 `InjectedPluginSource`。
+ *
+ * `form: 'instructions'` = 「这段内容在指导模型」。
+ */
 export interface InjectedPluginSource {
-  readonly kind: 'plugin'
+  readonly kind: 'omo-ulw-execute'
   readonly plugin: string
   readonly form: 'instructions'
 }
@@ -501,7 +517,7 @@ export function buildInjectionMessage(contextText: string): InjectedUserMessage 
     id: crypto.randomUUID(),
     role: 'user',
     content: [{ type: 'text', text: buildInjectionText(contextText) }],
-    source: { kind: 'plugin', plugin: ULW_EXECUTE_PLUGIN, form: 'instructions' },
+    source: { kind: 'omo-ulw-execute', plugin: ULW_EXECUTE_PLUGIN, form: 'instructions' },
   }
 }
 
@@ -600,8 +616,9 @@ export function readTaskText(payload: unknown): string {
  * 上游的对应面是**命令模板的 prompt 文本**（一个明确的、唯一的输入），本移植的
  * 等价物就是「委派子会话收到的**那一条**、**由用户发起**的任务消息」，因此：
  *
- *   ① 跳过**插件来源**的 user 消息（`source.kind !== 'user'`）——注入上下文、
- *      system-prompt 快照、job 通知全部不是「用户的任务表达」；
+ *   ① 跳过**非用户来源**的 user 消息（`source.kind !== 'user'`）——注入上下文、
+ *      system-prompt 快照、job 通知全部不是「用户的任务表达」；本 hook 自己的注入
+ *      带 `kind: 'omo-ulw-execute'`，同样落在这一侧（正向白名单只认 `'user'`）；
  *   ② 取第一条通过的 user 消息的文本块（= 委派的任务，见 dsh-tool-subagent
  *      构造的 `prompt` 块）；
  *   ③ 在 {@link RETURN_GUIDANCE_PREFIX} 处截断，去掉 dsh 追加的续作指引
@@ -637,10 +654,16 @@ export function readDelegationTaskText(payload: unknown): string {
 }
 
 /**
- * true when a claimed message was authored by the USER side rather than a plugin.
- * A message whose `source.kind` is anything other than `'user'` (or whose
- * `source` is absent, which only a foreign/hand-built payload produces) is NOT
- * the delegation's task text — see {@link readDelegationTaskText}.
+ * true when a claimed message was authored by the USER side rather than by some
+ * other producer. The rule is a POSITIVE whitelist on `source.kind === 'user'`,
+ * so every other kind — upstream's unprefixed ones (`tool-jobs`,
+ * `agent-instructions`, …) and OMO's own `omo-*` carriers alike — is excluded.
+ * An ABSENT `source` returns true: this read face is deliberately permissive
+ * toward hand-built/foreign payloads, and the unit suite pins that
+ * (`tests/omo-hooks/ulw-execute.test.ts` ⑫ — a source-less user message still
+ * yields its task text). Note that `keyword-detector/filters.ts`'s
+ * `isUserAuthoredMessage` takes the OPPOSITE branch on an absent source; the
+ * two are not the same rule despite the wording that has been used for both.
  */
 function isUserAuthored(message: Record<string, unknown>): boolean {
   const source = message.source

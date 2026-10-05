@@ -188,11 +188,11 @@ describe('P3-T5 bash-file-read-guard — registration + decision shape', () => {
     expect(message.role).toBe('user')
     expect(message.content).toEqual([{ type: 'text', text: EXPECTED_ADVISORY_TEXT }])
     expect(message.source).toEqual({
-      kind: 'plugin',
+      kind: 'omo-bash-read-guard',
       plugin: BASH_FILE_READ_GUARD_PLUGIN,
       form: 'notice',
     })
-    expect(message.source).toEqual({ kind: 'plugin', plugin: 'omo-hooks', form: 'notice' })
+    expect(message.source).toEqual({ kind: 'omo-bash-read-guard', plugin: 'omo-hooks', form: 'notice' })
   })
 
   it('③ the advisory text is upstream’s minus the hashline clause, verbatim', () => {

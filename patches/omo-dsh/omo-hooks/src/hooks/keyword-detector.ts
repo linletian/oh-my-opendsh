@@ -169,8 +169,9 @@
 //          在同一会话里第二次敲 `ulw` 被静默吞掉（只留一行 warn），上游会正常
 //          再次武装。
 //     **删闸后为什么没有重复注入面**（两条，都是可核的宿主事实）：
-//       ① **闸挡 plugin 源注入消息**：本 hook 注入的消息带
-//          `source.kind === 'plugin'`，① 号 user 源过滤在下一批把它摘掉，所以
+//       ① **闸挡非 user 源的注入消息**：本 hook 注入的消息带
+//          `source.kind === 'omo-keyword-detector'`，① 号 user 源过滤（正向白名单
+//          只认 `'user'`）在下一批把它摘掉，所以
 //          「注入正文里的 `ulw` token 触发自我再注入」这条路根本不成立
 //          （filters.ts 的 `isUserAuthoredMessage`）。
 //       ② **claim 破坏性防同消息重触发**：同一条用户消息不会被第二个 pre-step
@@ -211,7 +212,8 @@
 // S-9 **hook-ralph-loop.test.ts 跳过段**。它的 11 例断言的是 ralph-loop 特性
 //     把 keyword 注入文本自举进循环的那条自注入路径（opencode 专属面，DSH 无
 //     ralph 特性）。不移植用例；该路径的**防御**（已注入文本不重复触发）由 ① 号
-//     消息级幂等 + ① 号 user 源过滤共同承担——注入消息是 plugin 源，下一批就被
+//     消息级幂等 + ① 号 user 源过滤共同承担——注入消息带本 hook 专属的
+//     `source.kind: 'omo-keyword-detector'`（非 `'user'`），下一批就被
 //     摘掉，永远进不了检测面——两条都在本移植的单测里（S-6 记录了会话级闸为何
 //     不再参与这件事）。
 //
@@ -244,7 +246,8 @@
 //     `/ulw-plan` 手势不受影响：载体是 `<skill_content>`（source.kind ===
 //     'skill-invocation'），早已被 user 源过滤排除。
 //     另注：命令扩展消息里那句 `ulw` 唯一可能导致的自触发形态，也已被两道宿主
-//     事实关掉——注入正文是 plugin 源（① 号过滤摘掉），同一条用户消息不会被
+//     事实关掉——注入正文带本 hook 专属的 `source.kind: 'omo-keyword-detector'`
+//     （非 `'user'`，① 号过滤摘掉），同一条用户消息不会被
 //     第二个 pre-step 再看到（claim 破坏性，见 S-6）。所以 S-11 的「晚一步」是
 //     唯一的可观测差别，不要把它和幂等混成一个失败现象。
 //
@@ -332,8 +335,10 @@ export const KEYWORD_DETECTOR_ID = 'keyword-detector'
  * 注入消息 `source.plugin` 用的**包名**，不是 hook id。
  *
  * 同包先例口径：ulw-execute（`ULW_EXECUTE_PLUGIN`）、bash-file-read-guard 的
- * notice 载荷都是 `'omo-hooks'`（e2e 实测 session log 里
- * `source:{kind:'plugin',plugin:'omo-hooks',form:'notice'}`）。`source.plugin`
+ * notice 载荷的 `source.plugin` 都是 `'omo-hooks'`（0.1.x 时代的 session log 实测
+ * 过 `source:{kind:'plugin',plugin:'omo-hooks',form:'notice'}`；0.2.x 的 v4 native
+ * admission 拒绝 `kind:'plugin'`，本包各生产者自此各发自己的 `omo-*` kind，
+ * `plugin` 字段一字不动）。`source.plugin`
  * 标识的是**写入方插件**，消费方按它分流；填 hook id 会让下游看到一个它不认识的
  * 写入方名。hook 身份由上面那个 `KEYWORD_DETECTOR_ID` + 诊断行前缀承担。
  */
@@ -364,16 +369,31 @@ const NO_DESCRIPTOR: SessionDescriptor = Object.freeze({
 //     pending 唯一性校验**（lib:192-194）。裸字符串的 `id` 是 `undefined`，所以
 //     同一个会话里第二次注入就撞上 `message "undefined" is already pending`。
 //   * 而且裸字符串缺 `role` / `content` / `source`，对下游是残缺载荷。
-// 形态与同插件先例 ulw-execute.ts（`buildInjectionMessage`，:264-284 / :390）完全
-// 同构：id 每注入一次新铸，`source.form = 'instructions'` 表明"这段在指导模型"。
+// 形态与同包先例 ulw-execute.ts 的 `buildInjectionMessage` 同构（键集合一致：
+// id / role / content / source）：id 每注入一次新铸，`source.form = 'instructions'`
+// 表明"这段在指导模型"。两者的 `source.kind` **各自专属**（`omo-ulw-execute` vs
+// `omo-keyword-detector`），不再共用 `plugin`——0.2.x 的 v4 native admission 拒绝
+// `kind === 'plugin'`，共用 `plugin` 也让下游分不出写入方。
 
 export interface InjectedTextBlock {
   readonly type: 'text'
   readonly text: string
 }
 
+/**
+ * 注入消息的 **producer 归属**：`kind` 是 `omo-keyword-detector`，**不再是
+ * `plugin`**。0.2.x 的 v4 native admission 在每个持久消息槽位上都拒绝
+ * `kind === 'plugin'`（一手读自已安装的 npm 包
+ * `@deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2`：`lib/index.js:124-127`，
+ * 写侧经 `encodeEvent` `:1092-1099` → `assertV4RowAdmission` `:1107` →
+ * `assertV4SourceRowAdmission` `:142-152`）。全部规则只有三条：`source` 必须是
+ * 对象、`kind` 必须是非空字符串、`kind` 不能是 `'plugin'`；其它键不受约束 ⇒
+ * `plugin` 与 `form` 原样保留。`omo-` 前缀是取舍不是规定（v4 对前缀既不要求也
+ * 不禁止；上游自有生产者无前缀）。完整理由见 hard-blocks-injection.ts 的
+ * `InjectedPluginSource`。
+ */
 export interface InjectedPluginSource {
-  readonly kind: 'plugin'
+  readonly kind: 'omo-keyword-detector'
   readonly plugin: string
   readonly form: 'instructions'
 }
@@ -391,7 +411,7 @@ export function buildInjectionMessage(text: string): InjectedUserMessage {
     id: crypto.randomUUID(),
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: KEYWORD_DETECTOR_PLUGIN, form: 'instructions' },
+    source: { kind: 'omo-keyword-detector', plugin: KEYWORD_DETECTOR_PLUGIN, form: 'instructions' },
   }
 }
 

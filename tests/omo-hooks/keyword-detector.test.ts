@@ -1257,7 +1257,7 @@ describe('P4-T12 ⑥ the injected text is the vendored body, and the listener ne
     // `message "undefined" is already pending`. Assert the whole shape.
     const message = injected[0]
     expect(message?.role).toBe('user')
-    expect(message?.source).toEqual({ kind: 'plugin', plugin: KEYWORD_DETECTOR_PLUGIN, form: 'instructions' })
+    expect(message?.source).toEqual({ kind: 'omo-keyword-detector', plugin: KEYWORD_DETECTOR_PLUGIN, form: 'instructions' })
     // `source.plugin` is the PACKAGE name, not this hook's id (same as the
     // ulw-execute / guardrail carriers).
     expect(KEYWORD_DETECTOR_PLUGIN).toBe('omo-hooks')

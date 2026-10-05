@@ -224,20 +224,23 @@
 //
 // THE roster-parade scenario then answers the Phase 2 exit criterion (a) for
 // the WHOLE roster in one run. The sandbox env distributes the 10 delegation
-// agents over the REAL catalog route pairs (plan §4.7 counted SEVEN; on this
-// pinned install there are FOUR — see PARADE_SEATS for the re-derived table).
-// Both catalogs were re-measured for P4.5-T8b rather than inherited from the
-// plan: installed dsh-llm-deepseek DEFAULT_MODELS holds `deepseek-flash`
-// (lib/index.js:43, `inputModalities: ["text","image"]` at :46) and
-// `deepseek-v4-pro` (:50); installed pi-ai dist/providers/data/deepseek.json
-// (`openai-completions`) holds the same two ids and nothing else. So
-// `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` — the ids this file
-// pinned for explore, sisyphus-junior, librarian and multimodal-looker — are
-// FICTIONAL here, and the parade proved it LOUD before they were re-pinned:
-// `READ-FACE FAIL: explore: parsed agentOptions.model="deepseek-v4-flash" want
-// deepseek-flash`, measured once src/roster.ts (T8d) stopped pinning it. The
-// seats below now carry only ids the pinned install really serves, and the
-// coverage claim moved from seven pairs to four with them.
+// agents over the REAL catalog route pairs (SIX, derived from PARADE_SEATS —
+// plan §4.7 counted seven; the pre-T8b comment beside the derived table wrote
+// "7 pairs" while that very table derived six, which is why no count here is
+// ever restated in a check). The seats are pinned to the CI runtime
+// **dsh 0.1.5-rc.1** and were RESTORED to that pin after T8b's half-revert:
+// T8b re-pinned this table to the 0.2.x ids, a later slice re-pinned roster.ts
+// the same way, and only the roster half was reverted — leaving the parade the
+// one scenario to notice, LOUD, in CI: `READ-FACE FAIL: explore: parsed
+// agentOptions.model="deepseek-flash" want deepseek-v4-flash` (33 scenarios,
+// 1 failure). The catalogs were re-measured per-route today for that revert:
+// pi-ai@0.85.1 (what 0.1.5-rc.1 pins) deepseek.json `openai-completions`
+// holds `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp` and
+// `deepseek-v4-pro` — NO `deepseek-flash`; dsh-llm-deepseek@0.1.5-rc.1
+// DEFAULT_MODELS (lib/index.js:1841-1870) holds all four. The 0.2.x install
+// is the opposite pi-ai table (pi-ai@0.87.1: `deepseek-flash` +
+// `deepseek-v4-pro` only) — a name real on one route/runtime is not real
+// everywhere, so every seat above names its route.
 // NO fake ids: a session-controller `model-unavailable` is the only thing a
 // fake id would trip, and the deepseek adapter does not validate model ids at
 // request time under a mock baseURL — so a fake id is mechanically feasible,
@@ -341,9 +344,11 @@
 //   a raw text count over the file:
 //     * seq 17 `agent/inbox/spliced` data.target "next-step",
 //       data.inserted[0] = {id:<uuid>, role:"user", content:[{type:"text",
-//       text:<WARNING_MESSAGE>}], source:{kind:"plugin", plugin:"omo-hooks",
+//       text:<WARNING_MESSAGE>}], source:{kind:"omo-bash-read-guard", plugin:"omo-hooks",
 //       form:"notice"}} — the ACCEPT itself (dsh-agent-loop/lib/index.js:578
-//       acceptContext → inbox.splice → append :206). It lands BETWEEN the
+//       acceptContext → inbox.splice → append :206). The kind is the guard's own
+//       producer kind (P4.5-T9; the retired shared `kind:"plugin"` of the V3-era
+//       layout this layout was first pinned against). It lands BETWEEN the
 //       trigger's tool/result and the batch's remaining tool/calls, because
 //       runGroup commits results in model order.
 //     * seq 25 `user/message` with the identical id/role/content/source — the
@@ -359,7 +364,7 @@
 //         present, isError !== true, and carries the fixture bytes (劝导非阻断);
 //     (b) advisoryInjectedIntoSessionLog — a `user/message` whose content text
 //         contains the advisory VERBATIM and whose source is the
-//         {kind:'plugin', plugin:'omo-hooks', form:'notice'} triple (the text
+//         {kind:'omo-bash-read-guard', plugin:'omo-hooks', form:'notice'} triple (the text
 //         and plugin name are imported from the shipped listener module, never
 //         re-typed here);
 //     (c) pipedCatRanWithoutAdvisory — 对照①;
@@ -414,8 +419,9 @@
 //   BOUNDARY (nothing step-shaped between them):
 //     * seq 22 `agent/inbox/spliced` data.target "next-step", start 0,
 //       data.inserted[0] = {id:<uuid>, role:"user", content:[{type:"text",
-//       text:<CONTINUATION>}], source:{kind:"plugin", plugin:"omo-hooks",
-//       form:"instructions"}} — the ACCEPT itself;
+//       text:<CONTINUATION>}], source:{kind:"omo-todo-continuation", plugin:"omo-hooks",
+//       form:"instructions"}} — the ACCEPT itself (producer-dedicated kind since
+//       P4.5-T9; the retired shared `kind:"plugin"` is refused by v4 admission);
 //     * seq 23 `agent/inbox/spliced` target "next-step", removedCount 1,
 //       inserted [] — the same message CLAIMED (removal recorded);
 //     * seq 25 `user/message` with the identical id/role/content/source — the
@@ -431,7 +437,7 @@
 //
 //   断言面 (analyzeTodoContinuationEnforced, all in verdict.assertions per AC-7):
 //     (a) continuationSteerCarrierSourceIsOmoHooks — BOTH durable carriers
-//         exist and every one carries source {kind:'plugin', plugin:'omo-hooks',
+//         exist and every one carries source {kind:'omo-todo-continuation', plugin:'omo-hooks',
 //         form:'instructions'};
 //     (b) continuationSteerTextIsVerbatimListenerText — each carrier's text
 //         equals `buildContinuationText(<the first todo/write snapshot>)`,
@@ -636,7 +642,7 @@ const {
 // really emits, never a second hand-copied literal that could drift from it
 // (the H-02 unit test pins that literal against upstream; this scenario pins
 // that the literal really reaches the model).
-const { WARNING_MESSAGE: BASH_GUARD_ADVISORY_TEXT, BASH_FILE_READ_GUARD_PLUGIN } = await import(
+const { WARNING_MESSAGE: BASH_GUARD_ADVISORY_TEXT, BASH_FILE_READ_GUARD_PLUGIN, buildAdvisoryMessage: buildBashGuardAdvisoryMessage } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/bash-file-read-guard.ts', import.meta.url).href
 )
 // P3-T9: the E-mode continuation directive under test, read from the SHIPPED
@@ -661,6 +667,7 @@ const {
   TODO_CONTINUATION_ENFORCER_ID,
   formatCircuitBreakerLine: todoContinuationCircuitBreakerLine,
   buildContinuationText: buildTodoContinuationText,
+  buildContinuationMessage: buildTodoContinuationMessage,
   getIncompleteCount: getTodoIncompleteCount,
 } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/todo-continuation-enforcer.ts', import.meta.url).href
@@ -919,44 +926,46 @@ function paradeLabel(agent) {
 }
 
 // THE SEAT DISTRIBUTION (plan §4.7). 10 delegation agents over the catalog
-// pairs, every id re-verified against THIS pinned install (dsh 0.2.0-rc.2) by
-// P4.5-T8b rather than inherited from the plan:
-//   * dsh-llm-deepseek DEFAULT_MODELS — installed lib/index.js:43 `deepseek-flash`
-//     (its row declares `inputModalities: ["text","image"]`, :46) and :50
-//     `deepseek-v4-pro`, and NOTHING else in that list — route
-//     `deepseek-official`.
-//   * @earendil-works/pi-ai dist/providers/data/deepseek.json, `openai-completions`
-//     section — `deepseek-flash` and `deepseek-v4-pro`, and NOTHING else. This
-//     catalog spells modality `input`, NOT `inputModalities`, and the installed
-//     runtime maps it across: `dsh-llm-pi-ai/lib/index.js:1806` (`listModels`)
-//     and `:1825` (`modelInfo`) both emit `inputModalities: [...model.input]`.
-//     Measured per id: `deepseek-flash` → `input: ["text","image"]`, so the
-//     FAST ROUTE DOES advertise image input; `deepseek-v4-pro` → `input:
-//     ["text"]`, text only. Image capability is per-id on BOTH routes, never
-//     per-route — route `deepseek`.
-// ⇒ BOTH catalogs on this pin hold exactly those two ids, so the plan's
-// `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are FICTIONAL here and
-// this table carries FOUR distinct pairs, not the seven plan §4.7 counted:
-//   deepseek/deepseek-flash            → explore, librarian
-//   deepseek-official/deepseek-v4-pro → hephaestus, oracle, plan-reviewer, atlas
-//   deepseek-official/deepseek-flash  → plan-consultant, multimodal-looker,
-//                                          sisyphus-junior
-//   deepseek/deepseek-v4-pro          → prometheus
-// The vision seat: `multimodal-looker` sits on `deepseek-official/deepseek-flash`.
-// Both routes carry image input for `deepseek-flash` — the official row declares
-// `inputModalities: ["text","image"]` (lib/index.js:46), the pi-ai row declares
-// the same capability as `input: ["text","image"]` and the runtime maps it
-// (`dsh-llm-pi-ai/lib/index.js:1806`, `:1825`). An earlier revision of this
-// comment claimed pi-ai declared no image input because the `inputModalities` key
-// was absent: a citation that reads correctly and supports a stronger claim than
-// it earns, since the capability lives under a different key. The seat stayed on
-// `deepseek-official` because that is where it already sat and changing the model
-// id alone was the minimal correct change — NOT because the fast route cannot see
-// images. `librarian` (text) takes the pi-ai route. There is no second vision
-// pair to distribute, so the pre-T8b note that "covering all 7 real pairs requires
-// exactly one non-looker on a vision seat" is gone rather than amended — its
-// premise no longer exists. This stays a routing-mechanics distribution, not a
-// claim about semantic seat fitness.
+// pairs. The table below is the pre-T8b pin, RESTORED after T8b's half-revert
+// left it re-pinned to the 0.2.x ids while roster.ts/the template had gone
+// back — the CI canary fired exactly as this comment's last lines predicted:
+// `READ-FACE FAIL: explore: parsed agentOptions.model="deepseek-flash" want
+// deepseek-v4-flash` (33 scenarios, 1 failure; the ids are swapped vs the
+// pre-fix quote below because the revert landed on the roster side only).
+// Every id re-verified TODAY against BOTH pinned installs, per ROUTE — a name
+// real on one route is not real on the other:
+//   * @earendil-works/pi-ai@0.85.1 (what dsh 0.1.5-rc.1 depends on),
+//     dist/providers/data/deepseek.json, `openai-completions` section holds
+//     EXACTLY `deepseek-v4-flash` (input ["text"]),
+//     `deepseek-v4-flash-vision-exp` (input ["text","image"]) and
+//     `deepseek-v4-pro` (input ["text"]) — NO `deepseek-flash` (measured).
+//   * @deepseek-ai/dsh-llm-deepseek@0.1.5-rc.1 DEFAULT_MODELS (installed
+//     lib/index.js:1841-1870) holds `deepseek-flash` (:1843, text+image),
+//     `deepseek-v4-flash` (:1853), `deepseek-v4-pro` (:1859) and
+//     `deepseek-v4-flash-vision-exp` (:1864, text+image) — route
+//     `deepseek-official` carries all four.
+//   * For contrast, the 0.2.x install on this machine is the OTHER table:
+//     pi-ai@0.87.1 deepseek.json holds `deepseek-flash` + `deepseek-v4-pro`
+//     ONLY, and dsh-llm-deepseek DEFAULT_MODELS holds `deepseek-flash` (:43)
+//     + `deepseek-v4-pro` (:50) ONLY. The two runtimes' pi-ai catalogs SWAP:
+//     this is why the revert is judged per-route, and why the pi-ai-route
+//     seats (explore, librarian) must not carry `deepseek-flash` on 0.1.5
+//     while the official-route ones may.
+// ⇒ SIX distinct pairs on this pin:
+//   deepseek/deepseek-v4-flash             → explore
+//   deepseek/deepseek-v4-flash-vision-exp → librarian
+//   deepseek-official/deepseek-v4-pro     → hephaestus, oracle, plan-reviewer, atlas
+//   deepseek-official/deepseek-flash      → plan-consultant, sisyphus-junior
+//   deepseek-official/deepseek-v4-flash-vision-exp → multimodal-looker
+//   deepseek/deepseek-v4-pro              → prometheus
+// `plan-consultant` on `deepseek-official/deepseek-flash` is PRE-T8b and stays:
+// it predates the re-pin (git show f4015a1~1, line 889) and the id exists on
+// the pinned runtime's official route (dsh-llm-deepseek@0.1.5-rc.1
+// lib/index.js:1843). Reverting it would be a fresh unforced regression.
+// The vision seats: `multimodal-looker` (official/v4-flash-vision-exp) and
+// `librarian` (pi-ai/v4-flash-vision-exp) both sit on ids whose rows declare
+// image input on their own route (measured above) — capability is per-id on
+// BOTH routes, never per-route.
 // NO fake ids: under the mock baseURL a fake id would be mechanically
 // accepted, which is exactly why it would hollow out the assertion (plan §4.7
 // H-5 — "route observable" must keep meaning "route really servable").
@@ -969,26 +978,30 @@ function paradeLabel(agent) {
 // have the sandbox assert against itself, which is the self-referential check
 // this repo forbids everywhere else. The coupling is therefore the point: a
 // seat here that is not a real, servable id fails LOUD
-// (`READ-FACE FAIL: explore: parsed agentOptions.model="deepseek-v4-flash"
-// want deepseek-flash`, measured pre-fix) instead of silently agreeing.
+// (`READ-FACE FAIL: explore: parsed agentOptions.model="deepseek-flash" want
+// deepseek-v4-flash` — measured on CI after the half-revert; the pre-T8b
+// shape of the same message had the ids in the opposite roles) instead of
+// silently agreeing.
 const PARADE_SEATS = new Map([
-  ['explore', { provider: 'deepseek', model: 'deepseek-flash' }],
+  ['explore', { provider: 'deepseek', model: 'deepseek-v4-flash' }],
   ['hephaestus', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
   ['oracle', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
-  ['librarian', { provider: 'deepseek', model: 'deepseek-flash' }],
+  ['librarian', { provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp' }],
   ['plan-consultant', { provider: 'deepseek-official', model: 'deepseek-flash' }],
   ['plan-reviewer', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
   ['atlas', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
-  ['multimodal-looker', { provider: 'deepseek-official', model: 'deepseek-flash' }],
-  ['sisyphus-junior', { provider: 'deepseek-official', model: 'deepseek-flash' }],
+  ['multimodal-looker', { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' }],
+  ['sisyphus-junior', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }],
   ['prometheus', { provider: 'deepseek', model: 'deepseek-v4-pro' }],
 ])
 
 /**
- * The pairs the distribution must cover — FOUR on this pin, derived from
+ * The pairs the distribution must cover — SIX on this pin, derived from
  * PARADE_SEATS (never restated) — the scenario asserts all of them were
- * actually exercised. Pre-T8b this read seven, counting ids neither installed
- * catalog has.
+ * actually exercised. T8b's revision read FOUR (the 0.2.x catalogs hold fewer
+ * ids); the pre-T8b revision wrote "7 pairs" while the very table beside it
+ * derives six — the count below is DERIVED, so neither comment can make the
+ * check false.
  */
 const PARADE_SEAT_PAIRS = [...new Set(
   [...PARADE_SEATS.values()].map((seat) => `${seat.provider}/${seat.model}`),
@@ -4305,9 +4318,9 @@ export function analyzeRosterParade(
     everyConfiguredSeatResolvedFromEnv:
       childDetails.every((detail) => detail.configuredSeatResolved),
     // The distribution really covers every catalog pair the pinned install
-    // serves — FOUR since P4.5-T8b re-derived both catalogs (it was seven while
-    // the table carried ids neither adapter has). Renamed, not just re-counted:
-    // a check called allSeven… that passes on four pairs is a false report.
+    // serves — SIX on the restored pre-T8b pin (derived, never restated; T8b
+    // briefly made it FOUR against the 0.2.x catalogs). The count comes from
+    // PARADE_SEAT_PAIRS, so a comment drift cannot false this check.
     allRealCatalogPairsExercised: observedPairCount === PARADE_SEAT_PAIRS.length,
     // Every role's wire requests carried the configured model (route
     // observability on the mock channel too, not just the session log).
@@ -4784,23 +4797,26 @@ function pluginInjectedMessageCarriers(events, injectedText) {
   return { userMessages, nextStepInsertions }
 }
 
-/** True when a message carries the advisory's producer triple verbatim. */
+/** True when a message carries the advisory's producer triple verbatim
+ * ({kind: OMO_BASH_READ_GUARD_KIND, plugin:'omo-hooks', form:'notice'} — the kind
+ * became producer-dedicated in P4.5-T9). */
 function isBashGuardAdvisorySource(message) {
-  return message?.source?.kind === 'plugin'
+  return message?.source?.kind === OMO_BASH_READ_GUARD_KIND
     && message.source.plugin === BASH_FILE_READ_GUARD_PLUGIN
     && message.source.form === 'notice'
 }
 
 /**
  * True when a message carries the todo continuation's producer triple verbatim:
- * {kind:'plugin', plugin:'omo-hooks', form:'instructions'}. Both halves are
- * imported/measured — the plugin name from the shipped listener module, the
- * form from its own `buildContinuationMessage` declaration (the C-mode advisory
- * uses 'notice'; conflating the two would make the E-mode pilot unable to tell
- * a continuation directive from an advisory).
+ * {kind: OMO_TODO_CONTINUATION_KIND, plugin:'omo-hooks', form:'instructions'}.
+ * The kind and the plugin name are imported/measured — the kind pinned against
+ * `buildContinuationMessage`'s stamp by the producer-kind tripwire, the plugin
+ * name from the shipped listener module — and the form comes from that same
+ * declaration (the C-mode advisory uses 'notice'; conflating the two would make
+ * the E-mode pilot unable to tell a continuation directive from an advisory).
  */
 function isTodoContinuationSource(message) {
-  return message?.source?.kind === 'plugin'
+  return message?.source?.kind === OMO_TODO_CONTINUATION_KIND
     && message.source.plugin === TODO_CONTINUATION_ENFORCER_PLUGIN
     && message.source.form === 'instructions'
 }
@@ -4814,7 +4830,7 @@ function isTodoContinuationSource(message) {
  * about a batch in which all three really executed:
  *   (a) the trigger's result is present, non-error, and carries the fixture
  *       bytes (劝导非阻断: the command was NOT blocked or rewritten);
- *   (b) a `user/message` carrier with source {kind:'plugin',
+ *   (b) a `user/message` carrier with source {kind:'omo-bash-read-guard',
  *       plugin:'omo-hooks', form:'notice'} is durably in the session log;
  *   (c) 对照① the piped `cat` ran (its grep-filtered output proves the
  *       pipeline) and added NO second advisory;
@@ -6607,7 +6623,7 @@ function fabricatedParadeChildLog(agent, seat) {
         type: 'user/message',
         data: {
           content: [{ type: 'text', text: 'hard blocks injection' }],
-          source: { kind: 'plugin', plugin: 'omo-agents' },
+          source: { kind: OMO_HARD_BLOCKS_KIND, plugin: 'omo-agents', form: 'instructions' },
         },
       },
       { seq: 4, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: paradeChildNote(agent) }] } } },
@@ -6955,13 +6971,14 @@ function fabricatedAtlasNestedInput(baseRoutes) {
 
 const FABRICATED_BASH_GUARD_FIXTURE_PATH = '/fabricated/project/notes.txt'
 
-/** The advisory message exactly as the listener mints it (source triple). */
+/** The advisory message exactly as the listener mints it (source triple — kind
+ * pinned to the producer's dedicated value by the producer-kind tripwire). */
 function fabricatedBashGuardAdvisoryMessage(id) {
   return {
     id,
     role: 'user',
     content: [{ type: 'text', text: BASH_GUARD_ADVISORY_TEXT }],
-    source: { kind: 'plugin', plugin: BASH_FILE_READ_GUARD_PLUGIN, form: 'notice' },
+    source: { kind: OMO_BASH_READ_GUARD_KIND, plugin: BASH_FILE_READ_GUARD_PLUGIN, form: 'notice' },
   }
 }
 
@@ -7526,13 +7543,14 @@ const FABRICATED_TODO_CONTROL_SNAPSHOT = [{ content: TODO_TASK_SETTLED, status: 
 /** The listener's own text for the FIRST snapshot — assembled, never re-typed. */
 const FABRICATED_TODO_STEER_TEXT = buildTodoContinuationText(FABRICATED_TODO_FIRST_SNAPSHOT)
 
-/** The steered message exactly as the listener mints it (source triple + form). */
+/** The steered message exactly as the listener mints it (source triple + form —
+ * kind pinned to the producer's dedicated value by the producer-kind tripwire). */
 function fabricatedTodoSteerMessage(id, text = FABRICATED_TODO_STEER_TEXT) {
   return {
     id,
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
+    source: { kind: OMO_TODO_CONTINUATION_KIND, plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
   }
 }
 
@@ -9513,7 +9531,7 @@ async function runAnalysisSelfTest(routes) {
         type: 'user/message',
         data: {
           content: [{ type: 'text', text: FABRICATED_ULW_INJECTED_TEXT }],
-          source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+          source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
         },
       })
     }, 'noInjectionWithoutWorkIntent'],
@@ -9569,10 +9587,15 @@ async function runAnalysisSelfTest(routes) {
           : event)
     }, 'atlasPersonaObservable'],
     ['the injected context was NOT delivered with the plugin source contract', (input) => {
+      // A FOREIGN producer's carrier: v4 kinds are producer-owned, so "someone
+      // else" now means a foreign KIND too (the installed migration stamps
+      // non-first-party names as `plugin:<name>`, dsh-session-format-v3-to-v4
+      // lib/index.js:92) — the old defect kept kind 'plugin' and broke only
+      // plugin+form, which no v4 admission would ever have accepted anyway.
       const trigger = input.allLogs[1]
       trigger.events = trigger.events.map((event) =>
         event.type === 'user/message'
-          ? { ...event, data: { ...event.data, source: { kind: 'plugin', plugin: 'someone-else', form: 'notice' } } }
+          ? { ...event, data: { ...event.data, source: { kind: 'plugin:someone-else', plugin: 'someone-else', form: 'instructions' } } }
           : event)
     }, 'injectionSourceContract'],
     ['the injected context never reached the atlas model request', (input) => {
@@ -9586,7 +9609,7 @@ async function runAnalysisSelfTest(routes) {
         type: 'user/message',
         data: {
           content: [{ type: 'text', text: FABRICATED_ULW_INJECTED_TEXT }],
-          source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+          source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
         },
       })
     }, 'noInjectionForSiblingIdentity'],
@@ -9602,7 +9625,7 @@ async function runAnalysisSelfTest(routes) {
         type: 'user/message',
         data: {
           content: [{ type: 'text', text: FABRICATED_ULW_INJECTED_TEXT }],
-          source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+          source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
         },
       }])
     }, 'conductorNotInjected'],
@@ -9741,7 +9764,7 @@ async function runAnalysisSelfTest(routes) {
     // ② the source triple names the hook id instead of the package (the
     //    regression I hit while fixing BLOCKER-1).
     ['the injection source names the hook id instead of the package', (input) => {
-      input.log.events[3].data.inserted[0].source = { kind: 'plugin', plugin: keywordDetectorModule.KEYWORD_DETECTOR_ID, form: 'instructions' }
+      input.log.events[3].data.inserted[0].source = { kind: OMO_KEYWORD_DETECTOR_KIND, plugin: keywordDetectorModule.KEYWORD_DETECTOR_ID, form: 'instructions' }
     }, 'injectionIsFullUserMessage'],
     // ③ a missing / non-uuid id: the inbox pending-uniqueness check reads it.
     ['the injection id was stripped', (input) => {
@@ -9856,7 +9879,23 @@ async function runAnalysisSelfTest(routes) {
     // …and a keyword body arriving through SOME OTHER plugin's channel, which the
     // carrier-count check above would miss (it only knows our own triple).
     ['a foreign plugin carried the keyword body', (input) => {
-      const event = { ...fabricatedKeywordInjectedEvent(`prefix ${KEYWORD_TEXTS.ultrawork.slice(0, 120)} suffix`, { kind: 'plugin', plugin: 'some-other-plugin', form: 'snapshot' }, 'foreign-1'), seq: 16 }
+      const event = { ...fabricatedKeywordInjectedEvent(`prefix ${KEYWORD_TEXTS.ultrawork.slice(0, 120)} suffix`, { kind: 'plugin:some-other-plugin', plugin: 'some-other-plugin', form: 'instructions' }, 'foreign-1'), seq: 16 }
+      input.log.events.splice(2, 0, event)
+    }, 'noForeignPluginCarriedKeywordText'],
+    // ⚠️ THE regression guard for the per-producer keying itself (P4.5-T8′
+    // reviews A+B MAJOR-2): a SIBLING omo producer's carrier — `omo-ulw-execute`,
+    // SAME plugin (KEYWORD_DETECTOR_PLUGIN), SAME form, differing from the
+    // keyword detector's triple ONLY in `kind` — carrying the keyword body.
+    // Per-producer keying sees a foreign carrier and reddens
+    // `noForeignPluginCarriedKeywordText`; a filter regressed to a `'omo-'`
+    // PREFIX test accepts this carrier (kind prefix-matches, plugin and form
+    // arms intact), the foreign count drops to zero, and THAT is what reddens
+    // the battery. Without this case the prefix form escaped the whole ~450-case
+    // suite at exit 0 (measured by both reviews on the pre-guard file) — the
+    // per-producer invariant was true of the code but not falsifiable by the
+    // suite, which is what this defect supplies.
+    ['a sibling omo producer carried the keyword body', (input) => {
+      const event = { ...fabricatedKeywordInjectedEvent(`prefix ${KEYWORD_TEXTS.ultrawork.slice(0, 120)} suffix`, { kind: OMO_ULW_EXECUTE_KIND, plugin: keywordDetectorModule.KEYWORD_DETECTOR_PLUGIN, form: 'instructions' }, 'sibling-1'), seq: 17 }
       input.log.events.splice(2, 0, event)
     }, 'noForeignPluginCarriedKeywordText'],
     // …and on the wire, separately: a banner that reached the model without a
@@ -10152,6 +10191,52 @@ async function runAnalysisSelfTest(routes) {
       }
     }
     ULW_PLAN_SELF_TEST_ATTESTATION.push(...gestureCases.map(([label]) => ['ulw-plan-loads-prometheus-skill', label]))
+    // ⚠️ FALSIFIER for the v3-spelling exclusion arm of the ulw-plan locator
+    // (P4.5-T8′ review B MINOR-1: the arm was REAL, CORRECT, and UNTESTED —
+    // sabotage made nothing red). The 0.1.5 runtime stamps its runtime-context
+    // snapshot as {kind:'plugin', plugin:'@deepseek-ai/dsh-system-prompt'}
+    // (measured today in the AC8 sandbox session.v3.jsonl seq 9); the locator's
+    // third arm excludes it BY PRODUCER so it cannot masquerade as a bridge
+    // injection. Two fabricated shapes pin that arm in both directions:
+    const v3RuntimeSnapshotEvent = () => ({
+      seq: 900,
+      type: 'user/message',
+      data: {
+        id: 'fabricated-v3-runtime-snapshot',
+        role: 'user',
+        content: [{ type: 'text', text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.' }],
+        source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot', sections: [{ name: 'sandbox:policy', text: 'workspace-write' }] },
+      },
+    })
+    // GOOD side: the snapshot rides along; the locator must still count EXACTLY
+    // the two bridge injections. Drop the v3 arm and the count becomes three and
+    // this GOOD case goes RED.
+    {
+      const input = fabricatedUlwPlanInput(routes)
+      input.log.events.push(v3RuntimeSnapshotEvent())
+      const verdict = analyzeUlwPlanLoadsPrometheusSkill(input, routes)
+      if (verdict.result !== 'PASS') {
+        problems.push(`fabricated GOOD ulw-plan-loads-prometheus-skill with a v3-spelling runtime-context snapshot riding along must PASS, got FAIL on: ${verdict.failed.join(', ')}`)
+      }
+      ULW_PLAN_SELF_TEST_ATTESTATION.push(['ulw-plan-loads-prometheus-skill', 'v3-spelling-runtime-context-snapshot-rides-along-still-passes'])
+    }
+    // DEFECT side, on the arm's OWN axis: the snapshot present and ONE bridge
+    // injection removed. Correct code: one candidate → `twoInjectedMessagesArrived`
+    // FAILs (the named check). A locator that lost the v3 arm counts the snapshot
+    // as the second injection → the named check goes GREEN → this case reddens
+    // the battery naming exactly that axis.
+    {
+      const label = 'a-v3-spelling-runtime-context-snapshot-filled-in-for-a-lost-bridge-injection'
+      const input = fabricatedUlwPlanInput(routes)
+      input.log.events.push(v3RuntimeSnapshotEvent())
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'user/message' && event.data?.id === 'fabricated-injected-ulw-plan-2'))
+      const verdict = analyzeUlwPlanLoadsPrometheusSkill(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes('twoInjectedMessagesArrived')) {
+        problems.push(`fabricated ulw-plan-loads-prometheus-skill defect "${label}" must FAIL with twoInjectedMessagesArrived, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+      ULW_PLAN_SELF_TEST_ATTESTATION.push(['ulw-plan-loads-prometheus-skill', label])
+    }
   }
 
   // ── P4-T7 command-channel pilot self-test. Both specs run the SAME defect
@@ -10330,7 +10415,7 @@ const { buildAutoSelectedPlanContextInfoOnly, planProgressFromMarkdown } = await
 )
 // H-32's own gate, so the scenario asserts the shipped function's verdict rather
 // than re-implementing the two-marker conjunction.
-const { hasCommandTemplateMarker } = await import(
+const { hasCommandTemplateMarker, buildInjectionMessage: buildUlwExecuteInjectionMessage } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute.ts', import.meta.url).href
 )
 const {
@@ -10614,7 +10699,7 @@ export function analyzeUlwExecuteActivated(
       && triggerText.includes(`**Path**: ${planPath}`)
       && triggerText.includes('**Plan**: alpha'),
     injectionSourceContract:
-      triggerSource?.kind === 'plugin'
+      triggerSource?.kind === OMO_ULW_EXECUTE_KIND
       && triggerSource?.plugin === E2E_ULW_PLUGIN
       && triggerSource?.form === 'instructions',
     injectionReachedTheModel: triggerRequestHasInjection,
@@ -10800,7 +10885,7 @@ function fabricatedUlwChildLog(id, label, persona, note, taskText, injectedText)
       type: 'user/message',
       data: {
         content: [{ type: 'text', text: injectedText }],
-        source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+        source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
       },
     })
   }
@@ -12004,6 +12089,49 @@ const keywordDetectorModule = await import(
   '../../patches/omo-dsh/omo-hooks/src/hooks/keyword-detector.ts'
 )
 
+// ── P4.5-T9 producer kinds — the ONE place this file names them ─────────────────────
+// Since P4.5-T9 each of the five OMO producers stamps its OWN `source.kind`; the
+// retired `'plugin'` catch-all is gone. That is not a style choice: the installed
+// dsh 0.2.x's NATIVE v4 source admission REFUSES `kind === 'plugin'` in every
+// durable message slot ("format v4 message requires a producer-owned source kind" —
+// @deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js:126 of the installed
+// @deepseek-ai/dsh@0.2.0-rc.2; the retained v4 session logs under the e2e
+// sandboxes carry zero `kind:"plugin"`, measured). Because `kind` is now the
+// producer's identity, every filter below is keyed PER PRODUCER: an
+// `omo-ulw-execute` carrier can never satisfy the keyword detector's filter, so a
+// wrong-producer emission cannot quietly satisfy another producer's check.
+// The five values are transcribed exactly once from the working-tree producers
+// (each line cited below at its stamp site); the four producers with an exported
+// builder are re-pinned against that builder by the tripwire immediately below, so
+// a producer renaming its kind fails the driver at LOAD time, not mid-scenario.
+// `hard-blocks-injection.ts` stamps its source inline inside
+// `registerHardBlocksInjection` (no exported builder), so its line is the citation.
+const OMO_HARD_BLOCKS_KIND = 'omo-hard-blocks'
+const OMO_BASH_READ_GUARD_KIND = 'omo-bash-read-guard'
+const OMO_KEYWORD_DETECTOR_KIND = 'omo-keyword-detector'
+const OMO_TODO_CONTINUATION_KIND = 'omo-todo-continuation'
+const OMO_ULW_EXECUTE_KIND = 'omo-ulw-execute'
+/** Every kind an OMO producer stamps — for locators that must skip omo's own
+ * injections wholesale (the child-session delegation-task locator reads a child
+ * log where omo injects land NEXT TO the parent's task text). */
+const OMO_INJECTION_KINDS = [
+  OMO_HARD_BLOCKS_KIND,
+  OMO_BASH_READ_GUARD_KIND,
+  OMO_KEYWORD_DETECTOR_KIND,
+  OMO_TODO_CONTINUATION_KIND,
+  OMO_ULW_EXECUTE_KIND,
+]
+for (const [label, expected, stamped] of [
+  ['bash-file-read-guard.ts:183', OMO_BASH_READ_GUARD_KIND, buildBashGuardAdvisoryMessage().source.kind],
+  ['keyword-detector.ts:414', OMO_KEYWORD_DETECTOR_KIND, keywordDetectorModule.buildInjectionMessage('probe').source.kind],
+  ['todo-continuation-enforcer.ts:388', OMO_TODO_CONTINUATION_KIND, buildTodoContinuationMessage('probe').source.kind],
+  ['ulw-execute.ts:520', OMO_ULW_EXECUTE_KIND, buildUlwExecuteInjectionMessage('probe').source.kind],
+]) {
+  if (stamped !== expected) {
+    throw new Error(`P4.5-T9 kind migration: the ${label} producer now stamps kind '${stamped}' but this file pins '${expected}' — update the constant and every site that cites it`)
+  }
+}
+
 /** The real vendored bodies, read through the plugin's own loader. */
 const KEYWORD_TEXTS = (() => {
   const loaded = keywordDetectorMessages.loadInstructionTexts()
@@ -12151,9 +12279,11 @@ function keywordInjectedCarriers(events, needle) {
   ]
 }
 
-/** True when a stored message carries the keyword hook's producer triple. */
+/** True when a stored message carries the keyword hook's producer triple — kind
+ * `OMO_KEYWORD_DETECTOR_KIND`, pinned against the shipped builder's stamp by the
+ * producer-kind tripwire, so this filter follows the producer and nothing else. */
 function isKeywordInjectionSource(message) {
-  return message?.source?.kind === 'plugin'
+  return message?.source?.kind === OMO_KEYWORD_DETECTOR_KIND
     && message.source.plugin === keywordDetectorModule.KEYWORD_DETECTOR_PLUGIN
     && message.source.form === 'instructions'
 }
@@ -12497,22 +12627,34 @@ export function analyzeKeywordNegativeControls(input, routes) {
   // form is what the substring checks below see.
   const userTexts = userMessages.map((event) => messageContentText(event.data))
 
-  // ⚠️ Scoped to the KEYWORD hook's own producer triple, not to "any plugin".
-  // A real run's log carries at least one OTHER plugin-sourced user message —
-  // dsh's own `dsh-system-prompt` snapshot (`form: 'snapshot'`) and the
-  // `skill-catalog` block are both `user/message` events with
-  // `source.kind === 'plugin'`. The first version of this check counted those
-  // and failed the scenario on a perfectly correct run; "some plugin injected
-  // something" is true of every session and therefore not a claim.
+  // ⚠️ Scoped to the KEYWORD hook's own producer triple, not to "any injected
+  // source". A real run's log carries OTHER producer-sourced `user/message`
+  // events too — dsh's runtime-context snapshot and the `skill-catalog` block.
+  // On the retired 0.1.5/V3 format both landed as `source.kind === 'plugin'`
+  // (measured, retained v3 sandbox logs); on 0.2.x/V4 they land as their own
+  // kinds — `runtime-context` and `skill-catalog` (measured, retained v4 sandbox
+  // logs; the installed dsh-session-format-v3-to-v4 resolves them in
+  // `producerKind` lib/index.js:87-93 — renamed rows :51-57,
+  // `RELEASED_SAME_NAME_PRODUCERS` :59-85). The
+  // first version of this check counted those and failed the scenario on a
+  // perfectly correct run; "some producer injected something" is true of every
+  // session and therefore not a claim.
   const keywordCarriers = userMessages.filter((event) => isKeywordInjectionSource(event.data))
-  // …and, separately: no OTHER plugin's message may carry a keyword body. That is
-  // the real leak risk (a mode's text arriving through some other channel), and
-  // `noKeywordBodyInTheLog` below is the log-wide form of it.
-  const foreignCarriersWithKeywordText = userMessages.filter((event) =>
-    event.data?.source?.kind === 'plugin'
-    && !isKeywordInjectionSource(event.data)
-    && (eventTextFlat(event).includes(KEYWORD_TEXTS.ultrawork.slice(0, 120))
-      || eventTextFlat(event).includes(KEYWORD_TEXTS.hyperplan.slice(0, 120))))
+  // …and, separately: no OTHER producer's message may carry a keyword body. That
+  // is the real leak risk (a mode's text arriving through some other channel), and
+  // `noKeywordBodyInTheLog` below is the log-wide form of it. Under v4 "another
+  // plugin" is no longer a shared `kind:'plugin'` — every producer stamps its own
+  // kind (and native admission refuses `'plugin'`, lib/index.js:126) — so the
+  // foreign axis is: a non-empty source kind that is neither the user's nor the
+  // keyword hook's.
+  const foreignCarriersWithKeywordText = userMessages.filter((event) => {
+    const kind = event.data?.source?.kind
+    return typeof kind === 'string' && kind.length > 0
+      && kind !== 'user'
+      && !isKeywordInjectionSource(event.data)
+      && (eventTextFlat(event).includes(KEYWORD_TEXTS.ultrawork.slice(0, 120))
+        || eventTextFlat(event).includes(KEYWORD_TEXTS.hyperplan.slice(0, 120)))
+  })
 
   // The keyword's own banner, on the wire and in the log.
   const bannerOnWire = sisyphusRequests.some((request) =>
@@ -12719,7 +12861,13 @@ export function analyzeKeywordNegativeControls(input, routes) {
       turnCount: turnEnds.length,
       sisyphusRequestCount: sisyphusRequests.length,
       userMessageCount: userMessages.length,
-      pluginSourceCount: userMessages.filter((event) => event.data?.source?.kind === 'plugin').length,
+      // Diagnostic, not a check: how many user/messages carry some OTHER
+      // producer's kind (on 0.2.x: runtime-context/skill-catalog/omo-*). The
+      // retired name counted `kind:'plugin'`, a kind v4 admission refuses.
+      otherInjectionSourceCount: userMessages.filter((event) => {
+        const kind = event.data?.source?.kind
+        return typeof kind === 'string' && kind.length > 0 && kind !== 'user'
+      }).length,
       keywordCarrierCount: keywordCarriers.length,
       foreignCarriersWithKeywordText: foreignCarriersWithKeywordText.length,
       commandKeywordCarrierCount: commandKeywordCarriers.length,
@@ -14010,19 +14158,32 @@ export function analyzeUlwPlanLoadsPrometheusSkill({ log, requests, bootLog, com
   // instead. Exclusion depends on neither, so every source/shape defect stays
   // reachable and each check is independently falsifiable.
   // The two OTHER injections a DSH session always carries — the runtime-context
-  // snapshot (`kind: 'plugin'`) and the skill-catalog `<system-reminder>`
-  // (`kind: 'skill-catalog'`). They are excluded by source KIND for a reason: the
-  // first real run located the runtime snapshot instead of the bridge's injection,
-  // because the locator took the first non-submitted message. Excluding by kind
-  // (rather than SELECTING `skill-invocation`) keeps a relabelled bridge injection
-  // locatable, so the source-contract check stays reachable.
-  const OTHER_INJECTION_KINDS = ['plugin', 'skill-catalog']
+  // snapshot and the skill-catalog `<system-reminder>`. They must be excluded BY
+  // PRODUCER, not by one runtime's spelling — the same producer stamps differently
+  // per generation (measured today, per route):
+  //   * runtime-context producer: 0.2.x/V4 `kind:'runtime-context'` (retained v4
+  //     sandbox logs; dsh-session-format-v3-to-v4 `producerKind` lib/index.js:87-93,
+  //     renamed row :56 maps the legacy wrapper to it) — 0.1.5/V3
+  //     `kind:'plugin', plugin:'@deepseek-ai/dsh-system-prompt'` (measured today in
+  //     the AC8 sandbox session.v3.jsonl seq 9: it entered the candidates once the
+  //     exclusion list dropped the retired `'plugin'` kind, and the scenario failed
+  //     6 checks on the snapshot masquerading as the bridge injection).
+  //   * skill-catalog producer: `kind:'skill-catalog'` on BOTH generations
+  //     (measured: v3 session seq 10, v4 logs; RELEASED_SAME_NAME_PRODUCERS
+  //     lib/index.js:59-85 keeps it same-named).
+  // Excluding the v3 wrapper by its NAME, not by kind `'plugin'` wholesale, keeps
+  // a relabelled bridge injection locatable — exclusion, never selection, so every
+  // source/shape defect stays reachable and the contract check stays falsifiable.
+  const OTHER_INJECTION_PRODUCERS = (source) =>
+    source?.kind === 'runtime-context'
+    || source?.kind === 'skill-catalog'
+    || (source?.kind === 'plugin' && source?.plugin === '@deepseek-ai/dsh-system-prompt')
   const submittedLines = [ULW_PLAN_GESTURE_LINE, ULW_PLAN_BARE_GESTURE_LINE]
   const injectedCandidates = events
     .filter((event) => event.type === 'user/message')
     .map((event) => ({ event, text: messageContentText(event.data) }))
     .filter((candidate) => !submittedLines.includes(candidate.text))
-    .filter((candidate) => !OTHER_INJECTION_KINDS.includes(candidate.event.data?.source?.kind))
+    .filter((candidate) => !OTHER_INJECTION_PRODUCERS(candidate.event.data?.source))
   const firstInjection = injectedCandidates[0]
   const secondInjection = injectedCandidates[1]
   const firstText = firstInjection?.text ?? ''
@@ -14405,7 +14566,7 @@ function countGoalRoundsAfterLastStop(sandbox, sessionId) {
  *
  *   before the stop — H-03 really steers, TWICE, on two different lists: both
  *     durable carriers exist per boundary, carry the producer triple
- *     {kind:'plugin', plugin:'omo-hooks', form:'instructions'} and the listener's
+ *     {kind:'omo-todo-continuation', plugin:'omo-hooks', form:'instructions'} and the listener's
  *     OWN text for the list that boundary saw, and each steer rides the request
  *     right after its 收尾 step (the turn did not end).
  *   the command — admitted every time, `command/run`/`command/done` paired per
@@ -14996,7 +15157,8 @@ function atlasChildInjectionCarries(ctx) {
   const events = ctx.events ?? []
   const ultraworkNeedle = buildExpectedInjectedText('ultrawork').slice(0, 240)
   const markerSeen = keywordInjectedCarriers(events, E2E_ULW_CONTEXT_MARKER).length > 0
-  // keyword 源的 ultrawork 载体才算（H-32 的 atlas 上下文是 omo-hooks 另一个插件源）。
+  // keyword 源的 ultrawork 载体才算（H-32 的 atlas 上下文是 omo-hooks 里**另一个生产者**
+  // 的 kind `omo-ulw-execute`，与 keyword 源的 `omo-keyword-detector` 互斥，P4.5-T9 起 kind 不再共用）。
   const ultraworkSeen = keywordInjectedCarriers(events, ultraworkNeedle)
     .some((entry) => isKeywordInjectionSource(entry.message))
   return { markerSeen, ultraworkSeen }
@@ -15044,9 +15206,13 @@ export function analyzeUlwExecuteCommandActivatesAtlas(
     return typeof persona === 'string' ? persona : undefined
   }
   // The child's own durable record of the delegation task text it received.
+  // OMO's own injections land NEXT TO the task in a child log (v3 stamped them
+  // `kind:'plugin'`; v4 stamps each producer's dedicated kind), so the locator
+  // excludes every OMO injection kind rather than trusting one shared label —
+  // a relabelled omo injection still cannot masquerade as the parent's task.
   const childFirstUserText = (child) => {
     const first = (child?.events ?? []).find(
-      (event) => event.type === 'user/message' && event.data?.source?.kind !== 'plugin',
+      (event) => event.type === 'user/message' && !OMO_INJECTION_KINDS.includes(event.data?.source?.kind),
     )
     return first === undefined ? undefined : messageContentText(first.data)
   }
@@ -15212,7 +15378,7 @@ export function analyzeUlwExecuteCommandActivatesAtlas(
       && triggerInjectionText.includes(`**Path**: ${planPath}`)
       && triggerInjectionText.includes(`**Plan**: ${ULW_EXECUTE_PLAN_NAME}`),
     injectionSourceContract:
-      triggerInjectionSource?.kind === 'plugin'
+      triggerInjectionSource?.kind === OMO_ULW_EXECUTE_KIND
       && triggerInjectionSource?.plugin === E2E_ULW_PLUGIN
       && triggerInjectionSource?.form === 'instructions',
     injectionReachedTheAtlasModelRequest: atlasRequests.some(
@@ -16579,7 +16745,7 @@ function fabricatedUlwCommandChild(id, label, persona, taskText, injected) {
       data: {
         role: 'user',
         content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }],
-        source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+        source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
       },
     })
     events.push({ seq: 5, type: 'assistant/message', data: { role: 'assistant', content: [{ type: 'text', text: 'MOCK-FABRICATED-ULW-CHILD-STEP-2' }] } })
@@ -16728,7 +16894,7 @@ function ulwExecuteCommandDefectCases(routes) {
   // 是这两条检查能被称作检查的前提。
   //
   // 载体一律用 `buildInjectionMessage(body)` 的 source——它**就是** keyword 插件的
-  // 三元组 `{kind:'plugin', plugin: KEYWORD_DETECTOR_PLUGIN, form:'instructions'}`，
+  // 三元组 `{kind:'omo-keyword-detector', plugin: KEYWORD_DETECTOR_PLUGIN, form:'instructions'}`（P4.5-T9：kind 自此生产者专属），
   // 所以必须能过 `isKeywordInjectionSource` 那一道轴。若改成 user 源，检查会一直绿
   // 而缺陷「看起来也注入了」——那正是本次插桩查出的那个错误轴，只是换了个方向。
   const keywordCarrier = (id) => {
@@ -16818,7 +16984,7 @@ function ulwExecuteCommandDefectCases(routes) {
     }, 'commandDoneNamesThisSessionAndThePayload'],
     // ── the template injection into the conductor ──
     ['the command never queued its instruction into the session', (input) => {
-      mapEvent(input, (event) => event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes('# /ulw-execute Command'), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin', plugin: 'other', form: 'instructions' } } }))
+      mapEvent(input, (event) => event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes('# /ulw-execute Command'), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin:other', plugin: 'other', form: 'instructions' } } }))
     }, 'instructionCarriedIntoTheConductorSession'],
     ['the second command queued no instruction of its own', (input) => {
       // Located by ORDER (the carrier after the second command/run), never by a
@@ -16877,13 +17043,13 @@ function ulwExecuteCommandDefectCases(routes) {
     }, 'triggerChildIsTheAtlasRow'],
     ['the injected context never reached the atlas child', (input) => {
       const trigger = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_TRIGGER)
-      trigger.events = trigger.events.filter((event) => event.data?.source?.kind !== 'plugin')
+      trigger.events = trigger.events.filter((event) => event.data?.source?.kind !== OMO_ULW_EXECUTE_KIND)
     }, 'injectedContextReachedTheAtlasChild'],
     ['the injected context named another plan', (input) => {
       mapEvent(input, (event) => event.seq === 4 && event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes(E2E_ULW_CONTEXT_MARKER), (event) => ({ ...event, data: { ...event.data, content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT.replace(`**Plan**: ${ULW_EXECUTE_PLAN_NAME}`, '**Plan**: beta') }] } }))
     }, 'injectedContextReachedTheAtlasChild'],
     ['the injection carried the wrong producer', (input) => {
-      mapEvent(input, (event) => event.seq === 4 && event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes(E2E_ULW_CONTEXT_MARKER), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin', plugin: 'omo-commands', form: 'instructions' } } }))
+      mapEvent(input, (event) => event.seq === 4 && event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes(E2E_ULW_CONTEXT_MARKER), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin:omo-commands', plugin: 'omo-commands', form: 'instructions' } } }))
     }, 'injectionSourceContract'],
     ['the injection never reached the atlas model request', (input) => {
       input.requests = input.requests.map((request) => (request.role === 'atlas'
@@ -16899,11 +17065,11 @@ function ulwExecuteCommandDefectCases(routes) {
     // ── 幂等 + the controls ──
     ['the trigger child received a second injection', (input) => {
       const trigger = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_TRIGGER)
-      trigger.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
+      trigger.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
     }, 'secondCommandInjectedNothingNew'],
     ['the marker-less control delegation was injected anyway', (input) => {
       const control = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_CONTROL)
-      control.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
+      control.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
     }, 'markerlessControlInjectedNothing'],
     ['the control child never existed', (input) => {
       input.allLogs = input.allLogs.filter((child) => child.header.id !== FABRICATED_ULW_COMMAND_CHILD_CONTROL)
@@ -16912,7 +17078,7 @@ function ulwExecuteCommandDefectCases(routes) {
       input.log.events.push({
         seq: 14,
         type: 'user/message',
-        data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' } },
+        data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' } },
       })
     }, 'conductorNotInjected'],
     ['the scaffold kept the upstream /start-work footer', (input) => {
@@ -16990,7 +17156,7 @@ function fabricatedStopContinuationLog() {
       id: `fabricated-steer-${turn}`,
       role: 'user',
       content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
+      source: { kind: OMO_TODO_CONTINUATION_KIND, plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
     }
     push({ type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [message] } })
     push({ type: 'user/message', data: message })
@@ -17351,7 +17517,7 @@ function stopContinuationDefectCases() {
         id: 'fabricated-steer-after-stop',
         role: 'user',
         content: [{ type: 'text', text: buildTodoContinuationText(todos) }],
-        source: { kind: 'plugin', plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
+        source: { kind: OMO_TODO_CONTINUATION_KIND, plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
       }
       const at = boundary.seq + 1
       input.log.events.push(

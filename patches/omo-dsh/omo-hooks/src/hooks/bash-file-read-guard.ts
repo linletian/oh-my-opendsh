@@ -122,13 +122,32 @@ export interface AdvisoryTextBlock {
 }
 
 /**
- * The producer declaration on the advisory message. `form: 'notice'` is the
- * DSH vocabulary for "here is what just happened" (the derived
- * `MessageSourceMap['plugin']` shape). Mirrors the hard-blocks precedent's
- * `{ kind: 'plugin', plugin, form }` triple, with this plugin's own name.
+ * The producer declaration on the advisory message.
+ *
+ * `kind` is `omo-bash-read-guard`, never `plugin`: dsh 0.2.x v4 native
+ * admission refuses `kind === 'plugin'` in every durable message slot, so this
+ * advisory would be rejected before it is appended. Read first-hand against the
+ * INSTALLED artifact `@deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2`
+ * (`lib/index.js:124-127`, reached from the encode side at `:1097` →
+ * `assertV4RowAdmission` `:1107` → `assertV4SourceRowAdmission` `:142-152`):
+ * the only constraints are that `source` is an object, that `kind` is a
+ * non-empty string, and that `kind !== 'plugin'`. Nothing else on `source` is
+ * constrained, so `plugin` and `form` stay here untouched. The `omo-` prefix is
+ * a choice, not a rule (v4 neither requires nor forbids a vendor prefix;
+ * upstream's own producers are unprefixed) — full rationale on hard-blocks-injection.ts's
+ * `InjectedPluginSource`.
+ *
+ * `form: 'notice'` is the DSH vocabulary for "here is what just happened".
+ * OPEN, untouched by this slice: the installed `ContextFormed` declares that a
+ * `notice` form also carries a one-line `summary` (installed
+ * `dsh-llm/lib/types/message.d.ts:85-88`, and upstream does emit one —
+ * `dsh-tool-jobs/lib/index.js:277-281`), while this advisory emits no
+ * `summary`. v4 admission does not check `summary` (`assertV4SourceRowAdmission`
+ * reads `kind` only), so this is a vocabulary gap, not a refusal — closing it
+ * would change the emitted payload, which is outside this slice.
  */
 export interface AdvisoryPluginSource {
-  readonly kind: 'plugin'
+  readonly kind: 'omo-bash-read-guard'
   readonly plugin: string
   readonly form: 'notice'
 }
@@ -161,7 +180,7 @@ export function buildAdvisoryMessage(): AdvisoryUserMessage {
     id: crypto.randomUUID(),
     role: 'user',
     content: [{ type: 'text', text: WARNING_MESSAGE }],
-    source: { kind: 'plugin', plugin: BASH_FILE_READ_GUARD_PLUGIN, form: 'notice' },
+    source: { kind: 'omo-bash-read-guard', plugin: BASH_FILE_READ_GUARD_PLUGIN, form: 'notice' },
   }
 }
 
