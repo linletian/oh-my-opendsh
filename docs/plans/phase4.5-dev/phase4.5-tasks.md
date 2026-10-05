@@ -77,6 +77,20 @@
 >   ⇒ **⑲d**：回退前先问「这个概念一共出现在几个提交里」，列全再动手；回退后必须有一条
 >   **端到端的门**（这里是 33 场景全跑）确认概念已完全移除，**而不是只看被回退的那个提交绿了**。
 >   证据 `.omo/evidence/p45t8/P14-model-id-cross-generation.md` 的 P15 节。
+>   **四之六、规约⑲e（新增，2026-10-06 05:47）：可用性核对必须按「路由」做，不能按「名字」做。**
+>   仲裁者给 T8′ 的席位回退清单**先给错了**，自查后逐条核对 0.1.5-rc.1 的**两张**模型表：
+>   - **pi-ai 目录**（`pi-ai@0.85.1`）：`deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` /
+>     `deepseek-v4-pro` ⇒ **没有 `deepseek-flash`**；
+>   - **deepseek-official 适配器**（`dsh-llm-deepseek@0.1.5-rc.1`）：
+>     `deepseek-flash` / `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` / `deepseek-v4-pro`
+>     ⇒ **`deepseek-flash` 在这里存在**。
+>   ⇒ **故障是路由特定的**：只有 pi-ai 路由丢了那个 id，这正是失败**只点名 `explore`** 的原因。
+>   ⇒ **`plan-consultant` 必须原样保留**：它在 T8b 之前就已经是 `deepseek-official/deepseek-flash`
+>   （`git show f4015a1~1:tests/e2e/drive.mjs:889` 逐字可查），**两代都有效**；照仲裁者先前那句
+>   「可能也是新带进来的」去回退它，会制造一次**全新的、无端的**回归。
+>   ⇒ **⑲e**：凡「某 id 在 X 上可用」这类断言，**必须写明 X 是哪条路由 / 哪张表**；
+>   **一个在某处为真的名字，不等于在每处都为真。**
+>   证据同文件 P16 节。
 >
 >   **⑲c 补充条款（由 T9 提出，采纳）**：⑲c 保护别人不被**我的脏树**坑，但**不保护别人的在飞改动
 >   不被我的「按文件恢复」吃掉**——本次 `git reset --soft bc831da` + 按文件恢复确实抹掉了 T9 的
