@@ -293,7 +293,21 @@
   - demo 红**守在 6 条**未上升，`tool/call`=1、`tool/result`=1；成因仍是 `SessionFormatError`（T9 的面）。
   - **⚠️ 仲裁者复核时抓到的缺口（补测前不得提交）**：`isMessagesRequest` 这条**方言规则本身没有已提交的门**——`tests/e2e/mock-llm-server.test.ts` 在 HEAD 就存在且**未被改动**，其 6/6 是既有测试；`tests/` 里没有任何东西断言 `isMessagesRequest`（唯一的 `stream_options` 命中 `:57` 是**请求输入**、不是判定断言）⇒ 编码方那 9 条规则矩阵是**临时跑的**，只活在报告里。
     **而这条规则现在承载着每个场景的正确性**，并且建立在四条从已安装包读出来的事实上（`:1709` 空时省略顶层 `system`；`:1653-1661` 会把 `role:"system"` 行放进 `messages[]` 内部；0.2.x 的 Messages 适配器里 `stream_options` 零出现；pi-ai 的 OpenAI writer 里 `output_config` 零出现）。**上游任一条变了，仓内没有任何东西会发现。**
-    ⇒ **补测清单**（写进 `tests/e2e/mock-llm-server.test.ts`，断**判定**而非整个响应）：
+    ⇒ **补测已完成（提交 `1fe9caa`，8 条新测试，门 2 收集，59 files / 1559 tests）**，
+    且编码方**用测量而非断言**说明为什么是**三个文件**而不是两个：删掉 `.d.mts` 跑 `tsc` ⇒
+    `TS2305: Module '"./mock-llm-server.mjs" has no exported member 'isMessagesRequest'`、exit 1；
+    恢复 ⇒ exit 0。**它明确拒绝用 `as unknown as` 把文件数压回两个**——理由逐字：
+    *一个针对承重判定的无类型测试，是同一种缺陷类*。⇒ **采纳为通用纪律**：
+    为了少改一个文件而给承重判定加类型逃逸，等于用编译器的沉默换文件数。
+    **非空洞性亦由破坏实测**：删掉规则第 0 子句（`if (path.endsWith("/messages")) return true;`）
+    ⇒ 恰好 **3 条**依赖规则的红、11 条绿，**6 条既有 OpenAI 测试全绿**（破坏未波及旧路）；
+    还原后 `cmp` 逐字节一致。
+    编码方按要求在报告里**逐字写明**：那 9 条矩阵是 `/tmp` 里临时跑的、从未提交，
+    第二轮说的「vitest 6/6」是**既有** OpenAI 套件，且 `--self-test` 对本 mock **发零个真实请求**，
+    **所以它从来就不可能守这条规则**。
+    ⇒ **判据**（写进报告规范）：说「N 条矩阵通过」时必须说明**它是不是已提交的门**。
+    「跑过了」与「门在那儿」是两件事。
+    - **补测清单**（已落地）：
     ① `/messages` + `messages:[{user},{system}]` + **无顶层 `system`** ⇒ Messages（评审 A 的反例，正是那条 MAJOR）；
     ② `/chat/completions` + 有顶层 `system` ⇒ OpenAI（**路径压过 body**）；③ `/responses` ⇒ OpenAI；
     ④ 未识别路径 + `stream_options` ⇒ OpenAI；⑤ 未识别路径 + `output_config` ⇒ Messages；
