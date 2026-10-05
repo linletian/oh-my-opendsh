@@ -3,8 +3,14 @@
 // over HTTP at an ephemeral port and asserts text replay, tool_call replay,
 // sequential per-role playback, the hang primitive, and the unknown-role /
 // malformed-request failure paths.
+//
+// T8c adds the dialect-rule guard: `isMessagesRequest` is the load-bearing
+// decision that picks a wire dialect per request, and the facts it rests on are
+// read out of installed packages, so they are asserted here as committed tests
+// rather than demonstrated in a report.
 import { describe, expect, it } from "vitest";
 import {
+  isMessagesRequest,
   startMockLlmServer,
   type MockLlmServer,
   type MockScript,
@@ -289,6 +295,168 @@ describe("mock-llm-server (T17 L2 core)", () => {
       expect(ok.status).toBe(200);
       const capture = await readSseFully(ok);
       expect(streamedContent(capture.frames)).toBe("still alive");
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+// T8c: the wire-dialect rule. A concerto scenario puts seats on BOTH
+// `deepseek` (@deepseek-ai/dsh-llm-pi-ai → openai-completions) and
+// `deepseek-official` (@deepseek-ai/dsh-llm-deepseek → DeepSeek *Messages*)
+// against this one port, so the dialect is chosen per request by
+// isMessagesRequest(). Every case below pins a fact that was read out of an
+// installed package, and each citation is the reason the case must hold:
+//   · the path is decisive — installed dsh-llm-deepseek lib/index.js:2188
+//     posts `${messagesApiRoot(baseURL)}/messages` (:557-559 append `/v1`),
+//     while pi-ai posts /chat/completions (openai-completions.js via the
+//     openai SDK; mistral-conversations.js:164) or /responses
+//     (azure-openai-responses.js:157; openai-codex-responses.js:464-465);
+//   · a Messages request may carry its persona as an IN-HISTORY system row
+//     INSIDE messages[] and omit the top-level `system` entirely
+//     (dsh-llm-deepseek :47 systemPromptUpdate "in-history", read at :1579,
+//     rows built at :1653-1661, spliced at :1612-1615, field omitted at
+//     :1701,:1709) — required shape for a loop-built request, since installed
+//     dsh-agent-loop/lib/invariant.js:28 demands options.system be absent;
+//   · `stream_options` is OpenAI-only (pi-ai openai-completions.js:582, and
+//     dsh-v0.1.5-rc.1 serialize.ts:361; ZERO in the 0.2.x Messages adapter);
+//   · `output_config` is Messages-only (dsh-llm-deepseek :1708; in pi-ai it
+//     appears only in anthropic-messages.js / bedrock-converse-stream.js);
+//   · `thinking` is NOT a Messages marker — pi-ai writes params.thinking onto
+//     the OpenAI wire for compat.thinkingFormat "deepseek"
+//     (openai-completions.js:666-671), which both installed deepseek rows set.
+describe("wire-dialect rule (T8c)", () => {
+  const inHistorySystemRow = {
+    role: "system",
+    content: [{ type: "text", text: "persona\n\nMOCKROLE=vision" }],
+  };
+
+  it("serves a Messages request whose persona rides an in-history system row", () => {
+    // Review A's counterexample, and the reason the path is decisive: no
+    // top-level `system` exists to key on, yet this IS a Messages request.
+    expect(
+      isMessagesRequest(
+        { model: "deepseek-flash", stream: true, messages: [{ role: "user", content: "go" }, inHistorySystemRow] },
+        "/v1/messages",
+      ),
+    ).toBe(true);
+  });
+
+  it("lets the path beat a top-level system that argues for Messages", () => {
+    expect(
+      isMessagesRequest(
+        { model: "m", stream: true, messages: [{ role: "user", content: "go" }], system: "MOCKROLE=lead" },
+        "/v1/chat/completions",
+      ),
+    ).toBe(false);
+  });
+
+  it("routes /responses to the OpenAI path", () => {
+    expect(
+      isMessagesRequest(
+        { model: "m", stream: true, messages: [{ role: "user", content: "go" }], system: "MOCKROLE=lead" },
+        "/v1/responses",
+      ),
+    ).toBe(false);
+  });
+
+  it("treats stream_options as an exclusive OpenAI marker on an unrecognised path", () => {
+    // stream_options is 0 occurrences in the installed Messages adapter, so
+    // even alongside a top-level `system` it must resolve to OpenAI.
+    expect(
+      isMessagesRequest(
+        {
+          model: "m",
+          stream: true,
+          stream_options: { include_usage: true },
+          messages: [{ role: "user", content: "go" }],
+          system: "MOCKROLE=lead",
+        },
+        "/unrecognised",
+      ),
+    ).toBe(false);
+  });
+
+  it("treats output_config as an exclusive Messages marker on an unrecognised path", () => {
+    expect(
+      isMessagesRequest(
+        {
+          model: "m",
+          stream: true,
+          messages: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+          system: "MOCKROLE=vision",
+          output_config: { effort: "high" },
+        },
+        "/unrecognised",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not mistake pi-ai's OpenAI `thinking` payload for a Messages marker", () => {
+    // Regression guard for the marker that was tried and removed: pi-ai puts
+    // params.thinking on the OpenAI wire for compat.thinkingFormat "deepseek".
+    expect(
+      isMessagesRequest(
+        {
+          model: "deepseek-flash",
+          stream: true,
+          stream_options: { include_usage: true },
+          thinking: { type: "enabled" },
+          messages: [{ role: "system", content: "MOCKROLE=lead" }, { role: "user", content: "go" }],
+        },
+        "/v1/chat/completions",
+      ),
+    ).toBe(false);
+    // And on an unrecognised path `thinking` alone must not flip the decision.
+    expect(
+      isMessagesRequest(
+        { model: "deepseek-flash", stream: true, thinking: { type: "enabled" }, messages: [{ role: "user", content: "go" }] },
+        "/unrecognised",
+      ),
+    ).toBe(false);
+  });
+
+  it("never throws on a malformed body or an absent url and defaults to OpenAI", () => {
+    for (const [body, url] of [
+      [undefined, undefined],
+      [null, undefined],
+      ["not-an-object", undefined],
+      [{}, undefined],
+      [{ system: "" }, undefined],
+      [{ system: [] }, undefined],
+      [{ messages: "nope" }, undefined],
+      [{ system: "MOCKROLE=lead" }, undefined],
+      [{ model: "m", messages: [{ role: "user", content: "go" }] }, "/v1/messages"],
+    ] as const) {
+      expect(() => isMessagesRequest(body, url)).not.toThrow();
+    }
+    // Only a Messages-shaped body, or a /messages path, selects Messages.
+    expect(isMessagesRequest({ system: "MOCKROLE=lead" }, undefined)).toBe(true);
+    expect(isMessagesRequest({ model: "m", messages: [{ role: "user", content: "go" }] }, "/v1/messages")).toBe(true);
+    expect(isMessagesRequest(undefined, undefined)).toBe(false);
+    expect(isMessagesRequest({ model: "m", messages: [] }, "/v1/chat/completions")).toBe(false);
+  });
+
+  it("counts each dialect it actually served, over real HTTP", async () => {
+    const script: MockScript = { lead: [{ type: "text", text: "openai lane" }], vision: [{ type: "text", text: "messages lane" }] };
+    const server = await startMockLlmServer({ script });
+    try {
+      const messages = await fetch(`${server.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "text/event-stream" },
+        body: JSON.stringify({ model: "deepseek-flash", stream: true, messages: [{ role: "user", content: "go" }, inHistorySystemRow] }),
+      });
+      const messagesText = await messages.text();
+      expect(server.modeCounts).toEqual({ openai: 0, messages: 1 });
+      expect(messagesText).toContain("event: message_start");
+      expect(messagesText).toContain('"stop_reason":"end_turn"');
+      // The OpenAI control must not leak into the Messages counter, and
+      // Messages framing must not carry OpenAI's [DONE] sentinel.
+      const openai = await postChat(server.baseUrl, openAiBody("MOCKROLE=lead"));
+      const capture = await readSseFully(openai);
+      expect(streamedContent(capture.frames)).toBe("openai lane");
+      expect(server.modeCounts).toEqual({ openai: 1, messages: 1 });
+      expect(messagesText).not.toContain("[DONE]");
     } finally {
       await server.close();
     }

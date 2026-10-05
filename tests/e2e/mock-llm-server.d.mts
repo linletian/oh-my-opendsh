@@ -24,7 +24,16 @@ export interface MockLlmServer {
   baseUrl: string;
   port: number;
   requests: MockRequestRecord[];
+  // T8c: how many requests each dialect path served. Mutable and shared by
+  // reference, like `requests`, so a caller can read it after a scenario to
+  // prove the Messages branch is not dead code.
+  modeCounts: MockWireModeCounts;
   close(): Promise<void>;
+}
+
+export interface MockWireModeCounts {
+  openai: number;
+  messages: number;
 }
 
 export interface StartMockLlmServerOptions {
@@ -35,3 +44,13 @@ export interface StartMockLlmServerOptions {
 export declare function startMockLlmServer(
   options: StartMockLlmServerOptions,
 ): Promise<MockLlmServer>;
+
+/**
+ * The wire-dialect decision, declared here so the vitest suite can assert the
+ * rule directly (T8c). `body` is deliberately `unknown`: the rule guards its
+ * own reads. See the rule and its citations in the .mjs.
+ */
+export declare function isMessagesRequest(
+  body: unknown,
+  requestUrl: unknown,
+): boolean;
