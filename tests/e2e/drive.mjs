@@ -417,8 +417,15 @@
 //   never ran (or ran with an empty list) FAILs on
 //   controlTurnRanAfterContinuationTurn / controlTodoWasWrittenAllCompleted.
 
-// ── LLM WIRING (sandbox $DSH_HOME/settings.yaml only; nothing touches the
-// host). Both adapters are pointed at the mock with a dummy key:
+// ── LLM WIRING (sandbox $DSH_HOME/settings.yaml + the second --patch overlay;
+// nothing touches the host). Both adapters are pointed at the mock with a dummy
+// key, and since P4.5-T8a the same three sections are ALSO written into the
+// overlay as loader patch rows (`- id: <entryId>` + `config:`, no `name:`):
+// on dsh 0.2.x settings.yaml is imported into the profile patch layer only
+// after `loader.await()` (dsh-settings@0.2.0-rc.2/lib/index.js:339-341,
+// 346-363 — the published npm bundle, not the git tag), i.e.
+// after every entry has applied(), so a first boot would otherwise mount
+// llm-pi-ai with zero routes. seedSandbox() carries the full citations.
 //   llm-deepseek: {apiKeyEnv: DEEPSEEK_API_KEY, baseURL: <mock>/v1}
 //     — settings namespace "llm-deepseek" maps 1:1 to the adapter Config
 //       (dsh-llm-deepseek/lib/index.js:629,648-664; baseURL field :651;
@@ -1977,8 +1984,10 @@ function scenarioEnv(sandbox, overrides = {}) {
 const DEEPSEEK_ADAPTER_PROVIDER = 'deepseek-official'
 
 /**
- * Seed the sandbox: settings.yaml wiring BOTH adapters to the mock, and the
- * persistence patch overlay (compression:none, packChunks:false — T15 layout).
+ * Seed the sandbox: settings.yaml wiring BOTH adapters to the mock, AND the
+ * same wiring plus the persistence overlay (compression:none, packChunks:false
+ * — T15 layout) as `--patch` rows. The overlay is what makes the wiring
+ * visible at apply() time on dsh 0.2.x; see the block inside for the citations.
  * `routes` is the scenario's EFFECTIVE resolved route map (env overrides
  * included), so the seeded seats are exactly what the spawned dsh resolves.
  * ONE baseURL per adapter (P2-T18): the deepseek adapter gets one baseURL, and
@@ -2007,34 +2016,526 @@ function seedSandbox(sandbox, routes, mockBaseUrl) {
     'llm-deepseek:',
     '  apiKeyEnv: DEEPSEEK_API_KEY',
     `  baseURL: ${mockBaseUrl}/v1`,
-    'llm-pi-ai:',
-    '  providers:',
   ]
-  for (const provider of piAiProviders) {
-    settingsLines.push(
-      `    ${provider}:`,
-      '      apiKeyEnv: DEEPSEEK_API_KEY',
-      `      baseURL: ${mockBaseUrl}/v1`,
-    )
+  // P4.5-T8a (review B MINOR-1): the pi-ai section is written ONLY when a
+  // pi-ai provider exists, MIRRORING the patch leg below. Writing `providers:`
+  // with no keys unconditionally composes to `providers: null`, and
+  // `z.dict(profile).default({})` does NOT rescue null — measured on
+  // 0.2.0-rc.2 with `dsh --dump-config`, which prints `providers: null`.
+  if (piAiProviders.length > 0) {
+    settingsLines.push('llm-pi-ai:', '  providers:')
+    for (const provider of piAiProviders) {
+      settingsLines.push(
+        `    ${provider}:`,
+        '      apiKeyEnv: DEEPSEEK_API_KEY',
+        `      baseURL: ${mockBaseUrl}/v1`,
+      )
+    }
   }
   settingsLines.push('')
   writeFileSync(join(sandbox.dshHome, 'settings.yaml'), settingsLines.join('\n'))
+  // P4.5-T8a: the SAME three LLM sections also land in this overlay, as
+  // loader PATCH rows. On dsh 0.2.x `$DSH_HOME/settings.yaml` is not a
+  // configuration surface any more: the legacy importer renames the document to
+  // `settings.yaml.imported` and pushes its sections into the profile's own
+  // cordis.patch.yml only AFTER `ctx.root.loader.await()` has settled every
+  // entry (dsh-settings/lib/index.js:339-341 kicks the import off, :346-363
+  // does the rename + per-section update). Every entry — including omo-agents
+  // and llm-pi-ai — has therefore already applied() when that write happens,
+  // so a FIRST boot mounts llm-pi-ai with its shipped zero-route config
+  // (dsh-base/cordis.patch.yml:127-128) and the explore seat has no provider.
+  // A `--patch` row is composed into the entry BEFORE mounting, so pi-ai
+  // registers its routes inside its own apply() — `ensureRegistrationFacts()`
+  // defined at dsh-llm-pi-ai@0.2.0-rc.2/lib/index.js:2614-2626 and called at
+  // :2627 — and the same code path registers on the CI-pinned generation,
+  // dsh-llm-pi-ai@0.1.5-rc.1/lib/index.js:2645-2657 called at :2658, with the
+  // composition config as the base layer at :2573 `let current = () => config`.
+  // EVERY citation below names its ARTIFACT: they are all the PUBLISHED npm
+  // bundles' compiled lib (what CI installs), read out of the tarballs in
+  // ~/.npm/_cacache. The git tag's line numbers differ and are not cited here.
+  //
+  // ROW SHAPE — `- id: <entryId>` + `config:`. `name` is OPTIONAL in the
+  // patch dialect and, when truthy, only ASSERTS the existing row's package:
+  // a mismatch warns and SKIPS the whole row, taking its `config` with it
+  // (dsh-app-boot@0.2.0-rc.2/lib/index.js:73 destructures `{ id, insert,
+  // name, ...overrides }`, :100-103 is the mismatch skip, :104-107 applies
+  // the overrides). The CITED RANGES are byte-equal in the published
+  // dsh-app-boot@0.1.5-rc.1/lib/index.js at :71, :98-101, :102-105 — the
+  // CITED RANGES, not the whole function, which differs elsewhere; and on the
+  // 0.1.5 SOURCE tag the function is imported from
+  // @deepseek-ai/cordis-plugin-include and lives in another file, which is
+  // why every citation here names its ARTIFACT.
+  // `name:` is RESTORED on the two rows whose package is identical across
+  // generations — agent-default-model and llm-pi-ai (dsh-base@0.2.0-rc.2
+  // cordis.patch.yml:82-83, :127-128 vs dsh-base@0.1.5-rc.1 cordis.patch.yml
+  // :75-76, :107-108) — because there it is a free, real assertion. It stays
+  // OMITTED on exactly ONE row, `llm-deepseek`: its package differs
+  // (@deepseek-ai/dsh-llm-deepseek on 0.1.5 at :486-487 vs
+  // @deepseek-ai/dsh-llm-deepseek-api-key on 0.2.x at :525-526), so
+  // restating either spelling silently skips the row on the other generation
+  // and drops its baseURL with it (measured on 0.2.0-rc.2: 1 `patch:` warn
+  // and the composed row carries no config).
+  //
+  // `config` is REPLACED wholesale, never deep-merged: each targeted base row
+  // carries either no config at all (llm-deepseek, llm-pi-ai) or exactly the
+  // two keys restated below (agent-default-model), so nothing is lost.
+  const patchLines = [
+    '# T18 e2e overlay: plaintext, unpacked session JSONL (T15 layout). Row',
+    '# config is REPLACED, not merged, so root must be restated verbatim.',
+    '- id: session-persistence-jsonl',
+    "  name: '@deepseek-ai/dsh-session-persistence-jsonl'",
+    '  config:',
+    "    root: !!js dshHomePath('sessions')",
+    '    compression: none',
+    '    packChunks: false',
+    '',
+    '# P4.5-T8a: the LLM wiring as patch rows, so it is present at apply() time',
+    '# on dsh 0.2.x (where settings.yaml is imported only after loader.await()).',
+    '# Both surfaces are generated from the SAME `routes` / `mockBaseUrl`',
+    '# variables, so wherever the settings leg writes a section its patch twin',
+    '# writes the same values; with no pi-ai provider BOTH legs omit their',
+    '# pi-ai piece (review B MINOR-1) — they agree in value, but they are not',
+    '# one text, so "byte-identical" is not the claim being made. settings.yaml',
+    '# stays written for the CI-pinned',
+    '# 0.1.5-rc.1, where it IS the live surface (dsh-settings-file reads it at',
+    '# `<harness home>/settings.yaml`) and sits ON TOP of these rows as the',
+    '# settings user layer over the composition base.',
+    '- id: agent-default-model',
+    "  name: '@deepseek-ai/dsh-agent-default-model'",
+    '  config:',
+    `    provider: ${routes.sisyphus.provider}`,
+    `    model: ${routes.sisyphus.model}`,
+    '',
+    // `name:` deliberately ABSENT here and ONLY here — see ROW SHAPE above:
+    // this entry's package differs across generations, so any name stated
+    // would make the row skip on one of them and take its baseURL with it.
+    '- id: llm-deepseek',
+    '  config:',
+    '    apiKeyEnv: DEEPSEEK_API_KEY',
+    `    baseURL: ${mockBaseUrl}/v1`,
+  ]
+  if (piAiProviders.length > 0) {
+    // An empty `providers:` key would parse as null, which `z.dict(profile)`
+    // is not obliged to accept (and `--dump-config` shows it stays null, so
+    // `.default({})` does not rescue it); a scenario with no pi-ai route
+    // emits no row.
+    //
+    // Indentation is load-bearing and SILENT, and the mechanism is NOT "an
+    // empty dict": a provider key at the wrong depth becomes a SIBLING of
+    // `providers:` inside the row's config mapping, so `providers` composes to
+    // `null` and the stray key is simply ignored. Measured on 0.2.0-rc.2 with
+    // `dsh --dump-config`: composed `providers: null` + sibling `deepseek:`,
+    // exit 0, ZERO `patch:` warnings. Only the composed STRUCTURE catches it,
+    // which is why auditLlmPatchRows() below asserts structure and why
+    // --self-test runs it against seedSandbox()'s real output.
+    // `config:` is at 2, `providers:` at 4, dict keys at 6, their fields at 8.
+    patchLines.push('', '- id: llm-pi-ai', "  name: '@deepseek-ai/dsh-llm-pi-ai'", '  config:', '    providers:')
+    for (const provider of piAiProviders) {
+      patchLines.push(
+        `      ${provider}:`,
+        '        apiKeyEnv: DEEPSEEK_API_KEY',
+        `        baseURL: ${mockBaseUrl}/v1`,
+      )
+    }
+  }
+  patchLines.push('')
   const patchPath = join(sandbox.root, 'e2e.patch.yml')
-  writeFileSync(
-    patchPath,
-    [
-      '# T18 e2e overlay: plaintext, unpacked session JSONL (T15 layout). Row',
-      '# config is REPLACED, not merged, so root must be restated verbatim.',
-      '- id: session-persistence-jsonl',
-      "  name: '@deepseek-ai/dsh-session-persistence-jsonl'",
-      '  config:',
-      "    root: !!js dshHomePath('sessions')",
-      '    compression: none',
-      '    packChunks: false',
-      '',
-    ].join('\n'),
-  )
+  writeFileSync(patchPath, patchLines.join('\n'))
   return patchPath
+}
+
+/**
+ * P4.5-T8a (review A MAJOR) — the TIMER-FREE structural gate over the LLM
+ * wiring, and the ONLY gate that catches the silent faults.
+ *
+ * WHY this exists, in one measured sentence: a mis-indented provider key, a
+ * dropped row and a wrong baseURL all compose, boot and exit 0 with ZERO
+ * `patch:` warnings, so neither the exit code nor stderr distinguishes good
+ * from broken. Measured on 0.2.0-rc.2 with `dsh --dump-config`:
+ *   GOOD       : providers:\n      deepseek:\n        apiKeyEnv: …  → nested
+ *   MIS-INDENT : providers: null\n    deepseek:\n      apiKeyEnv: …  → sibling
+ * and the boot marker that used to be called the deterministic evidence is NOT:
+ * patches/omo-dsh/omo-agents/src/boot-markers.ts:277-284 arms
+ * setTimeout(check, ROUTE_PROVIDER_CHECK_SETTLE_MS) (= 8000, :219) and
+ * RE-ARMS on `llm/adapters-updated` when the registry grows, so the marker is
+ * a function of when the check lands relative to the legacy import — GREEN is
+ * structural (registration happens inside pi-ai's own apply()), RED is a race.
+ * The marker is now auxiliary; THIS function is the acceptance.
+ *
+ * Input is a PARSED row list (from `--dump-config` composed output, or from
+ * seedSandbox()'s own overlay text) — never text, because text assertions are
+ * exactly the format-coupled check that passed the mis-indent case. Rows are
+ * found by id anywhere in the tree, so a nested composition still audits.
+ *
+ * Returns the list of NAMED faults (empty = pass). Names are stable: the
+ * self-test asserts a SPECIFIC fault name per injected fault, so a gate that
+ * goes red for the wrong reason still shows up as a different name and fails.
+ */
+export function auditLlmPatchRows(rows, { mockBaseUrl, routes }) {
+  const faults = []
+  const byId = new Map()
+  const walk = (node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item)
+      return
+    }
+    if (node === null || typeof node !== 'object') return
+    if (typeof node.id === 'string' && !byId.has(node.id)) byId.set(node.id, node)
+    for (const value of Object.values(node)) walk(value)
+  }
+  walk(rows)
+
+  const configOf = (id) => {
+    const row = byId.get(id)
+    if (row === undefined) {
+      faults.push(`missingRow:${id}`)
+      return undefined
+    }
+    if (row.config === undefined || row.config === null) {
+      faults.push(`missingConfig:${id}`)
+      return undefined
+    }
+    return row.config
+  }
+
+  // agent-default-model — the sisyphus seat's resolved route, restated exactly.
+  const def = configOf('agent-default-model')
+  if (def !== undefined) {
+    if (def.provider !== routes.sisyphus.provider || def.model !== routes.sisyphus.model) {
+      faults.push(
+        `agentDefaultModelRouteWrong:provider=${String(def.provider)},model=${String(def.model)}`,
+      )
+    }
+  }
+
+  // llm-deepseek — the adapter's single baseURL, pointed at the mock.
+  const deep = configOf('llm-deepseek')
+  if (deep !== undefined) {
+    if (deep.baseURL !== `${mockBaseUrl}/v1`) {
+      faults.push(`llmDeepseekBaseURLWrong:${String(deep.baseURL)}`)
+    }
+    if (deep.apiKeyEnv !== 'DEEPSEEK_API_KEY') {
+      faults.push(`llmDeepseekApiKeyEnvWrong:${String(deep.apiKeyEnv)}`)
+    }
+  }
+
+  // llm-pi-ai — NON-EMPTY mapping, every provider pointed at the mock. This
+  // is the load-bearing row: with it absent or mis-indented the explore seat
+  // has no provider, and nothing else on the surface says so. The expected
+  // provider set is DERIVED from routes (the same rule seedSandbox uses), so a
+  // scenario with no pi-ai route does not fail on a legitimately absent row.
+  const expectedPiAi = [...new Set(
+    Object.values(routes).map((route) => route.provider).filter((p) => p !== DEEPSEEK_ADAPTER_PROVIDER),
+  )]
+  if (expectedPiAi.length === 0) return faults
+  const pi = configOf('llm-pi-ai')
+  if (pi !== undefined) {
+    const providers = pi.providers
+    if (!Array.isArray(providers) && (providers === null || typeof providers !== 'object')) {
+      faults.push(`piAiProvidersNotMapping:${providers === null ? 'null' : typeof providers}`)
+    } else if (Object.keys(providers).length === 0) {
+      faults.push('piAiProvidersEmpty')
+    } else {
+      for (const provider of expectedPiAi) {
+        if (!(provider in providers)) faults.push(`piAiProviderMissing:${provider}`)
+      }
+      for (const [provider, profile] of Object.entries(providers)) {
+        if (profile === null || typeof profile !== 'object') {
+          faults.push(`piAiProviderNotMapping:${provider}`)
+          continue
+        }
+        if (profile.baseURL !== `${mockBaseUrl}/v1`) {
+          faults.push(`piAiProviderBaseURLWrong:${provider}:${String(profile.baseURL)}`)
+        }
+        if (profile.apiKeyEnv !== 'DEEPSEEK_API_KEY') {
+          faults.push(`piAiProviderApiKeyEnvWrong:${provider}:${String(profile.apiKeyEnv)}`)
+        }
+      }
+    }
+  }
+  return faults
+}
+
+/**
+ * Parse YAML with the js-yaml the INSTALLED dsh ships, via the existing
+ * resolveDshNodeModules() (:2340 — walks up from the realpath of the dsh
+ * binary and THROWS rather than skipping). Same dialect as the host, no new
+ * dependency, no dsh boot: `command -v dsh` is a path lookup, not a spawn of
+ * the harness. A parse that silently fell back to a hand-rolled reader would
+ * be the same class of gate that let the mis-indent through, so there is none.
+ */
+async function parseYamlWithInstalledDsh(text) {
+  const modulesDir = resolveDshNodeModules()
+  const mod = await import(pathToFileURL(join(modulesDir, 'js-yaml', 'dist', 'js-yaml.mjs')).href)
+  const yaml = mod.default ?? mod
+  // The loader's OWN dialect: `!!js` is a declared tag of the include schema,
+  // so it must resolve here exactly as scripts/assert-concerto-read-face.mjs:30-36
+  // does — construct-only is enough for a LOAD, and the constructed marker
+  // `{ __jsExpr }` keeps an `!!js` cell from degrading into a plain string
+  // (a tag that silently became text is the failure this guards).
+  const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
+    kind: 'scalar',
+    resolve: (data) => typeof data === 'string',
+    construct: (data) => ({ __jsExpr: data }),
+  })
+  const load = yaml.load ?? mod.load
+  if (typeof load !== 'function') {
+    throw new Error('js-yaml resolved but exports no load() — the audit must not be skipped')
+  }
+  return load(text, { schema: yaml.JSON_SCHEMA.extend(JsExpr) })
+}
+
+/**
+ * The A1′ sub-gate's run state, read by the `--self-test` banner. A gate that
+ * cannot run must say so out loud and must never quietly read as green, so the
+ * banner prints either "RUN clean + N/5 fault classes" or "NOT RUN (reason)".
+ */
+const A1PRIME_SELF_TEST_STATE = { ran: false, faultsCaught: [], notRunReason: '' }
+
+function a1PrimeSelfTestBanner() {
+  if (!A1PRIME_SELF_TEST_STATE.ran) {
+    return `A1′ seeding gate NOT RUN (${A1PRIME_SELF_TEST_STATE.notRunReason || 'reason unrecorded'})`
+  }
+  return `A1′ seeding gate RUN clean + ${A1PRIME_SELF_TEST_STATE.faultsCaught.length}/5 fault classes caught by name (${A1PRIME_SELF_TEST_STATE.faultsCaught.join(', ')})`
+}
+
+/**
+ * P4.5-T8a A1′ — the self-test for the sandbox LLM seeding.
+ *
+ * `seedSandbox()` had never been exercised under `--self-test`, which is why
+ * a silently-broken overlay could still ship. This runs the REAL seedSandbox
+ * into a temp dir, parses its REAL output, audits it with the REAL
+ * auditLlmPatchRows(), and injects FIVE fault classes, requiring a NAMED fault
+ * from each — a fault that goes red for the wrong reason still fails.
+ *
+ * WHAT IS PURE AND WHAT BORROWS (review round 4 MAJOR — the word "hermetic"
+ * was too broad here and has been removed): the self-test SPAWNS NOTHING — no
+ * dsh boot, no port, no network; `mockBaseUrl` is a fixed unroutable literal
+ * because the gate is about STRUCTURE, not about reaching anything. But the
+ * YAML parse borrows the INSTALLED dsh's `js-yaml` (the loader's own `!!js`
+ * dialect, so the parse cannot silently drift from the host), and that makes
+ * THIS SUB-GATE require dsh on PATH. When it is not resolvable the sub-gate
+ * does NOT fail and does NOT pass: it declares itself NOT RUN in the banner
+ * (a1PrimeSelfTestBanner) and the rest of `--self-test` still runs and still
+ * earns its exit code. `seedSandbox()` itself, auditLlmPatchRows,
+ * auditPatchRowNames and auditSettingsPatchAgreement are pure JS.
+ *
+ * The real `--dump-config` leg (auditComposedLlmWiring, scenario path only) is
+ * the one that is SUPPOSED to use the host; it covers the same structure plus
+ * fault (d)'s consequence — the row skipped and its config dropped — which is
+ * only visible in composed output.
+ */
+async function runSandboxSeedingSelfTest(routes) {
+  const problems = []
+  const mockBaseUrl = 'http://127.0.0.1:40001'
+  const sandbox = createSandbox()
+  try {
+    const patchPath = seedSandbox(sandbox, routes, mockBaseUrl)
+    const overlayText = readFileSync(patchPath, 'utf8')
+    let rows
+    try {
+      rows = await parseYamlWithInstalledDsh(overlayText)
+    } catch (error) {
+      // The borrowed dependency is absent. Loud, explicit, and NOT a pass.
+      A1PRIME_SELF_TEST_STATE.ran = false
+      A1PRIME_SELF_TEST_STATE.faultsCaught = []
+      A1PRIME_SELF_TEST_STATE.notRunReason
+        = 'dsh not resolvable for the yaml dialect — installed js-yaml not found off PATH'
+      console.error(`drive: ${a1PrimeSelfTestBanner()}`)
+      console.error(`drive: A1′ resolver detail — ${error.message.split('\n')[0]}`)
+      return problems
+    }
+    A1PRIME_SELF_TEST_STATE.ran = true
+
+    const faults = auditLlmPatchRows(rows, { mockBaseUrl, routes })
+    if (faults.length > 0) {
+      problems.push(`A1′ GOOD seed must audit clean, got ${JSON.stringify(faults)}`)
+    } else {
+      const providers = Object.keys(rows.find((r) => r?.id === 'llm-pi-ai')?.config?.providers ?? {})
+      console.error(`drive: A1′ seed audited clean — llm-pi-ai providers [${providers.join(', ')}], mock ${mockBaseUrl}`)
+    }
+
+    // The `name:` policy is itself a machine assertion (MINOR-3): asserted on
+    // the two rows whose package is stable across generations, ABSENT on the
+    // one whose package is not.
+    const nameFaults = auditPatchRowNames(rows)
+    if (nameFaults.length > 0) {
+      problems.push(`A1′ GOOD seed name policy broken: ${JSON.stringify(nameFaults)}`)
+    }
+
+    // The settings.yaml leg must not diverge from the patch leg (MINOR-1:
+    // it used to write `providers:` unconditionally where the patch leg
+    // guarded the row).
+    const settingsText = readFileSync(join(sandbox.dshHome, 'settings.yaml'), 'utf8')
+    const settingsDoc = await parseYamlWithInstalledDsh(settingsText)
+    const divergence = auditSettingsPatchAgreement(settingsDoc, rows, routes)
+    if (divergence.length > 0) {
+      problems.push(`A1′ settings/patch surfaces diverge: ${JSON.stringify(divergence)}`)
+    }
+
+    // FIVE fault classes, each asserted by NAME on the audit that can see it.
+    // The fifth (wrong default-model route) exists because an audit branch with
+    // no red case is an unproven branch.
+    const firstPiAi = [...new Set(
+      Object.values(routes).map((r) => r.provider).filter((p) => p !== DEEPSEEK_ADAPTER_PROVIDER),
+    )][0]
+    if (firstPiAi === undefined) {
+      problems.push('A1′ self-test expects at least one pi-ai provider in routes; got none')
+    }
+    const cases = [
+      ['mis-indented provider key', overlayText.replace(
+        new RegExp(`^      ${firstPiAi}:$`, 'm'), `    ${firstPiAi}:`,
+      ), (f) => f.includes('piAiProvidersNotMapping:null')],
+      ['llm-pi-ai row dropped', overlayText.replace(
+        /^- id: llm-pi-ai\n(?:.*\n)*?(?=^- id: |$)/m, '',
+      ), (f) => f.includes('missingRow:llm-pi-ai')],
+      ['wrong baseURL', overlayText.replaceAll(`${mockBaseUrl}/v1`, 'http://127.0.0.1:1/wrong'), (f) => f
+        .some((x) => x.startsWith('piAiProviderBaseURLWrong:'))
+        && f.some((x) => x.startsWith('llmDeepseekBaseURLWrong:'))],
+      ['0.1.5 name spelling on 0.2.x', overlayText.replace(
+        '- id: llm-deepseek\n', "- id: llm-deepseek\n  name: '@deepseek-ai/dsh-llm-deepseek'\n",
+      ), (f) => f.includes('deepseekRowMustNotAssertName:@deepseek-ai/dsh-llm-deepseek')],
+      ['agent-default-model off the sisyphus route', overlayText.replace(
+        `    provider: ${routes.sisyphus.provider}\n    model: ${routes.sisyphus.model}`,
+        '    provider: not-a-provider\n    model: not-a-model',
+      ), (f) => f.some((x) => x.startsWith('agentDefaultModelRouteWrong:'))],
+    ]
+    for (const [label, mutated, expect] of cases) {
+      if (mutated === overlayText) {
+        problems.push(`A1′ fault "${label}" did not change the overlay text — the injection is vacuous`)
+        continue
+      }
+      const mutatedRows = await parseYamlWithInstalledDsh(mutated)
+      const mutatedFaults = [
+        ...auditLlmPatchRows(mutatedRows, { mockBaseUrl, routes }),
+        ...auditPatchRowNames(mutatedRows),
+      ]
+      if (!expect(mutatedFaults)) {
+        problems.push(`A1′ fault "${label}" must be caught by name, got ${JSON.stringify(mutatedFaults)}`)
+      } else {
+        // Recorded, not just asserted: the fault each injection actually
+        // produced, so a reviewer can see the gate bite without a debugger.
+        A1PRIME_SELF_TEST_STATE.faultsCaught.push(label)
+        console.error(`drive: A1′ fault caught — ${label} → ${JSON.stringify(mutatedFaults)}`)
+      }
+    }
+    if (problems.length === 0) console.error(`drive: ${a1PrimeSelfTestBanner()}`)
+  } catch (error) {
+    A1PRIME_SELF_TEST_STATE.ran = false
+    A1PRIME_SELF_TEST_STATE.notRunReason = `crashed: ${error.message.split('\n')[0]}`
+    problems.push(`A1′ seeding self-test crashed: ${error.message}`)
+  } finally {
+    rmSync(sandbox.root, { recursive: true, force: true })
+  }
+  return problems
+}
+
+/**
+ * The `name:` policy as a machine assertion (review A MINOR-3). Stable packages
+ * are ASSERTED; the one divergent package is NOT named, because naming either
+ * spelling skips the row on the other generation. Over the OVERLAY only — the
+ * composed tree fills `name` from the bundle row, so this never runs there.
+ */
+function auditPatchRowNames(rows) {
+  const faults = []
+  const byId = new Map()
+  const walk = (node) => {
+    if (Array.isArray(node)) { for (const i of node) walk(i); return }
+    if (node === null || typeof node !== 'object') return
+    if (typeof node.id === 'string' && !byId.has(node.id)) byId.set(node.id, node)
+    for (const v of Object.values(node)) walk(v)
+  }
+  walk(rows)
+  const stable = {
+    'agent-default-model': '@deepseek-ai/dsh-agent-default-model',
+    'llm-pi-ai': '@deepseek-ai/dsh-llm-pi-ai',
+  }
+  for (const [id, expectedName] of Object.entries(stable)) {
+    const row = byId.get(id)
+    if (row === undefined) continue
+    if (row.name !== expectedName) {
+      faults.push(`rowNameNotAssertedOrWrong:${id}:${String(row.name)}`)
+    }
+  }
+  const deep = byId.get('llm-deepseek')
+  if (deep !== undefined && deep.name !== undefined) {
+    faults.push(`deepseekRowMustNotAssertName:${String(deep.name)}`)
+  }
+  return faults
+}
+
+/**
+ * The two seed surfaces must say the same thing (review B MINOR-1). Compares
+ * the settings.yaml sections against the patch rows, cell by cell, for the
+ * three namespaces the seed writes. A divergence means one surface was edited
+ * and the other was not, which is the drift the dual-write design forbids.
+ */
+function auditSettingsPatchAgreement(settings, patchRows, routes) {
+  const faults = []
+  const patchById = new Map()
+  for (const row of Array.isArray(patchRows) ? patchRows : []) {
+    if (row !== null && typeof row === 'object' && typeof row.id === 'string') {
+      patchById.set(row.id, row.config ?? null)
+    }
+  }
+  const pairs = [
+    ['agent-default-model', ['provider', 'model']],
+    ['llm-deepseek', ['apiKeyEnv', 'baseURL']],
+  ]
+  for (const [id, keys] of pairs) {
+    const a = (settings?.[id] ?? null) ?? null
+    const b = patchById.get(id) ?? null
+    for (const key of keys) {
+      if (a?.[key] !== b?.[key]) {
+        faults.push(`${id}.${key}: settings=${JSON.stringify(a?.[key] ?? null)} patch=${JSON.stringify(b?.[key] ?? null)}`)
+      }
+    }
+  }
+  const settingsProviders = settings?.['llm-pi-ai']?.providers ?? null
+  const patchProviders = patchById.get('llm-pi-ai')?.providers ?? null
+  if (JSON.stringify(settingsProviders ?? null) !== JSON.stringify(patchProviders ?? null)) {
+    faults.push(`llm-pi-ai.providers: settings=${JSON.stringify(settingsProviders)} patch=${JSON.stringify(patchProviders)}`)
+  }
+  void routes
+  return faults
+}
+
+/**
+ * P4.5-T8a A1′ (real-composition leg) — run the harness's OWN composer over
+ * the sandbox overlay and audit what it composed, before any boot.
+ *
+ * `dsh --dump-config` prints the composed profile tree and exits ("print the
+ * composed profile tree and exit", `dsh --help`). It runs against a scratch
+ * DSH_HOME INSIDE the sandbox (`dump-home/`), never the boot's own
+ * `$DSH_HOME`, so the legacy importer cannot consume settings.yaml early and
+ * change what the real boot sees.
+ *
+ * This leg adds what the in-process self-test structurally cannot see: the
+ * host's answer to a `name:` that does not match (fault (d) — the row is
+ * skipped and its config dropped, visible only in composed output).
+ */
+async function auditComposedLlmWiring({ sandbox, patchPath, env, mockBaseUrl, routes }) {
+  const dumpHome = join(sandbox.root, 'dump-home')
+  mkdirSync(dumpHome, { recursive: true })
+  const dumpPath = join(sandbox.root, 'dump-config.yml')
+  const run = spawnSync(
+    'dsh',
+    ['--profile', 'web', '--patch', patchPath, '--dump-config'],
+    { env: { ...env, DSH_HOME: dumpHome }, encoding: 'utf8', timeout: 120000, cwd: sandbox.root },
+  )
+  const stdout = run.stdout ?? ''
+  const stderr = run.stderr ?? ''
+  writeFileSync(dumpPath, stdout)
+  const patchWarnLines = stderr.match(/patch:[^\n]*/g) ?? []
+  let faults = [`dumpConfigExit:${String(run.status)}`]
+  if (run.status === 0) {
+    try {
+      faults = auditLlmPatchRows(await parseYamlWithInstalledDsh(stdout), { mockBaseUrl, routes })
+    } catch (error) {
+      faults = [`dumpConfigUnparseable:${error.message}`]
+    }
+  }
+  return { ok: faults.length === 0 && patchWarnLines.length === 0, faults, patchWarnLines, dumpPath, dumpHome }
 }
 
 // ── Credential digest (§14.5) ────────────────────────────────────────────────
@@ -9080,6 +9581,14 @@ async function runAnalysisSelfTest(routes) {
 
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
+  // ── P4.5-T8a A1′ — the timer-free structural gate over the seeded LLM
+  // wiring. seedSandbox() was never exercised here, which is exactly why
+  // nothing guarded the row shape; it runs here now. It SPAWNS NOTHING, but its
+  // YAML parse borrows the INSTALLED dsh's js-yaml (the loader's own `!!js`
+  // dialect), so this sub-gate needs dsh on PATH — and when it is not
+  // resolvable it declares itself NOT RUN in the banner instead of reading
+  // green. runSandboxSeedingSelfTest's doc carries the pure/borrow split.
+  problems.push(...await runSandboxSeedingSelfTest(routes))
   return problems
 }
 
@@ -15127,6 +15636,22 @@ async function runScenario(def, baseRoutes) {
       },
       routes,
     )
+    // P4.5-T8a A1′ — the primary acceptance for the sandbox seeding: audit the
+    // harness's OWN composed output over this overlay (timer-free, so it does
+    // not inherit the boot marker's 8s settle race). Merged into the scenario's
+    // named checks AFTER `...analysis` so it is asserted whatever the analysis
+    // says, and `failed`/`result` are recomputed from the MERGED set.
+    const composedGate = await auditComposedLlmWiring({
+      sandbox, patchPath, env, mockBaseUrl: server.baseUrl, routes,
+    })
+    const mergedChecks = {
+      ...(analysis.checks ?? {}),
+      composedLlmWiringPresent: composedGate.faults.length === 0,
+      composedStderrNoPatchWarnings: composedGate.patchWarnLines.length === 0,
+    }
+    const mergedFailed = Object.entries(mergedChecks)
+      .filter(([, passed]) => passed !== true)
+      .map(([check]) => check)
     // Timing notes: mock arrival offsets relative to the first request.
     const t0 = server.requests[0]?.receivedAt ?? 0
     const timeline = server.requests.map((request) => ({
@@ -15142,8 +15667,17 @@ async function runScenario(def, baseRoutes) {
       timeline,
       // AC-7: every assertion BY NAME, in check order — CI can list what ran
       // without parsing the checks object.
-      assertions: Object.keys(analysis.checks ?? {}),
+      assertions: Object.keys(mergedChecks),
       ...analysis,
+      checks: mergedChecks,
+      failed: mergedFailed,
+      result: mergedFailed.length === 0 ? 'PASS' : 'FAIL',
+      composedLlmWiring: {
+        ok: composedGate.ok,
+        faults: composedGate.faults,
+        patchWarnLines: composedGate.patchWarnLines,
+        dumpPath: composedGate.dumpPath,
+      },
     }
   } catch (error) {
     scenario = { name: def.name, result: 'FAIL', failed: [`driver error: ${error.message}`] }
@@ -16959,7 +17493,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T15 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)`)
+    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus ${a1PrimeSelfTestBanner()}`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
