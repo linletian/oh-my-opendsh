@@ -287,7 +287,13 @@
 - **判定**：✅ 门 6 绿且其断言随新 id 更新；门 2 不回归；三席默认路由在 0.2.x 上可解析；文档双语同 commit；
   **删除/改写的每一处都要指回本段**，且 CHANGELOG 登记「默认模型 id 变更」这一**用户可见**改动。
 - **⚠️ 范围上修（2026-10-06 03:25，评审 A 指出「blocker D 只报了一行」）**：仲裁者实测 —— **pi-ai 路由**上的假 id **不止一行**：`roster.ts:129` / `:175` / `:251` 与 `drive.mjs:919` / `:922` / `:927` 都写着 `provider: 'deepseek'` + `deepseek-v4-flash`（该路由在本机目录里只有 `deepseek-flash` 与 `deepseek-v4-pro`）。**但必须区分两种路由**：`deepseek-official` 那一路的模型表**来自另一个来源，本轮未核**，例如 `roster.ts:233` 与 `drive.mjs:926` 的 `deepseek-v4-flash-vision-exp` 是否存在**尚未证实**。⇒ **判据里禁止把未核的写成已坏**：先核 `deepseek-official` 的模型表，再定这一行改不改。
-- **依赖**：无（与 T8b/T8c 无文件冲突）。**量级**：0.5 天 → **上修 1 天**（行数更多，且要先分清两条路由）。
+- **✅ 仲裁者已把「两条路由都要不要改」这个问题解掉（2026-10-06 03:29，一手）**：
+  - **pi-ai 路由** `…/pi-ai/dist/providers/data/deepseek.json` 实测只有 `deepseek-flash`（`input: ["text","image"]`）与 `deepseek-v4-pro` ⇒ `deepseek-v4-flash` **虚构**。
+  - **`deepseek-official` 路由**（仲裁者上轮标为「未核」的那条）`dsh-llm-deepseek/lib/index.js:42-54` 的 `DEFAULT_MODELS` **也只有** `deepseek-flash`（`inputModalities: ["text","image"]`）与 `deepseek-v4-pro`
+    ⇒ **`deepseek-v4-flash-vision-exp` 同样是虚构的**，先前「可能只坏一条路由」的顾虑不成立，**两条路由都坏**。
+  - ⇒ **可用的替代 id 唯一且两侧通用**：`deepseek-flash`（两条路由的表里都在，且**都接受图像输入**）⇒ **视觉席也能用它**，不必另找。
+  - **文件归属拆分（避免与在飞的 T8b 抢同一个文件）**：本片改 **出货码 + 门 + 安装期 env + 双语 README**；`drive.mjs` 里的席位表（`:919`/`:922`/`:926`/`:927`）**归 T8**（下一个占 `drive.mjs` 的任务）。**两处必须同批落地**——只改出货码而留 drive 的旧 id，门 3 仍会以 `UNKNOWN_MODEL` 红。
+- **依赖**：无（与 T8b/T8c 无文件冲突；`drive.mjs` 那半归 T8）。**量级**：0.5 天 → **上修 1 天**（行数更多）。
 
 ### [ ] P4.5-T8 — drive.mjs 双形状夹具 + 信封读取点核对
 
