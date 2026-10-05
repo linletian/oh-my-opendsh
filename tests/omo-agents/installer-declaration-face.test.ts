@@ -168,6 +168,8 @@ type Sandbox = {
   home: string
   bin: string
   script: string
+  /** The version the sandbox `dsh` shim answers, or null when NO shim was made. */
+  dshVersion: string | null
 }
 
 const sandboxes: Sandbox[] = []
@@ -189,7 +191,7 @@ function makeSandbox(opts: { dshVersion?: string | null } = {}): Sandbox {
   const script = join(root, 'install-offline.sh')
   writeFileSync(script, offlineInstaller, { mode: 0o755 })
   chmodSync(script, 0o755)
-  const sbx: Sandbox = { root, home, bin, script }
+  const sbx: Sandbox = { root, home, bin, script, dshVersion: opts.dshVersion ?? null }
   sandboxes.push(sbx)
   return sbx
 }
@@ -217,21 +219,84 @@ function isExecutable(path: string): boolean {
 }
 const PATH_WITHOUT_DSH = REAL_PATH.filter((dir) => !isExecutable(join(dir, 'dsh'))).join(':')
 
+/**
+ * THE ANTI-RECURRENCE GUARD — read this before touching any env below.
+ *
+ * WHY THIS EXISTS. GitHub Actions run 37325570400 (gate 2, unit tests) went red
+ * on a case that was green on every laptop that ever ran it. T24 case ② built
+ * its env BY HAND and prepended the sandbox `bin/` to nothing: `PATH` stayed
+ * the ambient one, so the installer ran `command -v dsh` against the REAL dsh
+ * on the machine. That answers 0.2.0-rc.2 locally ⇒ declaration face ⇒ it
+ * reaches the PyYAML guard ⇒ green. CI installs 0.1.5-rc.1 per D7 ⇒ the
+ * filediscovery face ⇒ the guard is never reached ⇒ exit 0 ⇒
+ * `expected +0 not to be +0`, hundreds of lines and one silent face-branch away
+ * from the thing that actually broke. The test was not testing the script, it
+ * was testing whichever dsh the environment happened to gift it.
+ *
+ * So "which dsh does the installer actually see" stops being an environment
+ * gift and becomes an ASSERTED FACT, asked with the exact env the test is about
+ * to hand the installer:
+ *   1. `command -v dsh` resolves to the sandbox shim, not to the host's dsh;
+ *   2. `dsh --version` answers the version THIS test claims is installed;
+ *   3. `command -v curl` resolves to the offline guard shim (the network fence).
+ * Miss a `PATH:` prefix in the future and this fails FIRST, by name, instead of
+ * letting a wrong-face install walk off unnoticed.
+ *
+ * `expectedVersion === null` is the other side of the same coin: the sandbox
+ * made NO shim, so dsh must be UNREACHABLE on that PATH (T8).
+ */
+function assertShimWins(label: string, env: NodeJS.ProcessEnv, bin: string, expectedVersion: string | null): void {
+  const found = spawnSync('sh', ['-c', 'command -v dsh'], { env, encoding: 'utf8', timeout: 30_000 })
+  const resolved = (found.stdout ?? '').trim()
+  if (expectedVersion === null) {
+    expect(resolved, `${label}: dsh must be UNREACHABLE on this PATH, but it resolved to '${resolved}' — the sandbox made no shim, so any hit here is the ambient dsh leaking in`).toBe('')
+    expect(found.status, `${label}: dsh resolved to '${resolved}' although this sandbox declares NO dsh shim`).not.toBe(0)
+    return
+  }
+  expect(resolved, `${label}: the SANDBOX SHIM WAS NOT USED — the installer would run '${resolved}', not the sandbox shim at ${join(bin, 'dsh')}. PATH is missing its '${bin}:' prefix (or the ambient dsh was put in front of it), so the version gate would pick a DIFFERENT install face than this test claims. 沙箱 shim 没被用上。`).toBe(join(bin, 'dsh'))
+  const ver = spawnSync('sh', ['-c', 'dsh --version'], { env, encoding: 'utf8', timeout: 30_000 })
+  expect((ver.stdout ?? '').split('\n')[0].trim(), `${label}: the dsh on this PATH answers a different version than the sandbox shim '${join(bin, 'dsh')}' declares — the ambient dsh is being used. 沙箱 shim 没被用上。`).toBe(expectedVersion)
+  const curl = spawnSync('sh', ['-c', 'command -v curl'], { env, encoding: 'utf8', timeout: 30_000 })
+  expect((curl.stdout ?? '').trim(), `${label}: the offline curl guard shim at ${join(bin, 'curl')} is NOT the curl the installer would run — a real curl could reach the network from a hermetic test`).toBe(join(bin, 'curl'))
+}
+
 function runInstaller(sbx: Sandbox, opts: { withDsh: boolean; extraEnv?: Record<string, string> }): {
   status: number | null
   stdout: string
   stderr: string
 } {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    DSH_HOME: sbx.home,
+    NO_PIAI: '1',
+    PATH: opts.withDsh ? `${sbx.bin}:${process.env.PATH}` : `${sbx.bin}:${PATH_WITHOUT_DSH}`,
+    // HERMETIC, not ambient. `...process.env` above carries whatever the host
+    // happens to export, and the installer READS all three of these:
+    // EXPLORE_PROVIDER / EXPLORE_MODEL rewrite agentOptions (so T6's
+    // "no override ⇒ authored route" case would be testing the host, not the
+    // script), and CONCERTO_TAG picks the ${BASE} ref whose printed tag several
+    // cases quote. Cleared HERE, before extraEnv, so a case that WANTS an
+    // override still sets it explicitly and visibly.
+    EXPLORE_PROVIDER: '',
+    EXPLORE_MODEL: '',
+    CONCERTO_TAG: '',
+    ...opts.extraEnv,
+  }
+  // The guard runs on the FINAL env — the same one the installer is about to
+  // get — so a future extraEnv that rewrites PATH cannot slip past it.
+  assertShimWins('runInstaller', env, sbx.bin, opts.withDsh ? sbx.dshVersion : null)
+  // HOME is ambient too, and the installer falls back to `${HOME}/.dsh` when
+  // DSH_HOME is unset. It is never unset here, so nothing can ever be written
+  // to a real ~/.dsh — pinned rather than assumed.
+  expect(env.DSH_HOME, 'every installer run here must be sandboxed by DSH_HOME').toBe(sbx.home)
+  if (process.env.HOME) {
+    expect(env.DSH_HOME, 'DSH_HOME must not be the developer real ~/.dsh').not.toBe(join(process.env.HOME, '.dsh'))
+  }
+  expect(env.NO_PIAI, 'NO_PIAI must stay set or the installer writes settings.yaml').toBe('1')
   const r = spawnSync('sh', [sbx.script], {
     encoding: 'utf8',
     timeout: 120_000,
-    env: {
-      ...process.env,
-      DSH_HOME: sbx.home,
-      NO_PIAI: '1',
-      PATH: opts.withDsh ? `${sbx.bin}:${process.env.PATH}` : `${sbx.bin}:${PATH_WITHOUT_DSH}`,
-      ...opts.extraEnv,
-    },
+    env,
   })
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' }
 }
@@ -358,11 +423,36 @@ describe('installer test harness fixtures (non-vacuity)', () => {
         env: { PATH: PATH_WITHOUT_DSH },
       }).status
     // curl is needed by `need curl` BEFORE the version gate — if it were gone,
-    // T8 would pass for the wrong reason.
-    for (const tool of ['curl', 'sh', 'sed', 'grep', 'mktemp', 'python3']) {
+    // T8 would pass for the wrong reason. head/rm/cp are the T24 guardbin
+    // symlinks (GUARD_TOOLS): findRealTool throws if they are gone, so they
+    // are pinned here too rather than only by an exception at use time.
+    for (const tool of ['curl', 'sh', 'sed', 'grep', 'mktemp', 'python3', 'head', 'rm', 'cp']) {
       expect(probe(tool), `PATH_WITHOUT_DSH lost ${tool}`).toBe(0)
     }
     expect(probe('dsh'), 'dsh must be unreachable on that PATH').not.toBe(0)
+  })
+
+  it('the PATH guard really tells the sandbox shim apart from the host dsh — it has teeth', { timeout: 60_000 }, () => {
+    // POSITIVE: exactly the PATH runInstaller builds, and it stays green.
+    const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
+    expect(() => assertShimWins('guard-positive', { ...process.env, PATH: `${sbx.bin}:${process.env.PATH}` }, sbx.bin, '0.2.0-rc.2')).not.toThrow()
+
+    // The host's own dsh — when there is one — is a DIFFERENT FILE, which is
+    // what makes the resolution above a fact and not a tautology.
+    const host = spawnSync('sh', ['-c', 'command -v dsh'], { env: { ...process.env, PATH: process.env.PATH ?? '' }, encoding: 'utf8', timeout: 30_000 })
+    if (host.status === 0) {
+      expect(host.stdout.trim(), 'the host dsh resolves to the SAME path as the sandbox shim — assertShimWins can no longer tell them apart').not.toBe(join(sbx.bin, 'dsh'))
+    }
+
+    // NEGATIVE ①: the exact shape of the CI bug — the `${sbx.bin}:` prefix
+    // dropped, PATH left ambient. 断言一 must go red, naming the shim.
+    expect(() => assertShimWins('guard-negative-no-prefix', { ...process.env, PATH: process.env.PATH ?? '' }, sbx.bin, '0.2.0-rc.2'), 'the guard stayed green while the sandbox shim was off PATH').toThrow()
+
+    // NEGATIVE ②: the shim IS on PATH but is a 0.1.x one while the case claims
+    // 0.2.0-rc.2 — what CI run 37325570400 actually looked like from the inside.
+    // 断言二 must go red even though 断言一 passes.
+    const ci = makeSandbox({ dshVersion: '0.1.5-rc.1' })
+    expect(() => assertShimWins('guard-negative-wrong-version', { ...process.env, PATH: `${ci.bin}:${process.env.PATH}` }, ci.bin, '0.2.0-rc.2'), 'the guard stayed green while a 0.1.x shim answered on PATH').toThrow()
   })
 })
 
@@ -608,7 +698,13 @@ describe('T6 EXPLORE_PROVIDER / EXPLORE_MODEL overrides', () => {
 
   it('leaves the authored route alone when no override is set', { timeout: 60_000 }, () => {
     const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
-    expect(runWithDsh(sbx).status).toBe(0)
+    const r = runWithDsh(sbx)
+    expect(r.status, r.stderr).toBe(0)
+    // HERMETIC: an EXPLORE_PROVIDER / EXPLORE_MODEL exported by the host or
+    // CI would make this case assert the ENVIRONMENT instead of the script.
+    // runInstaller blanks both, and this is the assertion that would notice if
+    // it stopped doing so — the override must not have fired at all.
+    expect(r.stdout, 'the override fired although this case passes none — the host exported EXPLORE_PROVIDER / EXPLORE_MODEL').not.toContain('explore route overridden')
     const found = collectAgentOptions(asJson(targetRow(parseFile(patchPath(sbx)))).config)
     expect(found).toHaveLength(1)
     expect(found[0].value).toEqual({ provider: AUTHORED_PROVIDER, model: AUTHORED_MODEL })
@@ -625,6 +721,9 @@ describe('T7 dsh 0.1.x still installs by file discovery', () => {
     expect(r.stderr).not.toContain(NETWORK_ATTEMPTED)
     expect(r.status, r.stderr).toBe(0)
     expect(r.stdout).toContain('install face: filediscovery')
+    // Same hermeticity pin as T6: no override is passed, so the host must not
+    // be the one supplying one.
+    expect(r.stdout, 'the host exported EXPLORE_PROVIDER / EXPLORE_MODEL into a case that passes none').not.toContain('explore route overridden')
 
     const dest = join(sbx.home, '.agent-presets', 'concerto')
     expect(existsSync(join(dest, 'agent.cordis.yml'))).toBe(true)
@@ -1767,14 +1866,31 @@ describe('T24 the python dependency guards stop before anything is created', () 
     // refusal must come from the guard, not from a crippled harness.
     expect(existsSync(join(guardBin, 'python3'))).toBe(false)
     expect(spawnSync('sh', ['-c', 'command -v python3 >/dev/null 2>&1', 'sh'], { env: { PATH: guardBin } }).status).not.toBe(0)
-    for (const tool of ['sh', 'sed', 'head', 'mktemp', 'curl', 'dsh']) {
+    for (const tool of [...GUARD_TOOLS, 'curl', 'dsh']) {
       expect(spawnSync('sh', ['-c', 'command -v "$1" >/dev/null 2>&1', 'sh', tool], { env: { PATH: guardBin } }).status, `guardbin lost ${tool}`).toBe(0)
     }
+
+    // THE ENV IS BUILT ONCE, then asked about, then handed over untouched — so
+    // what assertShimWins proves is exactly what the installer runs with.
+    // This case's shim lives in guardBin (a python3-free PATH), NOT in sbx.bin.
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DSH_HOME: sbx.home,
+      NO_PIAI: '1',
+      EXPLORE_PROVIDER: '',
+      EXPLORE_MODEL: '',
+      CONCERTO_TAG: '',
+      PATH: guardBin,
+    }
+    // 防复发: PATH resolves to the guardbin shim, and that shim answers the
+    // version this case claims. Without this the whole case could be running
+    // the host's dsh on the host's PATH.
+    assertShimWins('T24 no-python3', env, guardBin, '0.2.0-rc.2')
 
     const r = spawnSync('sh', [sbx.script], {
       encoding: 'utf8',
       timeout: 120_000,
-      env: { ...process.env, DSH_HOME: sbx.home, NO_PIAI: '1', EXPLORE_PROVIDER: '', EXPLORE_MODEL: '', PATH: guardBin } as NodeJS.ProcessEnv,
+      env,
     })
     expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).not.toBe(0)
     expect(r.status).not.toBeNull()
@@ -1790,12 +1906,46 @@ describe('T24 the python dependency guards stop before anything is created', () 
     mkdirSync(yamlDir, { recursive: true })
     // PYTHONPATH precedes site-packages, so this stub IS the `yaml` module.
     writeFileSync(join(yamlDir, 'yaml.py'), 'raise ImportError("no PyYAML — harness stub")\n', 'utf8')
-    expect(spawnSync('python3', ['-c', 'import yaml'], { env: { PYTHONPATH: yamlDir } }).status).not.toBe(0)
+
+    // THE ENV IS BUILT ONCE, then asked about, then handed over untouched.
+    // PATH MUST PREPEND sbx.bin. This is the line that caused CI run
+    // 37325570400: without the prefix the installer saw the HOST dsh —
+    // 0.2.0-rc.2 on a laptop (declaration face, reaches the PyYAML guard,
+    // green) and 0.1.5-rc.1 in CI per D7 (filediscovery face, never reaches
+    // the guard, exit 0, red). The version gate is the FIRST branch in this
+    // script and the face it picks decides whether the assertion below can
+    // ever be reached at all.
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DSH_HOME: sbx.home,
+      NO_PIAI: '1',
+      EXPLORE_PROVIDER: '',
+      EXPLORE_MODEL: '',
+      CONCERTO_TAG: '',
+      PYTHONPATH: yamlDir,
+      PATH: `${sbx.bin}:${process.env.PATH}`,
+    }
+    // 防复发 断言一 + 二: the sandbox shim IS the dsh on this PATH and it
+    // answers 0.2.0-rc.2, so the declaration face — and with it the PyYAML
+    // guard — is really the code path under test.
+    assertShimWins('T24 broken-yaml', env, sbx.bin, '0.2.0-rc.2')
+    // The same env, asked the same question the installer's guard asks: python3
+    // is reachable, and `import yaml` fails THERE (not in some other env), on
+    // the stub's own message — so the refusal can only come from the guard.
+    expect(spawnSync('sh', ['-c', 'command -v python3'], { env, encoding: 'utf8', timeout: 30_000 }).status, 'python3 must be reachable on the installer PATH or this case tests `missing python3`, not the PyYAML guard').toBe(0)
+    const pyImport = spawnSync('sh', ['-c', 'python3 -c \'import yaml\''], { env, encoding: 'utf8', timeout: 30_000 })
+    expect(pyImport.status, `stderr:\n${pyImport.stderr}`).not.toBe(0)
+    expect(`${pyImport.stderr}${pyImport.stdout}`).toContain('no PyYAML — harness stub')
+    // python3 is an AMBIENT binary by design here (no sandboxed interpreter);
+    // what is pinned is that it is the SAME interpreter the assertions parse
+    // with, and that PYTHONPATH really shadows its site-packages `yaml`.
+    const ambientPython = spawnSync('sh', ['-c', 'command -v python3'], { env, encoding: 'utf8', timeout: 30_000 })
+    expect((ambientPython.stdout ?? '').trim(), 'python3 must resolve on the installer PATH — it is ambient by design').not.toBe('')
 
     const r = spawnSync('sh', [sbx.script], {
       encoding: 'utf8',
       timeout: 120_000,
-      env: { ...process.env, DSH_HOME: sbx.home, NO_PIAI: '1', EXPLORE_PROVIDER: '', EXPLORE_MODEL: '', PYTHONPATH: yamlDir } as NodeJS.ProcessEnv,
+      env,
     })
     expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).not.toBe(0)
     expect(r.status).not.toBeNull()
