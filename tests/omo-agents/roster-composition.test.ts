@@ -252,8 +252,8 @@ describe('roster structure snapshot (P2-T17 · B · exit criterion b)', () => {
     // The snapshot documents all three seat routes the plan §4.6 fixes.
     for (const route of [
       'deepseek-official/deepseek-v4-pro',
-      'deepseek/deepseek-v4-flash',
-      'deepseek-official/deepseek-v4-flash-vision-exp',
+      'deepseek/deepseek-flash',
+      'deepseek-official/deepseek-flash',
     ]) {
       expect(snapshot).toContain(route)
     }

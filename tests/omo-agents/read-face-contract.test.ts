@@ -25,7 +25,7 @@ import {
 const REPO_ROOT = dirname(dirname(dirname(realpathSync(new URL(import.meta.url).pathname))))
 const VALIDATOR = join(REPO_ROOT, 'scripts', 'assert-concerto-read-face.mjs')
 const EXPLORE_PROVIDER = 'deepseek'
-const EXPLORE_MODEL = 'deepseek-v4-flash'
+const EXPLORE_MODEL = 'deepseek-flash'
 // The two platform-gated rows the real face carries. The validator demands the
 // count come from OUTSIDE the bytes under assertion, so the test states it the
 // same way the probe and drive do.

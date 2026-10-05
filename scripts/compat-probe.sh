@@ -69,8 +69,11 @@ LOG=".omo/evidence/probes/probe-dsh-${DSHV}-${TS}.log"
 
   echo "--- install concerto preset from ${OUR_TAG} (temp DSH_HOME) ---"
   mkdir -p "$TMP/dsh-home"
+  # EXPLORE_MODEL must name a model the deepseek-official catalog really serves:
+  # dsh-llm-deepseek DEFAULT_MODELS @0.2.0-rc.2 is exactly [deepseek-flash,
+  # deepseek-v4-pro] (lib/index.js:42-54), so this probe pins deepseek-flash.
   DSH_HOME="$TMP/dsh-home" NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official \
-    EXPLORE_MODEL=deepseek-v4-flash sh scripts/install-concerto.sh
+    EXPLORE_MODEL=deepseek-flash sh scripts/install-concerto.sh
 
   echo "--- doctor-lite (against the NEW dsh) ---"
   if node scripts/doctor-lite.mjs --json; then

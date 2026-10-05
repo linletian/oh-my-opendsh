@@ -109,7 +109,9 @@
 //     --question "请委派 oracle 读这个项目并给出架构层面的风险清单，然后总结。"
 //   # 3) multimodal-looker — VISION seat: the question must name the seeded PNG
 //   #    (smoke-fixture.png, in the sandboxed project = the session cwd) and the
-//   #    deepseek-official/deepseek-v4-flash-vision-exp route must be live; ask
+//   #    deepseek-official/deepseek-flash route must be live (deepseek-flash is
+//   #    the vision-capable entry of that catalog, inputModalities
+//   #    ["text","image"]); ask
 //   #    it to relate the image to README.md so link 2 also sees the sentinel:
 //   node scripts/smoke-real.mjs --agent multimodal-looker \
 //     --question "请委派 multimodal-looker 看 smoke-fixture.png，并结合 README.md 说明这个项目，然后总结。"
@@ -1242,7 +1244,7 @@ export function renderTranscript({ analysis, log, childLog, routes, meta }) {
     '',
     `- wall clock: boot ${meta.bootSeconds}s · scenario ${meta.scenarioSeconds}s · total ${meta.totalSeconds}s`,
     '- token usage is NOT metered by the harness JSONL — check the DeepSeek console for the exact figure.',
-    '  Catalog prices (pi-ai deepseek.json, $/M tokens input/output): deepseek-v4-pro 0.435/0.87 · deepseek-v4-flash 0.14/0.28.',
+    '  Catalog prices (pi-ai deepseek.json @0.87.1, $/M tokens input/output): deepseek-v4-pro 1.32/3.96 · deepseek-flash 0.3/1.2.',
     '  This scenario is one short delegation chain; expected cost is cents, far under the PRD §8 L4 $1 budget.',
     '',
     '---',

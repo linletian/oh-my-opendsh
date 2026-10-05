@@ -165,8 +165,11 @@ echo "release.sh: step 7/8 — install verification (sandboxed, new tag)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 curl -fsSL "https://raw.githubusercontent.com/${GH_REPO}/v${NEW}/scripts/install-concerto.sh" -o "$TMP/install.sh"
+# EXPLORE_MODEL must name a model the deepseek-official catalog really serves:
+# dsh-llm-deepseek DEFAULT_MODELS @0.2.0-rc.2 is exactly [deepseek-flash,
+# deepseek-v4-pro] (lib/index.js:42-54), so this override pins deepseek-flash.
 DSH_HOME="$TMP/dsh-home" NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official \
-  EXPLORE_MODEL=deepseek-v4-flash sh "$TMP/install.sh"
+  EXPLORE_MODEL=deepseek-flash sh "$TMP/install.sh"
 echo "release.sh: raw-tag install OK (DSH_HOME=$TMP/dsh-home)"
 if [[ "$WAIT_PAGES" -gt 0 ]]; then
   echo "release.sh: polling Pages /install (up to ${WAIT_PAGES}s, best effort)"

@@ -122,11 +122,18 @@ const ROSTER_ROWS = [
     id: 'explore',
     personaFile: 'explore-persona.md',
     routeEnvVars: { provider: 'OMO_EXPLORE_PROVIDER', model: 'OMO_EXPLORE_MODEL' },
-    // FAST seat — deepseek (llm-pi-ai catalog route) / deepseek-v4-flash. OMO
+    // FAST seat — deepseek (llm-pi-ai catalog route) / deepseek-flash. OMO
     // chain head (roster §2.1 + plan §4.6): the "gpt-5.6-luna-fast /
-    // deepseek-v4-flash 系" fast row for read-only retrieval. Pre-existing MVP
-    // T14 exploration seat, UNCHANGED (env names included).
-    defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    // deepseek-v4-flash 系" fast row for read-only retrieval — that quoted text
+    // names the upstream FAMILY (系), not a shipped id: the pi-ai `deepseek`
+    // catalog on dsh 0.2.0-rc.2 contains exactly two models
+    // (@earendil-works/pi-ai dist/providers/data/deepseek.json, api
+    // openai-completions: deepseek-flash, deepseek-v4-pro), so the cheap seat
+    // rides deepseek-flash. P4.5-T8d corrected the previous value
+    // `deepseek-v4-flash`, which resolves to UNKNOWN_MODEL at request time.
+    // Pre-existing MVP T14 exploration seat, otherwise UNCHANGED (env names
+    // included).
+    defaultRoute: { provider: 'deepseek', model: 'deepseek-flash' },
     class: 'read-only',
     // maxDepth 2 (roster §1 修正块): pre-Phase-2 this row was 1; under the
     // corrected target-row semantics a maxDepth-1 row could never be invoked by
@@ -170,9 +177,10 @@ const ROSTER_ROWS = [
     routeEnvVars: { provider: 'OMO_LIBRARIAN_PROVIDER', model: 'OMO_LIBRARIAN_MODEL' },
     // FAST seat — documentation / OSS source search. OMO chain head (roster
     // §2.4): gpt-5.6-luna-fast low → deepseek-v4-flash → qwen3.7-plus → …;
-    // the upstream chain already contains deepseek-v4-flash, so the fast seat is
-    // the same direction (cheap exploration volume).
-    defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    // that chain is an UPSTREAM citation, kept verbatim. Our fast seat takes
+    // the same direction (cheap exploration volume) on the id the pi-ai
+    // `deepseek` catalog really ships — deepseek-flash (P4.5-T8d).
+    defaultRoute: { provider: 'deepseek', model: 'deepseek-flash' },
     class: 'read-only',
     maxDepth: 2,
     writeCapable: false,
@@ -224,13 +232,29 @@ const ROSTER_ROWS = [
     id: 'multimodal-looker',
     personaFile: 'multimodal-looker-persona.md',
     routeEnvVars: { provider: 'OMO_MULTIMODAL_LOOKER_PROVIDER', model: 'OMO_MULTIMODAL_LOOKER_MODEL' },
-    // VISION seat — deepseek-official / deepseek-v4-flash-vision-exp, the only
-    // route whose catalog entry advertises image input (inputModalities
-    // ["text","image"]). OMO chain head (roster §2.8): gpt-5.6-sol low →
-    // kimi-k3 → glm-4.6v → gpt-5-nano. The id exists in BOTH catalogs; the
-    // default provider is deepseek-official because it is registered by the base
-    // composition in every profile with no settings dependency (plan §6 R-4).
-    defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' },
+    // VISION seat — deepseek-official / deepseek-flash, the only entry of that
+    // catalog whose row advertises image input (inputModalities
+    // ["text","image"] — dsh-llm-deepseek DEFAULT_MODELS @0.2.0-rc.2
+    // lib/index.js:42-49; the catalog has exactly two entries, the other being
+    // deepseek-v4-pro). OMO chain head (roster §2.8): gpt-5.6-sol low →
+    // kimi-k3 → glm-4.6v → gpt-5-nano. The default provider is
+    // deepseek-official because it is registered by the base composition in
+    // every profile with no settings dependency (plan §6 R-4). P4.5-T8d
+    // corrected the previous value `deepseek-v4-flash-vision-exp`, which is
+    // absent from BOTH model tables (dsh-llm-deepseek DEFAULT_MODELS and the
+    // pi-ai deepseek.json) and fails with UNKNOWN_MODEL; deepseek-flash is in
+    // both tables and accepts image input on both, so the seat's vision intent
+    // is preserved. That declaration is load-bearing, not decorative:
+    // dsh-llm-deepseek/lib/index.js:1415 throws UNSUPPORTED_CONTENT unless the
+    // resolved model's inputModalities includes "image", and pi-ai maps its
+    // `input` array straight into inputModalities (dsh-llm-pi-ai/lib/index.js
+    // :1806/:1825). Picking the text-only deepseek-v4-pro here would NOT have
+    // failed loudly — dsh-llm/lib/index.js:2311 projects images to text for any
+    // text-only model, so the seat would keep working while quietly describing
+    // images in words. RESIDUAL LIMIT: DEFAULT_MODELS is explicitly advisory
+    // ("deployments may replace the catalog", dsh-llm-deepseek/lib/index.js:41),
+    // so this resolves against the DEPLOYMENT's catalog at request time.
+    defaultRoute: { provider: 'deepseek-official', model: 'deepseek-flash' },
     class: 'allowlist',
     maxDepth: 2,
     // Plan §4.4 H-1 mapping: OMO's single `read` splits in DSH into `read`
@@ -247,8 +271,10 @@ const ROSTER_ROWS = [
     routeEnvVars: { provider: 'OMO_SISYPHUS_JUNIOR_PROVIDER', model: 'OMO_SISYPHUS_JUNIOR_MODEL' },
     // FAST seat — focused executor without delegation rights (volume work). OMO
     // chain head (roster §2.9): the atlas chain plus a big-pickle fallback; as a
-    // category-worker successor it is throughput-oriented, so the fast seat.
-    defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    // category-worker successor it is throughput-oriented, so the fast seat —
+    // deepseek-flash, the flash id the pi-ai `deepseek` catalog ships
+    // (P4.5-T8d; the previous value was fictional on both routes).
+    defaultRoute: { provider: 'deepseek', model: 'deepseek-flash' },
     class: 'worker',
     maxDepth: 2,
     writeCapable: true,

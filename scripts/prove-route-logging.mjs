@@ -152,7 +152,7 @@ if (expectMode === 'unlogged') {
   // Child-only gap: descriptor carries the route but the PARENT log has no
   // request/header — AC-5 needs BOTH agents, so this too must fall back.
   const childOnly = routeLogVerdict({
-    childEvents: [{ seq: 0, type: 'subagent/descriptor', data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'x', agentProvider: 'deepseek', agentModel: 'deepseek-v4-flash' } }],
+    childEvents: [{ seq: 0, type: 'subagent/descriptor', data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'x', agentProvider: 'deepseek', agentModel: 'deepseek-flash' } }],
     parentEvents: bareParent,
   })
   console.log(`T15-PROOF fabricated parent-route-less logs → verdict: ${childOnly.verdict}`)
@@ -162,7 +162,7 @@ if (expectMode === 'unlogged') {
   // Positive control: a fabricated COMPLETE pair must select 'logged' (the
   // fallback branch is selective, not constant).
   const complete = routeLogVerdict({
-    childEvents: [{ seq: 0, type: 'subagent/descriptor', data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'x', agentProvider: 'deepseek', agentModel: 'deepseek-v4-flash' } }],
+    childEvents: [{ seq: 0, type: 'subagent/descriptor', data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'x', agentProvider: 'deepseek', agentModel: 'deepseek-flash' } }],
     parentEvents: [{ seq: 0, type: 'request/header', data: { header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-pro' } }, reason: 'initial' } }],
   })
   console.log(`T15-PROOF fabricated complete logs → verdict: ${complete.verdict}`)
