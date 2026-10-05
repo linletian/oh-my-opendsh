@@ -19,7 +19,7 @@ export const PINNED_MINOR = 1
 /** The two shipped LLM adapter rows check 3 requires in the composed tree. */
 export const LLM_ADAPTER_ROWS = [
   '@deepseek-ai/dsh-llm-deepseek', // sisyphus seat (entry config route)
-  '@deepseek-ai/dsh-llm-pi-ai', // explore seat (settings-registered route)
+  '@deepseek-ai/dsh-llm-pi-ai', // explore seat (route from entry config: seeded via --patch overlay on 0.2.x; pre-0.2.x settings.yaml)
 ]
 
 /**

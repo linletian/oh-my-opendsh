@@ -105,9 +105,12 @@
 #                 with llm/listConfigurableProviders by the Web UI's own rule)
 #                 showing BOTH route providers `active:true` — the sisyphus
 #                 seat's from the llm-deepseek adapter (entry config), the
-#                 explore seat's from the llm-pi-ai adapter (sandbox-seeded
-#                 settings profile; registration is keyless — no API keys
-#                 exist in the sandbox, and none are needed for this gate).
+#                 explore seat's from the llm-pi-ai adapter seeded through the
+#                 probe's SECOND --patch overlay (present at compose/apply()
+#                 time; NOT settings.yaml — 0.2.x removed that surface and
+#                 its late importer loses the settled-provider check;
+#                 registration is keyless — no API keys exist in the sandbox,
+#                 and none are needed for this gate).
 #   T11 binding  — the omo-explore dsh-tool-subagent instance (form A static
 #                 config) in the MATERIALIZED composition: the row exists with
 #                 toolName `explore`, both T11 sentinels are rendered away,
@@ -170,8 +173,9 @@
 #                 non-vacuity guard; (d) every DISTINCT provider the 11 routes
 #                 use is `active:true` in the provider directory (the
 #                 transport-adaptive RPC join above), so a deployment missing
-#                 e.g. the pi-ai settings section fails here at boot instead of
-#                 at that child's first delegation. The per-row materialized
+#                 e.g. the pi-ai seed row (the probe's second --patch overlay;
+#                 the settings section on pre-0.2.x runtimes) fails here at
+#                 boot instead of at that child's first delegation. The per-row materialized
 #                 greps (toolName / roster-computed deny / roster allow /
 #                 uniform roster maxDepth) generalize the P2-T15 explore pins
 #                 to every roster row.
@@ -242,10 +246,13 @@ timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
 # T14 (FR-5, P-2; AC-5 config half): resolve the two route pairs from the
 # plugin's own config module — the single source of truth (Node 24
 # type-stripping runs the .ts directly, P-8.6) — then pre-seed the sandbox
-# settings.yaml with the llm-pi-ai profile that registers the explore seat's
-# provider route. Adapter REGISTRATION is the gate (no API keys exist in the
-# sandbox): credentials resolve per request, so a route registers keylessly
-# and a missing key would only fail a REQUEST with MISSING_CREDENTIAL.
+# with the llm-pi-ai provider profile that registers the explore seat's
+# route. On 0.2.x that seed is a SECOND --patch overlay composed into the
+# entry list before mount (see the seeding block below); settings.yaml is no
+# longer a config surface there, and writing only settings.yaml is the exact
+# regression this block guards. Adapter REGISTRATION is the gate (no API keys
+# exist in the sandbox): credentials resolve per request, so a route registers
+# keylessly and a missing key would only fail a REQUEST with MISSING_CREDENTIAL.
 # The same resolution reaches into src/roster.ts for the explore row's deny
 # list (P2-T15 shape), so both deny assertions below share one computed
 # expectation instead of an inline literal.
@@ -594,17 +601,52 @@ EXPLORE_DENY_SEQUENCE="$(node -e 'process.stdout.write(JSON.parse(process.argv[1
 echo "concerto-probe: T15 explore deny (roster-computed): $EXPLORE_DENY_JSON"
 
 # The explore seat rides the llm-pi-ai adapter, which the shipped composition
-# mounts DORMANT (zero routes); a settings profile registers the route at
-# boot. If an override points the explore seat at a route another adapter
-# already owns, llm-pi-ai logs the DUPLICATE_ADAPTER refusal and keeps
-# serving — the runtime assertions below then judge the result honestly.
-mkdir -p "$DSH_HOME"
-cat > "$DSH_HOME/settings.yaml" <<EOF
-# T14 probe seed: register the explore seat's pi-ai provider route.
-llm-pi-ai:
-  providers:
-    $EXPLORE_PROVIDER:
-      apiKeyEnv: DEEPSEEK_API_KEY
+# mounts DORMANT (zero routes): dsh-base/cordis.patch.yml:127-128 @ 0.2.0-rc.2
+# is `- id: llm-pi-ai` + `name: '@deepseek-ai/dsh-llm-pi-ai'` with NO config.
+# Pre-0.2.x the seed for its one live route was an `llm-pi-ai:` section in
+# $DSH_HOME/settings.yaml. 0.2.x REMOVED settings.yaml as a config surface; its
+# legacy importer moves the section only AFTER the Loader has settled every
+# entry (dsh-settings/lib/index.js:339 `ctx.root.loader.await().then(() =>
+# this.importLegacyDocument())`; :348 joins profile.home/settings.yaml; :351
+# renames it to settings.yaml.imported; :356 per-section `await this.update(ns,
+# values)`), while omo-agents' settled route-provider check reads the provider
+# registry earlier. Measured on this very probe (dsh 0.2.0-rc.2, the settings-
+# yaml baseline .omo/evidence/p45t8/t10a/probe-baseline.log): boot 1 logs
+# `[omo-agents] route provider not registered: deepseek` (line 83) and the
+# LATER /api/llm.providers RPC in the SAME boot already answers that route
+# `active:true` (line 89) — the import won, just after the check settled. A
+# probe that boots each label once has no second boot to recover on.
+# So the seed is a SECOND --patch overlay: `--patch` is a repeatable collector
+# (dsh/lib/bin.js:27-28 "Repeatable single-value collector: `--patch a.yml
+# --patch b.yml`" + the `.option("--patch <path>", …, collect)` at :105), and
+# overlays apply after the profile layer in argv order (dsh-app-boot
+# readProfilePatches, lib/index.js:1023-1030). A patch row is composed into
+# the entry list BEFORE the entry mounts — applyEntryPatches (dsh-app-boot
+# lib/index.js:61-110): `- id:` matches the mounted row (:96-99), `name:` is
+# an OPTIONAL mismatch guard that skips the row on drift (:100-103), and
+# `config:` REPLACES the row's config key (:104-107 `target[key] = value`) —
+# safe here precisely because the dormant row carries no config to clobber.
+# This row shape (id + name + config, config replaced-not-merged) is the one
+# the legacy importer itself writes (`- id: llm-deepseek` + `name:
+# "@deepseek-ai/dsh-llm-deepseek-api-key"`), and it is proven live on
+# 0.1.5-rc.1 by scripts/smoke-real.mjs's session-persistence override row
+# (:520-521) — the patch engine is byte-identical across the pin
+# (docs/dsh-0.1.5-rc.1-review.md:222, §P-20). If an override points the
+# explore seat at a route another adapter already owns, llm-pi-ai logs the
+# DUPLICATE_ADAPTER refusal and keeps serving — the runtime assertions below
+# then judge the result honestly.
+LLM_SEED_PATCH="$SANDBOX/llm-seed.patch.yml"
+cat > "$LLM_SEED_PATCH" <<EOF
+# T14 probe seed: register the explore seat's pi-ai provider route at COMPOSE
+# time, so the config is present at apply() time on a 0.2.x first boot.
+# Override-by-id row against the dormant llm-pi-ai entry the base bundle
+# mounts; config is REPLACED, not merged (dsh-app-boot applyEntryPatches).
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      $EXPLORE_PROVIDER:
+        apiKeyEnv: DEEPSEEK_API_KEY
 EOF
 
 # T11 schema gate: resolve the INSTALLED dsh's node_modules from the dsh
@@ -927,10 +969,14 @@ boot_once() {
     fi
   fi
 
-  echo "concerto-probe: [$label] booting dsh --profile $PROFILE --patch ./cordis.yml --port 0 $NO_OPEN"
+  echo "concerto-probe: [$label] booting dsh --profile $PROFILE --patch ./cordis.yml --patch $LLM_SEED_PATCH --port 0 $NO_OPEN"
   # NO_OPEN is either empty or exactly one flag; unquoted on purpose so the
   # empty case adds no argument at all. shellcheck disable=SC2086
-  dsh --profile "$PROFILE" --patch ./cordis.yml --port 0 $NO_OPEN >"$boot_log" 2>&1 &
+  # The second --patch is the llm-pi-ai route seed (see the seeding block
+  # above): composed into the entry list before mount, so the explore seat's
+  # provider is registered at apply() time on a 0.2.x FIRST boot — the race
+  # the removed settings.yaml surface lost.
+  dsh --profile "$PROFILE" --patch ./cordis.yml --patch "$LLM_SEED_PATCH" --port 0 $NO_OPEN >"$boot_log" 2>&1 &
   local dsh_pid=$!
 
   local port=""
@@ -972,8 +1018,9 @@ boot_once() {
   # joins ctx.llm.listProviders() (registered routes) with the configurable-
   # provider directory server-side. 0.1.2: the helper performs the client's
   # own two Remote calls and applies the same join (see WEB_RPC_MJS above).
-  # Settings-driven routes register during plugin load, before the readiness
-  # line, so one call suffices.
+  # The seeded pi-ai route registers during plugin load — its config rides the
+  # second --patch overlay composed into the entry list before mount, so it is
+  # registered before the readiness line and one call suffices.
   local llm_resp="$SANDBOX/llm.providers-$label.json"
   local rpc_err="$SANDBOX/web-rpc-$label.err"
   if ! node "$WEB_RPC_MJS" providers "$port" "$token" >"$llm_resp" 2>"$rpc_err"; then
@@ -1568,7 +1615,8 @@ boot_once() {
   # default three-seat distribution is neither all-identical nor
   # all-delegation-same-seat; rule 3 (`route provider not registered`) is silent
   # because every distinct route provider registers here — the two default seats
-  # come from the llm-deepseek entry config + the llm-pi-ai settings seed above,
+  # come from the llm-deepseek entry config + the llm-pi-ai second --patch
+  # overlay seed above,
   # while any further provider a roster/env change adds would have to be seeded
   # too (the activity check below is the positive counterpart and names the
   # provider set it verified). The ONE summary line asserted just above is the
@@ -1580,7 +1628,29 @@ boot_once() {
     fail "[$label] a non-blocking route warning fired: $(grep -m1 '\[omo-agents\] route warning \[' "$boot_log") — the default three-seat distribution must be silent"
   fi
   if grep -q '\[omo-agents\] route provider not registered: ' "$boot_log"; then
-    fail "[$label] 'route provider not registered' fired although all $DISTINCT_PROVIDER_COUNT route providers are registered in this sandbox: $(grep -m1 '\[omo-agents\] route provider not registered: ' "$boot_log")"
+    # T10a review MINOR 1: the old wording ("…although all $DISTINCT_PROVIDER_COUNT
+    # route providers ARE registered in this sandbox") was honest only while the
+    # seed was the racing settings.yaml import — "registered, just late" was then
+    # the truth. After T10a the seed is structural (a --patch overlay composed
+    # into the row BEFORE mount), so if this marker fires the providers are NOT
+    # all registered and the clause would lie to whoever reads the failure. The
+    # message now reports only what this boot actually establishes, and keeps the
+    # two states distinguishable with observed evidence: the provider directory
+    # ($llm_resp, fetched while the server was live) lists the named provider
+    # active:true ⟺ the route registered LATE (after the settled check — the
+    # pre-T10a shape); absent/inactive ⟺ genuinely not registered. Nothing else
+    # would tell the operator either way: a patch row skipped by id/name drift is
+    # SILENT at boot — the skip-warn sink is renderConfigDump
+    # (dsh-app-boot/lib/index.js:3604), which emits only under --dump-config
+    # (:3639, verified @ 0.2.0-rc.2).
+    local missing_provider dir_state
+    missing_provider="$(grep -m1 '\[omo-agents\] route provider not registered: ' "$boot_log" | sed -n 's/.*route provider not registered: \([^ ]*\).*/\1/p')"
+    if grep -q "\"provider\":\"$missing_provider\"[^}]*\"active\":true" "$llm_resp"; then
+      dir_state="'$missing_provider' IS listed active:true in the provider directory (fetched while the server was live) — the route registered, but AFTER the settled provider check: the seed regressed to a late-registration path"
+    else
+      dir_state="'$missing_provider' is NOT listed active in that directory — the route is genuinely not registered; check the seed row id/name in $LLM_SEED_PATCH against the base bundle row (a skipped patch row never warns at boot — only --dump-config shows it)"
+    fi
+    fail "[$label] 'route provider not registered' fired for '$missing_provider' — $dir_state"
   fi
   if grep -q '\[omo-agents\] route provider check FAILED' "$boot_log"; then
     fail "[$label] route provider check FAILED — see line above"
@@ -1589,7 +1659,7 @@ boot_once() {
   # T14 runtime half → P2-T20(d): EVERY distinct provider the 11 roster routes
   # use holds a REGISTERED route at runtime — the sisyphus seat's provider from
   # the llm-deepseek adapter's entry config, the explore seat's provider from
-  # the llm-pi-ai adapter via the settings profile seeded above. The provider
+  # the llm-pi-ai adapter via the second --patch overlay seeded above. The provider
   # set is resolved from src/model-routes.ts ($ROUTE_PROVIDERS, roster order),
   # so a future third seat is covered automatically. Registration is the gate;
   # no live model call is made (no API keys in the sandbox). The explicit
@@ -1597,7 +1667,7 @@ boot_once() {
   grep -q "\"provider\":\"$SISYPHUS_PROVIDER\"[^}]*\"active\":true" "$llm_resp" \
     || fail "[$label] sisyphus provider '$SISYPHUS_PROVIDER' not ACTIVE in the provider directory (llm-deepseek adapter registration broken?)"
   grep -q "\"provider\":\"$EXPLORE_PROVIDER\"[^}]*\"active\":true" "$llm_resp" \
-    || fail "[$label] explore provider '$EXPLORE_PROVIDER' not ACTIVE in the provider directory (llm-pi-ai settings-profile registration broken?)"
+    || fail "[$label] explore provider '$EXPLORE_PROVIDER' not ACTIVE in the provider directory (llm-pi-ai patch-overlay seed registration broken?)"
   local route_provider
   while IFS= read -r route_provider; do
     [[ -n "$route_provider" ]] || continue

@@ -58,17 +58,32 @@
 //    sisyphus-junior) rides the `dsh-llm-pi-ai` adapter's catalog route
 //    `deepseek` (pi-ai ships deepseek-v4-pro / deepseek-v4-flash on
 //    https://api.deepseek.com, openai-completions + deepseek thinking dialect).
-//    The shipped composition mounts llm-pi-ai DORMANT (zero routes): the route
-//    registers when a settings profile supplies it —
-//    `$DSH_HOME/settings.yaml`:
-//      llm-pi-ai:
-//        providers:
-//          deepseek:
-//            apiKeyEnv: DEEPSEEK_API_KEY
+//    The shipped composition mounts llm-pi-ai DORMANT (zero routes;
+//    dsh-base/cordis.patch.yml:127-128 @ 0.2.0-rc.2): the route registers when
+//    the ENTRY CONFIG carries the providers section. CURRENT SHAPE (0.2.x):
+//    0.2.x REMOVED `$DSH_HOME/settings.yaml` as a config surface, so the seed
+//    is a `--patch` override row composed into the entry BEFORE mount
+//    (dsh-app-boot applyEntryPatches, lib/index.js:61-110 — override-by-id,
+//    config replaced not merged):
+//      - id: llm-pi-ai
+//        name: '@deepseek-ai/dsh-llm-pi-ai'
+//        config:
+//          providers:
+//            deepseek:
+//              apiKeyEnv: DEEPSEEK_API_KEY
+//    HISTORY (pre-0.2.x): the same providers map was an `llm-pi-ai:` section
+//    of `$DSH_HOME/settings.yaml`, which fed the entry config at boot. On
+//    0.2.x the legacy importer of that file runs only after the Loader has
+//    settled (dsh-settings/lib/index.js:339) — too late for the settled
+//    route-provider check on a first boot; that lost race is the defect
+//    P4.5-T10a removed, and re-writing this section into settings.yaml is the
+//    regression its seed block guards against.
 //    Registration is keyless (a missing key fails the REQUEST with
-//    MISSING_CREDENTIAL, never the boot). The probe writes exactly this section
-//    into its sandbox and asserts the routes `active:true` over
-//    POST /api/llm.providers.
+//    MISSING_CREDENTIAL, never the boot; schemastery fields are optional
+//    unless `.required()` — dsh-llm-pi-ai/lib/index.js:1012/:1018). The probe
+//    seeds exactly this providers section through its second --patch overlay
+//    (scripts/concerto-mode-probe.sh) and asserts the routes `active:true`
+//    over POST /api/llm.providers.
 //  - VISION seat `deepseek-official / deepseek-v4-flash-vision-exp`
 //    (multimodal-looker) — the id exists in BOTH catalogs (dsh-llm-deepseek
 //    DEFAULT_MODELS, `inputModalities:["text","image"]`, and the pi-ai builtin
