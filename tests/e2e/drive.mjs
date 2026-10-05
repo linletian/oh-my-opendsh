@@ -3784,28 +3784,269 @@ export function advertisedToolNames(events) {
 }
 
 /**
- * Flatten a session's tool/result events into {callId, isError, text} parts
- * (the nested shape: data.message.content[] entries of type 'tool-result'
- * whose own content[] carries the text parts — see the T19 verbatim sample).
+ * The retired V3 `tool-result` content-block tag.
+ *
+ * Named, not inlined, because it is the ONE token that selects the shape below
+ * and it must be visibly distinct from the event type `'tool/result'`, which is
+ * identical in BOTH generations. Conflating the two is what made this reader
+ * silently dead on 0.2.x: it kept matching the event type and stopped matching
+ * the block tag.
  */
-export function toolResultParts(events) {
+const RETIRED_TOOL_RESULT_BLOCK = 'tool-result'
+
+/**
+ * Flatten a session's tool/result events into {callId, isError, text, shape}
+ * parts, over BOTH generations' wire shapes.
+ *
+ * ## What selects the shape — and it is exactly one thing
+ *
+ * **Whether `data.message.content[]` contains a block tagged
+ * `tool-result` (`RETIRED_TOOL_RESULT_BLOCK`).**
+ *
+ * That token is not a guess and not a heuristic: each runtime's own validator
+ * makes its answer MANDATORY and the two answers are mutually exclusive, so the
+ * token cannot drift out of agreement with the generation that wrote the row.
+ *
+ *  - `dsh 0.1.5-rc.1` (session format **v3**) — the wrapper is REQUIRED.
+ *    `@deepseek-ai/dsh-session@0.1.5-rc.1` `lib/index.js:954` throws
+ *    `"message must contain one tool-result block"` unless `content.length === 1`
+ *    and `content[0].type === 'tool-result'`, and `:955` throws
+ *    `"message has mismatched tool call ids"` unless that block's `toolCallId`
+ *    equals `source.callId`. It emits that shape at `lib/index.js:654-670`.
+ *    `isError` and `toolCallId` therefore live ON THE WRAPPER.
+ *  - `dsh 0.2.0-rc.2` (session format **v4**) — the wrapper is FORBIDDEN.
+ *    `@deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2` `lib/index.js:157`
+ *    throws `"must not contain a released tool-result wrapper"` for any such
+ *    block, `:213` the same for an SSE `block-start`, `:278`
+ *    `"format v4 system content rejects retired tool-result wrappers"`, and
+ *    `:478` `"… content must not contain a released tool-result wrapper"` on
+ *    the `tool/result` row itself. Its `liftToolResult` (`:423-446`) *lifts*
+ *    the wrapper away, and `assertV4ToolResultMessage` (`:459-481`) then
+ *    REQUIRES `role === 'tool'`, a first-class `toolCallId`, and array content.
+ *    `isError` and `toolCallId` therefore live ON THE MESSAGE, and the result
+ *    bytes are plain `text` blocks directly under `message.content`.
+ *
+ * So `hasWrapper` is true for every row 0.1.5 can write and false for every row
+ * 0.2.x can write. A row that satisfies NEITHER (no wrapper, and not a v4
+ * first-class `role: 'tool'` message) is not skipped: it is recorded in
+ * `malformed`, because the failure mode this reader already committed was
+ * returning `[]` to 19 call sites that all believe they received data.
+ * `toolResultShapeCensus` exposes the buckets and `toolResultParts` keeps the
+ * historical signature so no call site has to change.
+ *
+ * Measured, before this reader learned the V4 shape: `toolResultParts` returned
+ * `[]` for every real 0.2.x log (10 `tool/result` rows in
+ * `/tmp/omo-dsh-e2e-7ecGyx/…/session-13cad5df-…/session.v4.jsonl` → 0 parts).
+ */
+export function toolResultShapeCensus(events) {
   const parts = []
+  const malformed = []
+  let legacyWrapper = 0
+  let firstClassV4 = 0
   for (const event of events) {
     if (event.type !== 'tool/result') continue
-    const content = event.data?.message?.content
-    if (!Array.isArray(content)) continue
-    for (const part of content) {
-      if (part?.type !== 'tool-result') continue
-      const inner = Array.isArray(part.content) ? part.content : []
-      const text = inner
-        .filter((piece) => piece?.type === 'text' && typeof piece.text === 'string')
-        .map((piece) => piece.text)
-        .join('\n')
-      parts.push({ callId: part.toolCallId, isError: part.isError === true, text })
+    const message = event.data?.message
+    if (typeof message !== 'object' || message === null || Array.isArray(message)) {
+      malformed.push({ seq: event.seq, reason: 'data.message is not an object' })
+      continue
+    }
+    const content = message.content
+    if (!Array.isArray(content)) {
+      malformed.push({ seq: event.seq, reason: `message.content is ${typeof content}, not an array` })
+      continue
+    }
+    const wrappers = content.filter(
+      (block) => typeof block === 'object' && block !== null && block.type === RETIRED_TOOL_RESULT_BLOCK,
+    )
+    if (wrappers.length > 0) {
+      // V3 / 0.1.5-rc.1: identity and bytes live INSIDE the wrapper.
+      legacyWrapper += 1
+      for (const wrapper of wrappers) {
+        const inner = Array.isArray(wrapper.content) ? wrapper.content : []
+        parts.push({
+          callId: wrapper.toolCallId,
+          isError: wrapper.isError === true,
+          text: joinTextBlocks(inner),
+          shape: 'v3-wrapper',
+        })
+      }
+      continue
+    }
+    if (message.role !== 'tool') {
+      // Neither generation: not a wrapper row, not an admissible V4 row.
+      malformed.push({
+        seq: event.seq,
+        reason: `no ${RETIRED_TOOL_RESULT_BLOCK} wrapper and message.role is ${JSON.stringify(message.role)}, not "tool"`,
+      })
+      continue
+    }
+    // V4 / 0.2.0-rc.2: identity and bytes live ON THE MESSAGE.
+    firstClassV4 += 1
+    parts.push({
+      callId: message.toolCallId,
+      isError: message.isError === true,
+      text: joinTextBlocks(content),
+      shape: 'v4-first-class',
+    })
+  }
+  return { parts, malformed, legacyWrapper, firstClassV4 }
+}
+
+/** Concatenate the `text` blocks of one content array with newlines. */
+function joinTextBlocks(blocks) {
+  return blocks
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n')
+}
+
+/**
+ * `toolResultShapeCensus(events).parts` — the historical entry point, kept so
+ * the 19 existing call sites stay untouched. Use the census directly when a
+ * check needs to prove the shape selection actually happened (see
+ * `toolResultShapeCensus` for what selects it).
+ */
+export function toolResultParts(events) {
+  return toolResultShapeCensus(events).parts
+}
+
+/**
+ * The self-test's falsifiability gate for the shape rule above: every
+ * `tool/result` row must land in exactly one bucket, and the bucket the census
+ * reports must be the one the caller's own runtime prediction says it is.
+ * Returns a list of problems — empty means the selection held.
+ */
+export function auditToolResultShapeSelection({ events, expect }) {
+  const problems = []
+  const census = toolResultShapeCensus(events)
+  const rows = events.filter((event) => event?.type === 'tool/result').length
+  // The exhaustiveness invariant: nothing may vanish between input rows and the
+  // three buckets. This is the clause that would have caught the original defect,
+  // in which rows disappeared into a `continue` with no accounting.
+  if (census.legacyWrapper + census.firstClassV4 + census.malformed.length !== rows) {
+    problems.push(
+      `shape census is not exhaustive: ${rows} tool/result rows bucketed as ${census.legacyWrapper} v3-wrapper + ${census.firstClassV4} v4-first-class + ${census.malformed.length} malformed`,
+    )
+  }
+  if (census.malformed.length > 0) {
+    problems.push(
+      `unrecognised tool/result shape(s): ${census.malformed.map((row) => `seq ${row.seq}: ${row.reason}`).join('; ')}`,
+    )
+  }
+  for (const [bucket, expected] of Object.entries(expect ?? {})) {
+    if (census[bucket] !== expected) {
+      problems.push(`shape census ${bucket} is ${census[bucket]}, expected ${expected}`)
     }
   }
-  return parts
+  // A matched part must carry usable bytes: an empty text is how a silently
+  // dead reader looks from the outside.
+  const empty = census.parts.filter((part) => part.text === '')
+  if (empty.length > 0) {
+    problems.push(`${empty.length} matched tool-result part(s) carry empty text`)
+  }
+  return problems
 }
+
+/**
+ * TWO REAL `tool/result` rows, byte-for-byte as written by the installed
+ * runtimes — NOT fabricated. These exist because every fixture in this file was
+ * written in the 0.1.5 wrapper shape, which is precisely why the dead reader
+ * below survived 19 call sites: the self-test could only ever ask a 0.1.5
+ * question of a 0.2.x log.
+ *
+ * PROVENANCE (V4 leg, dsh 0.2.0-rc.2 — the machine's default PATH):
+ * `/tmp/omo-dsh-e2e-7ecGyx/dsh/sessions/--tmp-omo-dsh-e2e-7ecGyx-project--/`
+ * `session-13cad5df-d098-4524-9f89-3f5758a6406b/session.v4.jsonl`, seq 27 and
+ * seq 36, extracted verbatim with
+ * `node -e '…filter(e => e.type === "tool/result")…'`. The seq-27 text is the
+ * row the arbiter captured first-hand.
+ *
+ * PROVENANCE (V3 leg, dsh 0.1.5-rc.1 — `/tmp/p45t7-015/prefix/bin`): the
+ * message below is transcribed from the runtime's OWN emitter,
+ * `@deepseek-ai/dsh-session@0.1.5-rc.1` `lib/index.js:654-670` (the interrupted
+ * -call closer), with the row envelope from `:671-687`. It is the shape that
+ * emitter is *required* to produce — `lib/index.js:954-955` throws
+ * `"message must contain one tool-result block"` / `"message has mismatched tool
+ * call ids"` for anything else — and `SESSION_FORMAT_VERSION = 3` at `:56`.
+ */
+const CAPTURED_TOOL_RESULT_ROWS = [
+  // V4 / 0.2.0-rc.2, seq 27 — error path: isError ON THE MESSAGE, bytes in a
+  // plain text block, plus data.error metadata.
+  {
+    type: 'tool/result',
+    seq: 27,
+    time: 1791238477875,
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        role: 'tool',
+        source: { kind: 'tool', callId: 'mock-llm-tool-1-0' },
+        toolCallId: 'mock-llm-tool-1-0',
+        content: [{
+          type: 'text',
+          text: 'Error: pi-ai provider "deepseek" has no configured model "deepseek-v4-flash"',
+        }],
+        isError: true,
+        id: '080fd85b-9166-48ad-9ed2-bdf02ab2b018',
+      },
+      error: { name: 'LlmError', code: 'UNKNOWN_MODEL' },
+    },
+    sourceEventSeqs: [17],
+    surfaceOp: 'append',
+  },
+  // V4 / 0.2.0-rc.2, seq 36 — success path: a delegation's own reply bytes.
+  {
+    type: 'tool/result',
+    seq: 36,
+    time: 1791238478886,
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        role: 'tool',
+        source: { kind: 'tool', callId: 'mock-llm-tool-1-1' },
+        toolCallId: 'mock-llm-tool-1-1',
+        content: [{ type: 'text', text: 'MOCK-PARADE-CHILD-HEPHAESTUS-4b7e' }],
+        isError: false,
+        id: '8e06801c-9b43-4d4c-b07d-3f9be6118357',
+      },
+    },
+    sourceEventSeqs: [18],
+    surfaceOp: 'append',
+  },
+  // V3 / 0.1.5-rc.1 — the retired wrapper: identity, flag AND bytes INSIDE the
+  // wrapper block, `role: 'user'`, and NO first-class `toolCallId` on the
+  // message. Captured byte-for-byte from the `bash-read-guard-warned` sandbox
+  // this very suite produced on dsh 0.1.5-rc.1:
+  // `/tmp/omo-dsh-e2e-VVrUt5/dsh/sessions/--tmp-omo-dsh-e2e-VVrUt5-project--/`
+  // `session-964998d7-bfb5-41d4-9533-0c894b48a652/session.v3.jsonl`, seq 17.
+  {
+    type: 'tool/result',
+    seq: 17,
+    time: 1791241783234,
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        source: { kind: 'tool', callId: 'mock-llm-tool-1-0' },
+        content: [{
+          type: 'tool-result',
+          toolCallId: 'mock-llm-tool-1-0',
+          content: [{
+            type: 'text',
+            text: 'omo-dsh bash-file-read-guard fixture line one 4c1e9a\nguard grep target line 8f2b7d\n',
+          }],
+          isError: false,
+        }],
+        role: 'user',
+        id: 'f069e7e7-dc5c-4815-9987-358146e8fd50',
+      },
+    },
+    sourceEventSeqs: [16],
+    surfaceOp: 'append',
+  },
+]
 
 /**
  * The HELLO scenario assertions. `log` = {path, header, events} | undefined;
@@ -8201,6 +8442,87 @@ async function runMockRoleCopyStampSelfTest() {
 
 async function runAnalysisSelfTest(routes) {
   const problems = []
+
+  // ── P4.5-T8″: the tool/result SHAPE selection, on REAL captured rows ───────
+  //
+  // This block is the slice. Every other fixture in this file is 0.1.5-wrapper
+  // shaped, so `toolResultParts` could read all of them and still return `[]`
+  // against a real 0.2.x log — 19 call sites believing they had data. The cases
+  // below pin BOTH legs by name, and pin the NEITHER case as a loud failure
+  // rather than a silent skip.
+  const shapeProblems = auditToolResultShapeSelection({
+    events: CAPTURED_TOOL_RESULT_ROWS,
+    expect: { legacyWrapper: 1, firstClassV4: 2 },
+  })
+  problems.push(...shapeProblems.map((problem) => `P4.5-T8″ captured real tool/result rows: ${problem}`))
+  const capturedParts = toolResultParts(CAPTURED_TOOL_RESULT_ROWS)
+  if (capturedParts.length !== 3) {
+    problems.push(
+      `P4.5-T8″ toolResultParts over the 3 captured rows returned ${capturedParts.length} part(s), expected 3 — a reader that has forgotten the V4 shape returns 0 here`,
+    )
+  }
+  // Leg 1 — V4 / 0.2.0-rc.2 ERROR path: identity and isError come off the
+  // MESSAGE, the bytes off a plain text block.
+  // ⚠️ Pinned by (shape, callId), NOT callId alone: the two legs were captured
+  // from two different sandboxes whose runtimes happened to name their first
+  // call the same id (`mock-llm-tool-1-0` on both), so a bare `find` by callId
+  // answers with whichever row comes first in the array and cannot tell a leg
+  // from a leg. Selecting the shape IS the claim under test, so it is pinned.
+  const v4Error = capturedParts.find((part) => part.shape === 'v4-first-class'
+    && part.callId === 'mock-llm-tool-1-0')
+  if (v4Error === undefined || v4Error.isError !== true
+    || !v4Error.text.startsWith('Error: pi-ai provider "deepseek" has no configured model')) {
+    problems.push(`P4.5-T8″ v4-leg-error: the 0.2.x error row's callId/isError/text were not extracted (got ${JSON.stringify(v4Error ?? null).slice(0, 160)})`)
+  }
+  // Leg 2 — V4 / 0.2.0-rc.2 SUCCESS path: the delegation's own reply bytes.
+  const v4Ok = capturedParts.find((part) => part.shape === 'v4-first-class'
+    && part.callId === 'mock-llm-tool-1-1')
+  if (v4Ok === undefined || v4Ok.isError !== false
+    || v4Ok.text !== 'MOCK-PARADE-CHILD-HEPHAESTUS-4b7e') {
+    problems.push(`P4.5-T8″ v4-leg-success: the 0.2.x non-error row's bytes were not extracted verbatim (got ${JSON.stringify(v4Ok ?? null).slice(0, 160)})`)
+  }
+  // Leg 3 — V3 / 0.1.5-rc.1 wrapper: identity, flag AND bytes come from INSIDE
+  // the wrapper block. This leg is CI's only non-regression signal (ci.yml:102
+  // pins DSH_VERSION 0.1.5-rc.1), so dropping wrapper support would be a
+  // regression on that leg, not a cleanup.
+  const v3Part = capturedParts.find((part) => part.shape === 'v3-wrapper')
+  if (v3Part === undefined || v3Part.isError !== false
+    || !v3Part.text.includes('omo-dsh bash-file-read-guard fixture line one 4c1e9a')) {
+    problems.push(`P4.5-T8″ v3-leg-wrapper: the 0.1.5 wrapper row was not extracted (got ${JSON.stringify(v3Part ?? null).slice(0, 160)})`)
+  }
+  // The legs must be distinguishable, not just both non-empty: a reader that
+  // mis-bucketed every row into one branch would still return 3 parts.
+  const shapeTags = capturedParts.map((part) => part.shape).join(',')
+  if (capturedParts.filter((part) => part.shape === 'v4-first-class').length !== 2
+    || capturedParts.filter((part) => part.shape === 'v3-wrapper').length !== 1) {
+    problems.push(`P4.5-T8″ leg tagging is wrong: shapes [${shapeTags}]`)
+  }
+  // THE NEITHER CASE — the clause that makes the selection falsifiable. A row
+  // with no wrapper and no first-class `role: 'tool'` must be REPORTED, never
+  // skipped: skipping is exactly how the old reader lost 10 rows in silence.
+  const neitherRow = {
+    type: 'tool/result',
+    seq: 99,
+    data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'orphan bytes' }] } },
+  }
+  const neitherCensus = toolResultShapeCensus([neitherRow])
+  if (neitherCensus.malformed.length !== 1 || neitherCensus.parts.length !== 0) {
+    problems.push(
+      `P4.5-T8″ neither-shape row must land in malformed exactly once, got ${neitherCensus.malformed.length} malformed / ${neitherCensus.parts.length} parts`,
+    )
+  }
+  const neitherProblems = auditToolResultShapeSelection({ events: [neitherRow], expect: {} })
+  if (neitherProblems.length === 0) {
+    problems.push('P4.5-T8″ a neither-shape row passed the audit — the shape rule is not falsifiable')
+  }
+  // And the anti-silent-loss invariant on the CAPTURED set: parts must equal
+  // rows, because every captured row is admissible on one of the two legs.
+  if (capturedParts.length !== CAPTURED_TOOL_RESULT_ROWS.length) {
+    problems.push(
+      `P4.5-T8″ ${CAPTURED_TOOL_RESULT_ROWS.length} captured rows yielded ${capturedParts.length} parts — rows silently vanish only if a leg is unread`,
+    )
+  }
+
   const good = analyzeHello(
     {
       log: fabricatedGoodLog(routes),
@@ -18244,6 +18566,22 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     if (KEYWORD_SELF_TEST_ATTESTATION.length === 0) {
       problems.push('the self-test banner is EMPTY: no P4-T13 keyword case pushed a label, so the attestation below would claim nothing')
     }
+    // P4.5-T8″ — the tool/result SHAPE legs, named in the banner with the counts
+    // the LIVE census produced. Computed (and its guards pushed) BEFORE the
+    // `problems.length` exit below, so a leg that stops being read turns the
+    // self-test RED instead of merely rewording a banner that already printed OK.
+    // Rendered from `CAPTURED_TOOL_RESULT_ROWS` and the census, never hand-typed:
+    // the drift this slice fixes was exactly a green suite whose reader returned
+    // `[]` for every real 0.2.x log.
+    const capturedCensus = toolResultShapeCensus(CAPTURED_TOOL_RESULT_ROWS)
+    if (capturedCensus.parts.length !== CAPTURED_TOOL_RESULT_ROWS.length) {
+      problems.push(`P4.5-T8″: ${CAPTURED_TOOL_RESULT_ROWS.length} captured tool/result rows yielded only ${capturedCensus.parts.length} part(s) — a shape leg is unread`)
+    }
+    if (capturedCensus.legacyWrapper === 0 || capturedCensus.firstClassV4 === 0) {
+      problems.push(`P4.5-T8″: the shape banner would name a leg the census did not read (v3-wrapper=${capturedCensus.legacyWrapper}, v4-first-class=${capturedCensus.firstClassV4})`)
+    }
+    const TOOL_RESULT_SHAPE_SELF_TEST_BANNER =
+      `P4.5-T8″ tool/result shape selection on REAL captured rows — LEG 1 (dsh 0.1.5-rc.1 / session format v3, retired 'tool-result' wrapper: ${capturedCensus.legacyWrapper} row(s), callId+isError+bytes read from INSIDE the wrapper) and LEG 2 (dsh 0.2.0-rc.2 / session format v4 first-class: ${capturedCensus.firstClassV4} row(s), callId+isError read off the MESSAGE, bytes from plain text blocks) both extracted; a NEITHER-shape row is refused loudly, never skipped`
     if (problems.length > 0) {
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
@@ -18311,7 +18649,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T15 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}`)
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
