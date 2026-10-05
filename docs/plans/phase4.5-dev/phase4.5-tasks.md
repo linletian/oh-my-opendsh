@@ -266,6 +266,13 @@
 - **✅ 交付并实测（2026-10-06 03:53）**：AC1（`--self-test` 的 stdout **与 stderr** 逐字节相同）MET · **AC3 MET**（日志里真 `tool/call` + `tool/result`，直方图见报告）· AC4 MET（双方言非空洞，OpenAI 侧用真 `openai` SDK v6.40.0 打过，且与 HEAD 模块在 7 种请求形状上**逐字节相同**）· AC5 MET · **AC2 NOT MET：8 红降到 6 红**，剩余阻塞已归因到 **T9**（子席在任何 LLM 请求之前死于 `SessionFormatError`，见 T9 段的实测记录）。
   - **⚠️ 编码方如实登记的验收局限**：`--self-test` 对 mock **发零个真实请求**（实测 `grep -c = 0`），它只覆盖脚本内容与断言机械 ⇒ **AC1 本身不能证明任何一条线格式是对的**。这条限制与本项目「造不出红的门比没有门更坏」同源，**T8c 的真实证据是 AC3 与 AC4，不是 AC1**。
   - **⚖️ 仲裁者裁定：编码方提出的「让 mock 回答 `GET /v1/models` 并列出 `deepseek-flash`」→ 不批准。**理由：那是**把一个上游并不发布的模型 id 洗成可用**，用假值换绿灯；真正的修法是 **T8d** 把席位默认值改成目录里真实存在的 id。⇒ **门 3 的剩余红不许靠 mock 造 id 消掉。**
+- **双评审（2026-10-06 04:0x 进行中）**：B = **APPROVE-with-findings**，0 BLOCKER / **1 MAJOR** / 4 MINOR / 1 NIT。
+  - **仲裁者复核 B 的 MAJOR：成立。** 它指出方言判别规则第 1 子句的注释「installed
+    `dsh-llm-deepseek` `lib/index.js:1709` 写该字段、`:1705` 让 `messages[]` 不含 system 行」**是对线上格式的一句假陈述**。仲裁者在本机已安装包逐行复核：`:1705` 逐字就是 `messages,`（返回对象字面量里的数组简写，**对角色一字未提**）；更实质的是，**Messages 方言的 `messages[]` 里确实会出现 `role:"system"` 行**——`:1643` 与 `:1656` 两处，`flushSystemUpdates`（`:1612-1616`）把 system 更新 push 进 `messages`。
+  - ⚠️ **⚠️ 仲裁者随后自我更正**：两路评审**独立**找到同一条 MAJOR（评审 A 还**跑出了反例**），因此我上条「只是理由为假、规则本身没错」的判断**不成立**。评审 A 的反例逐字：真实适配器、`options.system` 缺席、人格以 **in-history 的 `role:"system"` 行**进入 `messages[]` ⇒ 产出 `{"model":"deepseek-flash",…,"messages":[{user},{system, MOCKROLE=probe}],…}` 且**无顶层 `system`**；mock 随即把它当 **OpenAI** 服务（`modeDelta {openai:1, messages:0}`）⇒ 给 Messages 客户端发 chat-completion 分片 ⇒ `parseSse` 以 `event type mismatch`（`:1785`）拒收。且 **`dsh-agent-loop/lib/invariant.js:28` 要求每次 loop 构造的请求 `options.system === void 0`**⇒ 「顶层 `system` 永远非空」这条安全论证**不成立**。
+  - **现状是潜伏而非在线**：当前跑的 `deepseek-v4-pro` 在目录里没有 `systemPromptUpdate`，人格恒折进顶层；**但 `roster.ts:235-245` 已经把视觉席路由到 `deepseek-official`/`deepseek-flash`**⇒ 一旦有视觉场景，这条洞立刻变活。⇒ **修法是改规则本身，不是改注释**：让 `isMessagesRequest` 接收 `request.url`（`:208` 已有），把 `/messages` 当**决定性**信号；这**保持编码方自己「零配置、零环境变量」的约束**。
+  - **评审 A 顺带指出的一条免费替代**：`stream_options` 在 0.1.5 tag 与 pi-ai `:582` 都存在，而在已安装的 0.2.x 适配器里**零出现**；配合只在 `:1706-1708` 写的 `thinking`/`output_config`/`max_tokens`，同样能把规则变严密。
+  - **两条并发纪律（评审 A 提出，采纳）**：① **每片锁一个 commit**——它发现 T8c 的报告**已进 HEAD `4170b72`，而 `tests/e2e/mock-llm-server.mjs` 仍未提交**，导致事后无法对着 HEAD 核「只改了一个文件」；② **影子树实验的坑**：把 `drive.mjs` **符号链接**过去会**静默 exit 0 且什么都不跑**（`drive.mjs:18035` 拿 `import.meta.url` 与 `pathToFileURL(argv[1])` 比对），必须**真复制**。
 - **依赖**：P4.5-T8b。**量级**：1 天。
 
 ### [ ] P4.5-T8d — 出货默认模型 id 修正：`deepseek-v4-flash` 在 0.2.x 上不存在（2026-10-06 新增，D17 派生）

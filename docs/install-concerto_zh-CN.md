@@ -27,7 +27,7 @@
 
 - DeepSeek Harness（含 agent preset 体系；依赖与 shipped `standard` preset 同套包）。
 - DSH 凭证里已配置 `DEEPSEEK_API_KEY`（两条路由共用；pi-ai 走 api.deepseek.com 兼容端点）。
-- pi-ai 目录里的 `deepseek-v4-flash` 模型（没有则改 `agentOptions`，见"适配"）。
+- pi-ai 目录里的 `deepseek-flash` 模型（没有则改 `agentOptions`，见"适配"）。
 - **仅 dsh ≥ 0.2**：PATH 上要有 `python3`，**且带 PyYAML 模块**（`pip install pyyaml`）。declaration
   形态下安装器用 python3 + PyYAML 渲染那条声明行，并在创建任何东西之前先检查；缺模块就停下，打印
   `error: PyYAML required for the dsh >= 0.2 install path (pip install pyyaml)` 并以非 0 退出码结束。
@@ -112,7 +112,7 @@ NO_PIAI=1 EXPLORE_MODEL=my-model sh oh-my-opendsh/scripts/install-concerto.sh   
 先记住三句话：
 
 1. 协奏模式有两个人：**指挥**（用你会话的默认模型）+ 检索小弟 **explore**（自己单独一路模型）。
-2. 默认安装已经给 explore 配好了一路模型：pi-ai 的 deepseek 路由 + `deepseek-v4-flash`（快、便宜）。
+2. 默认安装已经给 explore 配好了一路模型：pi-ai 的 deepseek 路由 + `deepseek-flash`（快、便宜）。
 3. 所有选项改的都只是 explore 这一路"**换谁来干活**"。指挥、只读限制、禁嵌套委派，一概不动。
 
 | 选项 | 白话解释 |
@@ -126,8 +126,8 @@ NO_PIAI=1 EXPLORE_MODEL=my-model sh oh-my-opendsh/scripts/install-concerto.sh   
 
 ```bash
 unzstd -c ~/.dsh/sessions/<工作区目录>/<子会话id>/session.v3.jsonl.zstd | grep request/context
-# {"provider":"deepseek","model":"deepseek-v4-flash"}                ← 默认（pi-ai）
-# {"provider":"deepseek-official","model":"deepseek-v4-flash"}       ← 同 provider 降级
+# {"provider":"deepseek","model":"deepseek-flash"}                ← 默认（pi-ai）
+# {"provider":"deepseek-official","model":"deepseek-flash"}       ← 同 provider 降级
 ```
 
 三个常见组合（带白话注释）：
@@ -137,7 +137,7 @@ unzstd -c ~/.dsh/sessions/<工作区目录>/<子会话id>/session.v3.jsonl.zstd 
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 
 # 没有 pi-ai：换到官方 deepseek 路由 + 同一个模型，回答和默认几乎没差
-curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official EXPLORE_MODEL=deepseek-v4-flash sh
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official EXPLORE_MODEL=deepseek-flash sh
 
 # 想更省/更快：给 explore 换个小模型
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<更小更快的模型名> sh

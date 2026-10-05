@@ -33,7 +33,7 @@ by 8 spaces) into the declared row — nothing is left behind in `.agent-presets
 
 - A DeepSeek Harness with the agent-preset system (the shipped `standard` preset's package set).
 - Credential `DEEPSEEK_API_KEY` configured in DSH credentials (used by both routes).
-- The pi-ai catalog model `deepseek-v4-flash` (adjust `agentOptions` otherwise — see "Adapting").
+- The pi-ai catalog model `deepseek-flash` (adjust `agentOptions` otherwise — see "Adapting").
 - **dsh ≥ 0.2 only**: `python3` **with the PyYAML module** on PATH (`pip install pyyaml`). On the
   declaration face the installer renders the row with python3 + PyYAML, guards for it before it
   creates anything, and stops with `error: PyYAML required for the dsh >= 0.2 install path
@@ -127,7 +127,7 @@ Three facts first:
 1. Concerto Mode has two players: the **conductor** (your session's default model) and the
    retrieval helper **explore** (its own separate model route).
 2. The default install already gives explore its route: the pi-ai `deepseek` provider +
-   `deepseek-v4-flash` (fast, cheap).
+   `deepseek-flash` (fast, cheap).
 3. Every option only changes "who does the work" on the explore side. The conductor, the
    read-only restrictions, and the no-nested-delegation cap are untouched.
 
@@ -142,8 +142,8 @@ How to confirm what actually took effect? Delegate once, then read the child ses
 
 ```bash
 unzstd -c ~/.dsh/sessions/<workspace-dir>/<child-session-id>/session.v3.jsonl.zstd | grep request/context
-# {"provider":"deepseek","model":"deepseek-v4-flash"}                ← default (pi-ai)
-# {"provider":"deepseek-official","model":"deepseek-v4-flash"}       ← same-provider fallback
+# {"provider":"deepseek","model":"deepseek-flash"}                ← default (pi-ai)
+# {"provider":"deepseek-official","model":"deepseek-flash"}       ← same-provider fallback
 ```
 
 Three common combinations (plain-words annotations):
@@ -153,7 +153,7 @@ Three common combinations (plain-words annotations):
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 
 # No pi-ai: official deepseek route + the same model — answers barely differ from the default
-curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official EXPLORE_MODEL=deepseek-v4-flash sh
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official EXPLORE_MODEL=deepseek-flash sh
 
 # Cheaper/faster: give explore a smaller model
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<smaller-faster-model> sh

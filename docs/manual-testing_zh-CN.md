@@ -17,7 +17,7 @@
 
 - 指挥 `omo-sisyphus` + 只读子代理 `omo-explore`（工具名 `explore`，toolFilter 拒绝 `[write, edit, explore]`——F1 之后委派工具本身也被拒绝，子代理在物理上无法再委派；maxDepth 1 保留为纵深防御）。
 - Hard-blocks 注入 + 双模型路由。
-- 默认路由：sisyphus 走 `deepseek-official/deepseek-v4-pro`（环境变量 `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL`）；explore 经 llm-pi-ai 走 `deepseek/deepseek-v4-flash`（环境变量 `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL`）。
+- 默认路由：sisyphus 走 `deepseek-official/deepseek-v4-pro`（环境变量 `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL`）；explore 经 llm-pi-ai 走 `deepseek/deepseek-flash`（环境变量 `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL`）。
 
 ## 前置条件
 
@@ -112,7 +112,7 @@ dsh --profile web --patch ./cordis.yml --port 4173
 
 ### 模式与模型选择
 
-在模式选择器中选协奏模式 / Concerto Mode（user-trust 花名册条目；名称来自我们的 `preset.yml`——客户端区域回退，P-1.2）。在模型选择器中为基准运行选 **deepseek-v4-pro**：你保存的默认是 deepseek-v4-flash，但 AC-5 要求两条不同路由，而 explore 子代理已被插件 agentOptions 钉在 `deepseek/deepseek-v4-flash`——所以指挥端请跑 v4-pro。
+在模式选择器中选协奏模式 / Concerto Mode（user-trust 花名册条目；名称来自我们的 `preset.yml`——客户端区域回退，P-1.2）。在模型选择器中为基准运行选 **deepseek-v4-pro**：你保存的默认是 deepseek-flash，但 AC-5 要求两条不同路由，而 explore 子代理已被插件 agentOptions 钉在 `deepseek/deepseek-flash`——所以指挥端请跑 v4-pro。
 
 ### 五个场景
 
@@ -124,7 +124,7 @@ dsh --profile web --patch ./cordis.yml --port 4173
 grep -E '"(provider|model)"' "$DSH_HOME/sessions/<path>/session.v3.jsonl"
 ```
 
-**S2 — 委派链（AC-4/AC-5）。** 输入例如 `用 explore 查一下这个仓库的 README 讲了什么，然后总结给我`。预期：指挥调用 `explore` 工具 → 子会话执行只读检索 → 结果返回 → 指挥总结。验证：出现第二个（子）会话 JSONL；父的 `subagent/descriptor` 与子的 `request/header` 显示子路由 `deepseek/deepseek-v4-flash` ≠ 父 `deepseek-official/deepseek-v4-pro`：
+**S2 — 委派链（AC-4/AC-5）。** 输入例如 `用 explore 查一下这个仓库的 README 讲了什么，然后总结给我`。预期：指挥调用 `explore` 工具 → 子会话执行只读检索 → 结果返回 → 指挥总结。验证：出现第二个（子）会话 JSONL；父的 `subagent/descriptor` 与子的 `request/header` 显示子路由 `deepseek/deepseek-flash` ≠ 父 `deepseek-official/deepseek-v4-pro`：
 
 ```bash
 grep -E '"(provider|model)"' "$DSH_HOME/sessions/<parent>/session.v3.jsonl" "$DSH_HOME/sessions/<child>/session.v3.jsonl"

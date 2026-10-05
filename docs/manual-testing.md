@@ -17,7 +17,7 @@ A 5th run mode, 协奏模式 / **Concerto Mode** (preset id `concerto`, trust us
 
 - Conductor `omo-sisyphus` + read-only subagent `omo-explore` (tool name `explore`, toolFilter deny `[write, edit, explore]` — post-F1 the delegation tool itself is also denied, so the child physically cannot delegate; maxDepth 1 stays as defense-in-depth).
 - Hard-blocks injection + dual model routes.
-- Defaults: sisyphus on `deepseek-official/deepseek-v4-pro` (env `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL`); explore on `deepseek/deepseek-v4-flash` via llm-pi-ai (env `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL`).
+- Defaults: sisyphus on `deepseek-official/deepseek-v4-pro` (env `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL`); explore on `deepseek/deepseek-flash` via llm-pi-ai (env `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL`).
 
 ## Prerequisites
 
@@ -112,7 +112,7 @@ Readiness line: `dsh web: http://127.0.0.1:4173/?token=<launch-token>` — on th
 
 ### Mode + model selection
 
-Pick 协奏模式 / Concerto Mode in the mode selector (user-trust roster entry; its name comes from our `preset.yml` — client locale fallback, P-1.2). In the model selector pick **deepseek-v4-pro** for the canonical run: your saved default is deepseek-v4-flash, but AC-5 wants two DISTINCT routes, and the explore child is pinned to `deepseek/deepseek-v4-flash` via the plugin's agentOptions — so run the conductor on v4-pro.
+Pick 协奏模式 / Concerto Mode in the mode selector (user-trust roster entry; its name comes from our `preset.yml` — client locale fallback, P-1.2). In the model selector pick **deepseek-v4-pro** for the canonical run: your saved default is deepseek-flash, but AC-5 wants two DISTINCT routes, and the explore child is pinned to `deepseek/deepseek-flash` via the plugin's agentOptions — so run the conductor on v4-pro.
 
 ### Five scenarios
 
@@ -124,7 +124,7 @@ Session JSONL lives at `$DSH_HOME/sessions/<path>/session.vN.jsonl` (the filenam
 grep -E '"(provider|model)"' "$DSH_HOME/sessions/<path>/session.v3.jsonl"
 ```
 
-**S2 — Delegation chain (AC-4/AC-5).** Type e.g. `用 explore 查一下这个仓库的 README 讲了什么，然后总结给我`. Expected: conductor calls the `explore` tool → a CHILD session runs the read-only research → result returns → conductor summarizes. Verify: a second (child) session JSONL appears; the parent's `subagent/descriptor` + the child's `request/header` show the child route `deepseek/deepseek-v4-flash` ≠ parent `deepseek-official/deepseek-v4-pro`:
+**S2 — Delegation chain (AC-4/AC-5).** Type e.g. `用 explore 查一下这个仓库的 README 讲了什么，然后总结给我`. Expected: conductor calls the `explore` tool → a CHILD session runs the read-only research → result returns → conductor summarizes. Verify: a second (child) session JSONL appears; the parent's `subagent/descriptor` + the child's `request/header` show the child route `deepseek/deepseek-flash` ≠ parent `deepseek-official/deepseek-v4-pro`:
 
 ```bash
 grep -E '"(provider|model)"' "$DSH_HOME/sessions/<parent>/session.v3.jsonl" "$DSH_HOME/sessions/<child>/session.v3.jsonl"
