@@ -212,6 +212,50 @@
 >
 >   证据 .omo/evidence/p45t8/ARB-four-theatre-lessons.md。门 7 9/9 PASS。
 >
+>   **四之十四、规约⑲k（新增，2026-10-06 07:55）：引用证据必须同时声明范围；
+>   「复现不出来」与「范围不同」是两个不同的问题**
+>
+>
+>   §Q1 的引用之争：评审 A 说交付报告那条 `grep … "exactly one file"` **复现零个文件**（产物纪律类错误）；
+>   编码方说**它的 grep 复现了**（→ 1 个文件），**它自己的错误是把一个模式的输出当成了整个面**。
+>
+>   **仲裁者一手复核（已安装 npm 包 `@0.2.0-rc.2`）**：
+>
+>       grep -rl 'type: "tool-result"' …/@deepseek-ai/   → 2 个文件
+>           dsh-session-persistence-jsonl/lib/worker.cjs
+>           dsh-session-format-v0-to-v1/lib/index.js
+>       grep -rc 'tool/result' dsh-agent-loop/lib/index.js               → 2（surfaceOp 另有 9 处）
+>       grep -rc 'tool/result' dsh-compaction-tool-result-pruner/…       → 2（surfaceOp 另有 1 处）
+>
+>   ⇒ **A 的「零个文件」被推翻**（实际有命中）；**编码方的「复现了」成立**；但**它的计数（1）也不是全集**。
+>
+>   **裁决**：采信编码方的「**范围过读**」定性，**不**采信 A 的「引用造假」定性。
+>   差别不是措辞：**前者是分析深度不足，后者是证据不可复现**——后者会要求作废整份报告，
+>   而实测证据并非不可复现。
+>
+>   **⑲k**：**引用他人证据时必须同时声明范围**（全树 / 单包 / 单模式 / 单文件）。
+>   **「复现不出来」与「范围不同」是两个不同的问题，混为一谈会作废本可复现的证据。**
+>   ⇒ **当两个评审对同一条 grep 给出互斥的说法时，不要裁决「谁在说谎」，
+>   而去跑那条 grep 并且换一个更宽的模式。** 本次：A 说零、作者说一、实测**两个**——
+>   **三个人都在不同的范围上是对的，也都在把范围当成全集。**
+>
+>   **顺带复核了形状规则真正需要的那一条断言（「没有任何产出者写出那个包装」）**：
+>   `grep -rc '"tool-result"'` 在已装树里命中 4 个包——`dsh-session-format-v0-to-v1`（3）、
+>   `-v2-to-v3`（4）、`-v3-to-v4`（7）、`dsh-experimental-agent-team`（1）。
+>   仲裁者逐个打开：**前三个是转换器**（工作正是把退役形态抬起来），
+>   **第四个是 Zod 枚举**（`dsh-experimental-agent-team/lib/index.js:1102-1107` 列出
+>   `text`/`reasoning`/`image`/`tool-call`/`tool-result`）——**内存消息形状的模式声明，不是会话行的产出者**。
+>   ⇒ **前提成立**：**0.2.x 的原生会话行没有任何产出者会写出那个包装。**
+>
+>   **完整的面（承重）**：对象字面量形态 1 处（`dsh-session:873`）；**append API 形态另两个包共 3 处**
+>   ——`dsh-agent-loop:697`（常规路径）、`dsh-agent-loop:982`（崩溃恢复重放）、
+>   `dsh-compaction-tool-result-pruner:167`（**在 `surfaceOp:{op:"replace"}` 下用
+>   `pruneContent(original.content)` 替换整条结果，本身就是一个形态生产者**）。
+>   ⇒ **共 5 处，五处没有一处产出那种包装。**
+>
+>   门 7 check-docs-consistency 9/9 PASS。
+>
+>
 >
 >   **① 仲裁者 brief 的前提是错的，且它推翻了本阶段的一个框定（第九次被推翻）**：
 >   仲裁者写「`toolResultParts` 的缺陷一直隐形，是因为**没有任何场景真的注入过重要的工具结果**」——
