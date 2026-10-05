@@ -242,7 +242,10 @@
 ### [ ] P4.5-T8 — drive.mjs 双形状夹具 + 信封读取点核对
 
 - **产出**：drive.mjs 的运行时形状探针（会话日志 header format 版本）+ v4 形状伪造/解析（T1 Q-8 抓取的逐字形状，形状常量单源）；9+ 处伪造点按分类清单迁移；prove 脚本与 smoke 的信封读取点核对结果（双形状或现状确认）。
-- **做法**：「运行时消费」类伪造必须过 v4 准入语义（形状与 Q-8 抓取逐字一致）；「解析器消费」类保持解析器双语义；形状常量集中定义（v3/v4 两组，禁止散落字面量）；对照断言 = 0.1.5 沙箱仍产 v3 形状且全链绿。**⚠️ D17 附注（2026-10-06）**：「9+ 处伪造点」的行号清单是**计划期读数，已随 T5/T6 漂移**——开工前由**仲裁者**重锚（规约⑪），编码 agent 无权改 docs。**T13 删死路径时**本任务的 v3 分支会随之删除，届时形状常量收敛为 v4 单组。
+- **做法**：「运行时消费」类伪造必须过 v4 准入语义（形状与 Q-8 抓取逐字一致）；「解析器消费」类保持解析器双语义；形状常量集中定义（v3/v4 两组，禁止散落字面量）；对照断言 = 0.1.5 沙箱仍产 v3 形状且全链绿。**T13 删死路径时**本任务的 v3 分支会随之删除，届时形状常量收敛为 v4 单组。
+- **⚠️ D17 附注一（重锚已完成，仲裁者亲跑）**：原文「9+ 处伪造点（`:5201/:5278/:5328/:5680/:5728/:5859/:6501/:6525/:6686`）」**九条没有一条落在伪造事件上**——该清单整体失真，**禁止照抄**。真实普查：**18 处** `type: 'tool/result'`，分 **3 种**内层形状。逐条与复算命令见 `.omo/evidence/p45t8/ARBITRATION-feasibility-probe.md` 的 P5 节与 `P11-citation-drift-table.md`。
+- **✅ Q-8 已闭合（2026-10-06 02:49，仲裁者亲手抓取）**：T8b 修好 MOCKROLE 投递之后，真实 `dsh 0.2.0-rc.2` 沙箱产出了本会话日志里**第一条真实的 `tool/call` + `tool/result`**，逐字形状见 `.omo/evidence/p45t1/Q8-v4-envelope.md`（含原始件 `logs/Q8-session.v4.jsonl`，70487 B）。**与 drive.mjs 三组伪造形状的逐字段差异共 8 条**，其中 **4 个顶层字段三组全缺**（`data.message.id`、`data.sourceEventSeqs`、`data.surfaceOp`、`data.error`），且 **`data.message.role` 真值是 `"tool"` 而伪造全写 `"user"`**、B 组的键名用 `callId` 而非 `toolCallId`。
+- **⚠️ Q-8 顺带抓到的下一个红点（未定性，登记）**：该 `tool/result` 是**失败**的——`pi-ai provider "deepseek" has no configured model "deepseek-v4-flash"`（`isError: true`，`data.error = { name: "LlmError", code: "UNKNOWN_MODEL" }`）。**provider 确实注册上了**（boot marker 命中数 0），失败在**模型解析**这一步。T8a 的 seed 只写 `{ apiKeyEnv, baseURL }`、**没有模型清单**；0.2.x 的 `dsh-llm-pi-ai` 是否需要 provider 级模型声明**尚未核实**。⇒ 这决定 **T8b 的 AC1 能否达成**，或落入 **T10**。
 - **判定**：✅ drive.mjs 33 场景在 0.2.x 全绿（含 v4 形状断言）；0.1.5 CI 绿（T12 之前是防回归的唯一真实信号）；prove/smoke 双运行时核对记录。
 - **证据**：⬜ 待填
 - **依赖**：P4.5-T1（Q-8，**实际前置是 T8a——Q-8 的数据采集被它阻塞**）。**量级**：1 天。
