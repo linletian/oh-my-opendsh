@@ -286,6 +286,12 @@
   - **现状是潜伏而非在线**：当前跑的 `deepseek-v4-pro` 在目录里没有 `systemPromptUpdate`，人格恒折进顶层；**但 `roster.ts:235-245` 已经把视觉席路由到 `deepseek-official`/`deepseek-flash`**⇒ 一旦有视觉场景，这条洞立刻变活。⇒ **修法是改规则本身，不是改注释**：让 `isMessagesRequest` 接收 `request.url`（`:208` 已有），把 `/messages` 当**决定性**信号；这**保持编码方自己「零配置、零环境变量」的约束**。
   - **评审 A 顺带指出的一条免费替代**：`stream_options` 在 0.1.5 tag 与 pi-ai `:582` 都存在，而在已安装的 0.2.x 适配器里**零出现**；配合只在 `:1706-1708` 写的 `thinking`/`output_config`/`max_tokens`，同样能把规则变严密。
   - **两条并发纪律（评审 A 提出，采纳）**：① **每片锁一个 commit**——它发现 T8c 的报告**已进 HEAD `4170b72`，而 `tests/e2e/mock-llm-server.mjs` 仍未提交**，导致事后无法对着 HEAD 核「只改了一个文件」；② **影子树实验的坑**：把 `drive.mjs` **符号链接**过去会**静默 exit 0 且什么都不跑**（`drive.mjs:18035` 拿 `import.meta.url` 与 `pathToFileURL(argv[1])` 比对），必须**真复制**。
+- **✅ 第二轮修复完成（2026-10-06 04:26）**：MAJOR **在规则层修好**，不是改注释——`isMessagesRequest(body, requestUrl)`（`:383`）以**路径为决定性信号**（`/messages` ⇒ Messages；`/chat/completions`、`/responses` ⇒ OpenAI），再以 body 兜底且**互斥标记优先**（`stream_options` ⇒ OpenAI、`output_config` ⇒ Messages），仍**零配置、零环境变量**。
+  - **⚠️ 编码方在修 MAJOR 时自己发现了同类第二例（值得单记）**：它原先用 `thinking` 当 Messages-only 标记，**那是不成立的**——仲裁者复核：已安装 pi-ai 的 `dist/api/openai-completions.js:666-671` 在 `compat.thinkingFormat === "deepseek" && model.reasoning` 时**把 `params.thinking` 写到 OpenAI 线上**，而已安装 `deepseek.json` 的**两行都** `compat.thinkingFormat = "deepseek"` 且 `reasoning: true`。⇒ 留着会把 OpenAI 请求误路由，**与 MAJOR 同一种失败模式、只深一层**。已移除，理由写进源码注释。
+  - `developer` 臂**删除而非重排**：`detectRole` 只扫 `role:"system"` 且先跑，要让它生效就得放宽 `detectRole`、把 OpenAI 路的 400 变成 200（越界）；且两行 `compat.supportsDeveloperRole` 均为 `false` ⇒ 本就无用。
+  - **反例已复现并转绿**：修前 `modeCounts {"openai":1,"messages":0}` ⇒ `event type mismatch`；修后 `{"openai":0,"messages":1}` ⇒ 适配器 `finish(stop)` **PASS**。规则矩阵 **9/9**；**反例控制**成立：已安装的 OpenAI 方言客户端**没有**一个会 POST `/messages`（用 `/chat/completions` 或 `/responses`）；pi-ai 的 `pi-messages.js:250` 确实 POST `/messages`，但发的是 `{model, context, options}`（无 `messages[]`、无 `system`）⇒ `detectRole` 先 400 掉，实测 HTTP 400 且 modeCounts 不变。
+  - demo 红**守在 6 条**未上升，`tool/call`=1、`tool/result`=1；成因仍是 `SessionFormatError`（T9 的面）。
+  - **新登记的局限**：pi-ai 原生的 `pi-messages` API **也** POST `/messages`；若哪个场景给它一个 MOCKROLE，它会收到无法解析的 Anthropic 帧 ⇒ **第三种方言，本切片未实现**。
 - **依赖**：P4.5-T8b。**量级**：1 天。
 
 ### [ ] P4.5-T8d — 出货默认模型 id 修正：`deepseek-v4-flash` 在 0.2.x 上不存在（2026-10-06 新增，D17 派生）
@@ -330,6 +336,12 @@
   ⇒ **候选解法据此排序，先后的不要弄反**：先给**描述面**加一条「与定义面对账」的静态门
   （便宜，且**直接堵住本次漂移的机制**），再考虑给**定义面**加生成器（更根本、成本更高）。
 - **⚠️ 遗留（诚实登记）**：`deepseek-flash` 现在**同时**承担快座与视觉席（两条路由都只剩这两个 id，路由仍按 provider 区分）。**真实 key 下 0.2.x 的图像投递仍未端到端验证**——能力是从目录声明读出来的，不是跑出来的。
+- **⚠️ 新登记的常设风险（评审 A 查出，第四个路由决定点）**：`patches/omo-dsh/omo-agents-current/concerto-plugin.host.js:196-203` 用 `/flash|lite|mini|turbo|fast/i` 正则**在 `llm.listModels()` 的结果上动态挑** explore 用的模型 —— 它落在**两个守卫之外**（`roster.ts` 由 vitest 守、出货模板由 `c02` + installer 哨兵守，都管不到它）。评审 A 专门查了它会不会藏着漏掉的虚构 id：**今天正则恰好选中 `deepseek-flash`，无害**，但这是一条**没有门**的路由决定路径 ⇒ 登记为常设风险，本阶段不改。
+- **⚠️ 守卫地图（评审 A 双向证过，取代「两个真相源」的粗说法）**：
+  - `roster.ts` **只由 vitest 守**——只回退它的四处 `defaultRoute`（出货模板与门断言都不动），门 6 仍 33/33，**真正抓住它的是 5 个文件 13 条测试**。
+  - 出货模板由 **`c02` + `installer-declaration-face` 的哨兵**守——只回退模板 ⇒ `c02` **与**哨兵同时红；只回退哨兵常量 ⇒ 哨兵红。
+  - ⇒ **两套守卫确实互不相交**，这正是「只改一边就是半修」的机制。
+  - 另注：出货模板里**只有一行字面量 `agentOptions`**（`call_omo_explore` 行），其余十行是哨兵从 `roster.ts` 渲染的 ⇒ 准确说法不是「两份平行名册」，而是「一份名册 + 一处字面量覆盖」。
 - **依赖**：无（与 T8b/T8c 无文件冲突；`drive.mjs` 那半归 T8）。**量级**：0.5 天 → **上修 1 天**（行数更多）。
 
 ### [ ] P4.5-T8 — drive.mjs 双形状夹具 + 信封读取点核对
