@@ -128,6 +128,35 @@
 >
 >   证据同文件 P17 节。
 >
+>   **四之八、仲裁者撤回自己的一条「证据」（2026-10-06 06:10，评审 A 推翻）**：
+>   仲裁者写过「T9 的修复确实生效——`SessionFormatError` 计数 **0**、`kind=plugin` **零残留**」。
+>   评审 A 指出**该度量恒为零**：跨 `/tmp/omo-dsh-e2e-*` 下**全部 226 份**留存的 `session.v4.jsonl`
+>   **没有任何一条 `"kind":"omo-*"`**，而 `concerto-delegation-demo` 里唯一的 OMO 耐久面
+>   （explore 子席里的 hard-blocks）**从不触发**，因为**子席压根没起来**（`child:null`）
+>   ⇒ **有没有这次迁移，那个数都是 0**。仲裁者复核后**成立，撤回**。
+>   **真正的证据由评审 A 跑了**：`DSH_E2E_ONLY=bash-read-guard-warned`（0.2.0-rc.2）下出货监听器的
+>   advisory **被接收两次**（`agent/inbox/spliced` seq 19 与 `user/message` seq 27，两者 source 都是
+>   `{"kind":"omo-bash-read-guard","plugin":"omo-hooks","form":"notice"}`）、`SessionFormatError` 计数 **0**、
+>   `advisoryInjectedIntoSessionLog` / `advisoryInjectedExactlyOnce` / `advisoryReachedNextModelRequest` 全 PASS。
+>   **它还绕开了被钳住的那条路**：`bash-read-guard` 走**指挥席**，而 `deepseek-official` 路由**两代都有**有效 id。
+>   ⇒ **新增规约⑲f**：凡以「某个计数为 0」作为「某项改动生效」的证据，**必须先证明该计数在改动前可能非零**；
+>   报告里写「某错误计数归零」时**必须同时给出「改动前它非零」的那份证据**
+>   （本例是 T8c 时期留存的 17 份 v4 日志里仍含 `format v4 message requires a producer-owned source kind`）。
+>   **本会话仲裁者被推翻六次**：前五次是对没打开过的面下断言，**这一次是量了一个恒为零的量**。
+>   形态不同、性质相同——都是**没有先问「这个证据能证明什么」**。
+>   证据 `.omo/evidence/p45t8/ARB-retract-vacuous-metric.md`。
+>
+>   **四之九、评审 A 查出一条比 T9 更大的未报漂移（已立为 T8″）**：
+>   `drive.mjs:3791` 的 `toolResultParts` **只收旧式 `{type:'tool-result', toolCallId, content}` 包装**，
+>   而**已安装的 `dsh-session-format-v3-to-v4` 明确拒绝产出这种行**
+>   （`lib/index.js:157/213/478` 逐字：*must not contain a released tool-result wrapper*）；
+>   真实的 0.2.x 日志把工具结果存成**普通 `{type:'text'}` 块** ⇒ `toolResultParts` 对**任何**真实 0.2.x 日志
+>   都返回 `[]`，它的**全部 19 个调用点**因此拿不到结果数据。
+>   **与 kind 迁移是同一类漂移**（0.1.5 时代的读取器 vs 0.2.x 的写入格式），**波及面大得多**，
+> **之所以一直隐形，是因为没有任何场景真的注入过**。证据：评审 A 在 `bash-read-guard-warned` 的运行里抓到的真实日志。
+>   ⇒ **登记为独立切片 T8″**，不得塞进 T8′。
+
+>
 >   **⑲c 补充条款（由 T9 提出，采纳）**：⑲c 保护别人不被**我的脏树**坑，但**不保护别人的在飞改动
 >   不被我的「按文件恢复」吃掉**——本次 `git reset --soft bc831da` + 按文件恢复确实抹掉了 T9 的
 >   `tests/omo-agents/hard-blocks-injection.test.ts`（它 10 个在飞文件里的那 1 个），且它当时的 AC5
