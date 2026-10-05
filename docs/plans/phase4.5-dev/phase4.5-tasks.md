@@ -146,6 +146,37 @@
 >   形态不同、性质相同——都是**没有先问「这个证据能证明什么」**。
 >   证据 `.omo/evidence/p45t8/ARB-retract-vacuous-metric.md`。
 >
+>   **四之十、规约⑲g（新增，2026-10-06 07:05）：给分类时先问「穷举了吗」——二选一必须先证明只有两种。**
+>   仲裁者给「两处漏网的 `kind:'plugin'` 夹具」写派单时，给的是**二选一**：(a) OMO 自有专属 kind，
+>   或 (b) 运行时外来形态 `plugin:<name>`，并说「逐处判断」。**编码方推翻：这个二分法对其中一处是错的。**
+>   仲裁者一手复核已安装包 `@0.2.0-rc.2` 的 `dsh-session-format-v3-to-v4/lib/index.js`：
+>   ```js
+>   function producerKind(plugin, role) {
+>     if (plugin === "@deepseek-ai/dsh-system-prompt" && role === "system") return "system-prompt";
+>     const renamed = Object.hasOwn(RENAMED_PRODUCERS, plugin) ? RENAMED_PRODUCERS[plugin] : undefined;
+>     if (renamed !== undefined) return renamed;                    // :90 重命名形
+>     if (RELEASED_SAME_NAME_PRODUCERS.has(plugin)) return plugin;  // :91 同名形 ← 本例的答案
+>     return `plugin:${plugin}`;                                     // :92 仅兜底未发布名
+>   }
+>   ```
+>   而 `dsh-tool-jobs/lib/index.js:278` 的活体盖章是 **`kind:"tool-jobs"`、不带 `plugin` 字段**
+>   ——**同名形**，因为 `tool-jobs` 在 `RELEASED_SAME_NAME_PRODUCERS`（`:59`）里，`:91` **先于** `:92` 命中。
+>   ⇒ **活的形态至少三种**，我漏掉了中间那一种，而它恰好是本例的答案。
+>   ⇒ **⑲g 特别地**：当你把某个第三方机制归纳成「A 或 B」时，**去读它自己的分派表**，
+>   而不是从两个已知样本推。**一个有结构的错误断言比一个明显的错误断言更危险**——
+>   它更难被质疑：评审要推翻它，得先指出「还有第三种」。
+>   ⇒ **本会话仲裁者被推翻七次，七次同一形态**：对没打开过的面下断言。
+>   证据 `.omo/evidence/p45t8/ARB-seventh-overturn.md`。
+>
+>   **四之十一、第三次「改了仍然不会失败」的断言（2026-10-06 07:05）**：
+>   `readDelegationTaskText` 用的是**正向白名单**（`patches/omo-dsh/omo-hooks/src/hooks/ulw-execute.ts:668-672`，
+>   `kind === 'user'`）⇒ **任何非 user 的 kind 行为完全相同** ⇒ **只迁移 kind 字符串，断言永远不会红**。
+>   编码方因此给每处夹具补了一条**kind 钉死断言**（与 `32ca629` 里 `hard-blocks-injection.test.ts:124`
+>   同一房式），并在 `/tmp` 装置里做了四组变异：`'plugin'` ⇒ 钉死断言红；
+>   **`plugin:tool-jobs` ⇒ 红**（证明派单里 (b) 那个陷阱被抓住）；`'user'` ⇒ 白名单断言 `:1659` 红
+>   （证明夹具仍约束真实行为）。⇒ **门 2 的 1559 条用例一条都没抓住**——
+>   这是本会话**第三次**出现同一个模式：一条断言在改完之后仍然无法失败，而它在改之前也无法失败。
+>
 >   **四之九、评审 A 查出一条比 T9 更大的未报漂移（已立为 T8″）**：
 >   `drive.mjs:3791` 的 `toolResultParts` **只收旧式 `{type:'tool-result', toolCallId, content}` 包装**，
 >   而**已安装的 `dsh-session-format-v3-to-v4` 明确拒绝产出这种行**
