@@ -212,6 +212,48 @@
 >
 >   证据 .omo/evidence/p45t8/ARB-four-theatre-lessons.md。门 7 9/9 PASS。
 >
+>
+>   **① 仲裁者 brief 的前提是错的，且它推翻了本阶段的一个框定（第九次被推翻）**：
+>   仲裁者写「`toolResultParts` 的缺陷一直隐形，是因为**没有任何场景真的注入过重要的工具结果**」——
+>   **错**。`bash-read-guard-warned` **注入了**，而且它在 0.2.x 上**本来就是红的**（三条具名检查：
+>   `bashTriggerExecutedWithFixtureBytes` / `pipedCatRanWithoutAdvisory` / `readToolRanWithoutAdvisory`，
+>   原读取器下 FAIL、修复后 PASS，**未放松任何断言**）。它隐形是因为 **CI 只跑 0.1.5 那条腿**
+>   （`ci.yml:102`）。
+>
+>   ⇒ **缺口不是覆盖率，是运行时矩阵**。「再加一个带工具结果的场景」**关不掉这一类**——
+>   那个场景**早就存在**，只是**不在绿色的路径上**。**要关掉这一类，需要一条 0.2.x 的 CI 腿。**
+>
+>   ⇒ **T12 的判据追加（硬）**：翻转 pin **必须**让 CI 在 **0.2.x** 上也跑一遍并留下记录。
+>   **这不是 T12 的副产品，是关掉这一整类隐形缺陷的唯一杠杆。**
+>
+>   **② 同一条形状规则现在答在三处**：`drive.mjs`、T9 的 `source.kind` 迁移（`5666ea1`）、
+>   `scripts/assert-concerto-read-face.mjs`。**一个测试驱动里的读取器保护不了同一批日志的
+>   其它消费者**（编码方提出异议、**未越界**，处置得当）⇒ 登记为结构项，归 T10 / T13 裁定，
+>   本阶段**不建**。
+>
+>   **③ 本阶段第五次「看着像门、其实不是门」，而且这次门连执行路径都没有**：
+>   四条 banner 守卫被收集进 `problems`（真实位置 `:18616`/`:18627`/`:18633`/`:18643`，
+>   编码方给的行号有偏差），而 `problems` **只被读一次**，在 `:18586-18587` 的
+>   `console.error(... problems.join ...)` + `process.exit(1)`，**在这四条之前**
+>   ⇒ **它们永远不会让一次运行变红**。登记为既有缺陷，归后续切片，**不混进 T8″**。
+>
+>   **④ 两条已知空洞（如实登记，不假装已关）**：
+>   - `joinTextBlocks` 只留 `text` 块 ⇒ `read_image` 的 `text`+`image` 形态丢附件；
+>     当前无断言看图像，将来一条看图像的断言会**空洞地通过**。
+>   - `analyzeKeywordInjection` 的 join 键在该夹具上是空的（配对 `tool/call` 无 `callId`）⇒
+>     `find` 命中「第一个 `callId` 为 undefined 的 part」。**准确说法是「接错键」而非「整条断言空转」**
+>     ——`!== undefined` / `isError` / `.includes()` 三段仍然咬得住。
+>     **仲裁者据此订正了编码方的措辞。**
+>
+>   **⑤ T8″ 的形状规则与 AC 证据（仲裁者复核）**：规则是「强制且互斥」的，因为两代自己的校验器
+>   **互相强制相反**——0.1.5-rc.1 `dsh-session/lib/index.js:954-955` **要求** wrapper；
+>   0.2.0-rc.2 `dsh-session-format-v3-to-v4/lib/index.js:478` **禁止** wrapper。
+>   AC1 真实 0.2.x 日志一条 **10 行 ⇒ 改前 0 份、改后 10 份**；盘上 11 份真实日志合计
+>   **22 行 ⇒ 0 → 22**；0.1.5 两场景改前改后皆 PASS。
+>
+>   门 7 check-docs-consistency 9/9 PASS。
+>
+>
 >   ulw 夹具切片收口时提出一条**在它范围内无法解决的遗留**，仲裁者核实后**接受并转为本片的验收项**：
 >
 >   > **`tool-jobs` 的 `source.kind` 在本仓内目前没有任何门。**
