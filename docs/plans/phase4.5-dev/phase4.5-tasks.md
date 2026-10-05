@@ -44,6 +44,29 @@
 >   ⇒ 本会话仲裁者被推翻**五次**，形态完全相同：**对一块自己没有打开过的面下了断言**
 >   （0.1.5 读 git 源码树而非已发布 bundle · `.option("--patch")` 的行号 · `c02` 耦合方向 ·
 >   哪张目录声明图像输入 · 本条的文件分类）。**当作一条纪律记，不当五次独立失误记。**
+>   **四之四、T8d 的模型 id 改钉已回退（2026-10-06 05:18，附完整实测），改钉挪到 T12**：
+>   **CI 在 `bc831da` 上门 3 红。** 干净树 + **0.1.5-rc.1 真二进制**（`git archive` 出树）跑完整 33 场景：
+>   **10 条红，全部是委派类**（`concerto-delegation-demo`、`background-notification-log`、
+>   `empty-task-response-corrected`、`agent-usage-reminder-appended`、`task-resume-info-appended`、
+>   `ulw-execute-activated`、`explore-write-denied`、`explore-nested-delegation-denied`、
+>   `roster-parade`、`atlas-nested-delegation`），`hello` 等非委派场景全绿；
+>   子席工具结果里逐字 **`Error: pi-ai provider "deepseek" has no configured model "deepseek-flash"`**。
+>   ⇒ **机制确认**：0.1.5 的 `pi-ai@0.85.1` 目录里没有 `deepseek-flash`，而 T8d 把三席 + 视觉席都改钉到它。
+>   回退后同一干净树复跑 `hello` + `explore-write-denied` ⇒ **双双 PASS**。
+>   **⇒ 结论**：D17(d) 说「pin 翻转前 CI 的绿是唯一非回归信号」——这条信号正是被这次改钉打掉的。
+>   **模型 id 改钉属于 T12（pin 翻转）那一步**，且必须与翻转同 commit：
+>   **一个出货默认值必须命名它所面对的那个运行时里存在的 id；改 id 就是换运行时的一部分。**
+>   另记：**两代的能力方向是反的**——0.1.5 的带图档是 `deepseek-v4-flash-vision-exp`、
+>   0.2.x 的带图档是 `deepseek-flash`；纯文本档分别是 `deepseek-v4-flash` 与 `deepseek-v4-pro`。
+>   ⇒ **不存在一个跨代都带图的 id**，视觉席在 T12 之前无法两代通吃，这是必须写进 T12 的事实。
+>   回退提交 `320a043`（已推送）。证据 `.omo/evidence/p45t8/P14-model-id-cross-generation.md`。
+>
+>   **⑲c 补充条款（由 T9 提出，采纳）**：⑲c 保护别人不被**我的脏树**坑，但**不保护别人的在飞改动
+>   不被我的「按文件恢复」吃掉**——本次 `git reset --soft bc831da` + 按文件恢复确实抹掉了 T9 的
+>   `tests/omo-agents/hard-blocks-injection.test.ts`（它 10 个在飞文件里的那 1 个），且它当时的 AC5
+>   测量因此失效（两边都写着 `'plugin'`）。⇒ **按文件恢复前必须先 `git status` 逐条核对归属**，
+>   不属于本次恢复目标的一律先备份再恢复。
+>
 >   **四之三、规约⑲c（新增，2026-10-06 05:05）：共享工作树下，脏树上的门禁结果不是任何提交的证据。**
 >   起因是一次**双重错误叠加**：① CI 在 `bc831da` 上门 3 红，仲裁者**未先隔离**就推断是 T8d 的模型 id，
 >   直接 `git revert`；② revert 后在**工作区**重跑 0.1.5 的 `hello` 仍崩，于是更确信——
