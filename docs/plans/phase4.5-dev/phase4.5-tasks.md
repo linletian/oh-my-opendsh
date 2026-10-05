@@ -302,12 +302,24 @@
 
 ## WP-5 延后对齐（deferrable；计划书 §4.8）
 
-### [ ] P4.5-T9 — 专属 source kind 迁移（仅当证据拉入）
+### [~] P4.5-T9 — 专属 source kind 迁移（2026-10-06 仲裁裁定：拉入）
 
 - **产出**（仅当 T1–T8 期间发现 0.2.x 消费者对未知 kind 有实际误行为时）：10 处代码点迁为专属 kind（`omo-hard-blocks` / `omo-todo-continuation` 等逐点定名）+ 3 处注释同步 + 结构类型更正；否则本任务记 `deferred` 出阶段并写明理由。
 - **判定**：✅ 拉入时：迁移点单测（kind 字符串单源）、注入链路 e2e 不回归；defer 时：任务书裁定成文。**⚠️ D17 改写判据（2026-10-06）**：defer 的举证**不再需要 0.1.5 侧对照**——WP-4/5/6 剩余部分只剩 0.2.x 一个运行时，「消费者」不再分两代，**只需证明 0.2.x 上没有任何消费者对未知 `kind` 误行为**即可 defer。
-- **证据**：⬜ 待填（或 defer 裁定）
-- **依赖**：P4.5-T1。**量级**：0.5 天（可 defer）。
+- **证据**：✅ `.omo/evidence/p45t9/T9-kind-consumers.md`（只读源审，167 行；仲裁者另有独立取样 `.omo/evidence/p45t9/ARB-sample-consumer-shapes.md`）。**代码点数恰 10** = 5 发射点 + 5 类型声明（发射：`hard-blocks-injection.ts:121`、`todo-continuation-enforcer.ts:369`、`ulw-execute.ts:504`、`keyword-detector.ts:394`、`bash-file-read-guard.ts:164`）+ 3 注释，与锚定 commit `1803790` 口径一致。
+- **⚖️ 仲裁裁定（2026-10-06 03:15）：T9 由 defer 翻成【拉入】。**
+  - **判据字面成立**：调研逐消费者核完，0.2.x 全部消费者对**未知** `kind` **都不误行为**（正向等值自己→忽略 / 反向等值 `user`→一并排除 / `default` 兜住→按 kind 展示），无 throw、无误归并、无提前终止、无危险 default。
+    仲裁者独立取样三个消费者（`dsh-llm-deepseek:1503`、`dsh-user-questions:257`、`dsh-agent-instructions:1075-1082`）**全部是白名单形**，与调研一致。**按字面 defer 是可辩护的。**
+  - **但同一次调查发现了一件更强的事，它不在判据的字面里**：0.2.x 的 **v4 native admission 主动拒绝我们现役的 `kind:'plugin'`**。仲裁者一手复核（`~/GithubRepo/deepseek-harness` @ `dsh-v0.2.0-rc.2`，`packages/session/session-format-v3-to-v4/src/message-sources.ts`）：
+    - `:1` 文件头注释逐字：**“Native source admission preserves unknown attribution and refuses retired plugin wrappers.”**
+    - `:9` `value['kind'] === 'plugin'` ⇒ `throw new SessionFormatError('format v4 message requires a producer-owned source kind')`
+    - `:40` **读侧**同样调 `source(message)` ⇒ 写侧与读侧都拒绝
+    ⇒ **「容忍未知 kind」与「拒绝我们自己的 kind」是两件事。**前者支持 defer，后者**推翻**它。
+  - **为什么不按字面 defer**：本任务的**目的是**把那 10 处迁到专属 kind；判据只是当时的**触发条件**。    现在证据说**不迁就落不了盘**（写侧 throw）。若因为「证据没按判据的措辞出现」而 defer，等于**让措辞否决目的**——    那正是本阶段反复付出代价的同一类错误（台账说已闭合、代码里不是那样）。
+  - **方向不是发明**：上游自有生产者（tool-jobs 等）**已经**迁到专属 kind ⇒ 专属 kind 是 v4 的原生形状。
+  - **⚠️ 未实测部分如实登记**：写侧 throw 在**现役注入链**上是否真的触发，**本轮无法实测**——    能触发 `kind:'plugin'` 注入的场景（keyword / hard-blocks / ulw）需要一次成功的 turn，    而 0.2.x 上 turn 仍被 **T8c 的方言阻塞**挡着。仲裁者查过 T8b 的两个沙箱：`SessionFormatError` /     `producer-owned` / `retired` **零命中**、`kind:"plugin"` **零命中**——但那是因为 `concerto-delegation-demo`     **根本不经过那四个注入点**，**这个「零」什么也不证明**。⇒ **T8c 落地后必须补这一次实测**。
+  - **执行序（由调研挑战⑤ 与仲裁者裁定）**：**T9 必须先于 T8 的 drive 盘上断言**——T8 要求「运行时消费类伪造必须过     v4 准入语义」，而 drive.mjs 现有断言要求盘上存在 `kind:'plugin'` 载体，**两者不可能同时成立**；    T9 不迁，T8 的形状迁移就是在给一个会被拒绝的值造夹具。
+- **依赖**：P4.5-T1。**量级**：0.5 天 → **上修为 1 天**（判据翻转 + 10 处迁移 + 实测补做）。
 
 ---
 
