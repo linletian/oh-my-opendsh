@@ -291,6 +291,15 @@
   - `developer` 臂**删除而非重排**：`detectRole` 只扫 `role:"system"` 且先跑，要让它生效就得放宽 `detectRole`、把 OpenAI 路的 400 变成 200（越界）；且两行 `compat.supportsDeveloperRole` 均为 `false` ⇒ 本就无用。
   - **反例已复现并转绿**：修前 `modeCounts {"openai":1,"messages":0}` ⇒ `event type mismatch`；修后 `{"openai":0,"messages":1}` ⇒ 适配器 `finish(stop)` **PASS**。规则矩阵 **9/9**；**反例控制**成立：已安装的 OpenAI 方言客户端**没有**一个会 POST `/messages`（用 `/chat/completions` 或 `/responses`）；pi-ai 的 `pi-messages.js:250` 确实 POST `/messages`，但发的是 `{model, context, options}`（无 `messages[]`、无 `system`）⇒ `detectRole` 先 400 掉，实测 HTTP 400 且 modeCounts 不变。
   - demo 红**守在 6 条**未上升，`tool/call`=1、`tool/result`=1；成因仍是 `SessionFormatError`（T9 的面）。
+  - **⚠️ 仲裁者复核时抓到的缺口（补测前不得提交）**：`isMessagesRequest` 这条**方言规则本身没有已提交的门**——`tests/e2e/mock-llm-server.test.ts` 在 HEAD 就存在且**未被改动**，其 6/6 是既有测试；`tests/` 里没有任何东西断言 `isMessagesRequest`（唯一的 `stream_options` 命中 `:57` 是**请求输入**、不是判定断言）⇒ 编码方那 9 条规则矩阵是**临时跑的**，只活在报告里。
+    **而这条规则现在承载着每个场景的正确性**，并且建立在四条从已安装包读出来的事实上（`:1709` 空时省略顶层 `system`；`:1653-1661` 会把 `role:"system"` 行放进 `messages[]` 内部；0.2.x 的 Messages 适配器里 `stream_options` 零出现；pi-ai 的 OpenAI writer 里 `output_config` 零出现）。**上游任一条变了，仓内没有任何东西会发现。**
+    ⇒ **补测清单**（写进 `tests/e2e/mock-llm-server.test.ts`，断**判定**而非整个响应）：
+    ① `/messages` + `messages:[{user},{system}]` + **无顶层 `system`** ⇒ Messages（评审 A 的反例，正是那条 MAJOR）；
+    ② `/chat/completions` + 有顶层 `system` ⇒ OpenAI（**路径压过 body**）；③ `/responses` ⇒ OpenAI；
+    ④ 未识别路径 + `stream_options` ⇒ OpenAI；⑤ 未识别路径 + `output_config` ⇒ Messages；
+    ⑥ pi-ai 的 OpenAI `thinking` 载荷 ⇒ OpenAI（**这是编码方自己发现并移除的那个标记的回归测试**）；
+    ⑦ `body` 残缺 / `requestUrl` 缺席 ⇒ 不抛、保守默认。
+    若 `isMessagesRequest` 未导出则导出它——这是让它可测的最小改动，不改运行时行为。
   - **新登记的局限**：pi-ai 原生的 `pi-messages` API **也** POST `/messages`；若哪个场景给它一个 MOCKROLE，它会收到无法解析的 Anthropic 帧 ⇒ **第三种方言，本切片未实现**。
 - **依赖**：P4.5-T8b。**量级**：1 天。
 
