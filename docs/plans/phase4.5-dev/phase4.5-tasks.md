@@ -61,6 +61,23 @@
 >   ⇒ **不存在一个跨代都带图的 id**，视觉席在 T12 之前无法两代通吃，这是必须写进 T12 的事实。
 >   回退提交 `320a043`（已推送）。证据 `.omo/evidence/p45t8/P14-model-id-cross-generation.md`。
 >
+>   **四之五、规约⑲d（新增，2026-10-06 05:45）：回退要按「概念」回退，不能按「提交」回退。**
+>   本次的完整因果（全部实测）：① T8d（`bc831da`）把 `roster.ts` + 出货模板 + 门 + 脚本 + 文档的
+>   模型 id 改成 0.2.x 的 `deepseek-flash`；② T8b（`f4015a1`，更早）把 **`drive.mjs` 的
+>   `PARADE_SEATS`** 也改成同一个 id——**两处是同一件事的两半**；③ CI 门 3 红，干净树 + 0.1.5-rc.1
+>   跑满 33 场景得 **10 条红、全是委派类**，子席逐字报
+>   `pi-ai provider "deepseek" has no configured model "deepseek-flash"`；④ **只回退 T8d 那一半**
+>   ⇒ 10 条降到 **1 条**；⑤ 那 1 条是 `roster-parade` 的
+>   `READ-FACE FAIL: explore: parsed agentOptions.model="deepseek-flash" want deepseek-v4-flash`
+>   ——因为 `PARADE_SEATS` 仍写新 id 而 `roster.ts` 已回退。⇒ **另一半必须同批回退**，
+>   整个模型 id 改钉作为**一个整体**挪到 **T12**。
+>   **这次是门抓到的，不是评审猜到的**：`PARADE_SEATS` 上方那段注释**事先就写好了这个失效形态**
+>   （逐字：*a seat here that is not a real, servable id fails LOUD … instead of silently agreeing*），
+>   它真的响了，只是两代 id 左右对调。⇒ **一个被刻意设计的耦合，在耦合真发生时被门抓住。**
+>   ⇒ **⑲d**：回退前先问「这个概念一共出现在几个提交里」，列全再动手；回退后必须有一条
+>   **端到端的门**（这里是 33 场景全跑）确认概念已完全移除，**而不是只看被回退的那个提交绿了**。
+>   证据 `.omo/evidence/p45t8/P14-model-id-cross-generation.md` 的 P15 节。
+>
 >   **⑲c 补充条款（由 T9 提出，采纳）**：⑲c 保护别人不被**我的脏树**坑，但**不保护别人的在飞改动
 >   不被我的「按文件恢复」吃掉**——本次 `git reset --soft bc831da` + 按文件恢复确实抹掉了 T9 的
 >   `tests/omo-agents/hard-blocks-injection.test.ts`（它 10 个在飞文件里的那 1 个），且它当时的 AC5
