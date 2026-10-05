@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4.5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，复核报告给出"每个面断在哪"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🚧 **5/13 + T8a**（T2–T7；WP-3 安装器交付线已落地并经四轮双评审收口，提交 `e588ea2`；**T8a 为 2026-10-06 新增切片**，见下方 D17 修订记录）（`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消；T9 为 deferrable 项，defer 不算未完成）
+> **状态**：🚧 **5/13 + T8a + T8b**（T2–T7；WP-3 安装器交付线已落地并经四轮双评审收口，提交 `e588ea2`；**T8a / T8b 为 2026-10-06 新增切片**，见下方 D17 修订记录）（`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消；T9 为 deferrable 项，defer 不算未完成）
 >
 > **修订记录**：
 >
@@ -14,7 +14,7 @@
 >
 >   **二、D17 推翻的计划前提（唯一一条）**：计划书 §4.1 原写「本阶段全程保持同一代码在 0.1.5-rc.1 与 0.2.x 上都可工作（双模）」，理由是「若适配代码只能在 0.2.x 工作，特性分支的 CI 自第一个适配 commit 起全程红」。**该理由不再成立**——业主选择「快速收敛到单一目标运行时」，接受过渡期内 CI 仍绿这一护栏逐步退场。**但推论不是「立刻删双模」**：T12 之前 CI 仍跑 0.1.5-rc.1，**过早删除会让 CI 立刻全红且掩盖真正的 0.2.x 红点**。⇒ **双模保留到 T12，T12 之后删**（这条与计划书 §4.1 末尾「死路径在 pin 翻转 commit 一并删除」一致，只是删除被拆成两次）。
 >
->   **三、重排序（新增 T8a / T12b，WP-4→WP-7）**：
+>   **三、重排序（新增 T8a / T8b，WP-4→WP-7）**：
 >
 >   | 序 | 任务 | 相对原计划 | 为什么 |
 >   |---|---|---|---|
@@ -27,7 +27,7 @@
 >   | 7 | **P4.5-T12** pin 翻转 | 原为「最后一个工作包」 | **提前到 WP-6 之后**，因为 0.2.x 全链绿是它的前置；退出标准 (f) 由**此 commit 的 CI 在新 pin 下绿**承载 |
 >   | 8 | **P4.5-T13** 死路径删除 + 矩阵迁移 + 文档收口 | 原含「0.1.5 死路径删除」，现独立成末段 | **拆分理由（对计划 §4.1 末尾的修订）**：翻转 commit 必须**小到能二分**——CI 一旦红，必须能立刻分清是「pin 本身」还是「顺手删的一大片」造成的。死路径删除随 T13 同 PR，不进翻转 commit |
 >
->   **四、T8a 的由来（本次一手实测，非推算）**：仲裁者派 WP-4 前先探了门 3 的本机可跑性，**发现它在本机 0.2.x 上跑得动但红 9 条断言**，且红点唯一、根因已一手钉死 ⇒ **Q-8（v4 逐字形状采集）在修复它之前一条数据都采不到**。上游一手：本机 0.2.0-rc.2 的 `dsh-settings/lib/index.js:343-362` 逐字写着「Move the sections of the **removed** `settings.yaml` into the active profile **once the Loader has settled every entry**」，`:348-351` 是 `join(profile.home,"settings.yaml")` → `rename(path, \`${path}.imported\`)`，`:334-337` 该导入由 `ctx.root.loader.await().then(...)` 触发 ⇒ **0.2.x 删掉了 `settings.yaml` 这个配置面**，改为一轮「loader settle 之后」的补导入。实测：沙箱首启后 `settings.yaml` **消失**、原地留下 `settings.yaml.imported`；导入**确实成功**（`profiles/web/cordis.patch.yml` 里长出与种子逐字段相同的三行）——**但它落在 `loader.await()` 之后，而 `omo-agents` 的 route provider 判定在自己的 `apply()` 期** ⇒ 首启必然抢跑，boot marker 打 `[omo-agents] route provider not registered: deepseek`。**反证决定性**：同一沙箱**再启一次**（patch 文件此时已带那三行）该 marker **整行消失**。⇒ 修法是把 LLM 接线**种进 profile patch overlay**（drive 本来就在用 `--patch` 种 persistence overlay），使配置在 `apply()` 前在场。完整证据：`.omo/evidence/p45t8/ARBITRATION-feasibility-probe.md`（含沙箱原始件与二次启动对照）。
+>   **四、T8a 的由来（本次一手实测，非推算）**：仲裁者派 WP-4 前先探了门 3 的本机可跑性，**发现它在本机 0.2.x 上跑得动但红 9 条断言**，且红点唯一、根因已一手钉死 ⇒ **Q-8（v4 逐字形状采集）在修复它之前一条数据都采不到**。上游一手：本机 0.2.0-rc.2 的 `dsh-settings/lib/index.js:343-362` 逐字写着「Move the sections of the **removed** `settings.yaml` into the active profile **once the Loader has settled every entry**」，`:348-351` 是 `join(profile.home,"settings.yaml")` → `rename(path, \`${path}.imported\`)`，`:339-341` 该导入由 `ctx.root.loader.await().then(...)` 触发 ⇒ **0.2.x 删掉了 `settings.yaml` 这个配置面**，改为一轮「loader settle 之后」的补导入。实测：沙箱首启后 `settings.yaml` **消失**、原地留下 `settings.yaml.imported`；导入**确实成功**（`profiles/web/cordis.patch.yml` 里长出与种子逐字段相同的三行）——**但它落在 `loader.await()` 之后，而 `omo-agents` 的 route provider 判定在自己的 `apply()` 期** ⇒ 首启必然抢跑，boot marker 打 `[omo-agents] route provider not registered: deepseek`。**反证决定性**：同一沙箱**再启一次**（patch 文件此时已带那三行）该 marker **整行消失**。⇒ 修法是把 LLM 接线**种进 profile patch overlay**（drive 本来就在用 `--patch` 种 persistence overlay），使配置在 `apply()` 前在场。完整证据：`.omo/evidence/p45t8/ARBITRATION-feasibility-probe.md`（含沙箱原始件与二次启动对照）。
 >
 >   **五、T9 判据改写**：原判据是「仅当 T1–T8 期间发现 0.2.x 消费者对未知 kind 有实际误行为时拉入」。D17 不改变这条判据本身，但**改变了「期间」的跨度**——WP-4/5/6 全部只剩 0.2.x 一个运行时，因此「消费者」不再分两代。**defer 的门槛随之降低**：只需证明 0.2.x 上没有任何消费者对未知 `kind` 误行为即可 defer，**不需要** 0.1.5 侧的对照。
 >
@@ -214,6 +214,18 @@
 - **非空洞性（硬性）**：修复后必须**把旧行为（只写 `settings.yaml`）放回去再跑一次**，展示它退回那 9 条红，再恢复修复展示绿。**造不出红的门比没有门更坏**。
 - **证据**：⬜ 进行中（`.omo/evidence/p45t8/T8a-sandbox-seeding.md`；仲裁者探针 `.omo/evidence/p45t8/ARBITRATION-feasibility-probe.md` + `logs/Q8-session.v4.jsonl`）
 - **依赖**：无（纯 0.2.x 驱动侧适配）。**量级**：3 小时。
+
+### [ ] P4.5-T8b — MOCKROLE 投递迁到 0.2.x 的注册面（2026-10-06 新增，D17 派生；T8 与 Q-8 的硬前置）
+
+- **为什么有这一片**：T8a 把门 3 的**第一道**红点修掉之后（route provider 已绿），场景仍红 8 条，末因逐字是 `mock-llm: no MOCKROLE=<role> marker found in any system message`（`INVALID_REQUEST` 400）。**这不是 T8a 引入的**：仲裁者自己 00:11 归档的**修复前**基线日志 `.omo/evidence/p45t8/logs/Q8-session.v4.jsonl` 里同一条错误逐字存在 ⇒ **两个独立根因叠着**，T8a 只覆盖了靠前那道。
+- **根因（一手，三处）**：`appendMockRoleMarker()`（`drive.mjs:2821-2838`）把标记写进 `materializedCompositionPath(sandbox)` = `$DSH_HOME/.agent-presets/concerto/agent.cordis.yml`；该目录在 0.2.x 上**零读取方**（T7 fork 裁定的 F1）；真正被挂载的组合来自 `CONCERTO_TEMPLATE_DIR`，而 `patches/omo-dsh/omo-agents/src/concerto-preset.ts:122-126` 用 `dirname(fileURLToPath(import.meta.url)) + '/../concerto'` **相对已安装插件包**解析，`:377-381` 从那里渲染，`:859` 交给 `register()`。⇒ **标记打在 A 面，运行时挂载的是 B 面。**
+- **产出**：MOCKROLE 在 0.2.x 上到达**被注册的**那份组合；**0.1.5 的物化面投递路径保留**（它在 0.1.5 上仍是被读的），T12/T13 再删。
+- **做法**：首选方向 = **让沙箱装插件包的副本**——`installPlugin()`（`drive.mjs:2505-2527`）现在 `dsh plugin add <仓内目录>`；改成先 `cp -r` 进沙箱、在**副本的模板**上盖 MOCKROLE、再 `add` 副本路径。依据是 `CONCERTO_TEMPLATE_DIR` 走 `import.meta.url` 相对解析 ⇒ 副本的模板就是副本渲染时读的模板。**不得为此改任何出货码、不得新增依赖。**
+- **实施方必须先答的三个问题（不得替它答）**：① `dsh plugin add <目录>` 是复制还是符号链接（查 `dsh/lib/bin.js` 与 plugin-manager 实装并引行号）；② 沙箱内的副本会不会被门 5 / 门 6 看见（**要实测，不能假定**）；③ 两条投递路径在 T12 之前的并存方式与各自的断言面。
+- **判定**：✅ `DSH_E2E_ONLY=concerto-delegation-demo node tests/e2e/drive.mjs` 在本机 0.2.x 上 `"result":"PASS"`；**日志里出现 `tool/call` 与 `tool/result` 事件**（这是 Q-8 能开工的前提，也是本切片最硬的判据）；非空洞性：把修复放回旧行为须退回那 8 条红。
+- **⚠️ 计划缺口登记（DoD-d）**：计划书 §4.6 门 3 行要求迁移的是 `materializedCompositionPath` 的**断言**面（T6 已做）；**MOCKROLE 是注入面**，§4.5/§4.6 通篇未提。⇒ 「T6 已迁移」**不得**读成「drive.mjs 的物化依赖已清空」——同一文件里两张面同时存在，只迁一张，门 3 在 0.2.x 上永远绿不了。
+- **证据**：⬜ 待填（`.omo/evidence/p45t8/P8-mockrole-dead-face.md` 为仲裁者的一手根因记录）
+- **依赖**：P4.5-T8a。**量级**：1 天。
 
 ### [ ] P4.5-T8 — drive.mjs 双形状夹具 + 信封读取点核对
 
