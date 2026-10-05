@@ -86,14 +86,56 @@
 // ── MOCKROLE DELIVERY (T17's role marker must reach a SYSTEM message)
 // Workspace instruction files (AGENTS.md) are injected as USER-role
 // <system-reminder> messages (dsh-agent-instructions/README.md:17,47) —
-// invisible to the mock server's system-message scan. Instead the driver
-// appends `MOCKROLE=<role>` to the PERSONA block scalar of the MATERIALIZED
-// preset ($DSH_HOME/.agent-presets/concerto/agent.cordis.yml) AFTER boot sync
-// and BEFORE session.create: dsh-agent-presets reads the composition file at
-// mount time (readComposition → readFile(preset.path), lib/index.js:334) and
-// ensureStanding re-stamps the file on every use (:1130-1160), so the edit is
-// honored. The persona IS the system prompt (T8), so the marker rides the
-// real prompt-assembly path. The mock's recorded requests[] prove delivery.
+// invisible to the mock server's system-message scan. The marker therefore has
+// to ride a PERSONA, and since P4.5-T8b it rides TWO FACES, because the two
+// runtime generations mount different bytes:
+//   * 0.2.x (this machine: dsh 0.2.0-rc.2) mounts what omo-agents handed to
+//     register(). renderConcertoComposition() reads agent.cordis.yml from
+//     CONCERTO_TEMPLATE_DIR, which resolves from the INSTALLED package's own
+//     import.meta.url (src/concerto-preset.ts:122, read at :381), and the
+//     profile's installed package is a SYMLINK to whatever path
+//     `dsh plugin add` was given (measured: pnpm records `link:<path>` and
+//     node_modules/@oh-my-opendsh/omo-agents is a symlink — see
+//     installPlugin). So the driver installs a COPY of the package into the
+//     sandbox and stamps `MOCKROLE=<role>` as the FIRST LINE of the COPY's
+//     persona SOURCE — system-sections/role.md for the conductor, the roster's
+//     `personaFile` for a delegation child (stampMockRoleMarkersIntoPluginCopy).
+//     NOT into the copy's template YAML: there the persona VALUES are sentinels
+//     that the renderer replaces wholesale — `prefix:
+//     __OMO_SISYPHUS_SYSTEM_PROMPT__` becomes `prefix: |-` plus the assembled
+//     markdown (src/system-prompt.ts:83 is the needle, :95 the replace) — so a
+//     line written into the template can never land inside the block scalar the
+//     renderer emits. The markdown is upstream of that scalar; the template is
+//     not. Measured on the pre-fix baseline: the stamped materialized file
+//     carries the markers, the `agentPresets/read` content carries NONE, and
+//     the session's `system/message` is the harness header + the assembled
+//     persona with no marker in it → the mock's 400.
+//   * 0.1.5 (the CI pin) answers the preset from FILE DISCOVERY, so
+//     appendMockRoleMarker keeps stamping the MATERIALIZED preset
+//     ($DSH_HOME/.agent-presets/concerto/agent.cordis.yml) after boot sync and
+//     before session.create — the pre-T8b delivery, kept verbatim because on
+//     that generation the file IS the mounted face (readComposition →
+//     readFile(preset.path), lib/index.js:334; ensureStanding re-stamps it on
+//     every use, :1130-1160 — citations inherited from this header pre-T8b,
+//     not re-measured here, since this machine runs 0.2.0-rc.2). On 0.2.x the
+//     materialized file IS still written — but NOT by appendMockRoleMarker: its
+//     line-anchored guard (`if (markerPattern.test(text)) return // idempotent`)
+//     returns BEFORE that function's only `writeFileSync`, and it returns on
+//     0.2.x precisely because the copy's stamp already put the marker on the
+//     FIRST content line of the rendered scalar. The writer on this generation is
+//     the plugin's own `syncConcertoPreset` at boot — which is also exactly what
+//     doctor-lite's `subagent-config` gate drives, into a throwaway mkdtemp that
+//     it then parses and validates (scripts/doctor-lite.mjs:597 mkdtempSync,
+//     :602 `concerto.syncConcertoPreset(temp)`), so that gate exercises the
+//     RENDER and never the `$DSH_HOME` write. What 0.2.x does NOT do is READ
+//     that file: the mounted face is `register()`'s rendered composition, which
+//     is why the copy's markdown is the load-bearing half here. The two paths
+//     coexist until the pin flips without double-stamping — the same
+//     line-anchored guard keeps every row at exactly one marker on BOTH
+//     generations.
+//     The persona IS the system prompt (T8), so the marker rides the real
+//     prompt-assembly path on either face. The mock's recorded requests[]
+//     prove delivery.
 // T19 generalized the delivery to BOTH persona scalars of the same file
 // (MOCKROLE_BLOCK_SCALARS): the conductor persona row (`prefix: |-`, content
 // indent 6 — src/system-prompt.ts renderPersonaIntoComposition) and the T11
@@ -182,10 +224,20 @@
 //
 // THE roster-parade scenario then answers the Phase 2 exit criterion (a) for
 // the WHOLE roster in one run. The sandbox env distributes the 10 delegation
-// agents over the 7 REAL catalog route pairs (plan §4.7): dsh-llm-deepseek's
-// DEFAULT_MODELS ids (deepseek-flash / deepseek-v4-flash / deepseek-v4-pro /
-// deepseek-v4-flash-vision-exp) and pi-ai's builtin deepseek ids
-// (deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp).
+// agents over the REAL catalog route pairs (plan §4.7 counted SEVEN; on this
+// pinned install there are FOUR — see PARADE_SEATS for the re-derived table).
+// Both catalogs were re-measured for P4.5-T8b rather than inherited from the
+// plan: installed dsh-llm-deepseek DEFAULT_MODELS holds `deepseek-flash`
+// (lib/index.js:43, `inputModalities: ["text","image"]` at :46) and
+// `deepseek-v4-pro` (:50); installed pi-ai dist/providers/data/deepseek.json
+// (`openai-completions`) holds the same two ids and nothing else. So
+// `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` — the ids this file
+// pinned for explore, sisyphus-junior, librarian and multimodal-looker — are
+// FICTIONAL here, and the parade proved it LOUD before they were re-pinned:
+// `READ-FACE FAIL: explore: parsed agentOptions.model="deepseek-v4-flash" want
+// deepseek-flash`, measured once src/roster.ts (T8d) stopped pinning it. The
+// seats below now carry only ids the pinned install really serves, and the
+// coverage claim moved from seven pairs to four with them.
 // NO fake ids: a session-controller `model-unavailable` is the only thing a
 // fake id would trip, and the deepseek adapter does not validate model ids at
 // request time under a mock baseURL — so a fake id is mechanically feasible,
@@ -498,6 +550,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -509,7 +562,7 @@ import {
 } from 'node:fs'
 import { createServer } from 'node:http'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { startMockLlmServer } from './mock-llm-server.mjs'
@@ -865,38 +918,77 @@ function paradeLabel(agent) {
   return `parade-${agent}`
 }
 
-// THE SEAT DISTRIBUTION (plan §4.7). 10 delegation agents over the 7 REAL
-// catalog pairs, every id verified against the pinned install:
-//   * dsh-llm-deepseek DEFAULT_MODELS (lib/index.js:1841; ids :1843
-//     deepseek-flash, :1852 deepseek-v4-flash, :1858 deepseek-v4-pro, :1864
-//     deepseek-v4-flash-vision-exp) — provider route `deepseek-official`.
-//   * @earendil-works/pi-ai dist/providers/data/deepseek.json (builtin
-//     `deepseek` provider: deepseek-v4-flash, deepseek-v4-pro,
-//     deepseek-v4-flash-vision-exp) — provider route `deepseek`.
+// THE SEAT DISTRIBUTION (plan §4.7). 10 delegation agents over the catalog
+// pairs, every id re-verified against THIS pinned install (dsh 0.2.0-rc.2) by
+// P4.5-T8b rather than inherited from the plan:
+//   * dsh-llm-deepseek DEFAULT_MODELS — installed lib/index.js:43 `deepseek-flash`
+//     (its row declares `inputModalities: ["text","image"]`, :46) and :50
+//     `deepseek-v4-pro`, and NOTHING else in that list — route
+//     `deepseek-official`.
+//   * @earendil-works/pi-ai dist/providers/data/deepseek.json, `openai-completions`
+//     section — `deepseek-flash` and `deepseek-v4-pro`, and NOTHING else. This
+//     catalog spells modality `input`, NOT `inputModalities`, and the installed
+//     runtime maps it across: `dsh-llm-pi-ai/lib/index.js:1806` (`listModels`)
+//     and `:1825` (`modelInfo`) both emit `inputModalities: [...model.input]`.
+//     Measured per id: `deepseek-flash` → `input: ["text","image"]`, so the
+//     FAST ROUTE DOES advertise image input; `deepseek-v4-pro` → `input:
+//     ["text"]`, text only. Image capability is per-id on BOTH routes, never
+//     per-route — route `deepseek`.
+// ⇒ BOTH catalogs on this pin hold exactly those two ids, so the plan's
+// `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are FICTIONAL here and
+// this table carries FOUR distinct pairs, not the seven plan §4.7 counted:
+//   deepseek/deepseek-flash            → explore, librarian
+//   deepseek-official/deepseek-v4-pro → hephaestus, oracle, plan-reviewer, atlas
+//   deepseek-official/deepseek-flash  → plan-consultant, multimodal-looker,
+//                                          sisyphus-junior
+//   deepseek/deepseek-v4-pro          → prometheus
+// The vision seat: `multimodal-looker` sits on `deepseek-official/deepseek-flash`.
+// Both routes carry image input for `deepseek-flash` — the official row declares
+// `inputModalities: ["text","image"]` (lib/index.js:46), the pi-ai row declares
+// the same capability as `input: ["text","image"]` and the runtime maps it
+// (`dsh-llm-pi-ai/lib/index.js:1806`, `:1825`). An earlier revision of this
+// comment claimed pi-ai declared no image input because the `inputModalities` key
+// was absent: a citation that reads correctly and supports a stronger claim than
+// it earns, since the capability lives under a different key. The seat stayed on
+// `deepseek-official` because that is where it already sat and changing the model
+// id alone was the minimal correct change — NOT because the fast route cannot see
+// images. `librarian` (text) takes the pi-ai route. There is no second vision
+// pair to distribute, so the pre-T8b note that "covering all 7 real pairs requires
+// exactly one non-looker on a vision seat" is gone rather than amended — its
+// premise no longer exists. This stays a routing-mechanics distribution, not a
+// claim about semantic seat fitness.
 // NO fake ids: under the mock baseURL a fake id would be mechanically
 // accepted, which is exactly why it would hollow out the assertion (plan §4.7
 // H-5 — "route observable" must keep meaning "route really servable").
-// multimodal-looker sits on a vision id (its natural seat). `librarian` is the
-// one TEXT agent deliberately parked on the second vision pair: with 10 agents
-// and 2 vision pairs, covering all 7 real pairs requires exactly one non-looker
-// on a vision seat, and the vision models are text+image supersets. This is a
-// routing-mechanics distribution, not a claim about semantic seat fitness.
+//
+// WHY THE TABLE MUST TRACK THE SHIPPED DEFAULT (and why `resolveModelRoutes()`
+// stays as it is): the read-face validator compares the sandbox's composed
+// `agentOptions.model` against `resolveModelRoutes()` reading the AMBIENT
+// process.env, i.e. against roster.ts's shipped defaults. Pointing it at the
+// scenario's own `def.env` would make this gate green in one edit — and would
+// have the sandbox assert against itself, which is the self-referential check
+// this repo forbids everywhere else. The coupling is therefore the point: a
+// seat here that is not a real, servable id fails LOUD
+// (`READ-FACE FAIL: explore: parsed agentOptions.model="deepseek-v4-flash"
+// want deepseek-flash`, measured pre-fix) instead of silently agreeing.
 const PARADE_SEATS = new Map([
-  ['explore', { provider: 'deepseek', model: 'deepseek-v4-flash' }],
+  ['explore', { provider: 'deepseek', model: 'deepseek-flash' }],
   ['hephaestus', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
   ['oracle', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
-  ['librarian', { provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp' }],
+  ['librarian', { provider: 'deepseek', model: 'deepseek-flash' }],
   ['plan-consultant', { provider: 'deepseek-official', model: 'deepseek-flash' }],
   ['plan-reviewer', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
   ['atlas', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
-  ['multimodal-looker', { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' }],
-  ['sisyphus-junior', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }],
+  ['multimodal-looker', { provider: 'deepseek-official', model: 'deepseek-flash' }],
+  ['sisyphus-junior', { provider: 'deepseek-official', model: 'deepseek-flash' }],
   ['prometheus', { provider: 'deepseek', model: 'deepseek-v4-pro' }],
 ])
 
 /**
- * The 7 pairs the distribution must cover, derived from PARADE_SEATS (never
- * restated) — the scenario asserts all of them were actually exercised.
+ * The pairs the distribution must cover — FOUR on this pin, derived from
+ * PARADE_SEATS (never restated) — the scenario asserts all of them were
+ * actually exercised. Pre-T8b this read seven, counting ids neither installed
+ * catalog has.
  */
 const PARADE_SEAT_PAIRS = [...new Set(
   [...PARADE_SEATS.values()].map((seat) => `${seat.provider}/${seat.model}`),
@@ -2928,27 +3020,126 @@ async function commandExecute(boot, { sessionId, line }) {
 
 // ── dsh process management (cold-start.sh discipline) ───────────────────────
 
+/**
+ * The sandbox COPY of the concerto package (P4.5-T8b) — the path
+ * `installPlugin` hands to `dsh plugin add` for the row that owns the
+ * concerto template, and the only place a MOCKROLE stamp may land.
+ *
+ * WHY A COPY IS LOAD-BEARING, measured on this machine (dsh 0.2.0-rc.2, the
+ * installed npm package at ~/.npm-global/lib/node_modules/@deepseek-ai/dsh):
+ *   * `dsh plugin --profile <p> add <abs dir>` forwards its arguments to
+ *     pnpm inside the PROFILE directory — `runPlugin` builds
+ *     `{profile, dir, installAnchor, cwd: process.cwd()}`
+ *     (lib/plugin-BGnVfe_D.js:74-79) and `runProfilePnpm` spawns pnpm with
+ *     `cwd: dir` (dsh-plugin-manager/lib/index.js:517-518). The caller's cwd
+ *     reaches nothing but `anchorPathSpec` (:215-219), which rewrites ONLY a
+ *     `./`/`../` operand — an absolute spec passes through untouched.
+ *   * pnpm installs a local directory dependency as a `link:` SYMLINK. Raw
+ *     output of the exact command into a throwaway DSH_HOME:
+ *     `+ @oh-my-opendsh/omo-agents link:/home/linletian/SoftwareWorkspace/
+ *     oh-my-opendsh/patches/omo-dsh/omo-agents`, and `ls -l` of the profile's
+ *     node_modules shows `lrwxrwxrwx … omo-agents -> …/patches/omo-agents`.
+ *   * Node resolves a symlinked module to its REALPATH, so the plugin's
+ *     `import.meta.url` — and with it CONCERTO_TEMPLATE_DIR
+ *     (src/concerto-preset.ts:122, read at :381) — realpaths BACK INTO THE
+ *     REPO.
+ * ⇒ Stamping "the sandbox's installed plugin" without copying would write into
+ * patches/omo-dsh/omo-agents/, the repo's shipping template. The copy is what
+ * makes the stamp land inside the sandbox instead.
+ */
+function pluginCopyDir(sandbox) {
+  return join(sandbox.root, 'plugins', basename(PLUGIN_DIR))
+}
+
 function installPlugin(sandbox, env) {
   // One `plugin add` per cordis.yml insert row (three rows since P4-T3): a
   // profile missing ANY one of them aborts the whole boot naming that row
   // (`plugin tree failed to load … ERR_MODULE_NOT_FOUND`) — not just a hooks
   // profile.
+  //
+  // P4.5-T8b: exactly ONE of the three rows is installed from a sandbox COPY —
+  // omo-agents, the package whose apply() renders the concerto template that
+  // 0.2.x mounts (see pluginCopyDir). The other two keep the repo path, and
+  // that is not laziness but a measured refusal: omo-hooks declares
+  // `dependencies: { undici: ^8.10.0 }` and the repo installs it as a pnpm
+  // symlink whose target is RELATIVE to the repo
+  // (`patches/omo-dsh/omo-hooks/node_modules/undici ->
+  // ../../../../node_modules/.pnpm/undici@8.11.2/node_modules/undici`), so a
+  // plain copy carries a symlink that dangles the moment it leaves the repo.
+  // Measured: `cp -r` of omo-hooks into a fresh /tmp dir then
+  // `node --input-type=module -e "import('undici')"` from that dir →
+  // `ERR_MODULE_NOT_FOUND: Cannot find package 'undici'` (the copy's
+  // node_modules/undici resolves to <tmp>/node_modules/…, which is not the
+  // repo's pnpm store). omo-agents by contrast declares NO `dependencies`
+  // field at all and every import in its src/*.ts is either `node:*` or
+  // relative, so the copy is genuinely self-contained. omo-commands declares no
+  // dependencies either, but owns no persona and no template, so copying it
+  // would only add a second face to keep honest.
+  //
+  // `cwd` moves to the sandbox WITH the copied operand and stays REPO_ROOT
+  // for the two repo operands. It is inert either way — anchorPathSpec only
+  // anchors relative operands (dsh-plugin-manager/lib/index.js:215-219) and
+  // pnpm itself runs with cwd = the profile dir (:518) — so the split is made
+  // for what it says: each `add` runs from the directory its operand lives in.
+  // bootDsh keeps `cwd: REPO_ROOT`, where cwd IS load-bearing: that is how
+  // its relative `--patch ./cordis.yml` resolves.
   let addLog = ''
+  const stagedAgentsDir = pluginCopyDir(sandbox)
+  rmSync(stagedAgentsDir, { recursive: true, force: true })
+  mkdirSync(stagedAgentsDir, { recursive: true })
+  cpSync(PLUGIN_DIR, stagedAgentsDir, { recursive: true })
   for (const pluginDir of PLUGIN_DIRS) {
-    const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', pluginDir], {
-      cwd: REPO_ROOT,
+    const operand = pluginDir === PLUGIN_DIR ? stagedAgentsDir : pluginDir
+    const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', operand], {
+      cwd: operand === stagedAgentsDir ? sandbox.root : REPO_ROOT,
       env,
       encoding: 'utf8',
       timeout: INSTALL_TIMEOUT_MS,
     })
-    addLog += `$ dsh plugin --profile ${PROFILE} add ${pluginDir}\n${add.stdout ?? ''}\n${add.stderr ?? ''}\n`
+    addLog += `$ dsh plugin --profile ${PROFILE} add ${operand}\n`
+      + (operand === stagedAgentsDir ? `(copied from ${PLUGIN_DIR})\n` : '')
+      + `${add.stdout ?? ''}\n${add.stderr ?? ''}\n`
     if (add.status !== 0) {
       writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
       throw new Error(
-        `dsh plugin add ${pluginDir} exited ${add.status} (see plugin-add.log in the sandbox)`,
+        `dsh plugin add ${operand} exited ${add.status} (see plugin-add.log in the sandbox)`,
       )
     }
   }
+  // P4.5-T8b closing assertion: the profile must REALLY resolve to the copy.
+  // `dsh plugin add <dir>` installs a local directory dependency as a pnpm
+  // `link:` SYMLINK (see pluginCopyDir), so the mounted package is only the
+  // copy for as long as that symlink points at it. If it ever realpathed back
+  // into the repo — a changed install anchor, a `file:`-style reify, a dedupe —
+  // every MOCKROLE stamp written into the copy would land on bytes nothing
+  // mounts, which is exactly the silent-break class this slice exists to kill.
+  // So the link's target is pinned here instead of trusted, and the resolved
+  // path is recorded in plugin-add.log for the kept sandbox to be audited.
+  const installedOmoAgents = join(
+    sandbox.dshHome,
+    'profiles',
+    PROFILE,
+    'node_modules',
+    '@oh-my-opendsh',
+    basename(PLUGIN_DIR),
+  )
+  if (!existsSync(installedOmoAgents)) {
+    throw new Error(
+      `the profile has no @oh-my-opendsh/${basename(PLUGIN_DIR)} entry at `
+      + `${installedOmoAgents} after `
+      + '`plugin add` — the install did not land where the stamp is written',
+    )
+  }
+  const installedReal = realpathSync(installedOmoAgents)
+  const copyReal = realpathSync(stagedAgentsDir)
+  if (installedReal !== copyReal) {
+    throw new Error(
+      `the profile's ${basename(PLUGIN_DIR)} realpaths to ${installedReal}, not to `
+      + `the sandbox plugin copy ${copyReal} — a MOCKROLE stamp into the copy would `
+      + 'reach nothing, so the run aborts instead of failing later as a mock 400',
+    )
+  }
+  addLog += `realpath ${installedOmoAgents} -> ${installedReal} (== the plugin copy)\n`
   writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
 }
 
@@ -3166,7 +3357,13 @@ async function awaitTurnEnd(sandbox, sessionId, expectedTurns = 1) {
   return found // may be undefined — the analysis reports the gap honestly
 }
 
-// ── MOCKROLE delivery (see header): extend the materialized persona scalar ──
+// ── MOCKROLE delivery (see header): TWO faces, one per generation ───────────
+// 0.2.x mounts what omo-agents handed to register(), so the marker is stamped
+// into the SANDBOX COPY's persona markdown BEFORE boot
+// (stampMockRoleMarkersIntoPluginCopy); 0.1.5 mounts the MATERIALIZED file, so
+// appendMockRoleMarker keeps stamping it AFTER boot sync and BEFORE
+// session.create. Both run on every scenario; the copy's stamp lands first and
+// makes the materialized one a line-anchored no-op (see the header).
 
 /** The materialized preset every scenario edits after boot (T6 apply-time sync). */
 function materializedCompositionPath(sandbox) {
@@ -3236,12 +3433,22 @@ function locateRoleBlockScalar(lines, spec, role) {
 }
 
 /**
- * P2-T18 MOCKROLE injection: idempotently stamp `MOCKROLE=<role>` as the FIRST
- * content line of that role's persona block scalar in the materialized
- * composition. Throws loudly on an unknown role, a missing/duplicated row
- * anchor, a missing block scalar, or a missing materialized file (sync did not
- * run). Idempotence is LINE-ANCHORED: `MOCKROLE=sisyphus` is not satisfied by
- * the `MOCKROLE=sisyphus-junior` line.
+ * P2-T18 MOCKROLE injection, 0.1.5 FACE: idempotently stamp `MOCKROLE=<role>`
+ * as the FIRST content line of that role's persona block scalar in the
+ * materialized composition. Throws loudly on an unknown role, a missing/duplicated
+ * row anchor, a missing block scalar, or a missing materialized file (sync did
+ * not run). Idempotence is LINE-ANCHORED: `MOCKROLE=sisyphus` is not satisfied
+ * by the `MOCKROLE=sisyphus-junior` line.
+ *
+ * P4.5-T8b scope note, so this comment does not lie about the runtime: on
+ * 0.2.x this file is WRITTEN and NOT READ — the preset the loader mounts comes
+ * from register(), rendered from the plugin package's own template directory —
+ * so this stamp alone cannot reach the mock. stampMockRoleMarkersIntoPluginCopy
+ * is the 0.2.x face and runs BEFORE boot; it makes this call a no-op on both
+ * generations, because the copy's stamped markdown already puts the marker on
+ * the first content line the guard below looks for. Both stay in the driver
+ * until the version pin flips: on 0.1.5 the materialized file IS the mounted
+ * face, and there the copy's stamp is what becomes redundant.
  */
 export function appendMockRoleMarker(sandbox, role) {
   const spec = MOCKROLE_BLOCK_SCALARS.get(role)
@@ -3271,6 +3478,16 @@ export function appendMockRoleMarker(sandbox, role) {
  * FIRST content line under that row's header and appears exactly once.
  * Never throws: a layout failure is returned as `{ok:false, reason}` so the
  * verdict can report it instead of collapsing into a driver error.
+ *
+ * SCOPE, stated so it cannot be over-read (P4.5-T8b review): this reads the
+ * MATERIALIZED preset, i.e. the WRITE face. On 0.1.5 that file is also the
+ * mounted face, so `ok:true` here means "the model will see the marker". On
+ * 0.2.x it is written by `syncConcertoPreset` and then NEVER READ, so
+ * `ok:true` here proves only the RENDER contract — the copy's markdown reached
+ * the composition the plugin renders — and says NOTHING about what the model
+ * received. That claim belongs to `verifyMockRoleMarkersOnReadFace`, which
+ * reads the face the runtime actually mounts. Keeping the two apart is the
+ * whole lesson of this slice; collapsing them is how the pre-T8b break hid.
  */
 export function verifyMockRoleMarkerLanding(sandbox, role) {
   const spec = MOCKROLE_BLOCK_SCALARS.get(role)
@@ -3303,6 +3520,196 @@ export function verifyMockRoleMarkerLanding(sandbox, role) {
     expected,
     actual: actual ?? null,
   }
+}
+
+/** Where the scenario archives the `agentPresets/read` content it captured. */
+function readFaceContentPath(sandbox) {
+  return join(sandbox.root, 'read-face', 'agentPresets-read-content.yml')
+}
+
+/**
+ * P4.5-T8b — gate the MOCKROLE markers on the READ face, the face this
+ * generation actually mounts.
+ *
+ * `verifyMockRoleMarkerLanding` above reads the MATERIALIZED preset; on 0.2.x
+ * that file is written and never read, so nothing in the suite previously
+ * proved that the marker reached the composition the runtime serves to the
+ * model — which is the entire point of the copy+stamp delivery. This closes
+ * that hole: it reads the archived `agentPresets/read` content (the bytes the
+ * RPC handed back for preset `concerto`, written there by runScenario straight
+ * off the read RPC, with NO fallback to the file on disk) and, per role,
+ * requires the marker row to appear EXACTLY ONCE at that role's own indent.
+ *
+ * Exactly-once, not "contains": `MOCKROLE=sisyphus` is a prefix of
+ * `MOCKROLE=sisyphus-junior`, so a substring test would let a sibling role's
+ * marker satisfy the conductor's gate. The per-role line count is therefore
+ * pinned against the exact expected row, and the total across roles is pinned
+ * too, so a marker that migrated to the wrong persona row is loud here rather
+ * than silently double-counted.
+ *
+ * Never throws: a miss is `{ok:false, reason}` so the verdict carries it.
+ */
+export function verifyMockRoleMarkersOnReadFace(sandbox, roles) {
+  const path = readFaceContentPath(sandbox)
+  let lines
+  try {
+    lines = readFileSync(path, 'utf8').split('\n')
+  } catch (error) {
+    return roles.map((role) => ({
+      role,
+      face: 'read',
+      ok: false,
+      reason: `cannot read the archived read face at ${path}: ${error.message}`,
+    }))
+  }
+  const perRole = roles.map((role) => {
+    const spec = MOCKROLE_BLOCK_SCALARS.get(role)
+    if (spec === undefined) {
+      return { role, face: 'read', ok: false, reason: `unknown role '${role}'` }
+    }
+    const expected = `${spec.indent}MOCKROLE=${role}`
+    const hits = lines
+      .map((line, index) => (line === expected ? index + 1 : 0))
+      .filter((lineNumber) => lineNumber > 0)
+    if (hits.length === 1) {
+      return { role, face: 'read', ok: true, markerLine: hits[0], markerCount: 1, expected }
+    }
+    return {
+      role,
+      face: 'read',
+      ok: false,
+      markerLine: hits[0] ?? null,
+      markerCount: hits.length,
+      expected,
+      reason: hits.length === 0
+        ? `no \`${expected}\` row in the read face — the marker never reached the mounted composition`
+        : `${hits.length} \`${expected}\` rows in the read face (lines ${hits.join(',')}) — a marker must appear exactly once`,
+    }
+  })
+  const anyMarkerLines = lines.filter((line) => /^\s*MOCKROLE=/.test(line)).length
+  if (anyMarkerLines !== roles.length) {
+    perRole.push({
+      role: '*',
+      face: 'read',
+      ok: false,
+      markerCount: anyMarkerLines,
+      reason: `the read face carries ${anyMarkerLines} MOCKROLE row(s) for ${roles.length} roles `
+        + '— a marker has migrated to, or vanished from, a persona row',
+    })
+  }
+  return perRole
+}
+
+/**
+ * P4.5-T8b MOCKROLE injection, 0.2.x FACE: stamp `MOCKROLE=<role>` as the
+ * FIRST line of that role's persona SOURCE inside the sandbox copy of
+ * omo-agents, BEFORE boot. On this generation the mounted composition comes
+ * from `register()`, and `register()` renders the template that
+ * CONCERTO_TEMPLATE_DIR points at — the plugin package's own directory, resolved
+ * from `import.meta.url` (src/concerto-preset.ts:122, read at :381). Writing
+ * the marker into the materialized file therefore reaches nothing; the marker
+ * has to be upstream of the render, and the persona markdown is the only thing
+ * upstream of it (the template's persona VALUES are sentinels that
+ * `renderPersonaIntoComposition` replaces wholesale — needle at
+ * src/system-prompt.ts:83, replace at :95 — so no line written into the
+ * template YAML can survive inside the block scalar it produces).
+ *
+ * WHICH file per role, derived rather than typed:
+ *   * a delegation child → its roster `personaFile` (roster.ts rows;
+ *     `personaFileFor` at src/persona-prompts.ts:132 is the plugin's own
+ *     lookup, so a renamed persona file cannot send the marker elsewhere);
+ *   * the conductor → the file the plugin's own loader returns for the FIRST
+ *     key of `SISYPHUS_SECTION_ORDER` (src/system-prompt.ts:33), located by
+ *     CONTENT among the copy's system-sections. Content-matching is deliberate:
+ *     the key→filename map lives inside `loadSystemSections`
+ *     (src/system-sections.ts:44-51) and is not exported, and a hand-copied
+ *     `'role.md'` here would be exactly the kind of restatement that goes
+ *     stale silently.
+ *
+ * The stamp is SELF-VERIFIED through the plugin's own assemblers pointed at
+ * the copy (`buildSisyphusSystemPrompt` / `buildAgentPersona`): the marker
+ * must be the first line of what the plugin would actually hand to
+ * `register()`, or this throws. An unknown role throws through `personaFileFor`.
+ *
+ * `reStamped` is reported per role and its meaning is pinned, not implied:
+ * `false` = THIS call performed the stamp (the source's byte 0 was not yet the
+ * marker); `true` = the source already began with it and nothing was rewritten.
+ * In production it is ALWAYS `false`, because `installPlugin` wipes and re-copies
+ * the staged directory before stamping — a fresh copy cannot already be stamped,
+ * so nobody should read `reStamped:false` as evidence of anything. It is not
+ * dead weight either: `runMockRoleCopyStampSelfTest` calls this twice against
+ * the SAME staged copy without wiping, and asserts the second pass returns
+ * `reStamped:true` for every role with the bytes unchanged. That is where the
+ * guard earns its keep, and a second stamp would be the double-marker the read
+ * face gate rejects.
+ */
+export async function stampMockRoleMarkersIntoPluginCopy(sandbox, roles) {
+  const sectionsDir = join(pluginCopyDir(sandbox), 'system-sections')
+  if (!existsSync(sectionsDir)) {
+    throw new Error(
+      `sandbox plugin copy has no system-sections/ at ${sectionsDir} `
+      + '(installPlugin did not run, or copied a package that owns none)',
+    )
+  }
+  const systemPrompt = await import(
+    new URL('../../patches/omo-dsh/omo-agents/src/system-prompt.ts', import.meta.url).href
+  )
+  const sectionLoader = await import(
+    new URL('../../patches/omo-dsh/omo-agents/src/system-sections.ts', import.meta.url).href
+  )
+  const personaPrompts = await import(
+    new URL('../../patches/omo-dsh/omo-agents/src/persona-prompts.ts', import.meta.url).href
+  )
+  const landing = []
+  for (const role of roles) {
+    const marker = `MOCKROLE=${role}`
+    let targetPath
+    if (role === CONDUCTOR_ID) {
+      const firstKey = systemPrompt.SISYPHUS_SECTION_ORDER[0]
+      const wanted = sectionLoader.loadSystemSections(sectionsDir)[firstKey]
+      const matches = readdirSync(sectionsDir).filter((file) => {
+        try {
+          return readFileSync(join(sectionsDir, file), 'utf8') === wanted
+        } catch {
+          return false
+        }
+      })
+      if (matches.length !== 1) {
+        throw new Error(
+          `the conductor's first persona section (${firstKey}) matches `
+          + `${matches.length} files in ${sectionsDir}; exactly one must match `
+          + 'or the marker has no unambiguous carrier',
+        )
+      }
+      targetPath = join(sectionsDir, matches[0])
+    } else {
+      targetPath = join(sectionsDir, personaPrompts.personaFileFor(role))
+    }
+    const before = readFileSync(targetPath, 'utf8')
+    // Line-anchored at byte 0: `MOCKROLE=sisyphus` is not satisfied by a
+    // leading `MOCKROLE=sisyphus-junior` line, and a mid-file marker would
+    // still be found by the mock's unanchored scan but is not what this
+    // driver promises.
+    if (!before.startsWith(`${marker}\n`)) {
+      writeFileSync(targetPath, `${marker}\n${before}`)
+    }
+    const assembled = role === CONDUCTOR_ID
+      ? systemPrompt.buildSisyphusSystemPrompt(sectionLoader.loadSystemSections(sectionsDir))
+      : personaPrompts.buildAgentPersona(role, sectionsDir)
+    if (!assembled.startsWith(`${marker}\n`)) {
+      throw new Error(
+        `MOCKROLE stamp for '${role}' did not reach the head of the persona `
+        + `the plugin assembles from ${sectionsDir}: ${JSON.stringify(assembled.slice(0, 60))}`,
+      )
+    }
+    landing.push({
+      role,
+      file: targetPath,
+      markerLine: 1,
+      reStamped: before.startsWith(`${marker}\n`),
+    })
+  }
+  return landing
 }
 
 // ── Analysis (pure — the --self-test QA targets exactly this) ────────────────
@@ -3897,8 +4304,11 @@ export function analyzeRosterParade(
     everyChildRouteMatchedConfiguredSeat: childDetails.every((detail) => detail.seatMatches),
     everyConfiguredSeatResolvedFromEnv:
       childDetails.every((detail) => detail.configuredSeatResolved),
-    // The distribution really covers all 7 real catalog pairs.
-    allSevenRealSeatsExercised: observedPairCount === PARADE_SEAT_PAIRS.length,
+    // The distribution really covers every catalog pair the pinned install
+    // serves — FOUR since P4.5-T8b re-derived both catalogs (it was seven while
+    // the table carried ids neither adapter has). Renamed, not just re-counted:
+    // a check called allSeven… that passes on four pairs is a false report.
+    allRealCatalogPairsExercised: observedPairCount === PARADE_SEAT_PAIRS.length,
     // Every role's wire requests carried the configured model (route
     // observability on the mock channel too, not just the session log).
     everyMockRequestOnConfiguredModel: childDetails.every(
@@ -7582,6 +7992,195 @@ async function runMockRoleLandingSelfTest() {
   return problems
 }
 
+/**
+ * P4.5-T8b — hermetic self-test (NO spawn) for the 0.2.x delivery half:
+ * `stampMockRoleMarkersIntoPluginCopy` and `verifyMockRoleMarkersOnReadFace`.
+ *
+ * Both shipped from T8b unexercised under `--self-test`, which is the same hole
+ * A1′ closed for `seedSandbox`: a new code path nothing drives is a hole, not a
+ * feature. This drives them over a staged `system-sections` copy of the REAL
+ * plugin package — the same bytes the stamp sees in production — and mutates
+ * that staging to name the faults the stamp exists to refuse.
+ *
+ * What each leg pins:
+ *   GOOD        every role's carrier starts with its own marker at line 1.
+ *   IDEMPOTENT  a SECOND pass over the SAME staged copy rewrites nothing and
+ *               reports `reStamped:true` — the branch production can never reach,
+ *               because installPlugin wipes the staged dir first. Without this
+ *               leg the field is unobservable and its meaning is a rumour.
+ *   FAULT 1     an unknown role throws (through `personaFileFor`).
+ *   FAULT 2     stamping with NO staged copy throws naming `system-sections` —
+ *               the copy and the stamp are coupled; forgetting the copy must not
+ *               half-succeed.
+ *   FAULT 3     a SECOND file carrying byte-identical conductor bytes throws:
+ *               the carrier must be unambiguous or the marker can land on a file
+ *               nothing assembles.
+ *   FAULT 4-7   the read-face gate must refuse a sibling-prefix marker
+ *               (`MOCKROLE=sisyphus-junior` satisfying `sisyphus`), a duplicated
+ *               marker, an unmarked mounted face, a marker that migrated to a
+ *               role outside the scenario, and an unreadable face.
+ */
+async function runMockRoleCopyStampSelfTest() {
+  const problems = []
+  const sandbox = createSandbox()
+  const roles = [CONDUCTOR_ID, 'explore']
+  try {
+    const copyDir = pluginCopyDir(sandbox)
+    const sectionsDir = join(copyDir, 'system-sections')
+    const stage = () => {
+      rmSync(copyDir, { recursive: true, force: true })
+      mkdirSync(sectionsDir, { recursive: true })
+      cpSync(join(PLUGIN_DIR, 'system-sections'), sectionsDir, { recursive: true })
+    }
+    const bytesOf = (entries) => entries.map((entry) => readFileSync(entry.file, 'utf8')).join('\u0000')
+
+    stage()
+    const landing = await stampMockRoleMarkersIntoPluginCopy(sandbox, roles)
+    if (landing.length !== roles.length) {
+      problems.push(`the copy stamp returned ${landing.length} entries for ${roles.length} roles`)
+    }
+    for (const entry of landing) {
+      const marker = `MOCKROLE=${entry.role}`
+      if (entry.markerLine !== 1) {
+        problems.push(`stamp landing for '${entry.role}' is at line ${entry.markerLine}, the marker must be line 1`)
+      }
+      if (entry.reStamped !== false) {
+        problems.push(`a freshly staged copy must report reStamped:false for '${entry.role}', got ${JSON.stringify(entry.reStamped)}`)
+      }
+      const firstLine = readFileSync(entry.file, 'utf8').split('\n')[0]
+      if (firstLine !== marker) {
+        problems.push(`the stamped carrier for '${entry.role}' starts with ${JSON.stringify(firstLine)}, not ${JSON.stringify(marker)}`)
+      }
+    }
+
+    const before = bytesOf(landing)
+    const second = await stampMockRoleMarkersIntoPluginCopy(sandbox, roles)
+    if (!second.every((entry) => entry.reStamped === true)) {
+      problems.push(
+        'a second pass over an already-stamped copy must report reStamped:true: '
+        + JSON.stringify(second.map((entry) => [entry.role, entry.reStamped])),
+      )
+    }
+    if (bytesOf(second) !== before) {
+      problems.push('a second stamp changed the bytes — the guard is not line-anchored at byte 0')
+    }
+
+    try {
+      await stampMockRoleMarkersIntoPluginCopy(sandbox, ['not-a-roster-agent'])
+      problems.push('the copy stamp must throw for an unknown role')
+    } catch (error) {
+      // Named, not merely "it threw": personaFileFor is the guard and its error
+      // carries the id, so an accidental failure elsewhere cannot masquerade as
+      // a passing fault test.
+      if (!/not-a-roster-agent/.test(error.message)) {
+        problems.push(`the unknown-role fault was not refused by the persona lookup: ${error.message.split('\n')[0]}`)
+      }
+    }
+
+    rmSync(copyDir, { recursive: true, force: true })
+    try {
+      await stampMockRoleMarkersIntoPluginCopy(sandbox, roles)
+      problems.push('stamping without a staged plugin copy must throw, not half-succeed')
+    } catch (error) {
+      if (!/system-sections/.test(error.message)) {
+        problems.push(`stamping without a staged copy threw the wrong thing: ${error.message}`)
+      }
+    }
+
+    stage()
+    const systemPrompt = await import(
+      new URL('../../patches/omo-dsh/omo-agents/src/system-prompt.ts', import.meta.url).href
+    )
+    const sectionLoader = await import(
+      new URL('../../patches/omo-dsh/omo-agents/src/system-sections.ts', import.meta.url).href
+    )
+    const conductorWanted = sectionLoader.loadSystemSections(sectionsDir)[systemPrompt.SISYPHUS_SECTION_ORDER[0]]
+    const carriers = readdirSync(sectionsDir).filter((file) => {
+      try {
+        return readFileSync(join(sectionsDir, file), 'utf8') === conductorWanted
+      } catch {
+        return false
+      }
+    })
+    if (carriers.length !== 1) {
+      problems.push(
+        `in the pristine package the conductor's first persona section must match exactly one `
+        + `file, got ${carriers.length} (${carriers.join(', ')}) — the stamp's carrier is unanchored`,
+      )
+    }
+    writeFileSync(join(sectionsDir, 'ambiguous-carrier.md'), conductorWanted)
+    try {
+      await stampMockRoleMarkersIntoPluginCopy(sandbox, [CONDUCTOR_ID])
+      problems.push('an ambiguous conductor carrier (two byte-identical files) must throw')
+    } catch (error) {
+      // The CARRIER guard must be what refuses, not a later accident: if the
+      // duplicate happens to sort second, the stamp picks the real carrier,
+      // succeeds, and a bare `catch` here would report this fault as caught
+      // while the guard was silently disabled. Measured — that is exactly how
+      // mutation B escaped the first draft of this leg.
+      if (!/unambiguous carrier/.test(error.message)) {
+        problems.push(
+          `an ambiguous conductor carrier must be refused by the carrier guard, not by an `
+          + `accident downstream (got: ${error.message.split('\n')[0]})`,
+        )
+      }
+    }
+
+    // ── the READ-FACE gate ────────────────────────────────────────────────────
+    mkdirSync(join(sandbox.root, 'read-face'), { recursive: true })
+    const facePath = readFaceContentPath(sandbox)
+    const faceFor = (rows) => `# fabricated read face (self-test)\nagentPresets:\n${rows.join('\n')}\n`
+    const markerRow = (role) => {
+      const spec = MOCKROLE_BLOCK_SCALARS.get(role)
+      return `${spec.rowAnchor}\n${spec.header}\n${spec.indent}MOCKROLE=${role}\n${spec.indent}body for ${role}`
+    }
+
+    writeFileSync(facePath, faceFor(roles.map(markerRow)))
+    const good = verifyMockRoleMarkersOnReadFace(sandbox, roles)
+    if (!good.every((entry) => entry.ok === true)) {
+      problems.push(`the read-face gate failed a well-formed face: ${JSON.stringify(good)}`)
+    }
+
+    writeFileSync(facePath, faceFor([markerRow('sisyphus-junior'), markerRow('explore')]))
+    const sisyphus = verifyMockRoleMarkersOnReadFace(sandbox, roles).find((entry) => entry.role === CONDUCTOR_ID)
+    if (sisyphus?.ok !== false) {
+      problems.push(`the read-face gate accepted a sibling role's marker as the conductor's: ${JSON.stringify(sisyphus)}`)
+    }
+
+    writeFileSync(facePath, faceFor([
+      markerRow(CONDUCTOR_ID),
+      `${MOCKROLE_BLOCK_SCALARS.get(CONDUCTOR_ID).indent}MOCKROLE=${CONDUCTOR_ID}`,
+      markerRow('explore'),
+    ]))
+    if (verifyMockRoleMarkersOnReadFace(sandbox, roles).find((entry) => entry.role === CONDUCTOR_ID)?.ok !== false) {
+      problems.push('the read-face gate accepted a duplicated conductor marker')
+    }
+
+    writeFileSync(facePath, faceFor(['    - id: persona', '      prefix: |-', '      no marker here']))
+    const bare = verifyMockRoleMarkersOnReadFace(sandbox, roles)
+    if (!bare.every((entry) => entry.ok === false)) {
+      problems.push(`the read-face gate accepted an unmarked mounted face: ${JSON.stringify(bare)}`)
+    }
+
+    writeFileSync(facePath, faceFor([markerRow(CONDUCTOR_ID), markerRow('oracle')]))
+    const strayed = verifyMockRoleMarkersOnReadFace(sandbox, [CONDUCTOR_ID])
+    if (!strayed.some((entry) => entry.role === '*' && entry.ok === false)) {
+      problems.push(`the read-face gate missed a marker that migrated to a role outside the scenario: ${JSON.stringify(strayed)}`)
+    }
+
+    rmSync(facePath, { force: true })
+    const unreadable = verifyMockRoleMarkersOnReadFace(sandbox, roles)
+    if (!unreadable.every((entry) => entry.ok === false && /cannot read/.test(entry.reason ?? ''))) {
+      problems.push(`a missing read face must be reported per role as unreadable: ${JSON.stringify(unreadable)}`)
+    }
+  } catch (error) {
+    problems.push(`MOCKROLE copy-stamp self-test crashed: ${error.message}`)
+  } finally {
+    rmSync(sandbox.root, { recursive: true, force: true })
+  }
+  return problems
+}
+
 async function runAnalysisSelfTest(routes) {
   const problems = []
   const good = analyzeHello(
@@ -9581,6 +10180,10 @@ async function runAnalysisSelfTest(routes) {
 
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
+  // ── P4.5-T8b the 0.2.x delivery half (hermetic): the plugin-copy stamp and
+  // the read-face gate. Both shipped unexercised; a new path nothing drives is
+  // a hole, not a feature.
+  problems.push(...await runMockRoleCopyStampSelfTest())
   // ── P4.5-T8a A1′ — the timer-free structural gate over the seeded LLM
   // wiring. seedSandbox() was never exercised here, which is exactly why
   // nothing guarded the row shape; it runs here now. It SPAWNS NOTHING, but its
@@ -15309,22 +15912,47 @@ async function runScenario(def, baseRoutes) {
     console.error(`drive: [${def.name}] stage 0 — dsh plugin add into the sandbox profile`)
     installPlugin(sandbox, env)
 
+    // P4.5-T8b: the 0.2.x MOCKROLE face, BEFORE boot. On this generation
+    // register() renders the template at apply() time and nothing reads the
+    // materialized preset afterwards, so a stamp that lands after readiness is
+    // a stamp nothing will ever mount — the marker has to be in the sandbox
+    // plugin copy before the process starts. Self-verified inside (the plugin's
+    // own assemblers must produce a persona that STARTS with the marker), and
+    // archived so the kept sandbox can be audited without re-running.
+    const copyStamp = await stampMockRoleMarkersIntoPluginCopy(sandbox, def.roles)
+    writeFileSync(join(sandbox.root, 'mock-role-copy-stamp.json'), `${JSON.stringify(copyStamp, null, 2)}\n`)
+    console.error(
+      `drive: [${def.name}] MOCKROLE stamped into the sandbox plugin copy BEFORE boot: `
+      + `${copyStamp.map((entry) => `${entry.role}→${basename(entry.file)}:1`).join(', ')}`,
+    )
+
     console.error(`drive: [${def.name}] booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0`)
     const boot = await bootDsh(sandbox, patchPath, env)
     child = boot.child
     console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port} (transport ${boot.transport})`)
 
-    // The plugin sync materializes the concerto preset at boot; then the
-    // MOCKROLE markers ride each role's persona into its child system prompt.
+    // The plugin sync materializes the concerto preset at boot — from the
+    // stamped copy above — and then appendMockRoleMarker stamps the same
+    // markers into the MATERIALIZED file: load-bearing on the 0.1.5 pin, where
+    // that file IS the mounted face, and a line-anchored no-op on 0.2.x, where
+    // the copy's stamp has already put each marker on the first content line.
     // P2-T18: verify where each marker LANDED (grep/line-number check) — the
     // parade gates on it, and every scenario carries the raw detail.
     for (const role of def.roles) appendMockRoleMarker(sandbox, role)
     const markerLanding = def.roles.map((role) => verifyMockRoleMarkerLanding(sandbox, role))
     // P3-T13: a scenario may additionally edit the SANDBOX-OWNED materialized
-    // preset before the session composes its tools (the MOCKROLE markers above
-    // already prove the file is read at session composition, not at boot). Used
+    // preset before the session composes its tools. Used
     // by the background scenario to reach the one-shot background job path the
     // shipped `continuable` rows cannot produce; loud on drift (it throws).
+    // P4.5-T8b CORRECTION to the parenthetical that sat in this comment: it
+    // claimed "the MOCKROLE markers above already prove the file is read at
+    // session composition, not at boot". That stopped being true on EITHER
+    // generation once the marker began arriving pre-boot. On 0.1.5 the stamped
+    // plugin COPY renders the marker into this file at apply() time, so
+    // appendMockRoleMarker is a line-anchored no-op and proves nothing about
+    // read timing; on 0.2.x this file is not read at all. The post-boot-read
+    // property is therefore carried by `augmentMaterialized` ALONE, which is
+    // why the scenarios that depend on it must keep the fixture.
     // WP2 MAJOR-1: the fixture's RETURN VALUE is now part of the contract — it
     // names every (row, key, after) it changed, and a fixture that returns
     // nothing throws HERE instead of letting its edit collide with the roster
@@ -15366,7 +15994,7 @@ async function runScenario(def, baseRoutes) {
     const readDoc = await readPresetDocument(boot, CONCERTO_PRESET_ID)
     const readFaceDir = join(sandbox.root, 'read-face')
     mkdirSync(readFaceDir, { recursive: true })
-    const readContentPath = join(readFaceDir, 'agentPresets-read-content.yml')
+    const readContentPath = readFaceContentPath(sandbox)
     const readExpectPath = join(readFaceDir, 'roster-expectations.json')
     writeFileSync(readContentPath, readDoc.content)
     writeFileSync(readExpectPath, JSON.stringify({
@@ -15452,6 +16080,30 @@ async function runScenario(def, baseRoutes) {
           + ' — NO fallback to the materialized file is permitted',
       )
     }
+    // P4.5-T8b — the MOCKROLE gate on the MOUNTED face. Everything above
+    // asserts the composition's STRUCTURE over the bytes the read RPC returned;
+    // NONE of it asserted that the markers this slice exists to deliver are
+    // among those bytes. On 0.2.x the materialized-file landing check passes
+    // while the mounted face can be empty, so without this gate the delivery
+    // could rot straight back to the pre-T8b break and the only symptom would
+    // be a mock 400 three hops and a 400-line log away from the cause. A miss
+    // aborts HERE and names the role.
+    const readFaceMarkers = verifyMockRoleMarkersOnReadFace(sandbox, def.roles)
+    writeFileSync(join(readFaceDir, 'mock-role-markers.json'), `${JSON.stringify(readFaceMarkers, null, 2)}\n`)
+    const readFaceMisses = readFaceMarkers.filter((entry) => entry.ok !== true)
+    if (readFaceMisses.length > 0) {
+      throw new Error(
+        `[${def.name}] MOCKROLE markers are missing or duplicated on the READ face `
+        + `${readContentPath}: `
+        + `${readFaceMisses.map((entry) => `${entry.role}[count=${entry.markerCount ?? 0}] ${entry.reason ?? ''}`).join('; ')}`
+        + ' — the mounted composition does not carry the marker, so the mock cannot route that role',
+      )
+    }
+    console.error(
+      `drive: [${def.name}] MOCKROLE read-face gate PASS: `
+      + `${readFaceMarkers.map((entry) => `${entry.role}→L${entry.markerLine}`).join(', ')} `
+      + `in ${readContentPath}`,
+    )
     // The validator's own accounting goes to the gate log: how many row-keys it
     // compared, and which of them resolved against THIS scenario's declared
     // sandbox edit. That line is the machine-readable answer to 'did this
@@ -17493,7 +18145,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T15 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus ${a1PrimeSelfTestBanner()}`)
+    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
