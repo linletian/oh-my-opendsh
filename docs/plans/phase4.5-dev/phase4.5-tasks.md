@@ -4,9 +4,36 @@
 >
 > **用法**：这是**唯一**记录 Phase 4.5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，复核报告给出"每个面断在哪"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🚧 **5/13**（T2–T7；WP-3 安装器交付线已落地并经四轮双评审收口，提交 `e588ea2`）（`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消；T9 为 deferrable 项，defer 不算未完成）
+> **状态**：🚧 **5/13 + T8a**（T2–T7；WP-3 安装器交付线已落地并经四轮双评审收口，提交 `e588ea2`；**T8a 为 2026-10-06 新增切片**，见下方 D17 修订记录）（`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消；T9 为 deferrable 项，defer 不算未完成）
 >
 > **修订记录**：
+>
+> - **2026-10-06 仲裁裁定 D17「放弃 0.1.5、只适配 0.2.x+」+ WP-4/5/6/7 重排序 + 新增 T8a**——业主裁定逐字：「**v0.1.5 不用兼容可以放弃掉，现在只需要适配 v0.2.x 以上**」。本条是本阶段**第二次**由业主直接改写计划前提（第一次是 2026-10-02 的工程师反馈修订 PRE-1），故与计划书 §4.1 的核心决策同批修订。
+>
+>   **一、D17 的内容**：0.1.x 的可执行分支**不再需要工作**。CI pin 仍停在 `0.1.5-rc.1` 直到 T12，但那是**过渡期的护栏**，不是要维持的能力承诺——**T12 翻转后 0.1.x 一律不再验收**。评审与派单中任何「0.1.x 腿绿不绿」的要求，在 T12 之后自动作废；在 T12 之前仍然有效（那是防回归的唯一真实信号）。
+>
+>   **二、D17 推翻的计划前提（唯一一条）**：计划书 §4.1 原写「本阶段全程保持同一代码在 0.1.5-rc.1 与 0.2.x 上都可工作（双模）」，理由是「若适配代码只能在 0.2.x 工作，特性分支的 CI 自第一个适配 commit 起全程红」。**该理由不再成立**——业主选择「快速收敛到单一目标运行时」，接受过渡期内 CI 仍绿这一护栏逐步退场。**但推论不是「立刻删双模」**：T12 之前 CI 仍跑 0.1.5-rc.1，**过早删除会让 CI 立刻全红且掩盖真正的 0.2.x 红点**。⇒ **双模保留到 T12，T12 之后删**（这条与计划书 §4.1 末尾「死路径在 pin 翻转 commit 一并删除」一致，只是删除被拆成两次）。
+>
+>   **三、重排序（新增 T8a / T12b，WP-4→WP-7）**：
+>
+>   | 序 | 任务 | 相对原计划 | 为什么 |
+>   |---|---|---|---|
+>   | 1 | **P4.5-T8a**（新增）drive.mjs 沙箱播种适配 0.2.x | 原不存在 | 见下「四、T8a 的由来」——**它是 Q-8 的硬阻塞** |
+>   | 2 | T1 **Q-8**（v4 信封逐字形状） | 原挂在 T8 之前但从未做 | 被 T8a 阻塞；T8a 绿后可采 |
+>   | 3 | **P4.5-T8** 双形状夹具 | 原位不变 | CI 仍钉 0.1.5 ⇒ 双形状在 T12 之前仍是必需的 |
+>   | 4 | **P4.5-T9** defer 裁定 | 原位不变 | 判据改写见下「五」 |
+>   | 5 | **P4.5-T10** 门断言迁移 | 原位不变 | 迁移重心顺序（门 3 > 门 8 > 门 2）**加权重排**：D17 之后 0.2.x 门绿才是唯一目标运行时 ⇒ **门 3 与门 8 从「次重心」升为主线** |
+>   | 6 | **P4.5-T11′** 0.2.x 单运行时全链 + 金丝雀 | 原为「双运行时」 | D17 之后「双侧 8 门绿」不再是判定；**但 0.1.5 侧仍作为 pre-pin 记录跑一次**（CI 本来就在跑，零成本） |
+>   | 7 | **P4.5-T12** pin 翻转 | 原为「最后一个工作包」 | **提前到 WP-6 之后**，因为 0.2.x 全链绿是它的前置；退出标准 (f) 由**此 commit 的 CI 在新 pin 下绿**承载 |
+>   | 8 | **P4.5-T13** 死路径删除 + 矩阵迁移 + 文档收口 | 原含「0.1.5 死路径删除」，现独立成末段 | **拆分理由（对计划 §4.1 末尾的修订）**：翻转 commit 必须**小到能二分**——CI 一旦红，必须能立刻分清是「pin 本身」还是「顺手删的一大片」造成的。死路径删除随 T13 同 PR，不进翻转 commit |
+>
+>   **四、T8a 的由来（本次一手实测，非推算）**：仲裁者派 WP-4 前先探了门 3 的本机可跑性，**发现它在本机 0.2.x 上跑得动但红 9 条断言**，且红点唯一、根因已一手钉死 ⇒ **Q-8（v4 逐字形状采集）在修复它之前一条数据都采不到**。上游一手：本机 0.2.0-rc.2 的 `dsh-settings/lib/index.js:343-362` 逐字写着「Move the sections of the **removed** `settings.yaml` into the active profile **once the Loader has settled every entry**」，`:348-351` 是 `join(profile.home,"settings.yaml")` → `rename(path, \`${path}.imported\`)`，`:334-337` 该导入由 `ctx.root.loader.await().then(...)` 触发 ⇒ **0.2.x 删掉了 `settings.yaml` 这个配置面**，改为一轮「loader settle 之后」的补导入。实测：沙箱首启后 `settings.yaml` **消失**、原地留下 `settings.yaml.imported`；导入**确实成功**（`profiles/web/cordis.patch.yml` 里长出与种子逐字段相同的三行）——**但它落在 `loader.await()` 之后，而 `omo-agents` 的 route provider 判定在自己的 `apply()` 期** ⇒ 首启必然抢跑，boot marker 打 `[omo-agents] route provider not registered: deepseek`。**反证决定性**：同一沙箱**再启一次**（patch 文件此时已带那三行）该 marker **整行消失**。⇒ 修法是把 LLM 接线**种进 profile patch overlay**（drive 本来就在用 `--patch` 种 persistence overlay），使配置在 `apply()` 前在场。完整证据：`.omo/evidence/p45t8/ARBITRATION-feasibility-probe.md`（含沙箱原始件与二次启动对照）。
+>
+>   **五、T9 判据改写**：原判据是「仅当 T1–T8 期间发现 0.2.x 消费者对未知 kind 有实际误行为时拉入」。D17 不改变这条判据本身，但**改变了「期间」的跨度**——WP-4/5/6 全部只剩 0.2.x 一个运行时，因此「消费者」不再分两代。**defer 的门槛随之降低**：只需证明 0.2.x 上没有任何消费者对未知 `kind` 误行为即可 defer，**不需要** 0.1.5 侧的对照。
+>
+>   **六、本次订正 T7 判定项③（DoD-d 回填，先前遗留）**：T7 证据段写「权威通道 = CI … **在 CI 跑绿之前不得声称 0.1.5 腿已验证**」——该句**当时是对的**（`compat-probe.yml` 因 `gh issue create` 哨兵 bug 挡在第一步，`main` 上两次定时 run 失败签名逐字相同，属先于本阶段存在的 CI 基础设施缺陷），**现按 PRE-1c 通道补齐**：本机 throwaway prefix 装真实 `dsh 0.1.5-rc.1`（`npm install --global --prefix … --before=2026-09-10T09:05:02.041Z`），空 `DSH_HOME` + `NO_PIAI=1 EXPLORE_PROVIDER/MODEL`（= `compat-probe.sh:70-73` 的同形）跑真实安装器 ⇒ `==> detected dsh 0.1.5-rc.1 — install face: filediscovery`，**退出码 0**，产物只有 `.agent-presets/concerto/{agent.cordis.yml,preset.yml}`、`profiles/` 未创建（正确）、与仓源差异**恰为 `:276-277` 两行**（env 覆盖）且 `:194 provider: spawn` 未被误伤、`preset.yml` 逐字节相同；**同一 0.1.5 二进制下完整 `scripts/ci-local.sh` 八门全绿**。原始件 `.omo/evidence/p45t7/T7-leg-0.1.5.md`。⇒ **判定项③ 由「未验证」转为「成立，通道 = PRE-1c 本机腿（非 CI）」**。D17 下这条证据的**前瞻价值归零**（0.1.5 不再是目标），但它仍是 T12 删除 0.1.x 分支前「那条路曾经是通的」的唯一存档。
+>
+>   **七、诚实登记：D17 没有消除任何已记录的返工成本**。计划 §4.1 当初选双模的三条理由里，第 3 条（「双模的探针本身构成『0.1.5 上没有静默退化』的证据」）在 D17 之后**失去价值**——因为不再需要证明 0.1.5 上没有静默退化。⇒ **净收益只有「范围收窄」一条；净损失是 T12 之前的双模维护成本 + T13 的删除成本**。这是业主的取舍，仲裁照办并把代价写在这里。
 >
 > - **2026-10-05 WP-3 / P4.5-T7 收口（提交 `e588ea2`）——安装器声明式迁移落地 + 四轮双评审 + 新增规约⑳⑲⑳b**
 >
@@ -159,7 +186,7 @@
   **判定项逐条**：
   - **① 沙箱全新安装后 roster 含 `concerto` 且 `session/create` 组合成功 = 成立（真机腿）**。dsh 0.2.0-rc.2 沙箱、`mktemp -d` 的 `DSH_HOME`、**联网**跑真实安装器（未替换成离线副本）；真起 `dsh --profile web --port 0 --no-open`，20s 内就绪。原始件：`artifacts/roster.raw.json`（`presets` 5 条，`concerto` 在列、带 `name`/`description`，`grep -o broken` 全文**零命中**——是**键不存在**而非空值）、`artifacts/session-create.{request,response}.json`（`{"args":{"request":{…,"agentPreset":"concerto"}}}` → `ok:true`、`agentPreset` 回显 `concerto`）、`artifacts/session.v4.jsonl` 首行 `agentPreset":"concerto"`、`artifacts/cordis.patch.yml.installed`（317 行）、`artifacts/dump-config.out`（组成树第 1260 行的层标记正是该 patch 文件、1261 行是本 row、`plugins:` 下 16 条齐全、`disabled: !!js process.platform …` 按表达式存活）。
   - **② 二次安装幂等 = 成立**。仲裁者**亲手**离线三连跑（`curl`→`cp`、`dsh`→版本 shim）：`preset-concerto` **1 次**；**run1 == run2 == run3 逐字节相同**；用户行是结果文件的**精确字节前缀**（含注释与空行）。四层独立钉子：T3 幂等 / T4 用户行保全 / T5 两种形态识别 / T19 备份只留最新 3 份且异前缀哨兵存活。
-  - **③ 0.1.5 安装路径不回归 = 桩验证成立，真机 NOT RUN**。0.1.x 面用 `dsh --version` shim 桩成 `0.1.5-rc.1`：只建两个旧文件、与仓源**逐字节相同**、`profiles/` 不存在（评审 A 另跑 `diff -r` 与 HEAD 版产物逐字节相同，含 EXPLORE 覆盖版）。**权威通道 = CI**：`scripts/compat-probe.sh:70-73` 用**空 `DSH_HOME`** 真跑本安装器（`NO_PIAI=1 EXPLORE_PROVIDER=… EXPLORE_MODEL=…`）。**在 CI 跑绿之前不得声称 0.1.5 腿已验证。**
+  - **③ 0.1.5 安装路径不回归 = 成立**。桩验证成立（0.1.x 面用 `dsh --version` shim 桩成 `0.1.5-rc.1`：只建两个旧文件、与仓源**逐字节相同**、`profiles/` 不存在；评审 A 另跑 `diff -r` 与 HEAD 版产物逐字节相同，含 EXPLORE 覆盖版）。**真机腿已于 2026-10-06 按 PRE-1c 通道补做并成立**（头部 D17 修订记录第六条）：真实 `dsh 0.1.5-rc.1` + 空 `DSH_HOME` ⇒ 安装器 exit 0、file-discovery 产物正确、八门全绿。原写的「权威通道 = CI」因 `compat-probe.yml` 的 `gh issue create` 哨兵步骤在 `main` 上即已失败而未能使用；**证据文件已注明通道为 PRE-1c 本机腿，不是 CI**。
   - **④ 双语文档同 commit = 成立**。两份各六段 + 三处后续订正（python3/PyYAML 前置条件、卸载 `2>/dev/null` 与「首次安装不产生备份」、嵌套声明行拒绝段）；门 7 `d08` 的 8 条 raw URL 全部 `/v0.2/`。
   - **⑤ 卸载路径 = 成立**。0.1.x 面 `rm -rf ${DEST}`；0.2.x 面改为「只删 `preset-concerto` 那一行 / 还原最新的**安装器**备份（glob 收紧为 `.bak.[0-9]*`）」并明写**不要 `rm -rf` 整个 patch 文件**。T15 双向断言。
   - **⑥ registry 前提断言 = 成立**。写入**任何字节之前**读 `profiles/web/package.json` 的 `dsh.profile.bundles`：缺席 → 放行并打印首启模板提示；含 `@deepseek-ai/dsh-web-app` → 放行且 `package.json` 逐字节不变；不含 → **响亮拒绝、退出码非 0、stderr 点名实际 bundles、patch 文件 Buffer 比对逐字节未写、无 `.bak`**（T16 三分支）。
@@ -178,13 +205,23 @@
 
 ## WP-4 会话日志 v4 观测通道（计划书 §4.5；复核 §4 为权威）
 
+### [~] P4.5-T8a — drive.mjs 沙箱播种适配 0.2.x（2026-10-06 新增，D17 派生）
+
+- **为什么有这一片**：T8 的全部输入是「T1 Q-8 从真实 0.2.x 沙箱会话抓取的 v4 逐字形状」，而**抓取需要门 3 在本机 0.2.x 上真跑出带 `tool/call` + `tool/result` 的会话**。仲裁者派单前的可行性探针实测：门 3 **跑得动**（沙箱真 boot、read-face 校验器 `READ-FACE PASS`、session 建出且带 `agentPreset:"concerto"`、日志头 `"version":4`），但**红 9 条断言且全部属于「explore 席没起来」的链** ⇒ 日志里 `tool/*` 事件**零条** ⇒ **Q-8 一条数据都采不到**。根因已一手钉死（头部 D17 修订记录第四条）：**0.2.x 删掉了 `settings.yaml` 配置面**，其补导入由 `ctx.root.loader.await().then(...)` 触发，**晚于** `omo-agents` 在自己 `apply()` 期的 route provider 判定 ⇒ 首启必然抢跑。**反证**：同一沙箱再启一次该 marker 整行消失。
+- **产出**：`seedSandbox()` 把 LLM 接线（`agent-default-model` / `llm-deepseek` / `llm-pi-ai` 三个 section）种进 **profile patch overlay**，使配置在 `apply()` 前在场；`settings.yaml` 那条路在 0.2.x 上自然退化为一次性导入。**两侧都要成立**（CI 仍钉 0.1.5-rc.1）。
+- **做法**：patch 行的形状（override-by-id 是否需要 `name:`、三个 entry id 在两代是否同名）**必须先从上游 loader 与 composition 源码各钉一条，不得照抄本仓安装器的行形状**——0.2.x 的补导入自己写的是 `- id: llm-deepseek` + `name: "@deepseek-ai/dsh-llm-deepseek-api-key"`，**与直觉名不同**。
+- **判定**：✅ `DSH_E2E_ONLY=concerto-delegation-demo node tests/e2e/drive.mjs` 在本机 0.2.x 上 exit 0 且 `"result":"PASS"`；**全新沙箱的首启** boot log 里 `route provider not registered` 零命中；`--self-test` 仍 exit 0；`git diff --stat` 限于 `tests/e2e/drive.mjs` 且 `package.json`/`pnpm-lock.yaml` 零 diff。
+- **非空洞性（硬性）**：修复后必须**把旧行为（只写 `settings.yaml`）放回去再跑一次**，展示它退回那 9 条红，再恢复修复展示绿。**造不出红的门比没有门更坏**。
+- **证据**：⬜ 进行中（`.omo/evidence/p45t8/T8a-sandbox-seeding.md`；仲裁者探针 `.omo/evidence/p45t8/ARBITRATION-feasibility-probe.md` + `logs/Q8-session.v4.jsonl`）
+- **依赖**：无（纯 0.2.x 驱动侧适配）。**量级**：3 小时。
+
 ### [ ] P4.5-T8 — drive.mjs 双形状夹具 + 信封读取点核对
 
 - **产出**：drive.mjs 的运行时形状探针（会话日志 header format 版本）+ v4 形状伪造/解析（T1 Q-8 抓取的逐字形状，形状常量单源）；9+ 处伪造点按分类清单迁移；prove 脚本与 smoke 的信封读取点核对结果（双形状或现状确认）。
-- **做法**：「运行时消费」类伪造必须过 v4 准入语义（形状与 Q-8 抓取逐字一致）；「解析器消费」类保持解析器双语义；形状常量集中定义（v3/v4 两组，禁止散落字面量）；对照断言 = 0.1.5 沙箱仍产 v3 形状且全链绿。
-- **判定**：✅ drive.mjs 33 场景在 0.2.x 全绿（含 v4 形状断言）；0.1.5 CI 绿；prove/smoke 双运行时核对记录。
+- **做法**：「运行时消费」类伪造必须过 v4 准入语义（形状与 Q-8 抓取逐字一致）；「解析器消费」类保持解析器双语义；形状常量集中定义（v3/v4 两组，禁止散落字面量）；对照断言 = 0.1.5 沙箱仍产 v3 形状且全链绿。**⚠️ D17 附注（2026-10-06）**：「9+ 处伪造点」的行号清单是**计划期读数，已随 T5/T6 漂移**——开工前由**仲裁者**重锚（规约⑪），编码 agent 无权改 docs。**T13 删死路径时**本任务的 v3 分支会随之删除，届时形状常量收敛为 v4 单组。
+- **判定**：✅ drive.mjs 33 场景在 0.2.x 全绿（含 v4 形状断言）；0.1.5 CI 绿（T12 之前是防回归的唯一真实信号）；prove/smoke 双运行时核对记录。
 - **证据**：⬜ 待填
-- **依赖**：P4.5-T1（Q-8）。**量级**：1 天。
+- **依赖**：P4.5-T1（Q-8，**实际前置是 T8a——Q-8 的数据采集被它阻塞**）。**量级**：1 天。
 
 ---
 
@@ -193,48 +230,48 @@
 ### [ ] P4.5-T9 — 专属 source kind 迁移（仅当证据拉入）
 
 - **产出**（仅当 T1–T8 期间发现 0.2.x 消费者对未知 kind 有实际误行为时）：10 处代码点迁为专属 kind（`omo-hard-blocks` / `omo-todo-continuation` 等逐点定名）+ 3 处注释同步 + 结构类型更正；否则本任务记 `deferred` 出阶段并写明理由。
-- **判定**：✅ 拉入时：迁移点单测（kind 字符串单源）、注入链路 e2e 不回归；defer 时：任务书裁定成文（证据 = 无消费者误行为的观察记录）。
+- **判定**：✅ 拉入时：迁移点单测（kind 字符串单源）、注入链路 e2e 不回归；defer 时：任务书裁定成文。**⚠️ D17 改写判据（2026-10-06）**：defer 的举证**不再需要 0.1.5 侧对照**——WP-4/5/6 剩余部分只剩 0.2.x 一个运行时，「消费者」不再分两代，**只需证明 0.2.x 上没有任何消费者对未知 `kind` 误行为**即可 defer。
 - **证据**：⬜ 待填（或 defer 裁定）
 - **依赖**：P4.5-T1。**量级**：0.5 天（可 defer）。
 
 ---
 
-## WP-6 门与双运行时复跑（计划书 §4.6）
+## WP-6 门与复跑（计划书 §4.6）
 
 ### [ ] P4.5-T10 — 门断言随面迁移（静态门 / doctor-lite / probe）
 
-- **产出**：verify-concerto-static c 组随 T5/T6 的锚点迁移（**门 6 低风险**：c01–c09 读仓内模板 `omo-agents-current/preset/agent.cordis.yml`，`verify-concerto-static.mjs:106-108`——迁移只随模板/署名面变化，0.1.5 死路径不断言）；doctor-lite **零改动成立的确认记录**（写盘契约保留后，闸继续调 `syncConcertoPreset(temp)` 读渲染产物——评审 R1-B4 后提，若有残余变化则同 commit 同步）；probe marker 同步网（T2/T5 的 marker 措辞变更处）全绿。
-- **做法**：每处门改动与引发它的代码改动同 commit（门随代码走纪律）；断言强度比对记录（迁移前后断言数量与覆盖面不降）；c 组编号不新增（在既有编号内迁移语义）——**⚠️ 仲裁例外授权（2026-10-04，T6 实施期）：新增 `c23`**（`assert-concerto-read-face.mjs` 声明的 argv 元数 ↔ **每个消费者**实传个数的三方对账，门 6 由 31/31 变 **32/32**）。理由：本轮两条 MAJOR **同源于「改共享 API 签名只改了一个消费者」**——probe 少传第 6 参 ⇒ 门 3 必红；drive.mjs 的 `resolveDshNodeModules()` 少解 symlink ⇒ 必抛。计划「不加新门」的意图是**不新增 CI 阶段**，c23 落在既有门 6 内、不新增阶段。评审 B 独立裁「c23 正确、无误报漏报、与既有 c 组无语义冲突」，并补测出**下限守卫**（validator 与消费者协同缩到 3 时仍被抓）。**规约⑭（T7 起生效）：改共享 API 必须同轮改完所有消费者并留静态对账；注释里的 `cannot drift` 不是证据，机器对账才是**。迁移重心次序：**门 3 > 门 8 > 门 2**（评审 R1-B2 实测分布）。
-- **判定**：✅ 门 4/6/8 在双运行时各绿；断言强度比对成文。
+- **产出**：verify-concerto-static c 组随 T5/T6 的锚点迁移（**门 6 低风险**：c01–c09 读仓内模板 `omo-agents-current/preset/agent.cordis.yml`，`verify-concerto-static.mjs:106-108`——迁移只随模板/署名面变化，0.1.5 死路径不断言）；doctor-lite **零改动成立的确认记录**（写盘契约保留后，闸继续调 `syncConcertoPreset(temp)` 读渲染产物——评审 R1-B4 后提，若有残余变化则同 commit 同步）；probe marker 同步网（T2/T5 的 marker 措辞变更处）全绿。**⚠️ D17 追加产出**：门 3/门 8 在 **0.2.x 上**的任何残余红点（**已知一条：0.2.x 删掉 `settings.yaml` 配置面导致 drive 沙箱首启 route provider 抢跑，由 T8a 修；probe 侧是否同源需本任务核实**）必须在此清零。
+- **做法**：每处门改动与引发它的代码改动同 commit（门随代码走纪律）；断言强度比对记录（迁移前后断言数量与覆盖面不降）；c 组编号不新增（在既有编号内迁移语义）——**⚠️ 仲裁例外授权（2026-10-04，T6 实施期）：新增 `c23`**（`assert-concerto-read-face.mjs` 声明的 argv 元数 ↔ **每个消费者**实传个数的三方对账，门 6 由 31/31 变 **32/32**）。理由：本轮两条 MAJOR **同源于「改共享 API 签名只改了一个消费者」**——probe 少传第 6 参 ⇒ 门 3 必红；drive.mjs 的 `resolveDshNodeModules()` 少解 symlink ⇒ 必抛。计划「不加新门」的意图是**不新增 CI 阶段**，c23 落在既有门 6 内、不新增阶段。评审 B 独立裁「c23 正确、无误报漏报、与既有 c 组无语义冲突」，并补测出**下限守卫**（validator 与消费者协同缩到 3 时仍被抓）。**规约⑭（T7 起生效）：改共享 API 必须同轮改完所有消费者并留静态对账；注释里的 `cannot drift` 不是证据，机器对账才是**。迁移重心次序：**门 3 > 门 8 > 门 2**（评审 R1-B2 实测分布）。**⚠️ D17 重心加权重排（2026-10-06）**：原顺序的依据是「双运行时都要绿」；D17 之后**唯一目标运行时是 0.2.x**，且 **T12 的 pin 翻转以「0.2.x 全链绿」为前置** ⇒ **门 3 与门 8 从「迁移重心」升为「翻转前置」**，二者在本任务内必须达到 0.2.x 全绿，门 2 仍仅增量。
+- **判定**：✅ **门 4/6/8 在 0.2.x 上绿**（D17 后这是唯一被要求的运行时；门 4 的红点 = D7 pin 未翻转，由 T12 消解，本任务只需**记录并说明**，不得顺手改 D7 常量——那是 T12 的面）。
 - **证据**：⬜ 待填
-- **依赖**：P4.5-T2 … P4.5-T6。**量级**：3 小时。
+- **依赖**：P4.5-T2 … P4.5-T6、**T8a**、T8。**量级**：3 小时（原估；D17 后门 3/门 8 权重上调，若 0.2.x 残余红点超出已知那一条则重估并回填）。
 
-### [ ] P4.5-T11 — 双运行时全链复跑 + 级联金丝雀 + roster 往返
+### [ ] P4.5-T11′ — 0.2.x 全链复跑 + 级联金丝雀 + roster 往返（原 T11，D17 改写）
 
-- **产出**：0.1.5-rc.1 与 0.2.x 两侧的 `scripts/ci-local.sh` 8 门完整记录；`/stop-continuation` 级联金丝雀场景在 0.2.x 的 verdict（退出标准 d 承载）；roster 含 `concerto` + explore 委派往返场景在 0.2.x 的 verdict（退出标准 c 承载）。
+- **产出**：0.2.x 侧 `scripts/ci-local.sh` 8 门完整记录（**T12 翻转前的 pre-pin 基线**）；`/stop-continuation` 级联金丝雀场景在 0.2.x 的 verdict（退出标准 d 承载）；roster 含 `concerto` + explore 委派往返场景在 0.2.x 的 verdict（退出标准 c 承载）。**0.1.5 侧仍跑一次并记录，但降级为「防回归信号」而非判定项**——CI 本来就在跑，零额外成本。
 - **做法**：金丝雀场景可复用/扩展现有 `stop-continuation-halts-todo`（断言 `cancelledJobIds` 非空 + 目标 job 消失 + 未触达降级 marker 的反向断言）；roster 往返复用现有委派场景；两侧记录进 `.omo/evidence/`；发现的残余断裂回本任务清单插新任务（不改结论改计划，DoD-d）。**机制注记（工程师反馈修订）**：门 3/4/8 消费环境 dsh 二进制（门 1/2/5/6/7 不碰）——0.2.x 侧 = 本机环境二进制直跑；0.1.5 侧 = **CI（权威）** 或 **PRE-1c 的 throwaway-prefix 本机腿**（`PATH=<prefix>/bin:$PATH scripts/ci-local.sh`）——证据文件必须注明 0.1.5 侧实际所用通道与二进制来源。
-- **判定**：✅ 双运行时 8 门绿；退出标准 (c)(d) 的 verdict 文件落盘。
+- **判定**：✅ **0.2.x 侧 8 门绿**（门 4 的 `dsh-version` 红点属**预期**——D7 pin 未翻转的正常表现，由 T12 消解；该红点必须**显式写为已知且可解释**，不得算进「全链绿」）；退出标准 (c)(d) 的 verdict 文件落盘。**⚠️ 不得写「双运行时 8 门绿」**——D17 之后该断言无意义且不可核。
 - **证据**：⬜ 待填
-- **依赖**：P4.5-T2、T3、T4、T5、T6、**T7（安装器线——退出标准 e 不得被 pin 翻转越过，评审 R1-I5 显式枚举）**、T8、P4.5-T10。**量级**：4 小时。
+- **依赖**：P4.5-T2、T3、T4、T5、T6、**T7（安装器线——退出标准 e 不得被 pin 翻转越过，评审 R1-I5 显式枚举）**、T8a、T8、P4.5-T10。**量级**：4 小时。
 
 ---
 
 ## WP-7 pin 与收口（计划书 §4.7）
 
-### [ ] P4.5-T12 — pin 机器：bump-dsh + D7 常量 + 0.1.x 假设清理
+### [ ] P4.5-T12 — pin 机器：bump-dsh + D7 常量
 
-- **产出**：`scripts/bump-dsh.sh <选定 rc>` 执行结果（`ci.yml` + `compat-probe.yml` 原子改，d09 复验绿）；**D7 断言权威面同 commit 手工改**（bump-dsh.sh `apply_bump` 不覆盖——评审 R1-B3）：`scripts/doctor-lite-core.ts:15-17`（`PINNED_MAJOR = 0` / `PINNED_MINOR = 1` 常量 + `Decision D7 pin: minor 0.1.x` 注释）与 `:44`（`isPinnedDshVersion` 注释文案）、`scripts/doctor-lite.mjs:211`（"pinned 0.1.x" 提示文案）、`tests/omo-agents/doctor-lite.test.ts:39-50`（夹具：`0.2.0` 从 rejects 组移入 accepts 组 + describe 标题 "decision D7: 0.1.x" 改口径）；bump-dsh.sh / release.sh / probe 注释中**会误导下一次执行**的 0.1.x 假设更正（历史记录不动）；0.1.5 死路径删除（§4.1 去留裁定逐点：0.2.x 上结构性不可达的分支随本 commit 删除并记 CHANGELOG；可保留的探针双模保留）。
-- **做法**：bump-dsh.sh 既定流程（safe_point 时间序、`apply_bump`、`family_verdict`）。**硬规则（评审 R1-I6，非回退方案）：T12 与 T13 不可能分开交付——两者合并为同一收口 commit/PR 是前提**（退出标准 f + `.omo/compat.yaml:72` 的「the D7 pin flip is its last step, gated on L1+L2 evidence」）；开工 T12 即默认 T13 同批。
-- **判定**：✅ **本机 0.2.x 全链绿（pre-pin 记录，T11 已落盘）** + **该收口 commit 上 CI 在新 pin 下 8 门绿**（评审 R1-I6 去自指：不要求在翻转前拿到翻转后的 CI 记录）；d09 绿；门 4/门 2 在新 pin 下绿（D7 常量与夹具同步的实证）；死路径删除清单成文。
+- **产出**：`scripts/bump-dsh.sh <选定 rc>` 执行结果（`ci.yml` + `compat-probe.yml` 原子改，d09 复验绿）；**D7 断言权威面同 commit 手工改**（bump-dsh.sh `apply_bump` 不覆盖——评审 R1-B3）：`scripts/doctor-lite-core.ts:15-17`（`PINNED_MAJOR = 0` / `PINNED_MINOR = 1` 常量 + `Decision D7 pin: minor 0.1.x` 注释）与 `:44`（`isPinnedDshVersion` 注释文案）、`scripts/doctor-lite.mjs:211`（"pinned 0.1.x" 提示文案）、`tests/omo-agents/doctor-lite.test.ts:39-50`（夹具：`0.2.0` 从 rejects 组移入 accepts 组 + describe 标题 "decision D7: 0.1.x" 改口径）；bump-dsh.sh / release.sh / probe 注释中**会误导下一次执行**的 0.1.x 假设更正（历史记录不动）。**⚠️ D17 修订：本任务不再承担「0.1.5 死路径删除」**——拆到 T13，理由见头部重排序表第 8 行：**翻转 commit 必须小到能二分**，CI 一旦红要能立刻分清是「pin 本身」还是「顺手删的一大片」造成的。
+- **做法**：bump-dsh.sh 既定流程（safe_point 时间序、`apply_bump`、`family_verdict`）。**硬规则（评审 R1-I6）的 D17 修订**：原写「T12 与 T13 不可能分开交付——合并为同一收口 commit/PR 是前提」。**修订为**：两者仍在**同一 PR** 内交付（不拆 PR、不拆分支），但**拆成两个 commit**；**退出标准 (f)「pin 翻转与绿色证据同一次变更交付」由 T12 这一个 commit 承载**——即该 commit 上 CI 必须在**新 pin** 下 8 门绿。理由：f 的本意是「不许拿着未经验证的 pin 发布」，不是「不许把删除与翻转分两次提交」。
+- **判定**：✅ **T11′ 的 0.2.x 全链绿记录已落盘**（pre-pin）+ **T12 这个 commit 上 CI 在新 pin 下 8 门绿**（评审 R1-I6 去自指：不要求在翻转前拿到翻转后的 CI 记录）；d09 绿；门 4/门 2 在新 pin 下绿（D7 常量与夹具同步的实证）。
 - **证据**：⬜ 待填
-- **依赖**：P4.5-T11。**量级**：3 小时。
+- **依赖**：P4.5-T11′。**量级**：3 小时。
 
-### [ ] P4.5-T13 — L2 重验证 + 矩阵跨段迁移 + 文档收口
+### [ ] P4.5-T13 — 0.1.x 死路径删除 + L2 重验证 + 矩阵跨段迁移 + 文档收口
 
-- **产出**：`.omo/evidence/concerto-verify-dsh-<rc>.md`（沿用 0.1.5-rc.1 证据文件的核对骨架在 0.2.x 重推导）；`.omo/compat.yaml` 的 0.2.x 行**跨段迁移**（`untested:` → `tested:`——补 **`{our, date, evidence}`** 字段集；**`our:` 取值裁定**（release-process §2a：`latest` 现为 `0.2.1`；裁定结果成文）+ **release gate 前置**：0.2.x 行在任何基于翻转后 pin 的发布**之前**已 `tested`——评审 R1-I1）+ 矩阵双语重渲染；README 状态行翻转（🔬 → ✅ 适配完成口径，含 (A)/(B) 终态与"≠ 0.2.x 特性消费"的 R-8 措辞）；CHANGELOG；decisions.md 带日期行（pin 翻转登记，沿用"无新增决策 + PRD §12 跟踪"体例）；PRD §12 该项翻 [x]；复核报告「实施期订正」节（若有实质出入）。
-- **判定**：✅ 退出标准 (a)–(f) 逐条有证据指针（核对表回填到本文末尾）；门 7/4 绿；文档双语同 commit。
+- **产出**：① **0.1.x 死路径删除**（D17 新增，从 T12 接过）：`.omo/evidence/p45t8/D17-scope-survey.md` 的 DELETE / DELETE-WITH-TESTS 清单逐点落地 + 删除清单成文 + CHANGELOG；**可保留的探针双模保留**（§4.1「默认保留探针与双路径」的纪律不变——删的是**结构性不可达**的分支，不是探测能力）；T8 的 v3 形状常量随之收敛为 v4 单组。② `.omo/evidence/concerto-verify-dsh-<rc>.md`（沿用 0.1.5-rc.1 证据文件的核对骨架在 0.2.x 重推导）；③ `.omo/compat.yaml` 的 0.2.x 行**跨段迁移**（`untested:` → `tested:`——补 **`{our, date, evidence}`** 字段集；**`our:` 取值裁定**（release-process §2a：`latest` 现为 `0.2.1`；裁定结果成文）+ **release gate 前置**：0.2.x 行在任何基于翻转后 pin 的发布**之前**已 `tested`——评审 R1-I1）+ 矩阵双语重渲染；④ README 状态行翻转（🔬 → ✅ 适配完成口径，含 (A)/(B) 终态与"≠ 0.2.x 特性消费"的 R-8 措辞）；⑤ CHANGELOG；⑥ decisions.md 带日期行（**D7 pin 翻转 + D17 放弃 0.1.5 两条登记**，沿用"无新增决策 + PRD §12 跟踪"体例）；⑦ PRD §12 该项翻 [x]；⑧ 复核报告「实施期订正」节（若有实质出入）。
+- **判定**：✅ 退出标准 (a)–(f) 逐条有证据指针（核对表回填到本文末尾）；门 7/4 绿；文档双语同 commit；**删除后 0.2.x 侧 8 门仍绿**，且**每一笔删除都能指回 D17-scope-survey 的某一行**——「顺手删掉的」不算，删除清单必须逐条可核。
 - **证据**：⬜ 待填
-- **依赖**：P4.5-T12（同一收口 commit/PR，T12 硬规则）。**量级**：1 天。
+- **依赖**：P4.5-T12（同一 PR，两个 commit，T12 硬规则）。**量级**：1 天 + 删除清单的实际规模（D17-scope-survey 出稿后由仲裁者重估）。
 
 ---
 
