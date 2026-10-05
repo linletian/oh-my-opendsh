@@ -1634,19 +1634,39 @@ describe('P3-T17 ulw-execute — 载荷读取（防御式叶子读）', () => {
       ],
     }
     expect(readDelegationTaskText(payload)).toBe('summarize the repository layout')
-    // 插件来源的注入段（含本 hook 自己的 job 通知，其 label 就是 `ulw-execute: alpha`）
-    // 一律不是任务文本——这是 e2e 实测的自指假阳性来源。
-    expect(readDelegationTaskText({ messages: [
-      { role: 'user', source: { kind: 'plugin', plugin: 'tool-jobs' }, content: [
-        { type: 'text', text: 'background job ulw-execute-2 (ulw-execute: ulw-execute: alpha) finished' },
-      ] },
-      { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'real task' }] },
-    ] })).toBe('real task')
-    expect(readDelegationTaskText({ messages: [
-      { role: 'user', source: { kind: 'plugin', plugin: 'omo-agents' }, content: [
-        { type: 'text', text: '## Hard Blocks\n- Start work only when requested' },
-      ] },
-    ] })).toBe('')
+    // 非 user 来源的注入段一律不是任务文本——这是 e2e 实测的自指假阳性来源。
+    // 两个载体都按**现行形态**转写（P4.5-T8；旧形态那个 catch-all kind
+    // `'plugin'` 已被 0.2.x 原生 admission 拒收——已装 @deepseek-ai/dsh@0.2.0-rc.2
+    // 随附的 @deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2 `lib/index.js:126`）：
+    //   * job 完成通知由 **dsh 自己的 tool-jobs 生产者**盖章——已装
+    //     @deepseek-ai/dsh-tool-jobs@0.2.0-rc.2 `lib/index.js:277-281` 盖
+    //     `{kind:"tool-jobs", form:"notice", summary:…}`（**没有** `plugin` 字段；v3 迁移
+    //     落点相同：`tool-jobs` 在 RELEASED_SAME_NAME_PRODUCERS 里
+    //     `lib/index.js:80` → 同名分支 `:91`，`plugin:<name>` 兜底 `:92` 只收
+    //     未released 的名字）。job 的 label 恰是本 hook 的 `ulw-execute: alpha`，
+    //     这正是当年自指假阳性的来源。
+    //   * Hard Blocks 段是**我们自己的 omo-agents 生产者**——patches/omo-dsh/
+    //     omo-agents/src/hard-blocks-injection.ts `:140` 盖
+    //     `{kind:'omo-hard-blocks', plugin:HARD_BLOCKS_INJECTION_PLUGIN,
+    //     form:'instructions'}`（常量 `:36` = `'omo-agents'`）。
+    // 白名单只认 `kind === 'user'`（ulw-execute.ts:668-672），对非 user 的 kind
+    // **取值不可分辨**：上面两条断言钉的是白名单行为——载体 kind 改成 `'user'`
+    // 就会经生产代码变红——它们钉不住 kind 字面量本身。载体里的 kind 只是按
+    // 现行形态转写以求真实，**本文件不是 kind 轴的 gate**（此前两条自比对
+    // 字面量的 pin 已删：literal 与它自己比，是 theatre，不是门）。kind 轴的
+    // gate 在别处：`omo-hard-blocks` 由 hard-blocks-injection.test.ts:122-124
+    // 从真实 producer 的 `agent.inject.mock.calls[0][0]` 捕获后断言（producer 改
+    // kind 即红）；dsh 的 `tool-jobs` 在已装 npm 包里、in-repo 单元层观测不到，
+    // 正确归宿是对捕获 v4 行做断言的 e2e（drive.mjs，另一切片在建）。
+    const jobNotice = { role: 'user', source: { kind: 'tool-jobs', form: 'notice' }, content: [
+      { type: 'text', text: 'background job ulw-execute-2 (ulw-execute: ulw-execute: alpha) finished' },
+    ] }
+    const realTask = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'real task' }] }
+    expect(readDelegationTaskText({ messages: [jobNotice, realTask] })).toBe('real task')
+    const hardBlocks = { role: 'user', source: { kind: 'omo-hard-blocks', plugin: 'omo-agents', form: 'instructions' }, content: [
+      { type: 'text', text: '## Hard Blocks\n- Start work only when requested' },
+    ] }
+    expect(readDelegationTaskText({ messages: [hardBlocks] })).toBe('')
     // 没有指引时原样返回；空/畸形输入 → 空串
     expect(readDelegationTaskText({ messages: [{ role: 'user', content: [{ type: 'text', text: 'start work' }] }] }))
       .toBe('start work')
