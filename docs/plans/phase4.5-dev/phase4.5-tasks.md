@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 4.5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，复核报告给出"每个面断在哪"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🚧 **5/13 + T8a + T8b**（T2–T7；WP-3 安装器交付线已落地并经四轮双评审收口，提交 `e588ea2`；**T8a / T8b 为 2026-10-06 新增切片**，见下方 D17 修订记录）（`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消；T9 为 deferrable 项，defer 不算未完成）
+> **状态**：🚧 **5/13 + T8a + T8b + T8c + T8d**（T2–T7；WP-3 安装器交付线已落地并经四轮双评审收口，提交 `e588ea2`；**T8a / T8b / T8c / T8d 为 2026-10-06 新增切片**，见下方 D17 修订记录）（`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消；T9 为 deferrable 项，defer 不算未完成）
 >
 > **修订记录**：
 >
@@ -236,8 +236,56 @@
 - **实施方必须先答的三个问题（不得替它答）**：① `dsh plugin add <目录>` 是复制还是符号链接（查 `dsh/lib/bin.js` 与 plugin-manager 实装并引行号）；② 沙箱内的副本会不会被门 5 / 门 6 看见（**要实测，不能假定**）；③ 两条投递路径在 T12 之前的并存方式与各自的断言面。
 - **判定**：✅ `DSH_E2E_ONLY=concerto-delegation-demo node tests/e2e/drive.mjs` 在本机 0.2.x 上 `"result":"PASS"`；**日志里出现 `tool/call` 与 `tool/result` 事件**（这是 Q-8 能开工的前提，也是本切片最硬的判据）；非空洞性：把修复放回旧行为须退回那 8 条红。
 - **⚠️ 计划缺口登记（DoD-d）**：计划书 §4.6 门 3 行要求迁移的是 `materializedCompositionPath` 的**断言**面（T6 已做）；**MOCKROLE 是注入面**，§4.5/§4.6 通篇未提。⇒ 「T6 已迁移」**不得**读成「drive.mjs 的物化依赖已清空」——同一文件里两张面同时存在，只迁一张，门 3 在 0.2.x 上永远绿不了。
-- **证据**：⬜ 待填（`.omo/evidence/p45t8/P8-mockrole-dead-face.md` 为仲裁者的一手根因记录）
+- **证据**：✅ 交付报告 `.omo/evidence/p45t8/T8b-mockrole-delivery.md`（STOP-and-report，见下）。**AC 状态**：AC3（`--self-test` 前后 exit 0 且 stdout 逐字节相同）**MET**；**AC1/AC2 NOT MET**（阻塞在第二个文件）；**AC4 只完成必要向的一半**。
 - **依赖**：P4.5-T8a。**量级**：1 天。
+- **⚠️ 仲裁裁定（2026-10-06 03:10）**：本切片**按 STOP-and-report 收口**——方向正确、机制已证承重、**但 AC1 在单文件约束下不可达**，编码方**拒绝**用「砍覆盖面」换绿灯（见下三条），按硬规则停在第二个文件。**这是正确处置，不是失败。**
+  - **阻塞 B/C（`tests/e2e/mock-llm-server.mjs`）→ 授权，列为 T8c**：0.2.x 的 `deepseek-official` 席走 **DeepSeek Messages（Anthropic）方言**（persona 走**顶层 `system`**、POST `/messages`、回包必须是 Messages SSE、`tool_use` 而非 `tool_calls`），而 mock 是 **OpenAI chat-completions**。⇒ 新增 **P4.5-T8c**，按**逐请求判别**双方言并存，**不得为过门放松任何断言**。
+  - **选项 2（把所有席钉到 OpenAI 方言的 pi-ai）→ 否决**：它确实能变绿，但 `deepseek-official` **彻底退出 e2e**，AC-5「两对互不相同」退化成「同 provider 两个模型」。**砍覆盖面换绿灯不是修复。**
+  - **选项 3（把套件重新钉回 0.1.5-rc.1）→ 否决**：与 D17 直接冲突。
+  - **本切片的提交口径**：机制已证承重（旧驱动 + 同一 shim ⇒ 线上**零** marker；修复后 ⇒ marker 上线），且**零回归**（`--self-test` 前后 stdout 逐字节相同）。⇒ **双评审 APPROVE 后可提交**，但**必须在任务书与证据里写明 AC1/AC2 NOT MET 且归 T8c**，不得读成「门 3 在 0.2.x 上已绿」。
+  - **编码方推翻了我的两条题面事实（均已实测）**：①「插件包 `dependencies: {}`」——`omo-agents` **根本没有该字段**，而 `omo-hooks` 依赖 `undici`（经符号链接解析），`cp -r` 后 `import('undici')` 直接 `ERR_MODULE_NOT_FOUND`；⇒ **只能复制 `omo-agents` 一个包**，复制更多会断链。②「pi-ai 的 deepseek 目录含 `deepseek-v4-flash`」——安装版只有 `deepseek-flash` 与 `deepseek-v4-pro`。
+
+
+### [~] P4.5-T8c — mock LLM 服务双方言：DeepSeek Messages 模式（2026-10-06 新增，D17 派生）
+
+- **为什么有这一片**：T8b 把 MOCKROLE 送上了线（wire 上的顶层 `system` 头部逐字含 `MOCKROLE=sisyphus`），
+  **但回包仍被适配器拒收**。根因一手：0.2.x 的 `deepseek-official` 席走 **DeepSeek Messages（Anthropic）方言**
+  （persona 走**顶层 `system`**、POST **`/messages`**、回包必须是 Messages SSE、工具用 `tool_use`），
+  而 `tests/e2e/mock-llm-server.mjs` 是 **OpenAI chat-completions** mock（只扫 `body.messages[]` 找
+  `role:"system"`，回 `chat.completion.chunk` + `[DONE]`）⇒ **它既看不见 persona，也答不对格式**。
+- **产出**：mock 按**逐请求判别**同时服务两种方言；OpenAI 侧**行为逐字不变**（33 个场景依赖它）；
+  Messages 侧复用**同一条**角色标记规则（不另立规则），工具用 `tool_use` + `input_json_delta`。
+- **判定**：✅ `DSH_E2E_ONLY=concerto-delegation-demo node tests/e2e/drive.mjs` 在本机 0.2.x 上 `"result":"PASS"`；
+  沙箱日志里有真 `tool/call` + `tool/result`（事件直方图为证）；`--self-test` 前后 stdout **逐字节相同**；
+  **非空洞性两半都要**：Messages 模式真的被走到 + 关掉它退回当前那 8 条红；OpenAI 模式不被打破。
+  **若到不了 PASS，必须如实报「哪条断言红、为什么」——半成品如实上报可以，放宽断言不行。**
+- **硬约束**：只改 `tests/e2e/mock-llm-server.mjs`（`drive.mjs` 由 T8b 切片占着）；不改 `docs/`；
+  不新增依赖；**不得为过门放松任何断言**；**不得凭记忆猜 Anthropic 线格式**——每个事件名与字段形状都要从
+  **已安装适配器自己的解析器**里读到并引行号，读不到就记成显式限制。
+- **依赖**：P4.5-T8b。**量级**：1 天。
+
+### [ ] P4.5-T8d — 出货默认模型 id 修正：`deepseek-v4-flash` 在 0.2.x 上不存在（2026-10-06 新增，D17 派生）
+
+- **为什么有这一片（仲裁者一手复核，非转述）**：`patches/omo-dsh/omo-agents/src/roster.ts:129` 逐字
+  `defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' }`，其上一行注释自述意图是
+  「deepseek-v4-flash 系" fast row」。而**本机已安装的 pi-ai 目录**
+  （`…/dsh/node_modules/@earendil-works/pi-ai/dist/providers/data/deepseek.json`）实测**只有两个 id**：
+  `deepseek-flash`（其 `name` 逐字 **"DeepSeek V4.1 Flash"**）与 `deepseek-v4-pro`；
+  `deepseek-v4-flash` **只存在于第三方网关目录**（cloudflare / fireworks 等），**不在第一方 `deepseek` provider 里**。
+  ⇒ **出货默认在 0.2.x 上是坏的**：explore / librarian / sisyphus-junior 三席默认路由指向一个不存在的模型，
+  实际请求以 `UNKNOWN_MODEL` 失败（`dsh-llm-pi-ai/lib/index.js` 抛，仲裁者在真实 `tool/result` 里逐字见到）。
+- **为什么不在 T8c 里顺手改**：它是**出货码 + 门 + 文档**的联合改动，全仓 `deepseek-v4-flash` **148 处**命中，
+  包含**门 6 的断言**（`scripts/verify-concerto-static.mjs:372-373`）、安装期 env 默认
+  （`scripts/compat-probe.sh:73`、`scripts/release.sh:169`）与**双语 README 的席位表**。
+  ⇒ 顺手的改法正是本阶段反复付出代价的那一类（「报告说已闭合、代码里不是那样」）。**单独立片。**
+- **裁定方向**：改为 pi-ai 目录里**真实存在**的 id，且**保留 roster 自己声明的档位意图**——
+  目录里 `deepseek-flash` 的 `name` 逐字是 "DeepSeek V4.1 Flash"，**正是 flash 档**，与注释的意图一致。
+  **实施方须先复核**：0.1.5 的 pi-ai 目录里是否存在 `deepseek-v4-flash`（存在则该 id 在 0.1.x 上有效，
+  改动会**改变 0.1.x 上的默认路由**，须在 CHANGELOG 登记）；以及 148 处里哪些是**默认值**、哪些是**历史记录**
+  （后者一个字不动）。
+- **判定**：✅ 门 6 绿且其断言随新 id 更新；门 2 不回归；三席默认路由在 0.2.x 上可解析；文档双语同 commit；
+  **删除/改写的每一处都要指回本段**，且 CHANGELOG 登记「默认模型 id 变更」这一**用户可见**改动。
+- **依赖**：无（与 T8b/T8c 无文件冲突）。**量级**：0.5 天。
 
 ### [ ] P4.5-T8 — drive.mjs 双形状夹具 + 信封读取点核对
 
