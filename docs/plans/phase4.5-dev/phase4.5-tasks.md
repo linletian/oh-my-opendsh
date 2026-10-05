@@ -326,7 +326,11 @@
     ⇒ **「容忍未知 kind」与「拒绝我们自己的 kind」是两件事。**前者支持 defer，后者**推翻**它。
   - **为什么不按字面 defer**：本任务的**目的是**把那 10 处迁到专属 kind；判据只是当时的**触发条件**。    现在证据说**不迁就落不了盘**（写侧 throw）。若因为「证据没按判据的措辞出现」而 defer，等于**让措辞否决目的**——    那正是本阶段反复付出代价的同一类错误（台账说已闭合、代码里不是那样）。
   - **方向不是发明**：上游自有生产者（tool-jobs 等）**已经**迁到专属 kind ⇒ 专属 kind 是 v4 的原生形状。
-  - **⚠️ 未实测部分如实登记**：写侧 throw 在**现役注入链**上是否真的触发，**本轮无法实测**——    能触发 `kind:'plugin'` 注入的场景（keyword / hard-blocks / ulw）需要一次成功的 turn，    而 0.2.x 上 turn 仍被 **T8c 的方言阻塞**挡着。仲裁者查过 T8b 的两个沙箱：`SessionFormatError` /     `producer-owned` / `retired` **零命中**、`kind:"plugin"` **零命中**——但那是因为 `concerto-delegation-demo`     **根本不经过那四个注入点**，**这个「零」什么也不证明**。⇒ **T8c 落地后必须补这一次实测**。
+  - **✅ 「未实测」已作废（2026-10-06 03:52，T8c 交付时实测到了）**：T8c 把 mock 改成双方言之后，`concerto-delegation-demo` 的红从 **8 条降到 6 条**（`link1SisyphusCalledExploreTool` 与 `link4SisyphusSummarizedFindings` 翻绿、会话日志里出现真 `tool/call` + `tool/result`），而**子席在任何 LLM 请求之前**就死于：
+    `Error: subagent run failed; dispose failed: SessionFormatError: format v4 message requires a producer-owned source kind`
+    来源：本机已安装包 `@deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js:126`
+  仲裁者**亲手复核了该行**：该文件逐字含 `/** Native source admission preserves unknown attribution and refuses retired plugin wrappers. */` 与 `if (… || value["kind"] === 'plugin') throw new SessionFormatError("format v4 message requires a producer-owned source kind")`。⇒ **写侧 throw 在现役注入链上确实触发，T9 不是理论风险而是已观测的断裂。**
+  - **（原登记保留为历史）未实测部分**：写侧 throw 在**现役注入链**上是否真的触发，**本轮无法实测**——    能触发 `kind:'plugin'` 注入的场景（keyword / hard-blocks / ulw）需要一次成功的 turn，    而 0.2.x 上 turn 仍被 **T8c 的方言阻塞**挡着。仲裁者查过 T8b 的两个沙箱：`SessionFormatError` /     `producer-owned` / `retired` **零命中**、`kind:"plugin"` **零命中**——但那是因为 `concerto-delegation-demo`     **根本不经过那四个注入点**，**这个「零」什么也不证明**。⇒ **T8c 落地后必须补这一次实测**。
   - **执行序（由调研挑战⑤ 与仲裁者裁定）**：**T9 必须先于 T8 的 drive 盘上断言**——T8 要求「运行时消费类伪造必须过     v4 准入语义」，而 drive.mjs 现有断言要求盘上存在 `kind:'plugin'` 载体，**两者不可能同时成立**；    T9 不迁，T8 的形状迁移就是在给一个会被拒绝的值造夹具。
 - **依赖**：P4.5-T1。**量级**：0.5 天 → **上修为 1 天**（判据翻转 + 10 处迁移 + 实测补做）。
 
