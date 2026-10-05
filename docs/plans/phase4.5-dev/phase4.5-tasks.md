@@ -211,7 +211,7 @@
 
 ## WP-4 会话日志 v4 观测通道（计划书 §4.5；复核 §4 为权威）
 
-### [~] P4.5-T8a — drive.mjs 沙箱播种适配 0.2.x（2026-10-06 新增，D17 派生）
+### [x] P4.5-T8a — drive.mjs 沙箱播种适配 0.2.x（2026-10-06 新增，D17 派生）
 
 - **为什么有这一片**：T8 的全部输入是「T1 Q-8 从真实 0.2.x 沙箱会话抓取的 v4 逐字形状」，而**抓取需要门 3 在本机 0.2.x 上真跑出带 `tool/call` + `tool/result` 的会话**。仲裁者派单前的可行性探针实测：门 3 **跑得动**（沙箱真 boot、read-face 校验器 `READ-FACE PASS`、session 建出且带 `agentPreset:"concerto"`、日志头 `"version":4`），但**红 9 条断言且全部属于「explore 席没起来」的链** ⇒ 日志里 `tool/*` 事件**零条** ⇒ **Q-8 一条数据都采不到**。根因已一手钉死（头部 D17 修订记录第四条）：**0.2.x 删掉了 `settings.yaml` 配置面**，其补导入由 `ctx.root.loader.await().then(...)` 触发，**晚于** `omo-agents` 在自己 `apply()` 期的 route provider 判定 ⇒ 首启必然抢跑。**反证**：同一沙箱再启一次该 marker 整行消失。
 - **产出**：`seedSandbox()` 把 LLM 接线（`agent-default-model` / `llm-deepseek` / `llm-pi-ai` 三个 section）种进 **profile patch overlay**，使配置在 `apply()` 前在场；`settings.yaml` 那条路在 0.2.x 上自然退化为一次性导入。**两侧都要成立**（CI 仍钉 0.1.5-rc.1）。
@@ -222,7 +222,7 @@
   - **boot marker 降为辅助信号并显式标注其计时依赖**（见下「为什么改判据」）。
   - `--self-test` exit 0；改动面按**文件 + hunk** 归属判定（不按 `git diff --stat`，共享 worktree 下有两个切片叠加）；`package.json`/`pnpm-lock.yaml` 零 diff。
 - **非空洞性（硬性）**：修复后必须**把旧行为（只写 `settings.yaml`）放回去再跑一次**，展示它退回那 9 条红，再恢复修复展示绿。**造不出红的门比没有门更坏**。
-- **证据**：⬜ 修复轮进行中（`.omo/evidence/p45t8/T8a-sandbox-seeding.md`；双评审落盘 `.omo/evidence/p45t8/review-A/verdict.txt` **APPROVE**(1 MAJOR+4 MINOR+2 NIT) 与 `review-B/verdict.txt` **APPROVE**(3 MINOR)；仲裁者裁决 `.omo/evidence/p45t8/ARBITRATION-T8a-verdict.md`；探针 `ARBITRATION-feasibility-probe.md` + `logs/Q8-session.v4.jsonl`）
+- **证据**：✅ **提交 `7ac714e`**（`.omo/evidence/p45t8/T8a-sandbox-seeding.md` v3；双评审落盘 `.omo/evidence/p45t8/review-A/verdict.txt` **APPROVE**(1 MAJOR+4 MINOR+2 NIT) 与 `review-B/verdict.txt` **APPROVE**(3 MINOR)；仲裁者裁决 `.omo/evidence/p45t8/ARBITRATION-T8a-verdict.md`；探针 `ARBITRATION-feasibility-probe.md` + `logs/Q8-session.v4.jsonl`）
 - **⚠️ 为什么改判据（双评评审定，仲裁者一手复核成立）**：原判据写「全新沙箱首启 boot log 里 marker 零命中」，并把它称作**确定性证据**——**这是反的**。`boot-markers.ts:277-284` 在 `ctx.inject(['llm'])` 处取 `baseline`、武装 `setTimeout(check, ROUTE_PROVIDER_CHECK_SETTLE_MS)`（`:219` = **8000ms**），并在 `llm/adapters-updated` 上按「注册表是否增长」改用事件宽限重武装；`dsh-llm/lib/index.js:1886-1894` 的 `commitRoutes` 每次 `registerAdapter` 都发这个事件。⇒ **marker 在场与否取决于 check 落在 legacy 导入之前还是之后**，是一个 8 秒窗口上的竞态；**绿是结构性的**（注册发生在 pi-ai 自己的 `apply()` 里），**红不是**。⇒ 「首启无 marker」在未修复的代码上**可以读成绿**，且被评那对红/绿对照继承同一缺陷。⇒ 换成 A1′。
 - **依赖**：无（纯 0.2.x 驱动侧适配）。**量级**：3 小时。
 
@@ -261,7 +261,9 @@
 
 ## WP-6 门与复跑（计划书 §4.6）
 
-### [ ] P4.5-T10 — 门断言随面迁移（静态门 / doctor-lite / probe）
+### [~] P4.5-T10 — 门断言随面迁移（静态门 / doctor-lite / probe）
+
+- **已完成的子切片 T10a（2026-10-06 新增，提交 `f997842`）**：probe 的 `settings.yaml` 播种迁到第二个 `--patch` overlay，两路评审**双 APPROVE、零 BLOCKER 零 MAJOR**。**但 probe 本身不在任何一道门里**（`ci-local.sh:61` 的门 8 = `run-proofs.sh`，其 7 条 proof 不含 probe）⇒ 本任务的**主体（门 3 / 门 8 在 0.2.x 上绿）仍未开始**，且门 8 **已经是绿的**（`run-proofs: PASS — 7/7 … on dsh 0.2.0-rc.2`）⇒ **本任务收窄为「把门 3 在 0.2.x 上修绿」+ 一条门 6 的组合断言**（按评审 A 建议：约 1 秒的 `dsh --profile <p> --patch <seed> --dump-config`，它是唯一能抓住 `config:` 整体替换把 base config 悄悄冲掉的那类故障的门）。
 
 - **产出**：verify-concerto-static c 组随 T5/T6 的锚点迁移（**门 6 低风险**：c01–c09 读仓内模板 `omo-agents-current/preset/agent.cordis.yml`，`verify-concerto-static.mjs:106-108`——迁移只随模板/署名面变化，0.1.5 死路径不断言）；doctor-lite **零改动成立的确认记录**（写盘契约保留后，闸继续调 `syncConcertoPreset(temp)` 读渲染产物——评审 R1-B4 后提，若有残余变化则同 commit 同步）；probe marker 同步网（T2/T5 的 marker 措辞变更处）全绿。**⚠️ D17 追加产出**：门 3/门 8 在 **0.2.x 上**的任何残余红点（**已知一条：0.2.x 删掉 `settings.yaml` 配置面导致 drive 沙箱首启 route provider 抢跑，由 T8a 修；probe 侧是否同源需本任务核实**）必须在此清零。
 - **⚠️ D17 追加订正（2026-10-06，仲裁者一手实测）**：`scripts/concerto-mode-probe.sh` **不在任何一道门里**——`scripts/ci-local.sh:61` 的门 8 是 `run_gate "session-free proofs" scripts/run-proofs.sh`，那 7 条 proof 里没有 probe；实测 **门 8 在 0.2.x 上本就已经 `PASS — 7/7 … on dsh 0.2.0-rc.2`**。计划书 §4.6 把「probe 71 行物化引用面迁移」列在门 8 行下，**分组 ≠ 门链结构**。⇒ **新增纪律⑳b**：「X 属于门 N」必须先打开 `scripts/ci-local.sh` 数 `run_gate` 并在该门实现里找到 X 才能引用；且**证据文件里被纠正过的事实必须同轮同步进计划/任务书**——本项目已在 T6 证据段纠正过一次「run-proofs 的 7 条里没有 probe」，但没带进计划书，被重新犯了一遍。⇒ probe 的修复**仍要做**（它是人读的观测工具，`docs/manual-testing.md:65` 双语，T8b/T10 之后要用它验注册面），但性质是**工具修复 + 文档纪律**，**不得**表述成任何一道门的前置。
