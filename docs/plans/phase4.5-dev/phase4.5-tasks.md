@@ -341,7 +341,14 @@
     来源：本机已安装包 `@deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js:126`
   仲裁者**亲手复核了该行**：该文件逐字含 `/** Native source admission preserves unknown attribution and refuses retired plugin wrappers. */` 与 `if (… || value["kind"] === 'plugin') throw new SessionFormatError("format v4 message requires a producer-owned source kind")`。⇒ **写侧 throw 在现役注入链上确实触发，T9 不是理论风险而是已观测的断裂。**
   - **（原登记保留为历史）未实测部分**：写侧 throw 在**现役注入链**上是否真的触发，**本轮无法实测**——    能触发 `kind:'plugin'` 注入的场景（keyword / hard-blocks / ulw）需要一次成功的 turn，    而 0.2.x 上 turn 仍被 **T8c 的方言阻塞**挡着。仲裁者查过 T8b 的两个沙箱：`SessionFormatError` /     `producer-owned` / `retired` **零命中**、`kind:"plugin"` **零命中**——但那是因为 `concerto-delegation-demo`     **根本不经过那四个注入点**，**这个「零」什么也不证明**。⇒ **T8c 落地后必须补这一次实测**。
-  - **执行序（由调研挑战⑤ 与仲裁者裁定）**：**T9 必须先于 T8 的 drive 盘上断言**——T8 要求「运行时消费类伪造必须过     v4 准入语义」，而 drive.mjs 现有断言要求盘上存在 `kind:'plugin'` 载体，**两者不可能同时成立**；    T9 不迁，T8 的形状迁移就是在给一个会被拒绝的值造夹具。
+  - **✅ v4 admission 契约已完整确定（2026-10-06 04:10，仲裁者一手复核 `message-sources.ts` 全文 42 行）**：
+  规则只有三条——`source` 必须是对象、`kind` 必须是非空字符串、**`kind` 不能是 `'plugin'`**；
+  **`source` 上的其它键不受任何约束** ⇒ OMO 现有的 `plugin` / `form` 字段**可原样保留**。
+  检查覆盖**六个**持久槽位：`user/message` 的 `data`；`system|assistant/tool/result` 的 `data.message`；**`agent/inbox/spliced` 的 `data.inserted`**；`session/title-llm-request` 的 `data.messages`。
+  上游命名惯例实测：小写连字符、**无厂商前缀**（`tool-jobs` / `agent-instructions` / `user-question-reply`）。
+  **⚠️「10 处代码点」只覆盖 `patches/` 侧**：仲裁者实测 **`tests/e2e/drive.mjs` 自己也是 `kind:'plugin'` 的生产者**（≥8 处，其中一处逐字写 `input.log.events[3].data.inserted[0].source = { kind: 'plugin', … }`，正落在第六节表里的 `agent/inbox/spliced` 槽位）⇒ **运行时生产者归 T9、驱动伪造夹具归 T8**，两者都要改但不是同一片。
+  证据 `.omo/evidence/p45t9/P13-v4-admission-contract.md`；派单已起草 `.omo/evidence/p45t9/DISPATCH-T9.md`，**等 T8d 落地后发出**（两者要改同一批 `tests/omo-agents/*`，并发写会互相覆盖）。
+- **执行序（由调研挑战⑤ 与仲裁者裁定）**：**T9 必须先于 T8 的 drive 盘上断言**——T8 要求「运行时消费类伪造必须过     v4 准入语义」，而 drive.mjs 现有断言要求盘上存在 `kind:'plugin'` 载体，**两者不可能同时成立**；    T9 不迁，T8 的形状迁移就是在给一个会被拒绝的值造夹具。
 - **依赖**：P4.5-T1。**量级**：0.5 天 → **上修为 1 天**（判据翻转 + 10 处迁移 + 实测补做）。
 
 ---
