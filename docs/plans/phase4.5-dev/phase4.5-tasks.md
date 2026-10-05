@@ -92,6 +92,42 @@
 >   **一个在某处为真的名字，不等于在每处都为真。**
 >   证据同文件 P16 节。
 >
+>   **四之七、决定性事实：pi-ai 路由不存在跨代共有的 model id（2026-10-06 05:52）**
+>
+>   T9 + T8′ 落地后仲裁者亲跑 `concerto-delegation-demo`（0.2.0-rc.2）逐事件读日志：
+>
+>   **T9 的修复确实生效**——`SessionFormatError` / `producer-owned source kind` 计数 **0**，
+>   `kind=plugin` **零残留**（现存 `user` / `runtime-context` / `skill-catalog` /
+>   `system-prompt` / `model` / `tool`）。⇒ T9 的承重证明（真实 `assertV4RowAdmission`：
+>   改前五条 REFUSED / 改后五条 ADMIT）与运行时实测**一致**。
+>
+>   **但子席仍然起不来**，且**没有子会话日志**，末因逐字是
+>   `Error: pi-ai provider "deepseek" has no configured model "deepseek-v4-flash"`
+>   / `code: UNKNOWN_MODEL`。
+>
+>   ⇒ **一把双向的钳子**：pi-ai 目录里，**0.1.5（`pi-ai@0.85.1`）只有** `deepseek-v4-flash` /
+>   `-vision-exp` / `-pro`；**0.2.x（`pi-ai@0.87.1`）只有** `deepseek-flash` / `-pro`。
+>   **⇒ pi-ai 路由上不存在一个两代都有的 id**，出货默认值**不可能**同时在两代上可解析。
+>   （`deepseek-official` 路由不同：两代都有 `deepseek-flash` 与 `deepseek-v4-pro`，
+>   **指挥席两代通吃**；被钳住的只有 explore / librarian / sisyphus-junior 三席与视觉席。）
+>
+>   ⇒ **两条结论**：
+>
+>   ① **T8d 的回退是对的**（保住 0.1.5 的门）与 **T9/T8′ 的落地也是对的**（解掉 v4 admission）
+>   **不矛盾**——前者管**出货默认**，后者管**注入归因**，是**两个不同的面**。
+>
+>   ② **门 3 在 0.2.x 上无法在 pin 翻转前全绿**，除非 **e2e 侧**按代各自钉一个存在的 id
+>   （`drive.mjs` 的 `resolveModelRoutes` 本就有这个能力，且**测试钉路由 ≠ 改出货默认**）。
+>   **这正是 T12 存在的理由，不是一个可以绕过的缺陷。**
+>
+>   ⇒ **T10 的判据**：把「e2e 按代钉路由」做成显式能力，并在报告里写明**它不等于出货默认**；
+>   否则下一个执行者会以为 e2e 绿了就等于产品绿了。
+>   ⇒ **T12 的判据**：翻转 pin 的**同一 commit** 里改 `roster.ts` + 出货模板 + 门断言 + 脚本 +
+>   文档的 id，**并且**在同一次 CI 里证明 0.2.x 侧那三席可解析。
+>   ⇒ **任何一侧都不许用「让 mock 报出一个上游没有的 id」来换绿**。
+>
+>   证据同文件 P17 节。
+>
 >   **⑲c 补充条款（由 T9 提出，采纳）**：⑲c 保护别人不被**我的脏树**坑，但**不保护别人的在飞改动
 >   不被我的「按文件恢复」吃掉**——本次 `git reset --soft bc831da` + 按文件恢复确实抹掉了 T9 的
 >   `tests/omo-agents/hard-blocks-injection.test.ts`（它 10 个在飞文件里的那 1 个），且它当时的 AC5
