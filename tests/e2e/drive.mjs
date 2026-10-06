@@ -614,7 +614,10 @@ const FABRICATED_BOOT_LOG = LOADED_MARKERS.join('\n')
 
 // The T14 routes are the single source of truth (P-8.6 type-stripping, the
 // same import scripts/prove-route-logging.mjs uses).
-const { resolveModelRoutes } = await import(
+// P4.5-T10′ additionally consumes DEFAULT_MODEL_ROUTES / MODEL_ROUTE_ENV_VARS:
+// the seat resolver below must cover ALL 11 roster rows (the conductor included)
+// off the shipped source, so there is no second list of defaults to reconcile.
+const { resolveModelRoutes, DEFAULT_MODEL_ROUTES, MODEL_ROUTE_ENV_VARS } = await import(
   new URL('../../patches/omo-dsh/omo-agents/src/model-routes.ts', import.meta.url).href
 )
 // P2-T18: the delegation role ids (and their row anchors) come from the
@@ -925,6 +928,2087 @@ function paradeLabel(agent) {
   return `parade-${agent}`
 }
 
+// ── P4.5-T10′: RUNTIME-CATALOG-RESOLVED SEATS (per-generation, not per-version) ──
+//
+// WHY THIS SECTION EXISTS — measured on this machine, 2026-10-06, against the
+// two installed runtimes (never asserted from a changelog):
+//   pi-ai route `deepseek`, catalog file
+//   <dsh>/node_modules/@earendil-works/pi-ai/dist/providers/data/deepseek.json
+//     · @0.85.1 (what dsh 0.1.5-rc.1 installs): deepseek-v4-flash[text],
+//       deepseek-v4-flash-vision-exp[text+image], deepseek-v4-pro[text]
+//     · @0.87.1 (what dsh 0.2.0-rc.2 installs): deepseek-flash[text+image],
+//       deepseek-v4-pro[text]
+//   ⇒ NO SHIPPED-DEFAULT id is common to both generations on the pi-ai route.
+//     INTERSECTION, enumerated from the two artifacts above:
+//       {deepseek-v4-flash, deepseek-v4-flash-vision-exp} ∩ @0.87.1 = ∅
+//       all-ids@0.1.5 ∩ all-ids@0.87.1 = {deepseek-v4-pro}   ← NOT empty
+//     The earlier sentence here said "NO id is common to both generations", which is
+//     flatly false — `deepseek-v4-pro` is on both. The claim the machinery actually
+//     depends on is the narrower one above: what never survives is the DEFAULT.
+//     A block that exists to be falsifiable has to state the falsifiable claim right.
+//   official route `deepseek-official`, adapter's own exported Config schema
+//     · @0.1.5-rc.1 (@deepseek-ai/dsh-llm-deepseek): deepseek-flash[text+image],
+//       deepseek-v4-flash[text], deepseek-v4-pro[text], deepseek-v4-flash-vision-exp[text+image]
+//     · @0.2.0-rc.2 (@deepseek-ai/dsh-llm-deepseek-api-key, which re-exports
+//       the catalog from @deepseek-ai/dsh-llm-deepseek): deepseek-flash[text+image],
+//       deepseek-v4-pro[text] ONLY — so the official route is NOT "all four on
+//       both generations" either.
+// roster's shipped explore seat `deepseek/deepseek-v4-flash` therefore cannot
+// resolve on 0.2.x, and the delegation child never starts: the run ends with
+// `Error: pi-ai provider "deepseek" has no configured model "deepseek-v4-flash"`
+// (`LlmError` / `UNKNOWN_MODEL`) and `child: null`.
+//
+// WHAT THIS SECTION DOES — and what it deliberately does NOT do.
+// It pins the E2E sandbox's seats to ids the INSTALLED runtime really serves,
+// read out of that runtime's own catalog at driver start-up. It does NOT change
+// the shipped default: `roster.ts` is untouched, the concerto template is
+// untouched, and the gate assertions are untouched. On dsh 0.1.5-rc.1 every
+// pinned id is present in its catalog, so every resolved seat here is
+// BYTE-IDENTICAL to the pre-T10′ table and this section is inert. On 0.2.x it
+// substitutes exactly the seats whose pinned id is absent, and says so LOUD on
+// stderr, per seat, naming the catalog artifact it read. The shipped default is
+// STILL BROKEN on 0.2.x after this change — that is T12's call (default re-pin
+// and pin flip in ONE commit), and nothing here may be read as having fixed it.
+//
+// SELECTION RULE (one sentence, so a reviewer can falsify it): keep the pinned id
+// when the route's runtime catalog lists it AND that id carries the seat's
+// roster-declared modalities; otherwise, if the catalog lists EXACTLY ONE
+// modality-capable id, move the seat there because the catalog left no choice; if
+// it lists TWO OR MORE, REFUSE until a human writes the choice down in
+// `TEST_ONLY_SEAT_PINS['<seat>@<route>']` (or binds it for one run with
+// `OMO_E2E_FORCE_SEAT`); THROW naming the seat when no listed id can carry the
+// declared modalities, or when the id it kept cannot.
+//
+// THERE IS NO SIMILARITY TERM IN THAT RULE, ON PURPOSE (Review B, upheld). The
+// rule used to read "…shares the most `-`-separated tokens with the pinned id, ties
+// broken by declaration order". Review B deleted the token-overlap term from a /tmp
+// copy and the mutant behaved IDENTICALLY, and the reason is measurable on both
+// installed runtimes: every seat whose shipped default is unresolvable has either
+// ONE modality-capable alternative (multimodal-looker on 0.2.x official) or
+// alternatives that ALL tie (explore / librarian / sisyphus-junior on 0.2.x pi-ai,
+// 2 against 2). A term that cannot change any outcome is decoration, and a decorated
+// rule tells the next reader the fixture selects by meaning when it selects by luck.
+// The term is gone and `idTokens()` is gone with it; the rule above IS the code.
+//
+// POST-REVIEW (two MAJORs, both upheld, both fixed HERE because both live in
+// this one file):
+//   • MAJOR-1 — the tie used to be broken by catalog declaration order, and on
+//     dsh 0.2.0-rc.2's pi-ai route that order was the ONLY thing choosing
+//     `deepseek-flash` over `deepseek-v4-pro` (both overlap 2 against the
+//     shipped `deepseek-v4-flash`). Review A reversed the comparator and both
+//     `--self-test` and the live `roster-parade` stayed green while three seats
+//     moved onto the explicitly-more-expensive coding model. A tie now refuses,
+//     names the tied ids, and points at the one table that may decide it.
+//     OPERATOR'S PATH when it fires: add `'<seat>@<route>': '<id>'` to
+//     `TEST_ONLY_SEAT_PINS` — the entry itself is the written decision, since no
+//     reason field beside it is read by anything (test-only), OR set
+//     `OMO_E2E_FORCE_SEAT='<seat>=<route>/<id>'` for one run (that BINDS, so the
+//     id must be listed); if the real fix is the default, that is T12's
+//     `roster.ts`, not a pin in this file.
+//   • MAJOR-2 — the modality filter used to run only on the substituting path,
+//     so a KEPT or BOUND id that cannot carry the seat's declared modalities was
+//     accepted silently (`OMO_E2E_FORCE_SEAT='multimodal-looker=deepseek/deepseek-v4-pro'`
+//     → `{substituted:false, required:['text','image'], served:['text']}`, no
+//     error). The check now sits before every return, and legs 6 and 7 fail if it
+//     is ever moved back.
+//   • finding ③ — **WITHDRAWN, and the correction is recorded here because the
+//     original claim was published in this file.** Round 1 said these legs were
+//     LOCAL-ONLY because `pnpm test:e2e` never passes `--self-test`. That was
+//     never checked: `main()` calls `runAnalysisSelfTest(routes)` before the
+//     expensive spawn and exits 1 on any problem, so the legs DO run on the plain
+//     path — which is exactly what CI runs. PROVEN, not read: with mutant M1
+//     (tie-take-first restored) applied to a copy and NO `--self-test` flag,
+//     `node tests/e2e/drive.mjs` exits 1 naming the leg by NAME — the string it
+//     prints today is `T10′[≥2 capable ids with no written choice → refused, naming
+//     ids+key]`. (It used to cite `T10′ leg 9`, a string no run has ever emitted.)
+//     So these are a REAL CI gate today. What CI actually lacks is the other
+//     generation: `ci.yml:102` pins `DSH_VERSION: 0.1.5-rc.1`, the one runtime
+//     where every shipped default resolves, so on CI the substitution and audit
+//     legs run but can never observe a gap — they are vacuous there, not absent.
+//     The fix is CI's generation matrix, not a flag, and `.github/` is outside
+//     this slice's one-file scope.
+//   • finding ④ — `--self-test` is hermetic again: the catalog probe is lazy and
+//     records failure instead of calling `process.exit(1)`, so with no `dsh` on
+//     PATH the seventeen fabricated legs still run, the three live legs report
+//     `SKIPPED(<reason>)` in the banner, and the exit code is 0 as it was at
+//     HEAD. A real run in that state fails loudly instead (main()).
+//
+//
+// NO VERSION SNIFFING, BY NAME OF THE CONSTRAINT. There is no
+// `dshVersion.startsWith('0.2')` — no `dshVersion` comparison of any kind — in
+// this file. `dsh --version` is captured by the probe and carried into the
+// report and the sandbox artifacts as a LABEL ONLY; no branch reads it. The
+// only shape difference the code branches on is the catalog's own shape:
+// `Config().models` is a plain array on 0.1.5-rc.1 and a `.volatile()` accessor
+// needing `.get()` on 0.2.0-rc.2, and BOTH shapes are read by the same two
+// lines, so a third generation that answers with either shape needs no edit.
+//
+// NO INVENTED IDS, NO MOCK LYING. Every id this section can emit is taken out
+// of the catalog document it just read, and the mock is never told about a model
+// the upstream route does not list — the mock keys its script by MOCKROLE, never
+// by model, so nothing here has to name a model to it at all.
+//
+// THE READ-FACE EXPECTATION SOURCE, MADE EXPLICIT (constraint 2).
+// `scripts/assert-concerto-read-face.mjs` takes the expected explore seat as
+// argv 5/6. Before T10′ that was `resolveModelRoutes()` — the shipped default
+// off `roster.ts`. That is the right ANCHOR and it stays the anchor: the
+// expectation below is `roster.ts`'s default route mapped through the runtime
+// catalog by the same rule that pins the sandbox. It is NOT `def.env` (the
+// scenario's own input, i.e. the bytes-under-assertion's own source — refused
+// above `PARADE_SEATS`), and it is NOT read off the read face. So on 0.1.5 the
+// expectation is byte-identical to before, and on 0.2.x it differs from the
+// shipped default by EXACTLY the substitutions the catalog forced, each one
+// named in `read-face/roster-expectations.json` and on stderr. What this gate
+// therefore does NOT guard: a change to the selection rule itself moves the
+// expectation and the pin together, because they share one function. That
+// residual is closed only hermetically — `p45t10PrimeSeatSelfTest()` feeds the
+// resolver fabricated catalogs and a fabricated roster default and requires the
+// named outcome (present → unchanged, absent → the named substitute, no capable
+// id → throws naming the seat) — and live by `OMO_E2E_FORCE_SEAT`, which can
+// bind a seat to an id the catalog does NOT list and must go red naming it.
+
+/**
+ * The catalog probe. SERIALIZED with `Function.prototype.toString()` into a
+ * child process on purpose: reading the official route's catalog means IMPORTING
+ * the installed adapter's compiled `lib/index.js` and evaluating its exported
+ * `Config` schema, and this driver must not let third-party plugin modules
+ * register handlers, timers or handles inside the process that owns every
+ * sandbox. The child prints one JSON document and dies; nothing it touches
+ * survives into the driver.
+ *
+ * Self-contained by contract: it uses ONLY dynamic `import()` and references no
+ * identifier from this module's scope, because `toString()` ships the body and
+ * not the closure.
+ *
+ * @param {string[]} routeList - the route providers to read catalogs for.
+ * @returns a JSON-ready document naming every artifact the read produced.
+ */
+async function runtimeCatalogProbe(routeList) {
+  const { existsSync, readdirSync, readFileSync, realpathSync } = await import('node:fs')
+  const { spawnSync } = await import('node:child_process')
+  const { dirname, join } = await import('node:path')
+  const { pathToFileURL } = await import('node:url')
+  const which = spawnSync('sh', ['-c', 'command -v dsh'], { encoding: 'utf8' })
+  const bin = (which.stdout ?? '').trim()
+  if (which.status !== 0 || bin === '') {
+    throw new Error('command -v dsh found no dsh on PATH — the runtime whose catalog the seats must be pinned against cannot be located')
+  }
+  const real = realpathSync(bin)
+  let walk = dirname(real)
+  let nodeModules = ''
+  for (let hop = 0; hop < 8; hop += 1) {
+    const candidate = join(walk, 'node_modules')
+    if (existsSync(candidate)) {
+      nodeModules = candidate
+      break
+    }
+    const parent = dirname(walk)
+    if (parent === walk) break
+    walk = parent
+  }
+  if (nodeModules === '') throw new Error('no node_modules above the dsh binary ' + real)
+  // A LABEL for the report, never a selector: nothing downstream branches on it.
+  const dshVersion = (spawnSync('dsh', ['--version'], { encoding: 'utf8' }).stdout ?? '').trim()
+  const packageLabel = (dir) => {
+    try {
+      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+      return String(manifest.name) + '@' + String(manifest.version)
+    } catch {
+      return '<no package.json at ' + dir + '>'
+    }
+  }
+  // Both shapes the installed adapter may answer with, read without asking
+  // which generation this is: a plain array (dsh 0.1.5-rc.1) or the accessor
+  // that `.volatile()` produces (dsh 0.2.0-rc.2).
+  const modelsOf = (instance) => {
+    const raw = instance === null || instance === undefined ? undefined : instance.models
+    if (Array.isArray(raw)) return raw
+    if (raw !== null && raw !== undefined && typeof raw.get === 'function') {
+      const got = raw.get()
+      if (Array.isArray(got)) return got
+    }
+    return null
+  }
+  const routes = {}
+  for (const route of routeList) {
+    const faces = []
+    // FACE A — pi-ai's builtin provider data, one file per route.
+    const piDir = join(nodeModules, '@earendil-works', 'pi-ai')
+    const piFile = join(piDir, 'dist', 'providers', 'data', route + '.json')
+    if (existsSync(piFile)) {
+      const doc = JSON.parse(readFileSync(piFile, 'utf8'))
+      const models = []
+      for (const api of Object.keys(doc)) {
+        for (const id of Object.keys(doc[api] ?? {})) {
+          const declared = doc[api][id]
+          models.push({ id, input: Array.isArray(declared === null || declared === undefined ? undefined : declared.input) ? declared.input : ['text'], api })
+        }
+      }
+      faces.push({ artifact: piFile, package: packageLabel(piDir), kind: 'pi-ai builtin provider data', models })
+    }
+    // FACE B — an installed adapter that REGISTERS this route (the quoted route
+    // literal occurs in its compiled entry) and publishes a default model list
+    // through its own exported Config schema.
+    for (const scope of readdirSync(nodeModules)) {
+      if (!scope.startsWith('@')) continue
+      for (const pkg of readdirSync(join(nodeModules, scope))) {
+        const pkgDir = join(nodeModules, scope, pkg)
+        const libIndex = join(pkgDir, 'lib', 'index.js')
+        if (!existsSync(libIndex)) continue
+        const text = readFileSync(libIndex, 'utf8')
+        if (!text.includes('"' + route + '"')) continue
+        try {
+          const mod = await import(pathToFileURL(libIndex).href)
+          const models = typeof mod.Config === 'function' ? modelsOf(mod.Config()) : null
+          faces.push({
+            artifact: libIndex,
+            package: packageLabel(pkgDir),
+            kind: 'adapter Config default models',
+            models: models === null ? [] : models.map((model) => ({
+              id: model.id,
+              input: Array.isArray(model.inputModalities) ? model.inputModalities : ['text'],
+            })),
+          })
+        } catch (error) {
+          // Recorded, never silently dropped: a package that mentions the route
+          // but cannot be imported is evidence, not noise.
+          faces.push({
+            artifact: libIndex,
+            package: packageLabel(pkgDir),
+            kind: 'adapter (import failed)',
+            models: [],
+            importError: String(error === null || error === undefined ? 'unknown' : error.message ?? error).slice(0, 160),
+          })
+        }
+      }
+    }
+    routes[route] = { faces }
+  }
+  return { dshBinary: real, dshVersion, nodeModules, routes }
+}
+
+/**
+ * Collapse the probe document to EXACTLY ONE non-empty catalog per route.
+ * Zero or several is a loud failure: an empty map would silently serve nothing,
+ * and two faces that disagree would make "does this id exist" unanswerable.
+ * PURE, so `--self-test` can drive both failure shapes with fabricated
+ * documents — the live probe cannot be made to produce them on demand.
+ */
+function collapseCatalogFaces(doc, routeList) {
+  const catalogs = {}
+  for (const route of routeList) {
+    const faces = doc?.routes?.[route]?.faces ?? []
+    const usable = faces.filter((face) => Array.isArray(face.models) && face.models.length > 0)
+    if (usable.length !== 1) {
+      // Tagged so the claim "every throw site declares its kind" is literally true.
+      // This one refuses to guess an authoritative catalog, which is a refusal and not
+      // an absence: it must never be skippable.
+      throw seatRefusal(
+        `seats: route '${route}' resolved to ${usable.length} non-empty catalog faces on `
+        + `${doc?.dshBinary ?? 'unknown dsh'} (scanned ${doc?.nodeModules ?? 'unknown node_modules'}); `
+        + `faces seen: ${faces.map((face) => `${face.package ?? '?'}=${(face.models ?? []).length} model(s)`).join(', ') || 'none'}`
+        + ' — the e2e refuses to guess which catalog is authoritative',
+      )
+    }
+    catalogs[route] = usable[0]
+  }
+  return catalogs
+}
+
+/** Run `runtimeCatalogProbe` out of process and parse its JSON document. */
+/**
+ * A refusal is a FACT about a seat, declared BY THE SITE THAT REFUSES — not a string
+ * a classifier has to remember. Review A's round-5 MAJOR-1 measured the shape of the
+ * hole: `REFUSAL_MARKERS` was a hand-written substring whitelist of 5 entries against
+ * 13 throw sites in this subsystem, so 7 of them — including a seat the runtime cannot
+ * seat at all — fell through the classifier and were recorded as a SKIP, and
+ * `OMO_E2E_FORCE_SEAT='explore=fake-route/deepseek-flash' … --self-test` exited 0 on
+ * the very generation `ci.yml:102` pins. A whitelist drifts from the throws forever,
+ * because nothing forces the two to move together. So the throw site now carries its
+ * own kind, the classifier reads the kind, and — the part that keeps it from rotting
+ * again — **an untagged reason is NOT skippable**: it is a problem. Add a throw site
+ * without declaring its kind and the gate names it the first time it fires.
+ *
+ * `catalogAbsent` is the ONLY legitimate route to a skip: the catalog was genuinely
+ * not there to read (no `dsh`, no catalog on disk), which is true in hermetic mode
+ * and nowhere near true for a seat that was refused.
+ */
+// Counted AND REPORTED (Review B, round 6: the round-4 fix printed each drop but the
+// number never reached the record, so a growing leak was still invisible to CI).
+export const BOOT_MIRROR_DROPS = { count: 0 }
+export const SEAT_REFUSAL_FLAG = 'seatRefusal'
+export const CATALOG_ABSENT_FLAG = 'catalogAbsent'
+function seatRefusal(message) {
+  const error = new Error(message)
+  error[SEAT_REFUSAL_FLAG] = true
+  return error
+}
+function catalogAbsent(message) {
+  const error = new Error(message)
+  error[CATALOG_ABSENT_FLAG] = true
+  return error
+}
+/** Is this reason a refusal the resolver DECLARED? Untagged is NOT a skip. */
+function isDeclaredRefusal(reason) {
+  return reason !== null && reason !== undefined && reason[SEAT_REFUSAL_FLAG] === true
+}
+function isDeclaredAbsence(reason) {
+  return reason !== null && reason !== undefined && reason[CATALOG_ABSENT_FLAG] === true
+}
+
+function probeRuntimeCatalog(routeList) {
+  const source = `const probe = ${runtimeCatalogProbe.toString()}
+probe(process.argv.slice(1)).then(
+  (doc) => process.stdout.write(JSON.stringify(doc)),
+  (error) => {
+    process.stderr.write(String(error && error.stack ? error.stack : error))
+    process.exit(1)
+  },
+)`
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', source, ...routeList], {
+    encoding: 'utf8',
+    timeout: 120_000,
+  })
+  const stdout = (child.stdout ?? '').trim()
+  if (child.status !== 0 || stdout === '') {
+    throw catalogAbsent(
+      `seats: the runtime catalog probe failed (exit ${child.status}) — `
+      + `${(child.stderr ?? '').slice(0, 400) || 'no stderr'} — the e2e will NOT guess a model id`,
+    )
+  }
+  let doc
+  try {
+    doc = JSON.parse(stdout)
+  } catch {
+    throw catalogAbsent(`seats: the runtime catalog probe printed non-JSON: ${stdout.slice(0, 200)}`)
+  }
+  return { catalogs: collapseCatalogFaces(doc, routeList), probe: doc }
+}
+
+/**
+ * EXPLICIT SEAT CHOICES, TEST-ONLY, KEY = `'<seat>@<route>'`.
+ *
+ * `resolveSeatAgainstCatalog` refuses to choose between two or more modality-capable
+ * ids, so every seat where the installed catalog leaves a genuine choice must be
+ * decided HERE, by name, in a line a reviewer can see. An entry naming an id that is
+ * not among the capable ids is itself a hard error, so a table that goes stale fails
+ * closed instead of quietly redirecting a seat.
+ *
+ * All four entries are needed on the installed dsh 0.2.0-rc.2, where BOTH catalogs
+ * list exactly two ids (`deepseek-flash[text+image]`, `deepseek-v4-pro[text]`), so
+ * every text seat there has two capable candidates. `multimodal-looker` is NOT
+ * listed: `image` is required there and only `deepseek-flash` declares it, so the
+ * catalog leaves no choice and the resolver takes it, flagged soleCapableCandidate.
+ *
+ * WHY `deepseek-flash` in all four, stated because it is a decision, not a fact:
+ *   • it is the only id either 0.2.x catalog declares with `input:["text","image"]`,
+ *     so it is the only choice that cannot blind a seat if its tools grow;
+ *   • `deepseek-v4-pro`'s own catalog description is "Stronger agentic coding… at
+ *     higher cost" — moving four parade seats onto the expensive coding model to make
+ *     a fixture pass is not a choice this file should make implicitly;
+ *   • keeping children on `deepseek-flash` preserves the parade's route-pair
+ *     DISTINCTNESS (parent official/deepseek-v4-pro vs child pi-ai/deepseek-flash).
+ *
+ * ON dsh 0.1.5-rc.1 THIS TABLE IS INERT: every shipped default resolves in place, no
+ * seat reaches the choice branch, and the audit leg reports 0 unresolvable rows there.
+ */
+export const TEST_ONLY_SEAT_PINS = {
+  'explore@deepseek': 'deepseek-flash',
+  'librarian@deepseek': 'deepseek-flash',
+  'sisyphus-junior@deepseek': 'deepseek-flash',
+  'sisyphus-junior@deepseek-official': 'deepseek-flash',
+}
+
+/**
+ * The seat a roster row runs on, chosen from the RUNTIME CATALOG by the rule
+ * stated in the section header above. Returns the pinned route untouched when the
+ * catalog lists it — PROVIDED that id carries the modalities the roster row
+ * declares, which is checked on EVERY path, not just the substituting one.
+ * Otherwise: exactly ONE modality-capable id → move there (the catalog left no
+ * choice, recorded as `soleCapableCandidate: true`); TWO OR MORE → REFUSE unless
+ * `TEST_ONLY_SEAT_PINS['<seat>@<route>']` names one of them. There is no ranking
+ * step and no similarity term — see the section header for why it was deleted.
+ * Throws naming the seat when nothing capable is listed, when a kept id cannot carry
+ * the declared modalities, and when a real choice has no written decision.
+ */
+function resolveSeatAgainstCatalog(catalogs, agentId, preferred, requiredModalities, binding = false) {
+  const catalog = catalogs[preferred.provider]
+  if (catalog === undefined) {
+    throw seatRefusal(
+      `seats: agent '${agentId}' wants route '${preferred.provider}', which this runtime `
+      + `serves no catalog at all (routes with a catalog: ${Object.keys(catalogs).join(', ')})`,
+    )
+  }
+  const listed = catalog.models
+  const pinned = listed.find((model) => model.id === preferred.model)
+  // A BINDING pin (OMO_E2E_FORCE_SEAT) is never substituted. This is the
+  // anti-vacuity half of the rule: without it a bogus pin would be quietly
+  // replaced by a real id and the run would stay green while proving nothing.
+  if (binding && pinned === undefined) {
+    throw seatRefusal(
+      `SEAT '${agentId}' IS PINNED TO A MODEL ID THIS RUNTIME DOES NOT SERVE: `
+      + `'${preferred.provider}/${preferred.model}' is absent from ${catalog.package} `
+      + `(${catalog.artifact}), which lists `
+      + `${listed.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ') || 'NOTHING'}`
+      + ' — refusing to substitute, because a bound pin that is silently replaced is a gate that proves nothing',
+    )
+  }
+  // MODALITY IS CHECKED ON EVERY PATH THAT RETURNS A SEAT, not only on the one
+  // that substitutes (post-review MAJOR-2). Before this, the two returns below
+  // handed back a seat without ever asking whether the id it kept can carry what
+  // the roster row declared, so this bit open:
+  //   OMO_E2E_FORCE_SEAT='multimodal-looker=deepseek/deepseek-v4-pro'
+  //   → { substituted:false, required:['text','image'], served:['text'] }, no error
+  // i.e. the one vision seat in the roster pinned onto a text-only model, accepted
+  // silently. `required ⊆ served` is the slice's central invariant, so it is
+  // asserted here, once, before any return. There is no live instance of this on
+  // either installed generation (multimodal-looker's shipped default is
+  // deepseek-v4-flash-vision-exp on both), which is exactly why it needs a check
+  // and not an observation: it fails open the day upstream edits that row.
+  const lackingModalities = (model) => requiredModalities.filter((modality) => !model.input.includes(modality))
+  if (pinned !== undefined) {
+    const missing = lackingModalities(pinned)
+    if (missing.length > 0) {
+      throw seatRefusal(
+        `SEAT '${agentId}' CANNOT CARRY THE MODALITIES ITS ROSTER ROW DECLARES: `
+        + `'${preferred.provider}/${preferred.model}' is listed by ${catalog.package} `
+        + `(${catalog.artifact}) but serves [${pinned.input.join(', ')}] while the roster row `
+        + `requires [${requiredModalities.join(', ')}] — missing [${missing.join(', ')}]. `
+        + `Listed here: ${listed.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ')}`
+        + ' — refusing to run a seat that cannot see what it is allowed to read'
+        + (binding
+          ? `; the id arrived through OMO_E2E_FORCE_SEAT, so point that knob at an id `
+            + `whose input covers [${requiredModalities.join(', ')}]`
+          : '; this is the SHIPPED DEFAULT failing, which is T12\'s to fix, not the test\'s to work around'),
+      )
+    }
+    return {
+      agent: agentId,
+      provider: preferred.provider,
+      model: preferred.model,
+      substituted: false,
+      requiredModalities: [...requiredModalities],
+      servedModalities: [...pinned.input],
+      catalogArtifact: catalog.artifact,
+      catalogPackage: catalog.package,
+    }
+  }
+  // THE CATALOG EITHER LEAVES NO CHOICE OR THE FIXTURE MAKES ONE EXPLICITLY.
+  //
+  // There is deliberately NO similarity term here. The previous revision ranked
+  // candidates by `-`-token overlap against the pinned id; Review B deleted that
+  // term in a /tmp copy and the mutant behaved IDENTICALLY, because on both
+  // installed runtimes every unresolvable seat has either exactly one
+  // modality-capable id (nothing to rank) or candidates that all tie
+  // (measured, `node -e` over RUNTIME_CATALOGS × DEFAULT_MODEL_ROUTES:
+  // explore/librarian/sisyphus-junior @deepseek → capable [deepseek-flash,
+  // deepseek-v4-pro] overlaps [2,2]; multimodal-looker @deepseek-official →
+  // capable [deepseek-flash] alone). A term that cannot change an outcome is not
+  // a rule, it is decoration, and a decorated rule tells the next reader the code
+  // selects by meaning when it selects by luck. So the rule is now two-valued:
+  //   • exactly ONE modality-capable id → the catalog forced it, substitute,
+  //     flagged `soleCapableCandidate: true`;
+  //   • TWO OR MORE → a real decision exists, so REFUSE unless a human wrote the
+  //     choice down in `TEST_ONLY_SEAT_PINS`.
+  const capable = listed.filter((model) => requiredModalities.every((modality) => model.input.includes(modality)))
+  if (capable.length === 0) {
+    throw seatRefusal(
+      `seats: agent '${agentId}' has NO valid model id on the runtime under test — `
+      + `pinned '${preferred.provider}/${preferred.model}' is absent from ${catalog.package} `
+      + `(${catalog.artifact}), which lists `
+      + `${listed.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ') || 'NOTHING'}`
+      + ` and the roster row requires modalities [${requiredModalities.join(', ')}]`
+      + ' — say so rather than installing something that is not there',
+    )
+  }
+  const key = `${agentId}@${preferred.provider}`
+  const explicit = TEST_ONLY_SEAT_PINS[key]
+  const listedCapable = capable.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ')
+  // A WRITTEN CHOICE IS NEVER SILENTLY BYPASSED, not even when the catalog leaves
+  // no choice (Review A, round 6). `TEST_ONLY_SEAT_PINS` used to be read ONLY when
+  // `capable.length > 1`, so a pin naming an id the catalog does not list, sitting
+  // beside exactly ONE capable id, was answered `soleCapableCandidate:true` with
+  // `explicitChoiceKey:null` and the stale pin unmentioned — against this file's own
+  // doctrine that a written decision is honoured BY NAME. A human wrote an id down;
+  // the machine must say so when it cannot serve it, not quietly serve another.
+  if (capable.length === 1 && explicit !== undefined && explicit !== capable[0].id) {
+    throw seatRefusal(
+      `SEAT '${agentId}' HAS A WRITTEN CHOICE THIS CATALOG CANNOT HONOUR: `
+      + `TEST_ONLY_SEAT_PINS['${key}'] = '${explicit}', but that id is absent from `
+      + `${catalog.package} (${catalog.artifact}) and the ONLY modality-capable id it lists is `
+      + `'${capable[0].id}'[${capable[0].input.join('+')}]. Refusing to substitute it silently: `
+      + `either the pin is stale — name the id that should replace it — or the catalog is not `
+      + `the one this pin was written for.`,
+    )
+  }
+  if (capable.length > 1) {
+    // A choice exists. It must be written down, by name, before it is made.
+    if (explicit === undefined) {
+      throw seatRefusal(
+        `SEAT '${agentId}' REQUIRES AN EXPLICIT MODEL CHOICE AND NONE IS WRITTEN DOWN: `
+        + `'${preferred.provider}/${preferred.model}' is absent from ${catalog.package} (${catalog.artifact}) `
+        + `and ${capable.length} ids there could carry the seat's modalities [${requiredModalities.join(', ')}]: `
+        + `${listedCapable}. Refusing to pick one, because after removing the inert token-overlap term `
+        + `(Review B: deleting it changed no outcome) there is NO criterion left in this file that could `
+        + `choose between them, and catalog declaration order is serialization, not a reason. `
+        + `TO PROCEED: (1) add \`${key}: '<one of the ids above>'\` to TEST_ONLY_SEAT_PINS in `
+        + `tests/e2e/drive.mjs — the entry IS the decision, there is no second field `
+        + `beside it that anything reads, or (2) set `
+        + `OMO_E2E_FORCE_SEAT='${agentId}=${preferred.provider}/<id>' for one run (that BINDS, so the id `
+        + `must be listed above). If the real answer is that the shipped default should change, that is `
+        + `T12's edit to roster.ts — not a pin in this file.`,
+      )
+    }
+    const chosen = capable.find((model) => model.id === explicit)
+    if (chosen === undefined) {
+      throw seatRefusal(
+        `seats: TEST_ONLY_SEAT_PINS['${key}'] names '${explicit}', which is not one of the `
+        + `capable ids [${capable.map((model) => model.id).join(', ')}] on ${catalog.package} `
+        + `(${catalog.artifact}) — a stale explicit decision is as dangerous as an implicit one`,
+      )
+    }
+    // A WRITTEN CHOICE MUST ALSO BE A DEFENSIBLE ONE (Review A delta round, M10).
+    // Before this, the VALUES of `TEST_ONLY_SEAT_PINS` were unguarded: flipping
+    // `explore@deepseek` to the text-only coding model exited 0 with every leg green,
+    // because the resolver only ever asked "is this id listed and capable?". This
+    // asks the sharper question the pin table's own comment claims to answer: did the
+    // fixture pick a STRICTLY LESS CAPABLE id while a more capable listed id was
+    // available? Capability dominance is read off the catalog, so it needs no prose
+    // and survives upstream rewording a description.
+    const dominating = capable.filter((model) => model.id !== chosen.id
+      && model.input.length > chosen.input.length
+      && chosen.input.every((modality) => model.input.includes(modality)))
+    if (dominating.length > 0) {
+      throw seatRefusal(
+        `SEAT '${agentId}' CHOSE A STRICTLY LESS CAPABLE MODEL ID: `
+        + `TEST_ONLY_SEAT_PINS['${key}'] = '${chosen.id}' serves [${chosen.input.join(', ')}] while `
+        + `${catalog.package} (${catalog.artifact}) also lists `
+        + `${dominating.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ')}, `
+        + `each carrying EVERY modality the chosen id does plus more. That may still be the right `
+        + `call (a cheaper text-only model is a legitimate pick), but not as an unexplained value in `
+        + `a table whose stated reason is capability. The remedy is to NAME the more capable id. `
+        + `(Deliberately no "write a different reason beside the entry" option: nothing reads such a reason, `
+        + `so offering it would return an identical red with no new information. If the shipped default is `
+        + `what should change, that is T12's edit to roster.ts.)`,
+      )
+    }
+    return {
+      agent: agentId,
+      provider: preferred.provider,
+      model: chosen.id,
+      substituted: true,
+      requiredModalities: [...requiredModalities],
+      servedModalities: [...chosen.input],
+      catalogArtifact: catalog.artifact,
+      catalogPackage: catalog.package,
+      pinnedButUnresolvableModel: preferred.model,
+      candidates: capable.map((model) => model.id),
+      explicitChoiceKey: key,
+      soleCapableCandidate: false,
+    }
+  }
+  const chosen = capable[0]
+  return {
+    agent: agentId,
+    provider: preferred.provider,
+    model: chosen.id,
+    substituted: true,
+    requiredModalities: [...requiredModalities],
+    servedModalities: [...chosen.input],
+    catalogArtifact: catalog.artifact,
+    catalogPackage: catalog.package,
+    pinnedButUnresolvableModel: preferred.model,
+    candidates: capable.map((model) => model.id),
+    // TRUE means the catalog offered exactly ONE id that can carry this seat, so
+    // there was no decision to make and no decision was made here. FALSE means a
+    // human wrote the choice down in TEST_ONLY_SEAT_PINS (see explicitChoiceKey).
+    soleCapableCandidate: true,
+    explicitChoiceKey: null,
+  }
+}
+
+/** The modalities a roster row declares it needs — `read_image` means image. */
+/**
+ * Review A: this FAILED OPEN, and it fails open TODAY — `DELEGATION_ENTRIES` has 10
+ * ids while `DEFAULT_MODEL_ROUTES` has 11, so the conductor `sisyphus` already falls
+ * through to `['text']`. A future vision seat added without an entry would silently
+ * lose its `image` requirement: the exact silent conversion this slice exists to kill.
+ * Guessing cannot be made safe (inventing `['text','image']` refuses ids the runtime
+ * serves), so the inference stays but is no longer silent: every inferred agent is
+ * RECORDED, PRINTED at startup, and pinned by `inferred-modalities-pinned`, which
+ * asserts the inferred set is EXACTLY today's known one.
+ */
+export const INFERRED_MODALITY_AGENTS = []
+function requiredModalitiesFor(agentId) {
+  const entry = DELEGATION_ENTRIES.find((candidate) => candidate.id === agentId)
+  if (entry === undefined) {
+    if (!INFERRED_MODALITY_AGENTS.includes(agentId)) INFERRED_MODALITY_AGENTS.push(agentId)
+    return ['text']
+  }
+  const allow = entry.allowTools ?? []
+  return allow.includes('read_image') ? ['text', 'image'] : ['text']
+}
+
+/**
+ * `OMO_E2E_FORCE_SEAT='agent=provider/model[,agent=…]'` — the ANTI-VACUITY
+ * knob, and the only way to bind a seat to an id the catalog does not list.
+ * It exists so AC6 can prove this gate bites: a bogus id must go RED naming the
+ * seat, not be silently substituted away. It is read HERE and nowhere else —
+ * `seedSandbox` never writes it, so it cannot certify the read face — and a
+ * bound id is still checked against the catalog, so it cannot invent one either.
+ */
+function forcedSeatPins(catalogs) {
+  const raw = (process.env.OMO_E2E_FORCE_SEAT ?? '').trim()
+  if (raw === '') return []
+  const pins = []
+  for (const clause of raw.split(',').map((part) => part.trim()).filter((part) => part.length > 0)) {
+    const splitAt = clause.indexOf('=')
+    const agent = splitAt < 0 ? '' : clause.slice(0, splitAt).trim()
+    const pair = splitAt < 0 ? '' : clause.slice(splitAt + 1).trim()
+    const provider = pair.split('/')[0] ?? ''
+    const model = pair.split('/').slice(1).join('/')
+    if (agent.length === 0 || provider.length === 0 || model.length === 0) {
+      throw seatRefusal(
+        `seats: OMO_E2E_FORCE_SEAT clause '${clause}' is not 'agent=provider/model' `
+        + `— the knob is load-bearing, so a malformed clause is a hard error`,
+      )
+    }
+    const catalog = catalogs[provider]
+    if (catalog === undefined) {
+      throw seatRefusal(
+        `seats: OMO_E2E_FORCE_SEAT pinned '${agent}' to route '${provider}', which this runtime `
+        + `serves no catalog (routes with a catalog: ${Object.keys(catalogs).join(', ')})`,
+      )
+    }
+    // The id itself is deliberately NOT checked here. `resolveSeatAgainstCatalog`
+    // does it, as a BINDING request, so there is exactly one place that emits
+    // `SEAT '<agent>' IS PINNED TO A MODEL ID THIS RUNTIME DOES NOT SERVE` and
+    // exactly one place that may substitute.
+    pins.push({ agent, provider, model })
+  }
+  return pins
+}
+
+/**
+ * The one resolution every seat in this driver comes from: ALL 11 roster rows
+ * (the conductor included) pinned at their SHIPPED default — `DEFAULT_MODEL_ROUTES`,
+ * the shipped source, never a copy — mapped through the installed runtime's own
+ * catalog. This is the single place the shipped default is allowed to move, and
+ * it moves only where the catalog says the shipped id is not there.
+ *
+ * @param {object} extraCatalogRoutes - routes the parade's preference table uses
+ *   that the shipped defaults do not, so one probe covers every pin in the file.
+ */
+function resolveRosterSeatsAgainstRuntime(extraCatalogRoutes = []) {
+  const shipped = Object.entries(DEFAULT_MODEL_ROUTES)
+  const routeList = [...new Set([
+    ...shipped.map(([, route]) => route.provider),
+    ...extraCatalogRoutes,
+  ])]
+  const { catalogs, probe } = probeRuntimeCatalog(routeList)
+  const forced = forcedSeatPins(catalogs)
+  const resolutions = {}
+  for (const [agent, route] of shipped) {
+    const pin = forced.find((candidate) => candidate.agent === agent)
+    // A bound pin goes through the SAME catalog, as a BINDING request: present
+    // → served verbatim, absent → throw naming the seat (never substituted).
+    const resolution = resolveSeatAgainstCatalog(
+      catalogs,
+      agent,
+      pin === undefined ? route : { provider: pin.provider, model: pin.model },
+      requiredModalitiesFor(agent),
+      pin !== undefined,
+    )
+    resolutions[agent] = pin === undefined
+      ? resolution
+      : { ...resolution, forcedByEnvVar: 'OMO_E2E_FORCE_SEAT' }
+  }
+  return { resolutions, catalogs, probe, forced }
+}
+
+/**
+ * Same rule, applied to the PARADE's own preference table (which re-seats
+ * librarian and multimodal-looker onto vision ids the shipped default does not
+ * use). On dsh 0.1.5-rc.1 every preferred id is listed, so this returns the
+ * preference table untouched.
+ */
+function resolvePreferredSeats(catalogs, preferences) {
+  const out = {}
+  for (const [agent, seat] of preferences) {
+    const entry = DELEGATION_ENTRIES.find((candidate) => candidate.id === agent)
+    out[agent] = resolveSeatAgainstCatalog(
+      catalogs,
+      agent,
+      seat,
+      entry === undefined ? ['text'] : requiredModalitiesFor(agent),
+    )
+  }
+  return out
+}
+
+/** The catalog a resolved seat came from, for log lines. */
+function catalogNameOf(seat) {
+  return `${seat.catalogPackage} (${seat.catalogArtifact})`
+}
+
+/**
+ * Loud, per seat, at start-up: which ids moved, and the artifact that said so.
+ * Takes its data as PARAMETERS — it is called from inside the module-init IIFE,
+ * before the `RUNTIME_*` consts below exist, and reading them there would be a
+ * temporal-dead-zone ReferenceError that looks like "no catalog was read".
+ */
+function announceRuntimeSeats(resolutions, catalogs, probe) {
+  void catalogs
+  console.error(
+    `drive: [seats] runtime ${probe?.dshVersion ?? '?'} `
+    + `(${probe?.dshBinary ?? '?'}) — catalogs read at run time, `
+    + `NOT version-sniffed: `
+    + Object.entries(probe?.routes ?? {})
+      .map(([route, face]) => {
+        const usable = (face.faces ?? []).find((entry) => (entry.models ?? []).length > 0)
+        return `${route}←${usable?.package ?? 'NO CATALOG'}[${(usable?.models ?? []).map((model) => `${model.id}(${model.input.join('+')})`).join(' ')}]`
+      })
+      .join(' | '),
+  )
+  const moved = Object.values(resolutions).filter((seat) => seat.substituted)
+  if (moved.length === 0) {
+    console.error(
+      'drive: [seats] every shipped default resolves on this runtime — no seat was moved '
+      + '(this is the dsh 0.1.5-rc.1 shape; the table below is byte-identical to it)',
+    )
+    return
+  }
+  for (const seat of moved) {
+    console.error(
+      `drive: [seats] TEST-ONLY SUBSTITUTION ${seat.agent}: shipped default `
+      + `${seat.provider}/${seat.pinnedButUnresolvableModel} is NOT listed by `
+      + `${seat.catalogPackage} (${seat.catalogArtifact}); the e2e pins `
+      + `${seat.provider}/${seat.model} (modalities [${seat.servedModalities.join('+')}], `
+      + `required [${seat.requiredModalities.join(', ')}]; candidates ${seat.candidates.join(', ')})`
+      // WHY this id and not another, stated in the log (Review A MINOR): either
+      // the catalog left exactly one capable id, or a human wrote the choice down.
+      // The log never leaves the reader to infer which of the two happened.
+      + (seat.soleCapableCandidate === true
+        ? ` [SOLE CAPABLE ID — ${catalogNameOf(seat)} listed no other id covering `
+          + `[${seat.requiredModalities.join(', ')}], so no choice existed here]`
+        : ` [EXPLICIT CHOICE among ${seat.candidates.join(', ')} — written down as `
+          + `TEST_ONLY_SEAT_PINS['${seat.explicitChoiceKey}'] = '${seat.model}'; `
+          + `the resolver has NO similarity criterion and would have refused]`)
+      + ' — THE SHIPPED DEFAULT REMAINS UNRESOLVABLE ON THIS RUNTIME, which is T12\'s to fix',
+    )
+  }
+}
+
+/** The OMO_<AGENT>_{PROVIDER,MODEL} overlay for ALL 11 roster rows, names and
+ * values both derived (env names from `MODEL_ROUTE_ENV_VARS`, seats from the
+ * runtime-resolved shipped defaults) — never restated. Refuses, loudly, when the
+ * catalog was never read: an unverified id must not reach a sandbox. */
+function runtimeSeatEnv() {
+  requireRuntimeSeats('runtimeSeatEnv')
+  const env = {}
+  for (const [agent, names] of Object.entries(MODEL_ROUTE_ENV_VARS)) {
+    const seat = RUNTIME_RESOLVED_SEATS[agent]
+    env[names.provider] = seat.provider
+    env[names.model] = seat.model
+  }
+  return env
+}
+
+/**
+ * EXPORTED (P4.5-T10′) so the per-generation seat table can be re-generated by
+ * ONE command against whichever runtime is installed — `node -e "import(...)"`
+ * runs this module's init (the catalog probe) and never `main()`, so the AC7
+ * table in the report is machine-produced from the same code the run uses, not
+ * transcribed from a prompt or from an earlier report.
+ *
+ * The read-face validator's expected explore seat, argv 5/6, with its source
+ * named in the returned record: `roster.ts`'s shipped default mapped through the
+ * installed runtime's catalog. NEVER `def.env`, NEVER the read face.
+ */
+export function readFaceSeatExpectation() {
+  requireRuntimeSeats('readFaceSeatExpectation')
+  const seat = RUNTIME_RESOLVED_SEATS.explore
+  return {
+    provider: seat.provider,
+    model: seat.model,
+    substitutedFromShippedDefault: seat.substituted,
+    shippedDefaultModel: seat.pinnedButUnresolvableModel ?? seat.model,
+    explicitChoiceKey: seat.explicitChoiceKey ?? null,
+    expectationSource: `roster.ts defaultRoute.explore ${seat.pinnedButUnresolvableModel ?? seat.model} mapped through ${seat.catalogPackage} ${seat.catalogArtifact}`,
+  }
+}
+
+/**
+ * NO-BOOT AUDIT: every shipped default in `DEFAULT_MODEL_ROUTES` against the
+ * catalog of its own route, on the runtime that is installed RIGHT NOW.
+ *
+ * WHY (Review A, adopted by the arbiter). T10′ made gate 3 green on 0.2.x by
+ * teaching the e2e to resolve against the live catalog. That leaves a failure mode
+ * the resolver itself would never show: if upstream's catalog changes again, the
+ * resolver quietly picks another id, the gate stays green, and the SHIPPED DEFAULT —
+ * which nothing re-resolves — has quietly become wrong. A reader of a green gate
+ * would conclude the product works on that runtime. This audit is what turns that
+ * silent conversion into a named, printed fact.
+ *
+ * WHAT IT IS NOT: it does NOT fix anything. It never edits `roster.ts`, never
+ * nudges a pin, never changes a seat. Fixing an unresolvable shipped default is
+ * T12's. This function's whole job is to DETECT and NAME.
+ *
+ * Pure over (catalogs, shippedRoutes) so `--self-test` can drive it with fabricated
+ * catalogs and no runtime at all.
+ */
+export function auditShippedDefaultsAgainstCatalog(catalogs, shippedRoutes = DEFAULT_MODEL_ROUTES, resolutions = {}, modalities = {}) {
+  const rows = []
+  const rowModalities = modalities
+  for (const [agent, shipped] of Object.entries(shippedRoutes)) {
+    const catalog = catalogs[shipped.provider]
+    const resolution = resolutions[agent]
+    // A BINDING override (OMO_E2E_FORCE_SEAT) can make a seat run on an id the
+    // catalog DOES list while the SHIPPED DEFAULT for that seat is still absent.
+    // That is not the default resolving — it is an operator covering the gap for
+    // one run, and the audit must say so rather than read it as a pass.
+    // An override only COVERS a row if the id it names can actually carry the
+    // seat. `deepseek-official/deepseek-v4-pro` on the one vision seat is listed but
+    // text-only: that is not covering anything, it is a second, louder failure.
+    const overrideModel = resolution?.forcedByEnvVar ? resolution.model : null
+    const overrideCarries = overrideModel === null
+      ? true
+      : catalog?.models.some((model) => model.id === overrideModel
+        && (rowModalities[agent] ?? ['text']).every((modality) => model.input.includes(modality))) !== false
+    const coveredBy = overrideModel !== null && overrideCarries ? overrideModel : null
+    if (catalog === undefined) {
+      rows.push({ agent, route: shipped.provider, shippedModel: shipped.model, status: 'NO-CATALOG', artifact: null, listed: [], coveredBy })
+      continue
+    }
+    const present = catalog.models.some((model) => model.id === shipped.model)
+    rows.push({
+      agent,
+      route: shipped.provider,
+      shippedModel: shipped.model,
+      status: present ? 'RESOLVES' : (coveredBy === null ? 'UNRESOLVABLE' : 'UNRESOLVABLE-COVERED-BY-OVERRIDE'),
+      artifact: catalog.artifact,
+      listed: catalog.models.map((model) => `${model.id}[${model.input.join('+')}]`),
+      coveredBy,
+      overrideIncapable: overrideModel !== null && !overrideCarries,
+      // Review A MINOR-1: the incapable line printed `coveredBy ?? ''`, and coveredBy
+      // is null BY CONSTRUCTION on an incapable row — the id being complained about was
+      // structurally impossible to print. The override id now rides on the row.
+      overrideModel,
+      // The resolver moves a row exactly when its shipped default is absent AND no
+      // override stands in. Derived from the row, not from a resolution object that
+      // does not exist yet at the moment the startup audit runs.
+      resolverMoved: present === false && overrideModel === null,
+      required: rowModalities[agent] ?? ['text'],
+    })
+  }
+  // `broken` counts EVERY row whose shipped default its catalog does not list,
+  // covered or not. `allClear` is derived from `broken`, NEVER from `unresolvable`.
+  // This is the anti-laundering seam (Review A delta round, MAJOR-1): the announce
+  // used to return early on `unresolvable.length === 0`, so overriding ALL four
+  // broken seats made it print "audit PASS — all 11 roster shipped ids are listed",
+  // which is false on both clauses. An override is an additive statement about a row
+  // that is STILL broken; it can never subtract from the count of broken rows.
+  const broken = rows.filter((row) => row.status !== 'RESOLVES')
+  return {
+    rows,
+    // Rows the shipped default genuinely cannot resolve with nothing covering it.
+    unresolvable: rows.filter((row) => row.status === 'UNRESOLVABLE'),
+    // THE FIFTH STATE, given its own name. A route with no catalog at all is neither
+    // "unresolvable against a catalog we read" nor "covered": the shipped default was
+    // never even CHECKED. It has always been counted in `broken` — so the gate still
+    // reds and this is not a fail-open — but it appeared in none of the three emitter
+    // loops, so the audit's contract of NAMING every broken row failed for it
+    // (Review A, round 6: it proved this by importing the frozen module itself).
+    noCatalog: rows.filter((row) => row.status === 'NO-CATALOG'),
+    // Rows where a binding override is standing in for a broken shipped default.
+    covered: rows.filter((row) => row.status === 'UNRESOLVABLE-COVERED-BY-OVERRIDE'),
+    // An override naming an id that cannot carry the seat covers NOTHING; it is a
+    // second failure on top of the absent default, never a reason to go quiet.
+    incapable: rows.filter((row) => row.overrideIncapable === true),
+    // Rows where the RESOLVER itself moved off the shipped default. A cover is not
+    // a move: an override that is served verbatim leaves `movedCount` at zero, which
+    // is the number that shows what a cover COSTS.
+    movedCount: rows.filter((row) => row.resolverMoved === true).length,
+    // Every row whose shipped default this catalog does not list, covered included.
+    broken,
+    checked: rows.length,
+    allClear: broken.length === 0,
+  }
+}
+
+/**
+ * Print the audit. Loud, on stderr, and NEVER a silent pass: when something is
+ * unresolvable the line begins with a marker a human and a log scraper can both
+ * grep, and it says who owns the fix.
+ */
+function shippedDefaultAuditLines(audit) {
+  // PURE: returns the lines instead of printing them, so a self-test leg can assert
+  // the OUTPUT, not just the data. Without this the print path was unmutatable —
+  // Review A's M13 (`if (audit.unresolvable.length === 0) return`) survived every
+  // leg that only inspects the audit object.
+  const lines = []
+  // The all-clear is gated on `allClear`, which counts COVERED rows as broken.
+  // There is no input to this function that yields PASS while any shipped default is
+  // absent from its catalog — that was the hole Review A measured by overriding all
+  // four broken seats and getting `audit PASS` plus exit 0.
+  if (audit.allClear) {
+    return [`drive: [shipped-defaults] audit PASS — all ${audit.checked} roster shipped ids are listed `
+      + `by their route's installed catalog; the e2e pins nothing the product does not already ship`]
+  }
+  lines.push(
+    `drive: [shipped-defaults] *** SHIPPED DEFAULT UNRESOLVABLE ON THIS RUNTIME — `
+    + `${audit.broken.length}/${audit.checked} roster rows *** `
+    + `(${audit.unresolvable.length} with nothing covering them, ${audit.covered.length} covered by `
+    + `OMO_E2E_FORCE_SEAT for THIS RUN ONLY — covering is not resolving) `
+    // Review A: at 4 legitimate overrides the substitution evidence drops to ZERO
+    // while the gate still reads `RUN 17/17` — technically true, substantively
+    // misleading, and a reader should not have to run four overrides to learn it.
+    // Every live id would then be operator-supplied: the resolver chose nothing.
+    + `(substitution evidence: resolver chose ${audit.movedCount}, operator supplied `
+    + `${audit.covered.length}${audit.movedCount === 0 && audit.covered.length > 0 ? ` — EVERY live id is operator-supplied, the resolver chose NOTHING` : ``}) `
+    + `(T10′'s e2e pins substitute these; THE PRODUCT STILL SHIPS THE BROKEN DEFAULT — T12 owns the fix)`,
+  )
+  for (const row of audit.unresolvable) {
+    lines.push(
+      `drive: [shipped-defaults] UNRESOLVABLE ${row.agent}: roster ships `
+      + `${row.route}/${row.shippedModel}, which `
+      // The old `?? 'no catalog on this runtime'` fallback here was DEAD CODE: an
+      // UNRESOLVABLE row always names its artifact, because a row with no catalog is
+      // NO-CATALOG and never reaches this loop. It now names the bug instead of
+      // quietly printing a sentence that can never be true.
+      + `${row.artifact ?? '<ARTIFACT UNRECORDED — a driver bug: every UNRESOLVABLE row names the artifact that refused it>'} `
+      + `does NOT list (it lists: ${row.listed.join(', ') || 'NOTHING'})`,
+    )
+  }
+  for (const row of audit.noCatalog ?? []) {
+    lines.push(
+      `drive: [shipped-defaults] NO CATALOG FOR THE ROUTE ${row.agent}: roster ships `
+      + `${row.route}/${row.shippedModel} and this runtime published NO catalog at all for route `
+      + `'${row.route}' — the shipped default was not checked and could not have been, `
+      + `which is NOT the same as it being fine`,
+    )
+  }
+  for (const row of audit.incapable ?? []) {
+    lines.push(
+      `drive: [shipped-defaults] OVERRIDE CANNOT CARRY THE SEAT ${row.agent}: OMO_E2E_FORCE_SEAT names `
+      + `${row.route}/${row.overrideModel ?? '<none recorded>'} but the roster row requires `
+      + `[${row.required.join(', ')}] and this catalog lists ${row.listed.join(', ')} — that id covers `
+      + `NOTHING, so the row stays UNRESOLVABLE and nothing about it is covered`,
+    )
+  }
+  // An override is not a fix. Each covered row is printed with the knob that is
+  // covering it, so a green run never reads as "the default works here".
+  for (const row of audit.covered) {
+    lines.push(
+      `drive: [shipped-defaults] OVERRIDE COVERS A BROKEN DEFAULT ${row.agent}: roster still ships `
+      + `${row.route}/${row.shippedModel}, absent from ${row.artifact}; this run runs `
+      + `${row.route}/${row.coveredBy} ONLY because OMO_E2E_FORCE_SEAT says so. `
+      + `THE SHIPPED DEFAULT REMAINS UNRESOLVABLE ON THIS RUNTIME — T12's to fix, and this run does not prove it works`,
+    )
+  }
+  return lines
+}
+
+/**
+ * The lines printed when the catalog itself could not be read. Separate from
+ * `shippedDefaultAuditLines` because it is a DIFFERENT admission: "we could not
+ * check" must never be reachable from, or resemble, the all-clear path.
+ */
+function shippedDefaultAuditNotRunLines(reason) {
+  return [
+    `drive: [shipped-defaults] *** AUDIT NOT RUN — the runtime catalog itself could not be read, `
+    + `so NOT ONE shipped default has been checked against anything. This is NOT a pass. `
+    + `Reason: ${String(reason).slice(0, 200)}`,
+  ]
+}
+
+/** Print the audit. Every line comes from the pure producer above, so leg 9c can
+ * assert the exact shape of what a human and a log scraper will see. */
+/**
+ * THE EMITTER, and it is a separate door from the producer above. Review B's delta
+ * MAJOR: legs 12/13/14 asserted `shippedDefaultAuditLines`'s RETURN VALUE, so
+ * mutating only the loop below — `if (mute) {} else { for … }` — left every leg green
+ * while a human read nothing but `RUN 17/17`. "The producer is right" and "the line
+ * reached the stream" are different claims; `AUDIT_EMISSION` records the second one
+ * and `audit-emission-actually-printed` compares them, so the loop is under test.
+ */
+function announceShippedDefaultAudit(audit) {
+  const lines = shippedDefaultAuditLines(audit)
+  for (const line of lines) console.error(line)
+  AUDIT_EMISSION.push({ produced: lines.length, emitted: lines.length, lines })
+  return lines
+}
+/** What the emitter actually put on the stream, in order, one entry per announce. */
+export const AUDIT_EMISSION = []
+
+/**
+ * Run state for the seat resolver's own `--self-test` legs, read by the banner.
+ * A gate that could not run must say so, never read as green.
+ */
+/**
+ * The ONE denominator. `--self-test` prints it, `ran` is computed from it, and the
+ * failure banner prints it — three readers, one constant. Adding a leg means adding
+ * exactly one `legs.push(...)` and bumping THIS number; there is no second literal
+ * left to fall out of step.
+ */
+/**
+ * THE CANONICAL LEG LIST — one source of truth for the denominator, for the
+ * banner, and for COMPLETENESS. `SEAT_SELF_TEST_TOTAL` is `length` of this array,
+ * so the two hard-codes Review A warned about (`only 16/15 legs passed` on an EXIT 0
+ * run, which this file actually produced once) cannot exist again. Adding a leg means
+ * adding ONE `legs.push(...)` AND one name here; forget either and leg 17 reds.
+ */
+export const SEAT_SELF_TEST_LEGS = [
+  'present-id-stays',
+  'absent-id-moves-when-catalog-leaves-one',
+  'modality-filter-narrows-to-the-image-id',
+  'no-capable-id-throws-naming-seat',
+  'binding-pin-never-substituted',
+  'modality-checked-on-kept-id',
+  'modality-checked-on-binding-pin',
+  'catalog-count-refused',
+  'many-capable-ids-refused-without-written-choice',
+  'written-choice-wins-by-name',
+  'no-boot-shipped-default-audit-names-gaps',
+  'override-covered-rows-are-still-broken',
+  'audit-output-never-laundered-by-overrides',
+  'written-choice-values-guarded-by-dominance',
+  'live-written-choice-values-validated',
+  'audit-emission-actually-printed',
+  'incappable-override-fabricated',
+  'inferred-modalities-pinned',
+  'banner-never-looks-green-when-failing',
+  'refusal-shapes-are-declared-not-remembered',
+  'operator-knob-refusal-is-not-swallowed',
+  'no-catalog-route-is-named-not-silent',
+  'sole-capable-never-bypasses-a-written-pin',
+  'live-shipped-default-audit-agrees-with-resolver',
+  'live-table-grounded',
+]
+export const SEAT_SELF_TEST_TOTAL = SEAT_SELF_TEST_LEGS.length
+
+const SEAT_SELF_TEST_STATE = {
+  ran: false,
+  // `legs` holds IDENTIFIERS ONLY — no counts, no parentheses. Anything a leg
+  // measured goes in `counts` and is printed after the list. A parameter inside a
+  // leg name is what made the mutation harness unable to tell which legs survived.
+  // Leg IDENTIFIERS ONLY — no counts, no parentheses.
+  legs: [],
+  // CONVENTION (stated here, at the declaration, not 171 lines below at the reader):
+  // every entry is `'<canonical name> (<reason>)'` — canonical name FIRST so the
+  // completeness accounting can see it, reason in parentheses so a skip stays legible.
+  // A skip whose reason names `SEAT …` or `IS PINNED TO A MODEL ID` is a REAL ERROR
+  // recorded as a problem, not a skip; only genuine absence may be skipped.
+  skipped: [],
+  // Live legs that REFUSED because a seat was refused — counted, accounted, and each
+  // one also pushed to `problems`. Never merged into `skipped`.
+  refused: [],
+  counts: [],
+  notRunReason: '',
+  failed: 0,
+}
+
+function seatSelfTestBanner() {
+  const skippedNote = SEAT_SELF_TEST_STATE.skipped.length > 0
+    ? ` + ${SEAT_SELF_TEST_STATE.skipped.length} SKIPPED [${SEAT_SELF_TEST_STATE.skipped.join('; ')}]`
+    : ''
+  // Review A NIT: `RUN 17/17 legs` used to print on a run that was FAILING, because
+  // the banner only looked at its own counters. A green-looking clause inside a red
+  // run is the same laundering shape one level up.
+  if (SEAT_SELF_TEST_STATE.failed > 0) {
+    return `P4.5-T10′ seat-catalog gate **FAILING** (${SEAT_SELF_TEST_STATE.failed} problem(s); `
+      + `${SEAT_SELF_TEST_STATE.legs.length}/${SEAT_SELF_TEST_TOTAL} legs reported)${skippedNote}`
+  }
+  if (!SEAT_SELF_TEST_STATE.ran) {
+    return `P4.5-T10′ seat-catalog gate INCOMPLETE (${SEAT_SELF_TEST_STATE.notRunReason || 'reason unrecorded'})${skippedNote}`
+  }
+  // ${SEAT_SELF_TEST_TOTAL} is the ONLY denominator in this file. It used to be a
+  // second literal `/15` next to a separate `const TOTAL_LEGS = 15`, and bumping one
+  // without the other yields `only 16/15 legs passed` on an EXIT 0 run — a red-looking
+  // banner on a green exit, the exact shape this project keeps paying for.
+  return `P4.5-T10′ seat-catalog gate RUN ${SEAT_SELF_TEST_STATE.legs.length}/${SEAT_SELF_TEST_TOTAL} legs (${SEAT_SELF_TEST_STATE.legs.join(', ')})`
+    + (SEAT_SELF_TEST_STATE.counts.length > 0 ? ` [${SEAT_SELF_TEST_STATE.counts.join('; ')}]` : '')
+    + skippedNote
+}
+
+/**
+ * The hermetic legs of the T10′ seat rule, on FABRICATED catalogs.
+ *
+ * WHAT THIS DOES NOT GUARD, stated plainly: it does not prove anything about
+ * what the real runtime serves — the fabricated ids are invented, so no id in
+ * here is evidence about any generation. What it DOES guard is the RULE: that
+ * a present id is never moved, that an absent id moves to the named nearest
+ * catalog id, that a modality requirement is honoured, that a BINDING pin is
+ * never substituted, that a route with zero or two catalogs is refused, and —
+ * over the LIVE table — that every seat the driver will actually pin is listed
+ * in the catalog the probe really read, and that exactly the shipped defaults
+ * the catalog cannot serve were moved. That last leg is what makes the live
+ * table catalog-grounded rather than hand-typed; it still does not certify the
+ * shipped default, because on the generation where the default is absent the
+ * live table is by construction not the default.
+ */
+/**
+ * Call the resolver for a leg that expects it to ANSWER. An unexpected throw is
+ * turned into a named leg failure instead of aborting the whole self-test: measured
+ * before this helper existed, deleting the modality filter made leg 3's call throw
+ * (three capable ids, no written choice) and the run died with NO leg named — red,
+ * but undiagnosable, which is a worse gate than a red that says which clause broke.
+ * Returns null when it threw; the caller has already been told.
+ */
+function legResolve(label, problems, ...args) {
+  try {
+    return resolveSeatAgainstCatalog(...args)
+  } catch (error) {
+    problems.push(`T10′ ${label}: the resolver THREW where it should have answered — ${String(error?.message ?? error).slice(0, 220)}`)
+    return null
+  }
+}
+
+/**
+ * THE OTHER HALF OF THE DOOR (parent's ruling, same shape as `broken.length > 0`).
+ * A skip is only legitimate when the thing genuinely was not there to check — no
+ * `dsh`, no catalog on disk. A skip whose reason names a SEAT REFUSAL is a real
+ * error wearing a skip's clothes: it stays visible AND it reaches `problems`, so it
+ * reaches the exit code. Measured before this existed: binding the vision seat to a
+ * text-only id printed a refusal naming everything, and `--self-test` still exited 0.
+ */
+/**
+ * THE CLASSIFIER, and it no longer owns a list. Round-5 MAJOR-1: this used to be
+ * `REFUSAL_MARKERS`, five hand-written substrings checked against 13 throw sites, so
+ * SEVEN refusal shapes — including a seat the runtime cannot seat at all — fell
+ * through and were recorded as a SKIP. A's measured command on the generation CI pins:
+ *   OMO_E2E_FORCE_SEAT='explore=fake-route/deepseek-flash' node tests/e2e/drive.mjs --self-test
+ *   → exit 0 · SELF-TEST OK · + 2 SKIPPED.
+ * Now the classification is READ off the error the throw site produced
+ * (`seatRefusal` / `catalogAbsent`, declared in this file beside the throws), and the
+ * default for anything untagged is NOT a skip but a PROBLEM: a reason nobody declared
+ * is a reason nobody thought about, and silently skipping it is the fail-open that got
+ * us here. Deleting a marker can no longer hide, because there are no markers.
+ */
+function recordLiveSkipOrRefusal(problems, legName, reason, detail) {
+  const text = String(detail ?? reason?.message ?? reason ?? '')
+  if (isDeclaredRefusal(reason)) {
+    SEAT_SELF_TEST_STATE.refused.push(legName)
+    problems.push(
+      `T10′ ${legName}: a live seat REFUSED — the throw site declared it so, and this is `
+      + `NOT genuine absence, so it is not skippable and it must reach the exit code. `
+      + `Reason: ${text.slice(0, 240)}`,
+    )
+    return 'refused'
+  }
+  if (isDeclaredAbsence(reason)) {
+    SEAT_SELF_TEST_STATE.skipped.push(`${legName} (${text.slice(0, 90)})`)
+    return 'skipped'
+  }
+  // The whole point: no tag ⇒ no skip. Not "assume absence because nothing matched a
+  // list of strings someone remembered".
+  SEAT_SELF_TEST_STATE.refused.push(legName)
+  problems.push(
+    `T10′ ${legName}: a live reason arrived UNCLASSIFIED — neither \`seatRefusal\` nor `
+    + `\`catalogAbsent\` was declared on it, so nothing says it is safe to skip. `
+    + `Declare the kind at the throw site. Reason: ${text.slice(0, 240)}`,
+  )
+  return 'unclassified'
+}
+
+function seatResolverSelfTest(problems) {
+  const catalogs = {
+    'fake-route': {
+      package: 'fake-adapter@9.9.9',
+      artifact: '/fake/catalog.json',
+      kind: 'fabricated',
+      models: [
+        { id: 'alpha-flash', input: ['text', 'image'] },
+        { id: 'beta-pro', input: ['text'] },
+      ],
+    },
+  }
+  // LEG — an id the catalog lists is NEVER moved.
+  const kept = legResolve('present-id-stays', problems, catalogs, 'fake-a', { provider: 'fake-route', model: 'alpha-flash' }, ['text'])
+  if (kept !== null && (kept.model !== 'alpha-flash' || kept.substituted !== false)) {
+    problems.push(`T10′[present id stays put]: got ${JSON.stringify(kept)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('present-id-stays')
+  }
+  // LEG — an absent id moves ONLY when the catalog leaves exactly one
+  // modality-capable id. Here `image` is required and only alpha-flash has it, so
+  // the catalog decided and the resolver just reports it.
+  const moved = legResolve('absent-id-moves-when-catalog-leaves-one', problems, catalogs, 'fake-b', { provider: 'fake-route', model: 'gamma-flash' }, ['image'])
+  if (moved !== null && (moved.model !== 'alpha-flash' || moved.substituted !== true
+    || moved.soleCapableCandidate !== true || moved.explicitChoiceKey !== null
+    || moved.pinnedButUnresolvableModel !== 'gamma-flash')) {
+    problems.push(`T10′[absent id moves when the catalog leaves ONE capable id]: got ${JSON.stringify(moved)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('absent-id-moves-when-catalog-leaves-one')
+  }
+  // LEG — the modality filter is the ONLY narrowing the resolver does: on a
+  // catalog with three ids where two are text-only, requiring `image` must land on
+  // the single image-capable id, and must NOT fall back to a text-only neighbour.
+  const threeCatalogs = {
+    'fake-route': { ...catalogs['fake-route'], models: [
+      { id: 'beta-pro', input: ['text'] },
+      { id: 'gamma-max', input: ['text'] },
+      { id: 'alpha-flash', input: ['text', 'image'] },
+    ] },
+  }
+  const vision = legResolve('modality-filter-narrows-to-the-image-id', problems, threeCatalogs, 'fake-c', { provider: 'fake-route', model: 'beta-max' }, ['text', 'image'])
+  if (vision !== null && (vision.model !== 'alpha-flash' || vision.soleCapableCandidate !== true)) {
+    problems.push(`T10′[image required never picks a text-only id]: got ${JSON.stringify(vision)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('modality-filter-narrows-to-the-image-id')
+  }
+  // LEG — a seat with NO valid id is reported, not papered over.
+  // LEG — a BINDING pin is never substituted.
+  const textOnlyCatalogs = {
+    'fake-route': { ...catalogs['fake-route'], models: [{ id: 'beta-pro', input: ['text'] }] },
+  }
+  let noIdError = ''
+  try {
+    resolveSeatAgainstCatalog(textOnlyCatalogs, 'fake-d', { provider: 'fake-route', model: 'gamma-vision' }, ['text', 'image'])
+  } catch (error) {
+    noIdError = String(error?.message ?? error)
+  }
+  if (!noIdError.includes("NO valid model id on the runtime under test") || !noIdError.includes('fake-d')) {
+    problems.push(`T10′[no capable id → throws naming the seat]: got ${JSON.stringify(noIdError.slice(0, 160))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('no-capable-id-throws-naming-seat')
+  }
+  let bindingError = ''
+  try {
+    resolveSeatAgainstCatalog(textOnlyCatalogs, 'fake-e', { provider: 'fake-route', model: 'beta-pro' }, ['text'])
+    resolveSeatAgainstCatalog(textOnlyCatalogs, 'fake-e', { provider: 'fake-route', model: 'gamma-not-there' }, ['text'], true)
+  } catch (error) {
+    bindingError = String(error?.message ?? error)
+  }
+  if (!bindingError.includes("SEAT 'fake-e' IS PINNED TO A MODEL ID THIS RUNTIME DOES NOT SERVE")
+    || !bindingError.includes('gamma-not-there')) {
+    problems.push(`T10′[a BINDING pin is never substituted]: got ${JSON.stringify(bindingError.slice(0, 160))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('binding-pin-never-substituted')
+  }
+  // LEG — the modality requirement is checked on a KEPT id too, not only on a
+  // substituting one (post-review MAJOR-2). Before this fix the resolver returned
+  // a present id without asking whether it can carry what the roster row declared,
+  // so `OMO_E2E_FORCE_SEAT='multimodal-looker=deepseek/deepseek-v4-pro'` — the
+  // one vision seat pinned onto a text-only model — was accepted silently.
+  let keptModalityError = ''
+  try {
+    resolveSeatAgainstCatalog(catalogs, 'fake-vision', { provider: 'fake-route', model: 'beta-pro' }, ['text', 'image'])
+  } catch (error) {
+    keptModalityError = String(error?.message ?? error)
+  }
+  if (!keptModalityError.includes('CANNOT CARRY THE MODALITIES ITS ROSTER ROW DECLARES')
+    || !keptModalityError.includes('fake-vision') || !keptModalityError.includes('image')) {
+    problems.push(`T10′[modality checked on a KEPT id]: got ${JSON.stringify(keptModalityError.slice(0, 160))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('modality-checked-on-kept-id')
+  }
+  // LEG — the same check on a BINDING pin, naming the knob that supplied it.
+  let bindingModalityError = ''
+  try {
+    resolveSeatAgainstCatalog(catalogs, 'fake-vision-bound', { provider: 'fake-route', model: 'beta-pro' }, ['text', 'image'], true)
+  } catch (error) {
+    bindingModalityError = String(error?.message ?? error)
+  }
+  if (!bindingModalityError.includes('CANNOT CARRY THE MODALITIES')
+    || !bindingModalityError.includes('OMO_E2E_FORCE_SEAT')) {
+    problems.push(`T10′[modality checked on a BINDING pin]: got ${JSON.stringify(bindingModalityError.slice(0, 160))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('modality-checked-on-binding-pin')
+  }
+  // LEG — zero or two catalogs for one route is refused, never guessed.
+  const zeroFaces = { dshBinary: '/fake/dsh', nodeModules: '/fake/nm', routes: { 'fake-route': { faces: [] } } }
+  const twoFaces = {
+    dshBinary: '/fake/dsh',
+    nodeModules: '/fake/nm',
+    routes: { 'fake-route': { faces: [
+      { package: 'a@1', artifact: '/a', models: [{ id: 'x', input: ['text'] }] },
+      { package: 'b@2', artifact: '/b', models: [{ id: 'y', input: ['text'] }] },
+    ] } },
+  }
+  const refused = []
+  for (const [label, doc] of [['zero', zeroFaces], ['two', twoFaces]]) {
+    try {
+      collapseCatalogFaces(doc, ['fake-route'])
+      problems.push(`T10′[${label} catalogs for one route] must throw, it did not`)
+    } catch (error) {
+      refused.push(`${label}:${String(error?.message ?? error).includes('non-empty catalog faces')}`)
+    }
+  }
+  if (refused.length !== 2 || refused.some((entry) => !entry.endsWith(':true'))) {
+    problems.push(`T10′[catalog count is refused loudly]: got ${JSON.stringify(refused)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('catalog-count-refused')
+  }
+  // LEG — MORE THAN ONE CAPABLE ID WITHOUT A WRITTEN CHOICE IS REFUSED.
+  // This is the leg that makes the RULE, not just the log, mutation-sensitive:
+  // Review B showed the old token-overlap ranking could be deleted with no change
+  // in behaviour, so the surviving behaviour ("refuse") must be pinned by a leg
+  // whose outcome FLIPS if someone restores "pick the first listed id".
+  let choiceError = ''
+  try {
+    resolveSeatAgainstCatalog(catalogs, 'fake-choice', { provider: 'fake-route', model: 'gamma-flash' }, ['text'])
+  } catch (error) {
+    choiceError = String(error?.message ?? error)
+  }
+  if (!choiceError.includes("REQUIRES AN EXPLICIT MODEL CHOICE AND NONE IS WRITTEN DOWN")
+    || !choiceError.includes('alpha-flash') || !choiceError.includes('beta-pro')
+    || !choiceError.includes('fake-choice@fake-route') || !choiceError.includes('TEST_ONLY_SEAT_PINS')) {
+    problems.push(`T10′[≥2 capable ids with no written choice → refused, naming ids+key]: got ${JSON.stringify(choiceError.slice(0, 220))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('many-capable-ids-refused-without-written-choice')
+  }
+  // LEG — a WRITTEN choice wins BY NAME, and a stale or incapable one still
+  // throws. The fabricated key is added for the duration of this leg and removed in
+  // a `finally`; no real seat key is touched and none of these ids is evidence
+  // about any generation.
+  const choiceKey = 'fake-choice@fake-route'
+  try {
+    // Pinned to the MAXIMALLY capable id so this leg tests NAMING only; picking a
+    // dominated id is leg 11's subject and the resolver now refuses it.
+    TEST_ONLY_SEAT_PINS[choiceKey] = 'alpha-flash'
+    const decided = legResolve('written-choice-wins-by-name', problems, catalogs, 'fake-choice', { provider: 'fake-route', model: 'gamma-flash' }, ['text'])
+    if (decided !== null && (decided.model !== 'alpha-flash' || decided.substituted !== true
+      || decided.explicitChoiceKey !== choiceKey || decided.soleCapableCandidate !== false)) {
+      problems.push(`T10′[a written choice wins by name]: got ${JSON.stringify(decided).slice(0, 200)}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('written-choice-wins-by-name')
+    }
+    // The same table, naming an id the catalog does NOT list, must still refuse:
+    // an explicit decision that went stale is worse than none, because it looks safe.
+    TEST_ONLY_SEAT_PINS[choiceKey] = 'delta-not-listed-anywhere'
+    let staleError = ''
+    try {
+      resolveSeatAgainstCatalog(catalogs, 'fake-choice', { provider: 'fake-route', model: 'gamma-flash' }, ['text'])
+    } catch (error) {
+      staleError = String(error?.message ?? error)
+    }
+    if (!staleError.includes('not one of the capable ids')) {
+      problems.push(`T10′[a STALE written choice still throws]: got ${JSON.stringify(staleError.slice(0, 160))}`)
+    }
+    // And a written choice cannot smuggle past the modality check either.
+    let visionChoiceError = ''
+    try {
+      resolveSeatAgainstCatalog(catalogs, 'fake-vision-choice', { provider: 'fake-route', model: 'gamma-flash' }, ['text', 'image'])
+    } catch (error) {
+      visionChoiceError = String(error?.message ?? error)
+    }
+    if (visionChoiceError.includes('fake-vision-choice') && visionChoiceError.includes('beta-pro')) {
+      problems.push(`T10′[a written choice for a DIFFERENT seat must not apply]: got ${JSON.stringify(visionChoiceError.slice(0, 160))}`)
+    }
+  } finally {
+    delete TEST_ONLY_SEAT_PINS[choiceKey]
+  }
+  // LEG — the NO-BOOT SHIPPED-DEFAULT AUDIT, on fabricated catalogs. It must
+  // name every roster row whose shipped default its route's catalog does not list,
+  // and stay silent-clean when they all resolve. Review A's adopted requirement:
+  // without this, a catalog change upstream turns "the default is wrong" into
+  // "the gate is green". DETECTS AND NAMES ONLY — it fixes nothing (T12's job).
+  const fakeShipped = {
+    'fake-a': { provider: 'fake-route', model: 'alpha-flash' },
+    'fake-b': { provider: 'fake-route', model: 'gamma-gone' },
+  }
+  const fakeAudit = auditShippedDefaultsAgainstCatalog(catalogs, fakeShipped)
+  if (fakeAudit.checked !== 2 || fakeAudit.unresolvable.length !== 1
+    || fakeAudit.unresolvable[0].agent !== 'fake-b'
+    || fakeAudit.unresolvable[0].shippedModel !== 'gamma-gone'
+    || !fakeAudit.unresolvable[0].artifact.includes('/fake/catalog.json')
+    || !fakeAudit.unresolvable[0].listed.join(',').includes('alpha-flash')) {
+    problems.push(`T10′[no-boot shipped-default audit names the unresolvable row]: got ${JSON.stringify(fakeAudit).slice(0, 260)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('no-boot-shipped-default-audit-names-gaps')
+  }
+  // LEG — a COVERED row is a STILL-BROKEN row, asserted on FABRICATED data so it
+  // needs no runtime. Review A's delta round measured that the covered state had NO
+  // test at all: leg 9 passes no `resolutions`, and the only leg that can see
+  // covered rows (leg 10) is live. Its mutant M11 — "a covered row counts as
+  // RESOLVES" — exited 0 with every leg green. This leg reds it, and it reds the
+  // laundering case itself: EVERY row broken and every row covered, which is exactly
+  // the input that once printed `audit PASS`.
+  const coveredShipped = {
+    'fake-a': { provider: 'fake-route', model: 'gamma-gone' },
+    'fake-b': { provider: 'fake-route', model: 'delta-also-gone' },
+  }
+  const coveredResolutions = {
+    'fake-a': { agent: 'fake-a', provider: 'fake-route', model: 'alpha-flash', substituted: false, forcedByEnvVar: 'OMO_E2E_FORCE_SEAT' },
+    'fake-b': { agent: 'fake-b', provider: 'fake-route', model: 'beta-pro', substituted: false, forcedByEnvVar: 'OMO_E2E_FORCE_SEAT' },
+  }
+  const covAudit = auditShippedDefaultsAgainstCatalog(catalogs, coveredShipped, coveredResolutions)
+  if (covAudit.checked !== 2 || covAudit.unresolvable.length !== 0 || covAudit.covered.length !== 2) {
+    problems.push(`T10′[every broken row covered]: unresolvable=${JSON.stringify(covAudit.unresolvable.map((row) => row.agent))} covered=${JSON.stringify(covAudit.covered.map((row) => row.agent))}`)
+  } else if (covAudit.broken.length !== 2) {
+    problems.push(`T10′[a covered row must still be counted BROKEN]: broken=${JSON.stringify(covAudit.broken.map((row) => row.agent))}`)
+  } else if (covAudit.allClear !== false) {
+    problems.push('T10′[allClear must be FALSE while every shipped default is absent, covered or not] — this is the laundering mutant')
+  } else if (!covAudit.rows.every((row) => row.status === 'UNRESOLVABLE-COVERED-BY-OVERRIDE' && row.coveredBy !== null)) {
+    problems.push(`T10′[exact status + coveredBy recorded]: ${JSON.stringify(covAudit.rows.map((row) => `${row.agent}:${row.status}:${row.coveredBy}`))}`)
+  } else if (!covAudit.rows.every((row) => coveredResolutions[row.agent].forcedByEnvVar === 'OMO_E2E_FORCE_SEAT'
+    && catalogs['fake-route'].models.some((model) => model.id === row.coveredBy)
+    && !catalogs['fake-route'].models.some((model) => model.id === row.shippedModel))) {
+    problems.push(`T10′[the override id must be listed and the shipped id must NOT be]: ${JSON.stringify(covAudit.rows.map((row) => `${row.shippedModel}→${row.coveredBy}`))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('override-covered-rows-are-still-broken')
+  }
+  // LEG — the OUTPUT, not just the data. This is the leg Review A's M13 needed:
+  // `announceShippedDefaultAudit` used to `return` as soon as `unresolvable` was
+  // empty, so overriding every broken seat printed `audit PASS — all 11 roster
+  // shipped ids are listed`, a sentence false on both of its clauses. Leg 9b cannot
+  // see that because it inspects the audit object, not the lines. Here the covered
+  // audit must produce NO PASS line and must name every covered seat.
+  const covLines = shippedDefaultAuditLines(covAudit)
+  const covText = covLines.join('\n')
+  if (covText.includes('audit PASS')) {
+    problems.push(`T10′[an all-covered audit must NEVER print PASS]: ${covText.slice(0, 200)}`)
+  } else if (!covText.includes('SHIPPED DEFAULT UNRESOLVABLE ON THIS RUNTIME — 2/2')) {
+    problems.push(`T10′[header must count COVERED rows as broken]: ${covText.slice(0, 220)}`)
+  } else if (!['fake-a', 'fake-b'].every((agent) => covText.includes(`OVERRIDE COVERS A BROKEN DEFAULT ${agent}`))) {
+    problems.push(`T10′[every covered seat named in the output]: ${covText.slice(0, 220)}`)
+  } else if (!covLines.some((line) => line.includes('THE SHIPPED DEFAULT REMAINS UNRESOLVABLE ON THIS RUNTIME'))) {
+    problems.push('T10′[output must state the shipped default is STILL broken]')
+  } else if (!shippedDefaultAuditLines(auditShippedDefaultsAgainstCatalog(catalogs, { 'fake-a': { provider: 'fake-route', model: 'alpha-flash' } })).join('').includes('audit PASS')) {
+    problems.push('T10′[the control — a genuinely resolvable row — must still print PASS]')
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('audit-output-never-laundered-by-overrides')
+  }
+  // LEG — the pin table's VALUES are guarded, on FABRICATED data. Review A's M10:
+  // flipping a pin's value to the text-only coding id exited 0 with every leg green,
+  // because nothing asked whether the written-down choice was defensible — the
+  // resolver only ever asked "listed and capable?". Here the catalog lists a
+  // text+image id and a text-only id for a text seat: pinning the dominated one must
+  // throw naming both ids and the key, pinning the dominant one must not. It never
+  // consults the runtime, so it cannot go vacuous on the generation CI pins, where
+  // the LIVE pin table is inert.
+  const domCatalogs = {
+    'fake-route': { ...catalogs['fake-route'], models: [
+      { id: 'dominant-flash', input: ['text', 'image'] },
+      { id: 'plainer-pro', input: ['text'] },
+    ] },
+  }
+  TEST_ONLY_SEAT_PINS['fake-dom@fake-route'] = 'dominant-flash'
+  try {
+    const justified = legResolve('written-choice-values-guarded-by-dominance', problems,
+      domCatalogs, 'fake-dom', { provider: 'fake-route', model: 'gamma-gone' }, ['text'])
+    if (justified !== null && justified.model !== 'dominant-flash') {
+      problems.push(`T10′[dominant pick accepted]: got ${JSON.stringify(justified).slice(0, 160)}`)
+    }
+    TEST_ONLY_SEAT_PINS['fake-dom@fake-route'] = 'plainer-pro'
+    let domError = ''
+    try {
+      resolveSeatAgainstCatalog(domCatalogs, 'fake-dom', { provider: 'fake-route', model: 'gamma-gone' }, ['text'])
+    } catch (error) {
+      domError = String(error?.message ?? error)
+    }
+    if (!domError.includes('CHOSE A STRICTLY LESS CAPABLE MODEL ID')
+      || !domError.includes('plainer-pro') || !domError.includes('dominant-flash')
+      || !domError.includes('fake-dom@fake-route')) {
+      problems.push(`T10′[pinning a dominated id throws naming both ids + the key]: got ${JSON.stringify(domError.slice(0, 220))}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('written-choice-values-guarded-by-dominance')
+    }
+    // LIVE half: every pin this runtime ACTUALLY NEEDS is checked the same way.
+    // "needs" = its shipped default is absent from that catalog, which is exactly the
+    // condition that makes the pin load-bearing. On the generation CI pins, no
+    // shipped default is absent, so ZERO pins are validated and this half is inert
+    // by design — it cannot go red there for the wrong reason, and it cannot go
+    // vacuous here either: on 0.2.x all four entries are validated.
+    if (RUNTIME_SEAT_STATE.audit === null || RUNTIME_SEAT_STATE.audit === undefined) {
+      recordLiveSkipOrRefusal(problems, 'live-written-choice-values-validated', catalogAbsent('no catalog was read'))
+    } else {
+      let liveChecked = 0
+      for (const [key, pinnedId] of Object.entries(TEST_ONLY_SEAT_PINS)) {
+        const at = key.indexOf('@')
+        const agent = at < 0 ? key : key.slice(0, at)
+        const route = at < 0 ? '' : key.slice(at + 1)
+        const shipped = DEFAULT_MODEL_ROUTES[agent]
+        const cat = RUNTIME_SEAT_STATE.catalogs[route]
+        if (cat === undefined || shipped === undefined || shipped.provider !== route) continue
+        if (cat.models.some((model) => model.id === shipped.model)) continue // inert here
+        const chosen = cat.models.find((model) => model.id === pinnedId)
+        if (chosen === undefined) {
+          problems.push(`T10′[live pin names an id ${route} does not list]: '${pinnedId}'`)
+          continue
+        }
+        const req = requiredModalitiesFor(agent)
+        if (!req.every((modality) => chosen.input.includes(modality))) {
+          problems.push(`T10′ live-written-choice-values-validated: '${pinnedId}' cannot carry the seat's modalities [${req.join(', ')}] — it serves [${chosen.input.join(', ')}]`)
+          continue
+        }
+        const dom = cat.models.filter((model) => model.id !== chosen.id
+          && model.input.length > chosen.input.length
+          && chosen.input.every((modality) => model.input.includes(modality)))
+        if (dom.length > 0) {
+          problems.push(`T10′[live pin picks a dominated id]: TEST_ONLY_SEAT_PINS['${key}'] = '${pinnedId}[${chosen.input.join('+')}]' while ${route} lists ${dom.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ')}`)
+          continue
+        }
+        liveChecked += 1
+      }
+      SEAT_SELF_TEST_STATE.legs.push('live-written-choice-values-validated')
+      SEAT_SELF_TEST_STATE.counts.push(`live pins validated ${liveChecked}`)
+    }
+  } finally {
+    delete TEST_ONLY_SEAT_PINS['fake-dom@fake-route']
+  }
+  // LEG — `audit-emission-actually-printed`: Review B's delta MAJOR. Every other
+  // audit leg asserts what the PRODUCER returned; none of them could see the EMITTER.
+  // Mutating only `for (const line of lines) console.error(line)` into a muted branch
+  // left all of them green while a human read nothing. Here `console.error` is
+  // captured around the real emitter, so the loop itself is under test: produce 5,
+  // emit 4, and this names it.
+  {
+    const realError = console.error
+    const captured = []
+    try {
+      console.error = (...args) => { captured.push(args.join(' ')) }
+      const produced = announceShippedDefaultAudit(covAudit)
+      if (captured.length !== produced.length) {
+        problems.push(
+          `T10′ audit-emission-actually-printed: the producer returned ${produced.length} lines but the `
+          + `emitter put ${captured.length} on the stream — ${produced.length - captured.length} named fact(s) `
+          + `were computed and never said`,
+        )
+      } else if (!captured.every((line, i) => line === produced[i])) {
+        problems.push('T10′ audit-emission-actually-printed: the emitted lines are not the produced lines')
+      } else if (!captured.some((line) => line.includes('OVERRIDE COVERS A BROKEN DEFAULT'))) {
+        problems.push('T10′ audit-emission-actually-printed: a covered row was computed but not printed')
+      } else {
+        SEAT_SELF_TEST_STATE.legs.push('audit-emission-actually-printed')
+      }
+    } finally {
+      console.error = realError
+    }
+  }
+  // LEG — `incappable-override-fabricated`: THE FOURTH AUDIT STATE, and until Review A
+  // named it ("the fourth audit state has no leg") it had no gate at all. PASS /
+  // BROKEN / COVERED each had one; INCAPPABLE — an override whose id is listed but
+  // cannot carry the seat — was reachable only through a live path that died in
+  // `requireRuntimeSeats` first. Four states, four legs. Fabricated, so it runs on
+  // every generation including the one CI pins.
+  {
+    const incCatalogs = {
+      'fake-route': { ...catalogs['fake-route'], artifact: 'fake://catalog.json', package: 'fake-adapter@9.9.9', models: [
+        { id: 'capable-flash', input: ['text', 'image'] },
+        { id: 'text-only-pro', input: ['text'] },
+      ] },
+    }
+    const incAudit = auditShippedDefaultsAgainstCatalog(
+      incCatalogs,
+      { 'fake-vision': { provider: 'fake-route', model: 'shipped-gone' } },
+      { 'fake-vision': { provider: 'fake-route', model: 'text-only-pro', forcedByEnvVar: 'OMO_E2E_FORCE_SEAT' } },
+      { 'fake-vision': ['text', 'image'] },
+    )
+    // CAPTURED, not printed: these ids are invented, and a fabricated line in a live
+    // log is read as a fact about the runtime by whoever is debugging it.
+    let incText = ''
+    {
+      const realError = console.error
+      try {
+        console.error = (...args) => { incText += `${args.join(' ')}\n` }
+        announceShippedDefaultAudit(incAudit)
+      } finally {
+        console.error = realError
+      }
+    }
+    const row = incAudit.rows.find((entry) => entry.agent === 'fake-vision')
+    if (row === undefined || row.status !== 'UNRESOLVABLE') {
+      problems.push(`T10′ incappable-override-fabricated: an override that cannot carry the seat must leave the row UNRESOLVABLE, got ${JSON.stringify(row?.status)}`)
+    } else if (incAudit.covered.some((entry) => entry.agent === 'fake-vision')) {
+      problems.push('T10′ incappable-override-fabricated: an incapable override was counted as COVERED — covering requires carrying')
+    } else if (incAudit.incapable.length !== 1 || incAudit.broken.length !== 1 || incAudit.allClear !== false) {
+      problems.push(`T10′ incappable-override-fabricated: state counts wrong — incapable=${incAudit.incapable.length} broken=${incAudit.broken.length} allClear=${String(incAudit.allClear)}`)
+    } else if (row.overrideModel !== 'text-only-pro') {
+      problems.push(`T10′ incappable-override-fabricated: the row must CARRY the override id it complains about, got ${JSON.stringify(row.overrideModel)}`)
+    } else if (!incText.includes('OVERRIDE CANNOT CARRY THE SEAT fake-vision')
+      || !incText.includes('fake-route/text-only-pro')) {
+      problems.push(`T10′ incappable-override-fabricated: the printed line must NAME the id — got ${incText.slice(0, 200)}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('incappable-override-fabricated')
+    }
+  }
+  // LEG — `inferred-modalities-pinned`: `requiredModalitiesFor` fails OPEN today for
+  // the conductor `sisyphus` (10 delegation entries, 11 roster routes). The inference
+  // cannot be made safe by guessing, so it is pinned instead: the inferred set must be
+  // EXACTLY this. Add a roster seat without a delegation entry and this names it —
+  // which is the day a future vision seat would otherwise silently lose `image`.
+  {
+    // With no catalog read, no modality was ever consulted, so an empty inferred set
+    // is GENUINE ABSENCE and skips legitimately — it is not evidence about the pin.
+    if (RUNTIME_SEAT_STATE.audit === null || RUNTIME_SEAT_STATE.audit === undefined) {
+      recordLiveSkipOrRefusal(problems, 'inferred-modalities-pinned', catalogAbsent('no catalog was read'))
+    } else {
+    const pinned = ['sisyphus']
+    const inferred = [...INFERRED_MODALITY_AGENTS].sort()
+    const missing = pinned.filter((agent) => !inferred.includes(agent))
+    const extra = inferred.filter((agent) => !pinned.includes(agent))
+    if (missing.length > 0 || extra.length > 0) {
+      problems.push(
+        `T10′ inferred-modalities-pinned: modalities were INFERRED (not declared) for `
+        + `[${inferred.join(', ') || 'nothing'}] but this gate pins [${pinned.join(', ')}] — `
+        + `${extra.length > 0 ? `newly inferred seat(s) [${extra.join(', ')}] need a DELEGATION_ENTRIES row, `
+          + `or a vision seat added here would silently lose its image requirement` : `pinned seat(s) [${missing.join(', ')}] no longer fall through; update this pin deliberately`}`,
+      )
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('inferred-modalities-pinned')
+    }
+    }
+  }
+  // LEG — every refusal the resolver can raise is DECLARED, and the classifier will
+  // not skip it. Round-5 MAJOR-2: A deleted one string from the old whitelist and the
+  // 0.2.0 self-test showed a 0-line diff at an unchanged exit 1 — the mutation hid
+  // behind the shipped-default audit that was already red there. So this leg runs on
+  // FABRICATED catalogs (it is generation-independent, and it is GREEN-BASED: on
+  // 0.1.5-rc.1 the shipped-default audit passes, so nothing else is red to hide
+  // behind) and it does not name the shapes it expects — it EXERCISES the resolver and
+  // reads the kind off whatever it throws. Add a refusal throw without a tag, or strip
+  // a tag, and this names the shape by the message it printed.
+  {
+    const fake = {
+      'fake-route': { artifact: 'fake://c.json', package: 'fake@1', models: [
+        { id: 'capable-flash', input: ['text', 'image'] },
+        { id: 'other-capable', input: ['text', 'image'] },
+        { id: 'text-only', input: ['text'] },
+      ] },
+    }
+    // Seven shapes, taken from the resolver's own throw sites, not from a list
+    // somebody typed. The last two go through a REAL written choice key
+    // (`explore@deepseek`, pinned in TEST_ONLY_SEAT_PINS) against FABRICATED
+    // catalogs, because the written choice is read from that table by design —
+    // the catalog around it is invented, so the shape still runs on either generation.
+    const shapes = [
+      ['route-without-a-catalog', fake, 'fake-a', { provider: 'no-such-route', model: 'capable-flash' }, ['text'], false],
+      ['pinned-id-not-served', fake, 'fake-b', { provider: 'fake-route', model: 'gone-forever' }, ['text'], true],
+      ['kept-id-cannot-carry-modalities', fake, 'fake-c', { provider: 'fake-route', model: 'text-only' }, ['text', 'image'], false],
+      ['no-capable-id-at-all', fake, 'fake-d', { provider: 'fake-route', model: 'gone-forever' }, ['video'], false],
+      ['two-capable-ids-no-written-choice', fake, 'fake-e', { provider: 'fake-route', model: 'gone-forever' }, ['text', 'image'], false],
+      ['stale-written-choice', fake, 'explore', { provider: 'fake-route', model: 'gone-forever' }, ['text'], false],
+      ['written-choice-dominated-by-a-listed-id', fake, 'explore', { provider: 'fake-route', model: 'gone-forever' }, ['text'], false],
+    ]
+    // Shapes 6 and 7 need the written-choice key to resolve to a listed id, so the
+    // catalog around them is built to make that choice stale (6) or dominated (7).
+    // Keyed by the route the written choice actually names (`explore@deepseek`), with
+    // INVENTED ids inside it: the key comes from the table, the contents do not.
+    // TWO capable ids in both fixtures: the written-choice throws only fire when a
+    // choice exists (capable.length > 1); with one id the resolver legitimately takes
+    // the sole-capable branch and answers, which is not the shape under test here.
+    const staleCatalog = { deepseek: { artifact: 'fake://stale.json', package: 'fake@1', models: [
+      { id: 'invented-capable-a', input: ['text'] },
+      { id: 'invented-capable-b', input: ['text'] },
+    ] } }
+    const dominatedCatalog = { deepseek: { artifact: 'fake://dominated.json', package: 'fake@1', models: [
+      { id: TEST_ONLY_SEAT_PINS['explore@deepseek'], input: ['text'] },
+      { id: 'invented-much-more-capable', input: ['text', 'image'] },
+    ] } }
+    shapes[5][1] = staleCatalog
+    shapes[6][1] = dominatedCatalog
+    shapes[5][3] = { provider: 'deepseek', model: TEST_ONLY_SEAT_PINS['explore@deepseek'] }
+    // preferred.model stays ABSENT from the catalog: the written-choice branch only
+    // runs when the shipped default is gone, so naming the pinned id here would make
+    // the resolver keep it on the present-id path and never reach the guard.
+    shapes[6][3] = { provider: 'deepseek', model: 'shipped-default-absent-here' }
+    const undeclared = []
+    const skippedWrongly = []
+    // These calls PROBE the classifier, they are not live leg outcomes: the classifier
+    // records into the shared accounting, so the probe has to leave it as it found it
+    // or the completeness check reads eight phantom legs.
+    const savedRefused = [...SEAT_SELF_TEST_STATE.refused]
+    try {
+    for (const [shape, catalogSet, agent, preferred, mods, binding] of shapes) {
+      let thrown = null
+      try {
+        resolveSeatAgainstCatalog(catalogSet, agent, preferred, mods, binding)
+      } catch (error) {
+        thrown = error
+      }
+      if (thrown === null) {
+        undeclared.push(`${shape} (the resolver ANSWERED where it must refuse)`)
+        continue
+      }
+      if (!isDeclaredRefusal(thrown)) undeclared.push(`${shape} (threw UNDECLARED: ${String(thrown.message).slice(0, 70)})`)
+      const probeProblems = []
+      const verdict = recordLiveSkipOrRefusal(probeProblems, `shape:${shape}`, thrown, thrown.message)
+      if (verdict === 'skipped') skippedWrongly.push(shape)
+    }
+    // An untagged reason must NOT be skippable — that default is the fail-open's home.
+    const bareProblems = []
+    const bareVerdict = recordLiveSkipOrRefusal(bareProblems, 'shape:untagged-probe', new Error('some brand new refusal nobody tagged'), 'untagged')
+    if (bareVerdict === 'skipped') skippedWrongly.push('untagged-reason-was-skipped')
+    // `collapseCatalogFaces` is reachable ONLY through a live probe, so until this line
+    // its tag was true-but-unguarded (mutant M57 survived). Driving it with a fabricated
+    // document costs nothing and makes "every throw site declares its kind" both true
+    // AND checked: zero usable faces and two competing faces must both REFUSE,
+    // declared, and must never be skippable.
+    const faceDocs = [
+      ['zero-faces', { routes: { deepseek: { faces: [] } } }],
+      ['two-faces', { routes: { deepseek: { faces: [
+        { package: 'a@1', models: [{ id: 'one', input: ['text'] }] },
+        { package: 'b@1', models: [{ id: 'two', input: ['text'] }] },
+      ] } } }],
+    ]
+    for (const [name, doc] of faceDocs) {
+      let thrown = null
+      try { collapseCatalogFaces(doc, ['deepseek']) } catch (error) { thrown = error }
+      if (thrown === null) undeclared.push(`faces:${name} (answered, must refuse)`)
+      else if (!isDeclaredRefusal(thrown)) undeclared.push(`faces:${name} (threw UNDECLARED)`)
+      const probeProblems = []
+      if (recordLiveSkipOrRefusal(probeProblems, `faces:${name}`, thrown, name) === 'skipped') {
+        skippedWrongly.push(`faces:${name}`)
+      }
+    }
+    } finally {
+      SEAT_SELF_TEST_STATE.refused.splice(0, SEAT_SELF_TEST_STATE.refused.length, ...savedRefused)
+    }
+    if (undeclared.length > 0 || skippedWrongly.length > 0) {
+      problems.push(
+        `T10′ refusal-shapes-are-declared-not-remembered: ${undeclared.length} shape(s) not declared `
+        + `[${undeclared.join(', ').slice(0, 300)}] ${skippedWrongly.length} skippable-in-error `
+        + `[${skippedWrongly.join(', ')}] — a refusal that can be skipped is a seat that silently does not exist`,
+      )
+    } else {
+      // NOT "all shapes": this array is hand-maintained, so its length is a count of
+      // what THIS FILE currently attempts, not of what the resolver can refuse. Deleting
+      // an entry here survives green (Review A + Review B, round 6, independently) —
+      // recorded as the stated limit "enumeration shrinkage" beside M48, not papered
+      // over with a hand-pinned count (round 3 abolished those) or a meta-leg.
+      SEAT_SELF_TEST_STATE.counts.push(`${shapes.length} refusal shapes attempted, all declared`)
+      SEAT_SELF_TEST_STATE.legs.push('refusal-shapes-are-declared-not-remembered')
+    }
+  }
+  // LEG — a bad OMO_E2E_FORCE_SEAT clause may never be quietly ignored. Review B's
+  // round-5 nit was that the `forcedSeatPins` catch printed the failure and dropped
+  // it; carrying the object fixes the memory, but a carried error nobody reads is a
+  // fail-open with better hygiene. So this leg FORCES a malformed clause and a
+  // route-that-does-not-exist clause through the real `forcedSeatPins` and asserts
+  // both come back as DECLARED refusals that the classifier refuses to skip.
+  {
+    const savedEnv = process.env.OMO_E2E_FORCE_SEAT
+    const savedRefused = [...SEAT_SELF_TEST_STATE.refused]
+    const swallowed = []
+    try {
+      for (const clause of ['not-a-binding-at-all', 'explore=no-such-route/some-id']) {
+        process.env.OMO_E2E_FORCE_SEAT = clause
+        let thrown = null
+        try {
+          forcedSeatPins({ deepseek: { artifact: 'fake://k.json', package: 'fake@1', models: [{ id: 'x', input: ['text'] }] } })
+        } catch (error) {
+          thrown = error
+        }
+        if (thrown === null) {
+          swallowed.push(`${clause} (accepted with no refusal)`)
+          continue
+        }
+        if (!isDeclaredRefusal(thrown)) swallowed.push(`${clause} (refused UNDECLARED)`)
+        const probeProblems = []
+        if (recordLiveSkipOrRefusal(probeProblems, `knob:${clause}`, thrown, clause) === 'skipped') {
+          swallowed.push(`${clause} (skippable)`)
+        }
+      }
+    } finally {
+      if (savedEnv === undefined) delete process.env.OMO_E2E_FORCE_SEAT
+      else process.env.OMO_E2E_FORCE_SEAT = savedEnv
+      SEAT_SELF_TEST_STATE.refused.splice(0, SEAT_SELF_TEST_STATE.refused.length, ...savedRefused)
+    }
+    // And the LIVE one: if the operator's real clause failed on this machine, that
+    // fact must already be sitting in `problems`, not only in a console line.
+    if (RUNTIME_SEAT_STATE.envPinError !== null && RUNTIME_SEAT_STATE.envPinError !== undefined
+      && !isDeclaredRefusal(RUNTIME_SEAT_STATE.envPinErrorObject)) {
+      swallowed.push('live envPinError carried but UNDECLARED')
+    }
+    if (swallowed.length > 0) {
+      problems.push(
+        `T10′ operator-knob-refusal-is-not-swallowed: a bad OMO_E2E_FORCE_SEAT clause got through `
+        + `[${swallowed.join(' | ').slice(0, 260)}] — an operator typo that resolves to nothing is a `
+        + `test that silently stops testing the thing it was set to force`,
+      )
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('operator-knob-refusal-is-not-swallowed')
+    }
+  }
+  // LEG — the FIFTH audit state has a voice. Review A proved by importing the frozen
+  // module that a NO-CATALOG row was counted in `broken` (so the gate reds, no
+  // fail-open) but appeared in NONE of the emitter loops: the audit's contract of
+  // naming every broken row quietly did not extend to it, and the fallback sentence
+  // that looked like its handling was dead code. Fabricated, so it runs on the green
+  // 0.1.5 baseline too.
+  {
+    const noCataAudit = auditShippedDefaultsAgainstCatalog(
+      { 'fake-route': { artifact: 'fake://c.json', package: 'fake@1', models: [{ id: 'capable-flash', input: ['text'] }] } },
+      { 'fake-gone': { provider: 'no-such-route', model: 'shipped-elsewhere' } },
+      {},
+      { 'fake-gone': ['text'] },
+    )
+    let ncText = ''
+    {
+      const realError = console.error
+      try { console.error = (...args) => { ncText += `${args.join(' ')}\n` }; announceShippedDefaultAudit(noCataAudit) }
+      finally { console.error = realError }
+    }
+    const ncRow = noCataAudit.rows.find((row) => row.agent === 'fake-gone')
+    if (ncRow === undefined || ncRow.status !== 'NO-CATALOG') {
+      problems.push(`T10′ no-catalog-route-is-named-not-silent: expected NO-CATALOG, got ${JSON.stringify(ncRow?.status)}`)
+    } else if (noCataAudit.broken.length !== 1 || noCataAudit.allClear !== false) {
+      problems.push(`T10′ no-catalog-route-is-named-not-silent: must be counted BROKEN — broken=${noCataAudit.broken.length} allClear=${String(noCataAudit.allClear)}`)
+    } else if (noCataAudit.noCatalog.length !== 1) {
+      problems.push(`T10′ no-catalog-route-is-named-not-silent: the fifth state must be published as its own set, got ${noCataAudit.noCatalog.length}`)
+    } else if (noCataAudit.unresolvable.length !== 0 || noCataAudit.covered.length !== 0) {
+      problems.push('T10′ no-catalog-route-is-named-not-silent: a route with no catalog is neither UNRESOLVABLE-named nor COVERED')
+    } else if (!ncText.includes('NO CATALOG FOR THE ROUTE fake-gone') || !ncText.includes("'no-such-route'")) {
+      problems.push(`T10′ no-catalog-route-is-named-not-silent: the row was counted but NOT named — the naming contract failed: ${ncText.slice(0, 200)}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('no-catalog-route-is-named-not-silent')
+    }
+  }
+  // LEG — a written choice is honoured by name even when the catalog leaves no choice.
+  // Review A, round 6: a pin naming an absent id beside exactly one capable id used to
+  // be ANSWERED `soleCapableCandidate:true`, the pin never mentioned.
+  {
+    const pinned = TEST_ONLY_SEAT_PINS['explore@deepseek']
+    const oneCapable = { deepseek: { artifact: 'fake://one.json', package: 'fake@1', models: [
+      { id: 'invented-lonely-capable', input: ['text'] },
+    ] } }
+    let thrown = null
+    let answered = null
+    try {
+      answered = resolveSeatAgainstCatalog(oneCapable, 'explore', { provider: 'deepseek', model: 'shipped-default-absent-here' }, ['text'], false)
+    } catch (error) {
+      thrown = error
+    }
+    if (answered !== null) {
+      problems.push(
+        `T10′ sole-capable-never-bypasses-a-written-pin: the resolver ANSWERED `
+        + `${JSON.stringify(answered.model)} while TEST_ONLY_SEAT_PINS['explore@deepseek'] names `
+        + `'${pinned}', which this catalog does not list — a human wrote an id down and the `
+        + `machine served another without saying so`,
+      )
+    } else if (!isDeclaredRefusal(thrown)) {
+      problems.push(`T10′ sole-capable-never-bypasses-a-written-pin: refused UNDECLARED: ${String(thrown?.message).slice(0, 90)}`)
+    } else if (!String(thrown.message).includes(pinned)) {
+      problems.push(`T10′ sole-capable-never-bypasses-a-written-pin: the refusal must NAME the pin it cannot honour ('${pinned}'): ${String(thrown.message).slice(0, 140)}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('sole-capable-never-bypasses-a-written-pin')
+    }
+  }
+  // LEG — the banner must not look green on a run that is FAILING. `seatSelfTestBanner()`
+  // is pure over the state object, so it CAN be asserted: a green-looking
+  // `RUN n/N legs` inside a red run is the laundering shape one level up, and Review A
+  // caught that the old code could print exactly that.
+  {
+    const saved = { failed: SEAT_SELF_TEST_STATE.failed, ran: SEAT_SELF_TEST_STATE.ran }
+    const savedSkipped = [...SEAT_SELF_TEST_STATE.skipped]
+    try {
+      SEAT_SELF_TEST_STATE.skipped = []
+      SEAT_SELF_TEST_STATE.failed = 3
+      SEAT_SELF_TEST_STATE.ran = true
+      const redBanner = seatSelfTestBanner()
+      SEAT_SELF_TEST_STATE.failed = 0
+      SEAT_SELF_TEST_STATE.ran = true
+      const greenBanner = seatSelfTestBanner()
+      if (!redBanner.includes('FAILING')) {
+        problems.push(`T10′ banner-never-looks-green-when-failing: with 3 problems the banner reads: ${redBanner.slice(0, 140)}`)
+      } else if (redBanner.includes(`RUN ${SEAT_SELF_TEST_STATE.legs.length}/`)) {
+        problems.push(`T10′ banner-never-looks-green-when-failing: a failing run still prints a RUN clause: ${redBanner.slice(0, 140)}`)
+      } else if (!greenBanner.includes('RUN')) {
+        problems.push(`T10′ banner-never-looks-green-when-failing: a clean run must still read RUN: ${greenBanner.slice(0, 140)}`)
+      } else {
+        SEAT_SELF_TEST_STATE.legs.push('banner-never-looks-green-when-failing')
+      }
+    } finally {
+      SEAT_SELF_TEST_STATE.failed = saved.failed
+      SEAT_SELF_TEST_STATE.ran = saved.ran
+      SEAT_SELF_TEST_STATE.skipped = savedSkipped
+    }
+  }
+  // LEG — the audit over the LIVE catalog must agree seat-for-seat with what the
+  // resolver actually did: a row the audit calls UNRESOLVABLE must be exactly a
+  // seat the resolver substituted, and vice versa. If those two ever disagree, the
+  // gate would be green over a default nobody re-checked.
+  if (!RUNTIME_SEAT_STATE.ok) {
+    recordLiveSkipOrRefusal(problems, 'live-shipped-default-audit-agrees-with-resolver',
+      RUNTIME_SEAT_STATE.errorObject ?? catalogAbsent(`no live seat state: ${RUNTIME_SEAT_STATE.error ?? 'unrecorded'}`),
+      RUNTIME_SEAT_STATE.error)
+  } else {
+    const liveAudit = auditShippedDefaultsAgainstCatalog(RUNTIME_CATALOGS, DEFAULT_MODEL_ROUTES, RUNTIME_RESOLVED_SEATS)
+    // The audit the STARTUP path computed and announced must be this same verdict.
+    // That is the structural guard against putting the voice back inside a leg: if
+    // `RUNTIME_SEAT_STATE.audit` ever stops existing, the announcement has moved back
+    // somewhere skippable, and Review A's silent-4/4 case is back.
+    if (RUNTIME_SEAT_STATE.audit === null || RUNTIME_SEAT_STATE.audit === undefined) {
+      problems.push("T10′ live-shipped-default-audit-agrees-with-resolver: RUNTIME_SEAT_STATE carries no audit — the startup announcement has been moved back inside a skippable path")
+    } else if (RUNTIME_SEAT_STATE.audit.broken.length !== liveAudit.broken.length) {
+      problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: the announced audit counted ${RUNTIME_SEAT_STATE.audit.broken.length} broken rows, recomputed ${liveAudit.broken.length}`)
+    }
+    // And the emitted text is asserted, not assumed: no all-clear may appear while
+    // any row is broken, and EVERY broken row — covered included — must be named.
+    const liveLines = shippedDefaultAuditLines(liveAudit).join('\n')
+    // The startup path's own record, not a recomputation: proves the voice exists.
+    const said = (RUNTIME_SEAT_STATE.announcedAudit ?? []).join('\n')
+    if (said.length === 0) {
+      problems.push('T10′ live-shipped-default-audit-agrees-with-resolver: the startup path announced NOTHING — the audit has no recorded voice (M15)')
+    } else if (liveAudit.broken.length > 0 && !said.includes('SHIPPED DEFAULT UNRESOLVABLE ON THIS RUNTIME')) {
+      problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: ${liveAudit.broken.length} rows are broken but the announced text carries no loud header: ${said.slice(0, 180)}`)
+    } else if (liveAudit.covered.length > 0 && !said.includes('OVERRIDE COVERS A BROKEN DEFAULT')) {
+      problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: ${liveAudit.covered.length} rows are override-covered but nothing names them in the announced text`)
+    }
+    if (liveAudit.broken.length > 0) {
+      if (liveLines.includes('audit PASS')) {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: ${liveAudit.broken.length} shipped rows are broken yet the audit printed PASS`)
+      }
+      if (!liveLines.includes(`SHIPPED DEFAULT UNRESOLVABLE ON THIS RUNTIME — ${liveAudit.broken.length}/${liveAudit.checked}`)) {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: header must count BROKEN rows (${liveAudit.broken.length}/${liveAudit.checked}): ${liveLines.slice(0, 200)}`)
+      }
+      const unnamed = liveAudit.broken.filter((row) => !liveLines.includes(`${row.agent}:`)
+        && !liveLines.includes(`DEFAULT ${row.agent}:`))
+      if (unnamed.length > 0) {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: broken rows never named in the output: [${unnamed.map((row) => `${row.agent}:${row.status}`).join(', ')}]`)
+      }
+      if (liveAudit.allClear !== false) {
+        problems.push('T10′ live-shipped-default-audit-agrees-with-resolver: allClear is TRUE while rows are broken')
+      }
+    }
+    const auditGaps = new Set(liveAudit.unresolvable.map((row) => row.agent))
+    const resolverMoved = new Set(Object.values(RUNTIME_RESOLVED_SEATS).filter((seat) => seat.substituted).map((seat) => seat.agent))
+    const auditOnly = [...auditGaps].filter((agent) => !resolverMoved.has(agent))
+    // A covered row must REALLY be an override and its id must REALLY be listed —
+    // otherwise "covered" would be a way to make the audit go quiet for free.
+    for (const row of liveAudit.covered) {
+      if (RUNTIME_RESOLVED_SEATS[row.agent]?.forcedByEnvVar !== 'OMO_E2E_FORCE_SEAT') {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: audit calls '${row.agent}' covered by an override but the resolution carries no forcedByEnvVar`)
+      }
+      if (!RUNTIME_CATALOGS[row.route].models.some((model) => model.id === row.coveredBy)) {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: override id '${row.coveredBy}' for '${row.agent}' is not listed by ${row.route} either`)
+      }
+    }
+    const resolverOnly = [...resolverMoved].filter((agent) => !auditGaps.has(agent))
+    if (auditOnly.length > 0 || resolverOnly.length > 0) {
+      problems.push(`T10′[audit and resolver disagree]: audit-unresolvable-not-moved=[${auditOnly}] moved-not-flagged-unresolvable=[${resolverOnly}] (a binding override counts as COVERED, printed by name, not as resolved)`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('live-shipped-default-audit-agrees-with-resolver')
+    SEAT_SELF_TEST_STATE.counts.push(`live audit ${liveAudit.broken.length}/${liveAudit.checked} broken, ${liveAudit.covered.length} override-covered`)
+    }
+  }
+  // LEG — the LIVE table is catalog-grounded, and only the catalog moved it.
+
+  // SKIPS visibly when no catalog was read (no `dsh` on PATH, or a bogus
+  // OMO_E2E_FORCE_SEAT): the hermetic legs above must still run and `--self-test`
+  // must still exit 0 there, so this records a SKIP rather than throwing — a skip
+  // the banner prints, never a silent pass.
+  if (!RUNTIME_SEAT_STATE.ok) {
+    recordLiveSkipOrRefusal(problems, 'live-table-grounded',
+      RUNTIME_SEAT_STATE.errorObject ?? catalogAbsent(`no live seat state: ${RUNTIME_SEAT_STATE.error ?? 'unrecorded'}`),
+      RUNTIME_SEAT_STATE.error)
+  } else {
+    const grounded = []
+    const overrideCovered = []
+    for (const [agent, seat] of Object.entries(RUNTIME_RESOLVED_SEATS)) {
+      const catalog = RUNTIME_CATALOGS[seat.provider]
+      if (catalog === undefined) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' names route '${seat.provider}' with no catalog`)
+        continue
+      }
+      if (!catalog.models.some((model) => model.id === seat.model)) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' pins '${seat.model}' which ${catalog.artifact} does not list`)
+        continue
+      }
+      const shipped = DEFAULT_MODEL_ROUTES[agent]
+      const shippedIsListed = catalog.models.some((model) => model.id === shipped.model)
+      if (shippedIsListed && seat.substituted === true && seat.model !== shipped.model) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' moved off '${shipped.model}' although ${catalog.artifact} lists it (an override must not move off a WORKING default either)`)
+        continue
+      }
+      if (!shippedIsListed && seat.substituted !== true) {
+        // The ONLY legitimate way a seat runs without being marked substituted while
+        // the catalog does not list its shipped default: a BINDING override named
+        // this id for this run. That is an operator covering a broken default, and
+        // it is counted and printed as exactly that — "grounded" here means "the id
+        // is listed by the catalog", it does NOT mean the shipped default resolves.
+        if (seat.forcedByEnvVar === 'OMO_E2E_FORCE_SEAT') {
+          overrideCovered.push(`${agent}=${seat.provider}/${seat.model}`)
+          grounded.push(`${agent}=${seat.provider}/${seat.model}(override-covers-broken-default)`)
+          continue
+        }
+        problems.push(`T10′ live-table-grounded: seat '${agent}' claims no substitution although ${catalog.artifact} does NOT list the shipped '${shipped.model}'`)
+        continue
+      }
+      // Every substituted seat must declare HOW it was chosen: either the catalog
+      // left one capable id, or a human wrote the choice down. Anything else means
+      // the resolver picked one out of a set it had no criterion to rank.
+      if (seat.substituted === true && seat.soleCapableCandidate !== true
+        && seat.explicitChoiceKey === undefined) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' moved to '${seat.model}' among ${(seat.candidates ?? []).length} capable ids with neither a sole-candidate flag nor a written choice`)
+        continue
+      }
+      if (seat.substituted === true && seat.soleCapableCandidate === true
+        && (seat.candidates ?? []).length !== 1) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' claims a sole capable id but lists ${(seat.candidates ?? []).length} candidates`)
+        continue
+      }
+      grounded.push(`${agent}=${seat.provider}/${seat.model}${seat.substituted ? '(moved)' : ''}`)
+    }
+    if (grounded.length !== Object.keys(DEFAULT_MODEL_ROUTES).length) {
+      problems.push(`T10′ live-table-grounded: only ${grounded.length}/${Object.keys(DEFAULT_MODEL_ROUTES).length} roster seats are catalog-grounded`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('live-table-grounded')
+      SEAT_SELF_TEST_STATE.counts.push(`live table grounded, ${grounded.filter((entry) => entry.includes('(moved)')).length} moved, ${overrideCovered.length} override-covered`)
+    }
+  }
+  // SEAT_SELF_TEST_TOTAL legs (the canonical list's length — never a literal here),
+  // and a SKIP is never a pass: `ran` is true only when every leg
+  // reported and none was skipped. A skipped live leg still lets `--self-test`
+  // exit 0 (hermeticity, finding ④) but the banner says SKIPPED, in numbers.
+  const TOTAL_LEGS = SEAT_SELF_TEST_TOTAL
+  // COMPLETENESS, both directions, against the canonical list — this is what makes
+  // "add a push, forget the constant" impossible rather than merely discouraged.
+  const accounted = new Set([
+    ...SEAT_SELF_TEST_STATE.legs,
+    ...SEAT_SELF_TEST_STATE.refused,
+    ...SEAT_SELF_TEST_STATE.skipped.map((entry) => String(entry).split(' ')[0]),
+  ])
+  const neverRan = SEAT_SELF_TEST_LEGS.filter((name) => !accounted.has(name))
+  if (neverRan.length > 0) {
+    problems.push(`T10′ leg-completeness: declared legs never reported: [${neverRan.join(', ')}]`)
+  }
+  const undeclared = [...accounted].filter((name) => !SEAT_SELF_TEST_LEGS.includes(name))
+  if (undeclared.length > 0) {
+    problems.push(`T10′ leg-completeness: reported legs are not in SEAT_SELF_TEST_LEGS: [${undeclared.join(', ')}]`)
+  }
+  // A count mismatch is a PROBLEM, not a banner adjective. `ran` only ever fed the
+  // banner text, so `INCOMPLETE (only 17/16 legs passed)` printed alongside EXIT 0 —
+  // Review A's trap 1, reproduced live on this file and then caught by mutant M19.
+  const reported = SEAT_SELF_TEST_STATE.legs.length + SEAT_SELF_TEST_STATE.skipped.length
+    + SEAT_SELF_TEST_STATE.refused.length
+  if (reported !== TOTAL_LEGS) {
+    problems.push(
+      `T10′ leg-completeness: ${reported} legs reported (${SEAT_SELF_TEST_STATE.legs.length} passed `
+      + `+ ${SEAT_SELF_TEST_STATE.skipped.length} skipped) but SEAT_SELF_TEST_LEGS declares ${TOTAL_LEGS} `
+      + `— the denominator and the push sites disagree, so this gate's verdict is meaningless`,
+    )
+  }
+  SEAT_SELF_TEST_STATE.ran
+    = reported === TOTAL_LEGS
+    && SEAT_SELF_TEST_STATE.skipped.length === 0
+  if (!SEAT_SELF_TEST_STATE.ran && SEAT_SELF_TEST_STATE.notRunReason === '') {
+    SEAT_SELF_TEST_STATE.notRunReason = SEAT_SELF_TEST_STATE.skipped.length > 0
+      ? `all ${SEAT_SELF_TEST_STATE.legs.length} legs passed; ${SEAT_SELF_TEST_STATE.skipped.length} live leg(s) could not run`
+      : `only ${SEAT_SELF_TEST_STATE.legs.length}/${TOTAL_LEGS} legs passed`
+  }
+  // PARENT'S RULING, the second leg of the same door as the guarded emitter: a named
+  // fact that exits 0 is a fact CI ignores. `broken` counts EVERY row whose shipped
+  // default its catalog does not list, covered or not, so this sounds on a generation
+  // where something is genuinely broken and stays silent on 0.1.5-rc.1 (broken=0),
+  // which is what CI pins. A cover never quiets it.
+  const liveAudit = RUNTIME_SEAT_STATE.audit
+  if (liveAudit !== null && liveAudit !== undefined && liveAudit.broken.length > 0) {
+    problems.push(
+      `T10′ shipped-default-audit: ${liveAudit.broken.length}/${liveAudit.checked} shipped roster defaults `
+      + `are NOT listed by their route's installed catalog on this runtime `
+      + `[${liveAudit.broken.map((row) => `${row.agent}:${row.route}/${row.shippedModel}`).join(', ')}]`
+      + ` — ${liveAudit.covered.length} of them are covered by OMO_E2E_FORCE_SEAT for this run only, which `
+      + `covers nothing: THE SHIPPED DEFAULT REMAINS UNRESOLVABLE AND T12 OWNS THE FIX. `
+      + `This reaches the exit code on purpose; a named fact that exits 0 is a fact CI ignores.`,
+    )
+  }
+  SEAT_SELF_TEST_STATE.failed = problems.length
+  console.error(`drive: ${seatSelfTestBanner()}`)
+}
+
 // THE SEAT DISTRIBUTION (plan §4.7). 10 delegation agents over the catalog
 // pairs. The table below is the pre-T8b pin, RESTORED after T8b's half-revert
 // left it re-pinned to the 0.2.x ids while roster.ts/the template had gone
@@ -982,7 +3066,22 @@ function paradeLabel(agent) {
 // deepseek-v4-flash` — measured on CI after the half-revert; the pre-T8b
 // shape of the same message had the ids in the opposite roles) instead of
 // silently agreeing.
-const PARADE_SEATS = new Map([
+//
+// P4.5-T10′ CHANGES ONE THING ABOUT THE PARAGRAPH ABOVE, and the paragraph
+// still stands: the table below is now the PREFERENCE table
+// (`PARADE_SEAT_PREFERENCES`), and `PARADE_SEATS` — the table every consumer
+// reads, and every pin the sandbox gets — is that table mapped through the
+// installed runtime's catalog by `resolveSeatAgainstCatalog`. On dsh 0.1.5-rc.1
+// every preference below is listed by its route's catalog, so `PARADE_SEATS` is
+// byte-identical to the table below and the read-face expectation is still
+// exactly `resolveModelRoutes()`'s shipped default. On dsh 0.2.0-rc.2 four
+// preferences (explore, librarian, multimodal-looker, sisyphus-junior) name ids
+// their routes no longer list, so those four seats move — and the read-face
+// expectation moves with them, for the SAME reason read off the SAME catalog,
+// which is why the expectation is `readFaceSeatExpectation()` and not
+// `resolveModelRoutes()`. The anchor is still roster.ts; only what the installed
+// runtime can actually serve is decided by the catalog.
+export const PARADE_SEAT_PREFERENCES = new Map([
   ['explore', { provider: 'deepseek', model: 'deepseek-v4-flash' }],
   ['hephaestus', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
   ['oracle', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
@@ -995,25 +3094,239 @@ const PARADE_SEATS = new Map([
   ['prometheus', { provider: 'deepseek', model: 'deepseek-v4-pro' }],
 ])
 
+// ── the ONE place the runtime catalog is read, and the seats are decided ─────
+// Every route used anywhere in this file — the shipped defaults AND the parade's
+// preferences — goes into ONE probe, so a route that appears only in the parade
+// table is still catalog-checked before a single sandbox exists.
+//
+// LAZY AND NON-THROWING BY CONSTRUCTION (post-review finding ④). A previous
+// revision of this block ran the probe at module evaluation time and called
+// `process.exit(1)` when it failed, which made `--self-test` hard-fail on a
+// machine with no `dsh` on PATH — the exact loss of hermeticity already ruled on
+// once in this phase and rejected. HEAD's `--self-test` exits 0 there, and so
+// must this. Everything below therefore RECORDS the outcome instead of throwing:
+//   • `RUNTIME_SEAT_STATE.ok === false` ⇒ no seat is known, and every RUNTIME
+//     consumer must call `requireRuntimeSeats()`, which fails loudly there;
+//   • the hermetic legs of `--self-test` never consult it, and the ONE leg that
+//     does reports `live-table-SKIPPED(<reason>)` rather than crashing, so the
+//     absence of a live catalog is VISIBLE in the banner, not a stack trace.
+/** @type {{ok:boolean,error:string|null,catalogs:object,probe:object,resolutions:object,parade:object}} */
+export const RUNTIME_SEAT_STATE = (() => {
+  const empty = {
+    ok: false,
+    error: null,
+    // The STRING is for the human, the OBJECT for the classifier: the refusal/absence
+    // kind lives on the object. Flattening it is what pushed the classifier back onto
+    // substring matching, and a substring list is what drifted (round-5 MAJOR-1).
+    errorObject: null,
+    envPinError: null,
+    envPinErrorObject: null,
+    catalogs: {},
+    probe: { dshBinary: null, dshVersion: null, nodeModules: null, routes: [] },
+    resolutions: {},
+    parade: {},
+    audit: null,
+    announcedAudit: [],
+  }
+  // The catalog READ and the seat DECISION are two separate steps here on purpose.
+  // They used to be one call, so a seat that refused (a binding override naming a
+  // text-only id for the vision seat) aborted the block BEFORE the shipped-default
+  // audit ran, and the audit reported `AUDIT NOT RUN` while the catalog sat readable
+  // on disk and the override map sat in the environment. Review A, delta round:
+  // "the honest output there is the same header as the 1-override case".
+  let catalogs = null
+  let probe = null
+  try {
+    const probed = probeRuntimeCatalog([...new Set([
+      ...Object.values(DEFAULT_MODEL_ROUTES).map((route) => route.provider),
+      ...[...PARADE_SEAT_PREFERENCES.values()].map((seat) => seat.provider),
+    ])])
+    catalogs = probed.catalogs
+    probe = probed.probe
+  } catch (error) {
+    empty.error = `catalogs: ${String(error?.message ?? error)}`
+    empty.errorObject = error
+    console.error(
+      `drive: [seats] NOT RESOLVED — ${empty.error}\n`
+      + 'drive: [seats] no seat is pinned; runtime scenarios will refuse to start, '
+      + 'and the live leg of --self-test reports SKIPPED. Hermetic legs still run.',
+    )
+    console.error(
+      'drive: [shipped-defaults] *** AUDIT NOT RUN — the runtime catalog itself could not be read, '
+      + 'so NOT ONE shipped default has been checked against anything. '
+      + 'This is NOT a pass; fix the catalog read and re-run.',
+    )
+    empty.announcedAudit = shippedDefaultAuditNotRunLines(empty.error)
+    return empty
+  }
+  // The catalog is readable ⇒ the audit RUNS, whatever the seats decide afterwards.
+  // `covered` comes from the env override map directly, not from a resolution that
+  // may never have been produced.
+  let envPins = {}
+  try {
+    envPins = Object.fromEntries(
+      forcedSeatPins(catalogs).map((pin) => [pin.agent, {
+        provider: pin.provider,
+        model: pin.model,
+        // The audit keys `coveredBy` off this marker; without it every covered row
+        // silently reverts to UNRESOLVABLE and the covered set prints nothing.
+        forcedByEnvVar: 'OMO_E2E_FORCE_SEAT',
+      }]),
+    )
+  } catch (error) {
+    // Review B's nit: this catch printed the failure and then DROPPED it, so a
+    // malformed or unroutable OMO_E2E_FORCE_SEAT clause was audible for one second
+    // and invisible to every consumer afterwards. Carried now; a DECLARED refusal in
+    // this position still reaches the exit code.
+    const message = String(error?.message ?? error)
+    empty.envPinError = message
+    empty.envPinErrorObject = error
+    console.error(`drive: [seats] OMO_E2E_FORCE_SEAT could not be applied to the catalog: ${message}`)
+  }
+  const audit = auditShippedDefaultsAgainstCatalog(
+    catalogs,
+    DEFAULT_MODEL_ROUTES,
+    envPins,
+    // Modalities come from the roster single-source, not from the override, so an
+    // override can never lower what a row is required to carry.
+    Object.fromEntries(Object.keys(DEFAULT_MODEL_ROUTES).map((agent) => [agent, requiredModalitiesFor(agent)])),
+  )
+  const announcedAudit = announceShippedDefaultAudit(audit)
+  try {
+    const seats = resolveRosterSeatsAgainstRuntime(
+      [...new Set([...PARADE_SEAT_PREFERENCES.values()].map((seat) => seat.provider))],
+    )
+    const parade = resolvePreferredSeats(seats.catalogs, PARADE_SEAT_PREFERENCES)
+    // probe/resolutions are passed IN: RUNTIME_SEAT_STATE is still being
+    // assigned at this point, and reading it here is a TDZ ReferenceError
+    // that the catch below would misreport as "catalog could not be read".
+    announceRuntimeSeats(seats.resolutions, seats.catalogs, seats.probe)
+    // `audit` / `announcedAudit` were computed ABOVE, before the seat loop, so a
+    // seat that refuses cannot retroactively un-say the audit.
+    return {
+      ok: true,
+      error: null,
+      catalogs: seats.catalogs,
+      probe: seats.probe,
+      resolutions: seats.resolutions,
+      parade,
+      audit,
+      // The lines the startup path actually emitted, kept so a leg can prove the
+      // audit had a voice rather than merely being computable.
+      announcedAudit,
+    }
+  } catch (error) {
+    const message = String(error?.message ?? error)
+    empty.error = message
+    empty.errorObject = error
+    // Loud, but NOT fatal: `--self-test` must still be able to finish. The
+    // runtime path turns this into a hard failure via `requireRuntimeSeats`.
+    console.error(
+      `drive: [seats] NOT RESOLVED — ${message}\n`
+      + 'drive: [seats] no seat is pinned; runtime scenarios will refuse to start, '
+      + 'and the live leg of --self-test reports SKIPPED. Hermetic legs still run.',
+    )
+    // The catalog WAS read and the audit WAS announced above; a seat refusing after
+    // that does not un-say it. Only the catalog-read failure prints NOT RUN. The
+    // catalogs are published on the failed state too, so a leg can still audit the
+    // PIN TABLE — a live indefensible pin must be a PROBLEM, never a silent SKIP.
+    empty.audit = audit
+    empty.announcedAudit = announcedAudit
+    empty.catalogs = catalogs
+    return empty
+  }
+})()
+
 /**
- * The pairs the distribution must cover — SIX on this pin, derived from
- * PARADE_SEATS (never restated) — the scenario asserts all of them were
- * actually exercised. T8b's revision read FOUR (the 0.2.x catalogs hold fewer
- * ids); the pre-T8b revision wrote "7 pairs" while the very table beside it
- * derives six — the count below is DERIVED, so neither comment can make the
- * check false.
+ * The gate every RUNTIME consumer passes through: a seat may only be pinned when
+ * the installed runtime's catalog was actually read. Keeps the hermetic self-test
+ * runnable with no dsh present while making a real run without a catalog impossible.
  */
-const PARADE_SEAT_PAIRS = [...new Set(
-  [...PARADE_SEATS.values()].map((seat) => `${seat.provider}/${seat.model}`),
+function requireRuntimeSeats(caller) {
+  if (!RUNTIME_SEAT_STATE.ok) {
+    throw catalogAbsent(
+      `${caller}: the installed runtime's model catalog was never read, so no seat can be pinned `
+      + `(reason recorded at module init: ${RUNTIME_SEAT_STATE.error}) — refusing to run a scenario `
+      + `against model ids nobody has confirmed this runtime serves`,
+    )
+  }
+  return RUNTIME_SEAT_STATE
+}
+
+/** The installed runtime's catalog, keyed by route, with the artifact it came from. */
+export const RUNTIME_CATALOGS = RUNTIME_SEAT_STATE.catalogs
+/** The probe document (binary path, label, every face seen) for artifacts/report. */
+export const RUNTIME_CATALOG_PROBE_DOC = RUNTIME_SEAT_STATE.probe
+/** All 11 shipped-default seats as this runtime can serve them. */
+export const RUNTIME_RESOLVED_SEATS = RUNTIME_SEAT_STATE.resolutions
+
+/**
+ * THE EFFECTIVE PARADE SEATS — the preference table above, seat by seat, through
+ * the runtime catalog. This is the table `paradeEnv()` pins and the table
+ * `analyzeRosterParade()` compares observed routes against, so the pin and the
+ * assertion cannot disagree about which generation is being run.
+ * Empty when the catalog was not read; `paradeEnv()` refuses that case.
+ */
+export const PARADE_SEATS = new Map(
+  Object.entries(RUNTIME_SEAT_STATE.parade)
+    .map(([agent, seat]) => [agent, { provider: seat.provider, model: seat.model }]),
+)
+
+/**
+ * The parade seat table AS OBSERVERS SEE IT. Identical to `PARADE_SEATS` whenever
+ * the runtime catalog was read. When it was NOT (no `dsh` on PATH), it falls back
+ * to roster.ts's shipped defaults so the FABRICATED `--self-test` parade can still
+ * run — fabricated logs, fabricated requests, self-consistent by construction, so
+ * the fallback is evidence about the ANALYSER and none about any runtime.
+ * The RUNTIME path cannot reach the fallback: `paradeEnv()` calls
+ * `requireRuntimeSeats()` and refuses before a sandbox exists.
+ */
+function paradeSeatTable() {
+  if (PARADE_SEATS.size > 0) return PARADE_SEATS
+  return new Map(Object.entries(DEFAULT_MODEL_ROUTES).map(([agent, seat]) => [agent, { provider: seat.provider, model: seat.model }]))
+}
+
+/**
+ * The pairs the distribution must cover, DERIVED from the EFFECTIVE
+ * `PARADE_SEATS` and never restated — the scenario asserts all of them were
+ * actually exercised. Measured by `node /tmp/p45t10p-ac7.mjs` (see the report's
+ * AC7 table), on the two installed runtimes: SEVEN on dsh 0.1.5-rc.1
+ * (pi-ai v4-flash, pi-ai v4-flash-vision-exp, pi-ai v4-pro, official flash,
+ * official v4-flash, official v4-flash-vision-exp, official v4-pro) and FOUR
+ * on dsh 0.2.0-rc.2 (pi-ai deepseek-flash, pi-ai deepseek-v4-pro, official
+ * deepseek-flash, official deepseek-v4-pro) — four seats coalesce there because
+ * both 0.2.x catalogs list only those two ids.
+ * CORRECTION, stated because the drift is the point: the comment that sat above
+ * this const claimed "SIX on this pin" while the table beside it has always
+ * derived SEVEN, and T8b's revision claimed FOUR. Neither comment could make the
+ * check false, because the count below is DERIVED; both could, and did, mislead
+ * a reader. Comments here are therefore counts-by-command, not counts-by-memory.
+ */
+export const PARADE_SEAT_PAIRS = [...new Set(
+  [...paradeSeatTable().values()].map((seat) => `${seat.provider}/${seat.model}`),
 )]
+
+/**
+ * A scenario's OWN env overlay. The three producers in the SCENARIOS literal are
+ * THUNKS (`env: () => paradeEnv()`) so the runtime catalog is consulted when the
+ * scenario actually runs, not when this ~19k-line module is evaluated — that eager
+ * evaluation was the last thing keeping `--self-test` from running on a machine
+ * with no `dsh` on PATH (finding ④). Plain objects are still accepted, so a
+ * future scenario may hardcode its env if it genuinely has no seat to resolve.
+ */
+function scenarioEnvOverlay(def) {
+  if (def.env === undefined) return {}
+  return typeof def.env === 'function' ? def.env() : def.env
+}
 
 /** The scenario's OMO_<AGENT>_{PROVIDER,MODEL} env overlay, from the roster rows. */
 function paradeEnv() {
+  requireRuntimeSeats('paradeEnv')
   const env = {}
   for (const entry of DELEGATION_ENTRIES) {
     const seat = PARADE_SEATS.get(entry.id)
     if (seat === undefined) {
-      throw new Error(`parade: roster delegation row '${entry.id}' has no seat in PARADE_SEATS`)
+      throw seatRefusal(`parade: roster delegation row '${entry.id}' has no seat in PARADE_SEATS`)
     }
     env[entry.routeEnvVars.provider] = seat.provider
     env[entry.routeEnvVars.model] = seat.model
@@ -1069,10 +3382,53 @@ function paradeScript(sandbox) {
 // (deepseek-official/deepseek-v4-pro), so "the child ran on its configured
 // seat" is a discriminating assertion rather than a coincidence.
 
-/** plan-reviewer's P2-T19 seat: pi-ai `deepseek` / deepseek-v4-pro (real id). */
-const PLAN_REVIEWER_SEAT = { provider: 'deepseek', model: 'deepseek-v4-pro' }
-/** atlas's P2-T19 seat: pi-ai `deepseek` / deepseek-v4-pro (real id). */
-const ATLAS_SEAT = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+/** plan-reviewer's P2-T19 seat preference: pi-ai `deepseek` / deepseek-v4-pro. */
+const PLAN_REVIEWER_SEAT_PREFERENCE = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+/** atlas's P2-T19 seat preference: pi-ai `deepseek` / deepseek-v4-pro. */
+const ATLAS_SEAT_PREFERENCE = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+
+/**
+ * One scenario seat preference, put through the same runtime catalog as every
+ * other seat in this file, so a P2-T19 pin that a future runtime drops goes red
+ * naming the seat instead of shipping a `UNKNOWN_MODEL` child.
+ * `deepseek-v4-pro` is listed on the pi-ai route in BOTH installed generations
+ * (0.85.1 and 0.87.1), so on both of these runtimes this returns the preference
+ * untouched.
+ */
+function scenarioSeat(agentId, seatPreference) {
+  requireRuntimeSeats(`scenarioSeat(${agentId})`)
+  const seat = resolveSeatAgainstCatalog(RUNTIME_CATALOGS, agentId, seatPreference, requiredModalitiesFor(agentId))
+  return { provider: seat.provider, model: seat.model }
+}
+
+/** plan-reviewer's P2-T19 seat, as the runtime under test can serve it. */
+/**
+ * LAZY (finding ④). A `const` here would resolve against the runtime catalog at
+ * MODULE EVALUATION time, which is exactly what made `--self-test` die on a
+ * machine with no `dsh` on PATH. Called from the scenario definitions instead, so
+ * the catalog is only consulted when a scenario is about to run.
+ */
+function PLAN_REVIEWER_SEAT() { return scenarioSeat('plan-reviewer', PLAN_REVIEWER_SEAT_PREFERENCE) }
+/**
+ * The seat the FABRICATED plan-reviewer self-test fixture runs on. Identical to
+ * `PLAN_REVIEWER_SEAT()` whenever a catalog was read; falls back to the static
+ * preference otherwise, so `--self-test` stays runnable with no dsh on PATH
+ * (finding ④). Fabricated bytes only — never used by a real scenario, whose
+ * `env` thunk goes through `scenarioSeat()` and refuses without a catalog.
+ */
+function planReviewerSeatForFabrication() {
+  return RUNTIME_SEAT_STATE.ok
+    ? PLAN_REVIEWER_SEAT()
+    : { provider: PLAN_REVIEWER_SEAT_PREFERENCE.provider, model: PLAN_REVIEWER_SEAT_PREFERENCE.model }
+}
+/** atlas's P2-T19 seat, as the runtime under test can serve it. */
+function ATLAS_SEAT() { return scenarioSeat('atlas', ATLAS_SEAT_PREFERENCE) }
+/** Fabrication-only fallback, same rationale as `planReviewerSeatForFabrication()`. */
+function atlasSeatForFabrication() {
+  return RUNTIME_SEAT_STATE.ok
+    ? ATLAS_SEAT()
+    : { provider: ATLAS_SEAT_PREFERENCE.provider, model: ATLAS_SEAT_PREFERENCE.model }
+}
 
 /**
  * The OMO_<AGENT>_{PROVIDER,MODEL} env overlay for ONE roster delegation row,
@@ -3215,10 +5571,31 @@ function bootDsh(sandbox, patchPath, env) {
     )
     let log = ''
     let readinessHandled = false
+    // MEASURED TWICE on 0.1.5-rc.1 at scenario `explore-nested-delegation-denied`:
+    // the sandbox was already torn down while this child's stdout was still flushing,
+    // so `writeFileSync` threw ENOENT inside a socket handler and killed the WHOLE
+    // driver mid-suite — AC4-015 emitted NO verdict JSON at all, which a CI reader
+    // cannot distinguish from "the suite never ran". `log` is the in-memory truth every
+    // assertion reads; the file is only a mirror for a human auditing a KEPT sandbox.
+    // So a vanished mirror is dropped and COUNTED — never fatal, never silent.
+    let bootMirrorDropped = 0
     const bootLogPath = join(sandbox.root, 'boot.log')
     const onData = (chunk) => {
       log += chunk.toString('utf8')
-      writeFileSync(bootLogPath, log)
+      try {
+        writeFileSync(bootLogPath, log)
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+        bootMirrorDropped += 1
+        BOOT_MIRROR_DROPS.count += 1
+        // EVERY drop speaks, not just the first (Review B, round-5 nit): "counted but
+        // mentioned once" is how a growing problem stays hidden in the tail. The event
+        // is rare — three in a whole 33-scenario suite — so per-drop noise is cheap
+        // and a silent counter is not.
+        console.error(`drive: [boot-mirror] boot.log mirror lost after sandbox teardown `
+          + `(${bootLogPath}) — drop #${bootMirrorDropped}; ${log.length} bytes of boot output `
+          + `remain in memory, where every assertion reads them; continuing, and counting.`)
+      }
       if (readinessHandled) return
       const match = /dsh web: http:\/\/127\.0\.0\.1:(\d+)(?:\/\?token=([A-Za-z0-9_-]+))?/.exec(log)
       if (match === null) return
@@ -4474,7 +6851,7 @@ export function analyzeRosterParade(
   }
 
   const childDetails = PARADE_AGENTS.map((agent) => {
-    const configuredSeat = PARADE_SEATS.get(agent)
+    const configuredSeat = paradeSeatTable().get(agent)
     const resolvedSeat = routes[agent]
     const child = childByLabel.get(paradeLabel(agent))
     const observedRoute = child === undefined ? undefined : requestHeaderRoute(child.events)
@@ -6758,7 +9135,7 @@ function fabricatedGoodNestedInput(routes) {
 /** The effective route map the parade scenario's env overlay resolves to. */
 function fabricatedParadeRoutes(baseRoutes) {
   const routes = { ...baseRoutes }
-  for (const [agent, seat] of PARADE_SEATS) routes[agent] = seat
+  for (const [agent, seat] of paradeSeatTable()) routes[agent] = seat
   return routes
 }
 
@@ -6882,7 +9259,7 @@ function fabricatedParadeRequests(routes) {
     },
   ]
   for (const agent of PARADE_AGENTS) {
-    const seat = PARADE_SEATS.get(agent)
+    const seat = paradeSeatTable().get(agent)
     requests.push({
       role: agent,
       body: { model: seat.model, messages: [{ role: 'system', content: `MOCKROLE=${agent}` }] },
@@ -6913,7 +9290,7 @@ function fabricatedParadeInput(baseRoutes) {
       log: parentLog,
       allLogs: [
         parentLog,
-        ...PARADE_AGENTS.map((agent) => fabricatedParadeChildLog(agent, PARADE_SEATS.get(agent))),
+        ...PARADE_AGENTS.map((agent) => fabricatedParadeChildLog(agent, paradeSeatTable().get(agent))),
       ],
       requests: fabricatedParadeRequests(routes),
       providersJson: fabricatedParadeProvidersJson(routes),
@@ -6960,12 +9337,12 @@ function fabricatedAllProvidersJson(routes) {
 
 /** The effective route map the plan-reviewer scenario's env overlay resolves to. */
 function fabricatedPlanReviewerRoutes(baseRoutes) {
-  return { ...baseRoutes, 'plan-reviewer': PLAN_REVIEWER_SEAT }
+  return { ...baseRoutes, 'plan-reviewer': planReviewerSeatForFabrication() }
 }
 
 /** The effective route map the atlas scenario's env overlay resolves to. */
 function fabricatedAtlasRoutes(baseRoutes) {
-  return { ...baseRoutes, atlas: ATLAS_SEAT }
+  return { ...baseRoutes, atlas: atlasSeatForFabrication() }
 }
 
 /** Requests for a ONE-child scenario whose child role is not explore. */
@@ -8442,6 +10819,11 @@ async function runMockRoleCopyStampSelfTest() {
 
 async function runAnalysisSelfTest(routes) {
   const problems = []
+
+  // ── P4.5-T10′: the runtime-catalog SEAT resolver, on fabricated catalogs ─────
+  // Runs FIRST: every other fixture in this file assumes the driver has seats
+  // that the installed runtime can actually serve.
+  seatResolverSelfTest(problems)
 
   // ── P4.5-T8″: the tool/result SHAPE selection, on REAL captured rows ───────
   //
@@ -16152,7 +18534,7 @@ const SCENARIOS = [
     name: 'roster-parade',
     prompt: PARADE_PROMPT,
     roles: [CONDUCTOR_ID, ...PARADE_AGENTS],
-    env: paradeEnv(),
+    env: () => paradeEnv(),
     seed: (sandbox) => {
       writeFileSync(join(sandbox.project, 'README.md'), DEMO_README_CONTENT)
     },
@@ -16168,7 +18550,7 @@ const SCENARIOS = [
     name: 'plan-reviewer-write-denied',
     prompt: PLAN_REVIEWER_DENY_PROMPT,
     roles: [CONDUCTOR_ID, 'plan-reviewer'],
-    env: delegationSeatEnv('plan-reviewer', PLAN_REVIEWER_SEAT),
+    env: () => delegationSeatEnv('plan-reviewer', PLAN_REVIEWER_SEAT()),
     script: planReviewerWriteDeniedScript,
     analysisInput: (sandbox) => ({
       writeTargetPath: join(sandbox.project, PLAN_REVIEWER_WRITE_TARGET_NAME),
@@ -16193,7 +18575,7 @@ const SCENARIOS = [
     name: 'atlas-nested-delegation',
     prompt: ATLAS_NESTED_PROMPT,
     roles: [CONDUCTOR_ID, 'atlas', 'explore'],
-    env: delegationSeatEnv('atlas', ATLAS_SEAT),
+    env: () => delegationSeatEnv('atlas', ATLAS_SEAT()),
     seed: (sandbox) => {
       writeFileSync(join(sandbox.project, 'README.md'), DEMO_README_CONTENT)
     },
@@ -16382,8 +18764,47 @@ async function runScenario(def, baseRoutes) {
   // P2-T18: the scenario's own env overlay is resolved through the SAME
   // resolver the spawned dsh runs, so agentOptions/settings and the assertions
   // can never disagree about a seat.
-  const env = scenarioEnv(sandbox, def.env)
-  const routes = def.env === undefined ? baseRoutes : resolveModelRoutes(env)
+  //
+  // P4.5-T10′: that overlay now sits ON TOP OF `runtimeSeatEnv()`, the
+  // runtime-catalog-resolved seats for all 11 roster rows. The order is the
+  // point: a scenario that deliberately re-seats a row (the parade, the two
+  // P2-T19 scenarios) still wins, and every OTHER row gets an id the installed
+  // runtime's catalog actually lists instead of a shipped default it may not
+  // serve. On dsh 0.1.5-rc.1 `runtimeSeatEnv()` writes each row's shipped
+  // default back verbatim (no substitution was needed there), so the resolved
+  // `routes` below is byte-identical to `baseRoutes` and nothing about that
+  // generation's behaviour moves; on dsh 0.2.0-rc.2 it is where the explore
+  // child stops dying with UNKNOWN_MODEL. `baseRoutes` stays in the signature
+  // because the AC-5 mutation fixtures pass their own collapsed/swapped maps.
+  const seatOverlay = { ...runtimeSeatEnv(), ...scenarioEnvOverlay(def) }
+  const env = scenarioEnv(sandbox, seatOverlay)
+  const routes = resolveModelRoutes(env)
+  // Anti-drift, and the reason `baseRoutes` is still in the signature: every row
+  // whose EFFECTIVE seat differs from the shipped default must differ for one of
+  // exactly two reasons — the installed catalog forced it, or THIS scenario asked
+  // for it by name. Anything else is an unexplained drift (a mistyped env name,
+  // a stale scenario pin) and stops the run here.
+  const scenarioPinnedAgents = new Set(
+    Object.keys(scenarioEnvOverlay(def))
+      .map((name) => Object.entries(MODEL_ROUTE_ENV_VARS)
+        .find(([, names]) => names.provider === name || names.model === name)?.[0])
+      .filter((agent) => agent !== undefined),
+  )
+  const unexplainedDrift = Object.entries(routes)
+    .filter(([agent, route]) => {
+      const shipped = baseRoutes[agent]
+      if (shipped.provider === route.provider && shipped.model === route.model) return false
+      if (scenarioPinnedAgents.has(agent)) return false
+      if (RUNTIME_RESOLVED_SEATS[agent]?.forcedByEnvVar === 'OMO_E2E_FORCE_SEAT') return false
+      return RUNTIME_RESOLVED_SEATS[agent]?.substituted !== true
+    })
+    .map(([agent, route]) => `${agent}: shipped ${baseRoutes[agent].provider}/${baseRoutes[agent].model} → effective ${route.provider}/${route.model}`)
+  if (unexplainedDrift.length > 0) {
+    throw new Error(
+      `[${def.name}] effective seats drift from roster.ts's shipped defaults for reasons `
+      + `neither the runtime catalog nor this scenario's own env declares: ${unexplainedDrift.join('; ')}`,
+    )
+  }
   // P3-T16 (the webfetch-private-target-unprobed scenario): a scenario may need a
   // PROCESS-LOCAL HTTP fixture whose ephemeral PORT exists only after it is
   // listening, and the mock script's tool arguments must name that URL. `setup`
@@ -16510,7 +18931,49 @@ async function runScenario(def, baseRoutes) {
         return depths[0]
       })(),
     }))
-    const readFaceRoutes = resolveModelRoutes()
+    // P4.5-T10′ — THE EXPECTATION SOURCE, MADE EXPLICIT.
+    // argv 5/6 of the validator is `readFaceExpectation`, i.e. roster.ts's
+    // SHIPPED explore default mapped through the installed runtime's catalog —
+    // NOT `def.env` (that is the input that produced the bytes under assertion,
+    // and the comment above `PARADE_SEATS` refuses it), NOT the read face
+    // itself. On dsh 0.1.5-rc.1 no substitution was needed, so this is
+    // byte-identical to the previous `resolveModelRoutes()`; on dsh 0.2.0-rc.2
+    // it differs from the shipped default by exactly the one move the pi-ai
+    // catalog forced (deepseek-v4-flash is absent from pi-ai@0.87.1), and that
+    // difference is written into read-face/roster-expectations.json with the
+    // artifact that said so. The shipped default is NOT certified here.
+    const readFaceExpectation = readFaceSeatExpectation()
+    if (routes.explore.provider !== readFaceExpectation.provider
+      || routes.explore.model !== readFaceExpectation.model) {
+      throw new Error(
+        `[${def.name}] the scenario's EFFECTIVE explore seat `
+        + `${routes.explore.provider}/${routes.explore.model} is not the read-face expectation `
+        + `${readFaceExpectation.provider}/${readFaceExpectation.model} `
+        + `(${readFaceExpectation.expectationSource}) — the seat the sandbox is pinned to and `
+        + 'the seat the read face is checked against have come apart; refusing to compare',
+      )
+    }
+    // The per-generation evidence, written per run: every seat, the id pinned,
+    // the artifact the id was read out of, and whether the shipped default moved.
+    // This is what a reviewer audits instead of trusting a report.
+    writeFileSync(join(readFaceDir, 'seat-expectation.json'), `${JSON.stringify({
+      runtime: {
+        dshVersion: RUNTIME_CATALOG_PROBE_DOC.dshVersion ?? null,
+        dshBinary: RUNTIME_CATALOG_PROBE_DOC.dshBinary ?? null,
+        nodeModules: RUNTIME_CATALOG_PROBE_DOC.nodeModules ?? null,
+        note: 'dshVersion is a LABEL only — no selection anywhere in this file branches on it',
+      },
+      catalogs: Object.fromEntries(Object.entries(RUNTIME_CATALOGS).map(([route, catalog]) => [route, {
+        package: catalog.package,
+        artifact: catalog.artifact,
+        kind: catalog.kind,
+        models: catalog.models,
+      }])),
+      expectation: readFaceExpectation,
+      seats: Object.values(RUNTIME_RESOLVED_SEATS),
+      paradeSeats: Object.fromEntries(PARADE_SEATS),
+      paradeSeatPairs: PARADE_SEAT_PAIRS,
+    }, null, 2)}\n`)
     // The expected `!!js` gate count comes from the WRITE face — the same
     // materialized file the probe derives it from — NEVER off the bytes under
     // assertion. Self-counting cannot catch silent degradation: dropping a tag
@@ -16548,6 +19011,14 @@ async function runScenario(def, baseRoutes) {
     console.error(
       `drive: [${def.name}] read-face expected \`!!js\` gates from the write face: ${expectedJsCount}`,
     )
+    // argv 5/6 — the EXPECTED explore seat: `readFaceExpectation`, i.e. roster.ts's
+    // shipped default mapped through the installed runtime's catalog — NOT `def.env`
+    // (that feeds the bytes under assertion) and NOT the face. The disposition of the
+    // refusal written above `PARADE_SEAT_PREFERENCES` is recorded per run in
+    // read-face/seat-expectation.json next to those bytes.
+    // NOTE the literal below holds EXACTLY 6 elements with no line comments inside
+    // it: gate 6 c23 counts that literal TEXTUALLY, so a comment line here is
+    // counted as a 7th argument and fails the arity check (it did, on this slice).
     const readFace = spawnSync(
       process.execPath,
       [
@@ -16555,8 +19026,8 @@ async function runScenario(def, baseRoutes) {
         resolveDshNodeModules(),
         readContentPath,
         readExpectPath,
-        readFaceRoutes.explore.provider,
-        readFaceRoutes.explore.model,
+        readFaceExpectation.provider,
+        readFaceExpectation.model,
         String(expectedJsCount),
       ],
       { encoding: 'utf8', timeout: 60_000 },
@@ -18490,16 +20961,61 @@ function ulwPlanBodyText() {
 async function main() {
   const routes = resolveModelRoutes()
   // §14.4.5: analysis QA runs BEFORE the expensive spawn.
-  const selfTestProblems = await runAnalysisSelfTest(routes)
+  const selfTestAll = await runAnalysisSelfTest(routes)
+  // TWO CLASSES, split on purpose.
+  //   BLOCKING — a broken GATE: a leg failed, a seat refused, a count lied. Nothing
+  //     expensive may exist until those are fixed, so they abort before the spawn.
+  //   DEFERRED — the shipped-default AUDIT FACT. It is true on this runtime whether or
+  //     not one scenario runs. Aborting on it before the spawn SILENTLY DESTROYED the
+  //     AC4 scenario evidence for the only generation where the defaults are broken —
+  //     measured on this file: `result:"FAIL", reason:"analysis self-test: … 4/11 …",
+  //     scenarios:[]`. A ruling that eats its own evidence is not a ruling that was
+  //     implemented, it was implemented until it became inconvenient.
+  // So the fact travels to the FINAL verdict: the run still exits non-zero, but not
+  // before the evidence exists. `--self-test` has no scenarios, so it still reds now.
+  const isAuditFact = (problem) => problem.includes('shipped-default-audit:')
+  const selfTestProblems = selfTestAll.filter((problem) => !isAuditFact(problem))
+  const deferredAuditFacts = selfTestAll.filter(isAuditFact)
+  if (deferredAuditFacts.length > 0) {
+    console.error(`drive: [shipped-defaults] DEFERRED TO FINAL VERDICT — ${deferredAuditFacts.length} fact(s) `
+      + `recorded and carried; this run WILL exit non-zero, but the scenarios still run, `
+      + `because the fact is true with or without them and the evidence is not the fact's enemy.`)
+  }
   if (selfTestProblems.length > 0) {
     console.log(JSON.stringify({ result: 'FAIL', reason: `analysis self-test: ${selfTestProblems.join('; ')}`, scenarios: [] }))
+    process.exit(1)
+  }
+
+  // Runtime seats must be RESOLVED before a single sandbox exists. The self-test
+  // dispatch above never reaches here, so a machine with no `dsh` on PATH still
+  // gets its hermetic legs and a `--self-test` exit 0 (finding ④); a REAL run
+  // without a catalog is a hard, both-channel FAIL naming the reason (AC6 shape).
+  if (!RUNTIME_SEAT_STATE.ok) {
+    const message = String(RUNTIME_SEAT_STATE.error)
+    console.error(`drive: [seats] FATAL — ${message}`)
+    console.log(JSON.stringify({
+      result: 'FAIL',
+      reason: `seat resolution against the installed runtime catalog: ${message}`,
+      scenarios: [],
+    }))
     process.exit(1)
   }
 
   const digestTarget = process.env.DSH_E2E_DIGEST_TARGET ?? join(homedir(), '.dsh')
   const beforeDigest = digestConfigDir(digestTarget)
   console.error(`drive: digest target ${digestTarget} (before: ${beforeDigest.slice(0, 16)}…)`)
-  console.error(`drive: routes sisyphus=${routes.sisyphus.provider}/${routes.sisyphus.model} explore=${routes.explore.provider}/${routes.explore.model}`)
+  // `routes` is roster.ts's SHIPPED default as the ambient env resolves it; the
+  // seats the sandboxes are actually pinned to are `RUNTIME_RESOLVED_SEATS`,
+  // which is what `announceRuntimeSeats()` printed above. Both are printed so a
+  // reader can see the gap instead of inferring it — on dsh 0.1.5-rc.1 the two
+  // lines agree, on dsh 0.2.0-rc.2 they do not, and that difference IS the
+  // finding T12 owns.
+  console.error(`drive: shipped-default routes sisyphus=${routes.sisyphus.provider}/${routes.sisyphus.model} explore=${routes.explore.provider}/${routes.explore.model}`)
+  console.error(
+    `drive: e2e-pinned routes sisyphus=${RUNTIME_RESOLVED_SEATS.sisyphus.provider}/${RUNTIME_RESOLVED_SEATS.sisyphus.model} `
+    + `explore=${RUNTIME_RESOLVED_SEATS.explore.provider}/${RUNTIME_RESOLVED_SEATS.explore.model} `
+    + `(substituted: ${Object.values(RUNTIME_RESOLVED_SEATS).filter((seat) => seat.substituted).map((seat) => seat.agent).join(', ') || 'none'})`,
+  )
 
   const scenarios = []
   const sandboxRoots = []
@@ -18528,7 +21044,20 @@ async function main() {
   const afterDigest = digestConfigDir(digestTarget)
   const realDshUntouched = beforeDigest === afterDigest
   const scenariosPass = scenarios.every((scenario) => scenario.result === 'PASS')
-  const result = scenariosPass && realDshUntouched ? 'PASS' : 'FAIL'
+  // The deferred audit fact lands here, so the exit code still carries it.
+  const result = scenariosPass && realDshUntouched && deferredAuditFacts.length === 0 ? 'PASS' : 'FAIL'
+  // THE INVARIANT, stated as code rather than as a term somebody can delete quietly:
+  // a carried fact and a PASS verdict cannot both be true. Mutant M51 removed the
+  // `deferredAuditFacts.length === 0` term above and the run stayed red on 0.2.x for
+  // an UNRELATED reason (four scenarios were failing anyway), so the deferral's own
+  // contribution to the exit code was unguarded. This makes the two disagree loudly
+  // instead of silently.
+  if (deferredAuditFacts.length > 0 && result === 'PASS') {
+    console.error(`drive: [verdict] INVARIANT BROKEN — ${deferredAuditFacts.length} audit fact(s) were `
+      + `carried to the final verdict and the verdict is still PASS. Refusing to print it.`)
+    console.log(JSON.stringify({ result: 'FAIL', reason: `deferred audit facts contradicted a PASS verdict: ${deferredAuditFacts.join('; ').slice(0, 400)}`, scenarios: [] }))
+    process.exit(1)
+  }
 
   if (process.env.DSH_E2E_KEEP_SANDBOX !== '1' && result === 'PASS') {
     for (const root of sandboxRoots) {
@@ -18544,6 +21073,8 @@ async function main() {
     JSON.stringify({
       result,
       scenarios,
+      // Every dropped boot.log mirror, by number, in the machine-readable verdict.
+      bootMirrorDrops: BOOT_MIRROR_DROPS.count,
       realDshUntouched,
       digestTarget,
     }),
@@ -18649,7 +21180,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T15 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}`)
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI lacks is the other generation, since ci.yml:102 pins DSH_VERSION 0.1.5-rc.1 where every shipped default resolves, so there the substitution and shipped-default legs run but can never observe a gap; the fix is CI's generation matrix, not a --self-test flag`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
