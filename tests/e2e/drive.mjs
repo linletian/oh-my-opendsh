@@ -3847,21 +3847,30 @@ function parentSessionLog(sandbox, sessionId) {
 }
 
 /**
- * Flip THIS scenario's sandbox copy of the materialized preset's `explore`
- * delegation row from `backgroundMode: continuable` to `one-shot`.
+ * Flip THIS scenario's sandbox plugin-copy TEMPLATE `explore` delegation row
+ * from `backgroundMode: continuable` to `one-shot`.
  *
  * WHY A FIXTURE EDIT IS REQUIRED (see fact 2 in the section comment): only the
  * one-shot background path registers a `ctx.jobs` entry, and every shipped
- * concerto row is `continuable`. The edit is SCENARIO-LOCAL — it rewrites the
- * materialized composition in the sandbox's own DSH_HOME (the same file
- * `appendMockRoleMarker` already edits, and the same file the session composes
- * from), never the repo template, so no other scenario and no shipped artifact
- * changes. Loud on drift: a template change that moves the row or its
- * `backgroundMode` line throws here instead of silently turning the scenario
- * vacuous.
+ * concerto row is `continuable`.
+ *
+ * WHY THE TEMPLATE AND NOT THE MATERIALIZED FILE (P4.5-T12a): the same edit
+ * made post-boot to `$DSH_HOME/.agent-presets/concerto/agent.cordis.yml` is
+ * INVISIBLE to the 0.2.x runtime — measured on dsh 0.2.0-rc.2 (the machine's
+ * installed npm package), the materialized row read `one-shot` while the child's
+ * durable `subagent/descriptor` still read `mode=continuable`, so no JobRegistry
+ * entry existed, no settlement was delivered, and all five notification checks went
+ * red together. The template is the face BOTH generations descend from — see
+ * `pluginTemplateCompositionPath()` — so the edit is made there, BEFORE boot.
+ *
+ * SCENARIO-LOCAL: the file is the sandbox's own plugin copy (the same copy
+ * `stampMockRoleMarkersIntoPluginCopy` stamps before boot), never the repo
+ * template, so no other scenario and no shipped artifact changes. Loud on drift:
+ * a template change that moves the row or its `backgroundMode` line throws here
+ * instead of silently turning the scenario vacuous.
  */
 function enableOneShotBackgroundExplore(sandbox) {
-  const compositionPath = materializedCompositionPath(sandbox)
+  const compositionPath = pluginTemplateCompositionPath(sandbox)
   const text = readFileSync(compositionPath, 'utf8')
   const lines = text.split('\n')
   const rowAnchor = `    - id: tool-subagent-${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}`
@@ -3870,7 +3879,7 @@ function enableOneShotBackgroundExplore(sandbox) {
     .filter((index) => index >= 0)
   if (anchors.length !== 1) {
     throw new Error(
-      `background-notification scenario: materialized preset must carry `
+      `background-notification scenario: the sandbox plugin-copy template must carry `
       + `\`${rowAnchor}\` exactly once; found ${anchors.length}`,
     )
   }
@@ -3887,18 +3896,20 @@ function enableOneShotBackgroundExplore(sandbox) {
   }
   if (modeIndex < 0) {
     throw new Error(
-      `background-notification scenario: the materialized `
+      `background-notification scenario: the template `
       + `'${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}' row carries no `
       + '`        backgroundMode: continuable` line to flip to one-shot',
     )
   }
   lines[modeIndex] = '        backgroundMode: one-shot'
   writeFileSync(compositionPath, lines.join('\n'))
-  // WP2 MAJOR-1: an `augmentMaterialized` fixture RETURNS what it changed. On a
-  // 0.1.5 file-supplied `agentPresets/read` this row reads `one-shot` while
-  // src/roster.ts still says `continuable`; on 0.2.x register() renders the
-  // template and the edit never reaches the face. The declaration is how the
-  // assertion knows which world it is in — see `declaredSandboxEdits`.
+  // WP2 MAJOR-1: an `augmentMaterialized` fixture RETURNS what it changed. The
+  // key name is the historical one c24 pins (scripts/verify-concerto-static.mjs
+  // :2165 pins the call expression, :2243 the `augmentMaterialized:` scenario
+  // key); the FACE it names is now the pre-boot template, which is the mounted
+  // face on 0.2.x and the source of the mounted file on 0.1.5. The declaration is
+  // how the read-face assertion knows which value is legitimately its own — see
+  // `declaredSandboxEdits`.
   return [{ row: BACKGROUND_NOTIFICATION_EXPECTED_LABEL, key: 'backgroundMode', after: 'one-shot' }]
 }
 
@@ -4072,13 +4083,103 @@ const JSON_RECOVERY_PROMPT =
 // The raw argument value the mock serializes. It is a JSON STRING, i.e. valid
 // JSON with a non-object root — the shape that reaches the tool registry and
 // fails its schema walk (see the section header's fact 2).
+//
+// GENERATION THIS FIXTURE EMULATES: dsh 0.1.5-rc.1, and ONLY that generation.
+// Measured there (sandbox `/tmp/omo-dsh-e2e-J0hwaW`, the 0.1.5 prefix at
+// /tmp/p45t7-015/prefix): `tool/call seq=16 arguments:"\"not-an-object\""` and
+// `tool/result seq=17 "Error: invalid arguments: \"arguments\" must be an objec…"`
+// — the raw text really does reach the registry.
+//
+// ON dsh 0.2.0-rc.2 THIS PREMISE IS DEAD ON THE `deepseek-official` ROUTE ONLY
+// (P4.5-T12a), and no fixture value revives it there:
+//   • dsh-llm-deepseek/lib/index.js:1983-1991 (the machine's installed npm
+//     package) — at `message_stop`, every `tool-call` block's `arguments` must
+//     `JSON.parse` to a plain object unless the stop reason is `max_tokens`;
+//     otherwise the turn ends with `LlmError(…, "MALFORMED_RESPONSE")` and the
+//     tool is never called. Measured (sandbox `/tmp/omo-dsh-e2e-qzhiFi`): ONE
+//     mock request, no `tool/call`, no `tool/result`,
+//     `turn/end reason:{kind:"error",error:{code:"MALFORMED_RESPONSE",
+//     message:"DeepSeek Messages expected a JSON object"}}`.
+//   • The other shipped adapter does NOT interpose on the live path. An earlier
+//     draft of this comment claimed it did, citing `parseArguments` "substituting
+//     {}" at dsh-llm-pi-ai/lib/index.js:28-34 — but that function lives in
+//     `@module dsh-llm-pi-ai/replay` (:18-26, "Durable pi-ai replay metadata and
+//     assistant-history reconstruction") and is reached only from :164 and :208,
+//     both reconstructing STORED history. The LIVE stream yields
+//     `arguments: JSON.stringify(event.toolCall.arguments)` (:1550-1555), the raw
+//     provider text. `json-error-recovery-pi-ai-lane` below is the assertion, and
+//     it measured the raw text arriving on 0.2.x (sandbox
+//     `/tmp/omo-dsh-e2e-2L4CQ0`: `tool/call arguments:"\"not-an-object\""` plus
+//     the reminder on the non-blacklisted `write` result).
+// So the listener is NOT retired on 0.2.x — it is unreachable on ONE route, and
+// the scenario pair now pins both halves instead of one of them going unmentioned.
+// The mock cannot reach past the `deepseek-official` guard either: its wire body
+// is `JSON.stringify(call.arguments ?? {})` (mock-llm-server.mjs), and stringify
+// normalises every non-lossless value away (`Infinity`→`null`, `-0`→`0`; the
+// registry's own `walkJsonValue` rejects exactly those two,
+// dsh-util-values/lib/index.js:103-104), so the only tool-error texts a fixture can
+// still cause on THAT route are schema violations, none of which the table matches.
 const JSON_RECOVERY_MALFORMED_ARGUMENTS = 'not-an-object'
-// The REAL error both calls produce, transcribed from the pinned install
-// (dsh-tools `ToolArgsError` :812-818 + `toolErrorResult` :3490-3502 through the
-// `"arguments" must be an object` violation at :449/:348-350). The analysis
-// additionally feeds it to the shipped table's `matchesJsonErrorTable`, so a
-// drift in either direction is loud.
+// The REAL error both calls produce on the generation above, transcribed from the
+// pinned install (dsh-tools `ToolArgsError` :812-818 + `toolErrorResult`
+// :3490-3502 through the `"arguments" must be an object` violation at :449/:348-350).
+// The analysis additionally feeds it to the shipped table's
+// `matchesJsonErrorTable`, so a drift in either direction is loud.
 const JSON_RECOVERY_EXPECTED_ERROR = 'Error: invalid arguments: "arguments" must be an object'
+// THE OTHER BRANCH'S NAMED TEXTS (P4.5-T12a), transcribed from the artifact that
+// produces them — NOT inferred: dsh 0.2.0-rc.2's installed
+// dsh-llm-deepseek/lib/index.js:1983-1991 walks every `tool-call` block at
+// `message_stop` (`JSON.parse(content.arguments)` then `object(parsed)`, skipped
+// only when `reason.kind === "max-tokens"`) and returns
+// `malformed("tool input is invalid JSON")`; the Harness records that on the
+// session log as `turn/end reason:{kind:"error",error:{code,message}}`. Measured
+// verbatim in sandbox /tmp/omo-dsh-e2e-qzhiFi (0.2.0-rc.2, this machine):
+//   reason.error.code    = "MALFORMED_RESPONSE"
+//   reason.error.message = "DeepSeek Messages expected a JSON object"
+// The same file on dsh 0.1.5-rc.1 (/tmp/p45t7-015/prefix) mentions
+// MALFORMED_RESPONSE twice and BOTH are SSE framing (:1253), which is why the
+// 0.1.5 run takes the `tool-registry` branch above and this one does not.
+const JSON_RECOVERY_EXPECTED_ADAPTER_CODE = 'MALFORMED_RESPONSE'
+const JSON_RECOVERY_EXPECTED_ADAPTER_MESSAGE = 'DeepSeek Messages expected a JSON object'
+
+// ── LANE B, the pi-ai lane (P4.5-T12a) ───────────────────────────────────────
+// THE SECOND HALF OF THE MIGRATED PREMISE — AND THE HALF THAT OVERTURNED AN
+// EARLIER INFERENCE OF MINE. The first diagnosis of the `json-error-recovery`
+// residual claimed that BOTH shipped 0.2.x adapters stood in front of the
+// registry, citing `dsh-llm-pi-ai`'s `parseArguments` "substituting {}". That was
+// WRONG, and the scenario is the thing that caught it: measured on dsh 0.2.0-rc.2
+// (sandbox /tmp/omo-dsh-e2e-2L4CQ0) this lane's log carries
+//   tool/call  arguments:"\"not-an-object\""
+//   tool/result "Error: invalid arguments: \"arguments\" must be an object"
+//   …and the `[JSON PARSE ERROR - IMMEDIATE ACTION REQUIRED]` reminder appended to
+//   the NON-blacklisted `write` result only.
+// The reason is in the artifact: `parseArguments` (installed
+// dsh-llm-pi-ai/lib/index.js:28-34) sits in `@module dsh-llm-pi-ai/replay`
+// (:18-26, "Durable pi-ai replay metadata and assistant-history reconstruction") and
+// has exactly TWO call sites, :164 and :208, both reconstructing STORED assistant
+// history. The LIVE path is `dsh-llm-pi-ai/stream`, whose `toolcall_end` yields
+// `arguments: JSON.stringify(event.toolCall.arguments)` (:1550-1555) — the raw
+// provider text, unvalidated, straight to the registry.
+//
+// ⇒ THE CORRECTED FINDING: the hook's trigger is NOT retired on 0.2.x. It is
+// retired on ONE ROUTE — `deepseek-official` / dsh-llm-deepseek, which since 0.2.x
+// validates every `tool_use` `arguments` at `message_stop` (:1983-1991, installed
+// npm package) and dead-turns with a named MALFORMED_RESPONSE. Lane A pins that;
+// this lane pins the other side: on the pi-ai route the same shipped 0.2.x runtime
+// still delivers the trigger and the hook still fires, byte-for-byte as on 0.1.5.
+// Both lanes therefore assert the SAME tool-registry shape, and this scenario needs
+// no premise branch.
+const JSON_RECOVERY_PI_AI_SUMMARY =
+  'MOCK-JSON-RECOVERY-PIAI-SUMMARY-2c8e5a: the pi-ai lane delivered the raw malformed arguments and the hook fired on write only'
+// The pi-ai ROUTE seat preference for lane B — the same route `ATLAS_SEAT_PREFERENCE`
+// rides, spelled once here. Put through `scenarioSeat` (and therefore the runtime
+// catalog) at scenario-boot time, never used raw.
+const PI_AI_LANE_SEAT_PREFERENCE = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+// The RAW text the registry is handed for a malformed call, DERIVED from the one
+// source above through the same `JSON.stringify` the mock performs on
+// `delta.tool_calls[].function.arguments` — so lane B's assertion cannot drift from
+// what lane A's fixture actually puts on the wire.
+const JSON_RECOVERY_RAW_ARGUMENTS = JSON.stringify(JSON_RECOVERY_MALFORMED_ARGUMENTS)
 const JSON_RECOVERY_SUMMARY =
   'MOCK-JSON-RECOVERY-SUMMARY-7d1b64: both malformed calls failed and only the non-blacklisted one got the reminder'
 
@@ -5418,6 +5519,37 @@ async function commandExecute(boot, { sessionId, line }) {
  */
 function pluginCopyDir(sandbox) {
   return join(sandbox.root, 'plugins', basename(PLUGIN_DIR))
+}
+
+/**
+ * The sandbox plugin copy's concerto TEMPLATE — the file the running plugin
+ * reads as `CONCERTO_TEMPLATE_DIR` (src/concerto-preset.ts:122, read at :381 by
+ * `renderConcertoComposition`), because `dsh plugin add` installs this copy as a
+ * `link:` symlink and Node realpaths the module to it.
+ *
+ * THIS is the pre-boot face a delegation row can still be changed on, on BOTH
+ * generations:
+ *   * dsh 0.2.x mounts `register()`'s rendered composition, and `register()`
+ *     renders THIS file at apply() time (src/concerto-preset.ts:845-880 —
+ *     `renderConcertoComposition(templateDir, …)` → `parseCompositionInLoaderDialect`
+ *     → `svc.register({ plugins: rows })`); nothing reads
+ *     `$DSH_HOME/.agent-presets/…` afterwards (the shipped
+ *     dsh-agent-preset-registry has no `.agent-presets` reader).
+ *   * dsh 0.1.5 answers `agentPresets/read` from FILE DISCOVERY of that
+ *     materialized file, and the plugin WRITES that file at boot FROM this
+ *     template (`syncConcertoPreset`, :420). An edit made here before boot is
+ *     therefore in the mounted face on that generation too.
+ *
+ * `materializedCompositionPath()` is the post-boot OUTPUT of this file on both
+ * generations and the mounted face on 0.1.5 only — editing it after readiness is
+ * a stamp nothing mounts on 0.2.x. Measured on dsh 0.2.0-rc.2 (the machine's
+ * installed npm package): the materialized explore row read `backgroundMode:
+ * one-shot` while the child's `subagent/descriptor` read `mode=continuable`, and
+ * the materialized prometheus row had no `toolFilter` while the child's
+ * `request/header` advertised no `write`.
+ */
+function pluginTemplateCompositionPath(sandbox) {
+  return join(pluginCopyDir(sandbox), CONCERTO_PRESET_ID, 'agent.cordis.yml')
 }
 
 function installPlugin(sandbox, env) {
@@ -7991,8 +8123,69 @@ export function analyzeJsonErrorRecoveryReminder(
     && writeResult.text.endsWith(`\n${JSON_ERROR_REMINDER}`)
     ? writeResult.text.slice(0, -(JSON_ERROR_REMINDER.length + 1))
     : writeResult?.text
-  const checks = {
-    ...dModeGivens({ log, providersJson, bootLog }, routes),
+
+  // ── THE PREMISE BRANCH (P4.5-T12a) ──────────────────────────────────────────
+  // The discriminator is an OBSERVABLE (did the registry answer the two calls at
+  // all?), never a version string, and the branch it selects is recorded in
+  // `bonus.premiseBranch` so a kept sandbox can be audited against it.
+  //
+  //   • `tool-registry` — dsh 0.1.5-rc.1. Its dsh-llm-deepseek has NO tool-call
+  //     arguments validation at `message_stop`: `MALFORMED_RESPONSE` occurs 2× in
+  //     that installed artifact (dsh-llm-deepseek/lib/index.js under
+  //     /tmp/p45t7-015/prefix), both about SSE payload FRAMING (:1253
+  //     `malformed SSE payload: …`). The malformed `arguments` text therefore
+  //     reaches the registry, which answers, and the listener fires.
+  //   • `adapter-dead-turn` — dsh 0.2.0-rc.2. dsh-llm-deepseek/lib/index.js
+  //     :1983-1991 (the machine's installed npm package) now walks every
+  //     `tool-call` block at `message_stop` — unless `reason.kind ===
+  //     "max-tokens"` — and does `JSON.parse(content.arguments)` then
+  //     `object(parsed)`, returning `malformed("tool input is invalid JSON")` on
+  //     failure. The turn ends in a NAMED error and the tool is NEVER called, so
+  //     the listener has nothing to fire on. Measured in
+  //     /tmp/omo-dsh-e2e-qzhiFi: `turn/end seq=18 reason.kind:"error"
+  //     reason.error.code:"MALFORMED_RESPONSE" reason.error.message:"DeepSeek
+  //     Messages expected a JSON object"`, with no `tool/call` in the log.
+  //
+  // Neither branch is a weakened form of the other: each names the exact text the
+  // runtime on that side produces. What BOTH assert, as an explicit negative that
+  // GUARDS THE RETIREMENT, is that the reminder did not appear when the trigger
+  // did not — and if a future dsh restores the recovery path on this route, the
+  // branch flips, the `tool-registry` checks start running, and a broken hook goes
+  // red again instead of being quietly forgotten.
+  //
+  // THERE IS NO "UNKNOWN THIRD SHAPE" CHECK HERE, AND THERE CANNOT BE ONE
+  // (P4.5-T12a review A+B, shared MAJOR-1, upheld). An earlier revision of this
+  // function carried `premiseBranchIsOneOfTheTwoNamedGenerations`. It was DELETED
+  // because it is VACUOUS by construction: `premiseBranch` has exactly one binding
+  // site, the ternary two lines below, whose two arms ARE those two string literals
+  // — so the predicate is a tautology and no runtime can make it false, and the
+  // comment that claimed a third shape "fails HERE" was false as written. This is
+  // the SECOND time in this slice a claim about WHERE a failure lands needed
+  // correction against the artifact (the first was pi-ai's `parseArguments`, which
+  // turned out to belong to the `replay` module and not the live stream); the
+  // pattern — reasoning about behaviour from a symbol's NAME instead of from its
+  // binding site and call graph — is the finding, not the two misses.
+  //
+  // A third shape is not unprotected; it is caught by the two checks that actually
+  // read the runtime's output:
+  //   • half-executed turn (exactly ONE `tool/result`): `triggerReachedTheTool` is
+  //     an OR, so the `tool-registry` set runs, and
+  //     `malformedArgumentsFailedBothCalls` requires BOTH results present ⇒ FALSE.
+  //   • silent stop (no result AND no named error): the `adapter-dead-turn` set
+  //     runs, and `turnEndedInNamedAdapterError` requires `errorTurnEnd !==
+  //     undefined` AND the verbatim code ⇒ FALSE.
+  // Both names are asserted, so both rejections are loud. The branch label stays in
+  // `bonus.premiseBranch` as an OBSERVATION for the audit, not as a check.
+  const errorTurnEnd = events.find(
+    (event) => event.type === 'turn/end'
+      && (event.data?.reason?.kind ?? event.data?.reason) === 'error',
+  )
+  const adapterErrorCode = errorTurnEnd?.data?.reason?.error?.code ?? null
+  const adapterErrorMessage = errorTurnEnd?.data?.reason?.error?.message ?? null
+  const triggerReachedTheTool = writeResult !== undefined || readResult !== undefined
+  const premiseBranch = triggerReachedTheTool ? 'tool-registry' : 'adapter-dead-turn'
+
+  const toolRegistryChecks = {
     // Both REAL calls failed on the malformed-arguments path (non-vacuous: the
     // model's arguments really were not an object).
     malformedArgumentsFailedBothCalls:
@@ -8027,12 +8220,171 @@ export function analyzeJsonErrorRecoveryReminder(
     mockSawTwoSteps: sisyphusRequests.length === 2,
     turnCompleted: turnCompleted(events),
   }
+
+  const adapterDeadTurnChecks = {
+    // The turn did not end silently: it ended in an ERROR reason the runtime
+    // NAMED, and the name is the adapter's own code.
+    turnEndedInNamedAdapterError:
+      errorTurnEnd !== undefined
+      && adapterErrorCode === JSON_RECOVERY_EXPECTED_ADAPTER_CODE,
+    // The message is the adapter's verbatim text, not a paraphrase.
+    adapterErrorTextIsVerbatimFromInstalledArtifact:
+      adapterErrorMessage === JSON_RECOVERY_EXPECTED_ADAPTER_MESSAGE,
+    // The tool was NEVER called — the reason the listener is silent is that its
+    // trigger never happened, not that the listener is broken.
+    malformedToolWasNeverCalled: writeCall === undefined && readCall === undefined,
+    // Exactly one mock request: the adapter refused the first answer and the loop
+    // never came back for a second.
+    mockSawExactlyOneRefusedAnswer: sisyphusRequests.length === 1,
+    // The turn never reached `completed` — the dead turn is the whole story, and a
+    // log that showed BOTH a named adapter error and a completed turn would mean
+    // something retried behind the scenario's back.
+    turnNeverCompletedOnTheDeadTurn: !turnCompleted(events),
+    // THE GUARD ON THE RETIREMENT: with no trigger there is no reminder anywhere.
+    // If a future dsh restores the recovery path on this route, `premiseBranch`
+    // flips to `tool-registry` and this check is replaced by the six above — so
+    // this check only ever fails while the surface is genuinely retired.
+    reminderAbsentBecauseTriggerSurfaceRetired:
+      results.every((part) => !part.text.includes(JSON_ERROR_REMINDER_MARKER))
+      && !JSON.stringify(events).includes(JSON_ERROR_REMINDER_MARKER),
+  }
+
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    ...(triggerReachedTheTool ? toolRegistryChecks : adapterDeadTurnChecks),
+  }
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
   return {
     result: failed.length === 0 ? 'PASS' : 'FAIL',
     failed,
     checks,
     bonus: {
+      premiseBranch,
+      adapterErrorCode,
+      adapterErrorMessage,
+      expectedErrorText: JSON_RECOVERY_EXPECTED_ERROR,
+      expectedAdapterCode: JSON_RECOVERY_EXPECTED_ADAPTER_CODE,
+      expectedAdapterMessage: JSON_RECOVERY_EXPECTED_ADAPTER_MESSAGE,
+      reminderText: JSON_ERROR_REMINDER,
+      toolResults: results.map((part) => ({
+        callId: part.callId,
+        isError: part.isError,
+        textLength: part.text.length,
+      })),
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
+/**
+ * The pi-ai lane's script (P4.5-T12a lane B): the SAME two malformed calls as
+ * lane A, so the only thing that differs between the two scenarios is WHICH
+ * adapter answered them.
+ */
+function jsonErrorRecoveryPiAiScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          { name: 'write', arguments: JSON_RECOVERY_MALFORMED_ARGUMENTS },
+          { name: 'read', arguments: JSON_RECOVERY_MALFORMED_ARGUMENTS },
+        ],
+      },
+      { type: 'text', text: JSON_RECOVERY_PI_AI_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * The pi-ai lane's assertions (P4.5-T12a lane B). No premise branch: the live
+ * pi-ai path passes the provider's raw `arguments` text through to the registry in
+ * BOTH installed generations (the raw-text yield is in
+ * dsh-llm-pi-ai/lib/index.js's `stream` module at :1550-1555 of the 0.2.x
+ * installed artifact; the `{}`-substituting `parseArguments` at :28-34 belongs to
+ * the `replay` module and is not on this path). So the same facts must hold on
+ * both generations, and this scenario goes red on either if a future dsh starts
+ * validating here — at which point lane A's `adapter-dead-turn` shape moves to
+ * this route too, and that is the fact a reviewer wants named, not hidden.
+ */
+export function analyzeJsonErrorRecoveryOnPiAiLane(
+  { log, requests, providersJson, bootLog, modeCounts },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const writeCall = findToolCall(events, 'write')
+  const readCall = findToolCall(events, 'read')
+  const writeResult = toolResultForCall(results, writeCall)
+  const readResult = toolResultForCall(results, readCall)
+  const observedErrorTexts = [writeResult?.text, readResult?.text].filter(
+    (text) => typeof text === 'string',
+  )
+  // The raw text the registry was handed, read straight off the durable
+  // `tool/call` event's `arguments` field — the field the loop carries verbatim,
+  // NOT `toolCallArguments()`, which would `JSON.parse` it and so could not tell
+  // a malformation from a clean object.
+  const rawArgumentsText = (call) => {
+    const raw = call?.data?.arguments
+    return typeof raw === 'string' ? raw : JSON.stringify(raw ?? null)
+  }
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // THE LANE IS REAL: every request the mock served came in on the
+    // OpenAI-completions path (what dsh-llm-pi-ai posts to), and NOT ONE on the
+    // Messages path (what dsh-llm-deepseek posts to). Counted by the mock from the
+    // request PATH, not inferred from the seat.
+    mockServedOnlyTheOpenAiCompletionsLane:
+      (modeCounts?.openai ?? 0) >= 2 && (modeCounts?.messages ?? 0) === 0,
+    // The adapter handed the registry the model's RAW text, malformation and all —
+    // the observable difference from `deepseek-official`, which never gets here.
+    piAiHandedTheRegistryTheRawMalformedArguments:
+      rawArgumentsText(writeCall) === JSON_RECOVERY_RAW_ARGUMENTS
+      && rawArgumentsText(readCall) === JSON_RECOVERY_RAW_ARGUMENTS,
+    // Both REAL calls failed on the malformed-arguments path, on the same verbatim
+    // registry text lane A asserts.
+    malformedArgumentsFailedBothCalls:
+      writeResult !== undefined
+      && readResult !== undefined
+      && writeResult.isError === true
+      && readResult.isError === true
+      && observedErrorTexts.every((text) => text.startsWith(JSON_RECOVERY_EXPECTED_ERROR)),
+    // The observed text is the very text the shipped table matches.
+    observedErrorTextMatchesLiveTable:
+      observedErrorTexts.length === 2
+      && observedErrorTexts.every((text) => matchesJsonErrorTable(text)),
+    // (a) TRIGGER: `write` is not blacklisted ⇒ reminder appended verbatim. THIS
+    // is the check that proves the hook is NOT retired on 0.2.x — only the
+    // `deepseek-official` route retired its trigger.
+    nonExcludedToolGotReminder:
+      writeResult !== undefined
+      && writeResult.text.endsWith(JSON_ERROR_REMINDER),
+    // (b) 对照: `read` IS blacklisted ⇒ the untouched error text, no reminder.
+    excludedToolResultUnchanged:
+      readResult !== undefined
+      && readResult.text === JSON_RECOVERY_EXPECTED_ERROR
+      && !readResult.text.includes(JSON_ERROR_REMINDER_MARKER),
+    // …and the two results differ ONLY by the reminder.
+    controlResultIsByteIdenticalToTriggerOriginal:
+      readResult !== undefined
+      && typeof writeResult?.text === 'string'
+      && writeResult.text.endsWith(`\n${JSON_ERROR_REMINDER}`)
+      && readResult.text === writeResult.text.slice(0, -(JSON_ERROR_REMINDER.length + 1)),
+    reminderInjectedExactlyOnce:
+      results.filter((part) => part.text.includes(JSON_ERROR_REMINDER_MARKER)).length === 1,
+    mockSawTwoSteps: sisyphusRequests.length === 2,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      lane: 'pi-ai / OpenAI-completions (raw arguments passed through)',
+      modeCounts: modeCounts ?? null,
+      rawArguments: [rawArgumentsText(writeCall), rawArgumentsText(readCall)],
       expectedErrorText: JSON_RECOVERY_EXPECTED_ERROR,
       reminderText: JSON_ERROR_REMINDER,
       toolResults: results.map((part) => ({
@@ -13964,19 +14316,37 @@ const PROMETHEUS_CONDUCTOR_CONTENT = 'MOCK-CONDUCTOR-NOTES-BODY-6d1c48\n'
 const PROMETHEUS_ROW_ID = 'prometheus'
 
 /**
- * Lift THIS scenario's sandbox copy of the materialized preset's prometheus
- * row's `toolFilter`. WHY A FIXTURE EDIT IS REQUIRED: the row is
- * `class: 'read-only'`, whose rendered `deny` list hides `write`/`edit` from
- * the child, so the listener under test would never see a write call. The edit
- * is SCENARIO-LOCAL (the sandbox's own DSH_HOME, the same file
- * `appendMockRoleMarker` edits) and touches NOTHING else: the persona, the
- * route and `maxDepth` stay as shipped, which is what keeps the identity gate
- * meaningful. Loud on drift: a template change that moves the row or its
- * `toolFilter`/`deny` lines throws here instead of silently turning the
+ * Lift THIS scenario's prometheus `toolFilter` from the SANDBOX plugin-copy
+ * TEMPLATE, BEFORE boot. WHY A FIXTURE EDIT IS REQUIRED: the row is
+ * `class: 'read-only'`, whose rendered `deny` list hides `write`/`edit` from the
+ * child, so the listener under test would never see a write call. The edit is
+ * SCENARIO-LOCAL (the sandbox's own plugin copy, the same file
+ * `stampMockRoleMarkersIntoPluginCopy` stamps) and touches NOTHING else: the
+ * persona, the route and `maxDepth` stay as shipped, which is what keeps the
+ * identity gate meaningful. Loud on drift: a template change that moves the row or
+ * its `toolFilter`/`deny` lines throws here instead of silently turning the
  * scenario vacuous.
+ *
+ * WHY THE PAIR IS COMMENTED OUT RATHER THAN DELETED (P4.5-T12a): the shipped
+ * renderer replaces this row's deny sentinel with
+ * `replaceSentinelOnce` (src/concerto-preset.ts:194-203), which THROWS when the
+ * sentinel occurs zero times — so a fixture that spliced the two lines away would
+ * fail the boot with `concerto template must carry the sentinel
+ * __OMO_PROMETHEUS_DENY__ exactly once; found 0`. Keeping the sentinel on a
+ * commented line satisfies that guard, leaves the row with no `toolFilter` key
+ * after the parse, and keeps the post-render residue check clean. The rendered
+ * comment therefore reads `# deny: ["write", "edit", …]` — the list the shipped
+ * roster computed, visibly not applied.
+ *
+ * WHY THE TEMPLATE AND NOT THE MATERIALIZED FILE: editing the materialized file
+ * after readiness reached no face on dsh 0.2.0-rc.2 (the machine's installed npm
+ * package) — measured, its prometheus row had no `toolFilter` while the child's
+ * `request/header` advertised no `write`/`edit` and both allowed `.omo` writes
+ * came back `Error: unknown tool "write"`. See `pluginTemplateCompositionPath()`
+ * for the citations on both generations.
  */
 function enablePrometheusWriteTools(sandbox) {
-  const compositionPath = materializedCompositionPath(sandbox)
+  const compositionPath = pluginTemplateCompositionPath(sandbox)
   const lines = readFileSync(compositionPath, 'utf8').split('\n')
   const rowAnchor = `    - id: tool-subagent-${PROMETHEUS_ROW_ID}`
   const anchors = lines
@@ -13984,7 +14354,7 @@ function enablePrometheusWriteTools(sandbox) {
     .filter((index) => index >= 0)
   if (anchors.length !== 1) {
     throw new Error(
-      `prometheus-md-only scenario: materialized preset must carry `
+      `prometheus-md-only scenario: the sandbox plugin-copy template must carry `
       + `\`${rowAnchor}\` exactly once; found ${anchors.length}`,
     )
   }
@@ -14001,28 +14371,32 @@ function enablePrometheusWriteTools(sandbox) {
   }
   if (filterIndex < 0 || !lines[filterIndex + 1]?.startsWith('          deny: ')) {
     throw new Error(
-      'prometheus-md-only scenario: the materialized prometheus row carries no '
+      'prometheus-md-only scenario: the template prometheus row carries no '
       + '`        toolFilter:` + `          deny: […]` pair to lift',
     )
   }
-  lines.splice(filterIndex, 2)
+  lines.splice(filterIndex, 2,
+    '        # toolFilter lifted by this scenario before boot (e2e sandbox copy only)',
+    '        # deny: __OMO_PROMETHEUS_DENY__')
   writeFileSync(compositionPath, lines.join('\n'))
   // WP2 MAJOR-1 — THE declaration, not a comment. This is the edit that turned
   // gate 3 red on dsh 0.1.5: that runtime answers `agentPresets/read` from FILE
-  // DISCOVERY, so the face the assertion reads is THIS file, prometheus row
-  // without `toolFilter`, while the expectation kept coming from the untouched
-  // src/roster.ts. Returning `{ row, key, after }` is how the fixture tells the
-  // assertion the fact it cannot infer; `after: null` means the key is gone.
+  // DISCOVERY of the materialized file the plugin wrote at boot FROM this
+  // template, so the face the assertion reads is prometheus without `toolFilter`
+  // while the expectation kept coming from the untouched src/roster.ts. Returning
+  // `{ row, key, after }` is how the fixture tells the assertion the fact it
+  // cannot infer; `after: null` means the key is gone.
   //
   // LEAF KEY, not the container (review B attack 2 / review A A1j): naming
   // `toolFilter` would exempt BOTH `toolFilter.deny` and `toolFilter.allow` on
   // one `after`, so a single sloppy value would silently cover half of what the
-  // declaration claims. The splice above removes `toolFilter:` plus its `deny:`
-  // line and nothing else, and src/roster.ts gives prometheus no allow list, so
-  // the only compared cell this edit can move on any face is `toolFilter.deny`.
-  // If the roster ever hands prometheus an allow list, this splice leaves an
-  // orphan `allow:` line and c24's declared-vs-written reconciliation goes red —
-  // which is the right place to discover that.
+  // declaration claims. The splice above takes away `toolFilter:` plus its
+  // `deny:` line and puts nothing in their place but two comment lines (the
+  // sentinel lives on one of them, see the header), and src/roster.ts gives
+  // prometheus no allow list, so the only compared cell this edit can move on any
+  // face is `toolFilter.deny`. If the roster ever hands prometheus an allow list,
+  // this splice leaves an orphan `allow:` line and c24's declared-vs-written
+  // reconciliation goes red — which is the right place to discover that.
   return [{ row: PROMETHEUS_ROW_ID, key: 'toolFilter.deny', after: null }]
 }
 
@@ -17215,6 +17589,41 @@ function stopContinuationScript() {
 }
 
 /**
+ * Wait (bounded) for the FIRST durable goal round of THIS session — a
+ * `user/message` whose `source.kind === 'goal'`, the carrier
+ * `dsh-goal-round-driver` writes through `agent.followup()`.
+ *
+ * WHY THE SCENARIO WAITS FOR IT INSTEAD OF RACING IT (P4.5-T12a): the third
+ * `/stop-continuation` used to be issued the instant `awaitTurnEnd` saw the
+ * prompt-4 `turn/end` land in the JSONL. The round that prompt 4's armed goal
+ * produces is queued AFTER that — on dsh 0.2.0-rc.2 (the machine's installed npm
+ * package) the driver reaches quiescence via `agent/status` and then awaits a
+ * durability checkpoint (`ctx.sessions.flush`) before `agent.followup()`
+ * (dsh-goal-round-driver/lib/index.js:100-155) — so the pause landed first, no
+ * round was ever opened, and `noGoalRoundOpenedAfterThePause` failed on its
+ * second conjunct (`goalRoundMessages.length > 0`) with `goalRoundCount: 0`
+ * measured. dsh 0.1.5-rc.1 won the same race without being asked (measured: 4
+ * rounds, `source.kind:"goal"`). The premise the check needs — at least one round
+ * BEFORE the pause — is now earned by waiting for the durable event, so the
+ * assertion itself is untouched and the timeout path still reports an honest FAIL.
+ *
+ * Returns the count it observed (0 on timeout — never throws, never fatal).
+ */
+async function awaitFirstGoalRound(sandbox, sessionId, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const log = logs.find((candidate) => String(candidate.header.id) === String(sessionId))
+    const rounds = (log?.events ?? []).filter(
+      (event) => event.type === 'user/message'
+        && event.data?.source?.kind === GOAL_ROUND_SOURCE_KIND,
+    ).length
+    if (rounds > 0 || Date.now() >= deadline) return rounds
+    await sleep(250)
+  }
+}
+
+/**
  * The scenario's settle hook: after the third stop paused the goal, the goal
  * driver must go quiet. This waits a bounded window for that silence and
  * records whether a round still opened — the observation is REPORTED here and
@@ -18319,6 +18728,36 @@ const SCENARIOS = [
     analyze: analyzeJsonErrorRecoveryReminder,
   },
   {
+    // P4.5-T12a LANE B: the SAME malformed tool-call pair, handed to the OTHER
+    // shipped adapter. Lane A above rides `deepseek-official` (dsh-llm-deepseek),
+    // which since 0.2.x validates every `tool_use` `arguments` at `message_stop`
+    // (installed dsh-llm-deepseek/lib/index.js:1983-1991) and dead-turns with a
+    // NAMED MALFORMED_RESPONSE without ever calling the tool; this lane re-seats
+    // sisyphus onto the pi-ai route (`deepseek`, dsh-llm-pi-ai), whose LIVE stream
+    // yields the provider's RAW `arguments` text (:1550-1555 of that installed
+    // artifact) and so still delivers the trigger.
+    //
+    // Together the two scenarios are the migrated premise, and they split it the
+    // way the runtime actually splits it: the json-error listener is NOT retired on
+    // 0.2.x — it is unreachable on ONE route and still fires on the other. If a
+    // future dsh moves the validation onto the pi-ai route too, THIS lane goes red
+    // naming the check, and the reviewer learns the hook has gone fully dark
+    // instead of finding out from a passing gate.
+    //
+    // The seat goes through `scenarioSeat`, so a runtime that stops serving the
+    // pi-ai id fails at the catalog gate naming the seat, not silently here.
+    name: 'json-error-recovery-pi-ai-lane',
+    prompt: JSON_RECOVERY_PROMPT,
+    roles: ['sisyphus'],
+    env: () => {
+      const seat = scenarioSeat('sisyphus', PI_AI_LANE_SEAT_PREFERENCE)
+      const names = MODEL_ROUTE_ENV_VARS.sisyphus
+      return { [names.provider]: seat.provider, [names.model]: seat.model }
+    },
+    script: jsonErrorRecoveryPiAiScript,
+    analyze: analyzeJsonErrorRecoveryOnPiAiLane,
+  },
+  {
     // P3-T14: H-16's listener on ONE real batch of two greps — the big one over
     // the fixed/adaptive budget (truncated, head kept, tail noted) and the small
     // one as the untouched control.
@@ -18711,6 +19150,10 @@ const SCENARIOS = [
       // The goal face LAST: an active goal opens rounds of its own, and keeping
       // that nondeterminism after every other claim keeps it from disturbing them.
       { kind: 'prompt', text: STOP_CONTINUATION_PROMPT_4 },
+      // P4.5-T12a: the round the armed goal produces is queued AFTER the
+      // prompt-4 `turn/end` is durable, so the pause has to wait for it —
+      // `awaitFirstGoalRound` carries the measurement and the citations.
+      { kind: 'awaitGoalRound' },
       { kind: 'command', line: STOP_CONTINUATION_COMMAND_LINE },
     ],
     script: stopContinuationScript,
@@ -18835,37 +19278,32 @@ async function runScenario(def, baseRoutes) {
       + `${copyStamp.map((entry) => `${entry.role}→${basename(entry.file)}:1`).join(', ')}`,
     )
 
-    console.error(`drive: [${def.name}] booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0`)
-    const boot = await bootDsh(sandbox, patchPath, env)
-    child = boot.child
-    console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port} (transport ${boot.transport})`)
-
-    // The plugin sync materializes the concerto preset at boot — from the
-    // stamped copy above — and then appendMockRoleMarker stamps the same
-    // markers into the MATERIALIZED file: load-bearing on the 0.1.5 pin, where
-    // that file IS the mounted face, and a line-anchored no-op on 0.2.x, where
-    // the copy's stamp has already put each marker on the first content line.
-    // P2-T18: verify where each marker LANDED (grep/line-number check) — the
-    // parade gates on it, and every scenario carries the raw detail.
-    for (const role of def.roles) appendMockRoleMarker(sandbox, role)
-    const markerLanding = def.roles.map((role) => verifyMockRoleMarkerLanding(sandbox, role))
-    // P3-T13: a scenario may additionally edit the SANDBOX-OWNED materialized
-    // preset before the session composes its tools. Used
-    // by the background scenario to reach the one-shot background job path the
-    // shipped `continuable` rows cannot produce; loud on drift (it throws).
-    // P4.5-T8b CORRECTION to the parenthetical that sat in this comment: it
-    // claimed "the MOCKROLE markers above already prove the file is read at
-    // session composition, not at boot". That stopped being true on EITHER
-    // generation once the marker began arriving pre-boot. On 0.1.5 the stamped
-    // plugin COPY renders the marker into this file at apply() time, so
-    // appendMockRoleMarker is a line-anchored no-op and proves nothing about
-    // read timing; on 0.2.x this file is not read at all. The post-boot-read
-    // property is therefore carried by `augmentMaterialized` ALONE, which is
-    // why the scenarios that depend on it must keep the fixture.
-    // WP2 MAJOR-1: the fixture's RETURN VALUE is now part of the contract — it
-    // names every (row, key, after) it changed, and a fixture that returns
-    // nothing throws HERE instead of letting its edit collide with the roster
-    // expectation 40 lines later.
+    // P3-T13 / P4.5-T12a: a scenario may additionally edit a delegation row of
+    // the SANDBOX plugin-copy TEMPLATE. Used by the background scenario to reach
+    // the one-shot background job path the shipped `continuable` rows cannot
+    // produce, and by the prometheus scenario to lift ONE row's `toolFilter`;
+    // loud on drift (it throws).
+    //
+    // WHY THIS RUNS BEFORE BOOT NOW (P4.5-T12a measurement on dsh 0.2.0-rc.2,
+    // the machine's installed npm package): the same fixtures ran AFTER
+    // `bootDsh` and edited `$DSH_HOME/.agent-presets/concerto/agent.cordis.yml`,
+    // which 0.2.x WRITES at boot and never READS — the mounted face is
+    // `register()`'s rendered composition (src/concerto-preset.ts:845-880). The
+    // edits therefore reached no face at all: the explore child's descriptor still
+    // read `mode=continuable` against a materialized row of `one-shot`, and the
+    // prometheus child's `request/header` still advertised no `write` against a
+    // materialized row with no `toolFilter`. The template is the one face both
+    // generations descend from — `pluginTemplateCompositionPath()` carries the
+    // citations — so the edit moved to it, and to the only point in the sequence
+    // that is upstream of `register()`.
+    //
+    // WP2 MAJOR-1: the fixture's RETURN VALUE is part of the contract — it names
+    // every (row, key, after) it changed, and a fixture that returns nothing
+    // throws HERE instead of letting its edit collide with the roster expectation
+    // further down. The scenario key and the call expression keep their historical
+    // names because scripts/verify-concerto-static.mjs c24 pins both (:2243 the
+    // `augmentMaterialized:` key, :2165 this expression); the FACE they now name
+    // is the pre-boot template, and the comment above is what says so.
     const declaredEdits = def.augmentMaterialized === undefined
       ? []
       : declaredSandboxEdits(def, def.augmentMaterialized(sandbox))
@@ -18875,17 +19313,37 @@ async function runScenario(def, baseRoutes) {
       + `${declaredEdits.length === 0 ? 'none (the scenario edits nothing)' : declaredEdits.map(renderEdit).join(', ')}`,
     )
 
+    console.error(`drive: [${def.name}] booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0`)
+    const boot = await bootDsh(sandbox, patchPath, env)
+    child = boot.child
+    console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port} (transport ${boot.transport})`)
+
+    // The plugin sync materializes the concerto preset at boot — from the
+    // stamped and (where declared) row-edited copy above — and then
+    // appendMockRoleMarker stamps the same markers into the MATERIALIZED file:
+    // load-bearing on the 0.1.5 pin, where that file IS the mounted face, and a
+    // line-anchored no-op on 0.2.x, where the copy's stamp has already put each
+    // marker on the first content line.
+    // P2-T18: verify where each marker LANDED (grep/line-number check) — the
+    // parade gates on it, and every scenario carries the raw detail.
+    for (const role of def.roles) appendMockRoleMarker(sandbox, role)
+    const markerLanding = def.roles.map((role) => verifyMockRoleMarkerLanding(sandbox, role))
+
     // P4.5-T6 — the composition ASSERTION face.
     //
     // WP2 MAJOR-1 CORRECTION to the comment that sat here: it claimed 'what the
     // session is about to compose from is asserted here over the READ face' and
     // that was TRUE ON HALF THE RUNTIMES. The two hosts do not answer
     // `agentPresets/read` from the same place:
-    //   • 0.2.x answers from register(), which rendered the REPO TEMPLATE — the
-    //     edits above (appendMockRoleMarker / augmentMaterialized) are NOT on
-    //     this face;
+    //   • 0.2.x answers from register(), which rendered the plugin COPY TEMPLATE
+    //     at apply() time — so `augmentMaterialized`'s row edits ARE on this face
+    //     (they are made in that same copy, before boot), while
+    //     `appendMockRoleMarker`'s post-boot stamp on the materialized file is
+    //     NOT, and never was;
     //   • 0.1.5 answers from FILE DISCOVERY — this sandbox's own materialized
-    //     file, MOCKROLE markers and all — so those edits ARE on this face.
+    //     file, which the plugin wrote at boot FROM that same copy — so BOTH
+    //     edits are on this face, the fixture's directly and the marker's through
+    //     the copy the render read.
     // So the read face is not one thing. What holds on both: every value
     // asserted here is derived from src/roster.ts (the write face's source) or
     // from the scenario's own declared edit list above — never read off the
@@ -18893,10 +19351,10 @@ async function runScenario(def, baseRoutes) {
     // accepts EXACTLY two values, roster ∪ post-edit, so a degraded list matches
     // neither. The roster half of that set is anchored in src/roster.ts; the
     // post-edit half is typed by the fixture and has NO external anchor, because
-    // on 0.1.5 the bytes under assertion ARE the file the fixture wrote. That
-    // residual trust boundary is why c24 reconciles each declared `after` against
-    // what the fixture body actually writes, and why fixture edits need review —
-    // stated here so nobody reads this as airtight when it is not.
+    // on 0.1.5 the bytes under assertion ARE the file the fixture's edit reached.
+    // That residual trust boundary is why c24 reconciles each declared `after`
+    // against what the fixture body actually writes, and why fixture edits need
+    // review — stated here so nobody reads this as airtight when it is not.
     // Fixture mechanics stay on the file (they need write access, or line
     // numbers a read RPC cannot give); the assertion path below never reads the
     // file, and NO fallback to it is permitted.
@@ -19122,6 +19580,15 @@ async function runScenario(def, baseRoutes) {
           log = await awaitTurnEnd(sandbox, created.sessionId, turnsSeen)
           continue
         }
+        if (action.kind === 'awaitGoalRound') {
+          const rounds = await awaitFirstGoalRound(sandbox, created.sessionId)
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} awaited the first goal `
+            + `round before the next action: ${rounds} round(s) durable (0 = the window expired, the `
+            + 'analysis still reports the honest FAIL)',
+          )
+          continue
+        }
         if (action.kind === 'command') {
           const admission = await commandExecute(boot, {
             sessionId: created.sessionId,
@@ -19238,6 +19705,14 @@ async function runScenario(def, baseRoutes) {
         childLog,
         allLogs,
         requests: server.requests,
+        // Which WIRE the mock served, counted by the mock itself from the request
+        // PATH (mock-llm-server.mjs:214 `modeCounts.messages`, :226
+        // `modeCounts.openai`, exposed at :246). `messages` is the
+        // dsh-llm-deepseek Messages dialect (`${baseURL}/messages`); `openai` is
+        // the OpenAI-completions dialect dsh-llm-pi-ai posts to
+        // (`${baseURL}/chat/completions`). A scenario that claims to ride one lane
+        // can now be caught riding the other.
+        modeCounts: server.modeCounts,
         providersJson,
         bootLog: boot.log(),
         markerLanding,
