@@ -18,24 +18,25 @@
 #                            override the explore route inside agentOptions
 #
 # Requirements:
-#   dsh >= 0.2 (declaration face): python3 WITH PyYAML on PATH
-#   (pip install pyyaml — macOS ships a python3 that has neither).
-#   dsh 0.1.x (filediscovery face): neither is needed, unless
-#   EXPLORE_PROVIDER / EXPLORE_MODEL are set.
+#   dsh >= 0.2 (the only supported face — declaration): python3 WITH PyYAML
+#   on PATH (pip install pyyaml — macOS ships a python3 that has neither).
+#   dsh < 0.2 is REFUSED by name: 0.1.x compatibility was dropped by ruling
+#   D17 (task book 四之二十二, commit 2323658); the filediscovery face this
+#   installer used to select for MINOR==1 was deleted in P4.5-T13 because
+#   0.2.x never reads $DSH_HOME/.agent-presets/ off disk — an installer that
+#   still took that leg would install nothing and say nothing.
 set -eu
 
 TAG="${CONCERTO_TAG:-v0.2}"
 BASE="https://raw.githubusercontent.com/linletian/oh-my-opendsh/${TAG}"
 D="${DSH_HOME:-${HOME}/.dsh}"
-# Two install targets, selected by DSH_FACE further down:
-#   DEST       — filediscovery face (dsh 0.1.x): the preset is file-discovered
-#                from this directory, so the installer drops the raw files there.
+# The one install target (P4.5-T13: the two-face split is gone — only the
+# declaration face remains, see the Requirements block above):
 #   DECL_PATCH — declaration face (dsh >= 0.2): 0.2.x never reads
 #                .agent-presets/ from disk. A preset only exists once it is
-#                DECLARED as a row of a host composition, so the install target is
-#                the web profile's patch file. Writing ${DEST} on 0.2 would
-#                install nothing and say nothing.
-DEST="${D}/.agent-presets/concerto"
+#                DECLARED as a row of a host composition, so the install target
+#                is the web profile's patch file. Writing a preset directory on
+#                0.2 would install nothing and say nothing.
 DECL_PATCH="${D}/profiles/web/cordis.patch.yml"
 SET="${D}/settings.yaml"
 
@@ -52,10 +53,13 @@ done
 need() { command -v "$1" >/dev/null 2>&1 || { echo "error: missing $1" >&2; exit 1; }; }
 need curl
 
-# Version gate: newer dsh (>= 0.2) no longer reads $DSH_HOME/.agent-presets/
-# from disk — presets are declared, not file-discovered — so the install face
-# depends on the version actually installed. Detect it here and refuse loudly
-# rather than dropping a preset into a directory this dsh will never load.
+# Version gate: dsh >= 0.2 never reads $DSH_HOME/.agent-presets/ from disk —
+# presets are DECLARED, not file-discovered — so below that line there is no
+# install face this installer can honestly offer. The old `MINOR==1 →
+# filediscovery` leg was deleted in P4.5-T13 (ruling D17, commit 2323658:
+# 0.1.x compatibility dropped); what remains is one comparison and one named
+# refusal — refuse loudly, never drop a preset into a directory this dsh will
+# never load, and never guess a face when the version is unreadable.
 DSH_VER=""
 if command -v dsh >/dev/null 2>&1; then
   DSH_VER="$(dsh --version 2>/dev/null | head -n 1 || true)"
@@ -64,15 +68,13 @@ DSH_MAJOR="$(printf '%s\n' "$DSH_VER" | sed -n 's/^[^0-9]*\([0-9][0-9]*\)\.\([0-
 DSH_MINOR="$(printf '%s\n' "$DSH_VER" | sed -n 's/^[^0-9]*\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\2/p')"
 if [ -z "$DSH_MAJOR" ] || [ -z "$DSH_MINOR" ]; then
   echo "error: cannot detect dsh version — dsh is missing from PATH or 'dsh --version' did not report a MAJOR.MINOR (got '${DSH_VER:-<empty>}')." >&2
-  echo "error: install dsh (>= 0.1) first, then re-run this installer." >&2
+  echo "error: install dsh (>= 0.2) first, then re-run this installer." >&2
   exit 1
 fi
 if [ "$DSH_MAJOR" -gt 0 ] || [ "$DSH_MINOR" -ge 2 ]; then
   DSH_FACE="declaration"
-elif [ "$DSH_MINOR" -eq 1 ]; then
-  DSH_FACE="filediscovery"
 else
-  echo "error: unsupported dsh version '${DSH_VER}' — older than 0.1; install dsh (>= 0.1) and retry." >&2
+  echo "error: unsupported dsh version '${DSH_VER}' — dsh < 0.2 is NOT supported: 0.1.x compatibility was dropped by ruling D17 (presets must be DECLARED; 0.1.x file-discovered installs would materialize files no runtime reads). Install dsh >= 0.2 (the D7 pin) and re-run." >&2
   exit 1
 fi
 echo "==> detected dsh ${DSH_VER} — install face: ${DSH_FACE}"
@@ -901,45 +903,42 @@ PY
 }
 
 # ---- install face -----------------------------------------------------------
-# Why the split: dsh 0.1.x file-discovered presets out of $DSH_HOME/.agent-presets/;
-# dsh >= 0.2 dropped that directory scan completely — the Loader composes only what
-# a profile DECLARES, i.e. the rows of $DSH_HOME/profiles/<profile>/cordis.patch.yml.
-# On 0.2 a preset file sitting in .agent-presets/ is dead weight: no error, no
-# preset, an installer that lied. So the declaration face renders the preset into a
-# single `- insert:` row and installs it with write_patch_row: idempotent, and it
-# copies each user entry of the patch file through as it stands — the only byte
-# change the rewrite can make outside the new block is appending the newline a
-# file that ended without one was missing.
+# Why this is straight-line now (P4.5-T13): dsh 0.1.x file-discovered presets
+# out of $DSH_HOME/.agent-presets/; dsh >= 0.2 dropped that directory scan
+# completely — the Loader composes only what a profile DECLARES, i.e. the rows
+# of $DSH_HOME/profiles/<profile>/cordis.patch.yml. On 0.2 a preset file sitting
+# in .agent-presets/ is dead weight: no error, no preset, an installer that lied.
+# Ruling D17 (commit 2323658) dropped 0.1.x, so the version gate above REFUSES
+# dsh < 0.2 by name and the old two-face `case` — whose `filediscovery` arm
+# could now only ever be reached by a version this installer rejects — was
+# deleted with it. DSH_FACE has exactly one assignment ("declaration"); the
+# declaration face renders the preset into a single `- insert:` row and installs
+# it with write_patch_row: idempotent, and it copies each user entry of the
+# patch file through as it stands — the only byte change the rewrite can make
+# outside the new block is appending the newline a file that ended without one
+# was missing.
 # No package.json is written on purpose: dsh creates it on first boot
 # (dsh-app-boot/lib/index.js:972-975), and :589 keeps that bootstrap from ever
 # overwriting the cordis.patch.yml we just wrote.
-case "${DSH_FACE}" in
-  filediscovery)
-    echo "==> installing concerto preset (tag ${TAG}) into ${DEST}"
-    stage_sources "${DEST}"
-    ;;
-  declaration)
-    need mktemp
-    # Dependency guards up front, BEFORE any directory or file is created:
-    # render_patch_block and write_patch_row both need python3 plus PyYAML,
-    # and without these lines a missing yaml module surfaces as a bare
-    # traceback after the target directory already exists. The filediscovery
-    # face keeps the old contract (python3 only when EXPLORE_PROVIDER /
-    # EXPLORE_MODEL are set, inside stage_sources).
-    need python3
-    if ! python3 -c 'import yaml' >/dev/null 2>&1; then
-      echo "error: PyYAML required for the dsh >= 0.2 install path (pip install pyyaml)" >&2
-      exit 1
-    fi
-    # agent-preset-registry precondition, asserted BEFORE anything is written.
-    # Basis: upstream dsh-agent-preset/lib/index.js:10 declares
-    # `static inject = ["agentPresets"]` — the plugin pulls the registry from
-    # the service scope, so a declared row only mounts while an
-    # agent-preset-registry service is in scope, and on 0.2.x that ships with
-    # @deepseek-ai/dsh-web-app. A profile that bundles no registry takes the
-    # row quietly and mounts nothing (the roster goes `broken`, nothing
-    # throws), so refuse here instead of shipping a silent no-op.
-    python3 - "${D}/profiles/web/package.json" <<'PYASSERT' || exit 1
+# Dependency guards up front, BEFORE any directory or file is created:
+# render_patch_block and write_patch_row both need python3 plus PyYAML,
+# and without these lines a missing yaml module surfaces as a bare
+# traceback after the target directory already exists.
+need mktemp
+need python3
+if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+  echo "error: PyYAML required for the dsh >= 0.2 install path (pip install pyyaml)" >&2
+  exit 1
+fi
+# agent-preset-registry precondition, asserted BEFORE anything is written.
+# Basis: upstream dsh-agent-preset/lib/index.js:10 declares
+# `static inject = ["agentPresets"]` — the plugin pulls the registry from
+# the service scope, so a declared row only mounts while an
+# agent-preset-registry service is in scope, and on 0.2.x that ships with
+# @deepseek-ai/dsh-web-app. A profile that bundles no registry takes the
+# row quietly and mounts nothing (the roster goes `broken`, nothing
+# throws), so refuse here instead of shipping a silent no-op.
+python3 - "${D}/profiles/web/package.json" <<'PYASSERT' || exit 1
 import json
 import sys
 
@@ -979,18 +978,16 @@ if not isinstance(bundles, list) or WEB_APP not in bundles:
 print('==> %s bundles %s — agent-preset-registry is in scope for the declared row'
       % (path, WEB_APP))
 PYASSERT
-    echo "==> installing concerto preset (tag ${TAG}) as a declared row of ${DECL_PATCH}"
-    TMP_SRC="$(mktemp -d)"
-    trap 'rm -rf "${TMP_SRC:-}" 2>/dev/null || true' EXIT INT TERM HUP
-    stage_sources "${TMP_SRC}"
-    # mkdir only AFTER the downloads succeeded, so a failed curl leaves no
-    # empty profiles/web/ behind.
-    mkdir -p "${D}/profiles/web"
-    render_patch_block "${TMP_SRC}/agent.cordis.yml" "${TMP_SRC}/preset.yml" > "${TMP_SRC}/block.yml"
-    write_patch_row "${DECL_PATCH}" "${TMP_SRC}/block.yml"
-    echo "==> declared preset-concerto in ${DECL_PATCH}; previous content (if any) backed up to ${DECL_PATCH}.bak.<timestamp> (newest 3 kept)"
-    ;;
-esac
+echo "==> installing concerto preset (tag ${TAG}) as a declared row of ${DECL_PATCH}"
+TMP_SRC="$(mktemp -d)"
+trap 'rm -rf "${TMP_SRC:-}" 2>/dev/null || true' EXIT INT TERM HUP
+stage_sources "${TMP_SRC}"
+# mkdir only AFTER the downloads succeeded, so a failed curl leaves no
+# empty profiles/web/ behind.
+mkdir -p "${D}/profiles/web"
+render_patch_block "${TMP_SRC}/agent.cordis.yml" "${TMP_SRC}/preset.yml" > "${TMP_SRC}/block.yml"
+write_patch_row "${DECL_PATCH}" "${TMP_SRC}/block.yml"
+echo "==> declared preset-concerto in ${DECL_PATCH}; previous content (if any) backed up to ${DECL_PATCH}.bak.<timestamp> (newest 3 kept)"
 
 if [ -n "${NO_PIAI:-}" ]; then
   echo "==> NO_PIAI=1 — skipping pi-ai settings; point agentOptions at your own second route"
@@ -1019,16 +1016,12 @@ fi
 echo
 echo "done. Restart the harness, open a NEW session, and pick 协奏模式 (Concerto Mode)."
 echo "30s check: ask 'which delegation tools do you see?' -> the CONDUCTOR sees only call_omo_explore; explore children see none."
-case "${DSH_FACE}" in
-  filediscovery)
-    echo "uninstall: rm -rf ${DEST}   (optionally remove the llm-pi-ai section from ${SET})"
-    ;;
-  declaration)
-    # Never rm -rf the patch file: it also carries the user's own rows.
-    # The restore glob is timestamp-shaped on purpose: '.bak.*' would also match
-    # the user's own '.bak.mine' archive, which no retention policy eats and
-    # which `ls -t` would happily hand back over the real backup.
-    echo "uninstall: edit ${DECL_PATCH} and delete ONLY the '- insert:' block whose row is '- id: preset-concerto' — do NOT delete the file, it holds your own rows too."
-    echo "           or restore the newest INSTALLER backup (timestamp-shaped names only, your own .bak.mine is never matched): cp \"\$(ls -t ${DECL_PATCH}.bak.[0-9]* 2>/dev/null | head -n 1)\" ${DECL_PATCH}   (optionally remove the llm-pi-ai section from ${SET})"
-    ;;
-esac
+# Uninstall guidance (P4.5-T13: declaration face only — the filediscovery arm
+# was deleted with the MINOR==1 leg; dsh < 0.2 is refused at the version gate,
+# so there is no `.agent-presets/concerto` this installer writes anymore).
+# Never rm -rf the patch file: it also carries the user's own rows.
+# The restore glob is timestamp-shaped on purpose: '.bak.*' would also match
+# the user's own '.bak.mine' archive, which no retention policy eats and
+# which `ls -t` would happily hand back over the real backup.
+echo "uninstall: edit ${DECL_PATCH} and delete ONLY the '- insert:' block whose row is '- id: preset-concerto' — do NOT delete the file, it holds your own rows too."
+echo "           or restore the newest INSTALLER backup (timestamp-shaped names only, your own .bak.mine is never matched): cp \"\$(ls -t ${DECL_PATCH}.bak.[0-9]* 2>/dev/null | head -n 1)\" ${DECL_PATCH}   (optionally remove the llm-pi-ai section from ${SET})"

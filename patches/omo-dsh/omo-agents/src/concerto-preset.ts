@@ -57,8 +57,9 @@
 //     (zero format change; the 29-sentinel census above still holds), and
 //     `syncConcertoPreset` now reuses it so the two outlets can never render
 //     two different compositions (DRY). The write contract is KEPT verbatim:
-//     scripts/doctor-lite.mjs:602 calls `syncConcertoPreset(temp)` and reads
-//     the file it writes (gate 4's input face), so "stop writing" was never
+//     gate 4's `syncConcertoPreset(temp)` call in scripts/doctor-lite.mjs
+//     reads the file it writes (gate 4's input face; 规约⑪ — name the call,
+//     do not pin a line number that can drift), so "stop writing" was never
 //     an option (plan §4.3, review R1-B4).
 //   * `registerConcertoPreset()` is the registration outlet the plugin calls
 //     from INSIDE its `ctx.inject(['agentPresets'])` callback — the only
@@ -414,6 +415,16 @@ export function renderConcertoComposition(
  * (persona-prompts.ts, model-routes.ts, roster.ts), so index.ts needs no new
  * wiring. Tests inject both to stay hermetic and sandboxed.
  *
+ * KEPT by the P4.5-T13 ruling, write contract and all (plan §4.3, review
+ * R1-B4): dsh 0.2.x never READS this materialized file — T12a measured the
+ * registry reading only register()'s rendered definition — but the write is
+ * load-bearing for the GATES, not the runtime: gate 4's `syncConcertoPreset(temp)`
+ * call in doctor-lite.mjs reads the bytes it writes, gate 8's
+ * run-proofs.sh renders through the SAME function, and the T12a-edited drive
+ * fixtures derive their expectations from it. "Stop writing" was ruled out
+ * (§4.3: mutually exclusive with gate 4); deleting it would ENOENT the gates
+ * while changing nothing the pinned runtime does.
+ *
  * @throws {Error} a sentinel did not occur exactly once, a deny list resolved
  *   empty, or any `__OMO_*__` marker survived the full render (residue check).
  */
@@ -431,7 +442,7 @@ export function syncConcertoPreset(
     }
     // P4.5-T5: the SAME pure outlet the registration path uses — one render
     // implementation, two carriers. Comparison/write/chmod/stale semantics
-    // below are unchanged (gate 4's doctor-lite.mjs:602 contract).
+    // below are unchanged (gate 4's `syncConcertoPreset(temp)` write contract).
     expected.set(file, renderConcertoComposition(templateDir, personaPrompt, inputs))
   }
   const existed = existsSync(targetDir)
@@ -636,10 +647,21 @@ export async function parseCompositionInLoaderDialect(text: string): Promise<unk
 
 /**
  * Capability probe, NOT an identity marker (surface map above). Answers only
- * "can this handle register presets?" — 0.1.5's agent-presets service says no
- * (no `register` member), 0.2.x's agent-preset-registry says yes. A
- * non-object always answers false: the honest reading of "no object" is "no
- * register face".
+ * "can this handle register presets?" — read off the RUNTIME handle, never
+ * off a version string: a handle with a callable `register` says yes, any
+ * other answer (no member, non-function, non-object) says no. KEPT by the
+ * P4.5-T13 ruling: 0.1.x is no longer a supported target (D17 dropped it),
+ * but this probe is not 0.1.5 vocabulary — it is the mechanism that selects
+ * the outlet's behaviour on ANY runtime. The failure mode of deleting it is
+ * NOT an uncaught TypeError (corrected by Review B MINOR-3 — `svc.register`
+ * sits inside registerConcertoPreset's try block, so a handle without
+ * `register` would be caught and logged as `concerto preset register FAILED`,
+ * which scripts/concerto-mode-probe.sh's own negative grep
+ * (`concerto .* FAILED`) already eats). The true, stronger argument: without
+ * the probe, face-absence collapses into an indistinguishable FAILED line —
+ * the probe is what makes "the face is absent on this runtime" a DISTINCT,
+ * NAMED outcome the probe greps for by name. The pinned runtime answers yes;
+ * a no on it is the alarm, and an alarm must be greppable to be an alarm.
  */
 export function hasAgentPresetsRegisterFace(agentPresets: unknown): boolean {
   if (typeof agentPresets !== 'object' || agentPresets === null) return false
@@ -702,7 +724,14 @@ export function compositionStringDisabledProblem(rows: unknown, at = ''): string
   return undefined
 }
 
-/** Marker: the register face is absent (0.1.5) — the materialized path owns it. */
+/**
+ * Marker: the register face is absent — the materialized write owns it. KEPT
+ * by the P4.5-T13 ruling (0.1.x support dropped by D17; this is the probe's
+ * defensive shape, not a supported leg): only a handle without `register` can
+ * print it, which on the pinned 0.2.x runtime means a face regression — the
+ * line IS the alarm, and scripts/concerto-mode-probe.sh asserts it mutually
+ * exclusive with the success marker, so the TEXT is a frozen grep surface.
+ */
 export const CONCERTO_REGISTER_FACE_ABSENT_LINE
   = '[omo-agents] concerto preset register face absent, materialized path only'
 
@@ -738,16 +767,16 @@ export const CONCERTO_BROKEN_ABSENT = 'absent'
  * so a comma or newline inside a real mount-failure message would make the
  * row count of that line lie.
  *
- * ⚠️ READ THE TOKEN FOR WHAT IT IS, per runtime:
- *   * 0.2.x — `broken` is written ONLY when activation threw
+ * ⚠️ READ THE TOKEN FOR WHAT IT IS, per runtime shape:
+ *   * the pinned 0.2.x line — `broken` is written ONLY when activation threw
  *     (agent-preset-registry/src/index.ts:161 `...(broken === undefined ? {}
  *     : { broken })`), so `broken=absent` genuinely IS the healthy form, and
  *     this is the readback the T5 success marker depends on.
- *   * 0.1.5 — the roster row has no `broken` field AT ALL, so the same token
- *     here means only "this runtime never reported a verdict". It is NOT
- *     evidence of health on 0.1.5; the 0.1.5 leg's evidence is the
- *     materialized file. Do not let one token read as a health claim on a
- *     runtime that cannot make it.
+ *   * a 0.1.x-shape handle (historical — 0.1.x support dropped by ruling D17;
+ *     recorded so the vocabulary is never re-confused): that roster row has no
+ *     `broken` field AT ALL, so the same token there means only "this runtime
+ *     never reported a verdict" — NOT evidence of health. Do not let one token
+ *     read as a health claim on a runtime that cannot make it.
  */
 export function formatBrokenVerdict(broken: string | undefined): string {
   if (broken === undefined) return CONCERTO_BROKEN_ABSENT
@@ -840,7 +869,10 @@ export async function releaseConcertoRegistration(): Promise<void> {
  * is STILL held and returned, so the dispose channel can clean up.
  *
  * @returns the disposer on success or on post-register failure; undefined
- *   when the face is absent (0.1.5) or register never ran.
+ *   when the capability probe answers no (the face-absent marker names it —
+ *   on the pinned 0.2.x runtime that is a regression alarm, not a supported
+ *   leg; ruling D17 dropped 0.1.x, the probe was KEPT by the P4.5-T13
+ *   ruling to select behaviour on ANY runtime) or register never ran.
  */
 export async function registerConcertoPreset(
   agentPresets: unknown,

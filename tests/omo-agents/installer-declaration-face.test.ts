@@ -229,7 +229,10 @@ const PATH_WITHOUT_DSH = REAL_PATH.filter((dir) => !isExecutable(join(dir, 'dsh'
  * its env BY HAND and prepended the sandbox `bin/` to nothing: `PATH` stayed
  * the ambient one, so the installer ran `command -v dsh` against the REAL dsh
  * on the machine. That answers 0.2.0-rc.2 locally ⇒ declaration face ⇒ it
- * reaches the PyYAML guard ⇒ green. CI installs 0.1.5-rc.1 per D7 ⇒ the
+ * reaches the PyYAML guard ⇒ green. CI installed 0.1.5-rc.1 per D7 AT THE
+ * TIME (historical — CI pins 0.2.0-rc.2 since the D17 cutover, P4.5-T12b;
+ * the 0.1.x leg this sentence describes no longer exists: the installer now
+ * refuses dsh < 0.2 by name) ⇒ the
  * filediscovery face ⇒ the guard is never reached ⇒ exit 0 ⇒
  * `expected +0 not to be +0`, hundreds of lines and one silent face-branch away
  * from the thing that actually broke. The test was not testing the script, it
@@ -714,28 +717,35 @@ describe('T6 EXPLORE_PROVIDER / EXPLORE_MODEL overrides', () => {
 })
 
 // ---------------------------------------------------------------------------
-// T7 — the 0.1.x face must not regress while 0.2 support was added.
+// T7 (P4.5-T13 rewrite) — the 0.1.x face is GONE: it must be REFUSED, by
+// name, before anything is written. This block used to pin "0.1.x still
+// installs by file discovery"; ruling D17 (commit 2323658, task book
+// 四之二十二) dropped 0.1.x compatibility, the installer's MINOR==1 →
+// filediscovery leg was deleted, and the assertion moved to the opposite
+// contract — a 0.1.x shim now gets a named refusal and a zero-write tree.
+// (The old green meant "preset files land in a directory 0.2.x never reads"
+// — the silent no-op the whole declaration face exists to prevent.)
 // ---------------------------------------------------------------------------
-describe('T7 dsh 0.1.x still installs by file discovery', () => {
-  it('writes .agent-presets/concerto/ byte-identically and never touches profiles/', { timeout: 60_000 }, () => {
+describe('T7 dsh < 0.2 is refused by name (0.1.x support dropped, D17)', () => {
+  it('exits non-zero naming the version and D17, selects NO face, and creates nothing', { timeout: 60_000 }, () => {
     const sbx = makeSandbox({ dshVersion: '0.1.5-rc.1' })
     const r = runWithDsh(sbx)
     expect(r.stderr).not.toContain(NETWORK_ATTEMPTED)
-    expect(r.status, r.stderr).toBe(0)
-    expect(r.stdout).toContain('install face: filediscovery')
-    // Same hermeticity pin as T6: no override is passed, so the host must not
-    // be the one supplying one.
-    expect(r.stdout, 'the host exported EXPLORE_PROVIDER / EXPLORE_MODEL into a case that passes none').not.toContain('explore route overridden')
-
-    const dest = join(sbx.home, '.agent-presets', 'concerto')
-    expect(existsSync(join(dest, 'agent.cordis.yml'))).toBe(true)
-    expect(existsSync(join(dest, 'preset.yml'))).toBe(true)
-    expect(readFileSync(join(dest, 'agent.cordis.yml')).equals(readFileSync(AGENT_SRC))).toBe(true)
-    expect(readFileSync(join(dest, 'preset.yml')).equals(readFileSync(PRESET_YML_SRC))).toBe(true)
-
-    // 0.1.x has no patch file to declare into — and must not grow one.
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).not.toBe(0)
+    expect(r.status).not.toBeNull()
+    // The refusal names the version it got and the ruling that dropped it.
+    expect(r.stderr).toContain('0.1.5-rc.1')
+    expect(r.stderr).toContain('D17')
+    expect(r.stderr).toContain('unsupported dsh version')
+    // No face is selected and nothing is installed: the refusal sits BEFORE
+    // the first write, exactly where the old filediscovery branch used to
+    // diverge.
+    expect(r.stdout).not.toContain('install face:')
+    expect(r.stdout).not.toContain('installing concerto preset')
+    expect(r.stdout).not.toContain('declared preset-concerto')
+    expect(existsSync(join(sbx.home, '.agent-presets'))).toBe(false)
     expect(existsSync(join(sbx.home, 'profiles'))).toBe(false)
-    expect(readdirSync(sbx.home).sort()).toEqual(['.agent-presets'])
+    expect(readdirSync(sbx.home)).toEqual([])
   })
 })
 
@@ -910,40 +920,30 @@ describe('T11 hostile preset.yml survives the full installer (quoting teeth)', (
 })
 
 // ---------------------------------------------------------------------------
-// T12 — the 0.1.x face honours EXPLORE_PROVIDER / EXPLORE_MODEL too.
-// T7 pinned only the no-override 0.1.x install; the override runs through the
-// SAME stage_sources rewrite, but filediscovery lands the rewritten SOURCE
-// files, not a rendered block, so the target of the assertion is a different
-// file.
+// T12 (P4.5-T13 rewrite) — a route override does NOT rescue a refused dsh.
+// This block used to pin "the 0.1.x face honours EXPLORE_PROVIDER /
+// EXPLORE_MODEL" (the override ran through stage_sources onto the discovered
+// SOURCE file); with the MINOR==1 → filediscovery leg deleted (ruling D17),
+// the same sandbox now refuses, and what this case pins is the ORDER: the
+// refusal fires before any override rewrite, so a user on 0.1.x gets a named
+// refusal and no half-written "overridden" preset that no runtime would load.
 // ---------------------------------------------------------------------------
-describe('T12 dsh 0.1.x face honours the route overrides', () => {
-  it('rewrites agentOptions inside the delegation group of the discovered file', { timeout: 60_000 }, () => {
+describe('T12 route overrides do not rescue a refused dsh < 0.2', () => {
+  it('refuses with the overrides set, fires no override, and writes nothing', { timeout: 60_000 }, () => {
     const sbx = makeSandbox({ dshVersion: '0.1.5-rc.1' })
     const r = runWithDsh(sbx, { EXPLORE_PROVIDER: 'ovr-prov', EXPLORE_MODEL: 'ovr-model' })
     expect(r.stderr).not.toContain(NETWORK_ATTEMPTED)
-    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).toBe(0)
-    expect(r.stdout).toContain('install face: filediscovery')
-    expect(r.stdout).toContain('explore route overridden')
-
-    const dest = join(sbx.home, '.agent-presets', 'concerto')
-    const installedAgent = join(dest, 'agent.cordis.yml')
-    expect(existsSync(installedAgent)).toBe(true)
-    // The override changed bytes — the installed file is NOT the repo source.
-    expect(readFileSync(installedAgent).equals(readFileSync(AGENT_SRC))).toBe(false)
-    // preset.yml carries no route — it must stay byte-identical to the source.
-    expect(readFileSync(join(dest, 'preset.yml')).equals(readFileSync(PRESET_YML_SRC))).toBe(true)
-    // 0.1.x must not grow a profiles/ tree.
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).not.toBe(0)
+    expect(r.status).not.toBeNull()
+    expect(r.stderr).toContain('unsupported dsh version')
+    expect(r.stderr).toContain('0.1.5-rc.1')
+    // The override never fires: the refusal sits upstream of stage_sources,
+    // so no rewritten bytes and no override announcement.
+    expect(r.stdout).not.toContain('explore route overridden')
+    expect(r.stdout).not.toContain('install face:')
+    expect(existsSync(join(sbx.home, '.agent-presets'))).toBe(false)
     expect(existsSync(join(sbx.home, 'profiles'))).toBe(false)
-
-    // agentOptions is NOT top level — same nested walk as T6, now over the
-    // discovered source file.
-    const found = collectAgentOptions(parseFile(installedAgent))
-    expect(found).toHaveLength(1)
-    expect(found[0].path.join('/')).toContain('delegation')
-    expect(found[0].value.provider).toBe('ovr-prov')
-    expect(found[0].value.model).toBe('ovr-model')
-    expect(found[0].value.provider).not.toBe(AUTHORED_PROVIDER)
-    expect(found[0].value.model).not.toBe(AUTHORED_MODEL)
+    expect(readdirSync(sbx.home)).toEqual([])
   })
 })
 
@@ -951,8 +951,10 @@ describe('T12 dsh 0.1.x face honours the route overrides', () => {
 // T13 — the version gate on the MAJOR > 0 branch.
 // `[ "$DSH_MAJOR" -gt 0 ] || [ "$DSH_MINOR" -ge 2 ]` sends every 1.x / 2.x
 // install to the declaration face; until now only 0.2.x exercised it. A
-// flipped comparison there silently sends 1.x users to the dead file-discovery
-// face — no error, no preset.
+// flipped comparison there silently sends 1.x users off the declaration face —
+// since P4.5-T13 that means the < 0.2 refusal branch (the file-discovery face
+// this comparison used to select for MINOR==1 is deleted; ruling D17). Either
+// way the test goes red on a flipped comparison, which is what it exists for.
 // ---------------------------------------------------------------------------
 describe('T13 the version gate sends MAJOR > 0 to the declaration face', () => {
   it('dsh 1.0.0 installs as a declared row, never into .agent-presets/', { timeout: 60_000 }, () => {
@@ -998,13 +1000,17 @@ describe('T14 dsh on PATH with an unparseable version is a refusal', () => {
 })
 
 // ---------------------------------------------------------------------------
-// T15 — uninstall guidance, per face. The script ships NO uninstall code —
-// `uninstall:` is printed instruction text only — so what is pinned here is
-// the text and its face split: the declaration face must protect the user's
-// patch file (it carries their own rows), while the filediscovery face's own
-// directory is the one thing that may be rm -rf'd.
+// T15 — uninstall guidance. The script ships NO uninstall code — `uninstall:`
+// is printed instruction text only — so what is pinned here is the text and
+// the refusal's silence. Since P4.5-T13 there is ONE face (declaration): the
+// declaration run must protect the user's patch file (it carries their own
+// rows), and a REFUSED dsh < 0.2 must print NO uninstall guidance at all —
+// guidance for an install that never happened is a second lie on top of the
+// first. (The old second case pinned the filediscovery face's `rm -rf`
+// guidance; the face was deleted under ruling D17, so its guidance is gone
+// too and this case is what keeps it gone.)
 // ---------------------------------------------------------------------------
-describe('T15 uninstall guidance per face', () => {
+describe('T15 uninstall guidance — declaration face, and silence on refusal', () => {
   it('declaration: protective wording, and never rm -rf on the patch file', { timeout: 60_000 }, () => {
     const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
     const r = runWithDsh(sbx)
@@ -1018,12 +1024,17 @@ describe('T15 uninstall guidance per face', () => {
     expect(r.stdout).not.toContain('rm -rf')
   })
 
-  it('filediscovery: rm -rf on .agent-presets/concerto is the documented uninstall', { timeout: 60_000 }, () => {
+  it('refused dsh < 0.2 prints no uninstall guidance and no deleted-face advice', { timeout: 60_000 }, () => {
     const sbx = makeSandbox({ dshVersion: '0.1.5-rc.1' })
     const r = runWithDsh(sbx)
-    expect(r.status, r.stderr).toBe(0)
-    expect(r.stdout).toContain('uninstall:')
-    expect(r.stdout).toContain(`rm -rf ${join(sbx.home, '.agent-presets', 'concerto')}`)
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).not.toBe(0)
+    // Nothing was installed, so nothing may be "uninstalled": the guidance
+    // block sits downstream of the install, and the refusal must short-circuit
+    // before it.
+    expect(r.stdout).not.toContain('uninstall:')
+    // The deleted filediscovery guidance must never come back.
+    expect(r.stdout).not.toContain('rm -rf')
+    expect(r.stdout).not.toContain('.agent-presets')
   })
 })
 

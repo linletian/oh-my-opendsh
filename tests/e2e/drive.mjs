@@ -110,8 +110,10 @@
 //     carries the markers, the `agentPresets/read` content carries NONE, and
 //     the session's `system/message` is the harness header + the assembled
 //     persona with no marker in it → the mock's 400.
-//   * 0.1.5 (the CI pin) answers the preset from FILE DISCOVERY, so
-//     appendMockRoleMarker keeps stamping the MATERIALIZED preset
+//   * 0.1.5 (the RETIRED pin — CI has been pinned to 0.2.0-rc.2 since the
+//     D17 cutover, P4.5-T12b; 0.1.x support is dropped) answers the preset
+//     from FILE DISCOVERY, so appendMockRoleMarker keeps stamping the
+//     MATERIALIZED preset
 //     ($DSH_HOME/.agent-presets/concerto/agent.cordis.yml) after boot sync and
 //     before session.create — the pre-T8b delivery, kept verbatim because on
 //     that generation the file IS the mounted face (readComposition →
@@ -1021,11 +1023,15 @@ function paradeLabel(agent) {
 //     `node tests/e2e/drive.mjs` exits 1 naming the leg by NAME — the string it
 //     prints today is `T10′[≥2 capable ids with no written choice → refused, naming
 //     ids+key]`. (It used to cite `T10′ leg 9`, a string no run has ever emitted.)
-//     So these are a REAL CI gate today. What CI actually lacks is the other
-//     generation: `ci.yml:102` pins `DSH_VERSION: 0.1.5-rc.1`, the one runtime
-//     where every shipped default resolves, so on CI the substitution and audit
-//     legs run but can never observe a gap — they are vacuous there, not absent.
-//     The fix is CI's generation matrix, not a flag, and `.github/` is outside
+//     So these are a REAL CI gate today. PIN STATUS, corrected by P4.5-T13:
+//     `ci.yml:97` pins `DSH_VERSION: 0.2.0-rc.2` since the D17 cutover
+//     (P4.5-T12b) — the sentence this comment used to carry, that CI sat on
+//     0.1.5-rc.1, is FALSE since the flip and was fixed rather than left to
+//     rot. On the pinned 0.2.x runtime the shipped defaults do NOT all
+//     resolve, so the substitution and shipped-default audit legs here OBSERVE
+//     the gap on CI for real (that observation is the T12 finding); what CI
+//     no longer runs is the RETIRED 0.1.x generation — dropped by ruling D17,
+//     so its absence is a ruling, not a coverage hole. `.github/` is outside
 //     this slice's one-file scope.
 //   • finding ④ — `--self-test` is hermetic again: the catalog probe is lazy and
 //     records failure instead of calling `process.exit(1)`, so with no `dsh` on
@@ -1223,7 +1229,8 @@ function collapseCatalogFaces(doc, routeList) {
  * 13 throw sites in this subsystem, so 7 of them — including a seat the runtime cannot
  * seat at all — fell through the classifier and were recorded as a SKIP, and
  * `OMO_E2E_FORCE_SEAT='explore=fake-route/deepseek-flash' … --self-test` exited 0 on
- * the very generation `ci.yml:102` pins. A whitelist drifts from the throws forever,
+ * the generation `ci.yml` pinned at the time (0.1.5-rc.1 — historical: CI has
+ * pinned 0.2.0-rc.2 since the D17 cutover, P4.5-T12b). A whitelist drifts from the throws forever,
  * because nothing forces the two to move together. So the throw site now carries its
  * own kind, the classifier reads the kind, and — the part that keeps it from rotting
  * again — **an untagged reason is NOT skippable**: it is a problem. Add a throw site
@@ -11240,10 +11247,13 @@ async function runAnalysisSelfTest(routes) {
     || v4Ok.text !== 'MOCK-PARADE-CHILD-HEPHAESTUS-4b7e') {
     problems.push(`P4.5-T8″ v4-leg-success: the 0.2.x non-error row's bytes were not extracted verbatim (got ${JSON.stringify(v4Ok ?? null).slice(0, 160)})`)
   }
-  // Leg 3 — V3 / 0.1.5-rc.1 wrapper: identity, flag AND bytes come from INSIDE
-  // the wrapper block. This leg is CI's only non-regression signal (ci.yml:102
-  // pins DSH_VERSION 0.1.5-rc.1), so dropping wrapper support would be a
-  // regression on that leg, not a cleanup.
+  // Leg 3 — V3 / 0.1.x-shape wrapper: identity, flag AND bytes come from INSIDE
+  // the wrapper block. This leg was CI's non-regression signal while ci.yml sat
+  // on 0.1.5-rc.1 (historical — CI pins 0.2.0-rc.2 since the D17 cutover,
+  // P4.5-T12b); it is KEPT because the v3 wrapper shape still exists in the
+  // parser's vocabulary and the extraction must not silently drop a shape it is
+  // fed — dropping wrapper support would be a regression on this leg, not a
+  // cleanup, on whatever runtime feeds it.
   const v3Part = capturedParts.find((part) => part.shape === 'v3-wrapper')
   if (v3Part === undefined || v3Part.isError !== false
     || !v3Part.text.includes('omo-dsh bash-file-read-guard fixture line one 4c1e9a')) {
@@ -19792,7 +19802,33 @@ async function runScenario(def, baseRoutes) {
       },
     }
   } catch (error) {
-    scenario = { name: def.name, result: 'FAIL', failed: [`driver error: ${error.message}`] }
+    // P4.5-T13 (kimi K3 challenge (b)): a sandbox that VANISHED mid-scenario
+    // is an ENVIRONMENTAL fact, not a product failure. A concurrent cleanup
+    // eating this run's /tmp/…/omo-dsh-e2e-* directory made the collision
+    // family produce phantom REDs twice in Phase 4.5 — an ENOENT nobody could
+    // explain. Now the vanish reports ITSELF: the scenario records
+    // `bonus.sandboxVanishedMidScenario: <path>` and SKIPs loudly
+    // (`SKIPPED [sandbox-vanished]`) instead of redding. The skip channel is
+    // sealed — SKIP is reachable ONLY while sandbox.root is verifiably absent
+    // at catch time (the driver itself created that directory at scenario
+    // start, so its absence mid-run can only mean someone else deleted it);
+    // any failure with the sandbox still on disk stays RED with its error.
+    if (!existsSync(sandbox.root)) {
+      scenario = {
+        name: def.name,
+        result: 'SKIP',
+        failed: [],
+        skipReason: 'sandbox-vanished',
+        bonus: { sandboxVanishedMidScenario: sandbox.root },
+      }
+      console.error(
+        `drive: [${def.name}] SKIPPED [sandbox-vanished] — sandbox ${sandbox.root} vanished `
+        + 'mid-scenario (environmental, not a product failure; the ENOENT family that '
+        + `produced this phase's phantom reds; last driver error: ${error.message})`,
+      )
+    } else {
+      scenario = { name: def.name, result: 'FAIL', failed: [`driver error: ${error.message}`] }
+    }
   } finally {
     if (child !== undefined) await stopDsh(child)
     await server.close()
@@ -21544,7 +21580,40 @@ async function main() {
 
   const afterDigest = digestConfigDir(digestTarget)
   const realDshUntouched = beforeDigest === afterDigest
-  const scenariosPass = scenarios.every((scenario) => scenario.result === 'PASS')
+  // P4.5-T13 (kimi K3 challenge (b)) — SKIP is not RED, and the skip channel
+  // is sealed so it cannot swallow a product failure: a scenario counts as
+  // non-red ONLY if it says SKIP, names `sandbox-vanished` as the reason, AND
+  // carries the vanished path in `bonus.sandboxVanishedMidScenario` (the same
+  // fact runScenario wrote only while sandbox.root was verifiably absent).
+  // Anything else that is not PASS — including a SKIP missing its named path,
+  // which would be an unauditable skip — is RED. The three counts are computed
+  // ONCE here and printed from these same variables (规约⑲o: a total written
+  // in two places forks on the first addition).
+  const isSealedSandboxSkip = (scenario) =>
+    scenario.result === 'SKIP'
+    && scenario.skipReason === 'sandbox-vanished'
+    && typeof scenario.bonus?.sandboxVanishedMidScenario === 'string'
+  const passedScenarios = scenarios.filter((scenario) => scenario.result === 'PASS')
+  const skippedScenarios = scenarios.filter(isSealedSandboxSkip)
+  const redScenarios = scenarios.filter((scenario) =>
+    scenario.result !== 'PASS' && !isSealedSandboxSkip(scenario))
+  const scenariosPass = redScenarios.length === 0
+  if (skippedScenarios.length > 0) {
+    console.error(
+      `drive: SKIPPED [sandbox-vanished] ${skippedScenarios.length}/${scenarios.length} scenario(s): `
+      + skippedScenarios
+        .map((scenario) => `${scenario.name} → ${scenario.bonus.sandboxVanishedMidScenario}`)
+        .join(', '),
+    )
+    console.error(
+      'drive: a vanished sandbox is environmental (concurrent cleanup), not a product failure — '
+      + 'the scenarios named above did NOT run to a verdict; the RED COUNT below excludes them BY NAME.',
+    )
+  }
+  console.error(
+    `drive: verdict counts — ${passedScenarios.length} PASS / ${skippedScenarios.length} SKIPPED [sandbox-vanished]`
+    + ` / ${redScenarios.length} RED (of ${scenarios.length} scenarios)`,
+  )
   // The deferred audit fact lands here, so the exit code still carries it.
   const result = scenariosPass && realDshUntouched && deferredAuditFacts.length === 0 ? 'PASS' : 'FAIL'
   // THE INVARIANT, stated as code rather than as a term somebody can delete quietly:
@@ -21574,6 +21643,18 @@ async function main() {
     JSON.stringify({
       result,
       scenarios,
+      // P4.5-T13 — the same counts the stderr banner printed, machine-readable
+      // (computed once above; this is a projection, not a second tally).
+      scenarioCounts: {
+        total: scenarios.length,
+        pass: passedScenarios.length,
+        skipped: skippedScenarios.length,
+        red: redScenarios.length,
+      },
+      skippedSandboxVanished: skippedScenarios.map((scenario) => ({
+        scenario: scenario.name,
+        path: scenario.bonus.sandboxVanishedMidScenario,
+      })),
       // Every dropped boot.log mirror, by number, in the machine-readable verdict.
       bootMirrorDrops: BOOT_MIRROR_DROPS.count,
       realDshUntouched,
@@ -21681,7 +21762,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T15 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI lacks is the other generation, since ci.yml:102 pins DSH_VERSION 0.1.5-rc.1 where every shipped default resolves, so there the substitution and shipped-default legs run but can never observe a gap; the fix is CI's generation matrix, not a --self-test flag`)
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults do NOT all resolve, so the substitution and shipped-default audit legs observe the real gap on CI; the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

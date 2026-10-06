@@ -82,8 +82,19 @@
 //     the id and the verdict; the probe greps it whole (-qF), never as a
 //     prefix.
 //     `[omo-agents] concerto preset register face absent, materialized path
-//     only` — the 0.1.5 shape: no register member on the service, the
-//     materialized write above owns the registration.
+//     only` — the no-register-face shape. KEPT by the P4.5-T13 ruling (D17
+//     dropped 0.1.x as a SUPPORTED target; the CAPABILITY PROBE stays because
+//     it is how this outlet selects behaviour on ANY runtime — a future 0.2.x
+//     that moves the face again degrades to this named marker instead of
+//     collapsing into an indistinguishable `register FAILED` line; Review B
+//     MINOR-3 correction: a TypeError on `.register` would have been swallowed
+//     by registerConcertoPreset's try block, so WITHOUT the probe face-absence
+//     stops being a distinct, greppable outcome — the probe is what keeps the
+//     alarm an alarm). Only a 0.1.x-shape handle
+//     answers face-absent, and on that shape the materialized write above really
+//     does own the registration — the sentence is true exactly when it prints,
+//     and seeing it on the pinned 0.2.x runtime is itself the regression alarm
+//     (scripts/concerto-mode-probe.sh asserts the two shapes mutually exclusive).
 //     `[omo-agents] concerto preset register FAILED: <reason>` — loud-but-
 //     non-fatal; already inside the probe's existing negative grep
 //     `\[omo-agents\] concerto .* FAILED` (scripts/concerto-mode-probe.sh:939).
@@ -146,10 +157,14 @@ interface RosterEntry {
   broken?: string
 }
 
-// P4.5-T5: `register` is OPTIONAL on purpose — its presence IS the 0.2.x
-// capability probe's answer (0.1.5's agent-presets service has no register
-// member; the probe is concerto-preset.ts `hasAgentPresetsRegisterFace`,
-// which reads the runtime handle, not this type).
+// P4.5-T5 / kept by the P4.5-T13 ruling (D17): `register` is OPTIONAL on
+// purpose — its presence IS the capability probe's answer, read off the RUNTIME
+// handle by concerto-preset.ts `hasAgentPresetsRegisterFace`, never off a
+// version string. The optionality is what lets the probe answer "no" on ANY
+// future runtime that moves the face again (the pinned target is 0.2.x per
+// D17 — 0.1.x support is dropped — but the probe is capability vocabulary,
+// not 0.1.5 vocabulary: making `register` REQUIRED here would delete the
+// probe's right to answer no and turn a future face regression into a crash).
 interface AgentPresetsLike {
   list(): Promise<RosterEntry[]>
   register?(definition: {
@@ -285,8 +300,12 @@ export function apply(ctx: InjectingContext): void {
       // registers — it is the host insert row cordis.yml:36-38). The
       // callback RETURNS the disposer so cordis collects it as the injected
       // child fiber's disposal (fiber.ts:373-374); it is idempotent, so no
-      // once guard is added. On 0.1.5 the face probe says no and the
-      // materialized path above stays the whole story.
+      // once guard is added. If the face probe ever answers no — a runtime
+      // outside the pinned 0.2.x line (0.1.x support is dropped by ruling D17;
+      // this branch is the probe's defensive answer, kept per the P4.5-T13
+      // ruling, not a supported leg) — the marker names it and the host keeps
+      // booting; on the pinned runtime the probe answers yes and register()
+      // owns the registration.
       //
       // ⚠️ COST REGISTERED (arbitration #4, 2026-10-04): `inject`'s official
       // signature is `Plugin.Function<void>` (vendor/cordis/src/registry.ts:300

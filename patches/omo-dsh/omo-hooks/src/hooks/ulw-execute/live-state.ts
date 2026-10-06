@@ -65,9 +65,13 @@
 // 真实失败。返回值形状不变（**C5**），所以分类只走日志。
 //
 // Every section below marked **[0.1.5]** / **[0.2.x]** / **[BOTH]** says which
-// generation it describes; an unmarked section describes both. The 0.1.5 text is
-// NOT rewritten away — it is the path CI is pinned to (0.1.5-rc.1, decision D7)
-// and the behaviour its tests protect. The notepad scaffold, the `cancel`
+// generation it describes; an unmarked section describes both. PIN STATUS
+// (corrected by P4.5-T13 under ruling D17, commit 2323658): CI is pinned to
+// 0.2.0-rc.2 — the earlier sentence claiming 0.1.5-rc.1 was the CI pin is
+// FALSE since the T12b cutover. The **[0.1.5]** text stays as the shape-fork
+// documentation the shared identity marker still answers; the v1 branch is kept
+// as the defensive shape fork and its tests protect the FORK, not a supported
+// runtime — 0.1.x support is dropped. The notepad scaffold, the `cancel`
 // semantics, the H-32 activation semantics and the `StartWorkJobResult` shape are
 // all **zero-change** on this branch (**C5**); only the job CARRIER forks.
 //

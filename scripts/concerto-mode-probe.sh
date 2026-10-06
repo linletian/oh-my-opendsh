@@ -1245,6 +1245,17 @@ boot_once() {
     ' "$api_resp" \
       || fail "[$label] the 0.2.x roster RPC row for concerto is not isDefault:false with trust/broken ABSENT (see the shape line above)"
   else
+    # T13 ADJUDICATION (Review A MINOR): capability-selected fork, KEPT. The
+    # selection above branches on the plugin's OWN boot marker
+    # (`registered: id=concerto broken=absent`), not on a version string —
+    # this else-leg fires exactly when the boot log instead says `register face
+    # absent`, i.e. it is the mutual-exclusion counterpart asserted at
+    # :1195-1201. On the pinned 0.2.x it never fires; it stays (a) to keep
+    # that mutual-exclusion honest — deleting it would leave the face-absent
+    # shape unasserted, so an outlet that flipped back to file-only mode would
+    # pass this probe by falling off its own grep map, and (b) to keep
+    # pre-cutover logs probeable. Not dead weight: the negative half of the
+    # canary.
     grep -q '"trust":"user"[^}]*"id":"concerto"\|"id":"concerto"[^}]*"trust":"user"' "$api_resp" \
       || fail "[$label] 0.1.5 leg: concerto entry does not carry trust:\"user\""
   fi
@@ -1284,6 +1295,13 @@ boot_once() {
   #   FACE A — 0.1.5 (`register face absent`): the host composes from the
   #     MATERIALIZED FILE (file discovery owns `agentPresets/read` there), so
   #     the file is the honest input and the verbatim line anchors below hold.
+  #     T13 ADJUDICATION (Review A MINOR): KEPT — capability-selected by the
+  #     plugin's own boot marker, never by a version string; post-D17 it is
+  #     the probe's face-absent half (mutual exclusion at :1195-1201) and the
+  #     only way to honestly probe pre-cutover logs. Dead-weight test applied
+  #     and failed: deleting it would leave the face-absent outcome unasserted,
+  #     so an outlet regressing to file-only mode would pass by vanishing from
+  #     this probe's grep map — the exact silent shape the canary guards.
   #
   #   FACE B — 0.2.x (`registered: id=concerto broken=absent`): the host
   #     composes from the REGISTERED DEFINITION, and `agentPresets/read` is
@@ -1374,6 +1392,10 @@ boot_once() {
       || fail "[$label] FACE B: the explore row in the read content failed validation against the installed dsh-tool-subagent Config"
     composition_for_proofs="$read_content"
   else
+    # T13 ADJUDICATION (Review A MINOR): KEPT — this FACE A branch is reached
+    # only when the FACE B marker was absent from THIS boot log (capability
+    # selection, see the FACE A/B block above and :1195-1201); on the pinned
+    # 0.2.x the probe selects FACE B and this leg never runs.
     composition_source="FACE A / 0.1.5 materialized file (file discovery owns the composition)"
     echo "concerto-probe: [$label] $composition_source"
     grep -q "prefix: |-" "$materialized" \

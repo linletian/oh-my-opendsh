@@ -127,6 +127,16 @@ if (jsExprNodes !== jsLines.length) {
 // (tests/e2e/drive.mjs `augmentMaterialized`). REQUIRED; `[]` when the
 // consumer edits nothing.
 //
+// T13 ADJUDICATION (Review A MINOR): KEPT, and the block below stays verbatim.
+// This is NOT a version fork: the validator applies the SAME accepted-set rule
+// ({roster value, declared post-edit value}) on every runtime — the 0.1.5/0.2.x
+// contrast below is the WP2-era MEASUREMENT that explains why the declaration
+// mechanism exists (provenance, kept per ⑲: history stays as history), not a
+// branch that selects behaviour by version. The capability difference it
+// records (read answered from register() vs from file discovery) is still what
+// decides what a sandbox edit can be visible through on any runtime the consumer
+// targets, so the rule and its explanation both stay.
+//
 // WHY this exists (WP2 MAJOR-1, the gate-3 red on dsh 0.1.5): the two
 // runtimes do NOT feed `agentPresets/read` from the same place. 0.2.x answers
 // it from `register()`, which renders the REPO TEMPLATE, so a sandbox edit is

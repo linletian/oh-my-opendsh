@@ -9,14 +9,20 @@
 
 | Piece | Files | Lifetime | Purpose |
 |---|---|---|---|
-| **Persistent preset (core) — dsh 0.1.x (filediscovery)** | `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` — `agent.cordis.yml` + `preset.yml` | On disk, survives restarts | Day-to-day use: Concerto Mode appears in the preset picker |
-| **Persistent preset (core) — dsh ≥ 0.2 (declaration)** | the one declared row `preset-concerto` inside `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml` (the web profile — the installer pins `web`) | On disk, survives restarts | Day-to-day use: 0.2 no longer reads `.agent-presets/` — a preset exists only once declared |
+| **Persistent preset (core) — dsh ≥ 0.2 (declaration)** | the one declared row `preset-concerto` inside `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml` (the web profile — the installer pins `web`) | On disk, survives restarts | Day-to-day use: 0.2 does not read `.agent-presets/` — a preset exists only once declared |
 | Dynamic plugin (optional) | `patches/omo-dsh/omo-agents-current/concerto-plugin.host.js` | Process-local, gone on restart | Verification / observability / demo (`concerto_verify`, `concerto_demo`, route enforcement, Hard Blocks injection) |
 
 The base experience needs only the preset: the conductor persona and the explore binding
 (persona + `toolFilter` + `maxDepth:1` + dual route) are all baked into the two YAML files.
-On dsh ≥ 0.2 those two files are fetched to a temp dir and their content is inlined (re-indented
-by 8 spaces) into the declared row — nothing is left behind in `.agent-presets/`.
+
+> 🚫 **dsh < 0.2 is not supported (ruling D17, 2026-10-06, commit `2323658`).** The installer's
+> former **0.1.x filediscovery face** — writing `agent.cordis.yml` + `preset.yml` into
+> `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` — was **deleted in P4.5-T13**: the version gate
+> now **refuses dsh < 0.2 by name** (`error: unsupported dsh version '<ver>' — dsh < 0.2 is NOT
+> supported: 0.1.x compatibility was dropped by ruling D17 …`), **before any write**, exit 1. The
+> declaration face is the installer's only face: on 0.2.x the two YAML files are fetched to a temp
+> dir and their content is inlined (re-indented by 8 spaces) into the declared row — nothing is left
+> behind in `.agent-presets/`. Manual 0.1.x steps survive below only as labelled legacy reference.
 
 > 📌 **Scope of this channel (2026-09-14).** Everything below installs the **1+1 preset** — the
 > conductor plus the single `explore` delegation binding — served from the frozen
@@ -34,23 +40,28 @@ by 8 spaces) into the declared row — nothing is left behind in `.agent-presets
 - A DeepSeek Harness with the agent-preset system (the shipped `standard` preset's package set).
 - Credential `DEEPSEEK_API_KEY` configured in DSH credentials (used by both routes).
 - The pi-ai catalog model `deepseek-flash` (adjust `agentOptions` otherwise — see "Adapting").
-- **dsh ≥ 0.2 only**: `python3` **with the PyYAML module** on PATH (`pip install pyyaml`). On the
+- **dsh ≥ 0.2**: `python3` **with the PyYAML module** on PATH (`pip install pyyaml`). On the
   declaration face the installer renders the row with python3 + PyYAML, guards for it before it
   creates anything, and stops with `error: PyYAML required for the dsh >= 0.2 install path
-  (pip install pyyaml)` when the module is missing. The dsh 0.1.x face needs neither — unless you
-  set `EXPLORE_PROVIDER` / `EXPLORE_MODEL`, which is the case that already needed `python3`.
-  macOS' built-in python3 ships **without** PyYAML. (Mirrors the `Requirements:` block in the
+  (pip install pyyaml)` when the module is missing.
+  ~~The dsh 0.1.x face needs neither — unless you set `EXPLORE_PROVIDER` / `EXPLORE_MODEL`, which
+  is the case that already needed `python3`.~~ *(P4.5-T13, ruling D17: there is no 0.1.x face
+  anymore — the installer refuses dsh < 0.2 by name before it checks anything else.)*
+   macOS' built-in python3 ships **without** PyYAML. (Mirrors the `Requirements:` block in the
   installer's own usage header.)
 
 ## Quick install
 
 All three options run the same `scripts/install-concerto.sh`, and the script branches on your dsh
 version (`dsh --version`) before it installs anything: **dsh ≥ 0.2** gets the preset rendered as a
-single **declaration row** in `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`; **dsh 0.1.x**
-installs the two YAML files into `.agent-presets/concerto/` the classic way. If the version cannot be
-detected (dsh not on PATH, or `dsh --version` output without a MAJOR.MINOR), the installer stops with
-a loud error and tells you to install dsh first — it never guesses. On the 0.2 face it also does
-**not** create `profiles/web/package.json` — dsh writes that itself on first boot.
+single **declaration row** in `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`;
+~~**dsh 0.1.x** installs the two YAML files into `.agent-presets/concerto/` the classic way.~~
+**dsh < 0.2 is REFUSED by name** — `error: unsupported dsh version '<ver>' — dsh < 0.2 is NOT
+supported: 0.1.x compatibility was dropped by ruling D17 …`, exit 1, nothing written
+*(P4.5-T13; the classic 0.1.x face was deleted, it is not an install path anymore)*. If the version
+cannot be detected (dsh not on PATH, or `dsh --version` output without a MAJOR.MINOR), the installer
+stops with a loud error and tells you to install dsh first — it never guesses. On the 0.2 face it
+also does **not** create `profiles/web/package.json` — dsh writes that itself on first boot.
 
 > 🚫 **The one shape the installer refuses outright (dsh ≥ 0.2).** If your `cordis.patch.yml` already
 > carries a `- id: preset-concerto` row **nested inside the `config:` list of a group row**, the installer
@@ -80,7 +91,7 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 
 Optional env vars (prefix the pipe): `NO_PIAI=1` (skip the pi-ai settings section),
 `EXPLORE_PROVIDER`/`EXPLORE_MODEL` (override the explore second route). `CONCERTO_TAG` and
-`DSH_HOME` keep the same meaning on both install faces:
+`DSH_HOME` keep the same meaning on the (single, declarative) install face:
 
 ```bash
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_MODEL=my-model sh
@@ -95,10 +106,10 @@ details at the bottom.)
 ```
 Install the oh-my-opendsh Concerto Mode on this machine (pinned to tag v0.2):
 1) Run `dsh --version` first. If its output carries no MAJOR.MINOR, stop and report — do not guess the version.
-   - dsh 0.1.x: create ${DSH_HOME:-~/.dsh}/.agent-presets/concerto/ and download
-     https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml
-     and .../preset.yml there with `curl -fsSL`.
-   - dsh >= 0.2: 0.2 no longer reads .agent-presets/ — download the same two files to a temp dir instead, then
+   - dsh < 0.2: STOP and report that dsh < 0.2 is not supported (ruling D17, dropped 2026-10-06) —
+     do NOT create .agent-presets/concerto/ and do NOT download preset files there; that face was
+     deleted and the official installer refuses these versions by name.
+   - dsh >= 0.2: 0.2 does not read .agent-presets/ — download the same two files to a temp dir instead, then
      append exactly ONE `- insert:` block declaring `- id: preset-concerto` (name: '@deepseek-ai/dsh-agent-preset';
      config: id concerto, name/description from preset.yml, plugins: the agent.cordis.yml content re-indented by
      8 spaces) to ${DSH_HOME:-~/.dsh}/profiles/web/cordis.patch.yml. Back that file up first as
@@ -159,10 +170,13 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<smaller-faster-model> sh
 ```
 
-<details><summary>Manual 3-step (equivalent reference, dsh 0.1.x only)</summary>
+<details><summary>Manual 3-step (LEGACY reference — dsh 0.1.x, UNSUPPORTED since ruling D17, 2026-10-06)</summary>
 
-> ⚠️ These manual steps mirror the **0.1.x filediscovery** face. On dsh ≥ 0.2 nothing inside
-> `.agent-presets/` is ever read — a preset must be *declared*: run Option A/C instead, the installer
+> ⚠️ **This whole block is historical reference for machines still holding a pre-cutover 0.1.x
+> install.** dsh 0.1.x is **not a supported target** (ruling D17): the installer refuses it by name
+> and there is no supported way to install Concerto Mode on it. These steps mirror the **0.1.x
+> filediscovery** face the installer used to have; on dsh ≥ 0.2 nothing inside `.agent-presets/` is
+> ever read — a preset must be *declared*: run Option A/C instead, the installer
 > edits `profiles/web/cordis.patch.yml` for you (idempotent, touches only the `preset-concerto` row,
 > backs the file up first).
 
@@ -203,8 +217,9 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<sm
   `call_omo_explore`, the child reads and reports back, the conductor summarizes. The child
   has no `write`/`edit` and cannot delegate.
 
-Both install faces aim at the same result: on dsh ≥ 0.2 the preset is a declared row of
-`profiles/web/cordis.patch.yml` rather than files in `.agent-presets/`. The 0.2 face has been
+The install aims at one result on the one supported runtime: on dsh ≥ 0.2 the preset is a declared
+row of `profiles/web/cordis.patch.yml` — there is no second install face (the 0.1.x filediscovery
+face was deleted at P4.5-T13; dsh < 0.2 is refused by name, ruling D17). The 0.2 face has been
 verified once on a real machine — a real fresh install in a sandbox plus a real harness start on
 **dsh 0.2.x** — and there the preset came back in the roster (one of 5 entries), its row carried
 no `broken` marker, and a session was created with that preset. That run did **not** exercise the
@@ -235,8 +250,9 @@ session-owned and process-local — other users need nothing from it.
 
 ## Uninstall
 
-- **dsh 0.1.x (filediscovery)**: delete `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` — the
-  preset leaves the roster.
+- **LEGACY dsh 0.1.x installs (pre-cutover; unsupported since ruling D17 — the installer no longer
+  installs there, it refuses < 0.2 by name)**: delete `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/`
+  to clean up what a pre-cutover installer left behind — the preset leaves the roster on that runtime.
 - **dsh ≥ 0.2 (declaration)**: ⚠️ do **not** `rm -rf` `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`
   — that file carries your own rows too. Either hand-edit it and remove ONLY the `- insert:` block whose
   row is `- id: preset-concerto`, or restore the newest **installer** backup:

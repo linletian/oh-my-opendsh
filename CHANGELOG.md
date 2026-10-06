@@ -49,6 +49,9 @@
   resolved before the D7 pin flips
 - docs(readme): both READMEs' Current Status carry the 0.2.x review row (🔬) and the key-facts DSH row now
   names 0.2.0-rc.2 as reviewed-but-unpinned — **the CI pin stays `0.1.5-rc.1` until Phase 4.5 closes**
+  *(historical by construction — accurate as of this 2026-10-02 docs commit; superseded 2026-10-06: the pin
+  flipped to `0.2.0-rc.2` at the D17 cutover (P4.5-T12b, commit `2323658`) and the compat row migrated to
+  `tested` at T13; the READMEs carry the corrected text)*
 - chore(compat): `0.2.0-rc.2` registered as an `untested` matrix row (`.omo/compat.yaml`, matrix
   re-rendered) — the standing "upstream published a new version" mechanism; **no `tested` row moves**
 

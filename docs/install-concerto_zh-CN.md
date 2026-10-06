@@ -5,13 +5,20 @@
 > 完整实现与验证报告：[docs/concerto-current-dsh_zh-CN.md](./concerto-current-dsh_zh-CN.md)。
 > English: [docs/install-concerto.md](./install-concerto.md)。
 
-## 两种形态
+## 形态（单一：declaration）
 
 | 形态 | 文件 | 生命周期 | 用途 |
 |---|---|---|---|
-| **持久化 preset（核心）— dsh 0.1.x（filediscovery）** | `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` 下 `agent.cordis.yml` + `preset.yml` | 磁盘持久，重启无损 | 日常使用：协奏模式进入 preset 选择器 |
-| **持久化 preset（核心）— dsh ≥ 0.2（declaration）** | `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`（web profile，安装器锁定 `web`）里声明的 `preset-concerto` 那一行 | 磁盘持久，重启无损 | 日常使用：0.2 起不再读 `.agent-presets/`，preset 声明了才存在 |
+| **持久化 preset（核心）— dsh ≥ 0.2（declaration）** | `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`（web profile，安装器锁定 `web`）里声明的 `preset-concerto` 那一行 | 磁盘持久，重启无损 | 日常使用：0.2 起不读 `.agent-presets/`，preset 声明了才存在 |
 | 动态插件（可选） | `patches/omo-dsh/omo-agents-current/concerto-plugin.host.js` | 进程级，重启即失 | 验证/观测/演示（`concerto_verify`、`concerto_demo`、路由强制与观测、Hard Blocks 注入） |
+
+> 🚫 **dsh < 0.2 不受支持（裁决 D17，2026-10-06，提交 `2323658`）。** 安装器原有的 **0.1.x
+> filediscovery 形态**——把 `agent.cordis.yml` + `preset.yml` 写进
+> `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/`——已在 **P4.5-T13 删除**：版本门现在
+> **具名拒绝 dsh < 0.2**（`error: unsupported dsh version '<ver>' — dsh < 0.2 is NOT supported:
+> 0.1.x compatibility was dropped by ruling D17 …`），**先于一切写盘**，退出码 1。declaration 是
+> 安装器唯一形态：0.2.x 上两个 YAML 文件下到临时目录，内容整体内联（重缩进 8 空格）进声明行——
+> `.agent-presets/` 里不留任何东西。下文的手动 0.1.x 步骤仅作为带标签的历史参考保留。
 
 基础体验只需 preset：指挥 persona 与 explore 绑定（persona + `toolFilter` + `maxDepth:1` +
 双路由）全部烘焙在两个 YAML 文件里，自包含、无仓库依赖。
@@ -31,15 +38,19 @@
 - **仅 dsh ≥ 0.2**：PATH 上要有 `python3`，**且带 PyYAML 模块**（`pip install pyyaml`）。declaration
   形态下安装器用 python3 + PyYAML 渲染那条声明行，并在创建任何东西之前先检查；缺模块就停下，打印
   `error: PyYAML required for the dsh >= 0.2 install path (pip install pyyaml)` 并以非 0 退出码结束。
-  dsh 0.1.x 形态两者都不需要——除非你设了 `EXPLORE_PROVIDER` / `EXPLORE_MODEL`，那本来就是需要
-  `python3` 的场景。macOS 自带的 python3 **不带** PyYAML。（与安装器 Usage 头部的 `Requirements:`
+  ~~dsh 0.1.x 形态两者都不需要——除非你设了 `EXPLORE_PROVIDER` / `EXPLORE_MODEL`，那本来就是需要
+  `python3` 的场景。~~ *（P4.5-T13，裁决 D17：0.1.x 形态已不存在——安装器在检查任何东西之前就先
+  具名拒绝 dsh < 0.2。）* macOS 自带的 python3 **不带** PyYAML。（与安装器 Usage 头部的 `Requirements:`
   一段一致。）
 
 ## 快速安装
 
 三种方式跑的是同一个 `scripts/install-concerto.sh`，它在动手前先跑 `dsh --version` 分流：**dsh ≥ 0.2**
-把 preset 渲染成**一条声明行**写进 `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`；**dsh 0.1.x**
-才按老样子把两个 YAML 落到 `.agent-presets/concerto/`。版本探测不到（dsh 不在 PATH、或输出里解析不出
+把 preset 渲染成**一条声明行**写进 `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`；
+~~**dsh 0.1.x** 才按老样子把两个 YAML 落到 `.agent-presets/concerto/`。~~
+**dsh < 0.2 会被具名拒绝**——`error: unsupported dsh version '<ver>' — dsh < 0.2 is NOT supported:
+0.1.x compatibility was dropped by ruling D17 …`，退出码 1，零写盘*（P4.5-T13；老形态已删除，
+不再是安装路径）*。版本探测不到（dsh 不在 PATH、或输出里解析不出
 MAJOR.MINOR）就响亮报错停下、提示先装 dsh——绝不瞎猜。0.2 形态下脚本也**不会**创建
 `profiles/web/package.json`（dsh 首次启动时自己补）。
 
@@ -69,7 +80,7 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 
 可选环境变量（管道前加前缀即可）：`NO_PIAI=1`（跳过 pi-ai 段）、
 `EXPLORE_PROVIDER`/`EXPLORE_MODEL`（覆盖 explore 第二路由）——`CONCERTO_TAG`、`DSH_HOME`
-在两个形态下语义都不变：
+在（唯一的、声明式）安装形态下语义都不变：
 
 ```bash
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_MODEL=my-model sh
@@ -83,9 +94,8 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE
 ```
 请在本机 DSH 用户目录安装 oh-my-opendsh 协奏模式（锁定 tag v0.2）：
 1) 先跑 `dsh --version`；输出里解析不出 MAJOR.MINOR 就报错停下，不要猜版本。
-   - dsh 0.1.x：用 shell 创建 ${DSH_HOME:-~/.dsh}/.agent-presets/concerto/，并用 curl -fsSL 下载
-     https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml
-     与 …/preset.yml 到该目录。
+   - dsh < 0.2：停下并报告 dsh < 0.2 不受支持（裁决 D17，2026-10-06 放弃）——不要创建
+     .agent-presets/concerto/，不要把 preset 文件下载进去；该形态已删除，官方安装器具名拒绝这些版本。
    - dsh ≥ 0.2：0.2 起已不读 .agent-presets/——把同样两个文件下载到临时目录，再往
      ${DSH_HOME:-~/.dsh}/profiles/web/cordis.patch.yml 追加**恰好一个** `- insert:` 块，声明
      `- id: preset-concerto`（name: '@deepseek-ai/dsh-agent-preset'；config 里 id 为 concerto，
@@ -143,9 +153,9 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<更小更快的模型名> sh
 ```
 
-<details><summary>手动 3 步（等价参考，仅 dsh 0.1.x）</summary>
+<details><summary>手动 3 步（历史参考——dsh 0.1.x，自裁决 D17（2026-10-06）起不受支持）</summary>
 
-> ⚠️ 这套手动步骤只对应 **0.1.x filediscovery** 形态。dsh ≥ 0.2 上 `.agent-presets/` 里的东西根本不会被读到——preset 必须**声明**才存在，请走方式 A/C（安装器会替你改 `profiles/web/cordis.patch.yml`：幂等、只动 `preset-concerto` 那一行、写前自动备份）。
+> ⚠️ **整段为历史参考**，只面向仍持有切换前 0.1.x 安装的机器。dsh 0.1.x **不是受支持的目标**（裁决 D17）：安装器具名拒绝它，0.1.x 上没有受支持的协奏安装方式。这套手动步骤对应安装器曾有过的 **0.1.x filediscovery** 形态。dsh ≥ 0.2 上 `.agent-presets/` 里的东西根本不会被读到——preset 必须**声明**才存在，请走方式 A/C（安装器会替你改 `profiles/web/cordis.patch.yml`：幂等、只动 `preset-concerto` 那一行、写前自动备份）。
 
 1. **复制 preset**（从 clone，或从任意已有该 preset 的机器拷这两个文件）：
 
@@ -182,8 +192,7 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<�
 - 给检索任务（"这个仓库的 README 讲了什么？"）→ 指挥调用 `call_omo_explore`，子 agent
   读完回传、指挥总结；子 agent 无 `write`/`edit`、不能再委派。
 
-两个形态指向同一个结果：dsh ≥ 0.2 下 preset 来自 `profiles/web/cordis.patch.yml` 里的声明行而不是
-`.agent-presets/` 目录。0.2 这条形态已在真机上验证过一次——在 **dsh 0.2.x** 上跑过一次真实的沙箱
+安装只指向一个结果、落在唯一受支持的运行时上：dsh ≥ 0.2 下 preset 来自 `profiles/web/cordis.patch.yml` 里的声明行——不存在第二个安装形态（0.1.x filediscovery 形态已在 P4.5-T13 删除；dsh < 0.2 被具名拒绝，裁决 D17）。0.2 这条形态已在真机上验证过一次——在 **dsh 0.2.x** 上跑过一次真实的沙箱
 全新安装 + 真实 harness 启动验证：preset 出现在 roster 里（5 个 preset 之一），那一行没有 `broken`
 标记，并且用这个 preset 成功建起了会话。那次验证**没有**跑上面这三条所描述的运行时行为，包括委派
 那条——沙箱里没有真实凭据。这三条得你自己跑。
@@ -209,7 +218,7 @@ Hard Blocks 注入。插件是会话专属、进程级的——不影响其他�
 
 ## 卸载
 
-- **dsh 0.1.x（filediscovery）**：删除 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` 目录即可（preset 从 roster 消失）。
+- **历史遗留 dsh 0.1.x 安装（切换前遗留；自裁决 D17 起不受支持——安装器已不再往那里装，具名拒绝 < 0.2）**：删除 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` 目录即可清理切换前安装器留下的东西（在该运行时上 preset 从 roster 消失）。
 - **dsh ≥ 0.2（declaration）**：⚠️ **不要 `rm -rf` `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml` 整个文件**——那里面还有你自己的行。要么手工编辑该文件，只删掉 `- id: preset-concerto` 所在的那个 `- insert:` 块；要么用**安装器**留下的最新备份还原：
   `cp "$(ls -t ${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml.bak.[0-9]* 2>/dev/null | head -n 1)" ${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`
   ——通配符**故意**写成带时间戳的形状（`.bak.` 后面紧跟一个数字）：裸的 `.bak.*` 也会匹配**你自己**命名的存档，

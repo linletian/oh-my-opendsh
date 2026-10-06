@@ -4,11 +4,17 @@
 //
 // DUAL-MODE since P4.5-T2 (plan §4.2; review §3.2-1): the observation channel
 // is chosen by `dshRuntimeShape(jobs)` — `events.subscribe` on the 0.2.x jobs
-// package, `onJobDone` on the 0.1.5 one, and the turn/end pull over `list()`
-// when neither push face exists. Every section below marked **[0.1.5]** /
-// **[0.2.x]** / **[BOTH]** says which generation it describes; an unmarked
-// section describes both. The 0.1.5 text is NOT rewritten away — it is the
-// path CI is pinned to (0.1.5-rc.1) and the behaviour its tests protect.
+// package, `onJobDone` on the 0.1.x-shape one, and the turn/end pull over
+// `list()` when neither push face exists. Every section below marked **[0.1.5]**
+// / **[0.2.x]** / **[BOTH]** says which generation it describes; an unmarked
+// section describes both. PIN STATUS (corrected by P4.5-T13 under ruling D17,
+// commit 2323658): CI is pinned to 0.2.0-rc.2 — the earlier sentence claiming
+// 0.1.5-rc.1 was the CI pin is FALSE since the T12b cutover and was fixed
+// here rather than left to rot. The **[0.1.5]** text stays: it documents the
+// shape fork the runtime-identity marker still answers, the v1 branch is kept
+// as the defensive shape fork (deleting it would turn a handle-shape
+// regression into a crash), and the tests that exercise it protect the FORK,
+// not a supported runtime — 0.1.x support is dropped.
 //
 // Upstream: packages/omo-opencode/src/hooks/background-notification/ @ v4.19.4
 //   (frozen baseline tag, commit

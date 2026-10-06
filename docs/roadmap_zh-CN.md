@@ -70,7 +70,7 @@
 
 > 2026-10-02 插入，位于 Team Mode 之前。刻意编号 4.5：给 Phase 5–7 重排号会让每一处既有引用（README 状态、计划目录、README 的 R-8 注记——`docs/plans/phase2-dev/phase2-plan.md` §6）无谓翻动，语义收益为零。范围与证据见 [`dsh-0.2.0-rc.2-review_zh-CN.md`](./dsh-0.2.0-rc.2-review_zh-CN.md)（静态源码实证；尚未跑运行时门）。
 
-- **目标**：让 overlay——协奏 preset、hooks、commands——在已发布的 dsh 0.2.x 线上（按 `0.2.0-rc.2` 复核）完整可用、全门转绿，然后翻 D7 pin。本阶段结项前，CI pin 保持 `0.1.5-rc.1`，0.2.x 是矩阵里已登记的 `untested` 行，不是受支持的运行时。
+- **目标**：让 overlay——协奏 preset、hooks、commands——在已发布的 dsh 0.2.x 线上（按 `0.2.0-rc.2` 复核）完整可用、全门转绿，然后翻 D7 pin。~~本阶段结项前，CI pin 保持 `0.1.5-rc.1`，0.2.x 是矩阵里已登记的 `untested` 行，不是受支持的运行时。~~ **已于 2026-10-06 结项**：pin 随 D17 切换（P4.5-T12b，提交 `2323658`；CI run 37476903377——8/8 门全绿）翻到 `0.2.0-rc.2`，矩阵行已在 T13 从 `untested` 迁入 `tested`；同一裁决放弃 0.1.x 兼容性——「结项前」的条件已满足，本句不再描述现在。
 - **为何是现在**：上游交付的三次重写正中本项目的承重层，且**三者全部静默失效**——其中两次打断**运行时**：agent-preset 重架构删掉了 `syncConcertoPreset` 所物化的 `$DSH_HOME/.agent-presets/` 文件发现（协奏模式干脆不注册——已发布的 curl 安装器写的静态 preset 也落在同一条被删路径上），`ctx.jobs` 重写让三个 jobs 触点无一抛出地失效；第三次打断**测试基础设施**：会话日志格式 v4 重构了 e2e 驱动伪造与解析的 `tool/result` 信封。Team Mode（Phase 5）直接建在 `ctx.jobs` + `ctx.subagents` 之上，所以先适配不是可选的排序偏好，而是依赖关系。
 - **范围**（按复核推导的强制顺序——先修功能所站立的面，再修功能，pin 最后）：
   1. **`ctx.jobs` 适配**（小、孤立）：`background-notification.ts` → `jobs.events.subscribe({owners:'scope'})` 并以 `settled.awaited` 去重；`stop-continuation-guard.ts` → `SessionId` caller + `JobView.owner`；`ulw-execute/live-state.ts` → 新 `JobSpec`（`owner: SessionId`、`run(job: JobHandle)`、`result`）。

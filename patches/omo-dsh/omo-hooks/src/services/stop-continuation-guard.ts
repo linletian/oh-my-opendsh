@@ -15,9 +15,13 @@
 //     single double-read `owner ?? ownerSession` so ONE fence covers BOTH
 //     generations and `owner` wins where both keys are present.
 // Every section below marked **[0.1.5]** / **[0.2.x]** / **[BOTH]** says which
-// generation it describes; an unmarked section describes both. The 0.1.5 text is
-// NOT rewritten away — it is the path CI is pinned to (0.1.5-rc.1, decision D7)
-// and the behaviour its tests protect. The fence SEMANTICS are identical on
+// generation it describes; an unmarked section describes both. PIN STATUS
+// (corrected by P4.5-T13 under ruling D17, commit 2323658): CI is pinned to
+// 0.2.0-rc.2 — the earlier sentence claiming 0.1.5-rc.1 was the CI pin is
+// FALSE since the T12b cutover. The **[0.1.5]** text stays as the shape-fork
+// documentation `dshRuntimeShape` still answers; the v1 caller/fence branch is
+// kept as the defensive shape fork and its tests protect the FORK, not a
+// supported runtime — 0.1.x support is dropped. The fence SEMANTICS are identical on
 // both branches (only this session's jobs are touched; unowned jobs are skipped;
 // the verdict/counting/reason/try-per-job discipline is shared) — the fork is
 // the caller shape and the owner key name, nothing else.

@@ -27,6 +27,22 @@ our:
   tag_alias: "v0.2"
 
 tested:
+  # P4.5-T13 cross-section migration (plan §4.7, review R1-I1): the 0.2.0-rc.2 row
+  # moved here from `untested:` with the {our, date, evidence} field set completed.
+  # `our: "unreleased"` is the develop line's PRE-REGISTRATION per release-process
+  # §2a — the combination was proven on develop @ 2323658 and no released version
+  # yet contains that work; release-bump.mjs UPGRADES this row in place at release
+  # (it is the ONLY row the identity rewrite may touch).
+  # The two 0.1.5-rc.1 rows below stay untouched: historical records, each true of
+  # the runtime it was tested on; 0.1.x support was dropped by ruling D17 (2323658).
+  - our: "unreleased"
+    dsh: "0.2.0-rc.2"
+    omo: "4.19.4"
+    date: "2026-10-06"
+    evidence: "CI run 37476903377 — commit 2323658 — 8/8 gates green on dsh 0.2.0-rc.2 (D7-pin install with frozen transitive tree / gate 1 typecheck / gate 2 unit tests / gate 3 mock-LLM e2e / gate 4 doctor-lite / gate 5 license / gate 6 static 33-33 / gate 7 docs 9-9 / gate 8 proofs 7-7; task book 四之二十二); local T13 re-run: .omo/evidence/p45t13/T13-cleanup.md"
+    note_en: "P4.5 cutover combination, tested on the develop line: the register() outlet + declarative installer face replaced the deleted .agent-presets file discovery (the static review docs/dsh-0.2.0-rc.2-review.md is superseded by runtime evidence), ctx.jobs moved to events.subscribe, session-log v4 envelope parsed by the e2e driver. 0.1.x compatibility is DROPPED (ruling D17, commit 2323658) — this row is the non-regression signal of record: green CI on 0.2.0-rc.2 replaces green CI on 0.1.5-rc.1"
+    note_zh: "P4.5 切换组合，已在 develop 线上验证：register() 出口 + 声明式安装器面取代了被删的 .agent-presets 文件发现（docs/dsh-0.2.0-rc.2-review_zh-CN.md 的静态复核已被运行时证据取代），ctx.jobs 迁至 events.subscribe，会话日志 v4 信封由 e2e 驱动解析。0.1.x 兼容性已放弃（裁决 D17，提交 2323658）——本行是记录在案的非回归信号：0.2.0-rc.2 上的 CI 绿取代 0.1.5-rc.1 上的 CI 绿"
+
   - our: "0.2.1"
     dsh: "0.1.5-rc.1"
     omo: "4.19.4"
@@ -66,12 +82,8 @@ tested:
     note_zh: "当前 DSH 运行时重验证：concerto_verify 22/22 PASS"
 
 untested:
-  - dsh: "0.2.0-rc.2"
-    omo: "4.19.4"
-    since: "2026-10-02"
-    note_en: "static review done (docs/dsh-0.2.0-rc.2-review.md): two P0 surfaces, both silent, plus one P1 (test infrastructure) — agent-preset re-architecture deletes the .agent-presets file discovery (concerto never registers; the released installer's static-preset line is hit by the same deletion), ctx.jobs rewrite (caller Agent->SessionId, ownerSession->owner, onJobDone->events.subscribe) invalidates 3 touch points, session-log v4 restructures the tool/result envelope; cordis core (vendor/cordis/src/{context,registry,service}.ts zero-diff) + 15 subscribed events + all 20 composition packages stable. Adaptation = roadmap Phase 4.5; the D7 pin flip is its last step, gated on L1+L2 evidence"
-    note_zh: "静态复核已完成（docs/dsh-0.2.0-rc.2-review_zh-CN.md）：两个 P0 面，全部静默，外加一个 P1（测试基础设施）——agent-preset 重架构删除 .agent-presets 文件发现（协奏不注册；已发布安装器的静态 preset 线同源受损）；ctx.jobs 重写（caller Agent->SessionId、ownerSession->owner、onJobDone->events.subscribe）使 3 处触点失效；会话日志 v4 重构 tool/result 信封。cordis 核心（vendor/cordis/src/{context,registry,service}.ts 零 diff）+ 15 个订阅事件 + 20 个组合包均稳定。适配 = ROADMAP Phase 4.5；D7 pin 翻转是其最后一步，以 L1+L2 证据为门"
-
+  # The 0.2.0-rc.2 row migrated to `tested:` in P4.5-T13 (see the note there);
+  # 0.1.2-rc.1 stays as the historical record of the superseded pin ladder.
   - dsh: "0.1.2-rc.1"
     omo: "4.19.4"
     since: "2026-09-05"
