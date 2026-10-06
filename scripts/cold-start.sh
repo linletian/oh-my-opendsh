@@ -89,8 +89,12 @@ grep -q "name: '@oh-my-opendsh/omo-commands'" "$DUMP_OUT" \
 # T14: both built-in LLM adapters our dual routing depends on (Q-3) must be
 # part of the composed tree — the composition-level half of the adapter gate
 # (the runtime-registration half lives in scripts/concerto-mode-probe.sh).
-grep -q "name: '@deepseek-ai/dsh-llm-deepseek'" "$DUMP_OUT" \
-  || fail "composed tree missing the dsh-llm-deepseek adapter row (sisyphus route)"
+# T12b cutover: on 0.2.x the sisyphus-route row is the `-api-key` package —
+# the one that registers `deepseek-official` (installed
+# dsh-llm-deepseek-api-key/lib/index.js:36/:58; composed at
+# dsh-base/cordis.patch.yml:525-526). The bare name is the 0.1.x row.
+grep -q "name: '@deepseek-ai/dsh-llm-deepseek-api-key'" "$DUMP_OUT" \
+  || fail "composed tree missing the dsh-llm-deepseek-api-key adapter row (sisyphus route)"
 grep -q "name: '@deepseek-ai/dsh-llm-pi-ai'" "$DUMP_OUT" \
   || fail "composed tree missing the dsh-llm-pi-ai adapter row (explore route)"
 if grep -qE "not found|mismatch|failed" "$DUMP_ERR"; then

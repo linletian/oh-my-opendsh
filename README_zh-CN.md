@@ -42,15 +42,15 @@ preset 携带 **11-agent 名册**：指挥 **sisyphus** + **10 个委派目标**
 
 | 委派目标 | 类 | 席位（默认 provider / model） |
 |---|---|---|
-| `explore` | 只读 | 快座 — `deepseek` / `deepseek-v4-flash` |
+| `explore` | 只读 | 快座 — `deepseek` / `deepseek-flash` |
 | `hephaestus` | worker | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 | `oracle` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
-| `librarian` | 只读 | 快座 — `deepseek` / `deepseek-v4-flash` |
+| `librarian` | 只读 | 快座 — `deepseek` / `deepseek-flash` |
 | `plan-consultant` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 | `plan-reviewer` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 | `atlas` | orchestrator | 强座 — `deepseek-official` / `deepseek-v4-pro` |
-| `multimodal-looker` | allowlist（`read`、`read_image`） | 视觉座 — `deepseek-official` / `deepseek-v4-flash-vision-exp` |
-| `sisyphus-junior` | worker | 快座 — `deepseek` / `deepseek-v4-flash` |
+| `multimodal-looker` | allowlist（`read`、`read_image`） | 视觉座 — `deepseek-official` / `deepseek-flash` |
+| `sisyphus-junior` | worker | 快座 — `deepseek` / `deepseek-flash` |
 | `prometheus` | 只读 | 强座 — `deepseek-official` / `deepseek-v4-pro` |
 
 > ⚠️ **名册完整 ≠ 完整的 OMO 编排面**（风险 R-8，见 docs/plans/phase2-dev/phase2-plan.md §6）。那句话点名了另外两件事，其中一件已经关闭
@@ -84,15 +84,15 @@ env 对逐 agent 覆盖，因此模型链留在配置里，而不在代码里。
 | # | Agent | 类 | `maxDepth` | 席位 | 默认 `provider` / `model` | env 覆盖对 |
 |---|---|---|---|---|---|---|
 | 1 | `sisyphus`（指挥——只持路由，不是委派工具） | — | — | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_SISYPHUS_PROVIDER` / `OMO_SISYPHUS_MODEL` |
-| 2 | `explore` | 只读 | 2 | 快座 | `deepseek` / `deepseek-v4-flash` | `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL` |
+| 2 | `explore` | 只读 | 2 | 快座 | `deepseek` / `deepseek-flash` | `OMO_EXPLORE_PROVIDER` / `OMO_EXPLORE_MODEL` |
 | 3 | `hephaestus` | worker | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_HEPHAESTUS_PROVIDER` / `OMO_HEPHAESTUS_MODEL` |
 | 4 | `oracle` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_ORACLE_PROVIDER` / `OMO_ORACLE_MODEL` |
-| 5 | `librarian` | 只读 | 2 | 快座 | `deepseek` / `deepseek-v4-flash` | `OMO_LIBRARIAN_PROVIDER` / `OMO_LIBRARIAN_MODEL` |
+| 5 | `librarian` | 只读 | 2 | 快座 | `deepseek` / `deepseek-flash` | `OMO_LIBRARIAN_PROVIDER` / `OMO_LIBRARIAN_MODEL` |
 | 6 | `plan-consultant` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_CONSULTANT_PROVIDER` / `OMO_PLAN_CONSULTANT_MODEL` |
 | 7 | `plan-reviewer` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_PLAN_REVIEWER_PROVIDER` / `OMO_PLAN_REVIEWER_MODEL` |
 | 8 | `atlas` | orchestrator | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_ATLAS_PROVIDER` / `OMO_ATLAS_MODEL` |
-| 9 | `multimodal-looker` | allowlist | 2 | 视觉座 | `deepseek-official` / `deepseek-v4-flash-vision-exp` | `OMO_MULTIMODAL_LOOKER_PROVIDER` / `OMO_MULTIMODAL_LOOKER_MODEL` |
-| 10 | `sisyphus-junior` | worker | 2 | 快座 | `deepseek` / `deepseek-v4-flash` | `OMO_SISYPHUS_JUNIOR_PROVIDER` / `OMO_SISYPHUS_JUNIOR_MODEL` |
+| 9 | `multimodal-looker` | allowlist | 2 | 视觉座 | `deepseek-official` / `deepseek-flash` | `OMO_MULTIMODAL_LOOKER_PROVIDER` / `OMO_MULTIMODAL_LOOKER_MODEL` |
+| 10 | `sisyphus-junior` | worker | 2 | 快座 | `deepseek` / `deepseek-flash` | `OMO_SISYPHUS_JUNIOR_PROVIDER` / `OMO_SISYPHUS_JUNIOR_MODEL` |
 | 11 | `prometheus` | 只读 | 2 | 强座 | `deepseek-official` / `deepseek-v4-pro` | `OMO_PROMETHEUS_PROVIDER` / `OMO_PROMETHEUS_MODEL` |
 
 - **硬预检（AC-5）**：指挥路由与 `explore` 路由必须**不同**。两者相同会在 apply 时**响亮致命报错**，
@@ -109,7 +109,7 @@ env 对逐 agent 覆盖，因此模型链留在配置里，而不在代码里。
 
 ## 当前状态
 
-🟢 **MVP v0.2 线；dsh 0.1.5-rc.1 已 pin 并通过 L1+L2 验证**
+🟢 **MVP v0.2 线；dsh 0.2.0-rc.2 已 pin（D17 切换——放弃 0.1.x 兼容）**
 
 - ✅ 调研报告完成（[`docs/feasibility-report_zh-CN.md`](./docs/feasibility-report_zh-CN.md)，16 节：2026-08-16 主体 + 2026-08-19 追加调研 + 2026-08-29 follow-up note + 2026-09-11 OMO v5.0 勘误）
 - ✅ 14 项决策已确认 + 6 项风险处置已登记（详见[项目决策记录](./docs/decisions_zh-CN.md)）
@@ -117,7 +117,7 @@ env 对逐 agent 覆盖，因此模型链留在配置里，而不在代码里。
 - ✅ **`@oh-my-opencode/hashline-core` 已 vendor——但尚未被消费**（2026-09-11，Phase 1）——OMO v4.19.4 的该包已 vendor 到 [`patches/omo-dsh/vendor/hashline-core`](./patches/omo-dsh/vendor/hashline-core)，作为 pnpm workspace 包、其测试已纳入 `pnpm vitest run`；**目前没有任何消费方**：没有 preset、也没有协奏模式代码 import 它，因此这**不是**"hashline 已接入"——来源、逐文件署名与"已修改"声明见 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)，计划与合规核对表见 [`docs/plans/phase1-dev/`](./docs/plans/phase1-dev/)
 - ✅ MVP PRD 已采纳（[`docs/mvp-prd_zh-CN.md`](./docs/mvp-prd_zh-CN.md)：协奏模式 + 1 Agent + 1 Subagent 最小骨架，决策 D11）
 - ✅ MVP 已结项——FR-1~FR-8 已实现、V1~V4 已验证（见 [mvp-pitfalls](./docs/mvp-pitfalls_zh-CN.md)）
-- ✅ **dsh 0.1.5-rc.1 的 pin 已落地**——0.1.2-alpha.1 的复核（[English](./docs/archived/dsh-0.1.2-review.md) / [中文](./docs/archived/dsh-0.1.2-review_zh-CN.md)）在它被 pin 之前就已被取代（那个 tag 从未发布）；升级到 0.1.5-rc.1 已通过 L1+L2 验证——见[复核报告](./docs/dsh-0.1.5-rc.1-review.md) / [升级记录](./docs/dsh-0.1.5-rc.1-upgrade.md)与 PRD §12
+- ✅ **dsh 0.2.0-rc.2 切换已落地（D17，P4.5-T12b）**——CI pin 与席位 id 在**同一次变更**中翻转：pin 从 `0.1.5-rc.1` 改钉 `0.2.0-rc.2`，快座改钉 `deepseek/deepseek-flash`、视觉座改钉 `deepseek-official/deepseek-flash`（即已安装的 pi-ai@0.87.1 / dsh-llm-deepseek@0.2.x 目录真实列出的 id；`deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 是 0.1.x 时代的 id）。0.1.x 兼容性**已放弃**——CI 不再跑 0.1.5。历史记录：0.1.2-alpha.1 的复核（[English](./docs/archived/dsh-0.1.2-review.md) / [中文](./docs/archived/dsh-0.1.2-review_zh-CN.md)）在它被 pin 之前就已被取代（那个 tag 从未发布）；更早升级到 0.1.5-rc.1 时已通过 L1+L2 验证——见[复核报告](./docs/dsh-0.1.5-rc.1-review.md) / [升级记录](./docs/dsh-0.1.5-rc.1-upgrade.md)与 PRD §12
 - ✅ **当前 DSH 运行时重跑**（2026-09-04）：协奏模式 MVP 已在当前 DSH 环境重新实现并验证
   （`concerto_verify` 22/22 PASS；双 provider 路由 deepseek-official + pi-ai；持久化
   `concerto` 用户 preset + P-19 加固；踩坑 P-13~P-19）——报告见
@@ -127,7 +127,7 @@ env 对逐 agent 覆盖，因此模型链留在配置里，而不在代码里。
 - ✅ 版本管理与发布流程已落地（决策 D13：三方兼容矩阵 + `scripts/release.sh` 六步发行 + 每周上游探测哨兵；「release 通知」「升级节奏」两个开放维度就此关闭）——见 [`docs/release-process_zh-CN.md`](./docs/release-process_zh-CN.md)
 - ✅ **Phase 3 hook listener 移植已落地**（2026-09-21，分支 `feature/phase3-dev`）——`omo-hooks` 插件把 OMO 的行为护栏 hook 移植到 DSH 事件：14 个模块已移植（文件读取劝导、todo 续行、会话/后台通知、错误恢复、输出截断、README 注入、使用提醒、webfetch/prometheus 门、ulw-execute 工作激活），每模块带 mock-LLM e2e；另有 47 个模块带成文的跳过/deferred 判定（含 DSH 原生覆盖——`fs-observation-policy`/`dsh-goal`/`dsh-compaction`——与 Phase 4/5/6/7 归属）。逐模块权威 = 覆盖基线 [`docs/plans/phase3-dev/`](./docs/plans/phase3-dev/)。⚠️ **护栏层 ≠ 命令面**（R-7）：hook 层完整 **≠** `/ulw-*` 命令（Phase 4）**≠** Team Mode（Phase 5）
 - ✅ **Phase 4 命令面已落地**（2026-10，分支 `feature/phase4-dev`）——`omo-commands` 插件注册 **5 条内建命令**，均为 OMO 内建命令的语义移植（`/ulw-execute`、`/handoff`、`/remove-ai-slops`、`/stop-continuation`、`/hyperplan`），每条带逐文件上游出处与一条 mock-LLM e2e 场景；**其中 `/ulw-execute` 另带接入 Phase 3 `ulw-execute` 监听器的 R-10 marker 闭环**（其余四条无 `$SESSION_ID`、无 `<session-context>` 外框，R-10 对它们不适用）；`/ulw-plan` 以**零代码手势桥**落地（DSH 自有 skill 手势），且**刻意不注册**同名命令。另 vendor 19 个 OMO 指令 skill（**属 vendored 内容，非移植**），`keyword-detector`（H-33）监听器在 `agent/pre-step` 上落地。逐行权威是覆盖基线 [`docs/plans/phase4-dev/`](./docs/plans/phase4-dev/)，署名见 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)。⚠️ **命令面 ≠ OMO 编排全流程可用**（R-7，本次落地不改变该判断）：命令面已落地 **≠** Team Mode（`team_create`、对抗评审环、`team` 关键词——属 Phase 5）**≠** 编辑面（`/refactor`、LSP/ast-grep——属 Phase 6）；`/hyperplan` 是**降级形态**（以名册委派替代 `team_*`），且必须在回复中声明该降级；`ralph` 在本运行时**无可编程停止 API**（如实登记为差异，不承诺可取消）；`session_read` 收窄为指引文案。
-- 🔬 **dsh 0.2.x 已复核；适配计划立为 Phase 4.5**（2026-10-02，分支 `feature/dsh-0.2-adaptation-docs`）——上游 0.2.0-rc 线重构了本项目所站立的三个面，且**全部静默失效**。其中两个打断**运行时**：`syncConcertoPreset` 所物化的 agent-preset 文件发现**被删**（协奏在 0.2.x 上根本不注册——已发布的 curl 安装器写的静态 preset 也落在同一条被删路径上），`ctx.jobs` 重写让三个 jobs 触点无一抛出地失效；第三个打断**测试基础设施**：会话日志格式 v4 重构了 e2e 驱动使用的 `tool/result` 信封。cordis 核心（`vendor/cordis/src/{context,registry,service}.ts` 零 diff）、全部 15 个订阅事件、协奏组合的 20 个上游包均稳定。完整分析见[复核报告](./docs/dsh-0.2.0-rc.2-review_zh-CN.md) / [English](./docs/dsh-0.2.0-rc.2-review.md)；计划见 [ROADMAP](./docs/roadmap_zh-CN.md) Phase 4.5。**Phase 4.5 结项前 CI pin 保持 `0.1.5-rc.1`**——0.2.x 已在矩阵登记 `untested`，尚不是受支持的运行时。
+- 🔬 **dsh 0.2.x 已复核；适配计划立为 Phase 4.5**（2026-10-02，分支 `feature/dsh-0.2-adaptation-docs`）——上游 0.2.0-rc 线重构了本项目所站立的三个面，且**全部静默失效**。其中两个打断**运行时**：`syncConcertoPreset` 所物化的 agent-preset 文件发现**被删**（协奏在 0.2.x 上根本不注册——已发布的 curl 安装器写的静态 preset 也落在同一条被删路径上），`ctx.jobs` 重写让三个 jobs 触点无一抛出地失效；第三个打断**测试基础设施**：会话日志格式 v4 重构了 e2e 驱动使用的 `tool/result` 信封。cordis 核心（`vendor/cordis/src/{context,registry,service}.ts` 零 diff）、全部 15 个订阅事件、协奏组合的 20 个上游包均稳定。完整分析见[复核报告](./docs/dsh-0.2.0-rc.2-review_zh-CN.md) / [English](./docs/dsh-0.2.0-rc.2-review.md)；计划见 [ROADMAP](./docs/roadmap_zh-CN.md) Phase 4.5。**CI pin 已不再保持 `0.1.5-rc.1`——随 D17 切换（P4.5-T12b）翻到 `0.2.0-rc.2`，0.1.x 兼容性放弃。** 矩阵的 0.2.x 行在收口步骤（T13）从 `untested` 跨段迁移到 `tested`。
 - ⏳ 2 个开放维度待决策（npm 命名、telemetry；详见决策记录"开放维度"——OMO core 包引进策略已由 D14 关闭）
 - ⏳ 工作量粗估：~16 周（一人主力）
 
@@ -162,7 +162,7 @@ MVP 产品需求文档（已采纳，决策 D11）见 [MVP PRD：协奏骨架](.
 
 | 项 | 值 |
 |---|---|
-| **DSH 版本** | **0.1.5-rc.1**（MIT；CI-pinned）——已在 2026-09-10 升级中端到端验证（[复核报告](./docs/dsh-0.1.5-rc.1-review.md)、[踩坑 P-20](./docs/mvp-pitfalls.md)）。历史 pin：0.1.0-rc.6（MVP 结项）；0.1.2-alpha.1 曾复核但从未 pin。**0.2.0-rc.2 已发布并完成复核**（[分析报告](./docs/dsh-0.2.0-rc.2-review_zh-CN.md)）——pin 翻转是 Phase 4.5 刻意排在最后的一步 |
+| **DSH 版本** | **0.2.0-rc.2**（MIT；自 D17 切换（P4.5-T12b）起 CI-pinned——0.1.x 兼容性放弃）——席位 id 已在同一次变更中重钉到 0.2.x 路由目录（[分析报告](./docs/dsh-0.2.0-rc.2-review_zh-CN.md)）。历史 pin：0.1.5-rc.1（2026-09-10 升级中端到端验证，[复核报告](./docs/dsh-0.1.5-rc.1-review.md)、[踩坑 P-20](./docs/mvp-pitfalls.md)）、0.1.0-rc.6（MVP 结项）；0.1.2-alpha.1 曾复核但从未 pin |
 | **OMO 上游** | 19 个 core 包 + 4 个小 adapter（harness-agnostic）（SUL-1.0）；**基线冻结 v4.19.4**（D14）——v5.0 已于 2026-09-11 调研，仅作认知跟踪 |
 | **本项目 license** | **MIT OR SUL-1.0**（dual license） |
 | **OMO LICENSE 原文** | [`LICENSES/oh-my-openagent.LICENSE.md`](./LICENSES/oh-my-openagent.LICENSE.md) |

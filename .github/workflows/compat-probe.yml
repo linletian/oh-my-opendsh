@@ -37,23 +37,23 @@ jobs:
 
       # The sentinel loads .omo/compat.yaml with the installed dsh's js-yaml
       # (the shared read-only dialect loader from scripts/doctor-lite.mjs).
-      # Same D7 caveat as ci.yml: the version pin alone leaves every caret-ranged
-      # transitive floating (`^0.1.5-rc.1` satisfies 0.1.5-rc.2/rc.3; upstream
-      # published 0.1.5-rc.3 / 0.1.7-rc.* on 2026-09-22..24), which is how a
-      # pinned install silently stops hoisting the sandbox family the plugin tree
-      # needs. `--before` freezes the whole resolved tree — and the cutoff is a
-      # SAFE POINT, not a publish instant: npm applies it per package and this
-      # monorepo does not publish its family atomically (at rc.1,
-      # @deepseek-ai/dsh-webhook-github landed 92s AFTER the top-level package),
-      # so the cutoff must sit strictly between the pinned family's MAX publish
-      # instant and the successor family's MIN publish instant. The committed
-      # value is the rc.1 midpoint and was verified by a real lockfile-only
-      # resolution: 231/231 @deepseek-ai/dsh* entries at 0.1.5-rc.1, zero nested
-      # paths. REVISIT on every dsh bump: scripts/bump-dsh.sh computes and
-      # verifies the safe point, then rewrites the quoted version AND both
-      # cutoffs — never hand-edit either.
+      # Same cutoff caveat as ci.yml (the lesson carries across generations): the
+      # version pin alone leaves every caret-ranged transitive floating, and the
+      # monorepo does not publish its family atomically — so `--before` must sit
+      # strictly between the pinned family's MAX publish instant and the
+      # successor family's MIN publish instant, picked by PUBLISH TIME from the
+      # registry time map. Since the D17 cutover the sentinel rides the SAME pin
+      # as ci.yml (0.2.0-rc.2; 0.1.x compatibility is dropped): the committed
+      # 2026-10-01T07:24:55.067Z is the midpoint between 0.2.0-rc.2
+      # (2026-09-29T09:56:27.792Z) and its earliest-later version 0.2.1-alpha.1
+      # (2026-10-03T04:53:22.343Z), verified by a real lockfile-only resolution:
+      # 278/278 @deepseek-ai/dsh* entries at 0.2.0-rc.2, any depth. REVISIT on
+      # every dsh bump: scripts/bump-dsh.sh computes and verifies the safe point,
+      # then rewrites the quoted version AND both cutoffs — never hand-edit
+      # either. Gate 7 (check-docs-consistency d09) asserts ci.yml and this file
+      # carry the same cutoff.
       - name: install dsh (parser provider)
-        run: npm install --global "@deepseek-ai/dsh@0.1.5-rc.1" --before=2026-09-10T09:05:02.041Z
+        run: npm install --global "@deepseek-ai/dsh@0.2.0-rc.2" --before=2026-10-01T07:24:55.067Z
 
       - name: detect new upstream versions → open issue
         run: node scripts/check-compat-probes.mjs

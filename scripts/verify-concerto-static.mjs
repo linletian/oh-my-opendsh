@@ -369,8 +369,8 @@ async function run() {
       const problems = []
       if (cfg.provider !== 'spawn') problems.push(`provider=${cfg.provider} (want spawn)`)
       if (cfg.backgroundMode !== 'one-shot') problems.push(`backgroundMode=${cfg.backgroundMode} (want one-shot)`)
-      if (!(cfg.agentOptions && cfg.agentOptions.provider === 'deepseek' && cfg.agentOptions.model === 'deepseek-v4-flash')) {
-        problems.push(`agentOptions=${JSON.stringify(cfg.agentOptions)} (want pi-ai deepseek route: provider deepseek, model deepseek-v4-flash)`)
+      if (!(cfg.agentOptions && cfg.agentOptions.provider === 'deepseek' && cfg.agentOptions.model === 'deepseek-flash')) {
+        problems.push(`agentOptions=${JSON.stringify(cfg.agentOptions)} (want pi-ai deepseek route: provider deepseek, model deepseek-flash — the 0.2.x pi-ai catalog id; deepseek-v4-flash was the pre-T12b 0.1.x-era id)`)
       }
       for (const t of ['write', 'edit', 'call_omo_explore']) {
         if (!deny.includes(t)) problems.push(`toolFilter.deny missing "${t}"`)

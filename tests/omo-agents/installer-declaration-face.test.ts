@@ -85,8 +85,10 @@ const PRESET_ROW_NAME = '@deepseek-ai/dsh-agent-preset'
 // CANARY — 改动仓内 preset 路由（patches/omo-dsh/omo-agents-current/preset/
 // agent.cordis.yml 里 agentOptions 的 provider/model）时必须连带改这两个常量，
 // 否则「没有 override 时原样装机」这类断言会跟着源文件一起漂移而测不出漂移。
+// T12b cutover executed this canary: the authored model is now deepseek-flash
+// (the 0.2.x pi-ai catalog id; deepseek-v4-flash was the 0.1.x-era value).
 const AUTHORED_PROVIDER = 'deepseek'
-const AUTHORED_MODEL = 'deepseek-v4-flash'
+const AUTHORED_MODEL = 'deepseek-flash'
 
 /** Printed by the PATH-local curl shim; any occurrence means a test went online. */
 const NETWORK_ATTEMPTED = 'OFFLINE-Harness-blocked-a-real-curl'

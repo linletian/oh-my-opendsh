@@ -4091,7 +4091,9 @@ const JSON_RECOVERY_PROMPT =
 // — the raw text really does reach the registry.
 //
 // ON dsh 0.2.0-rc.2 THIS PREMISE IS DEAD ON THE `deepseek-official` ROUTE ONLY
-// (P4.5-T12a), and no fixture value revives it there:
+// (P4.5-T12a; THE CONTRACT since the P4.5-T12b cutover — 0.1.x compatibility is
+// dropped, so this dead turn is the accepted product behaviour, not a transitional
+// accommodation), and no fixture value revives it there:
 //   • dsh-llm-deepseek/lib/index.js:1983-1991 (the machine's installed npm
 //     package) — at `message_stop`, every `tool-call` block's `arguments` must
 //     `JSON.parse` to a plain object unless the stop reason is `max_tokens`;
@@ -4143,7 +4145,9 @@ const JSON_RECOVERY_EXPECTED_ADAPTER_CODE = 'MALFORMED_RESPONSE'
 const JSON_RECOVERY_EXPECTED_ADAPTER_MESSAGE = 'DeepSeek Messages expected a JSON object'
 
 // ── LANE B, the pi-ai lane (P4.5-T12a) ───────────────────────────────────────
-// THE SECOND HALF OF THE MIGRATED PREMISE — AND THE HALF THAT OVERTURNED AN
+// THE SECOND HALF OF THE PREMISE SPLIT — SINCE P4.5-T12b, THE CONTRACT ITSELF
+// (lane A pins the dead-turn half as accepted 0.2.x product behaviour; this lane
+// pins the live half) — AND THE HALF THAT OVERTURNED AN
 // EARLIER INFERENCE OF MINE. The first diagnosis of the `json-error-recovery`
 // residual claimed that BOTH shipped 0.2.x adapters stood in front of the
 // registry, citing `dsh-llm-pi-ai`'s `parseArguments` "substituting {}". That was
@@ -8124,34 +8128,49 @@ export function analyzeJsonErrorRecoveryReminder(
     ? writeResult.text.slice(0, -(JSON_ERROR_REMINDER.length + 1))
     : writeResult?.text
 
-  // ── THE PREMISE BRANCH (P4.5-T12a) ──────────────────────────────────────────
+  // ── THE PREMISE BRANCH (P4.5-T12a; `adapter-dead-turn` PROMOTED TO CONTRACT
+  //    by P4.5-T12b) ───────────────────────────────────────────────────────────
   // The discriminator is an OBSERVABLE (did the registry answer the two calls at
   // all?), never a version string, and the branch it selects is recorded in
   // `bonus.premiseBranch` so a kept sandbox can be audited against it.
   //
-  //   • `tool-registry` — dsh 0.1.5-rc.1. Its dsh-llm-deepseek has NO tool-call
-  //     arguments validation at `message_stop`: `MALFORMED_RESPONSE` occurs 2× in
-  //     that installed artifact (dsh-llm-deepseek/lib/index.js under
-  //     /tmp/p45t7-015/prefix), both about SSE payload FRAMING (:1253
-  //     `malformed SSE payload: …`). The malformed `arguments` text therefore
-  //     reaches the registry, which answers, and the listener fires.
-  //   • `adapter-dead-turn` — dsh 0.2.0-rc.2. dsh-llm-deepseek/lib/index.js
-  //     :1983-1991 (the machine's installed npm package) now walks every
-  //     `tool-call` block at `message_stop` — unless `reason.kind ===
-  //     "max-tokens"` — and does `JSON.parse(content.arguments)` then
-  //     `object(parsed)`, returning `malformed("tool input is invalid JSON")` on
-  //     failure. The turn ends in a NAMED error and the tool is NEVER called, so
-  //     the listener has nothing to fire on. Measured in
+  //   • `adapter-dead-turn` — **THE CONTRACT on dsh 0.2.x** (promoted from
+  //     "migration accommodation" by the D17 cutover, P4.5-T12b: 0.1.x
+  //     compatibility is dropped, so this is no longer a transitional shape to
+  //     tolerate — it is the accepted product behaviour of the only supported
+  //     runtime). dsh-llm-deepseek/lib/index.js :1983-1991 (the machine's
+  //     installed npm package) walks every `tool-call` block at `message_stop` —
+  //     unless `reason.kind === "max-tokens"` — and does `JSON.parse(content
+  //     .arguments)` then `object(parsed)`, returning `malformed("tool input is
+  //     invalid JSON")` on failure. The turn ends in a NAMED error and the tool
+  //     is NEVER called, so the listener has nothing to fire on. Measured in
   //     /tmp/omo-dsh-e2e-qzhiFi: `turn/end seq=18 reason.kind:"error"
   //     reason.error.code:"MALFORMED_RESPONSE" reason.error.message:"DeepSeek
   //     Messages expected a JSON object"`, with no `tool/call` in the log.
+  //     KNOWN UPSTREAM GAP, NAMED (not ours to fix): installed dsh-llm/lib/
+  //     index.js:251-257 `DEFAULT_RETRYABLE_CODES` = [EMPTY_RESPONSE,
+  //     RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT] — it EXCLUDES MALFORMED_RESPONSE,
+  //     while EMPTY_RESPONSE retries because "The attempt produced nothing
+  //     durable, so retry policy treats it as safe" (dsh-llm/lib/index.js:147-
+  //     149, the EMPTY_RESPONSE_CODE docblock). A malformed turn likewise
+  //     produces nothing durable, yet is not retried. That asymmetry is upstream's
+  //     to fix; if upstream ever admits MALFORMED_RESPONSE to the retryable set,
+  //     this lane's one-request premise breaks HERE, loudly — which is the point.
+  //   • `tool-registry` — the retired 0.1.5 arm, kept as the TRIPWIRE half: its
+  //     dsh-llm-deepseek had NO tool-call arguments validation at `message_stop`
+  //     (`MALFORMED_RESPONSE` occurred 2× in that installed artifact (dsh-
+  //     llm-deepseek/lib/index.js under /tmp/p45t7-015/prefix), both about SSE
+  //     payload FRAMING (:1253 `malformed SSE payload: …`)). The malformed
+  //     `arguments` text reached the registry there, which answered, and the
+  //     listener fired. If a future dsh restores that recovery path on this
+  //     route, the branch flips, these checks start running, and a broken hook
+  //     goes red again instead of being quietly forgotten.
   //
   // Neither branch is a weakened form of the other: each names the exact text the
   // runtime on that side produces. What BOTH assert, as an explicit negative that
   // GUARDS THE RETIREMENT, is that the reminder did not appear when the trigger
-  // did not — and if a future dsh restores the recovery path on this route, the
-  // branch flips, the `tool-registry` checks start running, and a broken hook goes
-  // red again instead of being quietly forgotten.
+  // did not — `reminderAbsentBecauseTriggerSurfaceRetired` stays as the tripwire
+  // for exactly that future dsh.
   //
   // THERE IS NO "UNKNOWN THIRD SHAPE" CHECK HERE, AND THERE CANNOT BE ONE
   // (P4.5-T12a review A+B, shared MAJOR-1, upheld). An earlier revision of this
@@ -8221,6 +8240,12 @@ export function analyzeJsonErrorRecoveryReminder(
     turnCompleted: turnCompleted(events),
   }
 
+  // THE CONTRACT branch (0.2.x — promoted from "migration" by P4.5-T12b: the
+  // dead turn on malformed tool arguments IS the accepted product behaviour of
+  // the only supported runtime; artifact + named upstream retry-gap in the
+  // premise-branch header above). Its checks are the ONLY positive evidence
+  // physically obtainable on this route — a NAMED turn end, with the exact code
+  // and message transcribed from the artifact that produces them.
   const adapterDeadTurnChecks = {
     // The turn did not end silently: it ended in an ERROR reason the runtime
     // NAMED, and the name is the adapter's own code.
@@ -18737,8 +18762,9 @@ const SCENARIOS = [
     // yields the provider's RAW `arguments` text (:1550-1555 of that installed
     // artifact) and so still delivers the trigger.
     //
-    // Together the two scenarios are the migrated premise, and they split it the
-    // way the runtime actually splits it: the json-error listener is NOT retired on
+    // Together the two scenarios are THE CONTRACT on how the premise splits on
+    // the only supported runtime (0.2.x), and they split it the way the runtime
+    // actually splits it: the json-error listener is NOT retired on
     // 0.2.x — it is unreachable on ONE route and still fires on the other. If a
     // future dsh moves the validation onto the pi-ai route too, THIS lane goes red
     // naming the check, and the reviewer learns the hook has gone fully dark

@@ -1,4 +1,4 @@
-# 手工测试验证指南 — 协奏 MVP（dsh 0.1.5-rc.1）
+# 手工测试验证指南 — 协奏 MVP（dsh 0.2.0-rc.2）
 
 > 中文翻译；主文档（英文）见 [Manual Testing Guide](./manual-testing.md)。
 
@@ -7,7 +7,7 @@
 ## 当前状态
 
 - MVP 已结项：FR-1~FR-8 已实现，V1~V4 已验证。
-- 所有自动化门禁在 **dsh 0.1.5-rc.1** 上全绿（CI pin，决策 D7；L1 + L2 均绿——见[升级记录](./dsh-0.1.5-rc.1-upgrade_zh-CN.md)）。
+- 所有自动化门禁在 **dsh 0.2.0-rc.2** 上全绿（自 D17 切换（P4.5-T12b）起的 CI pin——0.1.x 兼容性放弃；0.1.5-rc.1 线为历史记录，见[升级记录](./dsh-0.1.5-rc.1-upgrade_zh-CN.md)）。
 - 中间的 0.1.2-alpha.1 验证线已被 0.1.5-rc.1 bump 取代（2026-09-10，PRD §12）。
 - 手工测试补上**真实模型层**（PRD §8 L4）：委派合规性、回答质量，以及 mock-LLM e2e 无法证明的 AC-4/AC-5 肉眼检查。
 
@@ -22,13 +22,13 @@
 ## 前置条件
 
 1. Node 24 与 pnpm。
-2. PATH 上有 dsh 0.1.5-rc.1：
+2. PATH 上有 dsh 0.2.0-rc.2：
 
    ```bash
    dsh --version
    ```
 
-   严格按 pin 版本安装，与 CI 一致：`npm i -g @deepseek-ai/dsh@0.1.5-rc.1 --before=2026-09-10T09:05:02.041Z`
+   严格按 pin 版本安装，与 CI 一致：`npm i -g @deepseek-ai/dsh@0.2.0-rc.2 --before=2026-10-01T07:24:55.067Z`
    （`--before` 不是装饰，是承重的——见下方「注意」）。
 
 3. 仓库依赖已安装（`node_modules` 存在）。
@@ -40,7 +40,7 @@
 
    或已存于 `~/.dsh/.credentials.yaml`（本机已存在——smoke-real 以只读方式读取并注入其沙箱）。
 
-> **注意：** 严格安装 pin 版本（`@0.1.5-rc.1`），切勿替换成其他 rc。rc 时代的教训（P-11.5）：裸跑 `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` 曾拉来 rc.8 依赖并搞坏整个栈——恢复方法见 P-11.5 的 validated-tree 配方。同一颗地雷在 2026-09 再次引爆（PR #9）：全新安装 `@0.1.5-rc.1` 会解析到 0.1.7-rc.* 的传递依赖，其中 `@deepseek-ai/dsh-sandbox-local`（以及 `-fs-sandbox` / `-sandbox-windows-acl`）不再被提升到插件树加载器解析裸包名的位置，导致组合出的插件树加载失败、所有 e2e 场景都在就绪前挂掉。顶层精确 pin **不**冻结传递依赖；`--before=2026-09-10T09:05:02.041Z` 才冻结。该截止日是**安全点，不是发布时刻**（PR #9 第二轮）：npm 对 `--before` 是**逐包**比较，而 monorepo 家族并非原子发布，所以它必须严格落在「所 pin 家族的发布时刻最大值」与「下一家族发布时刻最小值」之间——上面的 rc.1 取值正是两者的中点，并已用真实的 lockfile-only 解析复验（231/231 个 `@deepseek-ai/dsh*` 条目均为 rc.1，零嵌套路径）。在 `DSH_VERSION` 本身翻转之前请保留它；翻转时请让 [`scripts/bump-dsh.sh`](./release-process_zh-CN.md) 计算并验证新的截止日，而不是手改。
+> **注意：** 严格安装 pin 版本（`@0.2.0-rc.2`），切勿替换成其他 rc。rc 时代的教训（P-11.5）：裸跑 `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` 曾拉来 rc.8 依赖并搞坏整个栈——恢复方法见 P-11.5 的 validated-tree 配方。同一颗地雷在 2026-09 再次引爆（PR #9）：全新安装 `@0.1.5-rc.1` 会解析到 0.1.7-rc.* 的传递依赖，其中 `@deepseek-ai/dsh-sandbox-local`（以及 `-fs-sandbox` / `-sandbox-windows-acl`）不再被提升到插件树加载器解析裸包名的位置，导致组合出的插件树加载失败、所有 e2e 场景都在就绪前挂掉。顶层精确 pin **不**冻结传递依赖；`--before=2026-09-10T09:05:02.041Z` 才冻结。该截止日是**安全点，不是发布时刻**（PR #9 第二轮）：npm 对 `--before` 是**逐包**比较，而 monorepo 家族并非原子发布，所以它必须严格落在「所 pin 家族的发布时刻最大值」与「下一家族发布时刻最小值」之间——上面提交的 `2026-10-01T07:24:55.067Z` 正是 0.2.0-rc.2 的中点（目标 2026-09-29T09:56:27.792Z，最早后继 0.2.1-alpha.1 于 2026-10-03T04:53:22.343Z），并已用真实的 lockfile-only 解析复验（278/278 个 `@deepseek-ai/dsh*` 条目均为 0.2.0-rc.2，任意嵌套深度）。在 `DSH_VERSION` 本身翻转之前请保留它；翻转时请让 [`scripts/bump-dsh.sh`](./release-process_zh-CN.md) 计算并验证新的截止日，而不是手改。
 
 ## L0 — 零成本自动化冒烟
 
@@ -108,7 +108,7 @@ llm-pi-ai:
 dsh --profile web --patch ./cordis.yml --port 4173
 ```
 
-就绪行：`dsh web: http://127.0.0.1:4173/?token=<launch-token>`——在 pin 的 0.1.5-rc.1 上 URL 携带启动 token（0.1.2 起浏览器鉴权）：请打开完整 URL。
+就绪行：`dsh web: http://127.0.0.1:4173/?token=<launch-token>`——在 pin 的 0.2.0-rc.2 上 URL 携带启动 token（0.1.2 起浏览器鉴权）：请打开完整 URL。
 
 ### 模式与模型选择
 
@@ -172,10 +172,10 @@ AC-9（文档）已在 MVP 签核时关闭。
 | 模式花名册里没有协奏模式 | 插件未加载：查启动日志里有无 `[omo-agents] loaded`；preset 会在启动时写入 `$DSH_HOME/.agent-presets/concerto/`——检查该目录是否存在。 |
 | `MISSING_CREDENTIAL` 指向 explore 路由 | `settings.yaml` 缺 llm-pi-ai 段（L2-b），或 credentials.yaml/环境变量中没有 key。 |
 | 任何位置出现 `ctx.agents.get is not a function` | 你装上了 rc.8 依赖（裸重装拉来的）——validated-tree 配方见 P-11.5。 |
-| 就绪行带 `?token=` | 在 pin 的 0.1.5-rc.1 上属正常（0.1.2 起浏览器鉴权）：打开完整 URL；我们的 harness 脚本已兼容两种传输。 |
-| 指挥可直接抓取 URL | tool-web `fetch: true` 跟随 shipped standard preset（派生纪律；两个协奏 preset 自 0.1.5-rc.1 对齐起均携带）——属预期行为，详见 preset 的 derivation ledger。 |
+| 就绪行带 `?token=` | 在 pin 的 0.2.0-rc.2 上属正常（0.1.2 起浏览器鉴权）：打开完整 URL；我们的 harness 脚本已兼容两种传输。 |
+| 指挥可直接抓取 URL | tool-web `fetch: true` 跟随 shipped standard preset（派生纪律；两个协奏 preset 自 0.1.5-rc.1 对齐起均携带，跨过 0.2.x 切换保留）——属预期行为，详见 preset 的 derivation ledger。 |
 
 ## 当前限制
 
-- DSH pin 为 0.1.5-rc.1（2026-09-10 完成，PRD §12）；先前的"CI 翻转至 0.1.2"条目已被取代，`smoke-real.mjs` 的传输适配随之落地（P-11.6 已关闭）。
+- DSH pin 为 0.2.0-rc.2（D17 切换，P4.5-T12b）；历史线：曾 pin 0.1.5-rc.1（2026-09-10 完成，PRD §12），先前的"CI 翻转至 0.1.2"条目已被取代，`smoke-real.mjs` 的传输适配随之落地（P-11.6 已关闭）。
 - dsh 依赖树的 shrinkwrap 已登记为后续事项（P-11.5）。

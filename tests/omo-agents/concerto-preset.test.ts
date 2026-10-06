@@ -331,9 +331,9 @@ describe('concerto rendered composition — per-row contract (P2-T15)', () => {
     // Spot checks (independent of the roster rows): the two pre-existing seats
     // plus the one vision seat stay where the plan puts them.
     expect(toolRow(group, 'explore').config.agentOptions)
-      .toEqual({ provider: 'deepseek', model: 'deepseek-v4-flash' })
+      .toEqual({ provider: 'deepseek', model: 'deepseek-flash' })
     expect(toolRow(group, 'multimodal-looker').config.agentOptions)
-      .toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' })
+      .toEqual({ provider: 'deepseek-official', model: 'deepseek-flash' })
   })
 
   it('renders each row\'s persona as that agent\'s block scalar', async () => {
@@ -395,7 +395,7 @@ describe('concerto rendered composition — per-row contract (P2-T15)', () => {
     expect(explore.config.maxDepth)
       .toBe(DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')!.maxDepth)
     expect(explore.config.persona).toContain('# Explore: Read-Only Retrieval Agent')
-    expect(explore.config.agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-v4-flash' })
+    expect(explore.config.agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-flash' })
     // The T12 + F1 guardrails, now the read-only class list (P2-T15): write/edit
     // plus all ten delegation tools, so the child physically cannot delegate.
     const deny = denyToolNamesFor(DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')!)!
@@ -489,7 +489,7 @@ describe('concerto sentinel renderers — injection and guard (P2-T15)', () => {
     expect(composition).toContain('          # Explore: Read-Only Retrieval Agent')
     // Real route from src/model-routes.ts defaults (T14 source).
     expect(composition).toContain('          provider: "deepseek"')
-    expect(composition).toContain('          model: "deepseek-v4-flash"')
+    expect(composition).toContain('          model: "deepseek-flash"')
     // Roster-derived (was the literal `maxDepth: 1` before the
     // D-2026-09-13-01 correction): the rendered row carries the roster value.
     const exploreMaxDepth = DELEGATION_ENTRIES.find((entry) => entry.id === 'explore')!.maxDepth

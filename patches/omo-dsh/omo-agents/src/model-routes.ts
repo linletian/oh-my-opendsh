@@ -54,10 +54,13 @@
 //    rides the `dsh-llm-deepseek` adapter's shipped route `deepseek-official` —
 //    registered from the base composition's entry config in every shipped
 //    profile (no key needed for REGISTRATION; credentials resolve per request).
-//  - FAST seat `deepseek / deepseek-v4-flash` (3 agents: explore, librarian,
+//  - FAST seat `deepseek / deepseek-flash` (3 agents: explore, librarian,
 //    sisyphus-junior) rides the `dsh-llm-pi-ai` adapter's catalog route
-//    `deepseek` (pi-ai ships deepseek-v4-pro / deepseek-v4-flash on
-//    https://api.deepseek.com, openai-completions + deepseek thinking dialect).
+//    `deepseek` (installed pi-ai@0.87.1 dist/providers/data/deepseek.json
+//    lists EXACTLY deepseek-flash[text+image] + deepseek-v4-pro[text] on
+//    https://api.deepseek.com, openai-completions + deepseek thinking dialect;
+//    `deepseek-v4-flash` was the pi-ai@0.85.1-era id, dropped at the T12b
+//    cutover — 0.1.x compatibility is gone).
 //    The shipped composition mounts llm-pi-ai DORMANT (zero routes;
 //    dsh-base/cordis.patch.yml:127-128 @ 0.2.0-rc.2): the route registers when
 //    the ENTRY CONFIG carries the providers section. CURRENT SHAPE (0.2.x):
@@ -84,10 +87,14 @@
 //    seeds exactly this providers section through its second --patch overlay
 //    (scripts/concerto-mode-probe.sh) and asserts the routes `active:true`
 //    over POST /api/llm.providers.
-//  - VISION seat `deepseek-official / deepseek-v4-flash-vision-exp`
-//    (multimodal-looker) — the id exists in BOTH catalogs (dsh-llm-deepseek
-//    DEFAULT_MODELS, `inputModalities:["text","image"]`, and the pi-ai builtin
-//    deepseek catalog). The default provider is deepseek-official because that
+//  - VISION seat `deepseek-official / deepseek-flash` (multimodal-looker) —
+//    the ONLY image-capable id on the official route of the pinned 0.2.x
+//    runtime (installed dsh-llm-deepseek/lib/index.js:42-56 DEFAULT_MODELS:
+//    deepseek-flash `inputModalities:["text","image"]` + deepseek-v4-pro
+//    [text]; pi-ai@0.87.1's deepseek-flash is likewise text+image).
+//    `deepseek-v4-flash-vision-exp` existed in BOTH 0.1.x-era catalogs
+//    (pi-ai@0.85.1 + dsh-llm-deepseek@0.1.5 DEFAULT_MODELS) — history; on
+//    0.2.x neither catalog lists it. The default provider is deepseek-official because that
 //    adapter is registered by the base composition in every profile with no
 //    settings dependency (roster §2.8; plan §6 R-4 — a fallback must also land
 //    on the already-registered side).

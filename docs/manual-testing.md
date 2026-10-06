@@ -1,4 +1,4 @@
-# Manual Testing Guide — Concerto MVP (dsh 0.1.5-rc.1)
+# Manual Testing Guide — Concerto MVP (dsh 0.2.0-rc.2)
 
 > **Primary document (English).** 中文翻译见 [手工测试验证指南](./manual-testing_zh-CN.md).
 
@@ -7,7 +7,7 @@ This guide is for a developer who wants to run the MVP by hand **today**. Every 
 ## Current state
 
 - MVP closed: FR-1~FR-8 implemented, V1~V4 verified.
-- All automated gates green on **dsh 0.1.5-rc.1** (the CI pin, decision D7; L1 + L2 both green — see [the upgrade record](./dsh-0.1.5-rc.1-upgrade.md)).
+- All automated gates green on **dsh 0.2.0-rc.2** (the CI pin since the D17 cutover, P4.5-T12b — 0.1.x compatibility dropped; the earlier 0.1.5-rc.1 line is historical, see [the upgrade record](./dsh-0.1.5-rc.1-upgrade.md)).
 - The intermediate 0.1.2-alpha.1 verification line was superseded by the 0.1.5-rc.1 bump (2026-09-10, PRD §12).
 - Manual testing adds the **real-model layer** (PRD §8 L4): delegation compliance, answer quality, and the AC-4/AC-5 eyeball checks that mock-LLM e2e cannot prove.
 
@@ -22,13 +22,13 @@ A 5th run mode, 协奏模式 / **Concerto Mode** (preset id `concerto`, trust us
 ## Prerequisites
 
 1. Node 24 and pnpm.
-2. dsh 0.1.5-rc.1 on PATH:
+2. dsh 0.2.0-rc.2 on PATH:
 
    ```bash
    dsh --version
    ```
 
-   Install exactly the pinned version, the way CI does: `npm i -g @deepseek-ai/dsh@0.1.5-rc.1 --before=2026-09-10T09:05:02.041Z`
+   Install exactly the pinned version, the way CI does: `npm i -g @deepseek-ai/dsh@0.2.0-rc.2 --before=2026-10-01T07:24:55.067Z`
    (the `--before` cutoff is load-bearing, not decoration — see the CAUTION below).
 
 3. Repo deps installed (`node_modules` present).
@@ -40,7 +40,7 @@ A 5th run mode, 协奏模式 / **Concerto Mode** (preset id `concerto`, trust us
 
    or already stored in `~/.dsh/.credentials.yaml` (present on this machine — smoke-real reads it READ-ONLY and injects it into its sandbox).
 
-> **CAUTION:** install the pinned version exactly (`@0.1.5-rc.1`); never substitute another rc. rc-era lesson (P-11.5): a naive `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` pulled rc.8 deps and broke the stack — see P-11.5 for the validated-tree restore recipe. The same landmine fired again in 2026-09 (PR #9): a fresh `@0.1.5-rc.1` install resolved 0.1.7-rc.* transitives in which `@deepseek-ai/dsh-sandbox-local` (and `-fs-sandbox` / `-sandbox-windows-acl`) is no longer hoisted where the plugin-tree loader resolves bare specifiers, so the composed tree failed to load and every e2e scenario died before readiness. The exact version pin does **not** freeze the transitives; `--before=2026-09-10T09:05:02.041Z` does. That cutoff is a **safe point, not a publish instant** (PR #9 round 2): npm applies `--before` per package and the monorepo does not publish its family atomically, so it must sit strictly between the pinned family's max publish instant and the next family's min publish instant — the rc.1 value above is the midpoint and was verified by a real lockfile-only resolution (231/231 `@deepseek-ai/dsh*` entries at rc.1, zero nested paths). Keep it until `DSH_VERSION` itself moves — and when it does, let [`scripts/bump-dsh.sh`](./release-process.md) compute and verify the new one rather than hand-editing it.
+> **CAUTION:** install the pinned version exactly (`@0.2.0-rc.2`); never substitute another rc. rc-era lessons (P-11.5, PR #9 — both from the 0.1.x line, kept as history): a naive `npm i -g @deepseek-ai/dsh@0.1.0-rc.6` pulled rc.8 deps and broke the stack, and a fresh `@0.1.5-rc.1` install resolved 0.1.7-rc.* transitives in which `@deepseek-ai/dsh-sandbox-local` (and `-fs-sandbox` / `-sandbox-windows-acl`) is no longer hoisted where the plugin-tree loader resolves bare specifiers — the composed tree failed to load and every e2e scenario died before readiness. The exact version pin does **not** freeze the transitives; the `--before` cutoff does. That cutoff is a **safe point, not a publish instant** (PR #9 round 2): npm applies `--before` per package and the monorepo does not publish its family atomically, so it must sit strictly between the pinned family's max publish instant and the next family's min publish instant — the committed `2026-10-01T07:24:55.067Z` above is the 0.2.0-rc.2 midpoint (target 2026-09-29T09:56:27.792Z, earliest-later 0.2.1-alpha.1 at 2026-10-03T04:53:22.343Z) and was verified by a real lockfile-only resolution (278/278 `@deepseek-ai/dsh*` entries at 0.2.0-rc.2, any depth). Keep it until `DSH_VERSION` itself moves — and when it does, let [`scripts/bump-dsh.sh`](./release-process.md) compute and verify the new one rather than hand-editing it.
 
 ## L0 — Zero-cost automated smoke
 
@@ -108,7 +108,7 @@ llm-pi-ai:
 dsh --profile web --patch ./cordis.yml --port 4173
 ```
 
-Readiness line: `dsh web: http://127.0.0.1:4173/?token=<launch-token>` — on the pinned 0.1.5-rc.1 the URL carries a launch token (browser auth since 0.1.2): open the FULL URL.
+Readiness line: `dsh web: http://127.0.0.1:4173/?token=<launch-token>` — on the pinned 0.2.0-rc.2 the URL carries a launch token (browser auth since 0.1.2): open the FULL URL.
 
 ### Mode + model selection
 
@@ -172,10 +172,10 @@ AC-9 (docs) already closed at MVP sign-off.
 | Concerto missing from the mode roster | Plugin didn't load: check the boot log for `[omo-agents] loaded`; the preset is authored into `$DSH_HOME/.agent-presets/concerto/` at boot — check that dir exists. |
 | `MISSING_CREDENTIAL` naming the explore route | The `settings.yaml` llm-pi-ai block (L2-b) is missing, or the key is absent from credentials.yaml/env. |
 | `ctx.agents.get is not a function` anywhere | You have rc.8 deps (naive reinstall pulled them) — see P-11.5 for the validated-tree recipe. |
-| Boot readiness line carries `?token=` | Normal on the pinned 0.1.5-rc.1 (browser auth since 0.1.2): open the FULL URL; our harness scripts already handle both transports. |
-| Conductor can fetch URLs directly | tool-web `fetch: true` follows the shipped standard preset (derivation discipline; both concerto presets carry it since the 0.1.5-rc.1 parity pass) — intended behavior, see the preset's derivation ledger. |
+| Boot readiness line carries `?token=` | Normal on the pinned 0.2.0-rc.2 (browser auth since 0.1.2): open the FULL URL; our harness scripts already handle both transports. |
+| Conductor can fetch URLs directly | tool-web `fetch: true` follows the shipped standard preset (derivation discipline; both concerto presets carry it since the 0.1.5-rc.1 parity pass, kept through the 0.2.x cutover) — intended behavior, see the preset's derivation ledger. |
 
 ## Current limits
 
-- The DSH pin is 0.1.5-rc.1 (done 2026-09-10, PRD §12); the earlier "CI flip to 0.1.2" item is superseded, and `smoke-real.mjs`'s transport adaptation landed with it (P-11.6 closed).
+- The DSH pin is 0.2.0-rc.2 (D17 cutover, P4.5-T12b); the historical line: pinned 0.1.5-rc.1 (done 2026-09-10, PRD §12), earlier "CI flip to 0.1.2" superseded, `smoke-real.mjs`'s transport adaptation landed with it (P-11.6 closed).
 - Shrinkwrap of the dsh dep tree is a registered follow-up (P-11.5).

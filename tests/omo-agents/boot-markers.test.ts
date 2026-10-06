@@ -62,15 +62,15 @@ const LINE_PREFIX = '[omo-agents] model routes: '
  */
 const ROUTE_BASELINE: ReadonlyArray<{ id: string } & ModelRoute> = [
   { id: 'sisyphus', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
-  { id: 'explore', provider: 'deepseek', model: 'deepseek-v4-flash' },
+  { id: 'explore', provider: 'deepseek', model: 'deepseek-flash' },
   { id: 'hephaestus', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
   { id: 'oracle', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
-  { id: 'librarian', provider: 'deepseek', model: 'deepseek-v4-flash' },
+  { id: 'librarian', provider: 'deepseek', model: 'deepseek-flash' },
   { id: 'plan-consultant', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
   { id: 'plan-reviewer', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
   { id: 'atlas', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
-  { id: 'multimodal-looker', provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' },
-  { id: 'sisyphus-junior', provider: 'deepseek', model: 'deepseek-v4-flash' },
+  { id: 'multimodal-looker', provider: 'deepseek-official', model: 'deepseek-flash' },
+  { id: 'sisyphus-junior', provider: 'deepseek', model: 'deepseek-flash' },
   { id: 'prometheus', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
 ]
 
@@ -146,7 +146,7 @@ describe('P2-T16(A) child persona markers', () => {
 
 describe('P2-T16(B) one-line 11-route summary', () => {
   const PROBE_PREFIX = LINE_PREFIX
-    + 'sisyphus=deepseek-official/deepseek-v4-pro explore=deepseek/deepseek-v4-flash'
+    + 'sisyphus=deepseek-official/deepseek-v4-pro explore=deepseek/deepseek-flash'
 
   it('is the T14 two-route prefix, byte-compatible with the existing probe grep', () => {
     const line = formatRouteSummaryLine(resolveModelRoutes({}))
@@ -541,7 +541,7 @@ describe('P2-T16 apply() wiring', () => {
     expect(routeLines).toHaveLength(1)
     expect(routeLines[0]).toContain(
       LINE_PREFIX
-      + 'sisyphus=deepseek-official/deepseek-v4-pro explore=deepseek/deepseek-v4-flash',
+      + 'sisyphus=deepseek-official/deepseek-v4-pro explore=deepseek/deepseek-flash',
     )
     expect(routeLines[0]!.slice(LINE_PREFIX.length).split(' ')).toHaveLength(11)
 

@@ -69,8 +69,10 @@ LOG=".omo/evidence/probes/probe-dsh-${DSHV}-${TS}.log"
 
   echo "--- install concerto preset from ${OUR_TAG} (temp DSH_HOME) ---"
   mkdir -p "$TMP/dsh-home"
+  # T12b cutover: deepseek-flash is the id the pinned 0.2.x official route
+  # actually lists (installed dsh-llm-deepseek/lib/index.js:42-56 DEFAULT_MODELS).
   DSH_HOME="$TMP/dsh-home" NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official \
-    EXPLORE_MODEL=deepseek-v4-flash sh scripts/install-concerto.sh
+    EXPLORE_MODEL=deepseek-flash sh scripts/install-concerto.sh
 
   echo "--- doctor-lite (against the NEW dsh) ---"
   if node scripts/doctor-lite.mjs --json; then
