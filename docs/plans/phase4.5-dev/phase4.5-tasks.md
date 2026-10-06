@@ -212,6 +212,73 @@
 >
 >   证据 .omo/evidence/p45t8/ARB-four-theatre-lessons.md。门 7 9/9 PASS。
 >
+>   **四之十八、第十三次订正：那十三条腿本来就在 CI 里跑；错的是「LOCAL-ONLY」这句话**
+>
+>
+>   **仲裁者记录过一条硬判据：「CI 真的要跑 `--self-test`」。那条判据的前提是错的，现予撤销。**
+>
+>   ## 怎么错的
+>
+>   首轮评审 A 报「`--self-test` 从不在 CI 里跑（`ci.yml:143` 是 `pnpm test:e2e`，不带该标志）」。
+>   **两路首轮评审都读了 `ci.yml:143`、都 grep 了 `--self-test`，但没有一个人问：
+>   「这些腿在不带标志的 `main()` 路径上跑不跑？」** 仲裁者**直接转述了这条结论，没有自己核**。
+>
+>   **评审 A 在差分复评里查了，仲裁者已一手复核**（`tests/e2e/drive.mjs` 冻结 md5 `63e431f2809e…`）：
+>
+>       :19922   const selfTestProblems = await runAnalysisSelfTest(routes)     ← 在 main() 里，**无标志路径**
+>       :9778    async function runAnalysisSelfTest(routes)
+>       :9784      seatResolverSelfTest(problems)                              ← 十三条腿在这里
+>
+>   ⇒ **`pnpm test:e2e` 就是 `node tests/e2e/drive.mjs`（无标志），而 `main()` 会调它。**
+>   **证明而非阅读**：把 M1 变异打上、**不传 `--self-test`**，
+>   `node tests/e2e/drive.mjs` 退出 1 并打出
+>
+>       {"result":"FAIL","reason":"analysis self-test: T10′ leg 7 (≥2 capable ids with no written
+>        choice -> refused, naming ids+key): got \"\"","scenarios":[]}
+>
+>   未变异的对照在同一条无标志路径上打印五行 `[shipped-defaults]` 审计输出。
+>
+>   ⇒ **那十三条腿今天就是一道真实的 CI 门。** ⇒ `drive.mjs:1006-1011`（「NONE of these thirteen
+>   legs run in CI. They are a local gate」）、`SELF-TEST OK` 横幅（`:20107`，**该句出现两次**）
+>   与报告 §7.6 第 3 条**全部不成立**，必须更正。
+>
+>   ## 但结论仍然是 CI 的问题，而且理由比仲裁者原先给的更锋利
+>
+>   **CI 钉的是 `DSH_VERSION: 0.1.5-rc.1`（`ci.yml:101`）——那正是「替换路径是死的」那一代。**
+>   ⇒ **CI 会跑这十三条腿，而它们在那里全部空转。**
+>
+>   ⇒ **要修的是 CI 的运行时代，不是那个标志。**
+>   ⇒ 这**加强**了 T12 的硬判据而不是削弱它：**一条 0.2.x 的 CI 腿不只是为了多测一个运行时，
+>   更是为了让这十三条腿第一次真正非空转。**
+>   ⇒ 同时撤销本文件里此前写的「把 `--self-test` 接进 `ci.yml`」这条判据——**它建立在假前提上**。
+>
+>   ## 本次差分复评同时确认的好消息（评审 A 独立复现）
+>
+>   - **M1 已被抓住**：八条变异**全部与交付者的表逐项一致**（M1 → `rc=1`、**只红 leg 7**、
+>     横幅 `INCOMPLETE (only 12/13 legs passed)`）。首轮那次逃脱**已闭合**。
+>   - 0.2.0-rc.2 全量 **29/33 PASS、4 红逐名**；0.1.5-rc.1 `--self-test` 13/13、审计 PASS。
+>   - **审计的 4/11 是对的**——评审 A **绕开驱动的探针**，直接从目录 JSON 与 `DEFAULT_MODELS` 重算。
+>   - **自足性确实恢复了**：PATH 上无 `dsh` ⇒ `--self-test` exit 0 且 `INCOMPLETE … + 2 SKIPPED`；
+>     真实运行仍在两条通道上都 exit 1。
+>   - `tokenOverlap` 与 `TEST_ONLY_TIE_BREAK_PINS` **0 命中**；残留的 `idTokens`/`tied`/`ranked`
+>     命中**全在「已删除」的注释里**。
+>
+>   ## 另一条 MAJOR：反洗白修复在**顶上**有洞
+>
+>   `announceShippedDefaultAudit`（`drive.mjs:1685`）在 `audit.unresolvable.length === 0` 时**提前返回**，
+>   所以**当所有不可解析行都被覆盖时，永远走不到 `:1706` 的 `OVERRIDE COVERS A BROKEN DEFAULT` 循环**。
+>   评审 A 在冻结树上实测：**覆盖全部四个席位 ⇒ exit 0、13/13 腿、零 problem**，
+>   stderr 打印 `audit PASS — all 11 roster shipped ids are listed …`——**两句话都是假的**
+>   （四个出货 id 没被列出；e2e 钉的正是产品没有的）。**交付者 §7.8 只测过「一个覆盖」，那一行恰好是对的。**
+>   **第二个独立的洞**：`UNRESOLVABLE-COVERED-BY-OVERRIDE` 这个状态**完全没有测试**——
+>   leg 9 调审计时**不传 `resolutions`**，那里 `coveredBy` 恒为 null；唯一能看到被覆盖行的 leg 10 是**活的**。
+>   变异 **M11**（「被覆盖行算作已解析」）在**一个覆盖与四个覆盖下都 exit 0、13/13 腿**。
+>
+>   ⇒ **一次覆盖不必为它的沉默付代价；它只在横幅文字里付，而横幅恰好是错的那部分。**
+>
+>   门 7 check-docs-consistency 9/9 PASS。
+>
+>
 >   **四之十七、T10′ 复评增补（2026-10-06 09:52）**
 >
 >
