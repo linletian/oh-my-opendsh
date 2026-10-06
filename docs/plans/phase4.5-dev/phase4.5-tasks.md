@@ -212,6 +212,62 @@
 >
 >   证据 .omo/evidence/p45t8/ARB-four-theatre-lessons.md。门 7 9/9 PASS。
 >
+>   **四之十五、第十一 / 十二次订正（T10′ 推翻仲裁者两条断言，均成立）**
+>
+>
+>   **编码方 T10′ 推翻仲裁者两条断言，仲裁者一手复核后全部成立。**
+>
+>   **① （第十一次）`deepseek-official` 路由在 0.2.x 上**不是**四个 id，是**两个**。**
+>   仲裁者写过「`deepseek-official` 路由不同：**两代都有** `deepseek-flash` 与 `deepseek-v4-pro`」，
+>   并在另一处把它写成「两代都有 `deepseek-flash` / `deepseek-v4-flash` /
+>   `deepseek-v4-flash-vision-exp` / `deepseek-v4-pro`」——**那是把 0.1.5 那个包里的字面量
+>   外推到了两代**。仲裁者复核已安装的 0.2.0-rc.2：
+>
+>       @deepseek-ai/dsh-llm-deepseek/lib/index.js   const DEFAULT_MODELS
+>         → id: "deepseek-flash"   id: "deepseek-v4-pro"      **只有这两个**
+>
+>   且 0.2.x 上**注册 `deepseek-official` 这条路由的是 `@deepseek-ai/dsh-llm-deepseek-api-key@0.2.0-rc.2`**。
+>
+>   ⇒ **在 0.2.x 上，官方路由那些钉了 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 的席位
+>   （`multimodal-looker`、`sisyphus-junior`）同样不可解析**；**跨代都活着的只有 `deepseek-v4-pro`**。
+>   ⇒ **T12 的判据随之收紧**：跨代可解析的 id 比仲裁者原先写的更少。
+>
+>   **② （第十二次）门 3 在 0.2.x 上的真实基线是 13 条红场景，不是 6 条。**
+>   仲裁者一路引用「6 条红」——那是**单场景跑** `concerto-delegation-demo` 的**失败断言清单**，
+>   不是场景数。**在 0.2.x 上凡是会派生委派子会话的场景都是红的。**
+>   ⇒ 基线 13 红：`concerto-delegation-demo`、`background-notification-log`、
+>   `json-error-recovery-reminder`、`empty-task-response-corrected`、`agent-usage-reminder-appended`、
+>   `task-resume-info-appended`、`prometheus-md-only-denied`、`ulw-execute-activated`、
+>   `explore-write-denied`、`explore-nested-delegation-denied`、`roster-parade`、
+>   `atlas-nested-delegation`、`stop-continuation-halts-todo`。
+>
+>   **⇒ ⑲g 再一次生效**：两处都是**从一个样本外推到全集**——一处是**把一个包的目录内容外推到两代**，
+>   一处是**把单场景的断言清单当成场景数**。
+>
+>   ## T10′ 的两代成绩（两代都跑，0.1.5 侧惰性）
+>
+>   | 运行时 | 基线 | T10′ 后 | 席位迁移 | 新增红 |
+>   |---|---|---|---|---|
+>   | 0.1.5-rc.1 | 33/33 | **33/33** | — | **0**（stderr `no seat was moved`） |
+>   | 0.2.0-rc.2 | **20/33（红 13）** | **29/33（红 4）** | **9** | **0** |
+>
+>   **剩余 4 条红未被吸收、未被放松**：`background-notification-log`、`json-error-recovery-reminder`、
+>   `prometheus-md-only-denied`、`stop-continuation-halts-todo`。**席位解析不是它们的原因**
+>   （`background-notification-log` 里的 `delegatedChildSessionRan` 由红转绿），
+>   剩下的是通知锚点、JSON 错误文本表、写允许清单、暂停后的目标轮次。⇒ **归属待仲裁者裁定。**
+>
+>   ## T10′ 的诚实标注（值得单记）
+>
+>   它明写：**0.2.x 上的门 3 不再验证出货默认值**，它验证的是
+>   「**目录说能跑的，真的跑得起来**」；**每个钉位都带着 `TEST-ONLY` 与
+>   `THE SHIPPED DEFAULT REMAINS UNRESOLVABLE ON THIS RUNTIME, which is T12's to fix`**。
+>
+>   它还自陈**过程失手**：中途**为尚未跑完的运行播报了数字**（30/33、7 红），且 `/tmp/ac1-020.log`
+>   被覆盖；**最终树上每一个数字都重测进 `FINAL-*`**，陈旧的改名为 `INTERIM-*` 且**不作为结果引用**。
+>
+>   门 7 check-docs-consistency 9/9 PASS。
+>
+>
 >   **四之十四、规约⑲k（新增，2026-10-06 07:55）：引用证据必须同时声明范围；
 >   「复现不出来」与「范围不同」是两个不同的问题**
 >
