@@ -212,6 +212,40 @@
 >
 >   证据 .omo/evidence/p45t8/ARB-four-theatre-lessons.md。门 7 9/9 PASS。
 >
+>   **四之十六、规约⑲l（新增，2026-10-06 09:43）：评审在飞时不发修复轮；冻结产物再复评**
+>
+>
+>   **仲裁者的第三次编排失误**（前两次见规约⑲c）：仲裁者同时派出了 T10′ 的两路评审，
+>   **然后在评审仍在运行时就派出了修复轮**。评审 B 因此在复评时发现
+>   **被评产物在评审期间被换掉**：工作树文件 md5 `fcb6933288b7`（09:07）→ `d3f10380351`（09:40），
+>   **566 行的差异**，于是**拒绝给出裁决**，理由逐字：
+>
+>   > a verdict on "the working tree, unstaged, against HEAD" cannot be issued against an artifact
+>   > that changed after the runs that justify it; every claim below is verified only for
+>   > `fcb6933288b7`, and the 566-line delta is unreviewed and unexecuted.
+>
+>   **这个拒绝是对的。** 对一个在评审期间移动的产物出裁决，不是裁决。
+>
+>   ⇒ **⑲l**：**先冻结产物，再发评审；评审在飞期间不得派修复轮。**
+>   顺序是硬顺序：**实现完成 → 冻结（声明 tree frozen）→ 评审 → 逐条裁决 → 修复轮 → 再冻结 → 差分复评。**
+>   ⇒ 旁证：**两路评审在同一个未冻结的产物上独立命中了同一处缺陷**
+>   （A 说「并列决胜承重且无人守」，B 说「token-overlap 那一半**完全惰性**」），
+>   **这正说明未冻结的评审轮次只能拿到「对旧 md5 的意见」**，而不是对交付物的意见。
+>
+>   **B 独立发现、比 A 更进一步的一处**（已并入修复要求）：
+>   把 `drive.mjs:1240-1246` 的
+>   `right.tokenOverlap - left.tokenOverlap || left.declarationIndex - right.declarationIndex`
+>   删掉 overlap 那一半、只留 `left.declarationIndex - right.declarationIndex`，
+>   **变异体行为完全一致** ⇒ **overlap 项根本没有参与**。
+>   ⇒ **报告、注释、横幅里陈述的规则不是代码实现的规则**；
+>   实现的规则是「**目录声明顺序里第一个满足模态的 id**」。
+>   ⇒ **这是 ⑲g/⑲h 家族的又一例**：陈述的规则里有一个**装饰性的项**，
+>   它告诉下一个读者「这个选择在做某件事」，而它**什么都没做**——
+>   **装饰项比没有这一项更糟**。
+>
+>   门 7 check-docs-consistency 9/9 PASS。
+>
+>
 >   **四之十五、第十一 / 十二次订正（T10′ 推翻仲裁者两条断言，均成立）**
 >
 >
