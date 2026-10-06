@@ -215,6 +215,42 @@
 >
 >   证据 .omo/evidence/p45t8/ARB-four-theatre-lessons.md。门 7 9/9 PASS。
 >
+>   **四之二十二、T11′ 落地（2026-10-06 22:20）**
+>
+>
+>   **D17(c)/(d) 的非回归信号正式换代**：从「0.1.5 pin 上 CI 的绿」改为
+>   「**0.2.0-rc.2 pin 上 CI 的绿**」。第一份记录：
+>
+>       CI run 37476903377 · commit 2323658（D17 落地提交）· dsh 0.2.0-rc.2
+>       install dsh (D7 pin, exact rc + frozen transitive tree) ✅
+>       gate 1 typecheck ✅ · gate 2 unit tests ✅ · gate 3 mock-LLM e2e ✅
+>       gate 4 doctor-lite ✅ · gate 5 license ✅ · gate 6 static 33/33 ✅
+>       gate 7 docs 9/9 ✅ · gate 8 proofs 7/7 ✅
+>
+>   仲裁者本人电池（提交前，非采信报告）：
+>   - 门 3：PASS · 34 场景 · 0 红 · 整轮 exit 0 · `audit PASS — all 11 roster shipped ids are listed`；
+>   - 门 4 本人跑：`[PASS] dsh-version: dsh 0.2.0-rc.2 (pinned 0.2.x, decision D7)` — 5/0 exit 0；
+>   - 门 2 本人跑：59 文件 / 1559 测试全绿；
+>   - `--self-test` 0.2.x 本人跑：EXIT=0 · `audit PASS`（T10′ 那条「按裁决的 exit 1」已消失）；
+>   - 0.1.5：`--self-test` EXIT=1，响亮且具名（`3/11 UNRESOLVABLE` 点名 explore / librarian /
+>     sisyphus-junior + 目录路径）——**用户裁定放弃 0.1.5，这是旧时代落幕的合法形态，不是回归。**
+>
+>   **复核方法**：`gh run view 37476903377 --json status,conclusion`；
+>   `gh api repos/linletian/oh-my-opendsh/actions/runs/37476903377/jobs --jq '.jobs[].steps[].name'`
+>
+>   **T13 待办（已枚举，全部有消费者或归属）**：
+>   1. `.omo/compat.yaml`：0.2.0-rc.2 行 `untested` → `tested`（git 跟踪的活面，11 个消费者；
+>      `bump-dsh.sh:724-726` 的 Gate 1 在它翻转前**硬拒任何后续 bump**；
+>      d04 渲染的 `docs/compat-matrix.md:20-21` 仍把 0.1.5-rc.1 当最新已测组合）。
+>   2. omo-agents 的 0.1.x 双路径：`index.ts:85/:150/:288`（capability-probe 分支）、
+>      `concerto-preset.ts:639/:705/:746/:843`（materialized 路径）、
+>      `install-concerto.sh:55-77`（`MINOR==1 → filediscovery` 腿）——**删除或显式保留，不许静默存在**。
+>   3. 沙箱消失记为具名 bonus 字段（kimi K3 的 challenge b：让碰撞家族的幻影红自己报名字）。
+>   4. omo-hooks 的 0.1.x 注释标记与死径（T13 原范围）。
+>
+>   门 7 check-docs-consistency 9/9 PASS。
+>
+>
 >   **四之二十一、第十五次订正（2026-10-06 14:10）**
 >
 >
