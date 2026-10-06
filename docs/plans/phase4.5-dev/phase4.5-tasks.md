@@ -1240,9 +1240,9 @@ T8d (出货默认模型 id)          ← 与上面无文件冲突，可并行
 
 | # | 标准 | 证据指针 | 状态 |
 |---|---|---|---|
-| a | L1 全链在 0.2.x pin 下转绿 | ⬜ | ⬜ |
-| b | L2 重验证 + 矩阵行 `tested` | ⬜ | ⬜ |
-| c | roster 含 `concerto` + 委派往返 | ⬜ | ⬜ |
-| d | `/stop-continuation` 级联真实取消 | ⬜ | ⬜ |
-| e | 安装器线 0.2.x 状态有了结 | ⬜ | ⬜ |
-| f | pin 翻转与绿色证据同一次变更交付 | ⬜ | ⬜ |
+| a | L1 全链在 0.2.x pin 下转绿 | CI run [`37492409032`](https://github.com/linletian/oh-my-opendsh/actions/runs/37492409032)（`226970c`，dsh 0.2.0-rc.2，八门全绿，含门 3 全链 34 场景 0 红）· 前一份 `37476903377`（`2323658`） | ✅ 2026-10-07 |
+| b | L2 重验证 + 矩阵行 `tested` | 矩阵行：`226970c`（`.omo/compat.yaml` 0.2.0-rc.2 行 `untested`→`tested`，证据点名 run 37476903377；`bump-dsh.sh` Gate 1 双向验证通过）。**L2 重验证（真模型手动跑）：仍开，归属用户**——它是真实 Web UI + 真实协奏会话 + 真实模型的手动验证（见 `.omo/evidence/concerto-verify-dsh-0.1.5-rc.1.md` 的形态），不能由 mock-LLM agent 产出 | 矩阵 ✅ 2026-10-06 · L2 ⬜（归属用户） |
+| c | roster 含 `concerto` + 委派往返 | 门 3 的 `concerto-delegation-demo`（委派往返）在 0.2.0-rc.2 上绿（`226970c` 的 gate 3；`roster.ts` 含 `concerto` preset） | ✅ 2026-10-06 |
+| d | `/stop-continuation` 级联真实取消 | `stop-continuation-halts-todo` 场景在 0.2.0-rc.2 上 PASS（T12a 的 `awaitFirstGoalRound` 修复，`3f7c0c6`；仲裁者 2026-10-07 复跑 result=PASS, failed=[]） | ✅ 2026-10-07 |
+| e | 安装器线 0.2.x 状态有了结 | 安装器在 0.2.x 上仅声明式解析（`install face: declaration`），对 `<0.2` 具名拒绝（stderr 点名版本 + D17，写入前 exit 1）；安装器测试 T7/T12/T15 改写为拒绝契约（`226970c`）；doctor-lite 5/0 | ✅ 2026-10-06 |
+| f | pin 翻转与绿色证据同一次变更交付 | `2323658`（pin + id 改钉 + 全部派生面同一次提交）+ 同一提交的 CI run `37476903377` 八门全绿 | ✅ 2026-10-06 |
