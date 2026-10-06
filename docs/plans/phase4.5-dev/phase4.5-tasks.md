@@ -212,6 +212,50 @@
 >
 >   证据 .omo/evidence/p45t8/ARB-four-theatre-lessons.md。门 7 9/9 PASS。
 >
+>   **四之十七、T10′ 复评增补（2026-10-06 09:52）**
+>
+>
+>   **评审 A 终裁 REJECT（2 MAJOR · 3 MINOR · 5 NIT），并提出一条仲裁者没想到、现已采纳的检查**：
+>
+>   > *"what I would require alongside, which he does not ask for: a cheap **no-boot** check that every
+>   > `DEFAULT_MODEL_ROUTES` row's shipped id is present in its route's catalog, so **'the upstream catalog
+>   > changed' is not silently converted into a green gate**."*
+>
+>   **为什么形状是对的**：T10′ 让门 3 在 0.2.x 上变绿，靠的是让 **e2e** 对活目录做解析。
+>   这本身正确且标注诚实。**但有一个双方都没点名的失效模式**：
+>   **若上游目录在你脚下变了**，解析器会静默改挑另一个，门**仍然是绿的**——
+>   而**没有任何人去重新解析的出货默认**，已经悄悄变错了。
+>   读者看到绿，会得出「这个运行时上产品是好的」。
+>
+>   ⇒ **一条无启动检查正好堵住这个洞**，且与 T10′ 同属一个目录读取器，已并入其验收。
+>
+>   **⚠️ 边界（写死在任务书里）**：这条检查**检测并点名**一个不可解析的出货默认，
+>   **它不修复**。修复是 **T12** 的面。
+>
+>   ## 评审 A 逐腿变异测试的结论（值得逐字留档，因为它比读代码可靠）
+>
+>   - **第 1–5 腿是真门**：删掉模态过滤 ⇒ 5/7；删掉 present-id 快路 ⇒ 6/7；
+>     把折叠放宽 ⇒ 6/7；让解析器编造目录外的 id ⇒ 4/7；把 `substituted` 强设为 false ⇒ 5/7。
+>   - **没抓到：把并列决胜反过来 ⇒ 仍 7/7 / exit 0**，而 explore / librarian / sisyphus-junior
+>     **静默落到了 `deepseek-v4-pro`**——目录自己写着 *at higher cost* 的那个模型。
+>     `roster-parade` 在同一变异下**也 PASS**。
+>   - **第 6 腿是真门，但比横幅宣称的窄**。评审 A 的措辞值得照抄进代码注释：
+>     它 *"is not the same trick in a new place — it is a **self-comparison with one real external
+>     binding**"*——它**确实**把活表绑在一个真实外部产物上（这正是它能抓到「编造 id」与
+>     「伪造标志」两类变异、而**任何伪造腿都看不见**的原因），
+>     **但它对「规则挑中了哪个已列出的 id」是瞎的**，因为成员关系与 `substituted` 标志
+>     都是该函数**从同一个 `catalogs` 对象构造出来的不变量**。
+>
+>   ## 两条新的环境约束（复算这些数字的人必须知道）
+>
+>   1. **驱动必须严格串行跑**：`realDshUntouched` 会对 `~/.dsh` 前后做摘要比对，
+>      **并发跑会互相伪报失败**。评审 A 核过 `homedir()` 全文件**只出现在 `drive.mjs:19339`**。
+>   2. `--self-test` **在 CI 里从不跑**（`ci.yml:143` 是 `pnpm test:e2e`，不带该标志），
+>      **而 CI 钉的是 0.1.5，在那一代替换路径根本是死的** ⇒ 七条腿在本代是本地专属。
+>
+>   门 7 check-docs-consistency 9/9 PASS。
+>
+>
 >   **四之十六、规约⑲l（新增，2026-10-06 09:43）：评审在飞时不发修复轮；冻结产物再复评**
 >
 >
