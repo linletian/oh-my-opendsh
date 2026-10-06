@@ -212,6 +212,44 @@
 >
 >   证据 .omo/evidence/p45t8/ARB-four-theatre-lessons.md。门 7 9/9 PASS。
 >
+>   **四之二十一、第十五次订正（2026-10-06 14:10）**
+>
+>
+>   **评审 B（delta-3）在 drive.mjs:941 的注释块里抓到一处事实错误，仲裁者一手复核后成立：**
+>
+>   注释块逐字写「⇒ NO id is common to both generations on the pi-ai route」。
+>   仲裁者此前也在任务书（P17 节）写过同一句，编码方把它照抄进了代码。
+>
+>   **实测（仲裁者当场跑，两处产物各自点名）：**
+>
+>       @earendil-works/pi-ai@0.85.1  dist/providers/data/deepseek.json (openai-completions)
+>         → deepseek-v4-flash · deepseek-v4-flash-vision-exp · deepseek-v4-pro
+>       @earendil-works/pi-ai@0.87.1  dist/providers/data/deepseek.json (openai-completions)
+>         → deepseek-flash · deepseek-v4-pro
+>       交集 = {deepseek-v4-pro}      **≠ ∅**
+>
+>   ⇒ **「两代无公共 id」是错的。为真的是更窄、也恰恰是机制真正依赖的那句**：
+>   **「没有**出货默认** id 两代通吃」**——出货默认 `{deepseek-v4-flash, deepseek-v4-flash-vision-exp}`
+>   ∩ @0.87.1 = **∅**。
+>
+>   **为什么这条特别重要**：该注释块的自述目的就是**「给评审留一个可证伪的记录」**
+>   （"measured on this machine … never asserted from a changelog"、"SELECTION RULE (one sentence,
+>   so a reviewer can falsify it)"）。**在一个自称可证伪的块里，放一个表面就可证伪为假的结论，
+>   比不放结论更糟**——它教下一个读者：连「实测过」这几个字也不必信。
+>
+>   **⇒ 这是本会话仲裁者第十五次被推翻，且是第十一次之后**又**一次「把目录内容外推到全集」**
+>   （⑲e/⑲g 家族）：上一次是把 0.1.5 的官方路由四个 id 外推成「两代都有四个」；
+>   这一次是把「出货默认两代不通吃」外推成「目录两代无交集」。
+>   ⇒ **⑲g 再补一句**：**「更窄的断言为真」不是「更宽的断言为真」的证据**——
+>   **写「无」之前，先写出交集的枚举。**
+>
+>   **更正已发**：任务书本节；代码注释由编码方在 pending 的 scoped 修复轮里改
+>   （把那一句改成「no **shipped-default** id is common to both generations」，
+>   并保留交集枚举作为可复核依据）。
+>
+>   门 7 check-docs-consistency 9/9 PASS。
+>
+>
 >   **四之二十、规约⑲n / ⑲o（新增，2026-10-06 11:13）**
 >
 >
