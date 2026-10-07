@@ -157,7 +157,8 @@
 //          "Killing a stopping job is harmless ('already-finished')" —— 与实测相反。
 //          `kill` 只在 `isTerminal` 时返回 `'already-finished'`；`stopping` 不满足，
 //          于是走 `job.cancel(reason)` 并**再次**返回 `'requested'`
-//          （dsh-jobs-local:197-208）。级联侧按 verdict 计数（下方 :429-430），所以
+//          （dsh-jobs-local:197-208）。级联侧按 verdict 计数（下方 cascadeCancelJobs 的
+//          `verdict === 'already-finished'` 分支——行号曾钉在这里并烂掉过一次，故指名不指行），所以
 //          这些 job 会被**计入 `cancelledJobIds`**，而不是 `alreadyFinishedJobIds`。
 //          **[0.2.x]** 同一语义在 `killJob`（jobs-local/src/index.ts:458-468）里
 //          原样存活，本任务不改这条判定。
@@ -213,6 +214,12 @@ export interface StopContinuationOutcome {
   readonly cancelledJobIds: readonly string[]
   /** Jobs `kill` reported as already finished (nothing was cancelled). */
   readonly alreadyFinishedJobIds: readonly string[]
+  /**
+   * Jobs whose `kill` THREW — possibly still alive. Their own bucket, never
+   * folded into `alreadyFinishedJobIds`: reporting a job we failed to stop as
+   * "already finished" states the opposite of the truth (PR #12 review).
+   */
+  readonly stopFailedJobIds: readonly string[]
   /** False when no jobs service was mounted: nothing was cancelled, loudly. */
   readonly jobsServicePresent: boolean
 }
@@ -348,6 +355,7 @@ export function createStopContinuationGuard(
     deps.log(
       `[omo-hooks] ${STOP_CONTINUATION_GUARD_ID}: continuation stopped for session ${sessionId}`
       + ` (cancelled ${cascade.cancelledJobIds.length}, already finished ${cascade.alreadyFinishedJobIds.length}`
+      + `, stop failed ${cascade.stopFailedJobIds.length}`
       + `, jobs service ${cascade.jobsServicePresent ? 'present' : 'absent — nothing cancelled'})`,
     )
     return { sessionId, ...cascade }
@@ -385,20 +393,21 @@ export function createStopContinuationGuard(
 function cascadeCancelJobs(
   deps: StopContinuationGuardDeps,
   sessionId: string,
-): Pick<StopContinuationOutcome, 'cancelledJobIds' | 'alreadyFinishedJobIds' | 'jobsServicePresent'> {
+): Pick<StopContinuationOutcome, 'cancelledJobIds' | 'alreadyFinishedJobIds' | 'stopFailedJobIds' | 'jobsServicePresent'> {
   let jobs: StopContinuationJobsLike | undefined
   try {
     jobs = deps.readJobs()
   } catch (error) {
     deps.log(`[omo-hooks] ${STOP_CONTINUATION_GUARD_ID}: jobs lookup failed: ${describeError(error)}`)
-    return { cancelledJobIds: [], alreadyFinishedJobIds: [], jobsServicePresent: false }
+    return { cancelledJobIds: [], alreadyFinishedJobIds: [], stopFailedJobIds: [], jobsServicePresent: false }
   }
   if (jobs === undefined) {
-    return { cancelledJobIds: [], alreadyFinishedJobIds: [], jobsServicePresent: false }
+    return { cancelledJobIds: [], alreadyFinishedJobIds: [], stopFailedJobIds: [], jobsServicePresent: false }
   }
 
   const cancelledJobIds: string[] = []
   const alreadyFinishedJobIds: string[] = []
+  const stopFailedJobIds: string[] = []
   // THE FORK (P4.5-T3 B1/B2): the shared identity marker decides the caller
   // generation — 'v1' (no `events` key, 0.1.5) keeps the `{ id }` Agent-like
   // caller verbatim; 'v2' (0.2.x) hands the bare SessionId STRING, because the
@@ -416,7 +425,7 @@ function cascadeCancelJobs(
     // caller 看到的是**更少**的 job（只有无主的），不是"更多"——这正是 ④ 要传 caller
     // 的原因，两代同理。
     deps.log(`[omo-hooks] ${STOP_CONTINUATION_GUARD_ID}: jobs list failed: ${describeError(error)}`)
-    return { cancelledJobIds: [], alreadyFinishedJobIds: [], jobsServicePresent: true }
+    return { cancelledJobIds: [], alreadyFinishedJobIds: [], stopFailedJobIds: [], jobsServicePresent: true }
   }
   for (const snapshot of snapshots) {
     // 会话围栏（键名双读，P4.5-T3 B3）：`list(caller)` 也会回无主 job（无会话血缘，
@@ -435,12 +444,15 @@ function cascadeCancelJobs(
     } catch (error) {
       // One job's kill failing must not abandon the rest of the cascade — upstream
       // `allSettled` has exactly this property, and this is its synchronous
-      // equivalent: count the failure and keep going.
-      alreadyFinishedJobIds.push(snapshot.id)
+      // equivalent: count the failure and keep going. The failure lands in its
+      // OWN bucket — a kill that threw means the job may still be ALIVE, and
+      // counting it as already-finished would state the opposite of the truth
+      // to the `/stop-continuation` user (PR #12 review).
+      stopFailedJobIds.push(snapshot.id)
       deps.log(`[omo-hooks] ${STOP_CONTINUATION_GUARD_ID}: kill ${snapshot.id} failed: ${describeError(error)}`)
     }
   }
-  return { cancelledJobIds, alreadyFinishedJobIds, jobsServicePresent: true }
+  return { cancelledJobIds, alreadyFinishedJobIds, stopFailedJobIds, jobsServicePresent: true }
 }
 
 /**

@@ -3,11 +3,14 @@
 //
 // DUAL-MODE since P4.5-T4 (plan §4.2; review §3.2-3): the `ctx.jobs` STORAGE face
 // this module writes through was WHOLE-PACKAGE-rewritten between the two
-// generations. {@link startWorkJob} forks on exactly **TWO** things — and there is
-// a **third difference that needs NO fork**, listed separately because conflating
-// it with the forks is what review F2 caught: the code has TWO fork expressions
-// (`owner` and the terminal key), and `run` is written as a ZERO-parameter
-// closure, not a `(job?)` one. The fork signal is the SHARED runtime-identity
+// generations. {@link startWorkJob} forks on exactly **THREE** things — and there
+// is a **fourth difference that needs NO fork**, listed separately because
+// conflating it with the forks is what review F2 caught: the code has THREE fork
+// expressions (`owner`, the terminal key, and the failure-classifier consult),
+// and `run` is written as a ZERO-parameter closure, not a `(job?)` one. (The
+// count used to read TWO — the classifier consult was overlooked until PR #12
+// review counted the third `shape === 'v2' ?` arm.) The fork signal is the
+// SHARED runtime-identity
 // marker `dshRuntimeShape(jobs)` at ../../dsh-runtime-shape.ts (identity, not a
 // capability probe, and never a version string) — the SAME function
 // background-notification.ts (P4.5-T2) and stop-continuation-guard.ts (P4.5-T3)
@@ -30,6 +33,14 @@
 //     registry's `settle` reads `outcome.result` and NOTHING else,
 //     packages/jobs/jobs-local/src/index.ts:577-592, so writing `output` alone
 //     on 0.2.x drops the fact into a key nobody reads);
+//   * FORK 3 — the FAILURE-CLASSIFIER consult (**C4**): on a `start()` throw,
+//     **[0.2.x]** runs `classifyStartWorkJobFailure(message)` against the
+//     0.2.x registry's own preflight gates, **[0.1.5]** keeps the P3-T17
+//     wording with `{ preflight: false }` — there is no 0.1.5 gate table to
+//     match against and inventing one would be guessing at a binary this
+//     machine cannot run (H2). This third `shape === 'v2' ?` arm is a real
+//     fork: v2 classifies, v1 does not (PR #12 review counted it; the header
+//     used to claim TWO forks, "no third");
 //   * NO FORK — the ARITY of `run` (**C3**, a difference between the two
 //     DECLARATIONS that needs no branch): 0.1.5 declares `run()`, 0.2.x declares
 //     `run(job: JobHandle)` (packages/jobs/jobs/src/types.ts:157, re-opened at
@@ -572,10 +583,10 @@ export function startWorkJobOutput(
  * 不失败**：`degraded: true`，脚手架照常落地（它是同步文件写，不需要 jobs）。
  * 这与 P3-T13 `background-notification` 的 loud-but-non-fatal 口径一致。
  *
- * ═════════════════ THE FORK (**C1** / **C2** / **C3**) ═════════════════
+ * ═════════════ THE FORK (**C1** / **C2** / **C3** / **C4**) ═════════════
  * `dshRuntimeShape(jobs)` — the SHARED identity marker
  * (../../dsh-runtime-shape.ts), one call, one fork point, no second predicate —
- * decides exactly TWO things:
+ * decides exactly THREE things:
  *   * **owner** (**C2**, load-bearing): **[0.1.5]** `agent`, the live `Agent`
  *     instance — verbatim since P3-T17, zero change;
  *     `dsh-jobs/lib/types/types.d.ts:48-55` requires "Owning live agent… The
@@ -592,6 +603,10 @@ export function startWorkJobOutput(
  *     (packages/jobs/jobs-local/src/index.ts:577-592). A FUTURE read surface reads
  *     both through {@link readStartWorkJobOutcome} (`result ?? output`) and so
  *     never cares — though THIS module reads nothing back (**F6**).
+ *   * **failure classifier** (**C4**): on a `start()` throw, **[0.2.x]**
+ *     consults `classifyStartWorkJobFailure` against the 0.2.x registry's
+ *     preflight table; **[0.1.5]** classifies nothing (`{ preflight: false }`,
+ *     P3-T17 wording kept) — the third fork, the one the header once missed.
  * `run`'s arity needs NO fork: the closure written here is ZERO-parameter and one
  * such closure type-checks against both declarations (see
  * {@link StartWorkJobSpecLike} and the header's NO FORK bullet).
@@ -630,10 +645,10 @@ export function startWorkJob(params: {
     return { jobId: undefined, scaffold, degraded: true }
   }
 
-  // THE FORK (**C1**): one shared marker, TWO fork expressions, no third.
+  // THE FORK (**C1**): one shared marker, THREE fork expressions (header list).
   const shape = dshRuntimeShape(jobs)
   // **C2** the owner shape. **C3** the terminal key. `run` below gets neither —
-  // it is ZERO-parameter and consumes no handle (NO FORK, header bullet 3).
+  // it is ZERO-parameter and consumes no handle (NO FORK, header bullet 4).
   const owner: unknown = shape === 'v2' ? sessionId : agent
   const terminalKey: 'output' | 'result' = shape === 'v2' ? 'result' : 'output'
   // ⚠️ **Error-surface note (review F8)**: `fact` is built HERE, OUTSIDE the try

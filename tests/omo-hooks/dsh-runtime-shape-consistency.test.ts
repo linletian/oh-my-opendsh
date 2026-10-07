@@ -80,9 +80,15 @@ interface SharedFace {
  * between the two is the `events` key — the identity signal itself
  * (../dsh-runtime-shape.ts reads `jobs.events !== undefined` and nothing deeper).
  *
- * `events` is a GETTER with a counter: every `dshRuntimeShape(face)` call bumps
- * it, so "all three touch points consulted the shared marker on the same object"
- * is an OBSERVED number here, not an inference from reading their source.
+ * `events` is a GETTER so each read hands a fresh object (a member expression
+ * the three touch points can subscribe through without sharing a stale
+ * snapshot). There is deliberately NO probe counter on it: the header's
+ * review-F5 scope note owns the retraction — a read count only ever covered
+ * this test's own calls and is physically uncountable on v1 (no `events`
+ * key). What is observed instead is the BEHAVIOURAL landing recorded in
+ * `subscribedVia` / `guardCallers` / `liveStateOwners` below. (The block you
+ * are reading previously still promised the counter — a leftover this file's
+ * own header had already retracted; PR #12 review caught the contradiction.)
  */
 function sharedFace(shape: 'v1' | 'v2'): SharedFace {
   const face: Record<string, unknown> = {}

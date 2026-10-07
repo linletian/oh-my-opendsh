@@ -104,6 +104,12 @@ export interface StopContinuationEffects {
   readonly sessionId: string
   readonly cancelledJobIds: readonly string[]
   readonly alreadyFinishedJobIds: readonly string[]
+  /**
+   * Jobs whose kill THREW — possibly still running. Reported as their own
+   * count, never as "already finished" (PR #12 review: the folded form told
+   * the user a live job was done).
+   */
+  readonly stopFailedJobIds: readonly string[]
   readonly jobsServicePresent: boolean
   /**
    * What happened to the goal — **absent means the goal branch never ran**.
@@ -135,6 +141,7 @@ export function formatStopContinuationResult(effects: StopContinuationEffects): 
     effects.jobsServicePresent
       ? `cancelled ${effects.cancelledJobIds.length} running/stopping job(s)`
         + (effects.alreadyFinishedJobIds.length > 0 ? `, ${effects.alreadyFinishedJobIds.length} already finished` : '')
+        + (effects.stopFailedJobIds.length > 0 ? `, ${effects.stopFailedJobIds.length} could NOT be stopped (still possibly live — see the kill-failed log lines)` : '')
       : 'no jobs service mounted, so no background job was cancelled',
   )
   parts.push(
@@ -222,6 +229,7 @@ export function createStopContinuationCommand(services: StopContinuationServices
               sessionId,
               cancelledJobIds: [],
               alreadyFinishedJobIds: [],
+              stopFailedJobIds: [],
               jobsServicePresent: false,
             }),
           }
@@ -229,6 +237,7 @@ export function createStopContinuationCommand(services: StopContinuationServices
         const outcome = (guard as StopContinuationGuardLike).stop(sessionId) as {
           readonly cancelledJobIds?: readonly string[]
           readonly alreadyFinishedJobIds?: readonly string[]
+          readonly stopFailedJobIds?: readonly string[]
           readonly jobsServicePresent?: boolean
         }
         const effects: StopContinuationEffects = {
@@ -236,6 +245,7 @@ export function createStopContinuationCommand(services: StopContinuationServices
           sessionId,
           cancelledJobIds: outcome?.cancelledJobIds ?? [],
           alreadyFinishedJobIds: outcome?.alreadyFinishedJobIds ?? [],
+          stopFailedJobIds: outcome?.stopFailedJobIds ?? [],
           jobsServicePresent: outcome?.jobsServicePresent ?? false,
           goal: pauseActiveGoal(services, invocation.agent),
         }

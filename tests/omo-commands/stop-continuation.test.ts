@@ -440,9 +440,11 @@ describe('P4-T8 the background cascade — upstream ⑫ (cancel only running|pen
     }
     const guard = createStopContinuationGuard({ readJobs: () => jobs, log: (line) => logs.push(line) })
     const outcome = guard.stop('s')
-    // 上游 allSettled 的同步等价物：失败被计数，链条继续。
+    // 上游 allSettled 的同步等价物：失败被计数，链条继续。失败进**自己的**桶——
+    // kill 抛错意味着 job 可能还活着，绝不能算进 alreadyFinished（PR #12 评审）。
     expect(outcome.cancelledJobIds).toEqual(['a', 'c'])
-    expect(outcome.alreadyFinishedJobIds).toEqual(['b'])
+    expect(outcome.alreadyFinishedJobIds).toEqual([])
+    expect(outcome.stopFailedJobIds).toEqual(['b'])
     expect(logs.some((line) => line.includes('kill b failed: kill rejected'))).toBe(true)
   })
 
@@ -566,7 +568,7 @@ describe.each(['v1', 'v2'] as const)('P4.5-T3 the %s-shaped cascade — the same
     expect(absent.cancelledJobIds).toEqual([])
   })
 
-  it(`${shape}: verdict tristate — requested→cancelled, already-finished→alreadyFinished, throw→alreadyFinished+log+continue (§7)`, () => {
+  it(`${shape}: verdict tristate — requested→cancelled, already-finished→alreadyFinished, throw→stopFailed+log+continue (§7)`, () => {
     const logs: string[] = []
     const tasks = [owned('v-live', 'running'), owned('v-late', 'running'), owned('v-boom', 'running')]
     const jobs: StopContinuationJobsLike = {
@@ -584,7 +586,11 @@ describe.each(['v1', 'v2'] as const)('P4.5-T3 the %s-shaped cascade — the same
     const guard = createStopContinuationGuard({ readJobs: () => jobs, log: (line) => logs.push(line) })
     const outcome = guard.stop(session)
     expect(outcome.cancelledJobIds).toEqual(['v-live'])
-    expect(outcome.alreadyFinishedJobIds).toEqual(['v-late', 'v-boom'])
+    // v-boom's kill THREW — the job may still be alive. It lands in its own
+    // bucket, never in alreadyFinishedJobIds: reporting it as finished would
+    // state the opposite of the truth (PR #12 review).
+    expect(outcome.alreadyFinishedJobIds).toEqual(['v-late'])
+    expect(outcome.stopFailedJobIds).toEqual(['v-boom'])
     expect(logs.some((line) => line.includes('kill v-boom failed: kill rejected'))).toBe(true)
     // 抛错不放弃其余：v-boom 之后没有更多 job 了，但顺序证明 v-late/v-boom 都被尝试。
     expect(guard.isStopped(session)).toBe(true)
@@ -888,7 +894,7 @@ describe('P4-T8 the command handler — upstream plugin/stop-continuation.ts 的
   })
 
   it('every effect combination has its own sentence — no branch is a silent no-op', () => {
-    const base = { guardAvailable: true, sessionId: 's', cancelledJobIds: [], alreadyFinishedJobIds: [], jobsServicePresent: false }
+    const base = { guardAvailable: true, sessionId: 's', cancelledJobIds: [], alreadyFinishedJobIds: [], stopFailedJobIds: [], jobsServicePresent: false }
     expect(formatStopContinuationResult({ ...base, goal: 'paused' })).toContain('paused the active goal')
     expect(formatStopContinuationResult({ ...base, goal: 'absent' })).toContain('no goal on this session')
     expect(formatStopContinuationResult({ ...base, goal: 'not-active' })).toContain('not active')
@@ -902,6 +908,16 @@ describe('P4-T8 the command handler — upstream plugin/stop-continuation.ts 的
       alreadyFinishedJobIds: ['b', 'c'],
     })
     expect(withJobs).toContain('cancelled 1 running/stopping job(s), 2 already finished')
+    // The third bucket speaks as itself — never as "already finished" (PR #12).
+    const withFailure = formatStopContinuationResult({
+      ...base,
+      goal: 'absent',
+      jobsServicePresent: true,
+      cancelledJobIds: [],
+      stopFailedJobIds: ['x'],
+    })
+    expect(withFailure).toContain('1 could NOT be stopped')
+    expect(withFailure).not.toContain('already finished')
     expect(formatStopContinuationResult({ ...base, guardAvailable: false }))
       .toContain('nothing was stopped')
     // B 评审 NIT-10：guard 缺席那条路**没有**碰过 goal，所以不报 goal 结果；

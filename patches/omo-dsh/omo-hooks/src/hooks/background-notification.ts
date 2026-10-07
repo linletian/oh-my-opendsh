@@ -130,7 +130,9 @@
 //   2. v1 → `onJobDone(fn)`
 //   3. neither push face → the degraded turn/end pull over `list()` below, recorded
 //      with its own NOTE line. A subscription that THROWS is tier 3 in behaviour but
-//      it is recorded on a **FAILED** line (`fail(...)`, v2 `:1173` / v1 `:1191`),
+//      it is recorded on a **FAILED** line (the two `fail('jobs.* subscribe
+//      failed', …)` catch arms below — one per generation; line numbers were
+//      pinned here once and rotted off by 6, so this names them instead),
 //      NOT a NOTE — that prefix split is the whole distinction (:1050-1055).
 // The fork is the identity marker, not a capability probe
 // (../dsh-runtime-shape.ts header): capability absence is guarded at each call
@@ -1128,8 +1130,15 @@ export const registerBackgroundNotification: HookRegistrar = (
   /**
    * Wraps a subscription's own disposer in this port's fiber-scoped one
    * (header: DISPOSER OWNERSHIP). Order and once-only-ness are the contract:
-   *   * flip the push verdict FIRST, so a throwing service disposer cannot leave
-   *     `hasPushSurface()` stuck on `true` while nothing is subscribed;
+   *   * the released guard runs FIRST: a second call must be a TRUE no-op —
+   *     flipping the shared push verdict ahead of the guard (the pre-PR-#12
+   *     order) let a repeat dispose knock `hasPushSurface()` back to false
+   *     while a NEWER subscription was already live (cordis reload runs the
+   *     new inject callback before disposing the old child fiber), and the
+   *     pull path would then re-scan `list()` while push is up;
+   *   * flip the push verdict BEFORE the service disposer, so a throwing
+   *     service disposer cannot leave `hasPushSurface()` stuck on `true`
+   *     while nothing is subscribed;
    *   * run the service disposer AT MOST ONCE — cordis disposers are measured
    *     idempotent for the one-shot case (Q5 §6.2) and explicitly UNMEASURED
    *     for an in-register subscription (Q5 §7.7), so this port does not bet on
@@ -1138,9 +1147,9 @@ export const registerBackgroundNotification: HookRegistrar = (
   const wrapDisposer = (disposer: unknown): HookDisposer => {
     let released = false
     return () => {
-      listener.setPushSurfaceLive(false)
       if (released) return
       released = true
+      listener.setPushSurfaceLive(false)
       if (typeof disposer === 'function') (disposer as () => void)()
     }
   }

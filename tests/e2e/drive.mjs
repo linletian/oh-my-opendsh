@@ -20544,6 +20544,9 @@ function fabricatedStopContinuationLog() {
     sessionId: FABRICATED_STOP_SESSION_ID,
     cancelledJobIds: Array.from({ length: cancelled }, (_, index) => `job-fabricated-${index}`),
     alreadyFinishedJobIds: [],
+    // PR #12: the third bucket exists now — the formatter reads it, so the
+    // fabricated fixture must carry it (its absence crashes the formatter).
+    stopFailedJobIds: [],
     jobsServicePresent: true,
     goal,
   })

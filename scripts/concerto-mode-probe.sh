@@ -1158,7 +1158,7 @@ boot_once() {
   # Gate 8 running for real caught it (archived as gate8-probe-attempt.log:
   # "roster line missing or drifted"). A derived expectation that does not match
   # reality is still a wrong expectation, even when the code under test is right.
-  local expected_roster_prefix expected_roster_token
+  local expected_roster_prefix expected_roster_token expected_roster_empty
   expected_roster_prefix="$(cd "$REPO_ROOT" && node --input-type=module -e "
     import('./patches/omo-dsh/omo-agents/src/concerto-preset.ts')
       .then((m) => process.stdout.write(
@@ -1170,14 +1170,21 @@ boot_once() {
         m.formatConcertoRosterLine([{ id: 'concerto' }])
           .slice(m.formatConcertoRosterLine([]).replace(m.CONCERTO_ROSTER_EMPTY, '').length)))
   ")" || fail "[$label] could not derive the concerto roster token"
-  [[ -n "$expected_roster_prefix" && -n "$expected_roster_token" ]] \
-    || fail "[$label] the derived roster prefix/token came back empty"
-  echo "concerto-probe: [$label] derived roster assertion: prefix=\"$expected_roster_prefix\" token=$expected_roster_token"
+  # The empty roster prints `${prefix}${CONCERTO_ROSTER_EMPTY}` — the token is
+  # NOT a `id:broken=` row, so a guard grepping 'concerto:broken=EMPTY' can
+  # never fire (PR #12 review: dead guard). Derive the empty line itself.
+  expected_roster_empty="$(cd "$REPO_ROOT" && node --input-type=module -e "
+    import('./patches/omo-dsh/omo-agents/src/concerto-preset.ts')
+      .then((m) => process.stdout.write(m.formatConcertoRosterLine([])))
+  ")" || fail "[$label] could not derive the empty-roster line from the shipped formatter"
+  [[ -n "$expected_roster_prefix" && -n "$expected_roster_token" && -n "$expected_roster_empty" ]] \
+    || fail "[$label] the derived roster prefix/token/empty line came back empty"
+  echo "concerto-probe: [$label] derived roster assertion: prefix=\"$expected_roster_prefix\" token=$expected_roster_token empty=\"$expected_roster_empty\""
   grep -qF "$expected_roster_prefix" "$boot_log" \
     || fail "[$label] roster line missing or drifted (want the shipped prefix: $expected_roster_prefix)"
   grep -F "$expected_roster_prefix" "$boot_log" | grep -qF "$expected_roster_token" \
     || fail "[$label] the booted roster line does not list concerto as an UNBROKEN row — a bare prefix or the EMPTY token is not evidence of a roster (T1 Q-3 §1.4: a first list() may be empty)"
-  if grep -F "$expected_roster_prefix" "$boot_log" | grep -q "concerto:broken=EMPTY"; then
+  if grep -qF "$expected_roster_empty" "$boot_log"; then
     fail "[$label] the roster read came back EMPTY — registration never landed in the roster the plugin read"
   fi
   if grep -F "$expected_roster_prefix" "$boot_log" | grep -qE ':[?]|\buser\b|\bsystem\b'; then

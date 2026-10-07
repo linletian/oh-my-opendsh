@@ -35,11 +35,11 @@
 # that NO 0.2.x catalog lists, and the pin flip without the id re-pin is the
 # T8d failure mode this pairing exists to prevent). CI no longer runs 0.1.5.
 # Bump DSH_VERSION deliberately as the 0.2.x rc line advances (scripts/bump-dsh
-# .sh). KNOWN FOLLOW-UP (deliberately outside this cutover commit): doctor-lite
-# still enforces the old D7 minor pin (major 0, minor 1) at gate 4 — its
-# PINNED_MAJOR/PINNED_MINOR constants (scripts/doctor-lite-core.ts) must flip
-# to the 0.2 minor with their fixtures, tracked as the T13-side D7-assertion
-# migration.
+# .sh). The D7 pin moved WITH the cutover, not after it:
+# scripts/doctor-lite-core.ts carries PINNED_MAJOR=0 / PINNED_MINOR=2 since
+# 2323658 (fixtures migrated at T13) — no follow-up is owed here (the earlier
+# KNOWN FOLLOW-UP note claiming minor 1 was still pinned went stale in the
+# same commit; PR #12 review).
 #
 # Pinning the TOP-LEVEL version is NOT enough (PR #9, the lesson carries across
 # generations): dsh's own dependencies use caret ranges on prereleases, so a

@@ -270,6 +270,16 @@ def _fail(msg):
     sys.exit(1)
 
 
+class _InsertBlockCarriesUserContent(Exception):
+    """The `- insert:` block holding the old target row ALSO carries the user's
+    own non-dash lines (comments) but no other sub-entry. Cutting the target
+    would leave a comment-only `insert:` (parses to `insert: null` — noise,
+    not YAML), and dropping the whole block would silently erase the user's
+    text: comments are not YAML nodes, so none of the self-checks
+    (user_before / user_after / lost) can ever see that loss (PR #12 review).
+    Refuse loudly instead — the caller exits BEFORE any byte is written."""
+
+
 # The ONLY backup name shapes this script ever writes (see bak_path below):
 # '<patch file>.bak.<%Y%m%d%H%M%S>', plus '<patch file>.bak.<same>.<N>' for a
 # second backup inside the same second. '%Y%m%d%H%M%S' is exactly 14 ASCII
@@ -377,7 +387,11 @@ def _cuts_target_rows(text):
     column-0 `- ` line up to the next column-0 `- ` line or EOF, so user rows
     are copied out as they stand, comments included. Scope of that claim: per
     row. At file level the append step below can still add the one newline a
-    file that ended without one was missing.
+    file that ended without one was missing. One boundary is REFUSED rather
+    than cut: an `- insert:` block whose only remaining content beside the
+    target row is the user's own comments raises _InsertBlockCarriesUserContent
+    — the cut cannot keep them (a comment-only `insert:` is not YAML anyone
+    meant) and must not drop them silently (PR #12 review).
     """
     lines = text.split('\n')
     starts = [i for i, ln in enumerate(lines) if _is_top_entry(ln)]
@@ -406,12 +420,25 @@ def _cuts_target_rows(text):
                     skip = bool(RE_SUB_TARGET.match(ln))
                 if not skip:
                     subs.append(ln)
-            dropped += 1
-            # Keep `- insert:` only while at least one other sub-entry survives;
-            # an insert block with no entries left is noise, not YAML.
             if any(RE_SUB_DASH.match(ln) for ln in subs):
+                dropped += 1
+                # Keep `- insert:` only while at least one other sub-entry
+                # survives; an insert block with no entries left is noise, not
+                # YAML. Non-dash lines (comments) ride along with the kept
+                # block here — they are only at risk in the branch below.
                 kept.append(chunk[0])
                 kept.extend(subs)
+            elif any(ln.strip() for ln in subs):
+                # No sibling sub-entry survives, but the block carries the
+                # user's OWN non-blank lines (comments). Dropping the block
+                # would erase them silently (PR #12 review: measured rc=0 with
+                # the comment gone, invisible to every self-check); keeping it
+                # would emit a comment-only `insert:`. Refuse instead and let
+                # the user move their text by hand — nothing is written yet.
+                raise _InsertBlockCarriesUserContent(
+                    '\n'.join(ln for ln in subs if ln.strip()))
+            else:
+                dropped += 1
             continue
         kept.extend(chunk)                          # user entry — untouched
     return '\n'.join(kept), dropped
@@ -636,7 +663,11 @@ def _find_target_in_group_configs(node, path='document', inside=False, reason=''
                                              True, _group_reason(node))
         if hit:
             return hit
-    for key in sorted(node):
+    # key=str: legal YAML allows non-string mapping keys (`config: {1: a}`),
+    # and a bare sorted() would die with a raw TypeError ('<' between str and
+    # int) leaking out of the one-liner before any installer sentence (PR #12
+    # review). The walk only needs a deterministic order, not a typed one.
+    for key in sorted(node, key=str):
         # Sub-items of a NESTED `insert:` are rows as well; every other key of
         # a row holds data — including the row's own `config:` mapping, which
         # must never be read as a declaration row (see the `inside` note above).
@@ -680,8 +711,21 @@ def _refuse_nested_group_target(text):
             sys.exit(1)
 
 
+def _str_keys(v):
+    # YAML 1.1 allows non-string mapping keys (`config: {1: a}` is legal), and
+    # json.dumps(sort_keys=True) dies comparing str with int — the same bare
+    # TypeError class the group-walk's sorted(node) had (PR #12 review). The
+    # dumps below exist for EQUALITY comparisons only, and both sides go
+    # through this same coercion, so canonical order and equality survive.
+    if isinstance(v, dict):
+        return {str(k): _str_keys(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_str_keys(x) for x in v]
+    return v
+
+
 def _dump(v):
-    return json.dumps(v, sort_keys=True, ensure_ascii=False)
+    return json.dumps(_str_keys(v), sort_keys=True, ensure_ascii=False)
 
 
 patch_path, block_path = sys.argv[1], sys.argv[2]
@@ -712,22 +756,19 @@ orig_text = orig_bytes.decode('utf-8')
 # ride into the profile beside the freshly installed one.
 _refuse_nested_group_target(orig_text)
 
-# The patch file and its backup are read and written in binary mode, so a
-# restored .bak holds the exact bytes that were in the file before the rewrite.
-bak_path = ''
-if os.path.exists(patch_path):
-    bak_path = '%s.bak.%s' % (patch_path, time.strftime('%Y%m%d%H%M%S'))
-    n = 1
-    while os.path.exists(bak_path):
-        bak_path = '%s.bak.%s.%d' % (patch_path, time.strftime('%Y%m%d%H%M%S'), n)
-        n += 1
-    try:
-        with open(bak_path, 'wb') as f:
-            f.write(orig_bytes)
-    except OSError as e:
-        _fail('cannot write backup %s: %s' % (bak_path, e))
-
-cut_text, dropped = _cuts_target_rows(orig_text)
+# The cut may REFUSE (user comments riding inside the old row's `- insert:`
+# block) — that lands before any byte of the patch file, its backup, or the
+# staging .tmp exists, same boundary as the nested-group refusal above.
+try:
+    cut_text, dropped = _cuts_target_rows(orig_text)
+except _InsertBlockCarriesUserContent as e:
+    _fail('refusing to install over %s: the `- insert:` block holding the old '
+          '%s row also carries your own comment line(s):\n%s\n'
+          'Replacing the row would delete that text with it — comments are '
+          'not YAML nodes, so no self-check could ever see the loss. Move or '
+          'delete the comment by hand, delete the `- id: %s` sub-row, then '
+          're-run. Nothing has been written.'
+          % (patch_path, TARGET, e, TARGET))
 new_text = cut_text
 if new_text and not new_text.endswith('\n'):
     new_text += '\n'
@@ -751,6 +792,20 @@ if block_entry is None:
 if not isinstance(cut_doc, list):
     cut_doc = []
 
+if new_text == orig_text:
+    # Idempotent re-run: the declared row is already in place byte-for-byte.
+    # Writing anyway would stack a backup EQUAL TO the live file into
+    # retention, and enough no-op runs would evict the only backup that still
+    # holds the pre-install original (PR #12 review, measured: after four
+    # no-op runs all three surviving backups equalled the installed state, so
+    # the restore hint could only restore the file onto itself). No write, no
+    # backup — retention still runs, to bound leftovers from installer
+    # versions that backed up on refused/no-op runs.
+    _prune_backups(patch_path, keep=3)
+    print('write_patch_row: %s — already up to date (the %s row matches); '
+          'nothing written, no backup taken' % (patch_path, TARGET))
+    sys.exit(0)
+
 # Rows the append must not disturb, counted on the CUT text — i.e. before the
 # append, as the spec puts it. A pre-existing `- insert:` block that keeps a
 # sibling of its own legitimately grows the user-row count, so comparing with
@@ -760,6 +815,7 @@ user_before = sum(1 for e in cut_doc if not _refs_target(e))
 user_kept = sorted(_dump(e) for e in orig_doc if not _refs_target(e))
 
 tmp_path = '%s.tmp.%d' % (patch_path, os.getpid())
+bak_path = ''
 try:
     d = os.path.dirname(patch_path)
     if d:
@@ -821,6 +877,23 @@ try:
         if _dump(got) != _dump(want):
             _fail('config.plugins[%d] differs\n  patch:  %s\n  block: %s'
                  % (i, _dump(got)[:400], _dump(want)[:400]))
+    # Every check has passed — the new content is proven. Only NOW is the
+    # original backed up, immediately before it is replaced: a backup written
+    # earlier outlived every REFUSED install and stacked unpruned (PR #12
+    # review, measured: five refused runs left five .bak files). The patch
+    # file and its backup are read and written in binary mode, so a restored
+    # .bak holds the exact bytes that were in the file before the rewrite.
+    if os.path.exists(patch_path):
+        bak_path = '%s.bak.%s' % (patch_path, time.strftime('%Y%m%d%H%M%S'))
+        n = 1
+        while os.path.exists(bak_path):
+            bak_path = '%s.bak.%s.%d' % (patch_path, time.strftime('%Y%m%d%H%M%S'), n)
+            n += 1
+        try:
+            with open(bak_path, 'wb') as f:
+                f.write(orig_bytes)
+        except OSError as e:
+            _fail('cannot write backup %s: %s' % (bak_path, e))
     os.replace(tmp_path, patch_path)
 except SystemExit:
     if os.path.exists(tmp_path):
@@ -830,12 +903,14 @@ except (OSError, TypeError, KeyError, IndexError, ValueError, yaml.YAMLError) as
     if os.path.exists(tmp_path):
         os.remove(tmp_path)
     _fail('%s: %s' % (e.__class__.__name__, e))
+finally:
+    # Retention runs on EVERY outcome, refusal included: older installers had
+    # already written their backup by the time a check refused, and nothing
+    # ever pruned those. _prune_backups cannot turn a run red — it warns and
+    # continues, and only ever touches the strict timestamp shape.
+    _prune_backups(patch_path, keep=3)
 if os.path.exists(tmp_path):
     os.remove(tmp_path)
-
-# Reached only when os.replace() above succeeded, so the new content is already
-# live; pruning the older backups is housekeeping that must not fail the run.
-_prune_backups(patch_path, keep=3)
 
 print('write_patch_row: %s — 1 %s row (dropped %d old), %d user row(s) kept%s'
       % (patch_path, TARGET, dropped, user_after,
@@ -980,7 +1055,12 @@ print('==> %s bundles %s — agent-preset-registry is in scope for the declared 
 PYASSERT
 echo "==> installing concerto preset (tag ${TAG}) as a declared row of ${DECL_PATCH}"
 TMP_SRC="$(mktemp -d)"
-trap 'rm -rf "${TMP_SRC:-}" 2>/dev/null || true' EXIT INT TERM HUP
+# EXIT cleans up on the normal/error path; the signal trap must also EXIT —
+# a handler that only deletes the staging dir lets the script run on past the
+# interruption (measured under dash: SIGINT mid-run, script reached the last
+# line; PR #12 review). 130 = 128 + SIGINT, the conventional signal exit.
+trap 'rm -rf "${TMP_SRC:-}" 2>/dev/null || true' EXIT
+trap 'rm -rf "${TMP_SRC:-}" 2>/dev/null; exit 130' INT TERM HUP
 stage_sources "${TMP_SRC}"
 # mkdir only AFTER the downloads succeeded, so a failed curl leaves no
 # empty profiles/web/ behind.
@@ -1024,4 +1104,4 @@ echo "30s check: ask 'which delegation tools do you see?' -> the CONDUCTOR sees 
 # the user's own '.bak.mine' archive, which no retention policy eats and
 # which `ls -t` would happily hand back over the real backup.
 echo "uninstall: edit ${DECL_PATCH} and delete ONLY the '- insert:' block whose row is '- id: preset-concerto' — do NOT delete the file, it holds your own rows too."
-echo "           or restore the newest INSTALLER backup (timestamp-shaped names only, your own .bak.mine is never matched): cp \"\$(ls -t ${DECL_PATCH}.bak.[0-9]* 2>/dev/null | head -n 1)\" ${DECL_PATCH}   (optionally remove the llm-pi-ai section from ${SET})"
+echo "           or restore the newest INSTALLER backup (timestamp-shaped names only, your own .bak.mine is never matched): cp \"\$(ls -t \"${DECL_PATCH}\".bak.[0-9]* 2>/dev/null | head -n 1)\" \"${DECL_PATCH}\"   (optionally remove the llm-pi-ai section from ${SET})"

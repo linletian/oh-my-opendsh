@@ -220,7 +220,7 @@ Hard Blocks 注入。插件是会话专属、进程级的——不影响其他�
 
 - **历史遗留 dsh 0.1.x 安装（切换前遗留；自裁决 D17 起不受支持——安装器已不再往那里装，具名拒绝 < 0.2）**：删除 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` 目录即可清理切换前安装器留下的东西（在该运行时上 preset 从 roster 消失）。
 - **dsh ≥ 0.2（declaration）**：⚠️ **不要 `rm -rf` `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml` 整个文件**——那里面还有你自己的行。要么手工编辑该文件，只删掉 `- id: preset-concerto` 所在的那个 `- insert:` 块；要么用**安装器**留下的最新备份还原：
-  `cp "$(ls -t ${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml.bak.[0-9]* 2>/dev/null | head -n 1)" ${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`
+  `cp "$(ls -t "${DSH_HOME:-$HOME/.dsh}"/profiles/web/cordis.patch.yml.bak.[0-9]* 2>/dev/null | head -n 1)" "${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml"`
   ——通配符**故意**写成带时间戳的形状（`.bak.` 后面紧跟一个数字）：裸的 `.bak.*` 也会匹配**你自己**命名的存档，
   比如 `cordis.patch.yml.bak.mine`，而 `ls -t` 会把那一份当成最新文件交给你，而不是安装器真正写下的备份
   （安装器的清理策略从来不吃这类文件，所以它们可以在目录里躺很多年，并且正好是目录里 mtime 最新的那个）。

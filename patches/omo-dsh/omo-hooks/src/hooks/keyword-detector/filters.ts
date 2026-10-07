@@ -362,7 +362,10 @@ function isCommandExpansionMessage(text: string): boolean {
  * 合成/内部消息（插件注入、非 user role、`synthetic`/`internal` 标记）一律
  * 不参与——这就是上游 ① 号闸在 DSH 上的落点。它同时也是**唯一**的重复触发防线
  * 的一半：本 hook 自己 `agent.inject()` 出去的消息带
- * `source.kind === 'plugin'`，下一批被 claim 回来时在这一步就被滤掉。
+ * `source.kind === 'omo-keyword-detector'`（keyword-detector.ts 的注入构造点；
+ * 本注释曾写成 `'plugin'`——PR #12 评审指出的台账假话），准入谓词是白名单
+ * `source.kind === 'user'`（isUserAuthoredMessage），两种拼写一样被滤掉，下一批
+ * 被 claim 回来时在这一步就被滤掉。
  */
 export interface CurrentUserTexts {
   /** 本批里所有通过 ① 号闸与 S-12 的用户散文，按消息在批次中的先后顺序。 */

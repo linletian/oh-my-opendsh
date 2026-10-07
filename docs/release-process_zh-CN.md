@@ -14,7 +14,7 @@
 ## 2. 版本与 tag 约定
 
 - `package.json` 承载完整 semver `X.Y.Z`。
-- 每次发布打**两个 tag**：不可变的注释 tag `vX.Y.Z`，加上**移动别名** `vX.Y`（force 移到本线最新 patch）。安装器锁定别名（`TAG="${CONCERTO_TAG:-v0.1}"`），所以 `curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh` 永远装到最新稳定 patch；要精确锁版本就用 raw `vX.Y.Z` 直链。
+- 每次发布打**两个 tag**：不可变的注释 tag `vX.Y.Z`，加上**移动别名** `vX.Y`（force 移到本线最新 patch）。安装器锁定别名（`TAG="${CONCERTO_TAG:-v0.2}"`），所以 `curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh` 永远装到最新稳定 patch；要精确锁版本就用 raw `vX.Y.Z` 直链。
 - 语义：**major** = 矩阵不兼容变更 / 弃用旧 dsh 区间；**minor** = 新能力或新 ✅ 验证的上下游组合；**patch** = 修复 / 文档 / 仅安装器。
 - GitHub Pages 服务稳定线的分支根（`main`），所以 `/install` 永远镜像最新发布提交。
 
@@ -217,6 +217,11 @@ scripts/release.sh <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--no-gh] [
 5. **tag**——`vX.Y.Z` 注释 tag（不可变）+ `vX.Y` 别名 force 移动。
 6. **push**——分支 + 别名 + 完整 tag。
 7. **验证**——从新 tag 的 raw URL 做沙箱安装（硬门）；Pages `/install` 轮询（尽力而为，`--wait-pages`）。
+
+> **安装器有改动时，别名移动不是可选项（PR #12 评审）。** 门 7 的 d10 检查会读别名
+> tag 自己的 `scripts/install-concerto.sh` 内容，在别名提供声明式安装面之前保持红——
+> 指针类检查（d02/d07/d08）看不见别名仍在服务已删除的 `.agent-presets` 死面。所以动了
+> 安装器的合并必须在同一会话内紧跟一次发布：合并与发布之间的红是强制执行，不是抖动。
 8. **gh release**——notes = CHANGELOG 顶部小节 + 矩阵快照（无 gh 登录则打印手动命令）。
 
 ### 提交步骤整树暂存，并断言确实做到了

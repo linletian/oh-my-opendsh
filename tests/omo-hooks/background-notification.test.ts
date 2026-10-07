@@ -1119,32 +1119,39 @@ describe('P4.5-T2 background-notification — the runtime-identity fork (ADR-1)'
     // three-touch-point form of this assertion lands with T3/T4, which own the
     // other two files.) The deferred path is used because it is the one that
     // SPEAKS — the immediate fast path is note-free by contract (header).
-    const cases: Array<{ surface: JobsSurface; expectNote: string; expectLive: string }> = [
+    const cases: Array<{ surface: JobsSurface; expectShape: 'v1' | 'v2'; expectNote: string; expectLive: string }> = [
       {
         surface: v2JobsSurface().surface,
+        expectShape: 'v2',
         expectNote: BACKGROUND_NOTE_SUBSCRIBED_EVENTS,
         expectLive: 'push path live (events)',
       },
       {
         surface: { onJobDone: () => () => {} } as JobsSurface,
+        expectShape: 'v1',
         expectNote: BACKGROUND_NOTE_SUBSCRIBED_ONJOB_DONE,
         expectLive: 'push path live (onJobDone)',
       },
       {
         surface: v2JobsSurface({ withoutSubscribe: true }).surface,
+        expectShape: 'v2',
         expectNote: BACKGROUND_NOTE_V2_WITHOUT_SUBSCRIBE,
         expectLive: 'degraded pull path',
       },
       {
         surface: { list: () => [] } as JobsSurface,
+        expectShape: 'v1',
         expectNote: BACKGROUND_NOTE_PULL_ONLY,
         expectLive: 'degraded pull path',
       },
     ]
     for (const testCase of cases) {
-      // The marker's own verdict, re-read here so a fork that disagrees with it
-      // cannot pass by also having a matching-looking string.
-      expect(['v1', 'v2']).toContain(dshRuntimeShape(testCase.surface))
+      // The marker's verdict on THIS face, asserted against the generation the
+      // case intends — not `toContain(['v1','v2'])`, whose domain IS the marker's
+      // return type and therefore can never fail (PR #12 review: a tautology
+      // wearing a guard's clothes). A fork that disagrees with the case's
+      // generation fails HERE now.
+      expect(dshRuntimeShape(testCase.surface)).toBe(testCase.expectShape)
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
@@ -1609,5 +1616,27 @@ describe('P4.5-T2 background-notification — the 0.2.x registrar: NOTE tristate
     events[0]({ id: 'ses_1' }, TURN_END)
     await drainMicrotasks()
     expect(list).toHaveBeenCalledTimes(1)
+  })
+
+  it('⑧ a REPEAT dispose of the old subscription must not knock the verdict back while a newer one is live (PR #12)', async () => {
+    // The reload hazard the pre-fix order carried: cordis reload runs the new
+    // inject callback (subscription 2 sets the verdict live) and THEN disposes
+    // the old child fiber — and the in-register disposer is explicitly
+    // UNMEASURED for repeat calls (Q5 §7.7), so the old disposer can fire
+    // twice. With the flip ahead of the released guard, that repeat flipped
+    // the shared verdict to false while subscription 2 was live, and the pull
+    // path re-scanned list() underneath a living push. The guard now owns the
+    // flip too: a second call is a TRUE no-op.
+    const listB = vi.fn(() => [jobView({ id: 'bash-reload' })])
+    const { ctx, injectCalls, onCalls } = injectContext()
+    registerBackgroundNotification(ctx, backgroundRow())
+    const disposerOld = injectCalls[0]({ jobs: v2JobsSurface().surface }) as () => void
+    disposerOld() // subscription 1 torn down: verdict false, service disposer ran
+    injectCalls[0]({ jobs: v2JobsSurface({ list: listB }).surface }) // subscription 2 live: verdict true
+    disposerOld() // the spurious repeat — must NOT flip the verdict
+    onCalls[0]({ id: 'ses_1' }, TURN_END)
+    await drainMicrotasks()
+    // Push still owns the surface: the pull path never re-scanned list().
+    expect(listB).not.toHaveBeenCalled()
   })
 })

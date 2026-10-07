@@ -22,6 +22,11 @@
 //       and IDENTICAL (PR #9 round 2, N6). The pin is two tokens carried by two
 //       files; the drift that motivated the check was ci.yml sitting on a
 //       mixed-tree cutoff while compat-probe.yml claimed the same value.
+//   d10 the alias TAG's own copy of the installer carries the declaration
+//       face (DECL_PATCH) and NOT the deleted .agent-presets write target —
+//       the pointer checks (d02/d07/d08) cannot see a stale alias serving the
+//       dead face (PR #12 review BLOCKER). Red until the post-merge release
+//       moves the alias; that red is the enforcement.
 //
 // Usage: node scripts/check-docs-consistency.mjs [--json]
 // Exit: 1 iff any check FAILs.
@@ -182,6 +187,59 @@ async function run() {
   else if (ciCutoffs[0] !== probeCutoffs[0]) cutoffDetail = `cutoffs differ: ci.yml=${ciCutoffs[0]}, compat-probe.yml=${probeCutoffs[0]}`
   else cutoffDetail = `both install lines pin --before=${ciCutoffs[0]}`
   results.push(check('d09', 'D7 --before cutoffs well-shaped + identical', cutoffsMatch, cutoffDetail))
+
+  // d10 — the install one-liner's tag must SERVE the declaration-face
+  // installer, not merely share its name (PR #12 review BLOCKER).
+  //
+  // d02/d07/d08 prove the docs, the installer pin, and the alias AGREE with
+  // each other. None of them looks INSIDE the alias: `v0.2` → v0.2.1 shipped
+  // an installer whose only face wrote into $DSH_HOME/.agent-presets/ — the
+  // directory 0.2.x never reads — so every pointer check stayed green while
+  // the documented install path installed a preset nothing reads. This check
+  // reads the alias tag's own copy of scripts/install-concerto.sh and asserts
+  // the declaration-face marker IS there and the dead face's write target is
+  // NOT. The tag is fetched to a throwaway ref (the alias is force-moved at
+  // every release, so a stale local tag must never be trusted); offline, the
+  // local tag is the fallback and says so in the detail.
+  //
+  // RED HERE IS THE ENFORCEMENT, stated plainly: a merge that changes the
+  // installer must be followed IMMEDIATELY by a release (release.sh moves the
+  // alias and re-verifies from the new tag's raw URL). Until the alias moves,
+  // this gate stays red on purpose.
+  const d10 = (() => {
+    if (!alias) return { pass: false, detail: 'no tag_alias in compat.yaml' }
+    const tmpRef = 'refs/omo-gate-d10/alias'
+    const gitOpts = { cwd: REPO_ROOT, encoding: 'utf8', timeout: 90_000 }
+    const fetched = spawnSync('git',
+      ['fetch', '--depth', '1', '--force', 'origin', `refs/tags/${alias}:${tmpRef}`], gitOpts)
+    let ref = tmpRef
+    let source = `origin tag ${alias} (fetched)`
+    if (fetched.status !== 0) {
+      const local = spawnSync('git', ['rev-parse', '--verify', '-q', `refs/tags/${alias}`], gitOpts)
+      if (local.status !== 0) {
+        return { pass: false, detail: `cannot resolve tag ${alias} (fetch: ${(fetched.stderr || 'failed').trim().split('\n')[0]}; no local tag either)` }
+      }
+      ref = `refs/tags/${alias}`
+      source = `LOCAL tag ${alias} (fetch failed — result may be stale: ${(fetched.stderr || '').trim().split('\n')[0]})`
+    }
+    const show = spawnSync('git', ['show', `${ref}:scripts/install-concerto.sh`],
+      { ...gitOpts, maxBuffer: 4 * 1024 * 1024 })
+    if (ref === tmpRef) spawnSync('git', ['update-ref', '-d', tmpRef], gitOpts)
+    if (show.status !== 0 || !(show.stdout ?? '')) {
+      return { pass: false, detail: `git show ${ref}:scripts/install-concerto.sh failed (${(show.stderr || 'empty').trim().split('\n')[0]})` }
+    }
+    const content = show.stdout
+    const hasDeclaration = content.includes('DECL_PATCH=')
+    const servesDeadFace = content.includes('DEST="${D}/.agent-presets')
+    const pass = hasDeclaration && !servesDeadFace
+    return {
+      pass,
+      detail: pass
+        ? `${source} serves the declaration-face installer`
+        : `${source}: declaration marker DECL_PATCH ${hasDeclaration ? 'present' : 'MISSING'}; dead-face write target DEST=$D/.agent-presets ${servesDeadFace ? 'PRESENT' : 'absent'} — the documented one-liner installs from this tag; a merge that changes the installer must be followed by a release that moves the alias (scripts/release.sh)`,
+    }
+  })()
+  results.push(check('d10', 'alias tag serves the live installer face', d10.pass, d10.detail))
 
   const json = process.argv.includes('--json')
   if (json) {

@@ -1,10 +1,11 @@
 # compat-probe.yml — the weekly zero-cost upstream sentinel (release process,
-# decision D13). No secrets, no LLM: it asks the npm registry for the latest
-# @deepseek-ai/dsh and oh-my-openagent versions, compares them with every
-# dsh/omo value already recorded in .omo/compat.yaml (tested OR untested), and
-# opens ONE `compat-probe` issue per NEW version with the local probe
-# instructions (dedup by open issue title). The real verification runs
-# locally: scripts/compat-probe.sh + concerto_verify — cloud stays free.
+# decision D13). No secrets, no LLM: it asks the npm registry for EVERY
+# dist-tag of @deepseek-ai/dsh and oh-my-openagent (latest/next/alpha/…),
+# compares them with every dsh/omo value already recorded in .omo/compat.yaml
+# (tested OR untested), and opens ONE `compat-probe` issue per NEW version
+# with the local probe instructions (dedup by open issue title). The real
+# verification runs locally: scripts/compat-probe.sh + concerto_verify —
+# cloud stays free.
 
 name: compat-probe
 
@@ -56,4 +57,11 @@ jobs:
         run: npm install --global "@deepseek-ai/dsh@0.2.0-rc.2" --before=2026-10-01T07:24:55.067Z
 
       - name: detect new upstream versions → open issue
+        # gh needs the token IN THE ENV — `permissions: issues: write` alone
+        # leaves the CLI unauthenticated ("set the GH_TOKEN environment
+        # variable"), which is exactly what turned the sentinel red 4 times in
+        # a row (2026-09-21 … 10-05) with zero issues ever opened (PR #12
+        # review, run 37334589138 log).
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/check-compat-probes.mjs

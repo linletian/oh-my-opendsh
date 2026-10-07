@@ -256,7 +256,7 @@ session-owned and process-local — other users need nothing from it.
 - **dsh ≥ 0.2 (declaration)**: ⚠️ do **not** `rm -rf` `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`
   — that file carries your own rows too. Either hand-edit it and remove ONLY the `- insert:` block whose
   row is `- id: preset-concerto`, or restore the newest **installer** backup:
-  `cp "$(ls -t ${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml.bak.[0-9]* 2>/dev/null | head -n 1)" ${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`
+  `cp "$(ls -t "${DSH_HOME:-$HOME/.dsh}"/profiles/web/cordis.patch.yml.bak.[0-9]* 2>/dev/null | head -n 1)" "${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml"`
   — the glob is timestamp-shaped (`.bak.` followed by a digit) **on purpose**: plain `.bak.*` would also
   match archives *you* named, like `cordis.patch.yml.bak.mine`, and `ls -t` would hand one of those
   back instead of the backup the installer actually wrote (the installer's own prune never eats those,

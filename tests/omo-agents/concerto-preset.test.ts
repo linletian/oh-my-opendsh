@@ -568,7 +568,14 @@ function makeV1PresetService() {
 
 describe('renderConcertoComposition — the pure render outlet (P4.5-T5)', () => {
   it('renders the full anchor set with ZERO sentinel residue and writes nothing', () => {
-    const sandbox = makeSandbox()
+    // Pure = no filesystem side effect, asserted against the REAL input, not a
+    // bystander: the pre-PR-#12 form created a sandbox the render never
+    // received and asserted it stayed empty — vacuous by construction. What
+    // can actually be dirtied is the template dir the render READS, so its
+    // listing and bytes are snapshotted before and compared after.
+    const templateFile = join(EXPECTED_TEMPLATE_DIR, 'agent.cordis.yml')
+    const listingBefore = readdirSync(EXPECTED_TEMPLATE_DIR).sort()
+    const bytesBefore = readFileSync(templateFile, 'utf8')
     // DEFAULT conductor prompt — the section headings ARE the prompt content
     // rendered into the persona sentinel; a stub would erase them and make the
     // anchor assertions vacuous in the other direction.
@@ -581,8 +588,10 @@ describe('renderConcertoComposition — the pure render outlet (P4.5-T5)', () =>
     expect(composition).toContain('          # Explore: Read-Only Retrieval Agent')
     expect(composition).toContain('          provider: "deepseek"')
     expect(composition).not.toContain('__OMO_')
-    // Pure = no filesystem side effect: the sandbox stays EMPTY.
-    expect(readdirSync(sandbox)).toEqual([])
+    // The purity assertion with teeth: the read source is untouched, byte for
+    // byte, and nothing appeared next to it.
+    expect(readdirSync(EXPECTED_TEMPLATE_DIR).sort()).toEqual(listingBefore)
+    expect(readFileSync(templateFile, 'utf8')).toBe(bytesBefore)
   })
 
   it('is the SAME bytes syncConcertoPreset writes (single render implementation)', () => {

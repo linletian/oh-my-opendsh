@@ -65,7 +65,7 @@
 // no case renamed, no case removed; the only edits in this file are the timeouts
 // and this note.
 import { spawnSync } from 'node:child_process'
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { accessSync, appendFileSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -670,6 +670,63 @@ describe('T5 the delete recognises both pre-existing forms', () => {
     expect(refsTarget(asArray(doc)[1])).toBe(true)
     expect(asArray(asJson(asJson(targetRow(doc)).config).plugins))
       .toHaveLength(asArray(parseFile(AGENT_SRC)).length)
+  })
+
+  it('form ② with ONLY the target sub-row plus a user comment REFUSES — comments are never dropped silently (PR #12)', { timeout: 60_000 }, () => {
+    // Measured on the pre-fix installer: the block below installed with rc=0
+    // and the comment was GONE — the cut dropped the whole `- insert:` block
+    // because no sibling sub-entry survived, and comments are not YAML nodes,
+    // so user_before/user_after/lost saw nothing. The installer now refuses
+    // loudly before any byte is written.
+    const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
+    const fixture = [
+      '- id: my-own-row',
+      "  name: '@example/plugin'",
+      '- insert:',
+      '    # my note about this preset',
+      `    - id: ${TARGET}`,
+      `      name: '${PRESET_ROW_NAME}'`,
+      '      config:',
+      '        id: concerto',
+      '        plugins: []',
+      '',
+    ].join('\n')
+    mkdirSync(dirname(patchPath(sbx)), { recursive: true })
+    writeFileSync(patchPath(sbx), fixture, 'utf8')
+
+    const r = runWithDsh(sbx)
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).not.toBe(0)
+    expect(r.stderr).toContain('carries your own comment line(s)')
+    expect(r.stderr).toContain('my note about this preset')
+    // Nothing written: the file is byte-identical, and no backup exists.
+    expect(readFileSync(patchPath(sbx), 'utf8')).toBe(fixture)
+    expect(backupFiles(sbx)).toEqual([])
+  })
+
+  it('legal YAML with non-string mapping keys installs clean — no bare TypeError (PR #12)', { timeout: 60_000 }, () => {
+    // `config: {1: a}` is legal YAML 1.1. The pre-fix installer died on it
+    // twice: sorted(node) in the group walk ('<' between str and int) and
+    // json.dumps(sort_keys=True) in _dump — a raw traceback leaking out of
+    // the curl|sh one-liner before the installer ever spoke.
+    const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
+    const fixture = [
+      '- id: my-row',
+      "  name: '@example/plugin'",
+      '  config:',
+      '    1: a',
+      '    key: v',
+      '',
+    ].join('\n')
+    mkdirSync(dirname(patchPath(sbx)), { recursive: true })
+    writeFileSync(patchPath(sbx), fixture, 'utf8')
+
+    const r = runWithDsh(sbx)
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).toBe(0)
+    expect(r.stderr).not.toContain('Traceback')
+    const text = readFileSync(patchPath(sbx), 'utf8')
+    // The user's row stands byte-for-byte (int key included), the preset is declared once.
+    expect(text).toContain('    1: a\n')
+    expect(asArray(parseFile(patchPath(sbx))).filter(refsTarget)).toHaveLength(1)
   })
 })
 
@@ -1320,7 +1377,8 @@ describe('T18 a CRLF patch file is upgradeable', () => {
 })
 
 // ---------------------------------------------------------------------------
-// T19 — backup retention: five runs, newest three .bak.<timestamp> survive.
+// T19 — backup retention: content-changing runs, newest three
+// .bak.<timestamp> survive; no-op and refused runs leave nothing.
 //
 // WHY THIS EXISTS. Without retention every re-run stacks another
 // .bak.<timestamp> into the user's profile directory, unbounded. The prune
@@ -1329,10 +1387,22 @@ describe('T18 a CRLF patch file is upgradeable', () => {
 // NOTHING else in the directory. The foreign-prefixed witnesses below are
 // the anti-over-deletion tripwire: a prune degraded to '*bak*' or a bare
 // '.bak' substring test would delete them, and that is the failure mode with
-// real user data behind it.
+// real user data behind it. Since PR #12 review the prune also runs on
+// REFUSED runs (older installers had already written their backup when the
+// refusal fired) — so the witnesses must survive those too.
 // ---------------------------------------------------------------------------
 describe('T19 backup retention keeps exactly the newest three', () => {
-  it('five runs stack exactly three backups; foreign-prefixed files always survive', { timeout: 60_000 }, () => {
+  // PR #12 review rewrote this contract. The old form ran five IDENTICAL
+  // installs and pinned each one writing a backup — i.e. it calcified the
+  // leak as the expectation: no-op run 4's backup pushed the pre-install
+  // original (run 1's) out of the keep=3 window, so the retention queue ended
+  // up holding three copies of the installed state and the restore hint could
+  // only restore the file onto itself. The installer now skips no-op runs
+  // entirely (no write, no backup) and only backs up after the self-checks
+  // pass, so retention is exercised here by runs that genuinely change the
+  // file: a fresh user row appended before each run.
+
+  it('five CONTENT-CHANGING runs stack exactly three backups; foreign-prefixed files always survive', { timeout: 60_000 }, () => {
     const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
     const dir = dirname(patchPath(sbx))
     mkdirSync(dir, { recursive: true })
@@ -1366,7 +1436,13 @@ describe('T19 backup retention keeps exactly the newest three', () => {
     // { timeout: 60_000 } budget.
     const created: string[] = []
     for (let i = 1; i <= 5; i += 1) {
-      if (i > 1) sleepSync(1100)
+      if (i > 1) {
+        sleepSync(1100)
+        // Each run must CHANGE the file to earn a backup — a no-op run
+        // correctly creates none (the next case pins that). Appending a
+        // distinct user row is the minimal honest change.
+        appendFileSync(patchPath(sbx), `- id: user-row-${i}\n  name: '@acme/user-row-${i}'\n`, 'utf8')
+      }
       const r = runWithDsh(sbx)
       expect(r.status, `run ${i}:\n${r.stdout}\n${r.stderr}`).toBe(0)
       const present = backupFiles(sbx)
@@ -1382,6 +1458,8 @@ describe('T19 backup retention keeps exactly the newest three', () => {
     const survivors = backupFiles(sbx)
     // EXACTLY three, and they are the NEWEST three by creation order — the
     // distinct-second timestamps make this readable straight off the names.
+    // Every survivor is a REAL previous state (runs 3-5), never a no-op copy
+    // of the live file.
     expect(survivors).toHaveLength(3)
     expect(survivors).toEqual(created.slice(2))
     for (const gone of created.slice(0, 2)) {
@@ -1391,11 +1469,58 @@ describe('T19 backup retention keeps exactly the newest three', () => {
     for (const [name, body] of foreign) {
       expect(readFileSync(join(dir, name), 'utf8'), name).toBe(body)
     }
-    // And the live patch still declares exactly one target row.
+    // And the live patch still declares exactly one target row, with all
+    // appended user rows kept.
     const text = readFileSync(patchPath(sbx), 'utf8')
     expect(countOccurrences(text, `- id: ${TARGET}\n`)).toBe(1)
     expect(asArray(parseFile(patchPath(sbx))).filter(refsTarget)).toHaveLength(1)
     expect(text.startsWith(original)).toBe(true)
+    for (let i = 2; i <= 5; i += 1) expect(text).toContain(`- id: user-row-${i}`)
+  })
+
+  it('a no-op re-run writes nothing and takes no backup — the pre-install original never gets evicted by idling', { timeout: 60_000 }, () => {
+    const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
+    const dir = dirname(patchPath(sbx))
+    mkdirSync(dir, { recursive: true })
+    const original = '- id: user-row\n  name: \'@acme/user-row\'\n'
+    writeFileSync(patchPath(sbx), original, 'utf8')
+
+    // Run 1 installs and backs up the ORIGINAL (the only backup that can
+    // ever hold it).
+    expect(runWithDsh(sbx).status).toBe(0)
+    const afterFirst = readFileSync(patchPath(sbx), 'utf8')
+    const firstBackups = backupFiles(sbx)
+    expect(firstBackups).toHaveLength(1)
+    expect(readFileSync(join(dir, firstBackups[0]), 'utf8')).toBe(original)
+
+    // Runs 2-4 change nothing: no write, no backup, and the run-1 backup —
+    // the only automatic copy of the pre-install file — survives them all
+    // (PR #12 review measured the old form losing it after four no-op runs).
+    for (let i = 2; i <= 4; i += 1) {
+      const r = runWithDsh(sbx)
+      expect(r.status, `no-op run ${i}:\n${r.stdout}\n${r.stderr}`).toBe(0)
+      expect(r.stdout, `no-op run ${i} must SAY it wrote nothing`).toContain('already up to date')
+      expect(readFileSync(patchPath(sbx), 'utf8'), `no-op run ${i} must not touch the file`).toBe(afterFirst)
+      expect(backupFiles(sbx), `no-op run ${i} must not add a backup`).toEqual(firstBackups)
+    }
+    expect(readFileSync(join(dir, firstBackups[0]), 'utf8')).toBe(original)
+  })
+
+  it('a REFUSED install leaves no .bak behind — five refusals, zero backups', { timeout: 60_000 }, () => {
+    // PR #12 review, measured: the backup used to be written BEFORE the
+    // self-checks, so every refused run stacked an unpruned .bak (five runs
+    // of `foo: bar` → five files). The backup now lands only after every
+    // check has passed, so a refusal owns zero bytes.
+    const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
+    const dir = dirname(patchPath(sbx))
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(patchPath(sbx), 'foo: bar\n', 'utf8')
+    for (let i = 1; i <= 5; i += 1) {
+      const r = runWithDsh(sbx)
+      expect(r.status, `refused run ${i} must fail`).not.toBe(0)
+    }
+    expect(backupFiles(sbx)).toEqual([])
+    expect(readFileSync(patchPath(sbx), 'utf8')).toBe('foo: bar\n')
   })
 })
 
@@ -2369,7 +2494,12 @@ describe('T30 the uninstall restore hint can only ever select an installer backu
     const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
     const r = runWithDsh(sbx)
     expect(r.status, r.stderr).toBe(0)
-    expect(r.stdout).toContain(`${patchPath(sbx)}.bak.[0-9]*`)
+    // The copy-paste restore command quotes the path on BOTH sides of the
+    // command (PR #12 review: the unquoted destination died on a DSH_HOME
+    // with a space — measured `cp: target '...' no such file`, rc=1). The
+    // glob metacharacters stay bare so the pattern still expands.
+    expect(r.stdout).toContain(`"${patchPath(sbx)}".bak.[0-9]*`)
+    expect(r.stdout).toContain(`" "${patchPath(sbx)}"`)
     expect(r.stdout).toMatch(/newest INSTALLER backup/)
     expect(r.stdout).not.toContain('.bak.* 2>/dev/null')
 
