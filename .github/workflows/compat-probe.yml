@@ -1,9 +1,14 @@
 # compat-probe.yml — the weekly zero-cost upstream sentinel (release process,
-# decision D13). No secrets, no LLM: it asks the npm registry for the latest
-# @deepseek-ai/dsh and oh-my-openagent versions, compares them with every
-# dsh/omo value already recorded in .omo/compat.yaml (tested OR untested), and
-# opens ONE `compat-probe` issue per NEW version with the local probe
-# instructions (dedup by open issue title). The real verification runs
+# decision D13). No secrets, no LLM: it asks the npm registry for EVERY
+# dist-tag of @deepseek-ai/dsh and oh-my-openagent (latest/next/alpha/…),
+# compares them with every dsh/omo value already recorded in .omo/compat.yaml
+# (tested OR untested), and opens ONE `compat-probe` issue per NEW version
+# with the local probe instructions (dedup by open issue title). The script
+# ALSO checks the install alias tag's own installer content (DECL_PATCH
+# present / no .agent-presets write target) — the between-releases watch for
+# the face the alias serves, since the hard gate for it can only run
+# post-push in release.sh step 7b (PR #12 rounds 2-3; deliberately NOT in
+# ci.yml's required set, so no deadlock). The real verification runs
 # locally: scripts/compat-probe.sh + concerto_verify — cloud stays free.
 
 name: compat-probe
@@ -37,23 +42,41 @@ jobs:
 
       # The sentinel loads .omo/compat.yaml with the installed dsh's js-yaml
       # (the shared read-only dialect loader from scripts/doctor-lite.mjs).
-      # Same D7 caveat as ci.yml: the version pin alone leaves every caret-ranged
-      # transitive floating (`^0.1.5-rc.1` satisfies 0.1.5-rc.2/rc.3; upstream
-      # published 0.1.5-rc.3 / 0.1.7-rc.* on 2026-09-22..24), which is how a
-      # pinned install silently stops hoisting the sandbox family the plugin tree
-      # needs. `--before` freezes the whole resolved tree — and the cutoff is a
-      # SAFE POINT, not a publish instant: npm applies it per package and this
-      # monorepo does not publish its family atomically (at rc.1,
-      # @deepseek-ai/dsh-webhook-github landed 92s AFTER the top-level package),
-      # so the cutoff must sit strictly between the pinned family's MAX publish
-      # instant and the successor family's MIN publish instant. The committed
-      # value is the rc.1 midpoint and was verified by a real lockfile-only
-      # resolution: 231/231 @deepseek-ai/dsh* entries at 0.1.5-rc.1, zero nested
-      # paths. REVISIT on every dsh bump: scripts/bump-dsh.sh computes and
-      # verifies the safe point, then rewrites the quoted version AND both
-      # cutoffs — never hand-edit either.
+      # Same cutoff caveat as ci.yml (the lesson carries across generations): the
+      # version pin alone leaves every caret-ranged transitive floating, and the
+      # monorepo does not publish its family atomically — so `--before` must sit
+      # strictly between the pinned family's MAX publish instant and the
+      # successor family's MIN publish instant, picked by PUBLISH TIME from the
+      # registry time map. Since the D17 cutover the sentinel rides the SAME pin
+      # as ci.yml (0.2.0-rc.2; 0.1.x compatibility is dropped): the committed
+      # 2026-10-01T07:24:55.067Z is the midpoint between 0.2.0-rc.2
+      # (2026-09-29T09:56:27.792Z) and its earliest-later version 0.2.1-alpha.1
+      # (2026-10-03T04:53:22.343Z), verified by a real lockfile-only resolution:
+      # 278/278 @deepseek-ai/dsh* entries at 0.2.0-rc.2, any depth. REVISIT on
+      # every dsh bump: scripts/bump-dsh.sh computes and verifies the safe point,
+      # then rewrites the quoted version AND both cutoffs — never hand-edit
+      # either. Gate 7 (check-docs-consistency d09) asserts ci.yml and this file
+      # carry the same cutoff.
       - name: install dsh (parser provider)
-        run: npm install --global "@deepseek-ai/dsh@0.1.5-rc.1" --before=2026-09-10T09:05:02.041Z
+        run: npm install --global "@deepseek-ai/dsh@0.2.0-rc.2" --before=2026-10-01T07:24:55.067Z
+
+      - name: ensure the compat-probe label exists
+        # The sentinel files issues under --label compat-probe, but the label
+        # never existed on the repo — `gh issue create` then dies at label
+        # resolution ("could not add label"), which would have made the first
+        # real run red-without-a-voice (PR #12 round 4, kimi: `gh label list`
+        # measured 10 defaults only). Created on the repo out-of-band too;
+        # this step keeps the workflow self-healing if it is ever deleted.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh label create compat-probe --description "upstream drift + install-alias face alarms (weekly sentinel)" --force || true
 
       - name: detect new upstream versions → open issue
+        # gh needs the token IN THE ENV — `permissions: issues: write` alone
+        # leaves the CLI unauthenticated ("set the GH_TOKEN environment
+        # variable"), which is exactly what turned the sentinel red 4 times in
+        # a row (2026-09-21 … 10-05) with zero issues ever opened (PR #12
+        # review, run 37334589138 log).
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/check-compat-probes.mjs

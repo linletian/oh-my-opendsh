@@ -16,8 +16,11 @@
 #   4. commit     — release: vX.Y.Z
 #   5. tags       — vX.Y.Z (immutable, annotated) + vX.Y alias (force-moved)
 #   6. push       — branch + alias + full tag
-#   7. verify     — sandboxed install from the NEW tag's raw URL; best-effort
-#                   Pages /install poll
+#   7. verify     — sandboxed install from the NEW tag's raw URL; ALIAS content
+#                   gate (ls-remote peel == release commit + declaration-face
+#                   markers on the alias's own installer copy; the ONLY honest
+#                   point for it — pre-tag it deadlocks, PR #12 round 2);
+#                   best-effort alias-URL install smoke + Pages /install poll
 #   8. gh release — GitHub Release with changelog + matrix snapshot (if gh auth)
 #
 # Exit: 0 on a completed release (or a complete dry-run plan); non-zero at the
@@ -160,14 +163,79 @@ else
 fi
 
 # 7. verify — sandboxed install from the NEW tag's raw URL (deterministic),
-#    then best-effort Pages /install poll (Pages builds async).
-echo "release.sh: step 7/8 — install verification (sandboxed, new tag)"
+#    then the ALIAS verification, then best-effort Pages /install poll (Pages
+#    builds async). All REMOTE legs require step 6's push to have happened:
+#    under --no-push the tags exist only locally, the raw URL 404s and
+#    ls-remote answers empty (PR #12 round 3, measured) — so the remote legs
+#    skip by name and the WORKING TREE's installer gets the sandboxed install
+#    instead (it is exactly what a later pushing release would ship).
+echo "release.sh: step 7/8 — install verification"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf "$TMP"; git update-ref -d refs/omo-release-verify/alias 2>/dev/null || true' EXIT
+if [[ "$NO_PUSH" == "1" ]]; then
+  echo "release.sh: step 7 — remote verification SKIPPED (--no-push); verifying the WORKING TREE installer instead"
+  DSH_HOME="$TMP/dsh-home" NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official \
+    EXPLORE_MODEL=deepseek-flash sh scripts/install-concerto.sh
+  grep -q 'preset-concerto' "$TMP/dsh-home/profiles/web/cordis.patch.yml" \
+    && echo "release.sh: working-tree install OK (declared row landed, DSH_HOME=$TMP/dsh-home)" \
+    || { echo "release.sh: FAIL — working-tree install did not land the declared row" >&2; exit 1; }
+else
 curl -fsSL "https://raw.githubusercontent.com/${GH_REPO}/v${NEW}/scripts/install-concerto.sh" -o "$TMP/install.sh"
+# T12b cutover: deepseek-flash is the id the pinned 0.2.x official route
+# actually lists (installed dsh-llm-deepseek/lib/index.js:42-56 DEFAULT_MODELS).
 DSH_HOME="$TMP/dsh-home" NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official \
-  EXPLORE_MODEL=deepseek-v4-flash sh "$TMP/install.sh"
+  EXPLORE_MODEL=deepseek-flash sh "$TMP/install.sh"
 echo "release.sh: raw-tag install OK (DSH_HOME=$TMP/dsh-home)"
+
+# 7b. ALIAS verification (PR #12 review, round 2) — the alias URL is what the
+#    docs and the Pages wrapper actually publish, so IT is what must serve the
+#    declaration-face installer. This assertion can only live HERE: the alias
+#    moves at step 5/6, so any PRE-tag gate asserting its content deadlocks
+#    the release that would move it (the round-1 d10 placement did exactly
+#    that — release-check runs check-docs-consistency at steps 1/3, before the
+#    tags exist at step 5; measured). Two hard legs (git protocol, no CDN
+#    cache) + one smoke leg:
+#    1. the REMOTE alias peels to the release commit just pushed;
+#    2. the alias's own copy of the installer carries DECL_PATCH and not the
+#       deleted .agent-presets write target;
+#    3. a sandboxed install THROUGH the alias raw URL lands the declared row
+#       (best-effort: raw CDN may serve the pre-move cache for a few minutes —
+#       a mismatch there is a WARN, the git legs are the authority).
+if ! ALIAS_SHA="$(git ls-remote "$REMOTE" "refs/tags/$NEW_ALIAS^{}" 2>/dev/null | cut -f1)"; then
+  echo "release.sh: FAIL — git ls-remote $REMOTE failed (network/auth); the alias verification cannot run" >&2
+  exit 1
+fi
+HEAD_SHA="$(git rev-parse HEAD)"
+if [[ "$ALIAS_SHA" != "$HEAD_SHA" ]]; then
+  echo "release.sh: FAIL — remote alias $NEW_ALIAS peels to ${ALIAS_SHA:-<missing>}, not the release commit $HEAD_SHA (push the alias first)" >&2
+  exit 1
+fi
+if ! git fetch --depth 1 --force "$REMOTE" "refs/tags/$NEW_ALIAS:refs/omo-release-verify/alias" >/dev/null 2>&1; then
+  echo "release.sh: FAIL — cannot fetch the pushed alias $NEW_ALIAS back from $REMOTE for content verification" >&2
+  exit 1
+fi
+ALIAS_INSTALLER="$(git show refs/omo-release-verify/alias:scripts/install-concerto.sh)" \
+  || { git update-ref -d refs/omo-release-verify/alias; echo "release.sh: FAIL — alias $NEW_ALIAS has no scripts/install-concerto.sh" >&2; exit 1; }
+git update-ref -d refs/omo-release-verify/alias
+# (bash [[ == ]] with patterns, not printf|grep -q: under pipefail a grep -q
+# early-exit SIGPIPEs the printf and the pipeline reads 141 even on a match.)
+[[ "$ALIAS_INSTALLER" == *'DECL_PATCH='* ]] \
+  || { echo "release.sh: FAIL — alias $NEW_ALIAS serves an installer without the declaration face (DECL_PATCH missing)" >&2; exit 1; }
+if [[ "$ALIAS_INSTALLER" == *'DEST="${D}/.agent-presets'* ]]; then
+  echo "release.sh: FAIL — alias $NEW_ALIAS still serves the deleted .agent-presets face" >&2
+  exit 1
+fi
+echo "release.sh: alias $NEW_ALIAS content OK (peels to the release commit, declaration face)"
+if curl -fsSL "https://raw.githubusercontent.com/${GH_REPO}/${NEW_ALIAS}/scripts/install-concerto.sh" -o "$TMP/install-alias.sh" \
+    && grep -q 'DECL_PATCH=' "$TMP/install-alias.sh"; then
+  DSH_HOME="$TMP/dsh-home-alias" NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official \
+    EXPLORE_MODEL=deepseek-flash sh "$TMP/install-alias.sh"
+  grep -q 'preset-concerto' "$TMP/dsh-home-alias/profiles/web/cordis.patch.yml" \
+    && echo "release.sh: alias-URL install OK (declared row landed)" \
+    || { echo "release.sh: FAIL — alias-URL install did not land the declared row" >&2; exit 1; }
+else
+  echo "release.sh: WARN — the alias raw URL still serves the pre-move installer (CDN cache); the git legs above are the authority. Re-run the alias-URL install manually in a few minutes if you want the smoke."
+fi
 if [[ "$WAIT_PAGES" -gt 0 ]]; then
   echo "release.sh: polling Pages /install (up to ${WAIT_PAGES}s, best effort)"
   DEADLINE=$((SECONDS + WAIT_PAGES))
@@ -185,6 +253,7 @@ if [[ "$WAIT_PAGES" -gt 0 ]]; then
     echo "release.sh: WARN — Pages /install not live within ${WAIT_PAGES}s (check the Pages build; raw tag URL already verified)"
   fi
 fi
+fi  # NO_PUSH: remote legs skipped above
 
 # 8. gh release
 if [[ "$NO_GH" == "1" ]]; then

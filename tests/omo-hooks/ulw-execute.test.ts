@@ -61,6 +61,8 @@ import {
   type PreStepListener,
   type UlwExecuteDeps,
 } from '../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute.ts'
+// The SHARED identity marker — imported, never reimplemented in this suite.
+import { dshRuntimeShape } from '../../patches/omo-dsh/omo-hooks/src/dsh-runtime-shape.ts'
 import {
   NOTEPAD_FILES,
   NOTEPAD_FOOTER,
@@ -123,12 +125,18 @@ import {
 } from '../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute/worktree.ts'
 import {
   EMPTY_PLAN_INVENTORY,
+  PREFLIGHT_REJECT_MARKERS,
   buildNotepadHeader,
+  classifyStartWorkJobFailure,
   readPlanInventory,
   readPlanProgress,
+  readStartWorkJobOutcome,
   scaffoldNotepad,
   startWorkJob,
   type JobsSurface,
+  type StartWorkJobHandleLike,
+  type StartWorkJobHooksLike,
+  type StartWorkJobSpecLike,
 } from '../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute/live-state.ts'
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -1575,7 +1583,7 @@ describe('P3-T17 ulw-execute — 激活检测（纯函数，DSH 原生信号）'
     expect(message.role).toBe('user')
     expect(message.content).toEqual([{ type: 'text', text: buildInjectionText('BODY') }])
     expect(message.source).toEqual({
-      kind: 'plugin',
+      kind: 'omo-ulw-execute',
       plugin: ULW_EXECUTE_PLUGIN,
       form: 'instructions',
     })
@@ -1626,19 +1634,39 @@ describe('P3-T17 ulw-execute — 载荷读取（防御式叶子读）', () => {
       ],
     }
     expect(readDelegationTaskText(payload)).toBe('summarize the repository layout')
-    // 插件来源的注入段（含本 hook 自己的 job 通知，其 label 就是 `ulw-execute: alpha`）
-    // 一律不是任务文本——这是 e2e 实测的自指假阳性来源。
-    expect(readDelegationTaskText({ messages: [
-      { role: 'user', source: { kind: 'plugin', plugin: 'tool-jobs' }, content: [
-        { type: 'text', text: 'background job ulw-execute-2 (ulw-execute: ulw-execute: alpha) finished' },
-      ] },
-      { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'real task' }] },
-    ] })).toBe('real task')
-    expect(readDelegationTaskText({ messages: [
-      { role: 'user', source: { kind: 'plugin', plugin: 'omo-agents' }, content: [
-        { type: 'text', text: '## Hard Blocks\n- Start work only when requested' },
-      ] },
-    ] })).toBe('')
+    // 非 user 来源的注入段一律不是任务文本——这是 e2e 实测的自指假阳性来源。
+    // 两个载体都按**现行形态**转写（P4.5-T8；旧形态那个 catch-all kind
+    // `'plugin'` 已被 0.2.x 原生 admission 拒收——已装 @deepseek-ai/dsh@0.2.0-rc.2
+    // 随附的 @deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2 `lib/index.js:126`）：
+    //   * job 完成通知由 **dsh 自己的 tool-jobs 生产者**盖章——已装
+    //     @deepseek-ai/dsh-tool-jobs@0.2.0-rc.2 `lib/index.js:277-281` 盖
+    //     `{kind:"tool-jobs", form:"notice", summary:…}`（**没有** `plugin` 字段；v3 迁移
+    //     落点相同：`tool-jobs` 在 RELEASED_SAME_NAME_PRODUCERS 里
+    //     `lib/index.js:80` → 同名分支 `:91`，`plugin:<name>` 兜底 `:92` 只收
+    //     未released 的名字）。job 的 label 恰是本 hook 的 `ulw-execute: alpha`，
+    //     这正是当年自指假阳性的来源。
+    //   * Hard Blocks 段是**我们自己的 omo-agents 生产者**——patches/omo-dsh/
+    //     omo-agents/src/hard-blocks-injection.ts `:140` 盖
+    //     `{kind:'omo-hard-blocks', plugin:HARD_BLOCKS_INJECTION_PLUGIN,
+    //     form:'instructions'}`（常量 `:36` = `'omo-agents'`）。
+    // 白名单只认 `kind === 'user'`（ulw-execute.ts:668-672），对非 user 的 kind
+    // **取值不可分辨**：上面两条断言钉的是白名单行为——载体 kind 改成 `'user'`
+    // 就会经生产代码变红——它们钉不住 kind 字面量本身。载体里的 kind 只是按
+    // 现行形态转写以求真实，**本文件不是 kind 轴的 gate**（此前两条自比对
+    // 字面量的 pin 已删：literal 与它自己比，是 theatre，不是门）。kind 轴的
+    // gate 在别处：`omo-hard-blocks` 由 hard-blocks-injection.test.ts:122-124
+    // 从真实 producer 的 `agent.inject.mock.calls[0][0]` 捕获后断言（producer 改
+    // kind 即红）；dsh 的 `tool-jobs` 在已装 npm 包里、in-repo 单元层观测不到，
+    // 正确归宿是对捕获 v4 行做断言的 e2e（drive.mjs，另一切片在建）。
+    const jobNotice = { role: 'user', source: { kind: 'tool-jobs', form: 'notice' }, content: [
+      { type: 'text', text: 'background job ulw-execute-2 (ulw-execute: ulw-execute: alpha) finished' },
+    ] }
+    const realTask = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'real task' }] }
+    expect(readDelegationTaskText({ messages: [jobNotice, realTask] })).toBe('real task')
+    const hardBlocks = { role: 'user', source: { kind: 'omo-hard-blocks', plugin: 'omo-agents', form: 'instructions' }, content: [
+      { type: 'text', text: '## Hard Blocks\n- Start work only when requested' },
+    ] }
+    expect(readDelegationTaskText({ messages: [hardBlocks] })).toBe('')
     // 没有指引时原样返回；空/畸形输入 → 空串
     expect(readDelegationTaskText({ messages: [{ role: 'user', content: [{ type: 'text', text: 'start work' }] }] }))
       .toBe('start work')
@@ -2048,5 +2076,558 @@ describe('P3-T17 ulw-execute — 注册面', () => {
       console.warn = originalWarn
       rmSync(directory, { recursive: true, force: true })
     }
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ⑮ P4.5-T4 — `ctx.jobs` 存储面的 DUAL-SHAPE 行为（live-state.ts 的 fork）
+//
+// 每组场景在**两个形状**上各跑一遍：v1（0.1.5，无 `events` 键）与 v2（0.2.x，
+// 有 `events` 键）。形状判定**不在测试里重写**——测试构造形状，然后断言生产
+// 代码经共享标记 `dshRuntimeShape` 取到的结果，以及 owner / 终态键的落点。
+// 上面的 ⑧ 组是 P3-T17 的 v1 用例，**一条都没改**；本组是它的 v2 对偶 +
+// 双形状参数化。
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** What one `start()` call handed us, captured off the REAL spec object. */
+interface DualStartCall {
+  readonly kind: string
+  readonly label: string
+  readonly owner: unknown
+  readonly specKeys: readonly string[]
+  /** What `run` received: the JobHandle on v2, nothing on v1 (arity fork). */
+  readonly handle: StartWorkJobHandleLike | undefined
+  /** The producer hooks — `done` is awaited by the test, never unwrapped here. */
+  readonly hooks: StartWorkJobHooksLike
+}
+
+/**
+ * A fake registry whose shape differs in exactly ONE key: `events`. It mimics
+ * the real jobs-local `start()` in the three ways this hook depends on:
+ *   * v2 hands `run` a JobHandle, v1 hands it nothing (types.ts:157 vs the
+ *     0.1.5 no-arg form — citations in live-state.ts);
+ *   * v2 refuses a NON-string owner with the registry's verbatim `:365` message,
+ *     interpolated like the upstream template literal, so a wrong owner shape
+ *     really does reject here the way it does on a real 0.2.x machine;
+ *   * it returns a `<kind>-N` id.
+ * Nothing else about the real registry is simulated, and nothing here is offered
+ * as fact about dsh — the mirror citations carry that, and the real-machine half
+ * is the canary evidence in .omo/evidence/p45t4/.
+ */
+function dualRegistry(
+  shape: 'v1' | 'v2',
+  options: { throwOnStart?: (spec: StartWorkJobSpecLike) => Error } = {},
+): { jobs: JobsSurface; calls: DualStartCall[] } {
+  const calls: DualStartCall[] = []
+  // Both handle members THROW if ever called: this port must not append to the
+  // ring or write progress, so a misuse fails loudly instead of passing quietly.
+  const handle: StartWorkJobHandleLike = {
+    id: 'ulw-execute-1',
+    append: () => { throw new Error('this port must never append to the ring') },
+    updateProgress: () => { throw new Error('this port must never write progress') },
+  }
+  const start = (spec: StartWorkJobSpecLike): string => {
+    if (options.throwOnStart !== undefined) throw options.throwOnStart(spec)
+    // v2 mimics jobs-local:357-367 `resolveOwner`: a non-string owner misses the
+    // `agents.get(session)` lookup and throws the interpolated :365 message.
+    if (shape === 'v2' && typeof spec.owner !== 'string') {
+      throw new Error(`session "${String(spec.owner)}" has no live agent (background job owner must be live)`)
+    }
+    const received = shape === 'v2' ? handle : undefined
+    const hooks = spec.run(received)
+    calls.push({
+      kind: spec.kind,
+      label: spec.label,
+      owner: spec.owner,
+      specKeys: Object.keys(spec).sort(),
+      handle: received,
+      hooks,
+    })
+    return `ulw-execute-${calls.length}`
+  }
+  // THE ONLY structural difference between the two faces is the `events` key.
+  const jobs: JobsSurface = shape === 'v2'
+    ? { start, events: { subscribe: () => () => {} } }
+    : { start }
+  return { jobs, calls }
+}
+
+describe.each([['v1'], ['v2']] as const)('P4.5-T4 ulw-execute — ctx.jobs DUAL-SHAPE 存储面 [%s]', (shape) => {
+  let testDirectory = ''
+  const sessionId = 'ses_t4_dual'
+  const liveAgent = { id: 'agent-t4', session: { header: { id: sessionId } } }
+
+  beforeEach(() => {
+    testDirectory = join(tmpdir(), `ulw-execute-dual-${shape}-${randomUUID()}`)
+    mkdirSync(testDirectory, { recursive: true })
+  })
+
+  afterEach(() => {
+    if (existsSync(testDirectory)) rmSync(testDirectory, { recursive: true, force: true })
+  })
+
+  it(`⑮ 形状前提：${shape} 面被共享 dshRuntimeShape 判为 ${shape}`, () => {
+    const { jobs } = dualRegistry(shape)
+    // Imported, not reimplemented — the SAME shared predicate the two other
+    // touch points use (the cross-touchpoint half is pinned in
+    // tests/omo-hooks/dsh-runtime-shape-consistency.test.ts).
+    expect(dshRuntimeShape(jobs)).toBe(shape)
+  })
+
+  it(`⑮ ${shape}: 成功启动 → jobId 非空 + degraded:false + 脚手架落地 + 无降级日志`, () => {
+    const { jobs, calls } = dualRegistry(shape)
+    const logs: string[] = []
+    const result = startWorkJob({ jobs, directory: testDirectory, planName: 'alpha', sessionId, agent: liveAgent, log: (l) => logs.push(l) })
+
+    expect(result.jobId).toBe('ulw-execute-1')
+    expect(result.degraded).toBe(false)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].kind).toBe('ulw-execute')
+    expect(calls[0].label).toBe('ulw-execute: alpha')
+    // 成功态不写任何降级行（C4：成功必须与两种降级在日志上可分）。
+    expect(logs.filter((l) => /degraded|absent|rejected|failed/.test(l))).toEqual([])
+    expect(existsSync(join(testDirectory, '.omo', 'notepads', 'alpha', 'learnings.md'))).toBe(true)
+  })
+
+  it(`⑮ ${shape}: owner 逐字断言 — ${shape === 'v1' ? '活 Agent 对象本体（同一引用）' : 'sessionId 字符串（逐字相等）'}`, () => {
+    const { jobs, calls } = dualRegistry(shape)
+    const result = startWorkJob({ jobs, directory: testDirectory, planName: 'alpha', sessionId, agent: liveAgent })
+    expect(result.degraded).toBe(false)
+    expect(calls).toHaveLength(1)
+    if (shape === 'v1') {
+      // 同一引用：不是副本，也不是它的 session。
+      expect(calls[0].owner).toBe(liveAgent)
+      expect(calls[0].owner).not.toBe(sessionId)
+    } else {
+      // 逐字符串：不是 `{ id }`，不是 Agent 对象。
+      expect(calls[0].owner).toBe(sessionId)
+      expect(typeof calls[0].owner).toBe('string')
+      expect(calls[0].owner).not.toBe(liveAgent)
+    }
+  })
+
+  // HONEST SCOPE (review F5): the handle this test inspects is the one the MOCK
+  // decided to pass (`const received = shape === 'v2' ? handle : undefined`), so
+  // this case proves only that the port returns valid hooks when its `start` is
+  // invoked WITH a handle (v2) and WITHOUT one (v1) — i.e. the zero-parameter
+  // closure tolerates both call shapes. It is NOT evidence of dsh's real arity;
+  // that evidence is the real-machine `D-run-arity` row in
+  // `.omo/evidence/p45t4/logs/T4-scenario.ndjson` (`argType:"object"`,
+  // `id:"t4probe-1"`). The name says which.
+  it(`⑮ ${shape}: ${shape === 'v2' ? 'mock 带 JobHandle 调用 start 时端口照常返回 hooks（真机 arity 见 canary D-run-arity）' : 'mock 不带参数调用 start 时端口照常返回 hooks'}`, () => {
+    const { jobs, calls } = dualRegistry(shape)
+    const result = startWorkJob({ jobs, directory: testDirectory, planName: 'alpha', sessionId, agent: liveAgent })
+    expect(calls).toHaveLength(1)
+    expect(result.degraded).toBe(false)
+    expect(result.jobId).toBe('ulw-execute-1')
+    if (shape === 'v2') {
+      expect(calls[0].handle).toBeDefined()
+      expect(calls[0].handle?.id).toBe('ulw-execute-1')
+    } else {
+      expect(calls[0].handle).toBeUndefined()
+    }
+  })
+
+  it(`⑮ ${shape}: 终态载荷键名 — ${shape === 'v2' ? 'result（不是 output）' : 'output（不是 result）'}；双读读出同一句`, async () => {
+    const { jobs, calls } = dualRegistry(shape)
+    const result = startWorkJob({ jobs, directory: testDirectory, planName: 'alpha', sessionId, agent: liveAgent })
+    expect(calls).toHaveLength(1)
+    const outcome = await calls[0].hooks.done
+    const outcomeKeys = Object.keys(outcome).sort()
+    if (shape === 'v2') {
+      expect(outcomeKeys).toEqual(['result', 'status'])
+      expect(outcome.result).toBeDefined()
+      expect(outcome.output).toBeUndefined()
+    } else {
+      expect(outcomeKeys).toEqual(['output', 'status'])
+      expect(outcome.output).toBeDefined()
+      expect(outcome.result).toBeUndefined()
+    }
+    // THE DOUBLE READ: one expression, both generations, identical content.
+    const fact = readStartWorkJobOutcome(outcome)
+    expect(fact).toContain('plan=alpha session=ses_t4_dual')
+    expect(fact).toContain(`notepad=${result.scaffold.directory}`)
+    expect(fact).toContain('created=[learnings.md,decisions.md,issues.md,problems.md]')
+    expect(outcome.status).toBe('completed')
+  })
+
+  it(`⑮ ${shape}: 服务缺席 → degraded:true + 日志 jobs service absent + 脚手架照常落地`, () => {
+    const logs: string[] = []
+    const result = startWorkJob({ jobs: undefined, directory: testDirectory, planName: 'alpha', sessionId, agent: liveAgent, log: (l) => logs.push(l) })
+    expect(result.jobId).toBeUndefined()
+    expect(result.degraded).toBe(true)
+    expect(result.scaffold.created).toEqual([...NOTEPAD_FILES])
+    expect(logs.filter((l) => l.includes('jobs service absent'))).toHaveLength(1)
+    // 缺席 ≠ 拒绝：这条日志不得带 preflight/rejected 字样。
+    expect(logs.join('\n')).not.toMatch(/preflight|rejected/)
+  })
+
+  it(`⑮ ${shape}: start 抛非 preflight 异常 → 日志说 start failed，不说 preflight`, () => {
+    const { jobs } = dualRegistry(shape, { throwOnStart: () => new Error('ring allocation exploded') })
+    const logs: string[] = []
+    const result = startWorkJob({ jobs, directory: testDirectory, planName: 'alpha', sessionId, agent: liveAgent, log: (l) => logs.push(l) })
+    expect(result.jobId).toBeUndefined()
+    expect(result.degraded).toBe(true)
+    expect(result.scaffold.created).toEqual([...NOTEPAD_FILES])
+    const line = logs.find((l) => l.includes('start failed'))
+    expect(line).toBeDefined()
+    expect(line).toContain('ring allocation exploded')
+    expect(line).not.toContain('preflight')
+  })
+
+  it(`⑮ ${shape}: 三态返回值互不相同 + 三态日志互不相同（C4 判定项）`, () => {
+    const logsOk: string[] = []
+    const logsFailed: string[] = []
+    const logsAbsent: string[] = []
+
+    const good = dualRegistry(shape)
+    const ok = startWorkJob({ jobs: good.jobs, directory: testDirectory, planName: 'ok', sessionId, agent: liveAgent, log: (l) => logsOk.push(l) })
+    const bad = dualRegistry(shape, { throwOnStart: () => new Error('ring allocation exploded') })
+    const failed = startWorkJob({ jobs: bad.jobs, directory: testDirectory, planName: 'bad', sessionId, agent: liveAgent, log: (l) => logsFailed.push(l) })
+    const absent = startWorkJob({ jobs: undefined, directory: testDirectory, planName: 'absent', sessionId, agent: liveAgent, log: (l) => logsAbsent.push(l) })
+
+    // 返回值：成功 vs 两种降级
+    expect(ok.degraded).toBe(false)
+    expect(failed.degraded).toBe(true)
+    expect(absent.degraded).toBe(true)
+    expect(ok.jobId).toBeDefined()
+    expect(failed.jobId).toBeUndefined()
+    expect(absent.jobId).toBeUndefined()
+
+    // 日志：三态各一句，互不重叠。
+    const lineOk = logsOk.join('\n')
+    const lineFailed = logsFailed.join('\n')
+    const lineAbsent = logsAbsent.join('\n')
+    expect(lineOk).toBe('')
+    expect(lineFailed).toContain('start failed')
+    expect(lineAbsent).toContain('jobs service absent')
+    expect(lineFailed).not.toContain('jobs service absent')
+    expect(lineAbsent).not.toContain('start failed')
+  })
+
+  it(`⑮ ${shape}: 不碰 0.1.5 专属面 — spec 只有四个键，且从不追加 ring`, () => {
+    const { jobs, calls } = dualRegistry(shape)
+    // handle.append/updateProgress THROW if called, so a misuse fails loudly.
+    expect(() => startWorkJob({ jobs, directory: testDirectory, planName: 'alpha', sessionId, agent: liveAgent })).not.toThrow()
+    expect(calls).toHaveLength(1)
+    expect(calls[0].specKeys).toEqual(['kind', 'label', 'owner', 'run'])
+    // No 0.1.5-only job face is invented or consulted by this storage surface.
+    const face = jobs as Record<string, unknown>
+    for (const legacy of ['alreadyFinishedJobIds', 'kill', 'list', 'get', 'wait', 'remove', 'read']) {
+      expect(face[legacy]).toBeUndefined()
+    }
+  })
+})
+
+describe('P4.5-T4 ulw-execute — preflight 分类器（C4 的判定表）', () => {
+  it('⑮ 表上每条逐字标记都判为 preflight，并回带命中的标记', () => {
+    // Exact count, not a lower bound (review F8): a `>=` here would let an eighth
+    // fabricated marker through and still read as "the table is pinned". The real
+    // weight of this test is the per-marker loop below, which checks each string
+    // individually.
+    expect(PREFLIGHT_REJECT_MARKERS.length).toBe(7)
+    for (const marker of PREFLIGHT_REJECT_MARKERS) {
+      const verdict = classifyStartWorkJobFailure(`some prefix ${marker} some suffix`)
+      expect(verdict.preflight).toBe(true)
+      if (verdict.preflight === true) expect(verdict.marker).toBe(marker)
+    }
+  })
+
+  it('⑮ 不在表上的报错判为真实启动失败（不得一律算 preflight）', () => {
+    for (const message of ['ring allocation exploded', 'TypeError: x is not a function', '']) {
+      expect(classifyStartWorkJobFailure(message).preflight).toBe(false)
+    }
+  })
+
+  // F7: the `shape === 'v2' ? classify… : {preflight:false}` guard inside
+  // startWorkJob had NO assertion — flipping it to classify unconditionally kept
+  // the whole suite green, because no v1 mock ever threw a v2 marker string.
+  // This test throws one ON PURPOSE. The 0.1.5 error strings are unre-verified
+  // (H2), so a v1 throw must NEVER be dressed up as a 0.2.x preflight rejection
+  // just because its text happens to collide with a transcribed 0.2.x marker.
+  it('⑮ v1 face 抛一条含 v2 逐字标记的错 → 仍判 start failed，绝不判 preflight', () => {
+    for (const marker of PREFLIGHT_REJECT_MARKERS) {
+      const directory = join(tmpdir(), `ulw-execute-f7-${randomUUID()}`)
+      mkdirSync(directory, { recursive: true })
+      try {
+        // A v1 face: NO `events` key, so dshRuntimeShape answers 'v1'.
+        const jobs: JobsSurface = {
+          start: () => {
+            throw new Error(`0.1.5 registry said: ${marker}`)
+          },
+        }
+        const logs: string[] = []
+        const result = startWorkJob({
+          jobs,
+          directory,
+          planName: 'alpha',
+          sessionId: 'ses_f7',
+          agent: undefined,
+          log: (l) => logs.push(l),
+        })
+        const joined = logs.join('\n')
+        expect(result.degraded).toBe(true)
+        expect(result.jobId).toBeUndefined()
+        expect(joined).toContain('start failed')
+        expect(joined).not.toContain('preflight rejected')
+        expect(joined).not.toContain('(matched:')
+        // Scaffold still lands on the degraded path (§5.5).
+        expect(result.scaffold.created).toEqual([...NOTEPAD_FILES])
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  })
+
+  it('⑮ 对照：同一串报错走 v2 面则判 preflight（guard 的分叉方向正确）', () => {
+    const directory = join(tmpdir(), `ulw-execute-f7-v2-${randomUUID()}`)
+    mkdirSync(directory, { recursive: true })
+    try {
+      // Identical thrown text; the ONLY difference is the `events` identity key.
+      const jobs: JobsSurface = {
+        events: { subscribe: () => () => {} },
+        start: () => {
+          throw new Error('0.1.5 registry said: invalid job label: expected a non-empty string')
+        },
+      }
+      const logs: string[] = []
+      startWorkJob({ jobs, directory, planName: 'alpha', sessionId: 'ses_f7', agent: undefined, log: (l) => logs.push(l) })
+      const joined = logs.join('\n')
+      expect(joined).toContain('preflight rejected by the jobs registry')
+      expect(joined).toContain('(matched: invalid job label: expected a non-empty string)')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('⑮ v2 上 owner 形状写反真的会被 mock registry 按 :365 拒掉（owner fork 承重）', () => {
+    const directory = join(tmpdir(), `ulw-execute-ownerflip-${randomUUID()}`)
+    mkdirSync(directory, { recursive: true })
+    try {
+      const { jobs } = dualRegistry('v2')
+      const logs: string[] = []
+      // Force the WRONG owner shape on v2: the sessionId slot carries an object.
+      const result = startWorkJob({
+        jobs,
+        directory,
+        planName: 'alpha',
+        sessionId: { id: 'ses_t4' } as unknown as string,
+        agent: undefined,
+        log: (l) => logs.push(l),
+      })
+      expect(result.degraded).toBe(true)
+      expect(result.jobId).toBeUndefined()
+      const line = logs.find((l) => l.includes('preflight rejected'))
+      expect(line).toBeDefined()
+      expect(line).toContain('has no live agent (background job owner must be live)')
+      // 降级时脚手架照常落地（既有语义，§5.5）。
+      expect(result.scaffold.created).toEqual([...NOTEPAD_FILES])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('⑮ 诊断行前缀与父模块 formatUlwExecuteLine 逐字同形（可 grep 是硬要求）', () => {
+    const directory = join(tmpdir(), `ulw-execute-prefix-${randomUUID()}`)
+    mkdirSync(directory, { recursive: true })
+    try {
+      const logs: string[] = []
+      startWorkJob({ jobs: undefined, directory, planName: 'alpha', sessionId: 'ses_p', agent: undefined, log: (l) => logs.push(l) })
+      expect(logs).toHaveLength(1)
+      expect(logs[0].startsWith(formatUlwExecuteLine('work-session job'))).toBe(true)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('P4.5-T4 ulw-execute — 双读优先级（破坏式自检补上的非真空断言）', () => {
+  // WHY THIS BLOCK EXISTS: self-check 2 flipped `result ?? output` to
+  // `output ?? result` and the whole suite stayed GREEN — because no other case
+  // carries BOTH keys, so the order was never observed. That is a vacuous
+  // assertion, and §5.7 exists precisely to catch it. These cases make the ORDER
+  // observable: with both keys present `result` must win, and the test names the
+  // winner so a flip cannot hide.
+  it('⑮ 两键都在时 result 胜出（双读的优先级不是真空断言）', () => {
+    expect(readStartWorkJobOutcome({ status: 'completed', result: 'FROM-result', output: 'FROM-output' })).toBe('FROM-result')
+  })
+
+  it('⑮ 只有 result（v2 形状）读得出', () => {
+    expect(readStartWorkJobOutcome({ status: 'completed', result: 'ONLY-result' })).toBe('ONLY-result')
+  })
+
+  it('⑮ 只有 output（v1 形状）读得出', () => {
+    expect(readStartWorkJobOutcome({ status: 'completed', output: 'ONLY-output' })).toBe('ONLY-output')
+  })
+
+  it('⑮ 两键都不在 → undefined（不得读出空串冒充事实）', () => {
+    expect(readStartWorkJobOutcome({ status: 'completed' })).toBeUndefined()
+  })
+
+  it('⑮ result 是空串时仍胜出（?? 只在 nullish 上兜底，不在空串上）', () => {
+    // Pins the operator itself: `||` would fall through an empty `result` to
+    // `output`, `??` does not. The distinction is observable only here.
+    expect(readStartWorkJobOutcome({ status: 'completed', result: '', output: 'FROM-output' })).toBe('')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ⑯ P4.5-T4 修复轮 F1 — `ulw-execute.ts` 的两处改动必须有断言
+//
+// 评审 A 的 MAJOR：`ulw-execute.ts` 自报「诚实修复」，但它的全部行为改动**一条
+// 断言都没有**——整体回退到 HEAD、删掉 `log:` 汇、把三元改回说谎的 `[jobs absent]`，
+// 三种回退门 2 全绿。§3.2-3 的病灶会静默回归。
+// 所以本组**经真实 registrar 链路**跑（`registerUlwExecute` → pre-step listener →
+// `runPlanSelection` → `startWorkJob`），**不直接调 `startWorkJob`**：只有这条链路
+// 才经过 `ulw-execute.ts` 里那两处改动。
+//
+// 通道（**G4 修正**，旧注释曾夸大成「只读 console.warn」）：registrar 把 listener 的
+// 日志接 `log: (line) => console.warn(line)`（`ulw-execute.ts:1141`），
+// `logSafely` 在 `:838`，`startWorkJob` 的 `log:` 汇在 `:1052` —— 所以
+// **live-state 的诊断与调用点的 `work session …` 摘要都落在 console.warn**；
+// 而 registrar 自己的注册期 NOTE（`NOTE: jobs service never appeared` /
+// `jobs service observed; …`）走 **console.log**。两个通道**分开捕获**，断言各自
+// 读自己那条，不再合并成一个 blob 后用 `not.toContain` 假装钉住了单一通道。
+// 抖动的处置见 `driveRegistrar` 上方的 DETERMINISM CONTRACT。
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('P4.5-T4 F1 — 真实 registrar 链路上的降级日志（ulw-execute.ts 的断言）', () => {
+  let directory = ''
+
+  beforeEach(() => {
+    directory = join(tmpdir(), `ulw-execute-f1-${randomUUID()}`)
+    mkdirSync(join(directory, '.omo', 'plans'), { recursive: true })
+    writeFileSync(join(directory, '.omo', 'plans', 'alpha.md'), '## TODOs\n- [ ] 1. First\n')
+  })
+
+  afterEach(() => {
+    if (existsSync(directory)) rmSync(directory, { recursive: true, force: true })
+  })
+
+  /**
+   * Registers through the REAL registrar and drives exactly ONE pre-step.
+   *
+   * ⚠️ **DETERMINISM CONTRACT (review G1/G4) — read this before editing.**
+   * `registerUlwExecute` wires `log: (line) => console.warn(line)` and emits its
+   * registration NOTE on `console.log`; both are LATE-BOUND to the process-global
+   * `console`. That means this harness is only trustworthy if three things hold,
+   * and the harness enforces all three rather than trusting the runner:
+   *   1. the two channels are captured into **SEPARATE** arrays (G4: an earlier
+   *      revision merged warn+log into one array, which made every `not.toContain`
+   *      read a superset of the channel it claimed to assert on);
+   *   2. the capture window is exactly this one drive, restored in `finally`, and
+   *      the restore is **verified** (`restored` below) — a leaked patch would
+   *      otherwise poison whichever test runs next, and under `--sequence.shuffle`
+   *      "next" is random, which is precisely the shape of a heisenflaky gate;
+   *   3. the drive is asserted to have produced **exactly one** `work session`
+   *      line, so a second activation (foreign or duplicated) fails HERE, loudly,
+   *      instead of silently turning a `not.toContain` into a coin flip.
+   * Assertions below therefore read per-channel deltas, never a merged blob.
+   */
+  async function driveRegistrar(jobs: JobsSurface | undefined): Promise<{
+    warns: string[]
+    logs: string[]
+    restored: boolean
+  }> {
+    const warns: string[] = []
+    const logs: string[] = []
+    const originalWarn = console.warn
+    const originalLog = console.log
+    console.warn = (line: unknown) => { warns.push(String(line)) }
+    console.log = (line: unknown) => { logs.push(String(line)) }
+    try {
+      const { ctx, onCalls } = fakeContext({ jobs, withInject: true })
+      registerUlwExecute(ctx, ulwExecuteRow())
+      const pre = onCalls.find((call) => call.event === 'agent/pre-step')
+      if (pre === undefined) throw new Error('registrar did not wire agent/pre-step')
+      const session = atlasSession(directory)
+      const { payload } = injectingPayload(session, ['start work on the plan'])
+      await pre.listener(payload, nextDouble().next)
+    } finally {
+      console.warn = originalWarn
+      console.log = originalLog
+    }
+    return { warns, logs, restored: console.warn === originalWarn && console.log === originalLog }
+  }
+
+  /** Fail loudly if the drive did not produce exactly one activation summary line. */
+  function exactlyOneSessionLine(warns: readonly string[]): string {
+    const sessionLines = warns.filter((line) => line.includes('work session'))
+    expect(sessionLines, `expected exactly one 'work session' line, got ${sessionLines.length}: ${JSON.stringify(sessionLines)}`)
+      .toHaveLength(1)
+    return sessionLines[0] as string
+  }
+
+  it('⑯ F1-1 v2 面 + start 抛 :365 逐字串 → warn 通道里 preflight 行与 [degraded] 行同时出现', async () => {
+    // v2 face: the `events` key is the identity signal; start throws the
+    // registry's VERBATIM :365 message (jobs-local/src/index.ts:365).
+    const owners: unknown[] = []
+    const jobs: JobsSurface = {
+      events: { subscribe: () => () => {} },
+      start: (spec) => {
+        owners.push(spec.owner)
+        throw new Error('session "ses_f1" has no live agent (background job owner must be live)')
+      },
+    }
+    const { warns, logs, restored } = await driveRegistrar(jobs)
+    // Harness self-check first: if the console leaked, every assertion below is
+    // meaningless, so fail on the harness rather than on the product.
+    expect(restored).toBe(true)
+    const sessionLine = exactlyOneSessionLine(warns)
+
+    // The `log:` seam at ulw-execute.ts:1052 really delivered live-state's
+    // diagnostic into the registrar's logSafely → console.warn. Delete that seam
+    // and THIS assertion goes RED (self-check F1-a).
+    expect(warns.join('\n')).toContain('preflight rejected by the jobs registry')
+    expect(warns.join('\n')).toContain('has no live agent (background job owner must be live)')
+    // The call-site note must be the HONEST one, on the SAME channel it was
+    // written to. Scoped to the single session line (G1): a stray `[jobs absent]`
+    // anywhere else in the process can no longer flip this.
+    // Revert the ternary at ulw-execute.ts and THIS assertion goes RED (F1-b).
+    expect(sessionLine).toContain('[degraded: see the startWorkJob line above]')
+    expect(sessionLine).not.toContain('[jobs absent]')
+    // And the v1-absent NOTE must NOT have been emitted for a face that IS present.
+    expect(logs.join('\n')).not.toContain('NOTE: jobs service never appeared')
+    // And the v2 owner really was the session id string on this path too.
+    expect(owners).toEqual(['ses_atlas'])
+    // Degraded, but the scaffold still lands (§5.5).
+    expect(existsSync(join(directory, '.omo', 'notepads', 'alpha', 'learnings.md'))).toBe(true)
+  })
+
+  it('⑯ F1-2 v1 缺席面（jobs === undefined）→ [jobs absent] 仍在（既有契约不许丢）', async () => {
+    const { warns, logs, restored } = await driveRegistrar(undefined)
+    expect(restored).toBe(true)
+    const sessionLine = exactlyOneSessionLine(warns)
+    expect(sessionLine).toContain('[jobs absent]')
+    // Absent is NOT refusal: the honest v2 note must not appear on this channel…
+    expect(sessionLine).not.toContain('[degraded: see the startWorkJob line above]')
+    // …and live-state's own absent line (not a rejection line) is what got logged.
+    expect(warns.join('\n')).toContain('jobs service absent')
+    expect(warns.join('\n')).not.toContain('preflight rejected')
+    expect(existsSync(join(directory, '.omo', 'notepads', 'alpha', 'learnings.md'))).toBe(true)
+  })
+
+  it('⑯ F1-3 v2 成功路经真实 registrar → jobId 落地且无任何降级文案', async () => {
+    const owners: unknown[] = []
+    const jobs: JobsSurface = {
+      events: { subscribe: () => () => {} },
+      start: (spec) => {
+        owners.push(spec.owner)
+        spec.run({ id: 'ulw-execute-1' })
+        return 'ulw-execute-1'
+      },
+    }
+    const { warns, logs, restored } = await driveRegistrar(jobs)
+    expect(restored).toBe(true)
+    const sessionLine = exactlyOneSessionLine(warns)
+    expect(sessionLine).toContain('work session ulw-execute-1 plan=alpha')
+    // Scoped to the one session line, plus a whole-channel guard for the strings
+    // that must NEVER appear regardless of which line carries them.
+    expect(sessionLine).not.toContain('[jobs absent]')
+    expect(sessionLine).not.toContain('[degraded')
+    expect(warns.join('\n')).not.toContain('preflight rejected')
+    expect(warns.join('\n')).not.toContain('jobs service absent')
+    expect(logs.join('\n')).not.toContain('NOTE: jobs service never appeared')
+    expect(owners).toEqual(['ses_atlas'])
   })
 })

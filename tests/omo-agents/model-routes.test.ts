@@ -24,19 +24,22 @@ import {
  * The plan §4.6 seat map, copied by hand from phase2-roster.md §1 总表 (strong
  * seat 7 agents / fast seat 3 / vision seat 1) — deliberately NOT derived from
  * roster.ts, so this test fails if the roster rows and the documented table
- * ever diverge.
+ * ever diverge. The seat IDS are the post-T12b 0.2.x defaults (fast seat
+ * deepseek/deepseek-flash, vision seat deepseek-official/deepseek-flash — the
+ * ids the pinned 0.2.x catalogs list; the §1 总表 predates the cutover and
+ * still names the 0.1.x-era ids as its historical chain-head values).
  */
 const ROSTER_BASELINE: ReadonlyArray<{ id: string } & ModelRoute> = [
   { id: 'sisyphus', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
-  { id: 'explore', provider: 'deepseek', model: 'deepseek-v4-flash' },
+  { id: 'explore', provider: 'deepseek', model: 'deepseek-flash' },
   { id: 'hephaestus', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
   { id: 'oracle', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
-  { id: 'librarian', provider: 'deepseek', model: 'deepseek-v4-flash' },
+  { id: 'librarian', provider: 'deepseek', model: 'deepseek-flash' },
   { id: 'plan-consultant', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
   { id: 'plan-reviewer', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
   { id: 'atlas', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
-  { id: 'multimodal-looker', provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' },
-  { id: 'sisyphus-junior', provider: 'deepseek', model: 'deepseek-v4-flash' },
+  { id: 'multimodal-looker', provider: 'deepseek-official', model: 'deepseek-flash' },
+  { id: 'sisyphus-junior', provider: 'deepseek', model: 'deepseek-flash' },
   { id: 'prometheus', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
 ]
 
@@ -111,12 +114,12 @@ describe('omo-agents model routes (T14 + P2-T3 roster)', () => {
   it('trims whitespace-padded overrides instead of rejecting them', () => {
     const routes = resolveModelRoutes({
       OMO_SISYPHUS_MODEL: '  deepseek-v4-pro  ',
-      OMO_EXPLORE_MODEL: '\tdeepseek-v4-flash\n',
-      OMO_MULTIMODAL_LOOKER_MODEL: ' deepseek-v4-flash-vision-exp ',
+      OMO_EXPLORE_MODEL: '\tdeepseek-flash\n',
+      OMO_MULTIMODAL_LOOKER_MODEL: ' deepseek-flash ',
     })
     expect(routes.sisyphus.model).toBe('deepseek-v4-pro')
-    expect(routes.explore.model).toBe('deepseek-v4-flash')
-    expect(routes['multimodal-looker'].model).toBe('deepseek-v4-flash-vision-exp')
+    expect(routes.explore.model).toBe('deepseek-flash')
+    expect(routes['multimodal-looker'].model).toBe('deepseek-flash')
   })
 
   it('fails LOUD on a set-but-blank override for EVERY route env var, naming the variable', () => {
@@ -132,12 +135,12 @@ describe('omo-agents model routes (T14 + P2-T3 roster)', () => {
     // Direction 1: the conductor is moved onto the exploration seat.
     expect(() => resolveModelRoutes({
       OMO_SISYPHUS_PROVIDER: 'deepseek',
-      OMO_SISYPHUS_MODEL: 'deepseek-v4-flash',
+      OMO_SISYPHUS_MODEL: 'deepseek-flash',
     })).toThrowError(ModelRouteConfigError)
     expect(() => resolveModelRoutes({
       OMO_SISYPHUS_PROVIDER: 'deepseek',
-      OMO_SISYPHUS_MODEL: 'deepseek-v4-flash',
-    })).toThrowError(/AC-5 precheck failed: sisyphus and explore resolve to the SAME route deepseek\/deepseek-v4-flash/)
+      OMO_SISYPHUS_MODEL: 'deepseek-flash',
+    })).toThrowError(/AC-5 precheck failed: sisyphus and explore resolve to the SAME route deepseek\/deepseek-flash/)
     // Direction 2: the exploration seat is moved onto the conductor's route.
     expect(() => resolveModelRoutes({
       OMO_EXPLORE_PROVIDER: 'deepseek-official',
@@ -146,9 +149,9 @@ describe('omo-agents model routes (T14 + P2-T3 roster)', () => {
     // A third agent sharing the conductor's seat is NOT an AC-5 violation.
     const legal = resolveModelRoutes({
       OMO_ORACLE_PROVIDER: 'deepseek',
-      OMO_ORACLE_MODEL: 'deepseek-v4-flash',
+      OMO_ORACLE_MODEL: 'deepseek-flash',
     })
-    expect(legal.oracle).toEqual({ provider: 'deepseek', model: 'deepseek-v4-flash' })
+    expect(legal.oracle).toEqual({ provider: 'deepseek', model: 'deepseek-flash' })
   })
 
   it('AC-5 precheck message: leads with the two clashing env pairs, keeps the 22-name diagnostic tail', () => {
@@ -159,7 +162,7 @@ describe('omo-agents model routes (T14 + P2-T3 roster)', () => {
     try {
       resolveModelRoutes({
         OMO_SISYPHUS_PROVIDER: 'deepseek',
-        OMO_SISYPHUS_MODEL: 'deepseek-v4-flash',
+        OMO_SISYPHUS_MODEL: 'deepseek-flash',
       })
     } catch (error) {
       message = (error as Error).message
@@ -167,7 +170,7 @@ describe('omo-agents model routes (T14 + P2-T3 roster)', () => {
     // The prefix tests/consumers match on — byte-stable, and the FR-5 clause too.
     expect(message.startsWith(
       'AC-5 precheck failed: sisyphus and explore resolve to the SAME route '
-      + 'deepseek/deepseek-v4-flash',
+      + 'deepseek/deepseek-flash',
     )).toBe(true)
     expect(message).toContain(
       'dual model routing (FR-5) requires two distinct {provider,model} pairs',
@@ -207,10 +210,10 @@ describe('omo-agents model routes (T14 + P2-T3 roster)', () => {
       OMO_SISYPHUS_PROVIDER: 'deepseek-official',
       OMO_SISYPHUS_MODEL: 'deepseek-v4-pro',
       OMO_EXPLORE_PROVIDER: 'deepseek-official',
-      OMO_EXPLORE_MODEL: 'deepseek-v4-flash',
+      OMO_EXPLORE_MODEL: 'deepseek-flash',
     })
     expect(routes.sisyphus.model).toBe('deepseek-v4-pro')
-    expect(routes.explore.model).toBe('deepseek-v4-flash')
+    expect(routes.explore.model).toBe('deepseek-flash')
   })
 
   it('documents one override env pair per roster entry, with the MVP names unchanged', () => {
@@ -287,7 +290,7 @@ describe('omo-agents model routes (T14 + P2-T3 roster)', () => {
     expect(`${routes.sisyphus.provider}/${routes.sisyphus.model}`)
       .toBe('deepseek-official/deepseek-v4-pro')
     expect(`${routes.explore.provider}/${routes.explore.model}`)
-      .toBe('deepseek/deepseek-v4-flash')
+      .toBe('deepseek/deepseek-flash')
     expect(resolveModelRoutes({}).explore).toEqual(DEFAULT_MODEL_ROUTES.explore)
   })
 })

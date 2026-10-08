@@ -296,9 +296,25 @@ export interface InjectedTextBlock {
   readonly text: string
 }
 
-/** 注入消息的 source（`form: 'instructions'` = 「这段内容在指导模型」）。 */
+/**
+ * 注入消息的 **producer 归属**。
+ *
+ * `kind` 是 `omo-ulw-execute`，**不再是 `plugin`**：0.2.x 的 v4 native admission
+ * 在每个持久消息槽位上都拒绝 `kind === 'plugin'`，注入会在落盘前被拒。此结论一手
+ * 读自已安装的 npm 包 `@deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2`
+ * （`lib/index.js:124-127`；写侧由 `encodeEvent` `:1092-1099` 经
+ * `assertV4RowAdmission` `:1107` 走到 `assertV4SourceRowAdmission` `:142-152`）：
+ * 全部规则只有三条——`source` 必须是对象、`kind` 必须是非空字符串、**`kind` 不能
+ * 是 `'plugin'`**。`source` 上的其它键不受任何约束 ⇒ `plugin` 与 `form` 原样保留。
+ *
+ * `omo-` 前缀是**取舍，不是规定**：v4 对厂商前缀既不要求也不禁止，上游自有生产者
+ * 一律无前缀（`tool-jobs` —— 已装 `dsh-tool-jobs/lib/index.js:278`）。完整理由见
+ * hard-blocks-injection.ts 的 `InjectedPluginSource`。
+ *
+ * `form: 'instructions'` = 「这段内容在指导模型」。
+ */
 export interface InjectedPluginSource {
-  readonly kind: 'plugin'
+  readonly kind: 'omo-ulw-execute'
   readonly plugin: string
   readonly form: 'instructions'
 }
@@ -501,7 +517,7 @@ export function buildInjectionMessage(contextText: string): InjectedUserMessage 
     id: crypto.randomUUID(),
     role: 'user',
     content: [{ type: 'text', text: buildInjectionText(contextText) }],
-    source: { kind: 'plugin', plugin: ULW_EXECUTE_PLUGIN, form: 'instructions' },
+    source: { kind: 'omo-ulw-execute', plugin: ULW_EXECUTE_PLUGIN, form: 'instructions' },
   }
 }
 
@@ -600,8 +616,9 @@ export function readTaskText(payload: unknown): string {
  * 上游的对应面是**命令模板的 prompt 文本**（一个明确的、唯一的输入），本移植的
  * 等价物就是「委派子会话收到的**那一条**、**由用户发起**的任务消息」，因此：
  *
- *   ① 跳过**插件来源**的 user 消息（`source.kind !== 'user'`）——注入上下文、
- *      system-prompt 快照、job 通知全部不是「用户的任务表达」；
+ *   ① 跳过**非用户来源**的 user 消息（`source.kind !== 'user'`）——注入上下文、
+ *      system-prompt 快照、job 通知全部不是「用户的任务表达」；本 hook 自己的注入
+ *      带 `kind: 'omo-ulw-execute'`，同样落在这一侧（正向白名单只认 `'user'`）；
  *   ② 取第一条通过的 user 消息的文本块（= 委派的任务，见 dsh-tool-subagent
  *      构造的 `prompt` 块）；
  *   ③ 在 {@link RETURN_GUIDANCE_PREFIX} 处截断，去掉 dsh 追加的续作指引
@@ -637,10 +654,16 @@ export function readDelegationTaskText(payload: unknown): string {
 }
 
 /**
- * true when a claimed message was authored by the USER side rather than a plugin.
- * A message whose `source.kind` is anything other than `'user'` (or whose
- * `source` is absent, which only a foreign/hand-built payload produces) is NOT
- * the delegation's task text — see {@link readDelegationTaskText}.
+ * true when a claimed message was authored by the USER side rather than by some
+ * other producer. The rule is a POSITIVE whitelist on `source.kind === 'user'`,
+ * so every other kind — upstream's unprefixed ones (`tool-jobs`,
+ * `agent-instructions`, …) and OMO's own `omo-*` carriers alike — is excluded.
+ * An ABSENT `source` returns true: this read face is deliberately permissive
+ * toward hand-built/foreign payloads, and the unit suite pins that
+ * (`tests/omo-hooks/ulw-execute.test.ts` ⑫ — a source-less user message still
+ * yields its task text). Note that `keyword-detector/filters.ts`'s
+ * `isUserAuthoredMessage` takes the OPPOSITE branch on an absent source; the
+ * two are not the same rule despite the wording that has been used for both.
  */
 function isUserAuthored(message: Record<string, unknown>): boolean {
   const source = message.source
@@ -1033,17 +1056,36 @@ function runPlanSelection(
       directory: cwd,
       planName,
       sessionId,
-      // `dsh-jobs` 的 `JobStart.owner` 要求的是**活 Agent 实例**（"The instance
-      // must be the one currently registered under its agent id"），不是它的
-      // session；传错对象会被 registry 预检拒绝并降级（startWorkJob 吞掉），
-      // 那样 job 面就永远不生效。
+      // `owner` 的形状由 `startWorkJob` 内部按共享身份标记 `dshRuntimeShape(jobs)`
+      // 分叉（P4.5-T4 **C2**）；调用点两个值都照旧提供、零判断：
+      //   * **[0.1.5]** 用这里的 `agent` —— `JobStart.owner` 要求**活 Agent 实例**
+      //     （"The instance must be the one currently registered under its agent
+      //     id"，dsh-jobs/lib/types/types.d.ts:48-55 — P3-T17-era reading, H2
+      //     unre-verified），不是它的 session；传 session 会被预检拒绝；
+      //   * **[0.2.x]** 用上面的 `sessionId` 字符串 —— `JobSpec.owner?: SessionId`
+      //     （packages/jobs/jobs/src/types.ts:131-137）要的就是会话 id，registry
+      //     自己拿它去 `agents.get(session)` 找活实例
+      //     （packages/jobs/jobs-local/src/index.ts:357-367）；传 Agent 对象反而
+      //     查不到 → `:365` 预检拒绝 → 永久降级。
+      // 两代各自传错都会静默失效，所以形状由 live-state 的测试逐字钉死。
       agent,
+      // 诊断汇（P4.5-T4 **C4**）：`StartWorkJobResult` 被 **C5** 冻结成三个字段，
+      // 「服务缺席 / 预检拒绝 / 真实启动失败」三态在返回值上只剩两比特，分不出
+      // 后两者——不传这个汇，复核 §3.2-3 点名的「日志依旧干净」病灶就还在。
+      log: (line) => logSafely(deps, line),
     })
+    // `[jobs absent]` 只在服务**真的不在**时说；在场但被拒/真失败时改说
+    // `[degraded]`，否则这一行会把「registry 拒了我的声明」报成「没装 jobs」——
+    // 那正是 §3.2-3 的病灶。既有 v1 降级用例断言的 `[jobs absent]` 语义不变
+    // （那条用例的 jobs 本来就是 undefined）。
+    const degradedNote = result.degraded
+      ? (jobs === undefined ? ' [jobs absent]' : ' [degraded: see the startWorkJob line above]')
+      : ''
     logSafely(deps, formatUlwExecuteLine(
       `work session ${result.jobId ?? '(no jobs)'} plan=${planName}`
       + ` notepad=${result.scaffold.created.length} created`
       + `/${result.scaffold.skipped.length} skipped`
-      + (result.degraded ? ' [jobs absent]' : '')
+      + degradedNote
       + (workLabel !== undefined ? ` label="${workLabel}"` : ''),
     ))
   } catch (err) {

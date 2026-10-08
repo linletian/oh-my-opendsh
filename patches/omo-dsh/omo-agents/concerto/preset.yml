@@ -1,10 +1,21 @@
 # 协奏模式 / Concerto Mode — the 5th run mode, authored by the omo-agents
-# scratch plugin into `$DSH_HOME/.agent-presets/concerto/` (trust: user).
+# scratch plugin into `$DSH_HOME/.agent-presets/concerto/`.
+#
+# P4.5-T6 removed the `(trust: user)` tag from this header line. It was 0.1.5
+# vocabulary: 0.2.x has no `trust` field on a preset row at all (the roster row
+# is built by one literal at agent-preset-registry/src/index.ts:156-162 @
+# dsh-v0.2.0-rc.2 — id/name/description/order/broken), so this header declared
+# a level the runtime it now targets cannot represent. The registry's own level
+# field is `isDefault`, produced ONLY by remoteExportList() (:171-174), which
+# answers with an ENVELOPE {presets:[…]} — that is asserted over the roster RPC
+# in scripts/concerto-mode-probe.sh, never inferred from this comment.
 # Positioning per docs/mvp-prd_zh-CN.md §4.1: orchestration-first (编排优先) —
 # the main agent is a conductor that delegates by default, so the right model
 # does the right job by default, not by luck. `order: 5` sorts it after the
-# four shipped system presets (standard/ptc/minimal/cordis are 1-4 on the
-# pinned 0.1.5-rc.1 — `ptc` replaced the rc-era `code`).
+# four shipped system presets — standard/ptc/minimal/cordis are 1-4 on the
+# pinned 0.2.x line too (verified against dsh-v0.2.0-rc.2's
+# dsh-web-app/presets/*.patch.yml: standard=1, ptc=2, minimal=3, cordis=4;
+# this comment once cited the dropped 0.1.5-rc.1 pin — PR #12 review).
 name: 协奏模式 (Concerto Mode)
 description: 编排优先：主 agent 是指挥，接到任务先判断“谁最适合做”，默认委派给携带独立模型路由的 subagent——合适的模型做合适的事，不是运气，是默认。
 order: 5

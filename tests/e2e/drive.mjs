@@ -86,14 +86,58 @@
 // ── MOCKROLE DELIVERY (T17's role marker must reach a SYSTEM message)
 // Workspace instruction files (AGENTS.md) are injected as USER-role
 // <system-reminder> messages (dsh-agent-instructions/README.md:17,47) —
-// invisible to the mock server's system-message scan. Instead the driver
-// appends `MOCKROLE=<role>` to the PERSONA block scalar of the MATERIALIZED
-// preset ($DSH_HOME/.agent-presets/concerto/agent.cordis.yml) AFTER boot sync
-// and BEFORE session.create: dsh-agent-presets reads the composition file at
-// mount time (readComposition → readFile(preset.path), lib/index.js:334) and
-// ensureStanding re-stamps the file on every use (:1130-1160), so the edit is
-// honored. The persona IS the system prompt (T8), so the marker rides the
-// real prompt-assembly path. The mock's recorded requests[] prove delivery.
+// invisible to the mock server's system-message scan. The marker therefore has
+// to ride a PERSONA, and since P4.5-T8b it rides TWO FACES, because the two
+// runtime generations mount different bytes:
+//   * 0.2.x (this machine: dsh 0.2.0-rc.2) mounts what omo-agents handed to
+//     register(). renderConcertoComposition() reads agent.cordis.yml from
+//     CONCERTO_TEMPLATE_DIR, which resolves from the INSTALLED package's own
+//     import.meta.url (src/concerto-preset.ts:122, read at :381), and the
+//     profile's installed package is a SYMLINK to whatever path
+//     `dsh plugin add` was given (measured: pnpm records `link:<path>` and
+//     node_modules/@oh-my-opendsh/omo-agents is a symlink — see
+//     installPlugin). So the driver installs a COPY of the package into the
+//     sandbox and stamps `MOCKROLE=<role>` as the FIRST LINE of the COPY's
+//     persona SOURCE — system-sections/role.md for the conductor, the roster's
+//     `personaFile` for a delegation child (stampMockRoleMarkersIntoPluginCopy).
+//     NOT into the copy's template YAML: there the persona VALUES are sentinels
+//     that the renderer replaces wholesale — `prefix:
+//     __OMO_SISYPHUS_SYSTEM_PROMPT__` becomes `prefix: |-` plus the assembled
+//     markdown (src/system-prompt.ts:83 is the needle, :95 the replace) — so a
+//     line written into the template can never land inside the block scalar the
+//     renderer emits. The markdown is upstream of that scalar; the template is
+//     not. Measured on the pre-fix baseline: the stamped materialized file
+//     carries the markers, the `agentPresets/read` content carries NONE, and
+//     the session's `system/message` is the harness header + the assembled
+//     persona with no marker in it → the mock's 400.
+//   * 0.1.5 (the RETIRED pin — CI has been pinned to 0.2.0-rc.2 since the
+//     D17 cutover, P4.5-T12b; 0.1.x support is dropped) answers the preset
+//     from FILE DISCOVERY, so appendMockRoleMarker keeps stamping the
+//     MATERIALIZED preset
+//     ($DSH_HOME/.agent-presets/concerto/agent.cordis.yml) after boot sync and
+//     before session.create — the pre-T8b delivery, kept verbatim because on
+//     that generation the file IS the mounted face (readComposition →
+//     readFile(preset.path), lib/index.js:334; ensureStanding re-stamps it on
+//     every use, :1130-1160 — citations inherited from this header pre-T8b,
+//     not re-measured here, since this machine runs 0.2.0-rc.2). On 0.2.x the
+//     materialized file IS still written — but NOT by appendMockRoleMarker: its
+//     line-anchored guard (`if (markerPattern.test(text)) return // idempotent`)
+//     returns BEFORE that function's only `writeFileSync`, and it returns on
+//     0.2.x precisely because the copy's stamp already put the marker on the
+//     FIRST content line of the rendered scalar. The writer on this generation is
+//     the plugin's own `syncConcertoPreset` at boot — which is also exactly what
+//     doctor-lite's `subagent-config` gate drives, into a throwaway mkdtemp that
+//     it then parses and validates (scripts/doctor-lite.mjs:597 mkdtempSync,
+//     :602 `concerto.syncConcertoPreset(temp)`), so that gate exercises the
+//     RENDER and never the `$DSH_HOME` write. What 0.2.x does NOT do is READ
+//     that file: the mounted face is `register()`'s rendered composition, which
+//     is why the copy's markdown is the load-bearing half here. The two paths
+//     coexist until the pin flips without double-stamping — the same
+//     line-anchored guard keeps every row at exactly one marker on BOTH
+//     generations.
+//     The persona IS the system prompt (T8), so the marker rides the real
+//     prompt-assembly path on either face. The mock's recorded requests[]
+//     prove delivery.
 // T19 generalized the delivery to BOTH persona scalars of the same file
 // (MOCKROLE_BLOCK_SCALARS): the conductor persona row (`prefix: |-`, content
 // indent 6 — src/system-prompt.ts renderPersonaIntoComposition) and the T11
@@ -182,10 +226,23 @@
 //
 // THE roster-parade scenario then answers the Phase 2 exit criterion (a) for
 // the WHOLE roster in one run. The sandbox env distributes the 10 delegation
-// agents over the 7 REAL catalog route pairs (plan §4.7): dsh-llm-deepseek's
-// DEFAULT_MODELS ids (deepseek-flash / deepseek-v4-flash / deepseek-v4-pro /
-// deepseek-v4-flash-vision-exp) and pi-ai's builtin deepseek ids
-// (deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp).
+// agents over the REAL catalog route pairs (SIX, derived from PARADE_SEATS —
+// plan §4.7 counted seven; the pre-T8b comment beside the derived table wrote
+// "7 pairs" while that very table derived six, which is why no count here is
+// ever restated in a check). The seats are pinned to the CI runtime
+// **dsh 0.1.5-rc.1** and were RESTORED to that pin after T8b's half-revert:
+// T8b re-pinned this table to the 0.2.x ids, a later slice re-pinned roster.ts
+// the same way, and only the roster half was reverted — leaving the parade the
+// one scenario to notice, LOUD, in CI: `READ-FACE FAIL: explore: parsed
+// agentOptions.model="deepseek-flash" want deepseek-v4-flash` (33 scenarios,
+// 1 failure). The catalogs were re-measured per-route today for that revert:
+// pi-ai@0.85.1 (what 0.1.5-rc.1 pins) deepseek.json `openai-completions`
+// holds `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp` and
+// `deepseek-v4-pro` — NO `deepseek-flash`; dsh-llm-deepseek@0.1.5-rc.1
+// DEFAULT_MODELS (lib/index.js:1841-1870) holds all four. The 0.2.x install
+// is the opposite pi-ai table (pi-ai@0.87.1: `deepseek-flash` +
+// `deepseek-v4-pro` only) — a name real on one route/runtime is not real
+// everywhere, so every seat above names its route.
 // NO fake ids: a session-controller `model-unavailable` is the only thing a
 // fake id would trip, and the deepseek adapter does not validate model ids at
 // request time under a mock baseURL — so a fake id is mechanically feasible,
@@ -289,9 +346,11 @@
 //   a raw text count over the file:
 //     * seq 17 `agent/inbox/spliced` data.target "next-step",
 //       data.inserted[0] = {id:<uuid>, role:"user", content:[{type:"text",
-//       text:<WARNING_MESSAGE>}], source:{kind:"plugin", plugin:"omo-hooks",
+//       text:<WARNING_MESSAGE>}], source:{kind:"omo-bash-read-guard", plugin:"omo-hooks",
 //       form:"notice"}} — the ACCEPT itself (dsh-agent-loop/lib/index.js:578
-//       acceptContext → inbox.splice → append :206). It lands BETWEEN the
+//       acceptContext → inbox.splice → append :206). The kind is the guard's own
+//       producer kind (P4.5-T9; the retired shared `kind:"plugin"` of the V3-era
+//       layout this layout was first pinned against). It lands BETWEEN the
 //       trigger's tool/result and the batch's remaining tool/calls, because
 //       runGroup commits results in model order.
 //     * seq 25 `user/message` with the identical id/role/content/source — the
@@ -307,7 +366,7 @@
 //         present, isError !== true, and carries the fixture bytes (劝导非阻断);
 //     (b) advisoryInjectedIntoSessionLog — a `user/message` whose content text
 //         contains the advisory VERBATIM and whose source is the
-//         {kind:'plugin', plugin:'omo-hooks', form:'notice'} triple (the text
+//         {kind:'omo-bash-read-guard', plugin:'omo-hooks', form:'notice'} triple (the text
 //         and plugin name are imported from the shipped listener module, never
 //         re-typed here);
 //     (c) pipedCatRanWithoutAdvisory — 对照①;
@@ -362,8 +421,9 @@
 //   BOUNDARY (nothing step-shaped between them):
 //     * seq 22 `agent/inbox/spliced` data.target "next-step", start 0,
 //       data.inserted[0] = {id:<uuid>, role:"user", content:[{type:"text",
-//       text:<CONTINUATION>}], source:{kind:"plugin", plugin:"omo-hooks",
-//       form:"instructions"}} — the ACCEPT itself;
+//       text:<CONTINUATION>}], source:{kind:"omo-todo-continuation", plugin:"omo-hooks",
+//       form:"instructions"}} — the ACCEPT itself (producer-dedicated kind since
+//       P4.5-T9; the retired shared `kind:"plugin"` is refused by v4 admission);
 //     * seq 23 `agent/inbox/spliced` target "next-step", removedCount 1,
 //       inserted [] — the same message CLAIMED (removal recorded);
 //     * seq 25 `user/message` with the identical id/role/content/source — the
@@ -379,7 +439,7 @@
 //
 //   断言面 (analyzeTodoContinuationEnforced, all in verdict.assertions per AC-7):
 //     (a) continuationSteerCarrierSourceIsOmoHooks — BOTH durable carriers
-//         exist and every one carries source {kind:'plugin', plugin:'omo-hooks',
+//         exist and every one carries source {kind:'omo-todo-continuation', plugin:'omo-hooks',
 //         form:'instructions'};
 //     (b) continuationSteerTextIsVerbatimListenerText — each carrier's text
 //         equals `buildContinuationText(<the first todo/write snapshot>)`,
@@ -417,8 +477,15 @@
 //   never ran (or ran with an empty list) FAILs on
 //   controlTurnRanAfterContinuationTurn / controlTodoWasWrittenAllCompleted.
 
-// ── LLM WIRING (sandbox $DSH_HOME/settings.yaml only; nothing touches the
-// host). Both adapters are pointed at the mock with a dummy key:
+// ── LLM WIRING (sandbox $DSH_HOME/settings.yaml + the second --patch overlay;
+// nothing touches the host). Both adapters are pointed at the mock with a dummy
+// key, and since P4.5-T8a the same three sections are ALSO written into the
+// overlay as loader patch rows (`- id: <entryId>` + `config:`, no `name:`):
+// on dsh 0.2.x settings.yaml is imported into the profile patch layer only
+// after `loader.await()` (dsh-settings@0.2.0-rc.2/lib/index.js:339-341,
+// 346-363 — the published npm bundle, not the git tag), i.e.
+// after every entry has applied(), so a first boot would otherwise mount
+// llm-pi-ai with zero routes. seedSandbox() carries the full citations.
 //   llm-deepseek: {apiKeyEnv: DEEPSEEK_API_KEY, baseURL: <mock>/v1}
 //     — settings namespace "llm-deepseek" maps 1:1 to the adapter Config
 //       (dsh-llm-deepseek/lib/index.js:629,648-664; baseURL field :651;
@@ -491,17 +558,19 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
 import { createServer } from 'node:http'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { startMockLlmServer } from './mock-llm-server.mjs'
@@ -547,7 +616,10 @@ const FABRICATED_BOOT_LOG = LOADED_MARKERS.join('\n')
 
 // The T14 routes are the single source of truth (P-8.6 type-stripping, the
 // same import scripts/prove-route-logging.mjs uses).
-const { resolveModelRoutes } = await import(
+// P4.5-T10′ additionally consumes DEFAULT_MODEL_ROUTES / MODEL_ROUTE_ENV_VARS:
+// the seat resolver below must cover ALL 11 roster rows (the conductor included)
+// off the shipped source, so there is no second list of defaults to reconcile.
+const { resolveModelRoutes, DEFAULT_MODEL_ROUTES, MODEL_ROUTE_ENV_VARS } = await import(
   new URL('../../patches/omo-dsh/omo-agents/src/model-routes.ts', import.meta.url).href
 )
 // P2-T18: the delegation role ids (and their row anchors) come from the
@@ -556,7 +628,17 @@ const { resolveModelRoutes } = await import(
 // P2-T19 additionally consumes DELEGATION_TOOL_NAMES: the read-only child's
 // "all ten delegation tools are physically absent" claim and atlas's "keeps
 // all ten" claim both have to be the roster's own list, never a restatement.
-const { CONDUCTOR_ID, DELEGATION_ENTRIES, DELEGATION_TOOL_NAMES } = await import(
+// P4.5-T6: denyToolNamesFor/allowToolNamesFor join this import because the
+// read-face assertion derives its expectations from src/roster.ts here — the
+// same single-source discipline, so the e2e never restates a deny list that
+// could drift from the roster it is supposed to be checking.
+const {
+  CONDUCTOR_ID,
+  DELEGATION_ENTRIES,
+  DELEGATION_TOOL_NAMES,
+  allowToolNamesFor,
+  denyToolNamesFor,
+} = await import(
   new URL('../../patches/omo-dsh/omo-agents/src/roster.ts', import.meta.url).href
 )
 // P3-T6: the bash-read advisory under test, read from the SHIPPED listener
@@ -565,7 +647,7 @@ const { CONDUCTOR_ID, DELEGATION_ENTRIES, DELEGATION_TOOL_NAMES } = await import
 // really emits, never a second hand-copied literal that could drift from it
 // (the H-02 unit test pins that literal against upstream; this scenario pins
 // that the literal really reaches the model).
-const { WARNING_MESSAGE: BASH_GUARD_ADVISORY_TEXT, BASH_FILE_READ_GUARD_PLUGIN } = await import(
+const { WARNING_MESSAGE: BASH_GUARD_ADVISORY_TEXT, BASH_FILE_READ_GUARD_PLUGIN, buildAdvisoryMessage: buildBashGuardAdvisoryMessage } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/bash-file-read-guard.ts', import.meta.url).href
 )
 // P3-T9: the E-mode continuation directive under test, read from the SHIPPED
@@ -590,6 +672,7 @@ const {
   TODO_CONTINUATION_ENFORCER_ID,
   formatCircuitBreakerLine: todoContinuationCircuitBreakerLine,
   buildContinuationText: buildTodoContinuationText,
+  buildContinuationMessage: buildTodoContinuationMessage,
   getIncompleteCount: getTodoIncompleteCount,
 } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/todo-continuation-enforcer.ts', import.meta.url).href
@@ -847,23 +930,2169 @@ function paradeLabel(agent) {
   return `parade-${agent}`
 }
 
-// THE SEAT DISTRIBUTION (plan §4.7). 10 delegation agents over the 7 REAL
-// catalog pairs, every id verified against the pinned install:
-//   * dsh-llm-deepseek DEFAULT_MODELS (lib/index.js:1841; ids :1843
-//     deepseek-flash, :1852 deepseek-v4-flash, :1858 deepseek-v4-pro, :1864
-//     deepseek-v4-flash-vision-exp) — provider route `deepseek-official`.
-//   * @earendil-works/pi-ai dist/providers/data/deepseek.json (builtin
-//     `deepseek` provider: deepseek-v4-flash, deepseek-v4-pro,
-//     deepseek-v4-flash-vision-exp) — provider route `deepseek`.
+// ── P4.5-T10′: RUNTIME-CATALOG-RESOLVED SEATS (per-generation, not per-version) ──
+//
+// WHY THIS SECTION EXISTS — measured on this machine, 2026-10-06, against the
+// two installed runtimes (never asserted from a changelog):
+//   pi-ai route `deepseek`, catalog file
+//   <dsh>/node_modules/@earendil-works/pi-ai/dist/providers/data/deepseek.json
+//     · @0.85.1 (what dsh 0.1.5-rc.1 installs): deepseek-v4-flash[text],
+//       deepseek-v4-flash-vision-exp[text+image], deepseek-v4-pro[text]
+//     · @0.87.1 (what dsh 0.2.0-rc.2 installs): deepseek-flash[text+image],
+//       deepseek-v4-pro[text]
+//   ⇒ NO SHIPPED-DEFAULT id is common to both generations on the pi-ai route.
+//     INTERSECTION, enumerated from the two artifacts above:
+//       {deepseek-v4-flash, deepseek-v4-flash-vision-exp} ∩ @0.87.1 = ∅
+//       all-ids@0.1.5 ∩ all-ids@0.87.1 = {deepseek-v4-pro}   ← NOT empty
+//     The earlier sentence here said "NO id is common to both generations", which is
+//     flatly false — `deepseek-v4-pro` is on both. The claim the machinery actually
+//     depends on is the narrower one above: what never survives is the DEFAULT.
+//     A block that exists to be falsifiable has to state the falsifiable claim right.
+//   official route `deepseek-official`, adapter's own exported Config schema
+//     · @0.1.5-rc.1 (@deepseek-ai/dsh-llm-deepseek): deepseek-flash[text+image],
+//       deepseek-v4-flash[text], deepseek-v4-pro[text], deepseek-v4-flash-vision-exp[text+image]
+//     · @0.2.0-rc.2 (@deepseek-ai/dsh-llm-deepseek-api-key, which re-exports
+//       the catalog from @deepseek-ai/dsh-llm-deepseek): deepseek-flash[text+image],
+//       deepseek-v4-pro[text] ONLY — so the official route is NOT "all four on
+//       both generations" either.
+// roster's shipped explore seat `deepseek/deepseek-v4-flash` therefore cannot
+// resolve on 0.2.x, and the delegation child never starts: the run ends with
+// `Error: pi-ai provider "deepseek" has no configured model "deepseek-v4-flash"`
+// (`LlmError` / `UNKNOWN_MODEL`) and `child: null`.
+//
+// WHAT THIS SECTION DOES — and what it deliberately does NOT do.
+// It pins the E2E sandbox's seats to ids the INSTALLED runtime really serves,
+// read out of that runtime's own catalog at driver start-up. It does NOT change
+// the shipped default: `roster.ts` is untouched, the concerto template is
+// untouched, and the gate assertions are untouched. On dsh 0.1.5-rc.1 every
+// pinned id is present in its catalog, so every resolved seat here is
+// BYTE-IDENTICAL to the pre-T10′ table and this section is inert. On 0.2.x it
+// substitutes exactly the seats whose pinned id is absent, and says so LOUD on
+// stderr, per seat, naming the catalog artifact it read. HISTORICAL NOTE, kept
+// honest (PR #12 round 4, kimi): this section was written when the shipped
+// default was broken on 0.2.x; T12b then re-pinned the seat ids IN THE SAME
+// commit as the D17 pin flip (`2323658`), so on the pinned 0.2.0-rc.2 every
+// shipped default resolves — the live audit reads `0/11 broken, 0 moved`, and
+// this machinery stands as the drift guard for FUTURE catalog movement, not as
+// a live workaround.
+//
+// SELECTION RULE (one sentence, so a reviewer can falsify it): keep the pinned id
+// when the route's runtime catalog lists it AND that id carries the seat's
+// roster-declared modalities; otherwise, if the catalog lists EXACTLY ONE
+// modality-capable id, move the seat there because the catalog left no choice; if
+// it lists TWO OR MORE, REFUSE until a human writes the choice down in
+// `TEST_ONLY_SEAT_PINS['<seat>@<route>']` (or binds it for one run with
+// `OMO_E2E_FORCE_SEAT`); THROW naming the seat when no listed id can carry the
+// declared modalities, or when the id it kept cannot.
+//
+// THERE IS NO SIMILARITY TERM IN THAT RULE, ON PURPOSE (Review B, upheld). The
+// rule used to read "…shares the most `-`-separated tokens with the pinned id, ties
+// broken by declaration order". Review B deleted the token-overlap term from a /tmp
+// copy and the mutant behaved IDENTICALLY, and the reason is measurable on both
+// installed runtimes: every seat whose shipped default is unresolvable has either
+// ONE modality-capable alternative (multimodal-looker on 0.2.x official) or
+// alternatives that ALL tie (explore / librarian / sisyphus-junior on 0.2.x pi-ai,
+// 2 against 2). A term that cannot change any outcome is decoration, and a decorated
+// rule tells the next reader the fixture selects by meaning when it selects by luck.
+// The term is gone and `idTokens()` is gone with it; the rule above IS the code.
+//
+// POST-REVIEW (two MAJORs, both upheld, both fixed HERE because both live in
+// this one file):
+//   • MAJOR-1 — the tie used to be broken by catalog declaration order, and on
+//     dsh 0.2.0-rc.2's pi-ai route that order was the ONLY thing choosing
+//     `deepseek-flash` over `deepseek-v4-pro` (both overlap 2 against the
+//     shipped `deepseek-v4-flash`). Review A reversed the comparator and both
+//     `--self-test` and the live `roster-parade` stayed green while three seats
+//     moved onto the explicitly-more-expensive coding model. A tie now refuses,
+//     names the tied ids, and points at the one table that may decide it.
+//     OPERATOR'S PATH when it fires: add `'<seat>@<route>': '<id>'` to
+//     `TEST_ONLY_SEAT_PINS` — the entry itself is the written decision, since no
+//     reason field beside it is read by anything (test-only), OR set
+//     `OMO_E2E_FORCE_SEAT='<seat>=<route>/<id>'` for one run (that BINDS, so the
+//     id must be listed); if the real fix is the default, that is T12's
+//     `roster.ts`, not a pin in this file.
+//   • MAJOR-2 — the modality filter used to run only on the substituting path,
+//     so a KEPT or BOUND id that cannot carry the seat's declared modalities was
+//     accepted silently (`OMO_E2E_FORCE_SEAT='multimodal-looker=deepseek/deepseek-v4-pro'`
+//     → `{substituted:false, required:['text','image'], served:['text']}`, no
+//     error). The check now sits before every return, and legs 6 and 7 fail if it
+//     is ever moved back.
+//   • finding ③ — **WITHDRAWN, and the correction is recorded here because the
+//     original claim was published in this file.** Round 1 said these legs were
+//     LOCAL-ONLY because `pnpm test:e2e` never passes `--self-test`. That was
+//     never checked: `main()` calls `runAnalysisSelfTest(routes)` before the
+//     expensive spawn and exits 1 on any problem, so the legs DO run on the plain
+//     path — which is exactly what CI runs. PROVEN, not read: with mutant M1
+//     (tie-take-first restored) applied to a copy and NO `--self-test` flag,
+//     `node tests/e2e/drive.mjs` exits 1 naming the leg by NAME — the string it
+//     prints today is `T10′[≥2 capable ids with no written choice → refused, naming
+//     ids+key]`. (It used to cite `T10′ leg 9`, a string no run has ever emitted.)
+//     So these are a REAL CI gate today. PIN STATUS, corrected by P4.5-T13:
+//     `ci.yml:97` pins `DSH_VERSION: 0.2.0-rc.2` since the D17 cutover
+//     (P4.5-T12b) — the sentence this comment used to carry, that CI sat on
+//     0.1.5-rc.1, is FALSE since the flip and was fixed rather than left to
+//     rot. On the pinned 0.2.x runtime the shipped defaults do NOT all
+//     resolve, so the substitution and shipped-default audit legs here OBSERVE
+//     the gap on CI for real (that observation is the T12 finding); what CI
+//     no longer runs is the RETIRED 0.1.x generation — dropped by ruling D17,
+//     so its absence is a ruling, not a coverage hole. `.github/` is outside
+//     this slice's one-file scope.
+//   • finding ④ — `--self-test` is hermetic again: the catalog probe is lazy and
+//     records failure instead of calling `process.exit(1)`, so with no `dsh` on
+//     PATH the seventeen fabricated legs still run, the three live legs report
+//     `SKIPPED(<reason>)` in the banner, and the exit code is 0 as it was at
+//     HEAD. A real run in that state fails loudly instead (main()).
+//
+//
+// NO VERSION SNIFFING, BY NAME OF THE CONSTRAINT. There is no
+// `dshVersion.startsWith('0.2')` — no `dshVersion` comparison of any kind — in
+// this file. `dsh --version` is captured by the probe and carried into the
+// report and the sandbox artifacts as a LABEL ONLY; no branch reads it. The
+// only shape difference the code branches on is the catalog's own shape:
+// `Config().models` is a plain array on 0.1.5-rc.1 and a `.volatile()` accessor
+// needing `.get()` on 0.2.0-rc.2, and BOTH shapes are read by the same two
+// lines, so a third generation that answers with either shape needs no edit.
+//
+// NO INVENTED IDS, NO MOCK LYING. Every id this section can emit is taken out
+// of the catalog document it just read, and the mock is never told about a model
+// the upstream route does not list — the mock keys its script by MOCKROLE, never
+// by model, so nothing here has to name a model to it at all.
+//
+// THE READ-FACE EXPECTATION SOURCE, MADE EXPLICIT (constraint 2).
+// `scripts/assert-concerto-read-face.mjs` takes the expected explore seat as
+// argv 5/6. Before T10′ that was `resolveModelRoutes()` — the shipped default
+// off `roster.ts`. That is the right ANCHOR and it stays the anchor: the
+// expectation below is `roster.ts`'s default route mapped through the runtime
+// catalog by the same rule that pins the sandbox. It is NOT `def.env` (the
+// scenario's own input, i.e. the bytes-under-assertion's own source — refused
+// above `PARADE_SEATS`), and it is NOT read off the read face. So on 0.1.5 the
+// expectation is byte-identical to before, and on 0.2.x it differs from the
+// shipped default by EXACTLY the substitutions the catalog forced, each one
+// named in `read-face/roster-expectations.json` and on stderr. What this gate
+// therefore does NOT guard: a change to the selection rule itself moves the
+// expectation and the pin together, because they share one function. That
+// residual is closed only hermetically — `p45t10PrimeSeatSelfTest()` feeds the
+// resolver fabricated catalogs and a fabricated roster default and requires the
+// named outcome (present → unchanged, absent → the named substitute, no capable
+// id → throws naming the seat) — and live by `OMO_E2E_FORCE_SEAT`, which can
+// bind a seat to an id the catalog does NOT list and must go red naming it.
+
+/**
+ * The catalog probe. SERIALIZED with `Function.prototype.toString()` into a
+ * child process on purpose: reading the official route's catalog means IMPORTING
+ * the installed adapter's compiled `lib/index.js` and evaluating its exported
+ * `Config` schema, and this driver must not let third-party plugin modules
+ * register handlers, timers or handles inside the process that owns every
+ * sandbox. The child prints one JSON document and dies; nothing it touches
+ * survives into the driver.
+ *
+ * Self-contained by contract: it uses ONLY dynamic `import()` and references no
+ * identifier from this module's scope, because `toString()` ships the body and
+ * not the closure.
+ *
+ * @param {string[]} routeList - the route providers to read catalogs for.
+ * @returns a JSON-ready document naming every artifact the read produced.
+ */
+async function runtimeCatalogProbe(routeList) {
+  const { existsSync, readdirSync, readFileSync, realpathSync } = await import('node:fs')
+  const { spawnSync } = await import('node:child_process')
+  const { dirname, join } = await import('node:path')
+  const { pathToFileURL } = await import('node:url')
+  const which = spawnSync('sh', ['-c', 'command -v dsh'], { encoding: 'utf8' })
+  const bin = (which.stdout ?? '').trim()
+  if (which.status !== 0 || bin === '') {
+    throw new Error('command -v dsh found no dsh on PATH — the runtime whose catalog the seats must be pinned against cannot be located')
+  }
+  const real = realpathSync(bin)
+  let walk = dirname(real)
+  let nodeModules = ''
+  for (let hop = 0; hop < 8; hop += 1) {
+    const candidate = join(walk, 'node_modules')
+    if (existsSync(candidate)) {
+      nodeModules = candidate
+      break
+    }
+    const parent = dirname(walk)
+    if (parent === walk) break
+    walk = parent
+  }
+  if (nodeModules === '') throw new Error('no node_modules above the dsh binary ' + real)
+  // A LABEL for the report, never a selector: nothing downstream branches on it.
+  const dshVersion = (spawnSync('dsh', ['--version'], { encoding: 'utf8' }).stdout ?? '').trim()
+  const packageLabel = (dir) => {
+    try {
+      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+      return String(manifest.name) + '@' + String(manifest.version)
+    } catch {
+      return '<no package.json at ' + dir + '>'
+    }
+  }
+  // Both shapes the installed adapter may answer with, read without asking
+  // which generation this is: a plain array (dsh 0.1.5-rc.1) or the accessor
+  // that `.volatile()` produces (dsh 0.2.0-rc.2).
+  const modelsOf = (instance) => {
+    const raw = instance === null || instance === undefined ? undefined : instance.models
+    if (Array.isArray(raw)) return raw
+    if (raw !== null && raw !== undefined && typeof raw.get === 'function') {
+      const got = raw.get()
+      if (Array.isArray(got)) return got
+    }
+    return null
+  }
+  const routes = {}
+  for (const route of routeList) {
+    const faces = []
+    // FACE A — pi-ai's builtin provider data, one file per route.
+    const piDir = join(nodeModules, '@earendil-works', 'pi-ai')
+    const piFile = join(piDir, 'dist', 'providers', 'data', route + '.json')
+    if (existsSync(piFile)) {
+      const doc = JSON.parse(readFileSync(piFile, 'utf8'))
+      const models = []
+      for (const api of Object.keys(doc)) {
+        for (const id of Object.keys(doc[api] ?? {})) {
+          const declared = doc[api][id]
+          models.push({ id, input: Array.isArray(declared === null || declared === undefined ? undefined : declared.input) ? declared.input : ['text'], api })
+        }
+      }
+      faces.push({ artifact: piFile, package: packageLabel(piDir), kind: 'pi-ai builtin provider data', models })
+    }
+    // FACE B — an installed adapter that REGISTERS this route (the quoted route
+    // literal occurs in its compiled entry) and publishes a default model list
+    // through its own exported Config schema.
+    for (const scope of readdirSync(nodeModules)) {
+      if (!scope.startsWith('@')) continue
+      for (const pkg of readdirSync(join(nodeModules, scope))) {
+        const pkgDir = join(nodeModules, scope, pkg)
+        const libIndex = join(pkgDir, 'lib', 'index.js')
+        if (!existsSync(libIndex)) continue
+        const text = readFileSync(libIndex, 'utf8')
+        if (!text.includes('"' + route + '"')) continue
+        try {
+          const mod = await import(pathToFileURL(libIndex).href)
+          const models = typeof mod.Config === 'function' ? modelsOf(mod.Config()) : null
+          faces.push({
+            artifact: libIndex,
+            package: packageLabel(pkgDir),
+            kind: 'adapter Config default models',
+            models: models === null ? [] : models.map((model) => ({
+              id: model.id,
+              input: Array.isArray(model.inputModalities) ? model.inputModalities : ['text'],
+            })),
+          })
+        } catch (error) {
+          // Recorded, never silently dropped: a package that mentions the route
+          // but cannot be imported is evidence, not noise.
+          faces.push({
+            artifact: libIndex,
+            package: packageLabel(pkgDir),
+            kind: 'adapter (import failed)',
+            models: [],
+            importError: String(error === null || error === undefined ? 'unknown' : error.message ?? error).slice(0, 160),
+          })
+        }
+      }
+    }
+    routes[route] = { faces }
+  }
+  return { dshBinary: real, dshVersion, nodeModules, routes }
+}
+
+/**
+ * Collapse the probe document to EXACTLY ONE non-empty catalog per route.
+ * Zero or several is a loud failure: an empty map would silently serve nothing,
+ * and two faces that disagree would make "does this id exist" unanswerable.
+ * PURE, so `--self-test` can drive both failure shapes with fabricated
+ * documents — the live probe cannot be made to produce them on demand.
+ */
+function collapseCatalogFaces(doc, routeList) {
+  const catalogs = {}
+  for (const route of routeList) {
+    const faces = doc?.routes?.[route]?.faces ?? []
+    const usable = faces.filter((face) => Array.isArray(face.models) && face.models.length > 0)
+    if (usable.length !== 1) {
+      // Tagged so the claim "every throw site declares its kind" is literally true.
+      // This one refuses to guess an authoritative catalog, which is a refusal and not
+      // an absence: it must never be skippable.
+      throw seatRefusal(
+        `seats: route '${route}' resolved to ${usable.length} non-empty catalog faces on `
+        + `${doc?.dshBinary ?? 'unknown dsh'} (scanned ${doc?.nodeModules ?? 'unknown node_modules'}); `
+        + `faces seen: ${faces.map((face) => `${face.package ?? '?'}=${(face.models ?? []).length} model(s)`).join(', ') || 'none'}`
+        + ' — the e2e refuses to guess which catalog is authoritative',
+      )
+    }
+    catalogs[route] = usable[0]
+  }
+  return catalogs
+}
+
+/** Run `runtimeCatalogProbe` out of process and parse its JSON document. */
+/**
+ * A refusal is a FACT about a seat, declared BY THE SITE THAT REFUSES — not a string
+ * a classifier has to remember. Review A's round-5 MAJOR-1 measured the shape of the
+ * hole: `REFUSAL_MARKERS` was a hand-written substring whitelist of 5 entries against
+ * 13 throw sites in this subsystem, so 7 of them — including a seat the runtime cannot
+ * seat at all — fell through the classifier and were recorded as a SKIP, and
+ * `OMO_E2E_FORCE_SEAT='explore=fake-route/deepseek-flash' … --self-test` exited 0 on
+ * the generation `ci.yml` pinned at the time (0.1.5-rc.1 — historical: CI has
+ * pinned 0.2.0-rc.2 since the D17 cutover, P4.5-T12b). A whitelist drifts from the throws forever,
+ * because nothing forces the two to move together. So the throw site now carries its
+ * own kind, the classifier reads the kind, and — the part that keeps it from rotting
+ * again — **an untagged reason is NOT skippable**: it is a problem. Add a throw site
+ * without declaring its kind and the gate names it the first time it fires.
+ *
+ * `catalogAbsent` is the ONLY legitimate route to a skip: the catalog was genuinely
+ * not there to read (no `dsh`, no catalog on disk), which is true in hermetic mode
+ * and nowhere near true for a seat that was refused.
+ */
+// Counted AND REPORTED (Review B, round 6: the round-4 fix printed each drop but the
+// number never reached the record, so a growing leak was still invisible to CI).
+export const BOOT_MIRROR_DROPS = { count: 0 }
+export const SEAT_REFUSAL_FLAG = 'seatRefusal'
+export const CATALOG_ABSENT_FLAG = 'catalogAbsent'
+function seatRefusal(message) {
+  const error = new Error(message)
+  error[SEAT_REFUSAL_FLAG] = true
+  return error
+}
+function catalogAbsent(message) {
+  const error = new Error(message)
+  error[CATALOG_ABSENT_FLAG] = true
+  return error
+}
+/** Is this reason a refusal the resolver DECLARED? Untagged is NOT a skip. */
+function isDeclaredRefusal(reason) {
+  return reason !== null && reason !== undefined && reason[SEAT_REFUSAL_FLAG] === true
+}
+function isDeclaredAbsence(reason) {
+  return reason !== null && reason !== undefined && reason[CATALOG_ABSENT_FLAG] === true
+}
+
+function probeRuntimeCatalog(routeList) {
+  const source = `const probe = ${runtimeCatalogProbe.toString()}
+probe(process.argv.slice(1)).then(
+  (doc) => process.stdout.write(JSON.stringify(doc)),
+  (error) => {
+    process.stderr.write(String(error && error.stack ? error.stack : error))
+    process.exit(1)
+  },
+)`
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', source, ...routeList], {
+    encoding: 'utf8',
+    timeout: 120_000,
+  })
+  const stdout = (child.stdout ?? '').trim()
+  if (child.status !== 0 || stdout === '') {
+    throw catalogAbsent(
+      `seats: the runtime catalog probe failed (exit ${child.status}) — `
+      + `${(child.stderr ?? '').slice(0, 400) || 'no stderr'} — the e2e will NOT guess a model id`,
+    )
+  }
+  let doc
+  try {
+    doc = JSON.parse(stdout)
+  } catch {
+    throw catalogAbsent(`seats: the runtime catalog probe printed non-JSON: ${stdout.slice(0, 200)}`)
+  }
+  return { catalogs: collapseCatalogFaces(doc, routeList), probe: doc }
+}
+
+/**
+ * EXPLICIT SEAT CHOICES, TEST-ONLY, KEY = `'<seat>@<route>'`.
+ *
+ * `resolveSeatAgainstCatalog` refuses to choose between two or more modality-capable
+ * ids, so every seat where the installed catalog leaves a genuine choice must be
+ * decided HERE, by name, in a line a reviewer can see. An entry naming an id that is
+ * not among the capable ids is itself a hard error, so a table that goes stale fails
+ * closed instead of quietly redirecting a seat.
+ *
+ * All four entries are needed on the installed dsh 0.2.0-rc.2, where BOTH catalogs
+ * list exactly two ids (`deepseek-flash[text+image]`, `deepseek-v4-pro[text]`), so
+ * every text seat there has two capable candidates. `multimodal-looker` is NOT
+ * listed: `image` is required there and only `deepseek-flash` declares it, so the
+ * catalog leaves no choice and the resolver takes it, flagged soleCapableCandidate.
+ *
+ * WHY `deepseek-flash` in all four, stated because it is a decision, not a fact:
+ *   • it is the only id either 0.2.x catalog declares with `input:["text","image"]`,
+ *     so it is the only choice that cannot blind a seat if its tools grow;
+ *   • `deepseek-v4-pro`'s own catalog description is "Stronger agentic coding… at
+ *     higher cost" — moving four parade seats onto the expensive coding model to make
+ *     a fixture pass is not a choice this file should make implicitly;
+ *   • keeping children on `deepseek-flash` preserves the parade's route-pair
+ *     DISTINCTNESS (parent official/deepseek-v4-pro vs child pi-ai/deepseek-flash).
+ *
+ * ON dsh 0.1.5-rc.1 THIS TABLE IS INERT: every shipped default resolves in place, no
+ * seat reaches the choice branch, and the audit leg reports 0 unresolvable rows there.
+ */
+export const TEST_ONLY_SEAT_PINS = {
+  'explore@deepseek': 'deepseek-flash',
+  'librarian@deepseek': 'deepseek-flash',
+  'sisyphus-junior@deepseek': 'deepseek-flash',
+  'sisyphus-junior@deepseek-official': 'deepseek-flash',
+}
+
+/**
+ * The seat a roster row runs on, chosen from the RUNTIME CATALOG by the rule
+ * stated in the section header above. Returns the pinned route untouched when the
+ * catalog lists it — PROVIDED that id carries the modalities the roster row
+ * declares, which is checked on EVERY path, not just the substituting one.
+ * Otherwise: exactly ONE modality-capable id → move there (the catalog left no
+ * choice, recorded as `soleCapableCandidate: true`); TWO OR MORE → REFUSE unless
+ * `TEST_ONLY_SEAT_PINS['<seat>@<route>']` names one of them. There is no ranking
+ * step and no similarity term — see the section header for why it was deleted.
+ * Throws naming the seat when nothing capable is listed, when a kept id cannot carry
+ * the declared modalities, and when a real choice has no written decision.
+ */
+function resolveSeatAgainstCatalog(catalogs, agentId, preferred, requiredModalities, binding = false) {
+  const catalog = catalogs[preferred.provider]
+  if (catalog === undefined) {
+    throw seatRefusal(
+      `seats: agent '${agentId}' wants route '${preferred.provider}', which this runtime `
+      + `serves no catalog at all (routes with a catalog: ${Object.keys(catalogs).join(', ')})`,
+    )
+  }
+  const listed = catalog.models
+  const pinned = listed.find((model) => model.id === preferred.model)
+  // A BINDING pin (OMO_E2E_FORCE_SEAT) is never substituted. This is the
+  // anti-vacuity half of the rule: without it a bogus pin would be quietly
+  // replaced by a real id and the run would stay green while proving nothing.
+  if (binding && pinned === undefined) {
+    throw seatRefusal(
+      `SEAT '${agentId}' IS PINNED TO A MODEL ID THIS RUNTIME DOES NOT SERVE: `
+      + `'${preferred.provider}/${preferred.model}' is absent from ${catalog.package} `
+      + `(${catalog.artifact}), which lists `
+      + `${listed.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ') || 'NOTHING'}`
+      + ' — refusing to substitute, because a bound pin that is silently replaced is a gate that proves nothing',
+    )
+  }
+  // MODALITY IS CHECKED ON EVERY PATH THAT RETURNS A SEAT, not only on the one
+  // that substitutes (post-review MAJOR-2). Before this, the two returns below
+  // handed back a seat without ever asking whether the id it kept can carry what
+  // the roster row declared, so this bit open:
+  //   OMO_E2E_FORCE_SEAT='multimodal-looker=deepseek/deepseek-v4-pro'
+  //   → { substituted:false, required:['text','image'], served:['text'] }, no error
+  // i.e. the one vision seat in the roster pinned onto a text-only model, accepted
+  // silently. `required ⊆ served` is the slice's central invariant, so it is
+  // asserted here, once, before any return. There is no live instance of this on
+  // either installed generation (multimodal-looker's shipped default is
+  // deepseek-v4-flash-vision-exp on both), which is exactly why it needs a check
+  // and not an observation: it fails open the day upstream edits that row.
+  const lackingModalities = (model) => requiredModalities.filter((modality) => !model.input.includes(modality))
+  if (pinned !== undefined) {
+    const missing = lackingModalities(pinned)
+    if (missing.length > 0) {
+      throw seatRefusal(
+        `SEAT '${agentId}' CANNOT CARRY THE MODALITIES ITS ROSTER ROW DECLARES: `
+        + `'${preferred.provider}/${preferred.model}' is listed by ${catalog.package} `
+        + `(${catalog.artifact}) but serves [${pinned.input.join(', ')}] while the roster row `
+        + `requires [${requiredModalities.join(', ')}] — missing [${missing.join(', ')}]. `
+        + `Listed here: ${listed.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ')}`
+        + ' — refusing to run a seat that cannot see what it is allowed to read'
+        + (binding
+          ? `; the id arrived through OMO_E2E_FORCE_SEAT, so point that knob at an id `
+            + `whose input covers [${requiredModalities.join(', ')}]`
+          : '; this is the SHIPPED DEFAULT failing, which is T12\'s to fix, not the test\'s to work around'),
+      )
+    }
+    return {
+      agent: agentId,
+      provider: preferred.provider,
+      model: preferred.model,
+      substituted: false,
+      requiredModalities: [...requiredModalities],
+      servedModalities: [...pinned.input],
+      catalogArtifact: catalog.artifact,
+      catalogPackage: catalog.package,
+    }
+  }
+  // THE CATALOG EITHER LEAVES NO CHOICE OR THE FIXTURE MAKES ONE EXPLICITLY.
+  //
+  // There is deliberately NO similarity term here. The previous revision ranked
+  // candidates by `-`-token overlap against the pinned id; Review B deleted that
+  // term in a /tmp copy and the mutant behaved IDENTICALLY, because on both
+  // installed runtimes every unresolvable seat has either exactly one
+  // modality-capable id (nothing to rank) or candidates that all tie
+  // (measured, `node -e` over RUNTIME_CATALOGS × DEFAULT_MODEL_ROUTES:
+  // explore/librarian/sisyphus-junior @deepseek → capable [deepseek-flash,
+  // deepseek-v4-pro] overlaps [2,2]; multimodal-looker @deepseek-official →
+  // capable [deepseek-flash] alone). A term that cannot change an outcome is not
+  // a rule, it is decoration, and a decorated rule tells the next reader the code
+  // selects by meaning when it selects by luck. So the rule is now two-valued:
+  //   • exactly ONE modality-capable id → the catalog forced it, substitute,
+  //     flagged `soleCapableCandidate: true`;
+  //   • TWO OR MORE → a real decision exists, so REFUSE unless a human wrote the
+  //     choice down in `TEST_ONLY_SEAT_PINS`.
+  const capable = listed.filter((model) => requiredModalities.every((modality) => model.input.includes(modality)))
+  if (capable.length === 0) {
+    throw seatRefusal(
+      `seats: agent '${agentId}' has NO valid model id on the runtime under test — `
+      + `pinned '${preferred.provider}/${preferred.model}' is absent from ${catalog.package} `
+      + `(${catalog.artifact}), which lists `
+      + `${listed.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ') || 'NOTHING'}`
+      + ` and the roster row requires modalities [${requiredModalities.join(', ')}]`
+      + ' — say so rather than installing something that is not there',
+    )
+  }
+  const key = `${agentId}@${preferred.provider}`
+  const explicit = TEST_ONLY_SEAT_PINS[key]
+  const listedCapable = capable.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ')
+  // A WRITTEN CHOICE IS NEVER SILENTLY BYPASSED, not even when the catalog leaves
+  // no choice (Review A, round 6). `TEST_ONLY_SEAT_PINS` used to be read ONLY when
+  // `capable.length > 1`, so a pin naming an id the catalog does not list, sitting
+  // beside exactly ONE capable id, was answered `soleCapableCandidate:true` with
+  // `explicitChoiceKey:null` and the stale pin unmentioned — against this file's own
+  // doctrine that a written decision is honoured BY NAME. A human wrote an id down;
+  // the machine must say so when it cannot serve it, not quietly serve another.
+  if (capable.length === 1 && explicit !== undefined && explicit !== capable[0].id) {
+    throw seatRefusal(
+      `SEAT '${agentId}' HAS A WRITTEN CHOICE THIS CATALOG CANNOT HONOUR: `
+      + `TEST_ONLY_SEAT_PINS['${key}'] = '${explicit}', but that id is absent from `
+      + `${catalog.package} (${catalog.artifact}) and the ONLY modality-capable id it lists is `
+      + `'${capable[0].id}'[${capable[0].input.join('+')}]. Refusing to substitute it silently: `
+      + `either the pin is stale — name the id that should replace it — or the catalog is not `
+      + `the one this pin was written for.`,
+    )
+  }
+  if (capable.length > 1) {
+    // A choice exists. It must be written down, by name, before it is made.
+    if (explicit === undefined) {
+      throw seatRefusal(
+        `SEAT '${agentId}' REQUIRES AN EXPLICIT MODEL CHOICE AND NONE IS WRITTEN DOWN: `
+        + `'${preferred.provider}/${preferred.model}' is absent from ${catalog.package} (${catalog.artifact}) `
+        + `and ${capable.length} ids there could carry the seat's modalities [${requiredModalities.join(', ')}]: `
+        + `${listedCapable}. Refusing to pick one, because after removing the inert token-overlap term `
+        + `(Review B: deleting it changed no outcome) there is NO criterion left in this file that could `
+        + `choose between them, and catalog declaration order is serialization, not a reason. `
+        + `TO PROCEED: (1) add \`${key}: '<one of the ids above>'\` to TEST_ONLY_SEAT_PINS in `
+        + `tests/e2e/drive.mjs — the entry IS the decision, there is no second field `
+        + `beside it that anything reads, or (2) set `
+        + `OMO_E2E_FORCE_SEAT='${agentId}=${preferred.provider}/<id>' for one run (that BINDS, so the id `
+        + `must be listed above). If the real answer is that the shipped default should change, that is `
+        + `T12's edit to roster.ts — not a pin in this file.`,
+      )
+    }
+    const chosen = capable.find((model) => model.id === explicit)
+    if (chosen === undefined) {
+      throw seatRefusal(
+        `seats: TEST_ONLY_SEAT_PINS['${key}'] names '${explicit}', which is not one of the `
+        + `capable ids [${capable.map((model) => model.id).join(', ')}] on ${catalog.package} `
+        + `(${catalog.artifact}) — a stale explicit decision is as dangerous as an implicit one`,
+      )
+    }
+    // A WRITTEN CHOICE MUST ALSO BE A DEFENSIBLE ONE (Review A delta round, M10).
+    // Before this, the VALUES of `TEST_ONLY_SEAT_PINS` were unguarded: flipping
+    // `explore@deepseek` to the text-only coding model exited 0 with every leg green,
+    // because the resolver only ever asked "is this id listed and capable?". This
+    // asks the sharper question the pin table's own comment claims to answer: did the
+    // fixture pick a STRICTLY LESS CAPABLE id while a more capable listed id was
+    // available? Capability dominance is read off the catalog, so it needs no prose
+    // and survives upstream rewording a description.
+    const dominating = capable.filter((model) => model.id !== chosen.id
+      && model.input.length > chosen.input.length
+      && chosen.input.every((modality) => model.input.includes(modality)))
+    if (dominating.length > 0) {
+      throw seatRefusal(
+        `SEAT '${agentId}' CHOSE A STRICTLY LESS CAPABLE MODEL ID: `
+        + `TEST_ONLY_SEAT_PINS['${key}'] = '${chosen.id}' serves [${chosen.input.join(', ')}] while `
+        + `${catalog.package} (${catalog.artifact}) also lists `
+        + `${dominating.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ')}, `
+        + `each carrying EVERY modality the chosen id does plus more. That may still be the right `
+        + `call (a cheaper text-only model is a legitimate pick), but not as an unexplained value in `
+        + `a table whose stated reason is capability. The remedy is to NAME the more capable id. `
+        + `(Deliberately no "write a different reason beside the entry" option: nothing reads such a reason, `
+        + `so offering it would return an identical red with no new information. If the shipped default is `
+        + `what should change, that is T12's edit to roster.ts.)`,
+      )
+    }
+    return {
+      agent: agentId,
+      provider: preferred.provider,
+      model: chosen.id,
+      substituted: true,
+      requiredModalities: [...requiredModalities],
+      servedModalities: [...chosen.input],
+      catalogArtifact: catalog.artifact,
+      catalogPackage: catalog.package,
+      pinnedButUnresolvableModel: preferred.model,
+      candidates: capable.map((model) => model.id),
+      explicitChoiceKey: key,
+      soleCapableCandidate: false,
+    }
+  }
+  const chosen = capable[0]
+  return {
+    agent: agentId,
+    provider: preferred.provider,
+    model: chosen.id,
+    substituted: true,
+    requiredModalities: [...requiredModalities],
+    servedModalities: [...chosen.input],
+    catalogArtifact: catalog.artifact,
+    catalogPackage: catalog.package,
+    pinnedButUnresolvableModel: preferred.model,
+    candidates: capable.map((model) => model.id),
+    // TRUE means the catalog offered exactly ONE id that can carry this seat, so
+    // there was no decision to make and no decision was made here. FALSE means a
+    // human wrote the choice down in TEST_ONLY_SEAT_PINS (see explicitChoiceKey).
+    soleCapableCandidate: true,
+    explicitChoiceKey: null,
+  }
+}
+
+/** The modalities a roster row declares it needs — `read_image` means image. */
+/**
+ * Review A: this FAILED OPEN, and it fails open TODAY — `DELEGATION_ENTRIES` has 10
+ * ids while `DEFAULT_MODEL_ROUTES` has 11, so the conductor `sisyphus` already falls
+ * through to `['text']`. A future vision seat added without an entry would silently
+ * lose its `image` requirement: the exact silent conversion this slice exists to kill.
+ * Guessing cannot be made safe (inventing `['text','image']` refuses ids the runtime
+ * serves), so the inference stays but is no longer silent: every inferred agent is
+ * RECORDED, PRINTED at startup, and pinned by `inferred-modalities-pinned`, which
+ * asserts the inferred set is EXACTLY today's known one.
+ */
+export const INFERRED_MODALITY_AGENTS = []
+function requiredModalitiesFor(agentId) {
+  const entry = DELEGATION_ENTRIES.find((candidate) => candidate.id === agentId)
+  if (entry === undefined) {
+    if (!INFERRED_MODALITY_AGENTS.includes(agentId)) INFERRED_MODALITY_AGENTS.push(agentId)
+    return ['text']
+  }
+  const allow = entry.allowTools ?? []
+  return allow.includes('read_image') ? ['text', 'image'] : ['text']
+}
+
+/**
+ * `OMO_E2E_FORCE_SEAT='agent=provider/model[,agent=…]'` — the ANTI-VACUITY
+ * knob, and the only way to bind a seat to an id the catalog does not list.
+ * It exists so AC6 can prove this gate bites: a bogus id must go RED naming the
+ * seat, not be silently substituted away. It is read HERE and nowhere else —
+ * `seedSandbox` never writes it, so it cannot certify the read face — and a
+ * bound id is still checked against the catalog, so it cannot invent one either.
+ */
+function forcedSeatPins(catalogs) {
+  const raw = (process.env.OMO_E2E_FORCE_SEAT ?? '').trim()
+  if (raw === '') return []
+  const pins = []
+  for (const clause of raw.split(',').map((part) => part.trim()).filter((part) => part.length > 0)) {
+    const splitAt = clause.indexOf('=')
+    const agent = splitAt < 0 ? '' : clause.slice(0, splitAt).trim()
+    const pair = splitAt < 0 ? '' : clause.slice(splitAt + 1).trim()
+    const provider = pair.split('/')[0] ?? ''
+    const model = pair.split('/').slice(1).join('/')
+    if (agent.length === 0 || provider.length === 0 || model.length === 0) {
+      throw seatRefusal(
+        `seats: OMO_E2E_FORCE_SEAT clause '${clause}' is not 'agent=provider/model' `
+        + `— the knob is load-bearing, so a malformed clause is a hard error`,
+      )
+    }
+    const catalog = catalogs[provider]
+    if (catalog === undefined) {
+      throw seatRefusal(
+        `seats: OMO_E2E_FORCE_SEAT pinned '${agent}' to route '${provider}', which this runtime `
+        + `serves no catalog (routes with a catalog: ${Object.keys(catalogs).join(', ')})`,
+      )
+    }
+    // The id itself is deliberately NOT checked here. `resolveSeatAgainstCatalog`
+    // does it, as a BINDING request, so there is exactly one place that emits
+    // `SEAT '<agent>' IS PINNED TO A MODEL ID THIS RUNTIME DOES NOT SERVE` and
+    // exactly one place that may substitute.
+    pins.push({ agent, provider, model })
+  }
+  return pins
+}
+
+/**
+ * The one resolution every seat in this driver comes from: ALL 11 roster rows
+ * (the conductor included) pinned at their SHIPPED default — `DEFAULT_MODEL_ROUTES`,
+ * the shipped source, never a copy — mapped through the installed runtime's own
+ * catalog. This is the single place the shipped default is allowed to move, and
+ * it moves only where the catalog says the shipped id is not there.
+ *
+ * @param {object} extraCatalogRoutes - routes the parade's preference table uses
+ *   that the shipped defaults do not, so one probe covers every pin in the file.
+ */
+function resolveRosterSeatsAgainstRuntime(extraCatalogRoutes = []) {
+  const shipped = Object.entries(DEFAULT_MODEL_ROUTES)
+  const routeList = [...new Set([
+    ...shipped.map(([, route]) => route.provider),
+    ...extraCatalogRoutes,
+  ])]
+  const { catalogs, probe } = probeRuntimeCatalog(routeList)
+  const forced = forcedSeatPins(catalogs)
+  const resolutions = {}
+  for (const [agent, route] of shipped) {
+    const pin = forced.find((candidate) => candidate.agent === agent)
+    // A bound pin goes through the SAME catalog, as a BINDING request: present
+    // → served verbatim, absent → throw naming the seat (never substituted).
+    const resolution = resolveSeatAgainstCatalog(
+      catalogs,
+      agent,
+      pin === undefined ? route : { provider: pin.provider, model: pin.model },
+      requiredModalitiesFor(agent),
+      pin !== undefined,
+    )
+    resolutions[agent] = pin === undefined
+      ? resolution
+      : { ...resolution, forcedByEnvVar: 'OMO_E2E_FORCE_SEAT' }
+  }
+  return { resolutions, catalogs, probe, forced }
+}
+
+/**
+ * Same rule, applied to the PARADE's own preference table (which re-seats
+ * librarian and multimodal-looker onto vision ids the shipped default does not
+ * use). On dsh 0.1.5-rc.1 every preferred id is listed, so this returns the
+ * preference table untouched.
+ */
+function resolvePreferredSeats(catalogs, preferences) {
+  const out = {}
+  for (const [agent, seat] of preferences) {
+    const entry = DELEGATION_ENTRIES.find((candidate) => candidate.id === agent)
+    out[agent] = resolveSeatAgainstCatalog(
+      catalogs,
+      agent,
+      seat,
+      entry === undefined ? ['text'] : requiredModalitiesFor(agent),
+    )
+  }
+  return out
+}
+
+/** The catalog a resolved seat came from, for log lines. */
+function catalogNameOf(seat) {
+  return `${seat.catalogPackage} (${seat.catalogArtifact})`
+}
+
+/**
+ * Loud, per seat, at start-up: which ids moved, and the artifact that said so.
+ * Takes its data as PARAMETERS — it is called from inside the module-init IIFE,
+ * before the `RUNTIME_*` consts below exist, and reading them there would be a
+ * temporal-dead-zone ReferenceError that looks like "no catalog was read".
+ */
+function announceRuntimeSeats(resolutions, catalogs, probe) {
+  void catalogs
+  console.error(
+    `drive: [seats] runtime ${probe?.dshVersion ?? '?'} `
+    + `(${probe?.dshBinary ?? '?'}) — catalogs read at run time, `
+    + `NOT version-sniffed: `
+    + Object.entries(probe?.routes ?? {})
+      .map(([route, face]) => {
+        const usable = (face.faces ?? []).find((entry) => (entry.models ?? []).length > 0)
+        return `${route}←${usable?.package ?? 'NO CATALOG'}[${(usable?.models ?? []).map((model) => `${model.id}(${model.input.join('+')})`).join(' ')}]`
+      })
+      .join(' | '),
+  )
+  const moved = Object.values(resolutions).filter((seat) => seat.substituted)
+  if (moved.length === 0) {
+    console.error(
+      'drive: [seats] every shipped default resolves on this runtime — no seat was moved '
+      + '(this is the dsh 0.1.5-rc.1 shape; the table below is byte-identical to it)',
+    )
+    return
+  }
+  for (const seat of moved) {
+    console.error(
+      `drive: [seats] TEST-ONLY SUBSTITUTION ${seat.agent}: shipped default `
+      + `${seat.provider}/${seat.pinnedButUnresolvableModel} is NOT listed by `
+      + `${seat.catalogPackage} (${seat.catalogArtifact}); the e2e pins `
+      + `${seat.provider}/${seat.model} (modalities [${seat.servedModalities.join('+')}], `
+      + `required [${seat.requiredModalities.join(', ')}]; candidates ${seat.candidates.join(', ')})`
+      // WHY this id and not another, stated in the log (Review A MINOR): either
+      // the catalog left exactly one capable id, or a human wrote the choice down.
+      // The log never leaves the reader to infer which of the two happened.
+      + (seat.soleCapableCandidate === true
+        ? ` [SOLE CAPABLE ID — ${catalogNameOf(seat)} listed no other id covering `
+          + `[${seat.requiredModalities.join(', ')}], so no choice existed here]`
+        : ` [EXPLICIT CHOICE among ${seat.candidates.join(', ')} — written down as `
+          + `TEST_ONLY_SEAT_PINS['${seat.explicitChoiceKey}'] = '${seat.model}'; `
+          + `the resolver has NO similarity criterion and would have refused]`)
+      + ' — THE SHIPPED DEFAULT REMAINS UNRESOLVABLE ON THIS RUNTIME, which is T12\'s to fix',
+    )
+  }
+}
+
+/** The OMO_<AGENT>_{PROVIDER,MODEL} overlay for ALL 11 roster rows, names and
+ * values both derived (env names from `MODEL_ROUTE_ENV_VARS`, seats from the
+ * runtime-resolved shipped defaults) — never restated. Refuses, loudly, when the
+ * catalog was never read: an unverified id must not reach a sandbox. */
+function runtimeSeatEnv() {
+  requireRuntimeSeats('runtimeSeatEnv')
+  const env = {}
+  for (const [agent, names] of Object.entries(MODEL_ROUTE_ENV_VARS)) {
+    const seat = RUNTIME_RESOLVED_SEATS[agent]
+    env[names.provider] = seat.provider
+    env[names.model] = seat.model
+  }
+  return env
+}
+
+/**
+ * EXPORTED (P4.5-T10′) so the per-generation seat table can be re-generated by
+ * ONE command against whichever runtime is installed — `node -e "import(...)"`
+ * runs this module's init (the catalog probe) and never `main()`, so the AC7
+ * table in the report is machine-produced from the same code the run uses, not
+ * transcribed from a prompt or from an earlier report.
+ *
+ * The read-face validator's expected explore seat, argv 5/6, with its source
+ * named in the returned record: `roster.ts`'s shipped default mapped through the
+ * installed runtime's catalog. NEVER `def.env`, NEVER the read face.
+ */
+export function readFaceSeatExpectation() {
+  requireRuntimeSeats('readFaceSeatExpectation')
+  const seat = RUNTIME_RESOLVED_SEATS.explore
+  return {
+    provider: seat.provider,
+    model: seat.model,
+    substitutedFromShippedDefault: seat.substituted,
+    shippedDefaultModel: seat.pinnedButUnresolvableModel ?? seat.model,
+    explicitChoiceKey: seat.explicitChoiceKey ?? null,
+    expectationSource: `roster.ts defaultRoute.explore ${seat.pinnedButUnresolvableModel ?? seat.model} mapped through ${seat.catalogPackage} ${seat.catalogArtifact}`,
+  }
+}
+
+/**
+ * NO-BOOT AUDIT: every shipped default in `DEFAULT_MODEL_ROUTES` against the
+ * catalog of its own route, on the runtime that is installed RIGHT NOW.
+ *
+ * WHY (Review A, adopted by the arbiter). T10′ made gate 3 green on 0.2.x by
+ * teaching the e2e to resolve against the live catalog. That leaves a failure mode
+ * the resolver itself would never show: if upstream's catalog changes again, the
+ * resolver quietly picks another id, the gate stays green, and the SHIPPED DEFAULT —
+ * which nothing re-resolves — has quietly become wrong. A reader of a green gate
+ * would conclude the product works on that runtime. This audit is what turns that
+ * silent conversion into a named, printed fact.
+ *
+ * WHAT IT IS NOT: it does NOT fix anything. It never edits `roster.ts`, never
+ * nudges a pin, never changes a seat. Fixing an unresolvable shipped default is
+ * T12's. This function's whole job is to DETECT and NAME.
+ *
+ * Pure over (catalogs, shippedRoutes) so `--self-test` can drive it with fabricated
+ * catalogs and no runtime at all.
+ */
+export function auditShippedDefaultsAgainstCatalog(catalogs, shippedRoutes = DEFAULT_MODEL_ROUTES, resolutions = {}, modalities = {}) {
+  const rows = []
+  const rowModalities = modalities
+  for (const [agent, shipped] of Object.entries(shippedRoutes)) {
+    const catalog = catalogs[shipped.provider]
+    const resolution = resolutions[agent]
+    // A BINDING override (OMO_E2E_FORCE_SEAT) can make a seat run on an id the
+    // catalog DOES list while the SHIPPED DEFAULT for that seat is still absent.
+    // That is not the default resolving — it is an operator covering the gap for
+    // one run, and the audit must say so rather than read it as a pass.
+    // An override only COVERS a row if the id it names can actually carry the
+    // seat. `deepseek-official/deepseek-v4-pro` on the one vision seat is listed but
+    // text-only: that is not covering anything, it is a second, louder failure.
+    const overrideModel = resolution?.forcedByEnvVar ? resolution.model : null
+    const overrideCarries = overrideModel === null
+      ? true
+      : catalog?.models.some((model) => model.id === overrideModel
+        && (rowModalities[agent] ?? ['text']).every((modality) => model.input.includes(modality))) !== false
+    const coveredBy = overrideModel !== null && overrideCarries ? overrideModel : null
+    if (catalog === undefined) {
+      rows.push({ agent, route: shipped.provider, shippedModel: shipped.model, status: 'NO-CATALOG', artifact: null, listed: [], coveredBy })
+      continue
+    }
+    const present = catalog.models.some((model) => model.id === shipped.model)
+    rows.push({
+      agent,
+      route: shipped.provider,
+      shippedModel: shipped.model,
+      status: present ? 'RESOLVES' : (coveredBy === null ? 'UNRESOLVABLE' : 'UNRESOLVABLE-COVERED-BY-OVERRIDE'),
+      artifact: catalog.artifact,
+      listed: catalog.models.map((model) => `${model.id}[${model.input.join('+')}]`),
+      coveredBy,
+      overrideIncapable: overrideModel !== null && !overrideCarries,
+      // Review A MINOR-1: the incapable line printed `coveredBy ?? ''`, and coveredBy
+      // is null BY CONSTRUCTION on an incapable row — the id being complained about was
+      // structurally impossible to print. The override id now rides on the row.
+      overrideModel,
+      // The resolver moves a row exactly when its shipped default is absent AND no
+      // override stands in. Derived from the row, not from a resolution object that
+      // does not exist yet at the moment the startup audit runs.
+      resolverMoved: present === false && overrideModel === null,
+      required: rowModalities[agent] ?? ['text'],
+    })
+  }
+  // `broken` counts EVERY row whose shipped default its catalog does not list,
+  // covered or not. `allClear` is derived from `broken`, NEVER from `unresolvable`.
+  // This is the anti-laundering seam (Review A delta round, MAJOR-1): the announce
+  // used to return early on `unresolvable.length === 0`, so overriding ALL four
+  // broken seats made it print "audit PASS — all 11 roster shipped ids are listed",
+  // which is false on both clauses. An override is an additive statement about a row
+  // that is STILL broken; it can never subtract from the count of broken rows.
+  const broken = rows.filter((row) => row.status !== 'RESOLVES')
+  return {
+    rows,
+    // Rows the shipped default genuinely cannot resolve with nothing covering it.
+    unresolvable: rows.filter((row) => row.status === 'UNRESOLVABLE'),
+    // THE FIFTH STATE, given its own name. A route with no catalog at all is neither
+    // "unresolvable against a catalog we read" nor "covered": the shipped default was
+    // never even CHECKED. It has always been counted in `broken` — so the gate still
+    // reds and this is not a fail-open — but it appeared in none of the three emitter
+    // loops, so the audit's contract of NAMING every broken row failed for it
+    // (Review A, round 6: it proved this by importing the frozen module itself).
+    noCatalog: rows.filter((row) => row.status === 'NO-CATALOG'),
+    // Rows where a binding override is standing in for a broken shipped default.
+    covered: rows.filter((row) => row.status === 'UNRESOLVABLE-COVERED-BY-OVERRIDE'),
+    // An override naming an id that cannot carry the seat covers NOTHING; it is a
+    // second failure on top of the absent default, never a reason to go quiet.
+    incapable: rows.filter((row) => row.overrideIncapable === true),
+    // Rows where the RESOLVER itself moved off the shipped default. A cover is not
+    // a move: an override that is served verbatim leaves `movedCount` at zero, which
+    // is the number that shows what a cover COSTS.
+    movedCount: rows.filter((row) => row.resolverMoved === true).length,
+    // Every row whose shipped default this catalog does not list, covered included.
+    broken,
+    checked: rows.length,
+    allClear: broken.length === 0,
+  }
+}
+
+/**
+ * Print the audit. Loud, on stderr, and NEVER a silent pass: when something is
+ * unresolvable the line begins with a marker a human and a log scraper can both
+ * grep, and it says who owns the fix.
+ */
+function shippedDefaultAuditLines(audit) {
+  // PURE: returns the lines instead of printing them, so a self-test leg can assert
+  // the OUTPUT, not just the data. Without this the print path was unmutatable —
+  // Review A's M13 (`if (audit.unresolvable.length === 0) return`) survived every
+  // leg that only inspects the audit object.
+  const lines = []
+  // The all-clear is gated on `allClear`, which counts COVERED rows as broken.
+  // There is no input to this function that yields PASS while any shipped default is
+  // absent from its catalog — that was the hole Review A measured by overriding all
+  // four broken seats and getting `audit PASS` plus exit 0.
+  if (audit.allClear) {
+    return [`drive: [shipped-defaults] audit PASS — all ${audit.checked} roster shipped ids are listed `
+      + `by their route's installed catalog; the e2e pins nothing the product does not already ship`]
+  }
+  lines.push(
+    `drive: [shipped-defaults] *** SHIPPED DEFAULT UNRESOLVABLE ON THIS RUNTIME — `
+    + `${audit.broken.length}/${audit.checked} roster rows *** `
+    + `(${audit.unresolvable.length} with nothing covering them, ${audit.covered.length} covered by `
+    + `OMO_E2E_FORCE_SEAT for THIS RUN ONLY — covering is not resolving) `
+    // Review A: at 4 legitimate overrides the substitution evidence drops to ZERO
+    // while the gate still reads `RUN 17/17` — technically true, substantively
+    // misleading, and a reader should not have to run four overrides to learn it.
+    // Every live id would then be operator-supplied: the resolver chose nothing.
+    + `(substitution evidence: resolver chose ${audit.movedCount}, operator supplied `
+    + `${audit.covered.length}${audit.movedCount === 0 && audit.covered.length > 0 ? ` — EVERY live id is operator-supplied, the resolver chose NOTHING` : ``}) `
+    + `(T10′'s e2e pins substitute these; THE PRODUCT STILL SHIPS THE BROKEN DEFAULT — T12 owns the fix)`,
+  )
+  for (const row of audit.unresolvable) {
+    lines.push(
+      `drive: [shipped-defaults] UNRESOLVABLE ${row.agent}: roster ships `
+      + `${row.route}/${row.shippedModel}, which `
+      // The old `?? 'no catalog on this runtime'` fallback here was DEAD CODE: an
+      // UNRESOLVABLE row always names its artifact, because a row with no catalog is
+      // NO-CATALOG and never reaches this loop. It now names the bug instead of
+      // quietly printing a sentence that can never be true.
+      + `${row.artifact ?? '<ARTIFACT UNRECORDED — a driver bug: every UNRESOLVABLE row names the artifact that refused it>'} `
+      + `does NOT list (it lists: ${row.listed.join(', ') || 'NOTHING'})`,
+    )
+  }
+  for (const row of audit.noCatalog ?? []) {
+    lines.push(
+      `drive: [shipped-defaults] NO CATALOG FOR THE ROUTE ${row.agent}: roster ships `
+      + `${row.route}/${row.shippedModel} and this runtime published NO catalog at all for route `
+      + `'${row.route}' — the shipped default was not checked and could not have been, `
+      + `which is NOT the same as it being fine`,
+    )
+  }
+  for (const row of audit.incapable ?? []) {
+    lines.push(
+      `drive: [shipped-defaults] OVERRIDE CANNOT CARRY THE SEAT ${row.agent}: OMO_E2E_FORCE_SEAT names `
+      + `${row.route}/${row.overrideModel ?? '<none recorded>'} but the roster row requires `
+      + `[${row.required.join(', ')}] and this catalog lists ${row.listed.join(', ')} — that id covers `
+      + `NOTHING, so the row stays UNRESOLVABLE and nothing about it is covered`,
+    )
+  }
+  // An override is not a fix. Each covered row is printed with the knob that is
+  // covering it, so a green run never reads as "the default works here".
+  for (const row of audit.covered) {
+    lines.push(
+      `drive: [shipped-defaults] OVERRIDE COVERS A BROKEN DEFAULT ${row.agent}: roster still ships `
+      + `${row.route}/${row.shippedModel}, absent from ${row.artifact}; this run runs `
+      + `${row.route}/${row.coveredBy} ONLY because OMO_E2E_FORCE_SEAT says so. `
+      + `THE SHIPPED DEFAULT REMAINS UNRESOLVABLE ON THIS RUNTIME — T12's to fix, and this run does not prove it works`,
+    )
+  }
+  return lines
+}
+
+/**
+ * The lines printed when the catalog itself could not be read. Separate from
+ * `shippedDefaultAuditLines` because it is a DIFFERENT admission: "we could not
+ * check" must never be reachable from, or resemble, the all-clear path.
+ */
+function shippedDefaultAuditNotRunLines(reason) {
+  return [
+    `drive: [shipped-defaults] *** AUDIT NOT RUN — the runtime catalog itself could not be read, `
+    + `so NOT ONE shipped default has been checked against anything. This is NOT a pass. `
+    + `Reason: ${String(reason).slice(0, 200)}`,
+  ]
+}
+
+/** Print the audit. Every line comes from the pure producer above, so leg 9c can
+ * assert the exact shape of what a human and a log scraper will see. */
+/**
+ * THE EMITTER, and it is a separate door from the producer above. Review B's delta
+ * MAJOR: legs 12/13/14 asserted `shippedDefaultAuditLines`'s RETURN VALUE, so
+ * mutating only the loop below — `if (mute) {} else { for … }` — left every leg green
+ * while a human read nothing but `RUN 17/17`. "The producer is right" and "the line
+ * reached the stream" are different claims; `AUDIT_EMISSION` records the second one
+ * and `audit-emission-actually-printed` compares them, so the loop is under test.
+ */
+function announceShippedDefaultAudit(audit) {
+  const lines = shippedDefaultAuditLines(audit)
+  for (const line of lines) console.error(line)
+  AUDIT_EMISSION.push({ produced: lines.length, emitted: lines.length, lines })
+  return lines
+}
+/** What the emitter actually put on the stream, in order, one entry per announce. */
+export const AUDIT_EMISSION = []
+
+/**
+ * Run state for the seat resolver's own `--self-test` legs, read by the banner.
+ * A gate that could not run must say so, never read as green.
+ */
+/**
+ * The ONE denominator. `--self-test` prints it, `ran` is computed from it, and the
+ * failure banner prints it — three readers, one constant. Adding a leg means adding
+ * exactly one `legs.push(...)` and bumping THIS number; there is no second literal
+ * left to fall out of step.
+ */
+/**
+ * THE CANONICAL LEG LIST — one source of truth for the denominator, for the
+ * banner, and for COMPLETENESS. `SEAT_SELF_TEST_TOTAL` is `length` of this array,
+ * so the two hard-codes Review A warned about (`only 16/15 legs passed` on an EXIT 0
+ * run, which this file actually produced once) cannot exist again. Adding a leg means
+ * adding ONE `legs.push(...)` AND one name here; forget either and leg 17 reds.
+ */
+export const SEAT_SELF_TEST_LEGS = [
+  'present-id-stays',
+  'absent-id-moves-when-catalog-leaves-one',
+  'modality-filter-narrows-to-the-image-id',
+  'no-capable-id-throws-naming-seat',
+  'binding-pin-never-substituted',
+  'modality-checked-on-kept-id',
+  'modality-checked-on-binding-pin',
+  'catalog-count-refused',
+  'many-capable-ids-refused-without-written-choice',
+  'written-choice-wins-by-name',
+  'no-boot-shipped-default-audit-names-gaps',
+  'override-covered-rows-are-still-broken',
+  'audit-output-never-laundered-by-overrides',
+  'written-choice-values-guarded-by-dominance',
+  'live-written-choice-values-validated',
+  'audit-emission-actually-printed',
+  'incappable-override-fabricated',
+  'inferred-modalities-pinned',
+  'banner-never-looks-green-when-failing',
+  'refusal-shapes-are-declared-not-remembered',
+  'operator-knob-refusal-is-not-swallowed',
+  'no-catalog-route-is-named-not-silent',
+  'sole-capable-never-bypasses-a-written-pin',
+  'live-shipped-default-audit-agrees-with-resolver',
+  'live-table-grounded',
+]
+export const SEAT_SELF_TEST_TOTAL = SEAT_SELF_TEST_LEGS.length
+
+const SEAT_SELF_TEST_STATE = {
+  ran: false,
+  // `legs` holds IDENTIFIERS ONLY — no counts, no parentheses. Anything a leg
+  // measured goes in `counts` and is printed after the list. A parameter inside a
+  // leg name is what made the mutation harness unable to tell which legs survived.
+  // Leg IDENTIFIERS ONLY — no counts, no parentheses.
+  legs: [],
+  // CONVENTION (stated here, at the declaration, not 171 lines below at the reader):
+  // every entry is `'<canonical name> (<reason>)'` — canonical name FIRST so the
+  // completeness accounting can see it, reason in parentheses so a skip stays legible.
+  // A skip whose reason names `SEAT …` or `IS PINNED TO A MODEL ID` is a REAL ERROR
+  // recorded as a problem, not a skip; only genuine absence may be skipped.
+  skipped: [],
+  // Live legs that REFUSED because a seat was refused — counted, accounted, and each
+  // one also pushed to `problems`. Never merged into `skipped`.
+  refused: [],
+  counts: [],
+  notRunReason: '',
+  failed: 0,
+}
+
+function seatSelfTestBanner() {
+  const skippedNote = SEAT_SELF_TEST_STATE.skipped.length > 0
+    ? ` + ${SEAT_SELF_TEST_STATE.skipped.length} SKIPPED [${SEAT_SELF_TEST_STATE.skipped.join('; ')}]`
+    : ''
+  // Review A NIT: `RUN 17/17 legs` used to print on a run that was FAILING, because
+  // the banner only looked at its own counters. A green-looking clause inside a red
+  // run is the same laundering shape one level up.
+  if (SEAT_SELF_TEST_STATE.failed > 0) {
+    return `P4.5-T10′ seat-catalog gate **FAILING** (${SEAT_SELF_TEST_STATE.failed} problem(s); `
+      + `${SEAT_SELF_TEST_STATE.legs.length}/${SEAT_SELF_TEST_TOTAL} legs reported)${skippedNote}`
+  }
+  if (!SEAT_SELF_TEST_STATE.ran) {
+    return `P4.5-T10′ seat-catalog gate INCOMPLETE (${SEAT_SELF_TEST_STATE.notRunReason || 'reason unrecorded'})${skippedNote}`
+  }
+  // ${SEAT_SELF_TEST_TOTAL} is the ONLY denominator in this file. It used to be a
+  // second literal `/15` next to a separate `const TOTAL_LEGS = 15`, and bumping one
+  // without the other yields `only 16/15 legs passed` on an EXIT 0 run — a red-looking
+  // banner on a green exit, the exact shape this project keeps paying for.
+  return `P4.5-T10′ seat-catalog gate RUN ${SEAT_SELF_TEST_STATE.legs.length}/${SEAT_SELF_TEST_TOTAL} legs (${SEAT_SELF_TEST_STATE.legs.join(', ')})`
+    + (SEAT_SELF_TEST_STATE.counts.length > 0 ? ` [${SEAT_SELF_TEST_STATE.counts.join('; ')}]` : '')
+    + skippedNote
+}
+
+/**
+ * The hermetic legs of the T10′ seat rule, on FABRICATED catalogs.
+ *
+ * WHAT THIS DOES NOT GUARD, stated plainly: it does not prove anything about
+ * what the real runtime serves — the fabricated ids are invented, so no id in
+ * here is evidence about any generation. What it DOES guard is the RULE: that
+ * a present id is never moved, that an absent id moves to the named nearest
+ * catalog id, that a modality requirement is honoured, that a BINDING pin is
+ * never substituted, that a route with zero or two catalogs is refused, and —
+ * over the LIVE table — that every seat the driver will actually pin is listed
+ * in the catalog the probe really read, and that exactly the shipped defaults
+ * the catalog cannot serve were moved. That last leg is what makes the live
+ * table catalog-grounded rather than hand-typed; it still does not certify the
+ * shipped default, because on the generation where the default is absent the
+ * live table is by construction not the default.
+ */
+/**
+ * Call the resolver for a leg that expects it to ANSWER. An unexpected throw is
+ * turned into a named leg failure instead of aborting the whole self-test: measured
+ * before this helper existed, deleting the modality filter made leg 3's call throw
+ * (three capable ids, no written choice) and the run died with NO leg named — red,
+ * but undiagnosable, which is a worse gate than a red that says which clause broke.
+ * Returns null when it threw; the caller has already been told.
+ */
+function legResolve(label, problems, ...args) {
+  try {
+    return resolveSeatAgainstCatalog(...args)
+  } catch (error) {
+    problems.push(`T10′ ${label}: the resolver THREW where it should have answered — ${String(error?.message ?? error).slice(0, 220)}`)
+    return null
+  }
+}
+
+/**
+ * THE OTHER HALF OF THE DOOR (parent's ruling, same shape as `broken.length > 0`).
+ * A skip is only legitimate when the thing genuinely was not there to check — no
+ * `dsh`, no catalog on disk. A skip whose reason names a SEAT REFUSAL is a real
+ * error wearing a skip's clothes: it stays visible AND it reaches `problems`, so it
+ * reaches the exit code. Measured before this existed: binding the vision seat to a
+ * text-only id printed a refusal naming everything, and `--self-test` still exited 0.
+ */
+/**
+ * THE CLASSIFIER, and it no longer owns a list. Round-5 MAJOR-1: this used to be
+ * `REFUSAL_MARKERS`, five hand-written substrings checked against 13 throw sites, so
+ * SEVEN refusal shapes — including a seat the runtime cannot seat at all — fell
+ * through and were recorded as a SKIP. A's measured command on the generation CI pins:
+ *   OMO_E2E_FORCE_SEAT='explore=fake-route/deepseek-flash' node tests/e2e/drive.mjs --self-test
+ *   → exit 0 · SELF-TEST OK · + 2 SKIPPED.
+ * Now the classification is READ off the error the throw site produced
+ * (`seatRefusal` / `catalogAbsent`, declared in this file beside the throws), and the
+ * default for anything untagged is NOT a skip but a PROBLEM: a reason nobody declared
+ * is a reason nobody thought about, and silently skipping it is the fail-open that got
+ * us here. Deleting a marker can no longer hide, because there are no markers.
+ */
+function recordLiveSkipOrRefusal(problems, legName, reason, detail) {
+  const text = String(detail ?? reason?.message ?? reason ?? '')
+  if (isDeclaredRefusal(reason)) {
+    SEAT_SELF_TEST_STATE.refused.push(legName)
+    problems.push(
+      `T10′ ${legName}: a live seat REFUSED — the throw site declared it so, and this is `
+      + `NOT genuine absence, so it is not skippable and it must reach the exit code. `
+      + `Reason: ${text.slice(0, 240)}`,
+    )
+    return 'refused'
+  }
+  if (isDeclaredAbsence(reason)) {
+    SEAT_SELF_TEST_STATE.skipped.push(`${legName} (${text.slice(0, 90)})`)
+    return 'skipped'
+  }
+  // The whole point: no tag ⇒ no skip. Not "assume absence because nothing matched a
+  // list of strings someone remembered".
+  SEAT_SELF_TEST_STATE.refused.push(legName)
+  problems.push(
+    `T10′ ${legName}: a live reason arrived UNCLASSIFIED — neither \`seatRefusal\` nor `
+    + `\`catalogAbsent\` was declared on it, so nothing says it is safe to skip. `
+    + `Declare the kind at the throw site. Reason: ${text.slice(0, 240)}`,
+  )
+  return 'unclassified'
+}
+
+function seatResolverSelfTest(problems) {
+  const catalogs = {
+    'fake-route': {
+      package: 'fake-adapter@9.9.9',
+      artifact: '/fake/catalog.json',
+      kind: 'fabricated',
+      models: [
+        { id: 'alpha-flash', input: ['text', 'image'] },
+        { id: 'beta-pro', input: ['text'] },
+      ],
+    },
+  }
+  // LEG — an id the catalog lists is NEVER moved.
+  const kept = legResolve('present-id-stays', problems, catalogs, 'fake-a', { provider: 'fake-route', model: 'alpha-flash' }, ['text'])
+  if (kept !== null && (kept.model !== 'alpha-flash' || kept.substituted !== false)) {
+    problems.push(`T10′[present id stays put]: got ${JSON.stringify(kept)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('present-id-stays')
+  }
+  // LEG — an absent id moves ONLY when the catalog leaves exactly one
+  // modality-capable id. Here `image` is required and only alpha-flash has it, so
+  // the catalog decided and the resolver just reports it.
+  const moved = legResolve('absent-id-moves-when-catalog-leaves-one', problems, catalogs, 'fake-b', { provider: 'fake-route', model: 'gamma-flash' }, ['image'])
+  if (moved !== null && (moved.model !== 'alpha-flash' || moved.substituted !== true
+    || moved.soleCapableCandidate !== true || moved.explicitChoiceKey !== null
+    || moved.pinnedButUnresolvableModel !== 'gamma-flash')) {
+    problems.push(`T10′[absent id moves when the catalog leaves ONE capable id]: got ${JSON.stringify(moved)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('absent-id-moves-when-catalog-leaves-one')
+  }
+  // LEG — the modality filter is the ONLY narrowing the resolver does: on a
+  // catalog with three ids where two are text-only, requiring `image` must land on
+  // the single image-capable id, and must NOT fall back to a text-only neighbour.
+  const threeCatalogs = {
+    'fake-route': { ...catalogs['fake-route'], models: [
+      { id: 'beta-pro', input: ['text'] },
+      { id: 'gamma-max', input: ['text'] },
+      { id: 'alpha-flash', input: ['text', 'image'] },
+    ] },
+  }
+  const vision = legResolve('modality-filter-narrows-to-the-image-id', problems, threeCatalogs, 'fake-c', { provider: 'fake-route', model: 'beta-max' }, ['text', 'image'])
+  if (vision !== null && (vision.model !== 'alpha-flash' || vision.soleCapableCandidate !== true)) {
+    problems.push(`T10′[image required never picks a text-only id]: got ${JSON.stringify(vision)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('modality-filter-narrows-to-the-image-id')
+  }
+  // LEG — a seat with NO valid id is reported, not papered over.
+  // LEG — a BINDING pin is never substituted.
+  const textOnlyCatalogs = {
+    'fake-route': { ...catalogs['fake-route'], models: [{ id: 'beta-pro', input: ['text'] }] },
+  }
+  let noIdError = ''
+  try {
+    resolveSeatAgainstCatalog(textOnlyCatalogs, 'fake-d', { provider: 'fake-route', model: 'gamma-vision' }, ['text', 'image'])
+  } catch (error) {
+    noIdError = String(error?.message ?? error)
+  }
+  if (!noIdError.includes("NO valid model id on the runtime under test") || !noIdError.includes('fake-d')) {
+    problems.push(`T10′[no capable id → throws naming the seat]: got ${JSON.stringify(noIdError.slice(0, 160))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('no-capable-id-throws-naming-seat')
+  }
+  let bindingError = ''
+  try {
+    resolveSeatAgainstCatalog(textOnlyCatalogs, 'fake-e', { provider: 'fake-route', model: 'beta-pro' }, ['text'])
+    resolveSeatAgainstCatalog(textOnlyCatalogs, 'fake-e', { provider: 'fake-route', model: 'gamma-not-there' }, ['text'], true)
+  } catch (error) {
+    bindingError = String(error?.message ?? error)
+  }
+  if (!bindingError.includes("SEAT 'fake-e' IS PINNED TO A MODEL ID THIS RUNTIME DOES NOT SERVE")
+    || !bindingError.includes('gamma-not-there')) {
+    problems.push(`T10′[a BINDING pin is never substituted]: got ${JSON.stringify(bindingError.slice(0, 160))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('binding-pin-never-substituted')
+  }
+  // LEG — the modality requirement is checked on a KEPT id too, not only on a
+  // substituting one (post-review MAJOR-2). Before this fix the resolver returned
+  // a present id without asking whether it can carry what the roster row declared,
+  // so `OMO_E2E_FORCE_SEAT='multimodal-looker=deepseek/deepseek-v4-pro'` — the
+  // one vision seat pinned onto a text-only model — was accepted silently.
+  let keptModalityError = ''
+  try {
+    resolveSeatAgainstCatalog(catalogs, 'fake-vision', { provider: 'fake-route', model: 'beta-pro' }, ['text', 'image'])
+  } catch (error) {
+    keptModalityError = String(error?.message ?? error)
+  }
+  if (!keptModalityError.includes('CANNOT CARRY THE MODALITIES ITS ROSTER ROW DECLARES')
+    || !keptModalityError.includes('fake-vision') || !keptModalityError.includes('image')) {
+    problems.push(`T10′[modality checked on a KEPT id]: got ${JSON.stringify(keptModalityError.slice(0, 160))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('modality-checked-on-kept-id')
+  }
+  // LEG — the same check on a BINDING pin, naming the knob that supplied it.
+  let bindingModalityError = ''
+  try {
+    resolveSeatAgainstCatalog(catalogs, 'fake-vision-bound', { provider: 'fake-route', model: 'beta-pro' }, ['text', 'image'], true)
+  } catch (error) {
+    bindingModalityError = String(error?.message ?? error)
+  }
+  if (!bindingModalityError.includes('CANNOT CARRY THE MODALITIES')
+    || !bindingModalityError.includes('OMO_E2E_FORCE_SEAT')) {
+    problems.push(`T10′[modality checked on a BINDING pin]: got ${JSON.stringify(bindingModalityError.slice(0, 160))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('modality-checked-on-binding-pin')
+  }
+  // LEG — zero or two catalogs for one route is refused, never guessed.
+  const zeroFaces = { dshBinary: '/fake/dsh', nodeModules: '/fake/nm', routes: { 'fake-route': { faces: [] } } }
+  const twoFaces = {
+    dshBinary: '/fake/dsh',
+    nodeModules: '/fake/nm',
+    routes: { 'fake-route': { faces: [
+      { package: 'a@1', artifact: '/a', models: [{ id: 'x', input: ['text'] }] },
+      { package: 'b@2', artifact: '/b', models: [{ id: 'y', input: ['text'] }] },
+    ] } },
+  }
+  const refused = []
+  for (const [label, doc] of [['zero', zeroFaces], ['two', twoFaces]]) {
+    try {
+      collapseCatalogFaces(doc, ['fake-route'])
+      problems.push(`T10′[${label} catalogs for one route] must throw, it did not`)
+    } catch (error) {
+      refused.push(`${label}:${String(error?.message ?? error).includes('non-empty catalog faces')}`)
+    }
+  }
+  if (refused.length !== 2 || refused.some((entry) => !entry.endsWith(':true'))) {
+    problems.push(`T10′[catalog count is refused loudly]: got ${JSON.stringify(refused)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('catalog-count-refused')
+  }
+  // LEG — MORE THAN ONE CAPABLE ID WITHOUT A WRITTEN CHOICE IS REFUSED.
+  // This is the leg that makes the RULE, not just the log, mutation-sensitive:
+  // Review B showed the old token-overlap ranking could be deleted with no change
+  // in behaviour, so the surviving behaviour ("refuse") must be pinned by a leg
+  // whose outcome FLIPS if someone restores "pick the first listed id".
+  let choiceError = ''
+  try {
+    resolveSeatAgainstCatalog(catalogs, 'fake-choice', { provider: 'fake-route', model: 'gamma-flash' }, ['text'])
+  } catch (error) {
+    choiceError = String(error?.message ?? error)
+  }
+  if (!choiceError.includes("REQUIRES AN EXPLICIT MODEL CHOICE AND NONE IS WRITTEN DOWN")
+    || !choiceError.includes('alpha-flash') || !choiceError.includes('beta-pro')
+    || !choiceError.includes('fake-choice@fake-route') || !choiceError.includes('TEST_ONLY_SEAT_PINS')) {
+    problems.push(`T10′[≥2 capable ids with no written choice → refused, naming ids+key]: got ${JSON.stringify(choiceError.slice(0, 220))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('many-capable-ids-refused-without-written-choice')
+  }
+  // LEG — a WRITTEN choice wins BY NAME, and a stale or incapable one still
+  // throws. The fabricated key is added for the duration of this leg and removed in
+  // a `finally`; no real seat key is touched and none of these ids is evidence
+  // about any generation.
+  const choiceKey = 'fake-choice@fake-route'
+  try {
+    // Pinned to the MAXIMALLY capable id so this leg tests NAMING only; picking a
+    // dominated id is leg 11's subject and the resolver now refuses it.
+    TEST_ONLY_SEAT_PINS[choiceKey] = 'alpha-flash'
+    const decided = legResolve('written-choice-wins-by-name', problems, catalogs, 'fake-choice', { provider: 'fake-route', model: 'gamma-flash' }, ['text'])
+    if (decided !== null && (decided.model !== 'alpha-flash' || decided.substituted !== true
+      || decided.explicitChoiceKey !== choiceKey || decided.soleCapableCandidate !== false)) {
+      problems.push(`T10′[a written choice wins by name]: got ${JSON.stringify(decided).slice(0, 200)}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('written-choice-wins-by-name')
+    }
+    // The same table, naming an id the catalog does NOT list, must still refuse:
+    // an explicit decision that went stale is worse than none, because it looks safe.
+    TEST_ONLY_SEAT_PINS[choiceKey] = 'delta-not-listed-anywhere'
+    let staleError = ''
+    try {
+      resolveSeatAgainstCatalog(catalogs, 'fake-choice', { provider: 'fake-route', model: 'gamma-flash' }, ['text'])
+    } catch (error) {
+      staleError = String(error?.message ?? error)
+    }
+    if (!staleError.includes('not one of the capable ids')) {
+      problems.push(`T10′[a STALE written choice still throws]: got ${JSON.stringify(staleError.slice(0, 160))}`)
+    }
+    // And a written choice cannot smuggle past the modality check either.
+    let visionChoiceError = ''
+    try {
+      resolveSeatAgainstCatalog(catalogs, 'fake-vision-choice', { provider: 'fake-route', model: 'gamma-flash' }, ['text', 'image'])
+    } catch (error) {
+      visionChoiceError = String(error?.message ?? error)
+    }
+    if (visionChoiceError.includes('fake-vision-choice') && visionChoiceError.includes('beta-pro')) {
+      problems.push(`T10′[a written choice for a DIFFERENT seat must not apply]: got ${JSON.stringify(visionChoiceError.slice(0, 160))}`)
+    }
+  } finally {
+    delete TEST_ONLY_SEAT_PINS[choiceKey]
+  }
+  // LEG — the NO-BOOT SHIPPED-DEFAULT AUDIT, on fabricated catalogs. It must
+  // name every roster row whose shipped default its route's catalog does not list,
+  // and stay silent-clean when they all resolve. Review A's adopted requirement:
+  // without this, a catalog change upstream turns "the default is wrong" into
+  // "the gate is green". DETECTS AND NAMES ONLY — it fixes nothing (T12's job).
+  const fakeShipped = {
+    'fake-a': { provider: 'fake-route', model: 'alpha-flash' },
+    'fake-b': { provider: 'fake-route', model: 'gamma-gone' },
+  }
+  const fakeAudit = auditShippedDefaultsAgainstCatalog(catalogs, fakeShipped)
+  if (fakeAudit.checked !== 2 || fakeAudit.unresolvable.length !== 1
+    || fakeAudit.unresolvable[0].agent !== 'fake-b'
+    || fakeAudit.unresolvable[0].shippedModel !== 'gamma-gone'
+    || !fakeAudit.unresolvable[0].artifact.includes('/fake/catalog.json')
+    || !fakeAudit.unresolvable[0].listed.join(',').includes('alpha-flash')) {
+    problems.push(`T10′[no-boot shipped-default audit names the unresolvable row]: got ${JSON.stringify(fakeAudit).slice(0, 260)}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('no-boot-shipped-default-audit-names-gaps')
+  }
+  // LEG — a COVERED row is a STILL-BROKEN row, asserted on FABRICATED data so it
+  // needs no runtime. Review A's delta round measured that the covered state had NO
+  // test at all: leg 9 passes no `resolutions`, and the only leg that can see
+  // covered rows (leg 10) is live. Its mutant M11 — "a covered row counts as
+  // RESOLVES" — exited 0 with every leg green. This leg reds it, and it reds the
+  // laundering case itself: EVERY row broken and every row covered, which is exactly
+  // the input that once printed `audit PASS`.
+  const coveredShipped = {
+    'fake-a': { provider: 'fake-route', model: 'gamma-gone' },
+    'fake-b': { provider: 'fake-route', model: 'delta-also-gone' },
+  }
+  const coveredResolutions = {
+    'fake-a': { agent: 'fake-a', provider: 'fake-route', model: 'alpha-flash', substituted: false, forcedByEnvVar: 'OMO_E2E_FORCE_SEAT' },
+    'fake-b': { agent: 'fake-b', provider: 'fake-route', model: 'beta-pro', substituted: false, forcedByEnvVar: 'OMO_E2E_FORCE_SEAT' },
+  }
+  const covAudit = auditShippedDefaultsAgainstCatalog(catalogs, coveredShipped, coveredResolutions)
+  if (covAudit.checked !== 2 || covAudit.unresolvable.length !== 0 || covAudit.covered.length !== 2) {
+    problems.push(`T10′[every broken row covered]: unresolvable=${JSON.stringify(covAudit.unresolvable.map((row) => row.agent))} covered=${JSON.stringify(covAudit.covered.map((row) => row.agent))}`)
+  } else if (covAudit.broken.length !== 2) {
+    problems.push(`T10′[a covered row must still be counted BROKEN]: broken=${JSON.stringify(covAudit.broken.map((row) => row.agent))}`)
+  } else if (covAudit.allClear !== false) {
+    problems.push('T10′[allClear must be FALSE while every shipped default is absent, covered or not] — this is the laundering mutant')
+  } else if (!covAudit.rows.every((row) => row.status === 'UNRESOLVABLE-COVERED-BY-OVERRIDE' && row.coveredBy !== null)) {
+    problems.push(`T10′[exact status + coveredBy recorded]: ${JSON.stringify(covAudit.rows.map((row) => `${row.agent}:${row.status}:${row.coveredBy}`))}`)
+  } else if (!covAudit.rows.every((row) => coveredResolutions[row.agent].forcedByEnvVar === 'OMO_E2E_FORCE_SEAT'
+    && catalogs['fake-route'].models.some((model) => model.id === row.coveredBy)
+    && !catalogs['fake-route'].models.some((model) => model.id === row.shippedModel))) {
+    problems.push(`T10′[the override id must be listed and the shipped id must NOT be]: ${JSON.stringify(covAudit.rows.map((row) => `${row.shippedModel}→${row.coveredBy}`))}`)
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('override-covered-rows-are-still-broken')
+  }
+  // LEG — the OUTPUT, not just the data. This is the leg Review A's M13 needed:
+  // `announceShippedDefaultAudit` used to `return` as soon as `unresolvable` was
+  // empty, so overriding every broken seat printed `audit PASS — all 11 roster
+  // shipped ids are listed`, a sentence false on both of its clauses. Leg 9b cannot
+  // see that because it inspects the audit object, not the lines. Here the covered
+  // audit must produce NO PASS line and must name every covered seat.
+  const covLines = shippedDefaultAuditLines(covAudit)
+  const covText = covLines.join('\n')
+  if (covText.includes('audit PASS')) {
+    problems.push(`T10′[an all-covered audit must NEVER print PASS]: ${covText.slice(0, 200)}`)
+  } else if (!covText.includes('SHIPPED DEFAULT UNRESOLVABLE ON THIS RUNTIME — 2/2')) {
+    problems.push(`T10′[header must count COVERED rows as broken]: ${covText.slice(0, 220)}`)
+  } else if (!['fake-a', 'fake-b'].every((agent) => covText.includes(`OVERRIDE COVERS A BROKEN DEFAULT ${agent}`))) {
+    problems.push(`T10′[every covered seat named in the output]: ${covText.slice(0, 220)}`)
+  } else if (!covLines.some((line) => line.includes('THE SHIPPED DEFAULT REMAINS UNRESOLVABLE ON THIS RUNTIME'))) {
+    problems.push('T10′[output must state the shipped default is STILL broken]')
+  } else if (!shippedDefaultAuditLines(auditShippedDefaultsAgainstCatalog(catalogs, { 'fake-a': { provider: 'fake-route', model: 'alpha-flash' } })).join('').includes('audit PASS')) {
+    problems.push('T10′[the control — a genuinely resolvable row — must still print PASS]')
+  } else {
+    SEAT_SELF_TEST_STATE.legs.push('audit-output-never-laundered-by-overrides')
+  }
+  // LEG — the pin table's VALUES are guarded, on FABRICATED data. Review A's M10:
+  // flipping a pin's value to the text-only coding id exited 0 with every leg green,
+  // because nothing asked whether the written-down choice was defensible — the
+  // resolver only ever asked "listed and capable?". Here the catalog lists a
+  // text+image id and a text-only id for a text seat: pinning the dominated one must
+  // throw naming both ids and the key, pinning the dominant one must not. It never
+  // consults the runtime, so it cannot go vacuous on the generation CI pins, where
+  // the LIVE pin table is inert.
+  const domCatalogs = {
+    'fake-route': { ...catalogs['fake-route'], models: [
+      { id: 'dominant-flash', input: ['text', 'image'] },
+      { id: 'plainer-pro', input: ['text'] },
+    ] },
+  }
+  TEST_ONLY_SEAT_PINS['fake-dom@fake-route'] = 'dominant-flash'
+  try {
+    const justified = legResolve('written-choice-values-guarded-by-dominance', problems,
+      domCatalogs, 'fake-dom', { provider: 'fake-route', model: 'gamma-gone' }, ['text'])
+    if (justified !== null && justified.model !== 'dominant-flash') {
+      problems.push(`T10′[dominant pick accepted]: got ${JSON.stringify(justified).slice(0, 160)}`)
+    }
+    TEST_ONLY_SEAT_PINS['fake-dom@fake-route'] = 'plainer-pro'
+    let domError = ''
+    try {
+      resolveSeatAgainstCatalog(domCatalogs, 'fake-dom', { provider: 'fake-route', model: 'gamma-gone' }, ['text'])
+    } catch (error) {
+      domError = String(error?.message ?? error)
+    }
+    if (!domError.includes('CHOSE A STRICTLY LESS CAPABLE MODEL ID')
+      || !domError.includes('plainer-pro') || !domError.includes('dominant-flash')
+      || !domError.includes('fake-dom@fake-route')) {
+      problems.push(`T10′[pinning a dominated id throws naming both ids + the key]: got ${JSON.stringify(domError.slice(0, 220))}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('written-choice-values-guarded-by-dominance')
+    }
+    // LIVE half: every pin this runtime ACTUALLY NEEDS is checked the same way.
+    // "needs" = its shipped default is absent from that catalog, which is exactly the
+    // condition that makes the pin load-bearing. On the generation CI pins, no
+    // shipped default is absent, so ZERO pins are validated and this half is inert
+    // by design — it cannot go red there for the wrong reason, and it cannot go
+    // vacuous here either: on 0.2.x all four entries are validated.
+    if (RUNTIME_SEAT_STATE.audit === null || RUNTIME_SEAT_STATE.audit === undefined) {
+      recordLiveSkipOrRefusal(problems, 'live-written-choice-values-validated', catalogAbsent('no catalog was read'))
+    } else {
+      let liveChecked = 0
+      for (const [key, pinnedId] of Object.entries(TEST_ONLY_SEAT_PINS)) {
+        const at = key.indexOf('@')
+        const agent = at < 0 ? key : key.slice(0, at)
+        const route = at < 0 ? '' : key.slice(at + 1)
+        const shipped = DEFAULT_MODEL_ROUTES[agent]
+        const cat = RUNTIME_SEAT_STATE.catalogs[route]
+        if (cat === undefined || shipped === undefined || shipped.provider !== route) continue
+        if (cat.models.some((model) => model.id === shipped.model)) continue // inert here
+        const chosen = cat.models.find((model) => model.id === pinnedId)
+        if (chosen === undefined) {
+          problems.push(`T10′[live pin names an id ${route} does not list]: '${pinnedId}'`)
+          continue
+        }
+        const req = requiredModalitiesFor(agent)
+        if (!req.every((modality) => chosen.input.includes(modality))) {
+          problems.push(`T10′ live-written-choice-values-validated: '${pinnedId}' cannot carry the seat's modalities [${req.join(', ')}] — it serves [${chosen.input.join(', ')}]`)
+          continue
+        }
+        const dom = cat.models.filter((model) => model.id !== chosen.id
+          && model.input.length > chosen.input.length
+          && chosen.input.every((modality) => model.input.includes(modality)))
+        if (dom.length > 0) {
+          problems.push(`T10′[live pin picks a dominated id]: TEST_ONLY_SEAT_PINS['${key}'] = '${pinnedId}[${chosen.input.join('+')}]' while ${route} lists ${dom.map((model) => `${model.id}[${model.input.join('+')}]`).join(', ')}`)
+          continue
+        }
+        liveChecked += 1
+      }
+      SEAT_SELF_TEST_STATE.legs.push('live-written-choice-values-validated')
+      SEAT_SELF_TEST_STATE.counts.push(`live pins validated ${liveChecked}`)
+    }
+  } finally {
+    delete TEST_ONLY_SEAT_PINS['fake-dom@fake-route']
+  }
+  // LEG — `audit-emission-actually-printed`: Review B's delta MAJOR. Every other
+  // audit leg asserts what the PRODUCER returned; none of them could see the EMITTER.
+  // Mutating only `for (const line of lines) console.error(line)` into a muted branch
+  // left all of them green while a human read nothing. Here `console.error` is
+  // captured around the real emitter, so the loop itself is under test: produce 5,
+  // emit 4, and this names it.
+  {
+    const realError = console.error
+    const captured = []
+    try {
+      console.error = (...args) => { captured.push(args.join(' ')) }
+      const produced = announceShippedDefaultAudit(covAudit)
+      if (captured.length !== produced.length) {
+        problems.push(
+          `T10′ audit-emission-actually-printed: the producer returned ${produced.length} lines but the `
+          + `emitter put ${captured.length} on the stream — ${produced.length - captured.length} named fact(s) `
+          + `were computed and never said`,
+        )
+      } else if (!captured.every((line, i) => line === produced[i])) {
+        problems.push('T10′ audit-emission-actually-printed: the emitted lines are not the produced lines')
+      } else if (!captured.some((line) => line.includes('OVERRIDE COVERS A BROKEN DEFAULT'))) {
+        problems.push('T10′ audit-emission-actually-printed: a covered row was computed but not printed')
+      } else {
+        SEAT_SELF_TEST_STATE.legs.push('audit-emission-actually-printed')
+      }
+    } finally {
+      console.error = realError
+    }
+  }
+  // LEG — `incappable-override-fabricated`: THE FOURTH AUDIT STATE, and until Review A
+  // named it ("the fourth audit state has no leg") it had no gate at all. PASS /
+  // BROKEN / COVERED each had one; INCAPPABLE — an override whose id is listed but
+  // cannot carry the seat — was reachable only through a live path that died in
+  // `requireRuntimeSeats` first. Four states, four legs. Fabricated, so it runs on
+  // every generation including the one CI pins.
+  {
+    const incCatalogs = {
+      'fake-route': { ...catalogs['fake-route'], artifact: 'fake://catalog.json', package: 'fake-adapter@9.9.9', models: [
+        { id: 'capable-flash', input: ['text', 'image'] },
+        { id: 'text-only-pro', input: ['text'] },
+      ] },
+    }
+    const incAudit = auditShippedDefaultsAgainstCatalog(
+      incCatalogs,
+      { 'fake-vision': { provider: 'fake-route', model: 'shipped-gone' } },
+      { 'fake-vision': { provider: 'fake-route', model: 'text-only-pro', forcedByEnvVar: 'OMO_E2E_FORCE_SEAT' } },
+      { 'fake-vision': ['text', 'image'] },
+    )
+    // CAPTURED, not printed: these ids are invented, and a fabricated line in a live
+    // log is read as a fact about the runtime by whoever is debugging it.
+    let incText = ''
+    {
+      const realError = console.error
+      try {
+        console.error = (...args) => { incText += `${args.join(' ')}\n` }
+        announceShippedDefaultAudit(incAudit)
+      } finally {
+        console.error = realError
+      }
+    }
+    const row = incAudit.rows.find((entry) => entry.agent === 'fake-vision')
+    if (row === undefined || row.status !== 'UNRESOLVABLE') {
+      problems.push(`T10′ incappable-override-fabricated: an override that cannot carry the seat must leave the row UNRESOLVABLE, got ${JSON.stringify(row?.status)}`)
+    } else if (incAudit.covered.some((entry) => entry.agent === 'fake-vision')) {
+      problems.push('T10′ incappable-override-fabricated: an incapable override was counted as COVERED — covering requires carrying')
+    } else if (incAudit.incapable.length !== 1 || incAudit.broken.length !== 1 || incAudit.allClear !== false) {
+      problems.push(`T10′ incappable-override-fabricated: state counts wrong — incapable=${incAudit.incapable.length} broken=${incAudit.broken.length} allClear=${String(incAudit.allClear)}`)
+    } else if (row.overrideModel !== 'text-only-pro') {
+      problems.push(`T10′ incappable-override-fabricated: the row must CARRY the override id it complains about, got ${JSON.stringify(row.overrideModel)}`)
+    } else if (!incText.includes('OVERRIDE CANNOT CARRY THE SEAT fake-vision')
+      || !incText.includes('fake-route/text-only-pro')) {
+      problems.push(`T10′ incappable-override-fabricated: the printed line must NAME the id — got ${incText.slice(0, 200)}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('incappable-override-fabricated')
+    }
+  }
+  // LEG — `inferred-modalities-pinned`: `requiredModalitiesFor` fails OPEN today for
+  // the conductor `sisyphus` (10 delegation entries, 11 roster routes). The inference
+  // cannot be made safe by guessing, so it is pinned instead: the inferred set must be
+  // EXACTLY this. Add a roster seat without a delegation entry and this names it —
+  // which is the day a future vision seat would otherwise silently lose `image`.
+  {
+    // With no catalog read, no modality was ever consulted, so an empty inferred set
+    // is GENUINE ABSENCE and skips legitimately — it is not evidence about the pin.
+    if (RUNTIME_SEAT_STATE.audit === null || RUNTIME_SEAT_STATE.audit === undefined) {
+      recordLiveSkipOrRefusal(problems, 'inferred-modalities-pinned', catalogAbsent('no catalog was read'))
+    } else {
+    const pinned = ['sisyphus']
+    const inferred = [...INFERRED_MODALITY_AGENTS].sort()
+    const missing = pinned.filter((agent) => !inferred.includes(agent))
+    const extra = inferred.filter((agent) => !pinned.includes(agent))
+    if (missing.length > 0 || extra.length > 0) {
+      problems.push(
+        `T10′ inferred-modalities-pinned: modalities were INFERRED (not declared) for `
+        + `[${inferred.join(', ') || 'nothing'}] but this gate pins [${pinned.join(', ')}] — `
+        + `${extra.length > 0 ? `newly inferred seat(s) [${extra.join(', ')}] need a DELEGATION_ENTRIES row, `
+          + `or a vision seat added here would silently lose its image requirement` : `pinned seat(s) [${missing.join(', ')}] no longer fall through; update this pin deliberately`}`,
+      )
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('inferred-modalities-pinned')
+    }
+    }
+  }
+  // LEG — every refusal the resolver can raise is DECLARED, and the classifier will
+  // not skip it. Round-5 MAJOR-2: A deleted one string from the old whitelist and the
+  // 0.2.0 self-test showed a 0-line diff at an unchanged exit 1 — the mutation hid
+  // behind the shipped-default audit that was already red there. So this leg runs on
+  // FABRICATED catalogs (it is generation-independent, and it is GREEN-BASED: on
+  // 0.1.5-rc.1 the shipped-default audit passes, so nothing else is red to hide
+  // behind) and it does not name the shapes it expects — it EXERCISES the resolver and
+  // reads the kind off whatever it throws. Add a refusal throw without a tag, or strip
+  // a tag, and this names the shape by the message it printed.
+  {
+    const fake = {
+      'fake-route': { artifact: 'fake://c.json', package: 'fake@1', models: [
+        { id: 'capable-flash', input: ['text', 'image'] },
+        { id: 'other-capable', input: ['text', 'image'] },
+        { id: 'text-only', input: ['text'] },
+      ] },
+    }
+    // Seven shapes, taken from the resolver's own throw sites, not from a list
+    // somebody typed. The last two go through a REAL written choice key
+    // (`explore@deepseek`, pinned in TEST_ONLY_SEAT_PINS) against FABRICATED
+    // catalogs, because the written choice is read from that table by design —
+    // the catalog around it is invented, so the shape still runs on either generation.
+    const shapes = [
+      ['route-without-a-catalog', fake, 'fake-a', { provider: 'no-such-route', model: 'capable-flash' }, ['text'], false],
+      ['pinned-id-not-served', fake, 'fake-b', { provider: 'fake-route', model: 'gone-forever' }, ['text'], true],
+      ['kept-id-cannot-carry-modalities', fake, 'fake-c', { provider: 'fake-route', model: 'text-only' }, ['text', 'image'], false],
+      ['no-capable-id-at-all', fake, 'fake-d', { provider: 'fake-route', model: 'gone-forever' }, ['video'], false],
+      ['two-capable-ids-no-written-choice', fake, 'fake-e', { provider: 'fake-route', model: 'gone-forever' }, ['text', 'image'], false],
+      ['stale-written-choice', fake, 'explore', { provider: 'fake-route', model: 'gone-forever' }, ['text'], false],
+      ['written-choice-dominated-by-a-listed-id', fake, 'explore', { provider: 'fake-route', model: 'gone-forever' }, ['text'], false],
+    ]
+    // Shapes 6 and 7 need the written-choice key to resolve to a listed id, so the
+    // catalog around them is built to make that choice stale (6) or dominated (7).
+    // Keyed by the route the written choice actually names (`explore@deepseek`), with
+    // INVENTED ids inside it: the key comes from the table, the contents do not.
+    // TWO capable ids in both fixtures: the written-choice throws only fire when a
+    // choice exists (capable.length > 1); with one id the resolver legitimately takes
+    // the sole-capable branch and answers, which is not the shape under test here.
+    const staleCatalog = { deepseek: { artifact: 'fake://stale.json', package: 'fake@1', models: [
+      { id: 'invented-capable-a', input: ['text'] },
+      { id: 'invented-capable-b', input: ['text'] },
+    ] } }
+    const dominatedCatalog = { deepseek: { artifact: 'fake://dominated.json', package: 'fake@1', models: [
+      { id: TEST_ONLY_SEAT_PINS['explore@deepseek'], input: ['text'] },
+      { id: 'invented-much-more-capable', input: ['text', 'image'] },
+    ] } }
+    shapes[5][1] = staleCatalog
+    shapes[6][1] = dominatedCatalog
+    shapes[5][3] = { provider: 'deepseek', model: TEST_ONLY_SEAT_PINS['explore@deepseek'] }
+    // preferred.model stays ABSENT from the catalog: the written-choice branch only
+    // runs when the shipped default is gone, so naming the pinned id here would make
+    // the resolver keep it on the present-id path and never reach the guard.
+    shapes[6][3] = { provider: 'deepseek', model: 'shipped-default-absent-here' }
+    const undeclared = []
+    const skippedWrongly = []
+    // These calls PROBE the classifier, they are not live leg outcomes: the classifier
+    // records into the shared accounting, so the probe has to leave it as it found it
+    // or the completeness check reads eight phantom legs.
+    const savedRefused = [...SEAT_SELF_TEST_STATE.refused]
+    try {
+    for (const [shape, catalogSet, agent, preferred, mods, binding] of shapes) {
+      let thrown = null
+      try {
+        resolveSeatAgainstCatalog(catalogSet, agent, preferred, mods, binding)
+      } catch (error) {
+        thrown = error
+      }
+      if (thrown === null) {
+        undeclared.push(`${shape} (the resolver ANSWERED where it must refuse)`)
+        continue
+      }
+      if (!isDeclaredRefusal(thrown)) undeclared.push(`${shape} (threw UNDECLARED: ${String(thrown.message).slice(0, 70)})`)
+      const probeProblems = []
+      const verdict = recordLiveSkipOrRefusal(probeProblems, `shape:${shape}`, thrown, thrown.message)
+      if (verdict === 'skipped') skippedWrongly.push(shape)
+    }
+    // An untagged reason must NOT be skippable — that default is the fail-open's home.
+    const bareProblems = []
+    const bareVerdict = recordLiveSkipOrRefusal(bareProblems, 'shape:untagged-probe', new Error('some brand new refusal nobody tagged'), 'untagged')
+    if (bareVerdict === 'skipped') skippedWrongly.push('untagged-reason-was-skipped')
+    // `collapseCatalogFaces` is reachable ONLY through a live probe, so until this line
+    // its tag was true-but-unguarded (mutant M57 survived). Driving it with a fabricated
+    // document costs nothing and makes "every throw site declares its kind" both true
+    // AND checked: zero usable faces and two competing faces must both REFUSE,
+    // declared, and must never be skippable.
+    const faceDocs = [
+      ['zero-faces', { routes: { deepseek: { faces: [] } } }],
+      ['two-faces', { routes: { deepseek: { faces: [
+        { package: 'a@1', models: [{ id: 'one', input: ['text'] }] },
+        { package: 'b@1', models: [{ id: 'two', input: ['text'] }] },
+      ] } } }],
+    ]
+    for (const [name, doc] of faceDocs) {
+      let thrown = null
+      try { collapseCatalogFaces(doc, ['deepseek']) } catch (error) { thrown = error }
+      if (thrown === null) undeclared.push(`faces:${name} (answered, must refuse)`)
+      else if (!isDeclaredRefusal(thrown)) undeclared.push(`faces:${name} (threw UNDECLARED)`)
+      const probeProblems = []
+      if (recordLiveSkipOrRefusal(probeProblems, `faces:${name}`, thrown, name) === 'skipped') {
+        skippedWrongly.push(`faces:${name}`)
+      }
+    }
+    } finally {
+      SEAT_SELF_TEST_STATE.refused.splice(0, SEAT_SELF_TEST_STATE.refused.length, ...savedRefused)
+    }
+    if (undeclared.length > 0 || skippedWrongly.length > 0) {
+      problems.push(
+        `T10′ refusal-shapes-are-declared-not-remembered: ${undeclared.length} shape(s) not declared `
+        + `[${undeclared.join(', ').slice(0, 300)}] ${skippedWrongly.length} skippable-in-error `
+        + `[${skippedWrongly.join(', ')}] — a refusal that can be skipped is a seat that silently does not exist`,
+      )
+    } else {
+      // NOT "all shapes": this array is hand-maintained, so its length is a count of
+      // what THIS FILE currently attempts, not of what the resolver can refuse. Deleting
+      // an entry here survives green (Review A + Review B, round 6, independently) —
+      // recorded as the stated limit "enumeration shrinkage" beside M48, not papered
+      // over with a hand-pinned count (round 3 abolished those) or a meta-leg.
+      SEAT_SELF_TEST_STATE.counts.push(`${shapes.length} refusal shapes attempted, all declared`)
+      SEAT_SELF_TEST_STATE.legs.push('refusal-shapes-are-declared-not-remembered')
+    }
+  }
+  // LEG — a bad OMO_E2E_FORCE_SEAT clause may never be quietly ignored. Review B's
+  // round-5 nit was that the `forcedSeatPins` catch printed the failure and dropped
+  // it; carrying the object fixes the memory, but a carried error nobody reads is a
+  // fail-open with better hygiene. So this leg FORCES a malformed clause and a
+  // route-that-does-not-exist clause through the real `forcedSeatPins` and asserts
+  // both come back as DECLARED refusals that the classifier refuses to skip.
+  {
+    const savedEnv = process.env.OMO_E2E_FORCE_SEAT
+    const savedRefused = [...SEAT_SELF_TEST_STATE.refused]
+    const swallowed = []
+    try {
+      for (const clause of ['not-a-binding-at-all', 'explore=no-such-route/some-id']) {
+        process.env.OMO_E2E_FORCE_SEAT = clause
+        let thrown = null
+        try {
+          forcedSeatPins({ deepseek: { artifact: 'fake://k.json', package: 'fake@1', models: [{ id: 'x', input: ['text'] }] } })
+        } catch (error) {
+          thrown = error
+        }
+        if (thrown === null) {
+          swallowed.push(`${clause} (accepted with no refusal)`)
+          continue
+        }
+        if (!isDeclaredRefusal(thrown)) swallowed.push(`${clause} (refused UNDECLARED)`)
+        const probeProblems = []
+        if (recordLiveSkipOrRefusal(probeProblems, `knob:${clause}`, thrown, clause) === 'skipped') {
+          swallowed.push(`${clause} (skippable)`)
+        }
+      }
+    } finally {
+      if (savedEnv === undefined) delete process.env.OMO_E2E_FORCE_SEAT
+      else process.env.OMO_E2E_FORCE_SEAT = savedEnv
+      SEAT_SELF_TEST_STATE.refused.splice(0, SEAT_SELF_TEST_STATE.refused.length, ...savedRefused)
+    }
+    // And the LIVE one: if the operator's real clause failed on this machine, that
+    // fact must already be sitting in `problems`, not only in a console line.
+    if (RUNTIME_SEAT_STATE.envPinError !== null && RUNTIME_SEAT_STATE.envPinError !== undefined
+      && !isDeclaredRefusal(RUNTIME_SEAT_STATE.envPinErrorObject)) {
+      swallowed.push('live envPinError carried but UNDECLARED')
+    }
+    if (swallowed.length > 0) {
+      problems.push(
+        `T10′ operator-knob-refusal-is-not-swallowed: a bad OMO_E2E_FORCE_SEAT clause got through `
+        + `[${swallowed.join(' | ').slice(0, 260)}] — an operator typo that resolves to nothing is a `
+        + `test that silently stops testing the thing it was set to force`,
+      )
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('operator-knob-refusal-is-not-swallowed')
+    }
+  }
+  // LEG — the FIFTH audit state has a voice. Review A proved by importing the frozen
+  // module that a NO-CATALOG row was counted in `broken` (so the gate reds, no
+  // fail-open) but appeared in NONE of the emitter loops: the audit's contract of
+  // naming every broken row quietly did not extend to it, and the fallback sentence
+  // that looked like its handling was dead code. Fabricated, so it runs on the green
+  // 0.1.5 baseline too.
+  {
+    const noCataAudit = auditShippedDefaultsAgainstCatalog(
+      { 'fake-route': { artifact: 'fake://c.json', package: 'fake@1', models: [{ id: 'capable-flash', input: ['text'] }] } },
+      { 'fake-gone': { provider: 'no-such-route', model: 'shipped-elsewhere' } },
+      {},
+      { 'fake-gone': ['text'] },
+    )
+    let ncText = ''
+    {
+      const realError = console.error
+      try { console.error = (...args) => { ncText += `${args.join(' ')}\n` }; announceShippedDefaultAudit(noCataAudit) }
+      finally { console.error = realError }
+    }
+    const ncRow = noCataAudit.rows.find((row) => row.agent === 'fake-gone')
+    if (ncRow === undefined || ncRow.status !== 'NO-CATALOG') {
+      problems.push(`T10′ no-catalog-route-is-named-not-silent: expected NO-CATALOG, got ${JSON.stringify(ncRow?.status)}`)
+    } else if (noCataAudit.broken.length !== 1 || noCataAudit.allClear !== false) {
+      problems.push(`T10′ no-catalog-route-is-named-not-silent: must be counted BROKEN — broken=${noCataAudit.broken.length} allClear=${String(noCataAudit.allClear)}`)
+    } else if (noCataAudit.noCatalog.length !== 1) {
+      problems.push(`T10′ no-catalog-route-is-named-not-silent: the fifth state must be published as its own set, got ${noCataAudit.noCatalog.length}`)
+    } else if (noCataAudit.unresolvable.length !== 0 || noCataAudit.covered.length !== 0) {
+      problems.push('T10′ no-catalog-route-is-named-not-silent: a route with no catalog is neither UNRESOLVABLE-named nor COVERED')
+    } else if (!ncText.includes('NO CATALOG FOR THE ROUTE fake-gone') || !ncText.includes("'no-such-route'")) {
+      problems.push(`T10′ no-catalog-route-is-named-not-silent: the row was counted but NOT named — the naming contract failed: ${ncText.slice(0, 200)}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('no-catalog-route-is-named-not-silent')
+    }
+  }
+  // LEG — a written choice is honoured by name even when the catalog leaves no choice.
+  // Review A, round 6: a pin naming an absent id beside exactly one capable id used to
+  // be ANSWERED `soleCapableCandidate:true`, the pin never mentioned.
+  {
+    const pinned = TEST_ONLY_SEAT_PINS['explore@deepseek']
+    const oneCapable = { deepseek: { artifact: 'fake://one.json', package: 'fake@1', models: [
+      { id: 'invented-lonely-capable', input: ['text'] },
+    ] } }
+    let thrown = null
+    let answered = null
+    try {
+      answered = resolveSeatAgainstCatalog(oneCapable, 'explore', { provider: 'deepseek', model: 'shipped-default-absent-here' }, ['text'], false)
+    } catch (error) {
+      thrown = error
+    }
+    if (answered !== null) {
+      problems.push(
+        `T10′ sole-capable-never-bypasses-a-written-pin: the resolver ANSWERED `
+        + `${JSON.stringify(answered.model)} while TEST_ONLY_SEAT_PINS['explore@deepseek'] names `
+        + `'${pinned}', which this catalog does not list — a human wrote an id down and the `
+        + `machine served another without saying so`,
+      )
+    } else if (!isDeclaredRefusal(thrown)) {
+      problems.push(`T10′ sole-capable-never-bypasses-a-written-pin: refused UNDECLARED: ${String(thrown?.message).slice(0, 90)}`)
+    } else if (!String(thrown.message).includes(pinned)) {
+      problems.push(`T10′ sole-capable-never-bypasses-a-written-pin: the refusal must NAME the pin it cannot honour ('${pinned}'): ${String(thrown.message).slice(0, 140)}`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('sole-capable-never-bypasses-a-written-pin')
+    }
+  }
+  // LEG — the banner must not look green on a run that is FAILING. `seatSelfTestBanner()`
+  // is pure over the state object, so it CAN be asserted: a green-looking
+  // `RUN n/N legs` inside a red run is the laundering shape one level up, and Review A
+  // caught that the old code could print exactly that.
+  {
+    const saved = { failed: SEAT_SELF_TEST_STATE.failed, ran: SEAT_SELF_TEST_STATE.ran }
+    const savedSkipped = [...SEAT_SELF_TEST_STATE.skipped]
+    try {
+      SEAT_SELF_TEST_STATE.skipped = []
+      SEAT_SELF_TEST_STATE.failed = 3
+      SEAT_SELF_TEST_STATE.ran = true
+      const redBanner = seatSelfTestBanner()
+      SEAT_SELF_TEST_STATE.failed = 0
+      SEAT_SELF_TEST_STATE.ran = true
+      const greenBanner = seatSelfTestBanner()
+      if (!redBanner.includes('FAILING')) {
+        problems.push(`T10′ banner-never-looks-green-when-failing: with 3 problems the banner reads: ${redBanner.slice(0, 140)}`)
+      } else if (redBanner.includes(`RUN ${SEAT_SELF_TEST_STATE.legs.length}/`)) {
+        problems.push(`T10′ banner-never-looks-green-when-failing: a failing run still prints a RUN clause: ${redBanner.slice(0, 140)}`)
+      } else if (!greenBanner.includes('RUN')) {
+        problems.push(`T10′ banner-never-looks-green-when-failing: a clean run must still read RUN: ${greenBanner.slice(0, 140)}`)
+      } else {
+        SEAT_SELF_TEST_STATE.legs.push('banner-never-looks-green-when-failing')
+      }
+    } finally {
+      SEAT_SELF_TEST_STATE.failed = saved.failed
+      SEAT_SELF_TEST_STATE.ran = saved.ran
+      SEAT_SELF_TEST_STATE.skipped = savedSkipped
+    }
+  }
+  // LEG — the audit over the LIVE catalog must agree seat-for-seat with what the
+  // resolver actually did: a row the audit calls UNRESOLVABLE must be exactly a
+  // seat the resolver substituted, and vice versa. If those two ever disagree, the
+  // gate would be green over a default nobody re-checked.
+  if (!RUNTIME_SEAT_STATE.ok) {
+    recordLiveSkipOrRefusal(problems, 'live-shipped-default-audit-agrees-with-resolver',
+      RUNTIME_SEAT_STATE.errorObject ?? catalogAbsent(`no live seat state: ${RUNTIME_SEAT_STATE.error ?? 'unrecorded'}`),
+      RUNTIME_SEAT_STATE.error)
+  } else {
+    const liveAudit = auditShippedDefaultsAgainstCatalog(RUNTIME_CATALOGS, DEFAULT_MODEL_ROUTES, RUNTIME_RESOLVED_SEATS)
+    // The audit the STARTUP path computed and announced must be this same verdict.
+    // That is the structural guard against putting the voice back inside a leg: if
+    // `RUNTIME_SEAT_STATE.audit` ever stops existing, the announcement has moved back
+    // somewhere skippable, and Review A's silent-4/4 case is back.
+    if (RUNTIME_SEAT_STATE.audit === null || RUNTIME_SEAT_STATE.audit === undefined) {
+      problems.push("T10′ live-shipped-default-audit-agrees-with-resolver: RUNTIME_SEAT_STATE carries no audit — the startup announcement has been moved back inside a skippable path")
+    } else if (RUNTIME_SEAT_STATE.audit.broken.length !== liveAudit.broken.length) {
+      problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: the announced audit counted ${RUNTIME_SEAT_STATE.audit.broken.length} broken rows, recomputed ${liveAudit.broken.length}`)
+    }
+    // And the emitted text is asserted, not assumed: no all-clear may appear while
+    // any row is broken, and EVERY broken row — covered included — must be named.
+    const liveLines = shippedDefaultAuditLines(liveAudit).join('\n')
+    // The startup path's own record, not a recomputation: proves the voice exists.
+    const said = (RUNTIME_SEAT_STATE.announcedAudit ?? []).join('\n')
+    if (said.length === 0) {
+      problems.push('T10′ live-shipped-default-audit-agrees-with-resolver: the startup path announced NOTHING — the audit has no recorded voice (M15)')
+    } else if (liveAudit.broken.length > 0 && !said.includes('SHIPPED DEFAULT UNRESOLVABLE ON THIS RUNTIME')) {
+      problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: ${liveAudit.broken.length} rows are broken but the announced text carries no loud header: ${said.slice(0, 180)}`)
+    } else if (liveAudit.covered.length > 0 && !said.includes('OVERRIDE COVERS A BROKEN DEFAULT')) {
+      problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: ${liveAudit.covered.length} rows are override-covered but nothing names them in the announced text`)
+    }
+    if (liveAudit.broken.length > 0) {
+      if (liveLines.includes('audit PASS')) {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: ${liveAudit.broken.length} shipped rows are broken yet the audit printed PASS`)
+      }
+      if (!liveLines.includes(`SHIPPED DEFAULT UNRESOLVABLE ON THIS RUNTIME — ${liveAudit.broken.length}/${liveAudit.checked}`)) {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: header must count BROKEN rows (${liveAudit.broken.length}/${liveAudit.checked}): ${liveLines.slice(0, 200)}`)
+      }
+      const unnamed = liveAudit.broken.filter((row) => !liveLines.includes(`${row.agent}:`)
+        && !liveLines.includes(`DEFAULT ${row.agent}:`))
+      if (unnamed.length > 0) {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: broken rows never named in the output: [${unnamed.map((row) => `${row.agent}:${row.status}`).join(', ')}]`)
+      }
+      if (liveAudit.allClear !== false) {
+        problems.push('T10′ live-shipped-default-audit-agrees-with-resolver: allClear is TRUE while rows are broken')
+      }
+    }
+    const auditGaps = new Set(liveAudit.unresolvable.map((row) => row.agent))
+    const resolverMoved = new Set(Object.values(RUNTIME_RESOLVED_SEATS).filter((seat) => seat.substituted).map((seat) => seat.agent))
+    const auditOnly = [...auditGaps].filter((agent) => !resolverMoved.has(agent))
+    // A covered row must REALLY be an override and its id must REALLY be listed —
+    // otherwise "covered" would be a way to make the audit go quiet for free.
+    for (const row of liveAudit.covered) {
+      if (RUNTIME_RESOLVED_SEATS[row.agent]?.forcedByEnvVar !== 'OMO_E2E_FORCE_SEAT') {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: audit calls '${row.agent}' covered by an override but the resolution carries no forcedByEnvVar`)
+      }
+      if (!RUNTIME_CATALOGS[row.route].models.some((model) => model.id === row.coveredBy)) {
+        problems.push(`T10′ live-shipped-default-audit-agrees-with-resolver: override id '${row.coveredBy}' for '${row.agent}' is not listed by ${row.route} either`)
+      }
+    }
+    const resolverOnly = [...resolverMoved].filter((agent) => !auditGaps.has(agent))
+    if (auditOnly.length > 0 || resolverOnly.length > 0) {
+      problems.push(`T10′[audit and resolver disagree]: audit-unresolvable-not-moved=[${auditOnly}] moved-not-flagged-unresolvable=[${resolverOnly}] (a binding override counts as COVERED, printed by name, not as resolved)`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('live-shipped-default-audit-agrees-with-resolver')
+    SEAT_SELF_TEST_STATE.counts.push(`live audit ${liveAudit.broken.length}/${liveAudit.checked} broken, ${liveAudit.covered.length} override-covered`)
+    }
+  }
+  // LEG — the LIVE table is catalog-grounded, and only the catalog moved it.
+
+  // SKIPS visibly when no catalog was read (no `dsh` on PATH, or a bogus
+  // OMO_E2E_FORCE_SEAT): the hermetic legs above must still run and `--self-test`
+  // must still exit 0 there, so this records a SKIP rather than throwing — a skip
+  // the banner prints, never a silent pass.
+  if (!RUNTIME_SEAT_STATE.ok) {
+    recordLiveSkipOrRefusal(problems, 'live-table-grounded',
+      RUNTIME_SEAT_STATE.errorObject ?? catalogAbsent(`no live seat state: ${RUNTIME_SEAT_STATE.error ?? 'unrecorded'}`),
+      RUNTIME_SEAT_STATE.error)
+  } else {
+    const grounded = []
+    const overrideCovered = []
+    for (const [agent, seat] of Object.entries(RUNTIME_RESOLVED_SEATS)) {
+      const catalog = RUNTIME_CATALOGS[seat.provider]
+      if (catalog === undefined) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' names route '${seat.provider}' with no catalog`)
+        continue
+      }
+      if (!catalog.models.some((model) => model.id === seat.model)) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' pins '${seat.model}' which ${catalog.artifact} does not list`)
+        continue
+      }
+      const shipped = DEFAULT_MODEL_ROUTES[agent]
+      const shippedIsListed = catalog.models.some((model) => model.id === shipped.model)
+      if (shippedIsListed && seat.substituted === true && seat.model !== shipped.model) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' moved off '${shipped.model}' although ${catalog.artifact} lists it (an override must not move off a WORKING default either)`)
+        continue
+      }
+      if (!shippedIsListed && seat.substituted !== true) {
+        // The ONLY legitimate way a seat runs without being marked substituted while
+        // the catalog does not list its shipped default: a BINDING override named
+        // this id for this run. That is an operator covering a broken default, and
+        // it is counted and printed as exactly that — "grounded" here means "the id
+        // is listed by the catalog", it does NOT mean the shipped default resolves.
+        if (seat.forcedByEnvVar === 'OMO_E2E_FORCE_SEAT') {
+          overrideCovered.push(`${agent}=${seat.provider}/${seat.model}`)
+          grounded.push(`${agent}=${seat.provider}/${seat.model}(override-covers-broken-default)`)
+          continue
+        }
+        problems.push(`T10′ live-table-grounded: seat '${agent}' claims no substitution although ${catalog.artifact} does NOT list the shipped '${shipped.model}'`)
+        continue
+      }
+      // Every substituted seat must declare HOW it was chosen: either the catalog
+      // left one capable id, or a human wrote the choice down. Anything else means
+      // the resolver picked one out of a set it had no criterion to rank.
+      if (seat.substituted === true && seat.soleCapableCandidate !== true
+        && seat.explicitChoiceKey === undefined) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' moved to '${seat.model}' among ${(seat.candidates ?? []).length} capable ids with neither a sole-candidate flag nor a written choice`)
+        continue
+      }
+      if (seat.substituted === true && seat.soleCapableCandidate === true
+        && (seat.candidates ?? []).length !== 1) {
+        problems.push(`T10′ live-table-grounded: seat '${agent}' claims a sole capable id but lists ${(seat.candidates ?? []).length} candidates`)
+        continue
+      }
+      grounded.push(`${agent}=${seat.provider}/${seat.model}${seat.substituted ? '(moved)' : ''}`)
+    }
+    if (grounded.length !== Object.keys(DEFAULT_MODEL_ROUTES).length) {
+      problems.push(`T10′ live-table-grounded: only ${grounded.length}/${Object.keys(DEFAULT_MODEL_ROUTES).length} roster seats are catalog-grounded`)
+    } else {
+      SEAT_SELF_TEST_STATE.legs.push('live-table-grounded')
+      SEAT_SELF_TEST_STATE.counts.push(`live table grounded, ${grounded.filter((entry) => entry.includes('(moved)')).length} moved, ${overrideCovered.length} override-covered`)
+    }
+  }
+  // SEAT_SELF_TEST_TOTAL legs (the canonical list's length — never a literal here),
+  // and a SKIP is never a pass: `ran` is true only when every leg
+  // reported and none was skipped. A skipped live leg still lets `--self-test`
+  // exit 0 (hermeticity, finding ④) but the banner says SKIPPED, in numbers.
+  const TOTAL_LEGS = SEAT_SELF_TEST_TOTAL
+  // COMPLETENESS, both directions, against the canonical list — this is what makes
+  // "add a push, forget the constant" impossible rather than merely discouraged.
+  const accounted = new Set([
+    ...SEAT_SELF_TEST_STATE.legs,
+    ...SEAT_SELF_TEST_STATE.refused,
+    ...SEAT_SELF_TEST_STATE.skipped.map((entry) => String(entry).split(' ')[0]),
+  ])
+  const neverRan = SEAT_SELF_TEST_LEGS.filter((name) => !accounted.has(name))
+  if (neverRan.length > 0) {
+    problems.push(`T10′ leg-completeness: declared legs never reported: [${neverRan.join(', ')}]`)
+  }
+  const undeclared = [...accounted].filter((name) => !SEAT_SELF_TEST_LEGS.includes(name))
+  if (undeclared.length > 0) {
+    problems.push(`T10′ leg-completeness: reported legs are not in SEAT_SELF_TEST_LEGS: [${undeclared.join(', ')}]`)
+  }
+  // A count mismatch is a PROBLEM, not a banner adjective. `ran` only ever fed the
+  // banner text, so `INCOMPLETE (only 17/16 legs passed)` printed alongside EXIT 0 —
+  // Review A's trap 1, reproduced live on this file and then caught by mutant M19.
+  const reported = SEAT_SELF_TEST_STATE.legs.length + SEAT_SELF_TEST_STATE.skipped.length
+    + SEAT_SELF_TEST_STATE.refused.length
+  if (reported !== TOTAL_LEGS) {
+    problems.push(
+      `T10′ leg-completeness: ${reported} legs reported (${SEAT_SELF_TEST_STATE.legs.length} passed `
+      + `+ ${SEAT_SELF_TEST_STATE.skipped.length} skipped) but SEAT_SELF_TEST_LEGS declares ${TOTAL_LEGS} `
+      + `— the denominator and the push sites disagree, so this gate's verdict is meaningless`,
+    )
+  }
+  SEAT_SELF_TEST_STATE.ran
+    = reported === TOTAL_LEGS
+    && SEAT_SELF_TEST_STATE.skipped.length === 0
+  if (!SEAT_SELF_TEST_STATE.ran && SEAT_SELF_TEST_STATE.notRunReason === '') {
+    SEAT_SELF_TEST_STATE.notRunReason = SEAT_SELF_TEST_STATE.skipped.length > 0
+      ? `all ${SEAT_SELF_TEST_STATE.legs.length} legs passed; ${SEAT_SELF_TEST_STATE.skipped.length} live leg(s) could not run`
+      : `only ${SEAT_SELF_TEST_STATE.legs.length}/${TOTAL_LEGS} legs passed`
+  }
+  // PARENT'S RULING, the second leg of the same door as the guarded emitter: a named
+  // fact that exits 0 is a fact CI ignores. `broken` counts EVERY row whose shipped
+  // default its catalog does not list, covered or not, so this sounds on a generation
+  // where something is genuinely broken and stays silent on 0.1.5-rc.1 (broken=0),
+  // which is what CI pins. A cover never quiets it.
+  const liveAudit = RUNTIME_SEAT_STATE.audit
+  if (liveAudit !== null && liveAudit !== undefined && liveAudit.broken.length > 0) {
+    problems.push(
+      `T10′ shipped-default-audit: ${liveAudit.broken.length}/${liveAudit.checked} shipped roster defaults `
+      + `are NOT listed by their route's installed catalog on this runtime `
+      + `[${liveAudit.broken.map((row) => `${row.agent}:${row.route}/${row.shippedModel}`).join(', ')}]`
+      + ` — ${liveAudit.covered.length} of them are covered by OMO_E2E_FORCE_SEAT for this run only, which `
+      + `covers nothing: THE SHIPPED DEFAULT REMAINS UNRESOLVABLE AND T12 OWNS THE FIX. `
+      + `This reaches the exit code on purpose; a named fact that exits 0 is a fact CI ignores.`,
+    )
+  }
+  SEAT_SELF_TEST_STATE.failed = problems.length
+  console.error(`drive: ${seatSelfTestBanner()}`)
+}
+
+// THE SEAT DISTRIBUTION (plan §4.7). 10 delegation agents over the catalog
+// pairs. The table below is the pre-T8b pin, RESTORED after T8b's half-revert
+// left it re-pinned to the 0.2.x ids while roster.ts/the template had gone
+// back — the CI canary fired exactly as this comment's last lines predicted:
+// `READ-FACE FAIL: explore: parsed agentOptions.model="deepseek-flash" want
+// deepseek-v4-flash` (33 scenarios, 1 failure; the ids are swapped vs the
+// pre-fix quote below because the revert landed on the roster side only).
+// Every id re-verified TODAY against BOTH pinned installs, per ROUTE — a name
+// real on one route is not real on the other:
+//   * @earendil-works/pi-ai@0.85.1 (what dsh 0.1.5-rc.1 depends on),
+//     dist/providers/data/deepseek.json, `openai-completions` section holds
+//     EXACTLY `deepseek-v4-flash` (input ["text"]),
+//     `deepseek-v4-flash-vision-exp` (input ["text","image"]) and
+//     `deepseek-v4-pro` (input ["text"]) — NO `deepseek-flash` (measured).
+//   * @deepseek-ai/dsh-llm-deepseek@0.1.5-rc.1 DEFAULT_MODELS (installed
+//     lib/index.js:1841-1870) holds `deepseek-flash` (:1843, text+image),
+//     `deepseek-v4-flash` (:1853), `deepseek-v4-pro` (:1859) and
+//     `deepseek-v4-flash-vision-exp` (:1864, text+image) — route
+//     `deepseek-official` carries all four.
+//   * For contrast, the 0.2.x install on this machine is the OTHER table:
+//     pi-ai@0.87.1 deepseek.json holds `deepseek-flash` + `deepseek-v4-pro`
+//     ONLY, and dsh-llm-deepseek DEFAULT_MODELS holds `deepseek-flash` (:43)
+//     + `deepseek-v4-pro` (:50) ONLY. The two runtimes' pi-ai catalogs SWAP:
+//     this is why the revert is judged per-route, and why the pi-ai-route
+//     seats (explore, librarian) must not carry `deepseek-flash` on 0.1.5
+//     while the official-route ones may.
+// ⇒ SIX distinct pairs on this pin:
+//   deepseek/deepseek-v4-flash             → explore
+//   deepseek/deepseek-v4-flash-vision-exp → librarian
+//   deepseek-official/deepseek-v4-pro     → hephaestus, oracle, plan-reviewer, atlas
+//   deepseek-official/deepseek-flash      → plan-consultant, sisyphus-junior
+//   deepseek-official/deepseek-v4-flash-vision-exp → multimodal-looker
+//   deepseek/deepseek-v4-pro              → prometheus
+// `plan-consultant` on `deepseek-official/deepseek-flash` is PRE-T8b and stays:
+// it predates the re-pin (git show f4015a1~1, line 889) and the id exists on
+// the pinned runtime's official route (dsh-llm-deepseek@0.1.5-rc.1
+// lib/index.js:1843). Reverting it would be a fresh unforced regression.
+// The vision seats: `multimodal-looker` (official/v4-flash-vision-exp) and
+// `librarian` (pi-ai/v4-flash-vision-exp) both sit on ids whose rows declare
+// image input on their own route (measured above) — capability is per-id on
+// BOTH routes, never per-route.
 // NO fake ids: under the mock baseURL a fake id would be mechanically
 // accepted, which is exactly why it would hollow out the assertion (plan §4.7
 // H-5 — "route observable" must keep meaning "route really servable").
-// multimodal-looker sits on a vision id (its natural seat). `librarian` is the
-// one TEXT agent deliberately parked on the second vision pair: with 10 agents
-// and 2 vision pairs, covering all 7 real pairs requires exactly one non-looker
-// on a vision seat, and the vision models are text+image supersets. This is a
-// routing-mechanics distribution, not a claim about semantic seat fitness.
-const PARADE_SEATS = new Map([
+//
+// WHY THE TABLE MUST TRACK THE SHIPPED DEFAULT (and why `resolveModelRoutes()`
+// stays as it is): the read-face validator compares the sandbox's composed
+// `agentOptions.model` against `resolveModelRoutes()` reading the AMBIENT
+// process.env, i.e. against roster.ts's shipped defaults. Pointing it at the
+// scenario's own `def.env` would make this gate green in one edit — and would
+// have the sandbox assert against itself, which is the self-referential check
+// this repo forbids everywhere else. The coupling is therefore the point: a
+// seat here that is not a real, servable id fails LOUD
+// (`READ-FACE FAIL: explore: parsed agentOptions.model="deepseek-flash" want
+// deepseek-v4-flash` — measured on CI after the half-revert; the pre-T8b
+// shape of the same message had the ids in the opposite roles) instead of
+// silently agreeing.
+//
+// P4.5-T10′ CHANGES ONE THING ABOUT THE PARAGRAPH ABOVE, and the paragraph
+// still stands: the table below is now the PREFERENCE table
+// (`PARADE_SEAT_PREFERENCES`), and `PARADE_SEATS` — the table every consumer
+// reads, and every pin the sandbox gets — is that table mapped through the
+// installed runtime's catalog by `resolveSeatAgainstCatalog`. On dsh 0.1.5-rc.1
+// every preference below is listed by its route's catalog, so `PARADE_SEATS` is
+// byte-identical to the table below and the read-face expectation is still
+// exactly `resolveModelRoutes()`'s shipped default. On dsh 0.2.0-rc.2 four
+// preferences (explore, librarian, multimodal-looker, sisyphus-junior) name ids
+// their routes no longer list, so those four seats move — and the read-face
+// expectation moves with them, for the SAME reason read off the SAME catalog,
+// which is why the expectation is `readFaceSeatExpectation()` and not
+// `resolveModelRoutes()`. The anchor is still roster.ts; only what the installed
+// runtime can actually serve is decided by the catalog.
+export const PARADE_SEAT_PREFERENCES = new Map([
   ['explore', { provider: 'deepseek', model: 'deepseek-v4-flash' }],
   ['hephaestus', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
   ['oracle', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }],
@@ -876,21 +3105,239 @@ const PARADE_SEATS = new Map([
   ['prometheus', { provider: 'deepseek', model: 'deepseek-v4-pro' }],
 ])
 
+// ── the ONE place the runtime catalog is read, and the seats are decided ─────
+// Every route used anywhere in this file — the shipped defaults AND the parade's
+// preferences — goes into ONE probe, so a route that appears only in the parade
+// table is still catalog-checked before a single sandbox exists.
+//
+// LAZY AND NON-THROWING BY CONSTRUCTION (post-review finding ④). A previous
+// revision of this block ran the probe at module evaluation time and called
+// `process.exit(1)` when it failed, which made `--self-test` hard-fail on a
+// machine with no `dsh` on PATH — the exact loss of hermeticity already ruled on
+// once in this phase and rejected. HEAD's `--self-test` exits 0 there, and so
+// must this. Everything below therefore RECORDS the outcome instead of throwing:
+//   • `RUNTIME_SEAT_STATE.ok === false` ⇒ no seat is known, and every RUNTIME
+//     consumer must call `requireRuntimeSeats()`, which fails loudly there;
+//   • the hermetic legs of `--self-test` never consult it, and the ONE leg that
+//     does reports `live-table-SKIPPED(<reason>)` rather than crashing, so the
+//     absence of a live catalog is VISIBLE in the banner, not a stack trace.
+/** @type {{ok:boolean,error:string|null,catalogs:object,probe:object,resolutions:object,parade:object}} */
+export const RUNTIME_SEAT_STATE = (() => {
+  const empty = {
+    ok: false,
+    error: null,
+    // The STRING is for the human, the OBJECT for the classifier: the refusal/absence
+    // kind lives on the object. Flattening it is what pushed the classifier back onto
+    // substring matching, and a substring list is what drifted (round-5 MAJOR-1).
+    errorObject: null,
+    envPinError: null,
+    envPinErrorObject: null,
+    catalogs: {},
+    probe: { dshBinary: null, dshVersion: null, nodeModules: null, routes: [] },
+    resolutions: {},
+    parade: {},
+    audit: null,
+    announcedAudit: [],
+  }
+  // The catalog READ and the seat DECISION are two separate steps here on purpose.
+  // They used to be one call, so a seat that refused (a binding override naming a
+  // text-only id for the vision seat) aborted the block BEFORE the shipped-default
+  // audit ran, and the audit reported `AUDIT NOT RUN` while the catalog sat readable
+  // on disk and the override map sat in the environment. Review A, delta round:
+  // "the honest output there is the same header as the 1-override case".
+  let catalogs = null
+  let probe = null
+  try {
+    const probed = probeRuntimeCatalog([...new Set([
+      ...Object.values(DEFAULT_MODEL_ROUTES).map((route) => route.provider),
+      ...[...PARADE_SEAT_PREFERENCES.values()].map((seat) => seat.provider),
+    ])])
+    catalogs = probed.catalogs
+    probe = probed.probe
+  } catch (error) {
+    empty.error = `catalogs: ${String(error?.message ?? error)}`
+    empty.errorObject = error
+    console.error(
+      `drive: [seats] NOT RESOLVED — ${empty.error}\n`
+      + 'drive: [seats] no seat is pinned; runtime scenarios will refuse to start, '
+      + 'and the live leg of --self-test reports SKIPPED. Hermetic legs still run.',
+    )
+    console.error(
+      'drive: [shipped-defaults] *** AUDIT NOT RUN — the runtime catalog itself could not be read, '
+      + 'so NOT ONE shipped default has been checked against anything. '
+      + 'This is NOT a pass; fix the catalog read and re-run.',
+    )
+    empty.announcedAudit = shippedDefaultAuditNotRunLines(empty.error)
+    return empty
+  }
+  // The catalog is readable ⇒ the audit RUNS, whatever the seats decide afterwards.
+  // `covered` comes from the env override map directly, not from a resolution that
+  // may never have been produced.
+  let envPins = {}
+  try {
+    envPins = Object.fromEntries(
+      forcedSeatPins(catalogs).map((pin) => [pin.agent, {
+        provider: pin.provider,
+        model: pin.model,
+        // The audit keys `coveredBy` off this marker; without it every covered row
+        // silently reverts to UNRESOLVABLE and the covered set prints nothing.
+        forcedByEnvVar: 'OMO_E2E_FORCE_SEAT',
+      }]),
+    )
+  } catch (error) {
+    // Review B's nit: this catch printed the failure and then DROPPED it, so a
+    // malformed or unroutable OMO_E2E_FORCE_SEAT clause was audible for one second
+    // and invisible to every consumer afterwards. Carried now; a DECLARED refusal in
+    // this position still reaches the exit code.
+    const message = String(error?.message ?? error)
+    empty.envPinError = message
+    empty.envPinErrorObject = error
+    console.error(`drive: [seats] OMO_E2E_FORCE_SEAT could not be applied to the catalog: ${message}`)
+  }
+  const audit = auditShippedDefaultsAgainstCatalog(
+    catalogs,
+    DEFAULT_MODEL_ROUTES,
+    envPins,
+    // Modalities come from the roster single-source, not from the override, so an
+    // override can never lower what a row is required to carry.
+    Object.fromEntries(Object.keys(DEFAULT_MODEL_ROUTES).map((agent) => [agent, requiredModalitiesFor(agent)])),
+  )
+  const announcedAudit = announceShippedDefaultAudit(audit)
+  try {
+    const seats = resolveRosterSeatsAgainstRuntime(
+      [...new Set([...PARADE_SEAT_PREFERENCES.values()].map((seat) => seat.provider))],
+    )
+    const parade = resolvePreferredSeats(seats.catalogs, PARADE_SEAT_PREFERENCES)
+    // probe/resolutions are passed IN: RUNTIME_SEAT_STATE is still being
+    // assigned at this point, and reading it here is a TDZ ReferenceError
+    // that the catch below would misreport as "catalog could not be read".
+    announceRuntimeSeats(seats.resolutions, seats.catalogs, seats.probe)
+    // `audit` / `announcedAudit` were computed ABOVE, before the seat loop, so a
+    // seat that refuses cannot retroactively un-say the audit.
+    return {
+      ok: true,
+      error: null,
+      catalogs: seats.catalogs,
+      probe: seats.probe,
+      resolutions: seats.resolutions,
+      parade,
+      audit,
+      // The lines the startup path actually emitted, kept so a leg can prove the
+      // audit had a voice rather than merely being computable.
+      announcedAudit,
+    }
+  } catch (error) {
+    const message = String(error?.message ?? error)
+    empty.error = message
+    empty.errorObject = error
+    // Loud, but NOT fatal: `--self-test` must still be able to finish. The
+    // runtime path turns this into a hard failure via `requireRuntimeSeats`.
+    console.error(
+      `drive: [seats] NOT RESOLVED — ${message}\n`
+      + 'drive: [seats] no seat is pinned; runtime scenarios will refuse to start, '
+      + 'and the live leg of --self-test reports SKIPPED. Hermetic legs still run.',
+    )
+    // The catalog WAS read and the audit WAS announced above; a seat refusing after
+    // that does not un-say it. Only the catalog-read failure prints NOT RUN. The
+    // catalogs are published on the failed state too, so a leg can still audit the
+    // PIN TABLE — a live indefensible pin must be a PROBLEM, never a silent SKIP.
+    empty.audit = audit
+    empty.announcedAudit = announcedAudit
+    empty.catalogs = catalogs
+    return empty
+  }
+})()
+
 /**
- * The 7 pairs the distribution must cover, derived from PARADE_SEATS (never
- * restated) — the scenario asserts all of them were actually exercised.
+ * The gate every RUNTIME consumer passes through: a seat may only be pinned when
+ * the installed runtime's catalog was actually read. Keeps the hermetic self-test
+ * runnable with no dsh present while making a real run without a catalog impossible.
  */
-const PARADE_SEAT_PAIRS = [...new Set(
-  [...PARADE_SEATS.values()].map((seat) => `${seat.provider}/${seat.model}`),
+function requireRuntimeSeats(caller) {
+  if (!RUNTIME_SEAT_STATE.ok) {
+    throw catalogAbsent(
+      `${caller}: the installed runtime's model catalog was never read, so no seat can be pinned `
+      + `(reason recorded at module init: ${RUNTIME_SEAT_STATE.error}) — refusing to run a scenario `
+      + `against model ids nobody has confirmed this runtime serves`,
+    )
+  }
+  return RUNTIME_SEAT_STATE
+}
+
+/** The installed runtime's catalog, keyed by route, with the artifact it came from. */
+export const RUNTIME_CATALOGS = RUNTIME_SEAT_STATE.catalogs
+/** The probe document (binary path, label, every face seen) for artifacts/report. */
+export const RUNTIME_CATALOG_PROBE_DOC = RUNTIME_SEAT_STATE.probe
+/** All 11 shipped-default seats as this runtime can serve them. */
+export const RUNTIME_RESOLVED_SEATS = RUNTIME_SEAT_STATE.resolutions
+
+/**
+ * THE EFFECTIVE PARADE SEATS — the preference table above, seat by seat, through
+ * the runtime catalog. This is the table `paradeEnv()` pins and the table
+ * `analyzeRosterParade()` compares observed routes against, so the pin and the
+ * assertion cannot disagree about which generation is being run.
+ * Empty when the catalog was not read; `paradeEnv()` refuses that case.
+ */
+export const PARADE_SEATS = new Map(
+  Object.entries(RUNTIME_SEAT_STATE.parade)
+    .map(([agent, seat]) => [agent, { provider: seat.provider, model: seat.model }]),
+)
+
+/**
+ * The parade seat table AS OBSERVERS SEE IT. Identical to `PARADE_SEATS` whenever
+ * the runtime catalog was read. When it was NOT (no `dsh` on PATH), it falls back
+ * to roster.ts's shipped defaults so the FABRICATED `--self-test` parade can still
+ * run — fabricated logs, fabricated requests, self-consistent by construction, so
+ * the fallback is evidence about the ANALYSER and none about any runtime.
+ * The RUNTIME path cannot reach the fallback: `paradeEnv()` calls
+ * `requireRuntimeSeats()` and refuses before a sandbox exists.
+ */
+function paradeSeatTable() {
+  if (PARADE_SEATS.size > 0) return PARADE_SEATS
+  return new Map(Object.entries(DEFAULT_MODEL_ROUTES).map(([agent, seat]) => [agent, { provider: seat.provider, model: seat.model }]))
+}
+
+/**
+ * The pairs the distribution must cover, DERIVED from the EFFECTIVE
+ * `PARADE_SEATS` and never restated — the scenario asserts all of them were
+ * actually exercised. Measured by `node /tmp/p45t10p-ac7.mjs` (see the report's
+ * AC7 table), on the two installed runtimes: SEVEN on dsh 0.1.5-rc.1
+ * (pi-ai v4-flash, pi-ai v4-flash-vision-exp, pi-ai v4-pro, official flash,
+ * official v4-flash, official v4-flash-vision-exp, official v4-pro) and FOUR
+ * on dsh 0.2.0-rc.2 (pi-ai deepseek-flash, pi-ai deepseek-v4-pro, official
+ * deepseek-flash, official deepseek-v4-pro) — four seats coalesce there because
+ * both 0.2.x catalogs list only those two ids.
+ * CORRECTION, stated because the drift is the point: the comment that sat above
+ * this const claimed "SIX on this pin" while the table beside it has always
+ * derived SEVEN, and T8b's revision claimed FOUR. Neither comment could make the
+ * check false, because the count below is DERIVED; both could, and did, mislead
+ * a reader. Comments here are therefore counts-by-command, not counts-by-memory.
+ */
+export const PARADE_SEAT_PAIRS = [...new Set(
+  [...paradeSeatTable().values()].map((seat) => `${seat.provider}/${seat.model}`),
 )]
+
+/**
+ * A scenario's OWN env overlay. The three producers in the SCENARIOS literal are
+ * THUNKS (`env: () => paradeEnv()`) so the runtime catalog is consulted when the
+ * scenario actually runs, not when this ~19k-line module is evaluated — that eager
+ * evaluation was the last thing keeping `--self-test` from running on a machine
+ * with no `dsh` on PATH (finding ④). Plain objects are still accepted, so a
+ * future scenario may hardcode its env if it genuinely has no seat to resolve.
+ */
+function scenarioEnvOverlay(def) {
+  if (def.env === undefined) return {}
+  return typeof def.env === 'function' ? def.env() : def.env
+}
 
 /** The scenario's OMO_<AGENT>_{PROVIDER,MODEL} env overlay, from the roster rows. */
 function paradeEnv() {
+  requireRuntimeSeats('paradeEnv')
   const env = {}
   for (const entry of DELEGATION_ENTRIES) {
     const seat = PARADE_SEATS.get(entry.id)
     if (seat === undefined) {
-      throw new Error(`parade: roster delegation row '${entry.id}' has no seat in PARADE_SEATS`)
+      throw seatRefusal(`parade: roster delegation row '${entry.id}' has no seat in PARADE_SEATS`)
     }
     env[entry.routeEnvVars.provider] = seat.provider
     env[entry.routeEnvVars.model] = seat.model
@@ -946,10 +3393,53 @@ function paradeScript(sandbox) {
 // (deepseek-official/deepseek-v4-pro), so "the child ran on its configured
 // seat" is a discriminating assertion rather than a coincidence.
 
-/** plan-reviewer's P2-T19 seat: pi-ai `deepseek` / deepseek-v4-pro (real id). */
-const PLAN_REVIEWER_SEAT = { provider: 'deepseek', model: 'deepseek-v4-pro' }
-/** atlas's P2-T19 seat: pi-ai `deepseek` / deepseek-v4-pro (real id). */
-const ATLAS_SEAT = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+/** plan-reviewer's P2-T19 seat preference: pi-ai `deepseek` / deepseek-v4-pro. */
+const PLAN_REVIEWER_SEAT_PREFERENCE = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+/** atlas's P2-T19 seat preference: pi-ai `deepseek` / deepseek-v4-pro. */
+const ATLAS_SEAT_PREFERENCE = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+
+/**
+ * One scenario seat preference, put through the same runtime catalog as every
+ * other seat in this file, so a P2-T19 pin that a future runtime drops goes red
+ * naming the seat instead of shipping a `UNKNOWN_MODEL` child.
+ * `deepseek-v4-pro` is listed on the pi-ai route in BOTH installed generations
+ * (0.85.1 and 0.87.1), so on both of these runtimes this returns the preference
+ * untouched.
+ */
+function scenarioSeat(agentId, seatPreference) {
+  requireRuntimeSeats(`scenarioSeat(${agentId})`)
+  const seat = resolveSeatAgainstCatalog(RUNTIME_CATALOGS, agentId, seatPreference, requiredModalitiesFor(agentId))
+  return { provider: seat.provider, model: seat.model }
+}
+
+/** plan-reviewer's P2-T19 seat, as the runtime under test can serve it. */
+/**
+ * LAZY (finding ④). A `const` here would resolve against the runtime catalog at
+ * MODULE EVALUATION time, which is exactly what made `--self-test` die on a
+ * machine with no `dsh` on PATH. Called from the scenario definitions instead, so
+ * the catalog is only consulted when a scenario is about to run.
+ */
+function PLAN_REVIEWER_SEAT() { return scenarioSeat('plan-reviewer', PLAN_REVIEWER_SEAT_PREFERENCE) }
+/**
+ * The seat the FABRICATED plan-reviewer self-test fixture runs on. Identical to
+ * `PLAN_REVIEWER_SEAT()` whenever a catalog was read; falls back to the static
+ * preference otherwise, so `--self-test` stays runnable with no dsh on PATH
+ * (finding ④). Fabricated bytes only — never used by a real scenario, whose
+ * `env` thunk goes through `scenarioSeat()` and refuses without a catalog.
+ */
+function planReviewerSeatForFabrication() {
+  return RUNTIME_SEAT_STATE.ok
+    ? PLAN_REVIEWER_SEAT()
+    : { provider: PLAN_REVIEWER_SEAT_PREFERENCE.provider, model: PLAN_REVIEWER_SEAT_PREFERENCE.model }
+}
+/** atlas's P2-T19 seat, as the runtime under test can serve it. */
+function ATLAS_SEAT() { return scenarioSeat('atlas', ATLAS_SEAT_PREFERENCE) }
+/** Fabrication-only fallback, same rationale as `planReviewerSeatForFabrication()`. */
+function atlasSeatForFabrication() {
+  return RUNTIME_SEAT_STATE.ok
+    ? ATLAS_SEAT()
+    : { provider: ATLAS_SEAT_PREFERENCE.provider, model: ATLAS_SEAT_PREFERENCE.model }
+}
 
 /**
  * The OMO_<AGENT>_{PROVIDER,MODEL} env overlay for ONE roster delegation row,
@@ -1368,21 +3858,30 @@ function parentSessionLog(sandbox, sessionId) {
 }
 
 /**
- * Flip THIS scenario's sandbox copy of the materialized preset's `explore`
- * delegation row from `backgroundMode: continuable` to `one-shot`.
+ * Flip THIS scenario's sandbox plugin-copy TEMPLATE `explore` delegation row
+ * from `backgroundMode: continuable` to `one-shot`.
  *
  * WHY A FIXTURE EDIT IS REQUIRED (see fact 2 in the section comment): only the
  * one-shot background path registers a `ctx.jobs` entry, and every shipped
- * concerto row is `continuable`. The edit is SCENARIO-LOCAL — it rewrites the
- * materialized composition in the sandbox's own DSH_HOME (the same file
- * `appendMockRoleMarker` already edits, and the same file the session composes
- * from), never the repo template, so no other scenario and no shipped artifact
- * changes. Loud on drift: a template change that moves the row or its
- * `backgroundMode` line throws here instead of silently turning the scenario
- * vacuous.
+ * concerto row is `continuable`.
+ *
+ * WHY THE TEMPLATE AND NOT THE MATERIALIZED FILE (P4.5-T12a): the same edit
+ * made post-boot to `$DSH_HOME/.agent-presets/concerto/agent.cordis.yml` is
+ * INVISIBLE to the 0.2.x runtime — measured on dsh 0.2.0-rc.2 (the machine's
+ * installed npm package), the materialized row read `one-shot` while the child's
+ * durable `subagent/descriptor` still read `mode=continuable`, so no JobRegistry
+ * entry existed, no settlement was delivered, and all five notification checks went
+ * red together. The template is the face BOTH generations descend from — see
+ * `pluginTemplateCompositionPath()` — so the edit is made there, BEFORE boot.
+ *
+ * SCENARIO-LOCAL: the file is the sandbox's own plugin copy (the same copy
+ * `stampMockRoleMarkersIntoPluginCopy` stamps before boot), never the repo
+ * template, so no other scenario and no shipped artifact changes. Loud on drift:
+ * a template change that moves the row or its `backgroundMode` line throws here
+ * instead of silently turning the scenario vacuous.
  */
 function enableOneShotBackgroundExplore(sandbox) {
-  const compositionPath = materializedCompositionPath(sandbox)
+  const compositionPath = pluginTemplateCompositionPath(sandbox)
   const text = readFileSync(compositionPath, 'utf8')
   const lines = text.split('\n')
   const rowAnchor = `    - id: tool-subagent-${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}`
@@ -1391,7 +3890,7 @@ function enableOneShotBackgroundExplore(sandbox) {
     .filter((index) => index >= 0)
   if (anchors.length !== 1) {
     throw new Error(
-      `background-notification scenario: materialized preset must carry `
+      `background-notification scenario: the sandbox plugin-copy template must carry `
       + `\`${rowAnchor}\` exactly once; found ${anchors.length}`,
     )
   }
@@ -1408,13 +3907,21 @@ function enableOneShotBackgroundExplore(sandbox) {
   }
   if (modeIndex < 0) {
     throw new Error(
-      `background-notification scenario: the materialized `
+      `background-notification scenario: the template `
       + `'${BACKGROUND_NOTIFICATION_EXPECTED_LABEL}' row carries no `
       + '`        backgroundMode: continuable` line to flip to one-shot',
     )
   }
   lines[modeIndex] = '        backgroundMode: one-shot'
   writeFileSync(compositionPath, lines.join('\n'))
+  // WP2 MAJOR-1: an `augmentMaterialized` fixture RETURNS what it changed. The
+  // key name is the historical one c24 pins (scripts/verify-concerto-static.mjs
+  // :2165 pins the call expression, :2243 the `augmentMaterialized:` scenario
+  // key); the FACE it names is now the pre-boot template, which is the mounted
+  // face on 0.2.x and the source of the mounted file on 0.1.5. The declaration is
+  // how the read-face assertion knows which value is legitimately its own — see
+  // `declaredSandboxEdits`.
+  return [{ row: BACKGROUND_NOTIFICATION_EXPECTED_LABEL, key: 'backgroundMode', after: 'one-shot' }]
 }
 
 /**
@@ -1587,13 +4094,107 @@ const JSON_RECOVERY_PROMPT =
 // The raw argument value the mock serializes. It is a JSON STRING, i.e. valid
 // JSON with a non-object root — the shape that reaches the tool registry and
 // fails its schema walk (see the section header's fact 2).
+//
+// GENERATION THIS FIXTURE EMULATES: dsh 0.1.5-rc.1, and ONLY that generation.
+// Measured there (sandbox `/tmp/omo-dsh-e2e-J0hwaW`, the 0.1.5 prefix at
+// /tmp/p45t7-015/prefix): `tool/call seq=16 arguments:"\"not-an-object\""` and
+// `tool/result seq=17 "Error: invalid arguments: \"arguments\" must be an objec…"`
+// — the raw text really does reach the registry.
+//
+// ON dsh 0.2.0-rc.2 THIS PREMISE IS DEAD ON THE `deepseek-official` ROUTE ONLY
+// (P4.5-T12a; THE CONTRACT since the P4.5-T12b cutover — 0.1.x compatibility is
+// dropped, so this dead turn is the accepted product behaviour, not a transitional
+// accommodation), and no fixture value revives it there:
+//   • dsh-llm-deepseek/lib/index.js:1983-1991 (the machine's installed npm
+//     package) — at `message_stop`, every `tool-call` block's `arguments` must
+//     `JSON.parse` to a plain object unless the stop reason is `max_tokens`;
+//     otherwise the turn ends with `LlmError(…, "MALFORMED_RESPONSE")` and the
+//     tool is never called. Measured (sandbox `/tmp/omo-dsh-e2e-qzhiFi`): ONE
+//     mock request, no `tool/call`, no `tool/result`,
+//     `turn/end reason:{kind:"error",error:{code:"MALFORMED_RESPONSE",
+//     message:"DeepSeek Messages expected a JSON object"}}`.
+//   • The other shipped adapter does NOT interpose on the live path. An earlier
+//     draft of this comment claimed it did, citing `parseArguments` "substituting
+//     {}" at dsh-llm-pi-ai/lib/index.js:28-34 — but that function lives in
+//     `@module dsh-llm-pi-ai/replay` (:18-26, "Durable pi-ai replay metadata and
+//     assistant-history reconstruction") and is reached only from :164 and :208,
+//     both reconstructing STORED history. The LIVE stream yields
+//     `arguments: JSON.stringify(event.toolCall.arguments)` (:1550-1555), the raw
+//     provider text. `json-error-recovery-pi-ai-lane` below is the assertion, and
+//     it measured the raw text arriving on 0.2.x (sandbox
+//     `/tmp/omo-dsh-e2e-2L4CQ0`: `tool/call arguments:"\"not-an-object\""` plus
+//     the reminder on the non-blacklisted `write` result).
+// So the listener is NOT retired on 0.2.x — it is unreachable on ONE route, and
+// the scenario pair now pins both halves instead of one of them going unmentioned.
+// The mock cannot reach past the `deepseek-official` guard either: its wire body
+// is `JSON.stringify(call.arguments ?? {})` (mock-llm-server.mjs), and stringify
+// normalises every non-lossless value away (`Infinity`→`null`, `-0`→`0`; the
+// registry's own `walkJsonValue` rejects exactly those two,
+// dsh-util-values/lib/index.js:103-104), so the only tool-error texts a fixture can
+// still cause on THAT route are schema violations, none of which the table matches.
 const JSON_RECOVERY_MALFORMED_ARGUMENTS = 'not-an-object'
-// The REAL error both calls produce, transcribed from the pinned install
-// (dsh-tools `ToolArgsError` :812-818 + `toolErrorResult` :3490-3502 through the
-// `"arguments" must be an object` violation at :449/:348-350). The analysis
-// additionally feeds it to the shipped table's `matchesJsonErrorTable`, so a
-// drift in either direction is loud.
+// The REAL error both calls produce on the generation above, transcribed from the
+// pinned install (dsh-tools `ToolArgsError` :812-818 + `toolErrorResult`
+// :3490-3502 through the `"arguments" must be an object` violation at :449/:348-350).
+// The analysis additionally feeds it to the shipped table's
+// `matchesJsonErrorTable`, so a drift in either direction is loud.
 const JSON_RECOVERY_EXPECTED_ERROR = 'Error: invalid arguments: "arguments" must be an object'
+// THE OTHER BRANCH'S NAMED TEXTS (P4.5-T12a), transcribed from the artifact that
+// produces them — NOT inferred: dsh 0.2.0-rc.2's installed
+// dsh-llm-deepseek/lib/index.js:1983-1991 walks every `tool-call` block at
+// `message_stop` (`JSON.parse(content.arguments)` then `object(parsed)`, skipped
+// only when `reason.kind === "max-tokens"`) and returns
+// `malformed("tool input is invalid JSON")`; the Harness records that on the
+// session log as `turn/end reason:{kind:"error",error:{code,message}}`. Measured
+// verbatim in sandbox /tmp/omo-dsh-e2e-qzhiFi (0.2.0-rc.2, this machine):
+//   reason.error.code    = "MALFORMED_RESPONSE"
+//   reason.error.message = "DeepSeek Messages expected a JSON object"
+// The same file on dsh 0.1.5-rc.1 (/tmp/p45t7-015/prefix) mentions
+// MALFORMED_RESPONSE twice and BOTH are SSE framing (:1253), which is why the
+// 0.1.5 run takes the `tool-registry` branch above and this one does not.
+const JSON_RECOVERY_EXPECTED_ADAPTER_CODE = 'MALFORMED_RESPONSE'
+const JSON_RECOVERY_EXPECTED_ADAPTER_MESSAGE = 'DeepSeek Messages expected a JSON object'
+
+// ── LANE B, the pi-ai lane (P4.5-T12a) ───────────────────────────────────────
+// THE SECOND HALF OF THE PREMISE SPLIT — SINCE P4.5-T12b, THE CONTRACT ITSELF
+// (lane A pins the dead-turn half as accepted 0.2.x product behaviour; this lane
+// pins the live half) — AND THE HALF THAT OVERTURNED AN
+// EARLIER INFERENCE OF MINE. The first diagnosis of the `json-error-recovery`
+// residual claimed that BOTH shipped 0.2.x adapters stood in front of the
+// registry, citing `dsh-llm-pi-ai`'s `parseArguments` "substituting {}". That was
+// WRONG, and the scenario is the thing that caught it: measured on dsh 0.2.0-rc.2
+// (sandbox /tmp/omo-dsh-e2e-2L4CQ0) this lane's log carries
+//   tool/call  arguments:"\"not-an-object\""
+//   tool/result "Error: invalid arguments: \"arguments\" must be an object"
+//   …and the `[JSON PARSE ERROR - IMMEDIATE ACTION REQUIRED]` reminder appended to
+//   the NON-blacklisted `write` result only.
+// The reason is in the artifact: `parseArguments` (installed
+// dsh-llm-pi-ai/lib/index.js:28-34) sits in `@module dsh-llm-pi-ai/replay`
+// (:18-26, "Durable pi-ai replay metadata and assistant-history reconstruction") and
+// has exactly TWO call sites, :164 and :208, both reconstructing STORED assistant
+// history. The LIVE path is `dsh-llm-pi-ai/stream`, whose `toolcall_end` yields
+// `arguments: JSON.stringify(event.toolCall.arguments)` (:1550-1555) — the raw
+// provider text, unvalidated, straight to the registry.
+//
+// ⇒ THE CORRECTED FINDING: the hook's trigger is NOT retired on 0.2.x. It is
+// retired on ONE ROUTE — `deepseek-official` / dsh-llm-deepseek, which since 0.2.x
+// validates every `tool_use` `arguments` at `message_stop` (:1983-1991, installed
+// npm package) and dead-turns with a named MALFORMED_RESPONSE. Lane A pins that;
+// this lane pins the other side: on the pi-ai route the same shipped 0.2.x runtime
+// still delivers the trigger and the hook still fires, byte-for-byte as on 0.1.5.
+// Both lanes therefore assert the SAME tool-registry shape, and this scenario needs
+// no premise branch.
+const JSON_RECOVERY_PI_AI_SUMMARY =
+  'MOCK-JSON-RECOVERY-PIAI-SUMMARY-2c8e5a: the pi-ai lane delivered the raw malformed arguments and the hook fired on write only'
+// The pi-ai ROUTE seat preference for lane B — the same route `ATLAS_SEAT_PREFERENCE`
+// rides, spelled once here. Put through `scenarioSeat` (and therefore the runtime
+// catalog) at scenario-boot time, never used raw.
+const PI_AI_LANE_SEAT_PREFERENCE = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+// The RAW text the registry is handed for a malformed call, DERIVED from the one
+// source above through the same `JSON.stringify` the mock performs on
+// `delta.tool_calls[].function.arguments` — so lane B's assertion cannot drift from
+// what lane A's fixture actually puts on the wire.
+const JSON_RECOVERY_RAW_ARGUMENTS = JSON.stringify(JSON_RECOVERY_MALFORMED_ARGUMENTS)
 const JSON_RECOVERY_SUMMARY =
   'MOCK-JSON-RECOVERY-SUMMARY-7d1b64: both malformed calls failed and only the non-blacklisted one got the reminder'
 
@@ -1960,8 +4561,10 @@ function scenarioEnv(sandbox, overrides = {}) {
 const DEEPSEEK_ADAPTER_PROVIDER = 'deepseek-official'
 
 /**
- * Seed the sandbox: settings.yaml wiring BOTH adapters to the mock, and the
- * persistence patch overlay (compression:none, packChunks:false — T15 layout).
+ * Seed the sandbox: settings.yaml wiring BOTH adapters to the mock, AND the
+ * same wiring plus the persistence overlay (compression:none, packChunks:false
+ * — T15 layout) as `--patch` rows. The overlay is what makes the wiring
+ * visible at apply() time on dsh 0.2.x; see the block inside for the citations.
  * `routes` is the scenario's EFFECTIVE resolved route map (env overrides
  * included), so the seeded seats are exactly what the spawned dsh resolves.
  * ONE baseURL per adapter (P2-T18): the deepseek adapter gets one baseURL, and
@@ -1990,34 +4593,526 @@ function seedSandbox(sandbox, routes, mockBaseUrl) {
     'llm-deepseek:',
     '  apiKeyEnv: DEEPSEEK_API_KEY',
     `  baseURL: ${mockBaseUrl}/v1`,
-    'llm-pi-ai:',
-    '  providers:',
   ]
-  for (const provider of piAiProviders) {
-    settingsLines.push(
-      `    ${provider}:`,
-      '      apiKeyEnv: DEEPSEEK_API_KEY',
-      `      baseURL: ${mockBaseUrl}/v1`,
-    )
+  // P4.5-T8a (review B MINOR-1): the pi-ai section is written ONLY when a
+  // pi-ai provider exists, MIRRORING the patch leg below. Writing `providers:`
+  // with no keys unconditionally composes to `providers: null`, and
+  // `z.dict(profile).default({})` does NOT rescue null — measured on
+  // 0.2.0-rc.2 with `dsh --dump-config`, which prints `providers: null`.
+  if (piAiProviders.length > 0) {
+    settingsLines.push('llm-pi-ai:', '  providers:')
+    for (const provider of piAiProviders) {
+      settingsLines.push(
+        `    ${provider}:`,
+        '      apiKeyEnv: DEEPSEEK_API_KEY',
+        `      baseURL: ${mockBaseUrl}/v1`,
+      )
+    }
   }
   settingsLines.push('')
   writeFileSync(join(sandbox.dshHome, 'settings.yaml'), settingsLines.join('\n'))
+  // P4.5-T8a: the SAME three LLM sections also land in this overlay, as
+  // loader PATCH rows. On dsh 0.2.x `$DSH_HOME/settings.yaml` is not a
+  // configuration surface any more: the legacy importer renames the document to
+  // `settings.yaml.imported` and pushes its sections into the profile's own
+  // cordis.patch.yml only AFTER `ctx.root.loader.await()` has settled every
+  // entry (dsh-settings/lib/index.js:339-341 kicks the import off, :346-363
+  // does the rename + per-section update). Every entry — including omo-agents
+  // and llm-pi-ai — has therefore already applied() when that write happens,
+  // so a FIRST boot mounts llm-pi-ai with its shipped zero-route config
+  // (dsh-base/cordis.patch.yml:127-128) and the explore seat has no provider.
+  // A `--patch` row is composed into the entry BEFORE mounting, so pi-ai
+  // registers its routes inside its own apply() — `ensureRegistrationFacts()`
+  // defined at dsh-llm-pi-ai@0.2.0-rc.2/lib/index.js:2614-2626 and called at
+  // :2627 — and the same code path registers on the CI-pinned generation,
+  // dsh-llm-pi-ai@0.1.5-rc.1/lib/index.js:2645-2657 called at :2658, with the
+  // composition config as the base layer at :2573 `let current = () => config`.
+  // EVERY citation below names its ARTIFACT: they are all the PUBLISHED npm
+  // bundles' compiled lib (what CI installs), read out of the tarballs in
+  // ~/.npm/_cacache. The git tag's line numbers differ and are not cited here.
+  //
+  // ROW SHAPE — `- id: <entryId>` + `config:`. `name` is OPTIONAL in the
+  // patch dialect and, when truthy, only ASSERTS the existing row's package:
+  // a mismatch warns and SKIPS the whole row, taking its `config` with it
+  // (dsh-app-boot@0.2.0-rc.2/lib/index.js:73 destructures `{ id, insert,
+  // name, ...overrides }`, :100-103 is the mismatch skip, :104-107 applies
+  // the overrides). The CITED RANGES are byte-equal in the published
+  // dsh-app-boot@0.1.5-rc.1/lib/index.js at :71, :98-101, :102-105 — the
+  // CITED RANGES, not the whole function, which differs elsewhere; and on the
+  // 0.1.5 SOURCE tag the function is imported from
+  // @deepseek-ai/cordis-plugin-include and lives in another file, which is
+  // why every citation here names its ARTIFACT.
+  // `name:` is RESTORED on the two rows whose package is identical across
+  // generations — agent-default-model and llm-pi-ai (dsh-base@0.2.0-rc.2
+  // cordis.patch.yml:82-83, :127-128 vs dsh-base@0.1.5-rc.1 cordis.patch.yml
+  // :75-76, :107-108) — because there it is a free, real assertion. It stays
+  // OMITTED on exactly ONE row, `llm-deepseek`: its package differs
+  // (@deepseek-ai/dsh-llm-deepseek on 0.1.5 at :486-487 vs
+  // @deepseek-ai/dsh-llm-deepseek-api-key on 0.2.x at :525-526), so
+  // restating either spelling silently skips the row on the other generation
+  // and drops its baseURL with it (measured on 0.2.0-rc.2: 1 `patch:` warn
+  // and the composed row carries no config).
+  //
+  // `config` is REPLACED wholesale, never deep-merged: each targeted base row
+  // carries either no config at all (llm-deepseek, llm-pi-ai) or exactly the
+  // two keys restated below (agent-default-model), so nothing is lost.
+  const patchLines = [
+    '# T18 e2e overlay: plaintext, unpacked session JSONL (T15 layout). Row',
+    '# config is REPLACED, not merged, so root must be restated verbatim.',
+    '- id: session-persistence-jsonl',
+    "  name: '@deepseek-ai/dsh-session-persistence-jsonl'",
+    '  config:',
+    "    root: !!js dshHomePath('sessions')",
+    '    compression: none',
+    '    packChunks: false',
+    '',
+    '# P4.5-T8a: the LLM wiring as patch rows, so it is present at apply() time',
+    '# on dsh 0.2.x (where settings.yaml is imported only after loader.await()).',
+    '# Both surfaces are generated from the SAME `routes` / `mockBaseUrl`',
+    '# variables, so wherever the settings leg writes a section its patch twin',
+    '# writes the same values; with no pi-ai provider BOTH legs omit their',
+    '# pi-ai piece (review B MINOR-1) — they agree in value, but they are not',
+    '# one text, so "byte-identical" is not the claim being made. settings.yaml',
+    '# stays written for the CI-pinned',
+    '# 0.1.5-rc.1, where it IS the live surface (dsh-settings-file reads it at',
+    '# `<harness home>/settings.yaml`) and sits ON TOP of these rows as the',
+    '# settings user layer over the composition base.',
+    '- id: agent-default-model',
+    "  name: '@deepseek-ai/dsh-agent-default-model'",
+    '  config:',
+    `    provider: ${routes.sisyphus.provider}`,
+    `    model: ${routes.sisyphus.model}`,
+    '',
+    // `name:` deliberately ABSENT here and ONLY here — see ROW SHAPE above:
+    // this entry's package differs across generations, so any name stated
+    // would make the row skip on one of them and take its baseURL with it.
+    '- id: llm-deepseek',
+    '  config:',
+    '    apiKeyEnv: DEEPSEEK_API_KEY',
+    `    baseURL: ${mockBaseUrl}/v1`,
+  ]
+  if (piAiProviders.length > 0) {
+    // An empty `providers:` key would parse as null, which `z.dict(profile)`
+    // is not obliged to accept (and `--dump-config` shows it stays null, so
+    // `.default({})` does not rescue it); a scenario with no pi-ai route
+    // emits no row.
+    //
+    // Indentation is load-bearing and SILENT, and the mechanism is NOT "an
+    // empty dict": a provider key at the wrong depth becomes a SIBLING of
+    // `providers:` inside the row's config mapping, so `providers` composes to
+    // `null` and the stray key is simply ignored. Measured on 0.2.0-rc.2 with
+    // `dsh --dump-config`: composed `providers: null` + sibling `deepseek:`,
+    // exit 0, ZERO `patch:` warnings. Only the composed STRUCTURE catches it,
+    // which is why auditLlmPatchRows() below asserts structure and why
+    // --self-test runs it against seedSandbox()'s real output.
+    // `config:` is at 2, `providers:` at 4, dict keys at 6, their fields at 8.
+    patchLines.push('', '- id: llm-pi-ai', "  name: '@deepseek-ai/dsh-llm-pi-ai'", '  config:', '    providers:')
+    for (const provider of piAiProviders) {
+      patchLines.push(
+        `      ${provider}:`,
+        '        apiKeyEnv: DEEPSEEK_API_KEY',
+        `        baseURL: ${mockBaseUrl}/v1`,
+      )
+    }
+  }
+  patchLines.push('')
   const patchPath = join(sandbox.root, 'e2e.patch.yml')
-  writeFileSync(
-    patchPath,
-    [
-      '# T18 e2e overlay: plaintext, unpacked session JSONL (T15 layout). Row',
-      '# config is REPLACED, not merged, so root must be restated verbatim.',
-      '- id: session-persistence-jsonl',
-      "  name: '@deepseek-ai/dsh-session-persistence-jsonl'",
-      '  config:',
-      "    root: !!js dshHomePath('sessions')",
-      '    compression: none',
-      '    packChunks: false',
-      '',
-    ].join('\n'),
-  )
+  writeFileSync(patchPath, patchLines.join('\n'))
   return patchPath
+}
+
+/**
+ * P4.5-T8a (review A MAJOR) — the TIMER-FREE structural gate over the LLM
+ * wiring, and the ONLY gate that catches the silent faults.
+ *
+ * WHY this exists, in one measured sentence: a mis-indented provider key, a
+ * dropped row and a wrong baseURL all compose, boot and exit 0 with ZERO
+ * `patch:` warnings, so neither the exit code nor stderr distinguishes good
+ * from broken. Measured on 0.2.0-rc.2 with `dsh --dump-config`:
+ *   GOOD       : providers:\n      deepseek:\n        apiKeyEnv: …  → nested
+ *   MIS-INDENT : providers: null\n    deepseek:\n      apiKeyEnv: …  → sibling
+ * and the boot marker that used to be called the deterministic evidence is NOT:
+ * patches/omo-dsh/omo-agents/src/boot-markers.ts:277-284 arms
+ * setTimeout(check, ROUTE_PROVIDER_CHECK_SETTLE_MS) (= 8000, :219) and
+ * RE-ARMS on `llm/adapters-updated` when the registry grows, so the marker is
+ * a function of when the check lands relative to the legacy import — GREEN is
+ * structural (registration happens inside pi-ai's own apply()), RED is a race.
+ * The marker is now auxiliary; THIS function is the acceptance.
+ *
+ * Input is a PARSED row list (from `--dump-config` composed output, or from
+ * seedSandbox()'s own overlay text) — never text, because text assertions are
+ * exactly the format-coupled check that passed the mis-indent case. Rows are
+ * found by id anywhere in the tree, so a nested composition still audits.
+ *
+ * Returns the list of NAMED faults (empty = pass). Names are stable: the
+ * self-test asserts a SPECIFIC fault name per injected fault, so a gate that
+ * goes red for the wrong reason still shows up as a different name and fails.
+ */
+export function auditLlmPatchRows(rows, { mockBaseUrl, routes }) {
+  const faults = []
+  const byId = new Map()
+  const walk = (node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item)
+      return
+    }
+    if (node === null || typeof node !== 'object') return
+    if (typeof node.id === 'string' && !byId.has(node.id)) byId.set(node.id, node)
+    for (const value of Object.values(node)) walk(value)
+  }
+  walk(rows)
+
+  const configOf = (id) => {
+    const row = byId.get(id)
+    if (row === undefined) {
+      faults.push(`missingRow:${id}`)
+      return undefined
+    }
+    if (row.config === undefined || row.config === null) {
+      faults.push(`missingConfig:${id}`)
+      return undefined
+    }
+    return row.config
+  }
+
+  // agent-default-model — the sisyphus seat's resolved route, restated exactly.
+  const def = configOf('agent-default-model')
+  if (def !== undefined) {
+    if (def.provider !== routes.sisyphus.provider || def.model !== routes.sisyphus.model) {
+      faults.push(
+        `agentDefaultModelRouteWrong:provider=${String(def.provider)},model=${String(def.model)}`,
+      )
+    }
+  }
+
+  // llm-deepseek — the adapter's single baseURL, pointed at the mock.
+  const deep = configOf('llm-deepseek')
+  if (deep !== undefined) {
+    if (deep.baseURL !== `${mockBaseUrl}/v1`) {
+      faults.push(`llmDeepseekBaseURLWrong:${String(deep.baseURL)}`)
+    }
+    if (deep.apiKeyEnv !== 'DEEPSEEK_API_KEY') {
+      faults.push(`llmDeepseekApiKeyEnvWrong:${String(deep.apiKeyEnv)}`)
+    }
+  }
+
+  // llm-pi-ai — NON-EMPTY mapping, every provider pointed at the mock. This
+  // is the load-bearing row: with it absent or mis-indented the explore seat
+  // has no provider, and nothing else on the surface says so. The expected
+  // provider set is DERIVED from routes (the same rule seedSandbox uses), so a
+  // scenario with no pi-ai route does not fail on a legitimately absent row.
+  const expectedPiAi = [...new Set(
+    Object.values(routes).map((route) => route.provider).filter((p) => p !== DEEPSEEK_ADAPTER_PROVIDER),
+  )]
+  if (expectedPiAi.length === 0) return faults
+  const pi = configOf('llm-pi-ai')
+  if (pi !== undefined) {
+    const providers = pi.providers
+    if (!Array.isArray(providers) && (providers === null || typeof providers !== 'object')) {
+      faults.push(`piAiProvidersNotMapping:${providers === null ? 'null' : typeof providers}`)
+    } else if (Object.keys(providers).length === 0) {
+      faults.push('piAiProvidersEmpty')
+    } else {
+      for (const provider of expectedPiAi) {
+        if (!(provider in providers)) faults.push(`piAiProviderMissing:${provider}`)
+      }
+      for (const [provider, profile] of Object.entries(providers)) {
+        if (profile === null || typeof profile !== 'object') {
+          faults.push(`piAiProviderNotMapping:${provider}`)
+          continue
+        }
+        if (profile.baseURL !== `${mockBaseUrl}/v1`) {
+          faults.push(`piAiProviderBaseURLWrong:${provider}:${String(profile.baseURL)}`)
+        }
+        if (profile.apiKeyEnv !== 'DEEPSEEK_API_KEY') {
+          faults.push(`piAiProviderApiKeyEnvWrong:${provider}:${String(profile.apiKeyEnv)}`)
+        }
+      }
+    }
+  }
+  return faults
+}
+
+/**
+ * Parse YAML with the js-yaml the INSTALLED dsh ships, via the existing
+ * resolveDshNodeModules() (:2340 — walks up from the realpath of the dsh
+ * binary and THROWS rather than skipping). Same dialect as the host, no new
+ * dependency, no dsh boot: `command -v dsh` is a path lookup, not a spawn of
+ * the harness. A parse that silently fell back to a hand-rolled reader would
+ * be the same class of gate that let the mis-indent through, so there is none.
+ */
+async function parseYamlWithInstalledDsh(text) {
+  const modulesDir = resolveDshNodeModules()
+  const mod = await import(pathToFileURL(join(modulesDir, 'js-yaml', 'dist', 'js-yaml.mjs')).href)
+  const yaml = mod.default ?? mod
+  // The loader's OWN dialect: `!!js` is a declared tag of the include schema,
+  // so it must resolve here exactly as scripts/assert-concerto-read-face.mjs:30-36
+  // does — construct-only is enough for a LOAD, and the constructed marker
+  // `{ __jsExpr }` keeps an `!!js` cell from degrading into a plain string
+  // (a tag that silently became text is the failure this guards).
+  const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
+    kind: 'scalar',
+    resolve: (data) => typeof data === 'string',
+    construct: (data) => ({ __jsExpr: data }),
+  })
+  const load = yaml.load ?? mod.load
+  if (typeof load !== 'function') {
+    throw new Error('js-yaml resolved but exports no load() — the audit must not be skipped')
+  }
+  return load(text, { schema: yaml.JSON_SCHEMA.extend(JsExpr) })
+}
+
+/**
+ * The A1′ sub-gate's run state, read by the `--self-test` banner. A gate that
+ * cannot run must say so out loud and must never quietly read as green, so the
+ * banner prints either "RUN clean + N/5 fault classes" or "NOT RUN (reason)".
+ */
+const A1PRIME_SELF_TEST_STATE = { ran: false, faultsCaught: [], notRunReason: '' }
+
+function a1PrimeSelfTestBanner() {
+  if (!A1PRIME_SELF_TEST_STATE.ran) {
+    return `A1′ seeding gate NOT RUN (${A1PRIME_SELF_TEST_STATE.notRunReason || 'reason unrecorded'})`
+  }
+  return `A1′ seeding gate RUN clean + ${A1PRIME_SELF_TEST_STATE.faultsCaught.length}/5 fault classes caught by name (${A1PRIME_SELF_TEST_STATE.faultsCaught.join(', ')})`
+}
+
+/**
+ * P4.5-T8a A1′ — the self-test for the sandbox LLM seeding.
+ *
+ * `seedSandbox()` had never been exercised under `--self-test`, which is why
+ * a silently-broken overlay could still ship. This runs the REAL seedSandbox
+ * into a temp dir, parses its REAL output, audits it with the REAL
+ * auditLlmPatchRows(), and injects FIVE fault classes, requiring a NAMED fault
+ * from each — a fault that goes red for the wrong reason still fails.
+ *
+ * WHAT IS PURE AND WHAT BORROWS (review round 4 MAJOR — the word "hermetic"
+ * was too broad here and has been removed): the self-test SPAWNS NOTHING — no
+ * dsh boot, no port, no network; `mockBaseUrl` is a fixed unroutable literal
+ * because the gate is about STRUCTURE, not about reaching anything. But the
+ * YAML parse borrows the INSTALLED dsh's `js-yaml` (the loader's own `!!js`
+ * dialect, so the parse cannot silently drift from the host), and that makes
+ * THIS SUB-GATE require dsh on PATH. When it is not resolvable the sub-gate
+ * does NOT fail and does NOT pass: it declares itself NOT RUN in the banner
+ * (a1PrimeSelfTestBanner) and the rest of `--self-test` still runs and still
+ * earns its exit code. `seedSandbox()` itself, auditLlmPatchRows,
+ * auditPatchRowNames and auditSettingsPatchAgreement are pure JS.
+ *
+ * The real `--dump-config` leg (auditComposedLlmWiring, scenario path only) is
+ * the one that is SUPPOSED to use the host; it covers the same structure plus
+ * fault (d)'s consequence — the row skipped and its config dropped — which is
+ * only visible in composed output.
+ */
+async function runSandboxSeedingSelfTest(routes) {
+  const problems = []
+  const mockBaseUrl = 'http://127.0.0.1:40001'
+  const sandbox = createSandbox()
+  try {
+    const patchPath = seedSandbox(sandbox, routes, mockBaseUrl)
+    const overlayText = readFileSync(patchPath, 'utf8')
+    let rows
+    try {
+      rows = await parseYamlWithInstalledDsh(overlayText)
+    } catch (error) {
+      // The borrowed dependency is absent. Loud, explicit, and NOT a pass.
+      A1PRIME_SELF_TEST_STATE.ran = false
+      A1PRIME_SELF_TEST_STATE.faultsCaught = []
+      A1PRIME_SELF_TEST_STATE.notRunReason
+        = 'dsh not resolvable for the yaml dialect — installed js-yaml not found off PATH'
+      console.error(`drive: ${a1PrimeSelfTestBanner()}`)
+      console.error(`drive: A1′ resolver detail — ${error.message.split('\n')[0]}`)
+      return problems
+    }
+    A1PRIME_SELF_TEST_STATE.ran = true
+
+    const faults = auditLlmPatchRows(rows, { mockBaseUrl, routes })
+    if (faults.length > 0) {
+      problems.push(`A1′ GOOD seed must audit clean, got ${JSON.stringify(faults)}`)
+    } else {
+      const providers = Object.keys(rows.find((r) => r?.id === 'llm-pi-ai')?.config?.providers ?? {})
+      console.error(`drive: A1′ seed audited clean — llm-pi-ai providers [${providers.join(', ')}], mock ${mockBaseUrl}`)
+    }
+
+    // The `name:` policy is itself a machine assertion (MINOR-3): asserted on
+    // the two rows whose package is stable across generations, ABSENT on the
+    // one whose package is not.
+    const nameFaults = auditPatchRowNames(rows)
+    if (nameFaults.length > 0) {
+      problems.push(`A1′ GOOD seed name policy broken: ${JSON.stringify(nameFaults)}`)
+    }
+
+    // The settings.yaml leg must not diverge from the patch leg (MINOR-1:
+    // it used to write `providers:` unconditionally where the patch leg
+    // guarded the row).
+    const settingsText = readFileSync(join(sandbox.dshHome, 'settings.yaml'), 'utf8')
+    const settingsDoc = await parseYamlWithInstalledDsh(settingsText)
+    const divergence = auditSettingsPatchAgreement(settingsDoc, rows, routes)
+    if (divergence.length > 0) {
+      problems.push(`A1′ settings/patch surfaces diverge: ${JSON.stringify(divergence)}`)
+    }
+
+    // FIVE fault classes, each asserted by NAME on the audit that can see it.
+    // The fifth (wrong default-model route) exists because an audit branch with
+    // no red case is an unproven branch.
+    const firstPiAi = [...new Set(
+      Object.values(routes).map((r) => r.provider).filter((p) => p !== DEEPSEEK_ADAPTER_PROVIDER),
+    )][0]
+    if (firstPiAi === undefined) {
+      problems.push('A1′ self-test expects at least one pi-ai provider in routes; got none')
+    }
+    const cases = [
+      ['mis-indented provider key', overlayText.replace(
+        new RegExp(`^      ${firstPiAi}:$`, 'm'), `    ${firstPiAi}:`,
+      ), (f) => f.includes('piAiProvidersNotMapping:null')],
+      ['llm-pi-ai row dropped', overlayText.replace(
+        /^- id: llm-pi-ai\n(?:.*\n)*?(?=^- id: |$)/m, '',
+      ), (f) => f.includes('missingRow:llm-pi-ai')],
+      ['wrong baseURL', overlayText.replaceAll(`${mockBaseUrl}/v1`, 'http://127.0.0.1:1/wrong'), (f) => f
+        .some((x) => x.startsWith('piAiProviderBaseURLWrong:'))
+        && f.some((x) => x.startsWith('llmDeepseekBaseURLWrong:'))],
+      ['0.1.5 name spelling on 0.2.x', overlayText.replace(
+        '- id: llm-deepseek\n', "- id: llm-deepseek\n  name: '@deepseek-ai/dsh-llm-deepseek'\n",
+      ), (f) => f.includes('deepseekRowMustNotAssertName:@deepseek-ai/dsh-llm-deepseek')],
+      ['agent-default-model off the sisyphus route', overlayText.replace(
+        `    provider: ${routes.sisyphus.provider}\n    model: ${routes.sisyphus.model}`,
+        '    provider: not-a-provider\n    model: not-a-model',
+      ), (f) => f.some((x) => x.startsWith('agentDefaultModelRouteWrong:'))],
+    ]
+    for (const [label, mutated, expect] of cases) {
+      if (mutated === overlayText) {
+        problems.push(`A1′ fault "${label}" did not change the overlay text — the injection is vacuous`)
+        continue
+      }
+      const mutatedRows = await parseYamlWithInstalledDsh(mutated)
+      const mutatedFaults = [
+        ...auditLlmPatchRows(mutatedRows, { mockBaseUrl, routes }),
+        ...auditPatchRowNames(mutatedRows),
+      ]
+      if (!expect(mutatedFaults)) {
+        problems.push(`A1′ fault "${label}" must be caught by name, got ${JSON.stringify(mutatedFaults)}`)
+      } else {
+        // Recorded, not just asserted: the fault each injection actually
+        // produced, so a reviewer can see the gate bite without a debugger.
+        A1PRIME_SELF_TEST_STATE.faultsCaught.push(label)
+        console.error(`drive: A1′ fault caught — ${label} → ${JSON.stringify(mutatedFaults)}`)
+      }
+    }
+    if (problems.length === 0) console.error(`drive: ${a1PrimeSelfTestBanner()}`)
+  } catch (error) {
+    A1PRIME_SELF_TEST_STATE.ran = false
+    A1PRIME_SELF_TEST_STATE.notRunReason = `crashed: ${error.message.split('\n')[0]}`
+    problems.push(`A1′ seeding self-test crashed: ${error.message}`)
+  } finally {
+    rmSync(sandbox.root, { recursive: true, force: true })
+  }
+  return problems
+}
+
+/**
+ * The `name:` policy as a machine assertion (review A MINOR-3). Stable packages
+ * are ASSERTED; the one divergent package is NOT named, because naming either
+ * spelling skips the row on the other generation. Over the OVERLAY only — the
+ * composed tree fills `name` from the bundle row, so this never runs there.
+ */
+function auditPatchRowNames(rows) {
+  const faults = []
+  const byId = new Map()
+  const walk = (node) => {
+    if (Array.isArray(node)) { for (const i of node) walk(i); return }
+    if (node === null || typeof node !== 'object') return
+    if (typeof node.id === 'string' && !byId.has(node.id)) byId.set(node.id, node)
+    for (const v of Object.values(node)) walk(v)
+  }
+  walk(rows)
+  const stable = {
+    'agent-default-model': '@deepseek-ai/dsh-agent-default-model',
+    'llm-pi-ai': '@deepseek-ai/dsh-llm-pi-ai',
+  }
+  for (const [id, expectedName] of Object.entries(stable)) {
+    const row = byId.get(id)
+    if (row === undefined) continue
+    if (row.name !== expectedName) {
+      faults.push(`rowNameNotAssertedOrWrong:${id}:${String(row.name)}`)
+    }
+  }
+  const deep = byId.get('llm-deepseek')
+  if (deep !== undefined && deep.name !== undefined) {
+    faults.push(`deepseekRowMustNotAssertName:${String(deep.name)}`)
+  }
+  return faults
+}
+
+/**
+ * The two seed surfaces must say the same thing (review B MINOR-1). Compares
+ * the settings.yaml sections against the patch rows, cell by cell, for the
+ * three namespaces the seed writes. A divergence means one surface was edited
+ * and the other was not, which is the drift the dual-write design forbids.
+ */
+function auditSettingsPatchAgreement(settings, patchRows, routes) {
+  const faults = []
+  const patchById = new Map()
+  for (const row of Array.isArray(patchRows) ? patchRows : []) {
+    if (row !== null && typeof row === 'object' && typeof row.id === 'string') {
+      patchById.set(row.id, row.config ?? null)
+    }
+  }
+  const pairs = [
+    ['agent-default-model', ['provider', 'model']],
+    ['llm-deepseek', ['apiKeyEnv', 'baseURL']],
+  ]
+  for (const [id, keys] of pairs) {
+    const a = (settings?.[id] ?? null) ?? null
+    const b = patchById.get(id) ?? null
+    for (const key of keys) {
+      if (a?.[key] !== b?.[key]) {
+        faults.push(`${id}.${key}: settings=${JSON.stringify(a?.[key] ?? null)} patch=${JSON.stringify(b?.[key] ?? null)}`)
+      }
+    }
+  }
+  const settingsProviders = settings?.['llm-pi-ai']?.providers ?? null
+  const patchProviders = patchById.get('llm-pi-ai')?.providers ?? null
+  if (JSON.stringify(settingsProviders ?? null) !== JSON.stringify(patchProviders ?? null)) {
+    faults.push(`llm-pi-ai.providers: settings=${JSON.stringify(settingsProviders)} patch=${JSON.stringify(patchProviders)}`)
+  }
+  void routes
+  return faults
+}
+
+/**
+ * P4.5-T8a A1′ (real-composition leg) — run the harness's OWN composer over
+ * the sandbox overlay and audit what it composed, before any boot.
+ *
+ * `dsh --dump-config` prints the composed profile tree and exits ("print the
+ * composed profile tree and exit", `dsh --help`). It runs against a scratch
+ * DSH_HOME INSIDE the sandbox (`dump-home/`), never the boot's own
+ * `$DSH_HOME`, so the legacy importer cannot consume settings.yaml early and
+ * change what the real boot sees.
+ *
+ * This leg adds what the in-process self-test structurally cannot see: the
+ * host's answer to a `name:` that does not match (fault (d) — the row is
+ * skipped and its config dropped, visible only in composed output).
+ */
+async function auditComposedLlmWiring({ sandbox, patchPath, env, mockBaseUrl, routes }) {
+  const dumpHome = join(sandbox.root, 'dump-home')
+  mkdirSync(dumpHome, { recursive: true })
+  const dumpPath = join(sandbox.root, 'dump-config.yml')
+  const run = spawnSync(
+    'dsh',
+    ['--profile', 'web', '--patch', patchPath, '--dump-config'],
+    { env: { ...env, DSH_HOME: dumpHome }, encoding: 'utf8', timeout: 120000, cwd: sandbox.root },
+  )
+  const stdout = run.stdout ?? ''
+  const stderr = run.stderr ?? ''
+  writeFileSync(dumpPath, stdout)
+  const patchWarnLines = stderr.match(/patch:[^\n]*/g) ?? []
+  let faults = [`dumpConfigExit:${String(run.status)}`]
+  if (run.status === 0) {
+    try {
+      faults = auditLlmPatchRows(await parseYamlWithInstalledDsh(stdout), { mockBaseUrl, routes })
+    } catch (error) {
+      faults = [`dumpConfigUnparseable:${error.message}`]
+    }
+  }
+  return { ok: faults.length === 0 && patchWarnLines.length === 0, faults, patchWarnLines, dumpPath, dumpHome }
 }
 
 // ── Credential digest (§14.5) ────────────────────────────────────────────────
@@ -2091,6 +5186,198 @@ async function rpc(boot, method, payload) {
     throw new Error(`rpc ${method} failed: ${JSON.stringify(result ?? body).slice(0, 400)}`)
   }
   return result.value
+}
+
+/**
+ * P4.5-T6 — the `agentPresets/read` face: the single assertion face for preset
+ * CONTENT on both runtimes.
+ *
+ * Two measured facts (dsh 0.2.0-rc.2; artifacts in .omo/evidence/p45t6/logs/):
+ *
+ *  1. `remoteExportList()` — what `@Remote('list')` answers — returns an
+ *     ENVELOPE `{ presets: [...] }`, NOT an array
+ *     (dsh-agent-preset-registry/src/index.ts:171-174 @ dsh-v0.2.0-rc.2),
+ *     while the in-process `list()` DOES return a real array. Same name, two
+ *     shapes — measured side by side in the T6 sandbox scenario
+ *     (.omo/evidence/p45t6/logs/scenario-B-boot.log: `list-shape=array`,
+ *     `remoteExportList-shape=envelope`, `envelope-keys=["presets"]`).
+ *     This driver never calls the roster RPC, so it deliberately ships NO
+ *     shape resolver for a face it does not consume: an exported
+ *     `presetRosterRows` with zero call sites is decoration, and decoration in
+ *     a gate file is later trusted without ever being exercised (MINOR-1 —
+ *     removed rather than left to rot).
+ *  2. The read document's `content` is a `yaml.dump()` of the PARSED entry
+ *     list — `agent-preset-registry/src/index.ts:202` @ dsh-v0.2.0-rc.2
+ *     (`dump(plugins, { schema: entryListSchema, noRefs: true, lineWidth: -1 })`,
+ *     inside readDocument() which opens at :194; the file is 366 lines long, so
+ *     the `:620-631` this comment used to carry was a range that does not exist).
+ *     Flow sequences therefore come back as block sequences and
+ *     redundant quotes drop. Verbatim line greps written against the
+ *     materialized file are therefore WRONG here. The content check delegates
+ *     to scripts/assert-concerto-read-face.mjs — the SAME file the probe runs.
+ *     That delegation is NOT what keeps the consumers in step: last round this
+ *     call site kept passing 5 arguments after the validator grew a 6th, and the
+ *     comment below claiming they "cannot drift" was sitting right there while
+ *     they did. scripts/verify-concerto-static.mjs c23 now pins the arity of
+ *     every consumer statically — that is the evidence — which parses the content and compares
+ *     every delegation row ELEMENT-WISE against src/roster.ts.
+ *
+ * NO FALLBACK: if the read face is unavailable this throws. Falling back to
+ * `$DSH_HOME/.agent-presets/concerto/agent.cordis.yml` would assert bytes the
+ * 0.2.x host never reads — the 0.2.x registry has no `.agent-presets` reader at
+ * all (grep of the shipped dsh-agent-preset-registry/lib/index.js for
+ * `agent-presets|readdir|discover` is empty) — i.e. a gate that passes while
+ * proving nothing.
+ */
+async function readPresetDocument(boot, agentPreset) {
+  // Transport-adaptive, mirroring the roster call sites: rc6-flat exposes the
+  // flat `agentPreset.read`; the token/cookie transport exposes the Remote
+  // gateway path `agentPresets/read` with its {args:{…}} envelope.
+  const flat = boot.transport === 'rc6-flat'
+  const method = flat ? 'agentPreset.read' : 'agentPresets/read'
+  const payload = flat ? { agentPreset } : { args: { agentPreset } }
+  const value = await rpc(boot, method, payload)
+  if (value === null || typeof value !== 'object' || typeof value.content !== 'string') {
+    throw new Error(
+      `${method}: no string \`content\` on the read document (keys `
+        + `${JSON.stringify(Object.keys(value ?? {}))}) — NO fallback to the materialized file is permitted`,
+    )
+  }
+  if (value.agentPreset !== agentPreset) {
+    throw new Error(
+      `${method}: document is for ${JSON.stringify(value.agentPreset)}, not ${agentPreset}`,
+    )
+  }
+  return value
+}
+
+/**
+ * WP2 MAJOR-1 — the contract every `augmentMaterialized` fixture must satisfy.
+ *
+ * A fixture that edits the sandbox's materialized preset edits ONE face and not
+ * the other, and which one depends on the runtime: 0.1.5 serves
+ * `agentPresets/read` from FILE DISCOVERY (the edit lands on the face), 0.2.x
+ * serves it from register() (the edit never reaches it). An undeclared edit is
+ * therefore a coin toss between 'red on 0.1.5' and 'silently unasserted' — the
+ * exact cross-face same-source assumption this round exists to remove. So the
+ * fixture returns the (row, key, after) triples it changed, this function
+ * rejects anything that is not that shape (loudly, at the call site, naming the
+ * scenario), and the list rides to scripts/assert-concerto-read-face.mjs as
+ * `sandboxEdits`, where it turns one roster expectation into a TWO-VALUE
+ * accepted set for exactly those keys. `[]` is a legal answer and means the
+ * scenario edits nothing on the face.
+ *
+ * Keys must be LEAF paths. The vocabulary itself lives in
+ * scripts/assert-concerto-read-face.mjs (`DECLARATION_KEYS`) and is enforced
+ * there — one source, not a copy here — and scripts/verify-concerto-static.mjs
+ * c24 reconciles each fixture's declared keys against that parsed list. What
+ * this function adds is the shape check plus the ancestor check: declaring both
+ * `toolFilter` and `toolFilter.deny` (or any key and something beneath it)
+ * means the declarations disagree about one cell, so it throws.
+ *
+ * Trust boundary, because this is where a lie could live: `after` is typed by
+ * the fixture and is not anchored to any external source — on 0.1.5 the face
+ * under assertion IS the file the fixture edited. c24 checks the fixture body
+ * really writes what it declares; it cannot prove the intent. Changes to an
+ * `augmentMaterialized` fixture therefore go through dual review.
+ */
+function declaredSandboxEdits(def, declared) {
+  if (!Array.isArray(declared)) {
+    throw new Error(
+      `[${def.name}] \`augmentMaterialized\` edited the sandbox materialized preset and returned `
+        + `${JSON.stringify(declared ?? null)} instead of an array of \`{ row, key, after }\` triples — `
+        + 'the read face is FILE-supplied on 0.1.5 and register()-supplied on 0.2.x, so an undeclared '
+        + 'edit either breaks the roster comparison or escapes it, and neither may be decided by luck',
+    )
+  }
+  for (const [index, edit] of declared.entries()) {
+    if (!edit || typeof edit !== 'object' || typeof edit.row !== 'string' || edit.row === ''
+        || typeof edit.key !== 'string' || edit.key === '' || !('after' in edit)) {
+      throw new Error(
+        `[${def.name}] sandbox edit declaration ${index} is not a \`{ row, key, after }\` triple: ${JSON.stringify(edit ?? null)}`,
+      )
+    }
+    const matches = DELEGATION_ENTRIES.filter((entry) => entry.id === edit.row)
+    if (matches.length !== 1) {
+      throw new Error(
+        `[${def.name}] sandbox edit declares row ${JSON.stringify(edit.row)}, which is not exactly one `
+          + `roster delegation id (${DELEGATION_ENTRIES.map((entry) => entry.id).join(', ')})`,
+      )
+    }
+    if (edit.key.startsWith('.') || edit.key.endsWith('.') || edit.key.includes('..')) {
+      throw new Error(
+        `[${def.name}] sandbox edit declaration ${index} has a malformed key path ${JSON.stringify(edit.key)}`,
+      )
+    }
+    // Two declarations that nest inside each other disagree about one cell, and
+    // the outer one is the container that widens the accepted set — the shape
+    // this round removed from the validator's vocabulary.
+    for (const [otherIndex, other] of declared.entries()) {
+      if (otherIndex === index || !other || typeof other.key !== 'string') continue
+      if (edit.row === other.row && (other.key === edit.key || other.key.startsWith(`${edit.key}.`))) {
+        throw new Error(
+          `[${def.name}] sandbox edit declaration ${index} names ${JSON.stringify(edit.key)} while declaration `
+            + `${otherIndex} names ${JSON.stringify(other.key)} beneath it — declare LEAF paths, one per cell`,
+        )
+      }
+    }
+  }
+  return declared
+}
+
+/**
+ * The directory holding `js-yaml` for the INSTALLED dsh — the validator loads
+ * js-yaml from here so it parses in the same dialect the host does. Walks up
+ * from the realpath of the `dsh` binary (npm global trees hoist to different
+ * depths), then the repo's own node_modules as a last candidate. Throws if none
+ * carries js-yaml: a validator that silently skipped its parse is the flickering
+ * gate this task exists to remove.
+ */
+function resolveDshNodeModules() {
+  const candidates = []
+  const which = spawnSync('sh', ['-c', 'command -v dsh'], { encoding: 'utf8' })
+  if (which.status === 0 && which.stdout.trim() !== '') {
+    // `command -v dsh` yields the SYMLINK (`~/.npm-global/bin/dsh`), and a
+    // `bin/node_modules` layout NEVER exists for a global npm install: walking
+    // up from the symlink's own directory misses on every hop and this resolver
+    // throws on a machine where js-yaml is installed and working. `realpathSync`
+    // lands on the real entry (`…/@deepseek-ai/dsh/lib/bin.js`), and the walk
+    // up from THERE hits `…/dsh/node_modules` immediately.
+    //
+    // This is the THIRD resolver in this repo. doctor-lite.mjs:119 and T5's
+    // concerto-preset.ts:558 both realpath; only this one did not — three
+    // implementations of one fact, silently divergent, and the comment claiming
+    // they matched was not evidence. Same root cause as the missing 6th spawnSync
+    // argument: a shared contract changed in one place and its other consumers
+    // were not aligned in the same round.
+    let startDir = dirname(which.stdout.trim())
+    try {
+      startDir = dirname(realpathSync(which.stdout.trim()))
+    } catch {
+      // Keep the symlink directory as the start so the tried-list still records
+      // what was attempted; the throw below stays honest about the failure.
+    }
+    let dir = startDir
+    for (let hop = 0; hop < 8; hop += 1) {
+      candidates.push(join(dir, 'node_modules'))
+      const parent = dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+    // Sibling of the real bin.js: the package layout when node_modules sits
+    // beside lib/ rather than above it.
+    candidates.push(join(startDir, 'node_modules'))
+  }
+  candidates.push(join(REPO_ROOT, 'node_modules'))
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, 'js-yaml', 'dist', 'js-yaml.mjs'))) return candidate
+  }
+  // The throw is deliberate and stays: an unresolvable js-yaml must not degrade
+  // the read-face assertion into a silent skip. Only the STARTING POINT was wrong.
+  throw new Error(
+    `cannot locate js-yaml for the read-face validator; tried ${JSON.stringify(candidates)}`
+      + ' — the read-face assertion must not be skipped silently',
+  )
 }
 
 /**
@@ -2218,27 +5505,157 @@ async function commandExecute(boot, { sessionId, line }) {
 
 // ── dsh process management (cold-start.sh discipline) ───────────────────────
 
+/**
+ * The sandbox COPY of the concerto package (P4.5-T8b) — the path
+ * `installPlugin` hands to `dsh plugin add` for the row that owns the
+ * concerto template, and the only place a MOCKROLE stamp may land.
+ *
+ * WHY A COPY IS LOAD-BEARING, measured on this machine (dsh 0.2.0-rc.2, the
+ * installed npm package at ~/.npm-global/lib/node_modules/@deepseek-ai/dsh):
+ *   * `dsh plugin --profile <p> add <abs dir>` forwards its arguments to
+ *     pnpm inside the PROFILE directory — `runPlugin` builds
+ *     `{profile, dir, installAnchor, cwd: process.cwd()}`
+ *     (lib/plugin-BGnVfe_D.js:74-79) and `runProfilePnpm` spawns pnpm with
+ *     `cwd: dir` (dsh-plugin-manager/lib/index.js:517-518). The caller's cwd
+ *     reaches nothing but `anchorPathSpec` (:215-219), which rewrites ONLY a
+ *     `./`/`../` operand — an absolute spec passes through untouched.
+ *   * pnpm installs a local directory dependency as a `link:` SYMLINK. Raw
+ *     output of the exact command into a throwaway DSH_HOME:
+ *     `+ @oh-my-opendsh/omo-agents link:/home/linletian/SoftwareWorkspace/
+ *     oh-my-opendsh/patches/omo-dsh/omo-agents`, and `ls -l` of the profile's
+ *     node_modules shows `lrwxrwxrwx … omo-agents -> …/patches/omo-agents`.
+ *   * Node resolves a symlinked module to its REALPATH, so the plugin's
+ *     `import.meta.url` — and with it CONCERTO_TEMPLATE_DIR
+ *     (src/concerto-preset.ts:122, read at :381) — realpaths BACK INTO THE
+ *     REPO.
+ * ⇒ Stamping "the sandbox's installed plugin" without copying would write into
+ * patches/omo-dsh/omo-agents/, the repo's shipping template. The copy is what
+ * makes the stamp land inside the sandbox instead.
+ */
+function pluginCopyDir(sandbox) {
+  return join(sandbox.root, 'plugins', basename(PLUGIN_DIR))
+}
+
+/**
+ * The sandbox plugin copy's concerto TEMPLATE — the file the running plugin
+ * reads as `CONCERTO_TEMPLATE_DIR` (src/concerto-preset.ts:122, read at :381 by
+ * `renderConcertoComposition`), because `dsh plugin add` installs this copy as a
+ * `link:` symlink and Node realpaths the module to it.
+ *
+ * THIS is the pre-boot face a delegation row can still be changed on, on BOTH
+ * generations:
+ *   * dsh 0.2.x mounts `register()`'s rendered composition, and `register()`
+ *     renders THIS file at apply() time (src/concerto-preset.ts:845-880 —
+ *     `renderConcertoComposition(templateDir, …)` → `parseCompositionInLoaderDialect`
+ *     → `svc.register({ plugins: rows })`); nothing reads
+ *     `$DSH_HOME/.agent-presets/…` afterwards (the shipped
+ *     dsh-agent-preset-registry has no `.agent-presets` reader).
+ *   * dsh 0.1.5 answers `agentPresets/read` from FILE DISCOVERY of that
+ *     materialized file, and the plugin WRITES that file at boot FROM this
+ *     template (`syncConcertoPreset`, :420). An edit made here before boot is
+ *     therefore in the mounted face on that generation too.
+ *
+ * `materializedCompositionPath()` is the post-boot OUTPUT of this file on both
+ * generations and the mounted face on 0.1.5 only — editing it after readiness is
+ * a stamp nothing mounts on 0.2.x. Measured on dsh 0.2.0-rc.2 (the machine's
+ * installed npm package): the materialized explore row read `backgroundMode:
+ * one-shot` while the child's `subagent/descriptor` read `mode=continuable`, and
+ * the materialized prometheus row had no `toolFilter` while the child's
+ * `request/header` advertised no `write`.
+ */
+function pluginTemplateCompositionPath(sandbox) {
+  return join(pluginCopyDir(sandbox), CONCERTO_PRESET_ID, 'agent.cordis.yml')
+}
+
 function installPlugin(sandbox, env) {
   // One `plugin add` per cordis.yml insert row (three rows since P4-T3): a
   // profile missing ANY one of them aborts the whole boot naming that row
   // (`plugin tree failed to load … ERR_MODULE_NOT_FOUND`) — not just a hooks
   // profile.
+  //
+  // P4.5-T8b: exactly ONE of the three rows is installed from a sandbox COPY —
+  // omo-agents, the package whose apply() renders the concerto template that
+  // 0.2.x mounts (see pluginCopyDir). The other two keep the repo path, and
+  // that is not laziness but a measured refusal: omo-hooks declares
+  // `dependencies: { undici: ^8.10.0 }` and the repo installs it as a pnpm
+  // symlink whose target is RELATIVE to the repo
+  // (`patches/omo-dsh/omo-hooks/node_modules/undici ->
+  // ../../../../node_modules/.pnpm/undici@8.11.2/node_modules/undici`), so a
+  // plain copy carries a symlink that dangles the moment it leaves the repo.
+  // Measured: `cp -r` of omo-hooks into a fresh /tmp dir then
+  // `node --input-type=module -e "import('undici')"` from that dir →
+  // `ERR_MODULE_NOT_FOUND: Cannot find package 'undici'` (the copy's
+  // node_modules/undici resolves to <tmp>/node_modules/…, which is not the
+  // repo's pnpm store). omo-agents by contrast declares NO `dependencies`
+  // field at all and every import in its src/*.ts is either `node:*` or
+  // relative, so the copy is genuinely self-contained. omo-commands declares no
+  // dependencies either, but owns no persona and no template, so copying it
+  // would only add a second face to keep honest.
+  //
+  // `cwd` moves to the sandbox WITH the copied operand and stays REPO_ROOT
+  // for the two repo operands. It is inert either way — anchorPathSpec only
+  // anchors relative operands (dsh-plugin-manager/lib/index.js:215-219) and
+  // pnpm itself runs with cwd = the profile dir (:518) — so the split is made
+  // for what it says: each `add` runs from the directory its operand lives in.
+  // bootDsh keeps `cwd: REPO_ROOT`, where cwd IS load-bearing: that is how
+  // its relative `--patch ./cordis.yml` resolves.
   let addLog = ''
+  const stagedAgentsDir = pluginCopyDir(sandbox)
+  rmSync(stagedAgentsDir, { recursive: true, force: true })
+  mkdirSync(stagedAgentsDir, { recursive: true })
+  cpSync(PLUGIN_DIR, stagedAgentsDir, { recursive: true })
   for (const pluginDir of PLUGIN_DIRS) {
-    const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', pluginDir], {
-      cwd: REPO_ROOT,
+    const operand = pluginDir === PLUGIN_DIR ? stagedAgentsDir : pluginDir
+    const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', operand], {
+      cwd: operand === stagedAgentsDir ? sandbox.root : REPO_ROOT,
       env,
       encoding: 'utf8',
       timeout: INSTALL_TIMEOUT_MS,
     })
-    addLog += `$ dsh plugin --profile ${PROFILE} add ${pluginDir}\n${add.stdout ?? ''}\n${add.stderr ?? ''}\n`
+    addLog += `$ dsh plugin --profile ${PROFILE} add ${operand}\n`
+      + (operand === stagedAgentsDir ? `(copied from ${PLUGIN_DIR})\n` : '')
+      + `${add.stdout ?? ''}\n${add.stderr ?? ''}\n`
     if (add.status !== 0) {
       writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
       throw new Error(
-        `dsh plugin add ${pluginDir} exited ${add.status} (see plugin-add.log in the sandbox)`,
+        `dsh plugin add ${operand} exited ${add.status} (see plugin-add.log in the sandbox)`,
       )
     }
   }
+  // P4.5-T8b closing assertion: the profile must REALLY resolve to the copy.
+  // `dsh plugin add <dir>` installs a local directory dependency as a pnpm
+  // `link:` SYMLINK (see pluginCopyDir), so the mounted package is only the
+  // copy for as long as that symlink points at it. If it ever realpathed back
+  // into the repo — a changed install anchor, a `file:`-style reify, a dedupe —
+  // every MOCKROLE stamp written into the copy would land on bytes nothing
+  // mounts, which is exactly the silent-break class this slice exists to kill.
+  // So the link's target is pinned here instead of trusted, and the resolved
+  // path is recorded in plugin-add.log for the kept sandbox to be audited.
+  const installedOmoAgents = join(
+    sandbox.dshHome,
+    'profiles',
+    PROFILE,
+    'node_modules',
+    '@oh-my-opendsh',
+    basename(PLUGIN_DIR),
+  )
+  if (!existsSync(installedOmoAgents)) {
+    throw new Error(
+      `the profile has no @oh-my-opendsh/${basename(PLUGIN_DIR)} entry at `
+      + `${installedOmoAgents} after `
+      + '`plugin add` — the install did not land where the stamp is written',
+    )
+  }
+  const installedReal = realpathSync(installedOmoAgents)
+  const copyReal = realpathSync(stagedAgentsDir)
+  if (installedReal !== copyReal) {
+    throw new Error(
+      `the profile's ${basename(PLUGIN_DIR)} realpaths to ${installedReal}, not to `
+      + `the sandbox plugin copy ${copyReal} — a MOCKROLE stamp into the copy would `
+      + 'reach nothing, so the run aborts instead of failing later as a mock 400',
+    )
+  }
+  addLog += `realpath ${installedOmoAgents} -> ${installedReal} (== the plugin copy)\n`
   writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
 }
 
@@ -2301,10 +5718,31 @@ function bootDsh(sandbox, patchPath, env) {
     )
     let log = ''
     let readinessHandled = false
+    // MEASURED TWICE on 0.1.5-rc.1 at scenario `explore-nested-delegation-denied`:
+    // the sandbox was already torn down while this child's stdout was still flushing,
+    // so `writeFileSync` threw ENOENT inside a socket handler and killed the WHOLE
+    // driver mid-suite — AC4-015 emitted NO verdict JSON at all, which a CI reader
+    // cannot distinguish from "the suite never ran". `log` is the in-memory truth every
+    // assertion reads; the file is only a mirror for a human auditing a KEPT sandbox.
+    // So a vanished mirror is dropped and COUNTED — never fatal, never silent.
+    let bootMirrorDropped = 0
     const bootLogPath = join(sandbox.root, 'boot.log')
     const onData = (chunk) => {
       log += chunk.toString('utf8')
-      writeFileSync(bootLogPath, log)
+      try {
+        writeFileSync(bootLogPath, log)
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+        bootMirrorDropped += 1
+        BOOT_MIRROR_DROPS.count += 1
+        // EVERY drop speaks, not just the first (Review B, round-5 nit): "counted but
+        // mentioned once" is how a growing problem stays hidden in the tail. The event
+        // is rare — three in a whole 33-scenario suite — so per-drop noise is cheap
+        // and a silent counter is not.
+        console.error(`drive: [boot-mirror] boot.log mirror lost after sandbox teardown `
+          + `(${bootLogPath}) — drop #${bootMirrorDropped}; ${log.length} bytes of boot output `
+          + `remain in memory, where every assertion reads them; continuing, and counting.`)
+      }
       if (readinessHandled) return
       const match = /dsh web: http:\/\/127\.0\.0\.1:(\d+)(?:\/\?token=([A-Za-z0-9_-]+))?/.exec(log)
       if (match === null) return
@@ -2456,7 +5894,13 @@ async function awaitTurnEnd(sandbox, sessionId, expectedTurns = 1) {
   return found // may be undefined — the analysis reports the gap honestly
 }
 
-// ── MOCKROLE delivery (see header): extend the materialized persona scalar ──
+// ── MOCKROLE delivery (see header): TWO faces, one per generation ───────────
+// 0.2.x mounts what omo-agents handed to register(), so the marker is stamped
+// into the SANDBOX COPY's persona markdown BEFORE boot
+// (stampMockRoleMarkersIntoPluginCopy); 0.1.5 mounts the MATERIALIZED file, so
+// appendMockRoleMarker keeps stamping it AFTER boot sync and BEFORE
+// session.create. Both run on every scenario; the copy's stamp lands first and
+// makes the materialized one a line-anchored no-op (see the header).
 
 /** The materialized preset every scenario edits after boot (T6 apply-time sync). */
 function materializedCompositionPath(sandbox) {
@@ -2526,12 +5970,22 @@ function locateRoleBlockScalar(lines, spec, role) {
 }
 
 /**
- * P2-T18 MOCKROLE injection: idempotently stamp `MOCKROLE=<role>` as the FIRST
- * content line of that role's persona block scalar in the materialized
- * composition. Throws loudly on an unknown role, a missing/duplicated row
- * anchor, a missing block scalar, or a missing materialized file (sync did not
- * run). Idempotence is LINE-ANCHORED: `MOCKROLE=sisyphus` is not satisfied by
- * the `MOCKROLE=sisyphus-junior` line.
+ * P2-T18 MOCKROLE injection, 0.1.5 FACE: idempotently stamp `MOCKROLE=<role>`
+ * as the FIRST content line of that role's persona block scalar in the
+ * materialized composition. Throws loudly on an unknown role, a missing/duplicated
+ * row anchor, a missing block scalar, or a missing materialized file (sync did
+ * not run). Idempotence is LINE-ANCHORED: `MOCKROLE=sisyphus` is not satisfied
+ * by the `MOCKROLE=sisyphus-junior` line.
+ *
+ * P4.5-T8b scope note, so this comment does not lie about the runtime: on
+ * 0.2.x this file is WRITTEN and NOT READ — the preset the loader mounts comes
+ * from register(), rendered from the plugin package's own template directory —
+ * so this stamp alone cannot reach the mock. stampMockRoleMarkersIntoPluginCopy
+ * is the 0.2.x face and runs BEFORE boot; it makes this call a no-op on both
+ * generations, because the copy's stamped markdown already puts the marker on
+ * the first content line the guard below looks for. Both stay in the driver
+ * until the version pin flips: on 0.1.5 the materialized file IS the mounted
+ * face, and there the copy's stamp is what becomes redundant.
  */
 export function appendMockRoleMarker(sandbox, role) {
   const spec = MOCKROLE_BLOCK_SCALARS.get(role)
@@ -2561,6 +6015,16 @@ export function appendMockRoleMarker(sandbox, role) {
  * FIRST content line under that row's header and appears exactly once.
  * Never throws: a layout failure is returned as `{ok:false, reason}` so the
  * verdict can report it instead of collapsing into a driver error.
+ *
+ * SCOPE, stated so it cannot be over-read (P4.5-T8b review): this reads the
+ * MATERIALIZED preset, i.e. the WRITE face. On 0.1.5 that file is also the
+ * mounted face, so `ok:true` here means "the model will see the marker". On
+ * 0.2.x it is written by `syncConcertoPreset` and then NEVER READ, so
+ * `ok:true` here proves only the RENDER contract — the copy's markdown reached
+ * the composition the plugin renders — and says NOTHING about what the model
+ * received. That claim belongs to `verifyMockRoleMarkersOnReadFace`, which
+ * reads the face the runtime actually mounts. Keeping the two apart is the
+ * whole lesson of this slice; collapsing them is how the pre-T8b break hid.
  */
 export function verifyMockRoleMarkerLanding(sandbox, role) {
   const spec = MOCKROLE_BLOCK_SCALARS.get(role)
@@ -2593,6 +6057,196 @@ export function verifyMockRoleMarkerLanding(sandbox, role) {
     expected,
     actual: actual ?? null,
   }
+}
+
+/** Where the scenario archives the `agentPresets/read` content it captured. */
+function readFaceContentPath(sandbox) {
+  return join(sandbox.root, 'read-face', 'agentPresets-read-content.yml')
+}
+
+/**
+ * P4.5-T8b — gate the MOCKROLE markers on the READ face, the face this
+ * generation actually mounts.
+ *
+ * `verifyMockRoleMarkerLanding` above reads the MATERIALIZED preset; on 0.2.x
+ * that file is written and never read, so nothing in the suite previously
+ * proved that the marker reached the composition the runtime serves to the
+ * model — which is the entire point of the copy+stamp delivery. This closes
+ * that hole: it reads the archived `agentPresets/read` content (the bytes the
+ * RPC handed back for preset `concerto`, written there by runScenario straight
+ * off the read RPC, with NO fallback to the file on disk) and, per role,
+ * requires the marker row to appear EXACTLY ONCE at that role's own indent.
+ *
+ * Exactly-once, not "contains": `MOCKROLE=sisyphus` is a prefix of
+ * `MOCKROLE=sisyphus-junior`, so a substring test would let a sibling role's
+ * marker satisfy the conductor's gate. The per-role line count is therefore
+ * pinned against the exact expected row, and the total across roles is pinned
+ * too, so a marker that migrated to the wrong persona row is loud here rather
+ * than silently double-counted.
+ *
+ * Never throws: a miss is `{ok:false, reason}` so the verdict carries it.
+ */
+export function verifyMockRoleMarkersOnReadFace(sandbox, roles) {
+  const path = readFaceContentPath(sandbox)
+  let lines
+  try {
+    lines = readFileSync(path, 'utf8').split('\n')
+  } catch (error) {
+    return roles.map((role) => ({
+      role,
+      face: 'read',
+      ok: false,
+      reason: `cannot read the archived read face at ${path}: ${error.message}`,
+    }))
+  }
+  const perRole = roles.map((role) => {
+    const spec = MOCKROLE_BLOCK_SCALARS.get(role)
+    if (spec === undefined) {
+      return { role, face: 'read', ok: false, reason: `unknown role '${role}'` }
+    }
+    const expected = `${spec.indent}MOCKROLE=${role}`
+    const hits = lines
+      .map((line, index) => (line === expected ? index + 1 : 0))
+      .filter((lineNumber) => lineNumber > 0)
+    if (hits.length === 1) {
+      return { role, face: 'read', ok: true, markerLine: hits[0], markerCount: 1, expected }
+    }
+    return {
+      role,
+      face: 'read',
+      ok: false,
+      markerLine: hits[0] ?? null,
+      markerCount: hits.length,
+      expected,
+      reason: hits.length === 0
+        ? `no \`${expected}\` row in the read face — the marker never reached the mounted composition`
+        : `${hits.length} \`${expected}\` rows in the read face (lines ${hits.join(',')}) — a marker must appear exactly once`,
+    }
+  })
+  const anyMarkerLines = lines.filter((line) => /^\s*MOCKROLE=/.test(line)).length
+  if (anyMarkerLines !== roles.length) {
+    perRole.push({
+      role: '*',
+      face: 'read',
+      ok: false,
+      markerCount: anyMarkerLines,
+      reason: `the read face carries ${anyMarkerLines} MOCKROLE row(s) for ${roles.length} roles `
+        + '— a marker has migrated to, or vanished from, a persona row',
+    })
+  }
+  return perRole
+}
+
+/**
+ * P4.5-T8b MOCKROLE injection, 0.2.x FACE: stamp `MOCKROLE=<role>` as the
+ * FIRST line of that role's persona SOURCE inside the sandbox copy of
+ * omo-agents, BEFORE boot. On this generation the mounted composition comes
+ * from `register()`, and `register()` renders the template that
+ * CONCERTO_TEMPLATE_DIR points at — the plugin package's own directory, resolved
+ * from `import.meta.url` (src/concerto-preset.ts:122, read at :381). Writing
+ * the marker into the materialized file therefore reaches nothing; the marker
+ * has to be upstream of the render, and the persona markdown is the only thing
+ * upstream of it (the template's persona VALUES are sentinels that
+ * `renderPersonaIntoComposition` replaces wholesale — needle at
+ * src/system-prompt.ts:83, replace at :95 — so no line written into the
+ * template YAML can survive inside the block scalar it produces).
+ *
+ * WHICH file per role, derived rather than typed:
+ *   * a delegation child → its roster `personaFile` (roster.ts rows;
+ *     `personaFileFor` at src/persona-prompts.ts:132 is the plugin's own
+ *     lookup, so a renamed persona file cannot send the marker elsewhere);
+ *   * the conductor → the file the plugin's own loader returns for the FIRST
+ *     key of `SISYPHUS_SECTION_ORDER` (src/system-prompt.ts:33), located by
+ *     CONTENT among the copy's system-sections. Content-matching is deliberate:
+ *     the key→filename map lives inside `loadSystemSections`
+ *     (src/system-sections.ts:44-51) and is not exported, and a hand-copied
+ *     `'role.md'` here would be exactly the kind of restatement that goes
+ *     stale silently.
+ *
+ * The stamp is SELF-VERIFIED through the plugin's own assemblers pointed at
+ * the copy (`buildSisyphusSystemPrompt` / `buildAgentPersona`): the marker
+ * must be the first line of what the plugin would actually hand to
+ * `register()`, or this throws. An unknown role throws through `personaFileFor`.
+ *
+ * `reStamped` is reported per role and its meaning is pinned, not implied:
+ * `false` = THIS call performed the stamp (the source's byte 0 was not yet the
+ * marker); `true` = the source already began with it and nothing was rewritten.
+ * In production it is ALWAYS `false`, because `installPlugin` wipes and re-copies
+ * the staged directory before stamping — a fresh copy cannot already be stamped,
+ * so nobody should read `reStamped:false` as evidence of anything. It is not
+ * dead weight either: `runMockRoleCopyStampSelfTest` calls this twice against
+ * the SAME staged copy without wiping, and asserts the second pass returns
+ * `reStamped:true` for every role with the bytes unchanged. That is where the
+ * guard earns its keep, and a second stamp would be the double-marker the read
+ * face gate rejects.
+ */
+export async function stampMockRoleMarkersIntoPluginCopy(sandbox, roles) {
+  const sectionsDir = join(pluginCopyDir(sandbox), 'system-sections')
+  if (!existsSync(sectionsDir)) {
+    throw new Error(
+      `sandbox plugin copy has no system-sections/ at ${sectionsDir} `
+      + '(installPlugin did not run, or copied a package that owns none)',
+    )
+  }
+  const systemPrompt = await import(
+    new URL('../../patches/omo-dsh/omo-agents/src/system-prompt.ts', import.meta.url).href
+  )
+  const sectionLoader = await import(
+    new URL('../../patches/omo-dsh/omo-agents/src/system-sections.ts', import.meta.url).href
+  )
+  const personaPrompts = await import(
+    new URL('../../patches/omo-dsh/omo-agents/src/persona-prompts.ts', import.meta.url).href
+  )
+  const landing = []
+  for (const role of roles) {
+    const marker = `MOCKROLE=${role}`
+    let targetPath
+    if (role === CONDUCTOR_ID) {
+      const firstKey = systemPrompt.SISYPHUS_SECTION_ORDER[0]
+      const wanted = sectionLoader.loadSystemSections(sectionsDir)[firstKey]
+      const matches = readdirSync(sectionsDir).filter((file) => {
+        try {
+          return readFileSync(join(sectionsDir, file), 'utf8') === wanted
+        } catch {
+          return false
+        }
+      })
+      if (matches.length !== 1) {
+        throw new Error(
+          `the conductor's first persona section (${firstKey}) matches `
+          + `${matches.length} files in ${sectionsDir}; exactly one must match `
+          + 'or the marker has no unambiguous carrier',
+        )
+      }
+      targetPath = join(sectionsDir, matches[0])
+    } else {
+      targetPath = join(sectionsDir, personaPrompts.personaFileFor(role))
+    }
+    const before = readFileSync(targetPath, 'utf8')
+    // Line-anchored at byte 0: `MOCKROLE=sisyphus` is not satisfied by a
+    // leading `MOCKROLE=sisyphus-junior` line, and a mid-file marker would
+    // still be found by the mock's unanchored scan but is not what this
+    // driver promises.
+    if (!before.startsWith(`${marker}\n`)) {
+      writeFileSync(targetPath, `${marker}\n${before}`)
+    }
+    const assembled = role === CONDUCTOR_ID
+      ? systemPrompt.buildSisyphusSystemPrompt(sectionLoader.loadSystemSections(sectionsDir))
+      : personaPrompts.buildAgentPersona(role, sectionsDir)
+    if (!assembled.startsWith(`${marker}\n`)) {
+      throw new Error(
+        `MOCKROLE stamp for '${role}' did not reach the head of the persona `
+        + `the plugin assembles from ${sectionsDir}: ${JSON.stringify(assembled.slice(0, 60))}`,
+      )
+    }
+    landing.push({
+      role,
+      file: targetPath,
+      markerLine: 1,
+      reStamped: before.startsWith(`${marker}\n`),
+    })
+  }
+  return landing
 }
 
 // ── Analysis (pure — the --self-test QA targets exactly this) ────────────────
@@ -2654,28 +6308,269 @@ export function advertisedToolNames(events) {
 }
 
 /**
- * Flatten a session's tool/result events into {callId, isError, text} parts
- * (the nested shape: data.message.content[] entries of type 'tool-result'
- * whose own content[] carries the text parts — see the T19 verbatim sample).
+ * The retired V3 `tool-result` content-block tag.
+ *
+ * Named, not inlined, because it is the ONE token that selects the shape below
+ * and it must be visibly distinct from the event type `'tool/result'`, which is
+ * identical in BOTH generations. Conflating the two is what made this reader
+ * silently dead on 0.2.x: it kept matching the event type and stopped matching
+ * the block tag.
  */
-export function toolResultParts(events) {
+const RETIRED_TOOL_RESULT_BLOCK = 'tool-result'
+
+/**
+ * Flatten a session's tool/result events into {callId, isError, text, shape}
+ * parts, over BOTH generations' wire shapes.
+ *
+ * ## What selects the shape — and it is exactly one thing
+ *
+ * **Whether `data.message.content[]` contains a block tagged
+ * `tool-result` (`RETIRED_TOOL_RESULT_BLOCK`).**
+ *
+ * That token is not a guess and not a heuristic: each runtime's own validator
+ * makes its answer MANDATORY and the two answers are mutually exclusive, so the
+ * token cannot drift out of agreement with the generation that wrote the row.
+ *
+ *  - `dsh 0.1.5-rc.1` (session format **v3**) — the wrapper is REQUIRED.
+ *    `@deepseek-ai/dsh-session@0.1.5-rc.1` `lib/index.js:954` throws
+ *    `"message must contain one tool-result block"` unless `content.length === 1`
+ *    and `content[0].type === 'tool-result'`, and `:955` throws
+ *    `"message has mismatched tool call ids"` unless that block's `toolCallId`
+ *    equals `source.callId`. It emits that shape at `lib/index.js:654-670`.
+ *    `isError` and `toolCallId` therefore live ON THE WRAPPER.
+ *  - `dsh 0.2.0-rc.2` (session format **v4**) — the wrapper is FORBIDDEN.
+ *    `@deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2` `lib/index.js:157`
+ *    throws `"must not contain a released tool-result wrapper"` for any such
+ *    block, `:213` the same for an SSE `block-start`, `:278`
+ *    `"format v4 system content rejects retired tool-result wrappers"`, and
+ *    `:478` `"… content must not contain a released tool-result wrapper"` on
+ *    the `tool/result` row itself. Its `liftToolResult` (`:423-446`) *lifts*
+ *    the wrapper away, and `assertV4ToolResultMessage` (`:459-481`) then
+ *    REQUIRES `role === 'tool'`, a first-class `toolCallId`, and array content.
+ *    `isError` and `toolCallId` therefore live ON THE MESSAGE, and the result
+ *    bytes are plain `text` blocks directly under `message.content`.
+ *
+ * So `hasWrapper` is true for every row 0.1.5 can write and false for every row
+ * 0.2.x can write. A row that satisfies NEITHER (no wrapper, and not a v4
+ * first-class `role: 'tool'` message) is not skipped: it is recorded in
+ * `malformed`, because the failure mode this reader already committed was
+ * returning `[]` to 19 call sites that all believe they received data.
+ * `toolResultShapeCensus` exposes the buckets and `toolResultParts` keeps the
+ * historical signature so no call site has to change.
+ *
+ * Measured, before this reader learned the V4 shape: `toolResultParts` returned
+ * `[]` for every real 0.2.x log (10 `tool/result` rows in
+ * `/tmp/omo-dsh-e2e-7ecGyx/…/session-13cad5df-…/session.v4.jsonl` → 0 parts).
+ */
+export function toolResultShapeCensus(events) {
   const parts = []
+  const malformed = []
+  let legacyWrapper = 0
+  let firstClassV4 = 0
   for (const event of events) {
     if (event.type !== 'tool/result') continue
-    const content = event.data?.message?.content
-    if (!Array.isArray(content)) continue
-    for (const part of content) {
-      if (part?.type !== 'tool-result') continue
-      const inner = Array.isArray(part.content) ? part.content : []
-      const text = inner
-        .filter((piece) => piece?.type === 'text' && typeof piece.text === 'string')
-        .map((piece) => piece.text)
-        .join('\n')
-      parts.push({ callId: part.toolCallId, isError: part.isError === true, text })
+    const message = event.data?.message
+    if (typeof message !== 'object' || message === null || Array.isArray(message)) {
+      malformed.push({ seq: event.seq, reason: 'data.message is not an object' })
+      continue
+    }
+    const content = message.content
+    if (!Array.isArray(content)) {
+      malformed.push({ seq: event.seq, reason: `message.content is ${typeof content}, not an array` })
+      continue
+    }
+    const wrappers = content.filter(
+      (block) => typeof block === 'object' && block !== null && block.type === RETIRED_TOOL_RESULT_BLOCK,
+    )
+    if (wrappers.length > 0) {
+      // V3 / 0.1.5-rc.1: identity and bytes live INSIDE the wrapper.
+      legacyWrapper += 1
+      for (const wrapper of wrappers) {
+        const inner = Array.isArray(wrapper.content) ? wrapper.content : []
+        parts.push({
+          callId: wrapper.toolCallId,
+          isError: wrapper.isError === true,
+          text: joinTextBlocks(inner),
+          shape: 'v3-wrapper',
+        })
+      }
+      continue
+    }
+    if (message.role !== 'tool') {
+      // Neither generation: not a wrapper row, not an admissible V4 row.
+      malformed.push({
+        seq: event.seq,
+        reason: `no ${RETIRED_TOOL_RESULT_BLOCK} wrapper and message.role is ${JSON.stringify(message.role)}, not "tool"`,
+      })
+      continue
+    }
+    // V4 / 0.2.0-rc.2: identity and bytes live ON THE MESSAGE.
+    firstClassV4 += 1
+    parts.push({
+      callId: message.toolCallId,
+      isError: message.isError === true,
+      text: joinTextBlocks(content),
+      shape: 'v4-first-class',
+    })
+  }
+  return { parts, malformed, legacyWrapper, firstClassV4 }
+}
+
+/** Concatenate the `text` blocks of one content array with newlines. */
+function joinTextBlocks(blocks) {
+  return blocks
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n')
+}
+
+/**
+ * `toolResultShapeCensus(events).parts` — the historical entry point, kept so
+ * the 19 existing call sites stay untouched. Use the census directly when a
+ * check needs to prove the shape selection actually happened (see
+ * `toolResultShapeCensus` for what selects it).
+ */
+export function toolResultParts(events) {
+  return toolResultShapeCensus(events).parts
+}
+
+/**
+ * The self-test's falsifiability gate for the shape rule above: every
+ * `tool/result` row must land in exactly one bucket, and the bucket the census
+ * reports must be the one the caller's own runtime prediction says it is.
+ * Returns a list of problems — empty means the selection held.
+ */
+export function auditToolResultShapeSelection({ events, expect }) {
+  const problems = []
+  const census = toolResultShapeCensus(events)
+  const rows = events.filter((event) => event?.type === 'tool/result').length
+  // The exhaustiveness invariant: nothing may vanish between input rows and the
+  // three buckets. This is the clause that would have caught the original defect,
+  // in which rows disappeared into a `continue` with no accounting.
+  if (census.legacyWrapper + census.firstClassV4 + census.malformed.length !== rows) {
+    problems.push(
+      `shape census is not exhaustive: ${rows} tool/result rows bucketed as ${census.legacyWrapper} v3-wrapper + ${census.firstClassV4} v4-first-class + ${census.malformed.length} malformed`,
+    )
+  }
+  if (census.malformed.length > 0) {
+    problems.push(
+      `unrecognised tool/result shape(s): ${census.malformed.map((row) => `seq ${row.seq}: ${row.reason}`).join('; ')}`,
+    )
+  }
+  for (const [bucket, expected] of Object.entries(expect ?? {})) {
+    if (census[bucket] !== expected) {
+      problems.push(`shape census ${bucket} is ${census[bucket]}, expected ${expected}`)
     }
   }
-  return parts
+  // A matched part must carry usable bytes: an empty text is how a silently
+  // dead reader looks from the outside.
+  const empty = census.parts.filter((part) => part.text === '')
+  if (empty.length > 0) {
+    problems.push(`${empty.length} matched tool-result part(s) carry empty text`)
+  }
+  return problems
 }
+
+/**
+ * TWO REAL `tool/result` rows, byte-for-byte as written by the installed
+ * runtimes — NOT fabricated. These exist because every fixture in this file was
+ * written in the 0.1.5 wrapper shape, which is precisely why the dead reader
+ * below survived 19 call sites: the self-test could only ever ask a 0.1.5
+ * question of a 0.2.x log.
+ *
+ * PROVENANCE (V4 leg, dsh 0.2.0-rc.2 — the machine's default PATH):
+ * `/tmp/omo-dsh-e2e-7ecGyx/dsh/sessions/--tmp-omo-dsh-e2e-7ecGyx-project--/`
+ * `session-13cad5df-d098-4524-9f89-3f5758a6406b/session.v4.jsonl`, seq 27 and
+ * seq 36, extracted verbatim with
+ * `node -e '…filter(e => e.type === "tool/result")…'`. The seq-27 text is the
+ * row the arbiter captured first-hand.
+ *
+ * PROVENANCE (V3 leg, dsh 0.1.5-rc.1 — `/tmp/p45t7-015/prefix/bin`): the
+ * message below is transcribed from the runtime's OWN emitter,
+ * `@deepseek-ai/dsh-session@0.1.5-rc.1` `lib/index.js:654-670` (the interrupted
+ * -call closer), with the row envelope from `:671-687`. It is the shape that
+ * emitter is *required* to produce — `lib/index.js:954-955` throws
+ * `"message must contain one tool-result block"` / `"message has mismatched tool
+ * call ids"` for anything else — and `SESSION_FORMAT_VERSION = 3` at `:56`.
+ */
+const CAPTURED_TOOL_RESULT_ROWS = [
+  // V4 / 0.2.0-rc.2, seq 27 — error path: isError ON THE MESSAGE, bytes in a
+  // plain text block, plus data.error metadata.
+  {
+    type: 'tool/result',
+    seq: 27,
+    time: 1791238477875,
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        role: 'tool',
+        source: { kind: 'tool', callId: 'mock-llm-tool-1-0' },
+        toolCallId: 'mock-llm-tool-1-0',
+        content: [{
+          type: 'text',
+          text: 'Error: pi-ai provider "deepseek" has no configured model "deepseek-v4-flash"',
+        }],
+        isError: true,
+        id: '080fd85b-9166-48ad-9ed2-bdf02ab2b018',
+      },
+      error: { name: 'LlmError', code: 'UNKNOWN_MODEL' },
+    },
+    sourceEventSeqs: [17],
+    surfaceOp: 'append',
+  },
+  // V4 / 0.2.0-rc.2, seq 36 — success path: a delegation's own reply bytes.
+  {
+    type: 'tool/result',
+    seq: 36,
+    time: 1791238478886,
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        role: 'tool',
+        source: { kind: 'tool', callId: 'mock-llm-tool-1-1' },
+        toolCallId: 'mock-llm-tool-1-1',
+        content: [{ type: 'text', text: 'MOCK-PARADE-CHILD-HEPHAESTUS-4b7e' }],
+        isError: false,
+        id: '8e06801c-9b43-4d4c-b07d-3f9be6118357',
+      },
+    },
+    sourceEventSeqs: [18],
+    surfaceOp: 'append',
+  },
+  // V3 / 0.1.5-rc.1 — the retired wrapper: identity, flag AND bytes INSIDE the
+  // wrapper block, `role: 'user'`, and NO first-class `toolCallId` on the
+  // message. Captured byte-for-byte from the `bash-read-guard-warned` sandbox
+  // this very suite produced on dsh 0.1.5-rc.1:
+  // `/tmp/omo-dsh-e2e-VVrUt5/dsh/sessions/--tmp-omo-dsh-e2e-VVrUt5-project--/`
+  // `session-964998d7-bfb5-41d4-9533-0c894b48a652/session.v3.jsonl`, seq 17.
+  {
+    type: 'tool/result',
+    seq: 17,
+    time: 1791241783234,
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        source: { kind: 'tool', callId: 'mock-llm-tool-1-0' },
+        content: [{
+          type: 'tool-result',
+          toolCallId: 'mock-llm-tool-1-0',
+          content: [{
+            type: 'text',
+            text: 'omo-dsh bash-file-read-guard fixture line one 4c1e9a\nguard grep target line 8f2b7d\n',
+          }],
+          isError: false,
+        }],
+        role: 'user',
+        id: 'f069e7e7-dc5c-4815-9987-358146e8fd50',
+      },
+    },
+    sourceEventSeqs: [16],
+    surfaceOp: 'append',
+  },
+]
 
 /**
  * The HELLO scenario assertions. `log` = {path, header, events} | undefined;
@@ -3103,7 +6998,7 @@ export function analyzeRosterParade(
   }
 
   const childDetails = PARADE_AGENTS.map((agent) => {
-    const configuredSeat = PARADE_SEATS.get(agent)
+    const configuredSeat = paradeSeatTable().get(agent)
     const resolvedSeat = routes[agent]
     const child = childByLabel.get(paradeLabel(agent))
     const observedRoute = child === undefined ? undefined : requestHeaderRoute(child.events)
@@ -3187,8 +7082,11 @@ export function analyzeRosterParade(
     everyChildRouteMatchedConfiguredSeat: childDetails.every((detail) => detail.seatMatches),
     everyConfiguredSeatResolvedFromEnv:
       childDetails.every((detail) => detail.configuredSeatResolved),
-    // The distribution really covers all 7 real catalog pairs.
-    allSevenRealSeatsExercised: observedPairCount === PARADE_SEAT_PAIRS.length,
+    // The distribution really covers every catalog pair the pinned install
+    // serves — SIX on the restored pre-T8b pin (derived, never restated; T8b
+    // briefly made it FOUR against the 0.2.x catalogs). The count comes from
+    // PARADE_SEAT_PAIRS, so a comment drift cannot false this check.
+    allRealCatalogPairsExercised: observedPairCount === PARADE_SEAT_PAIRS.length,
     // Every role's wire requests carried the configured model (route
     // observability on the mock channel too, not just the session log).
     everyMockRequestOnConfiguredModel: childDetails.every(
@@ -3664,23 +7562,26 @@ function pluginInjectedMessageCarriers(events, injectedText) {
   return { userMessages, nextStepInsertions }
 }
 
-/** True when a message carries the advisory's producer triple verbatim. */
+/** True when a message carries the advisory's producer triple verbatim
+ * ({kind: OMO_BASH_READ_GUARD_KIND, plugin:'omo-hooks', form:'notice'} — the kind
+ * became producer-dedicated in P4.5-T9). */
 function isBashGuardAdvisorySource(message) {
-  return message?.source?.kind === 'plugin'
+  return message?.source?.kind === OMO_BASH_READ_GUARD_KIND
     && message.source.plugin === BASH_FILE_READ_GUARD_PLUGIN
     && message.source.form === 'notice'
 }
 
 /**
  * True when a message carries the todo continuation's producer triple verbatim:
- * {kind:'plugin', plugin:'omo-hooks', form:'instructions'}. Both halves are
- * imported/measured — the plugin name from the shipped listener module, the
- * form from its own `buildContinuationMessage` declaration (the C-mode advisory
- * uses 'notice'; conflating the two would make the E-mode pilot unable to tell
- * a continuation directive from an advisory).
+ * {kind: OMO_TODO_CONTINUATION_KIND, plugin:'omo-hooks', form:'instructions'}.
+ * The kind and the plugin name are imported/measured — the kind pinned against
+ * `buildContinuationMessage`'s stamp by the producer-kind tripwire, the plugin
+ * name from the shipped listener module — and the form comes from that same
+ * declaration (the C-mode advisory uses 'notice'; conflating the two would make
+ * the E-mode pilot unable to tell a continuation directive from an advisory).
  */
 function isTodoContinuationSource(message) {
-  return message?.source?.kind === 'plugin'
+  return message?.source?.kind === OMO_TODO_CONTINUATION_KIND
     && message.source.plugin === TODO_CONTINUATION_ENFORCER_PLUGIN
     && message.source.form === 'instructions'
 }
@@ -3694,7 +7595,7 @@ function isTodoContinuationSource(message) {
  * about a batch in which all three really executed:
  *   (a) the trigger's result is present, non-error, and carries the fixture
  *       bytes (劝导非阻断: the command was NOT blocked or rewritten);
- *   (b) a `user/message` carrier with source {kind:'plugin',
+ *   (b) a `user/message` carrier with source {kind:'omo-bash-read-guard',
  *       plugin:'omo-hooks', form:'notice'} is durably in the session log;
  *   (c) 对照① the piped `cat` ran (its grep-filtered output proves the
  *       pipeline) and added NO second advisory;
@@ -4237,8 +8138,84 @@ export function analyzeJsonErrorRecoveryReminder(
     && writeResult.text.endsWith(`\n${JSON_ERROR_REMINDER}`)
     ? writeResult.text.slice(0, -(JSON_ERROR_REMINDER.length + 1))
     : writeResult?.text
-  const checks = {
-    ...dModeGivens({ log, providersJson, bootLog }, routes),
+
+  // ── THE PREMISE BRANCH (P4.5-T12a; `adapter-dead-turn` PROMOTED TO CONTRACT
+  //    by P4.5-T12b) ───────────────────────────────────────────────────────────
+  // The discriminator is an OBSERVABLE (did the registry answer the two calls at
+  // all?), never a version string, and the branch it selects is recorded in
+  // `bonus.premiseBranch` so a kept sandbox can be audited against it.
+  //
+  //   • `adapter-dead-turn` — **THE CONTRACT on dsh 0.2.x** (promoted from
+  //     "migration accommodation" by the D17 cutover, P4.5-T12b: 0.1.x
+  //     compatibility is dropped, so this is no longer a transitional shape to
+  //     tolerate — it is the accepted product behaviour of the only supported
+  //     runtime). dsh-llm-deepseek/lib/index.js :1983-1991 (the machine's
+  //     installed npm package) walks every `tool-call` block at `message_stop` —
+  //     unless `reason.kind === "max-tokens"` — and does `JSON.parse(content
+  //     .arguments)` then `object(parsed)`, returning `malformed("tool input is
+  //     invalid JSON")` on failure. The turn ends in a NAMED error and the tool
+  //     is NEVER called, so the listener has nothing to fire on. Measured in
+  //     /tmp/omo-dsh-e2e-qzhiFi: `turn/end seq=18 reason.kind:"error"
+  //     reason.error.code:"MALFORMED_RESPONSE" reason.error.message:"DeepSeek
+  //     Messages expected a JSON object"`, with no `tool/call` in the log.
+  //     KNOWN UPSTREAM GAP, NAMED (not ours to fix): installed dsh-llm/lib/
+  //     index.js:251-257 `DEFAULT_RETRYABLE_CODES` = [EMPTY_RESPONSE,
+  //     RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT] — it EXCLUDES MALFORMED_RESPONSE,
+  //     while EMPTY_RESPONSE retries because "The attempt produced nothing
+  //     durable, so retry policy treats it as safe" (dsh-llm/lib/index.js:147-
+  //     149, the EMPTY_RESPONSE_CODE docblock). A malformed turn likewise
+  //     produces nothing durable, yet is not retried. That asymmetry is upstream's
+  //     to fix; if upstream ever admits MALFORMED_RESPONSE to the retryable set,
+  //     this lane's one-request premise breaks HERE, loudly — which is the point.
+  //   • `tool-registry` — the retired 0.1.5 arm, kept as the TRIPWIRE half: its
+  //     dsh-llm-deepseek had NO tool-call arguments validation at `message_stop`
+  //     (`MALFORMED_RESPONSE` occurred 2× in that installed artifact (dsh-
+  //     llm-deepseek/lib/index.js under /tmp/p45t7-015/prefix), both about SSE
+  //     payload FRAMING (:1253 `malformed SSE payload: …`)). The malformed
+  //     `arguments` text reached the registry there, which answered, and the
+  //     listener fired. If a future dsh restores that recovery path on this
+  //     route, the branch flips, these checks start running, and a broken hook
+  //     goes red again instead of being quietly forgotten.
+  //
+  // Neither branch is a weakened form of the other: each names the exact text the
+  // runtime on that side produces. What BOTH assert, as an explicit negative that
+  // GUARDS THE RETIREMENT, is that the reminder did not appear when the trigger
+  // did not — `reminderAbsentBecauseTriggerSurfaceRetired` stays as the tripwire
+  // for exactly that future dsh.
+  //
+  // THERE IS NO "UNKNOWN THIRD SHAPE" CHECK HERE, AND THERE CANNOT BE ONE
+  // (P4.5-T12a review A+B, shared MAJOR-1, upheld). An earlier revision of this
+  // function carried `premiseBranchIsOneOfTheTwoNamedGenerations`. It was DELETED
+  // because it is VACUOUS by construction: `premiseBranch` has exactly one binding
+  // site, the ternary two lines below, whose two arms ARE those two string literals
+  // — so the predicate is a tautology and no runtime can make it false, and the
+  // comment that claimed a third shape "fails HERE" was false as written. This is
+  // the SECOND time in this slice a claim about WHERE a failure lands needed
+  // correction against the artifact (the first was pi-ai's `parseArguments`, which
+  // turned out to belong to the `replay` module and not the live stream); the
+  // pattern — reasoning about behaviour from a symbol's NAME instead of from its
+  // binding site and call graph — is the finding, not the two misses.
+  //
+  // A third shape is not unprotected; it is caught by the two checks that actually
+  // read the runtime's output:
+  //   • half-executed turn (exactly ONE `tool/result`): `triggerReachedTheTool` is
+  //     an OR, so the `tool-registry` set runs, and
+  //     `malformedArgumentsFailedBothCalls` requires BOTH results present ⇒ FALSE.
+  //   • silent stop (no result AND no named error): the `adapter-dead-turn` set
+  //     runs, and `turnEndedInNamedAdapterError` requires `errorTurnEnd !==
+  //     undefined` AND the verbatim code ⇒ FALSE.
+  // Both names are asserted, so both rejections are loud. The branch label stays in
+  // `bonus.premiseBranch` as an OBSERVATION for the audit, not as a check.
+  const errorTurnEnd = events.find(
+    (event) => event.type === 'turn/end'
+      && (event.data?.reason?.kind ?? event.data?.reason) === 'error',
+  )
+  const adapterErrorCode = errorTurnEnd?.data?.reason?.error?.code ?? null
+  const adapterErrorMessage = errorTurnEnd?.data?.reason?.error?.message ?? null
+  const triggerReachedTheTool = writeResult !== undefined || readResult !== undefined
+  const premiseBranch = triggerReachedTheTool ? 'tool-registry' : 'adapter-dead-turn'
+
+  const toolRegistryChecks = {
     // Both REAL calls failed on the malformed-arguments path (non-vacuous: the
     // model's arguments really were not an object).
     malformedArgumentsFailedBothCalls:
@@ -4273,12 +8250,177 @@ export function analyzeJsonErrorRecoveryReminder(
     mockSawTwoSteps: sisyphusRequests.length === 2,
     turnCompleted: turnCompleted(events),
   }
+
+  // THE CONTRACT branch (0.2.x — promoted from "migration" by P4.5-T12b: the
+  // dead turn on malformed tool arguments IS the accepted product behaviour of
+  // the only supported runtime; artifact + named upstream retry-gap in the
+  // premise-branch header above). Its checks are the ONLY positive evidence
+  // physically obtainable on this route — a NAMED turn end, with the exact code
+  // and message transcribed from the artifact that produces them.
+  const adapterDeadTurnChecks = {
+    // The turn did not end silently: it ended in an ERROR reason the runtime
+    // NAMED, and the name is the adapter's own code.
+    turnEndedInNamedAdapterError:
+      errorTurnEnd !== undefined
+      && adapterErrorCode === JSON_RECOVERY_EXPECTED_ADAPTER_CODE,
+    // The message is the adapter's verbatim text, not a paraphrase.
+    adapterErrorTextIsVerbatimFromInstalledArtifact:
+      adapterErrorMessage === JSON_RECOVERY_EXPECTED_ADAPTER_MESSAGE,
+    // The tool was NEVER called — the reason the listener is silent is that its
+    // trigger never happened, not that the listener is broken.
+    malformedToolWasNeverCalled: writeCall === undefined && readCall === undefined,
+    // Exactly one mock request: the adapter refused the first answer and the loop
+    // never came back for a second.
+    mockSawExactlyOneRefusedAnswer: sisyphusRequests.length === 1,
+    // The turn never reached `completed` — the dead turn is the whole story, and a
+    // log that showed BOTH a named adapter error and a completed turn would mean
+    // something retried behind the scenario's back.
+    turnNeverCompletedOnTheDeadTurn: !turnCompleted(events),
+    // THE GUARD ON THE RETIREMENT: with no trigger there is no reminder anywhere.
+    // If a future dsh restores the recovery path on this route, `premiseBranch`
+    // flips to `tool-registry` and this check is replaced by the six above — so
+    // this check only ever fails while the surface is genuinely retired.
+    reminderAbsentBecauseTriggerSurfaceRetired:
+      results.every((part) => !part.text.includes(JSON_ERROR_REMINDER_MARKER))
+      && !JSON.stringify(events).includes(JSON_ERROR_REMINDER_MARKER),
+  }
+
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    ...(triggerReachedTheTool ? toolRegistryChecks : adapterDeadTurnChecks),
+  }
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
   return {
     result: failed.length === 0 ? 'PASS' : 'FAIL',
     failed,
     checks,
     bonus: {
+      premiseBranch,
+      adapterErrorCode,
+      adapterErrorMessage,
+      expectedErrorText: JSON_RECOVERY_EXPECTED_ERROR,
+      expectedAdapterCode: JSON_RECOVERY_EXPECTED_ADAPTER_CODE,
+      expectedAdapterMessage: JSON_RECOVERY_EXPECTED_ADAPTER_MESSAGE,
+      reminderText: JSON_ERROR_REMINDER,
+      toolResults: results.map((part) => ({
+        callId: part.callId,
+        isError: part.isError,
+        textLength: part.text.length,
+      })),
+      mockRequestCount: sisyphusRequests.length,
+    },
+  }
+}
+
+/**
+ * The pi-ai lane's script (P4.5-T12a lane B): the SAME two malformed calls as
+ * lane A, so the only thing that differs between the two scenarios is WHICH
+ * adapter answered them.
+ */
+function jsonErrorRecoveryPiAiScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_calls',
+        calls: [
+          { name: 'write', arguments: JSON_RECOVERY_MALFORMED_ARGUMENTS },
+          { name: 'read', arguments: JSON_RECOVERY_MALFORMED_ARGUMENTS },
+        ],
+      },
+      { type: 'text', text: JSON_RECOVERY_PI_AI_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * The pi-ai lane's assertions (P4.5-T12a lane B). No premise branch: the live
+ * pi-ai path passes the provider's raw `arguments` text through to the registry in
+ * BOTH installed generations (the raw-text yield is in
+ * dsh-llm-pi-ai/lib/index.js's `stream` module at :1550-1555 of the 0.2.x
+ * installed artifact; the `{}`-substituting `parseArguments` at :28-34 belongs to
+ * the `replay` module and is not on this path). So the same facts must hold on
+ * both generations, and this scenario goes red on either if a future dsh starts
+ * validating here — at which point lane A's `adapter-dead-turn` shape moves to
+ * this route too, and that is the fact a reviewer wants named, not hidden.
+ */
+export function analyzeJsonErrorRecoveryOnPiAiLane(
+  { log, requests, providersJson, bootLog, modeCounts },
+  routes,
+) {
+  const events = log?.events ?? []
+  const results = toolResultParts(events)
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const writeCall = findToolCall(events, 'write')
+  const readCall = findToolCall(events, 'read')
+  const writeResult = toolResultForCall(results, writeCall)
+  const readResult = toolResultForCall(results, readCall)
+  const observedErrorTexts = [writeResult?.text, readResult?.text].filter(
+    (text) => typeof text === 'string',
+  )
+  // The raw text the registry was handed, read straight off the durable
+  // `tool/call` event's `arguments` field — the field the loop carries verbatim,
+  // NOT `toolCallArguments()`, which would `JSON.parse` it and so could not tell
+  // a malformation from a clean object.
+  const rawArgumentsText = (call) => {
+    const raw = call?.data?.arguments
+    return typeof raw === 'string' ? raw : JSON.stringify(raw ?? null)
+  }
+  const checks = {
+    ...dModeGivens({ log, providersJson, bootLog }, routes),
+    // THE LANE IS REAL: every request the mock served came in on the
+    // OpenAI-completions path (what dsh-llm-pi-ai posts to), and NOT ONE on the
+    // Messages path (what dsh-llm-deepseek posts to). Counted by the mock from the
+    // request PATH, not inferred from the seat.
+    mockServedOnlyTheOpenAiCompletionsLane:
+      (modeCounts?.openai ?? 0) >= 2 && (modeCounts?.messages ?? 0) === 0,
+    // The adapter handed the registry the model's RAW text, malformation and all —
+    // the observable difference from `deepseek-official`, which never gets here.
+    piAiHandedTheRegistryTheRawMalformedArguments:
+      rawArgumentsText(writeCall) === JSON_RECOVERY_RAW_ARGUMENTS
+      && rawArgumentsText(readCall) === JSON_RECOVERY_RAW_ARGUMENTS,
+    // Both REAL calls failed on the malformed-arguments path, on the same verbatim
+    // registry text lane A asserts.
+    malformedArgumentsFailedBothCalls:
+      writeResult !== undefined
+      && readResult !== undefined
+      && writeResult.isError === true
+      && readResult.isError === true
+      && observedErrorTexts.every((text) => text.startsWith(JSON_RECOVERY_EXPECTED_ERROR)),
+    // The observed text is the very text the shipped table matches.
+    observedErrorTextMatchesLiveTable:
+      observedErrorTexts.length === 2
+      && observedErrorTexts.every((text) => matchesJsonErrorTable(text)),
+    // (a) TRIGGER: `write` is not blacklisted ⇒ reminder appended verbatim. THIS
+    // is the check that proves the hook is NOT retired on 0.2.x — only the
+    // `deepseek-official` route retired its trigger.
+    nonExcludedToolGotReminder:
+      writeResult !== undefined
+      && writeResult.text.endsWith(JSON_ERROR_REMINDER),
+    // (b) 对照: `read` IS blacklisted ⇒ the untouched error text, no reminder.
+    excludedToolResultUnchanged:
+      readResult !== undefined
+      && readResult.text === JSON_RECOVERY_EXPECTED_ERROR
+      && !readResult.text.includes(JSON_ERROR_REMINDER_MARKER),
+    // …and the two results differ ONLY by the reminder.
+    controlResultIsByteIdenticalToTriggerOriginal:
+      readResult !== undefined
+      && typeof writeResult?.text === 'string'
+      && writeResult.text.endsWith(`\n${JSON_ERROR_REMINDER}`)
+      && readResult.text === writeResult.text.slice(0, -(JSON_ERROR_REMINDER.length + 1)),
+    reminderInjectedExactlyOnce:
+      results.filter((part) => part.text.includes(JSON_ERROR_REMINDER_MARKER)).length === 1,
+    mockSawTwoSteps: sisyphusRequests.length === 2,
+    turnCompleted: turnCompleted(events),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      lane: 'pi-ai / OpenAI-completions (raw arguments passed through)',
+      modeCounts: modeCounts ?? null,
+      rawArguments: [rawArgumentsText(writeCall), rawArgumentsText(readCall)],
       expectedErrorText: JSON_RECOVERY_EXPECTED_ERROR,
       reminderText: JSON_ERROR_REMINDER,
       toolResults: results.map((part) => ({
@@ -5381,7 +9523,7 @@ function fabricatedGoodNestedInput(routes) {
 /** The effective route map the parade scenario's env overlay resolves to. */
 function fabricatedParadeRoutes(baseRoutes) {
   const routes = { ...baseRoutes }
-  for (const [agent, seat] of PARADE_SEATS) routes[agent] = seat
+  for (const [agent, seat] of paradeSeatTable()) routes[agent] = seat
   return routes
 }
 
@@ -5487,7 +9629,7 @@ function fabricatedParadeChildLog(agent, seat) {
         type: 'user/message',
         data: {
           content: [{ type: 'text', text: 'hard blocks injection' }],
-          source: { kind: 'plugin', plugin: 'omo-agents' },
+          source: { kind: OMO_HARD_BLOCKS_KIND, plugin: 'omo-agents', form: 'instructions' },
         },
       },
       { seq: 4, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: paradeChildNote(agent) }] } } },
@@ -5505,7 +9647,7 @@ function fabricatedParadeRequests(routes) {
     },
   ]
   for (const agent of PARADE_AGENTS) {
-    const seat = PARADE_SEATS.get(agent)
+    const seat = paradeSeatTable().get(agent)
     requests.push({
       role: agent,
       body: { model: seat.model, messages: [{ role: 'system', content: `MOCKROLE=${agent}` }] },
@@ -5536,7 +9678,7 @@ function fabricatedParadeInput(baseRoutes) {
       log: parentLog,
       allLogs: [
         parentLog,
-        ...PARADE_AGENTS.map((agent) => fabricatedParadeChildLog(agent, PARADE_SEATS.get(agent))),
+        ...PARADE_AGENTS.map((agent) => fabricatedParadeChildLog(agent, paradeSeatTable().get(agent))),
       ],
       requests: fabricatedParadeRequests(routes),
       providersJson: fabricatedParadeProvidersJson(routes),
@@ -5583,12 +9725,12 @@ function fabricatedAllProvidersJson(routes) {
 
 /** The effective route map the plan-reviewer scenario's env overlay resolves to. */
 function fabricatedPlanReviewerRoutes(baseRoutes) {
-  return { ...baseRoutes, 'plan-reviewer': PLAN_REVIEWER_SEAT }
+  return { ...baseRoutes, 'plan-reviewer': planReviewerSeatForFabrication() }
 }
 
 /** The effective route map the atlas scenario's env overlay resolves to. */
 function fabricatedAtlasRoutes(baseRoutes) {
-  return { ...baseRoutes, atlas: ATLAS_SEAT }
+  return { ...baseRoutes, atlas: atlasSeatForFabrication() }
 }
 
 /** Requests for a ONE-child scenario whose child role is not explore. */
@@ -5835,13 +9977,14 @@ function fabricatedAtlasNestedInput(baseRoutes) {
 
 const FABRICATED_BASH_GUARD_FIXTURE_PATH = '/fabricated/project/notes.txt'
 
-/** The advisory message exactly as the listener mints it (source triple). */
+/** The advisory message exactly as the listener mints it (source triple — kind
+ * pinned to the producer's dedicated value by the producer-kind tripwire). */
 function fabricatedBashGuardAdvisoryMessage(id) {
   return {
     id,
     role: 'user',
     content: [{ type: 'text', text: BASH_GUARD_ADVISORY_TEXT }],
-    source: { kind: 'plugin', plugin: BASH_FILE_READ_GUARD_PLUGIN, form: 'notice' },
+    source: { kind: OMO_BASH_READ_GUARD_KIND, plugin: BASH_FILE_READ_GUARD_PLUGIN, form: 'notice' },
   }
 }
 
@@ -6406,13 +10549,14 @@ const FABRICATED_TODO_CONTROL_SNAPSHOT = [{ content: TODO_TASK_SETTLED, status: 
 /** The listener's own text for the FIRST snapshot — assembled, never re-typed. */
 const FABRICATED_TODO_STEER_TEXT = buildTodoContinuationText(FABRICATED_TODO_FIRST_SNAPSHOT)
 
-/** The steered message exactly as the listener mints it (source triple + form). */
+/** The steered message exactly as the listener mints it (source triple + form —
+ * kind pinned to the producer's dedicated value by the producer-kind tripwire). */
 function fabricatedTodoSteerMessage(id, text = FABRICATED_TODO_STEER_TEXT) {
   return {
     id,
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
+    source: { kind: OMO_TODO_CONTINUATION_KIND, plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
   }
 }
 
@@ -6751,11 +10895,20 @@ function fabricatedBackgroundNotificationInput(routes) {
     bootLog: [
       FABRICATED_BOOT_LOG,
       '[omo-hooks] hook background-notification registered on session/event',
-      // The deferred-acquisition NOTE a real boot carries (the loader race
-      // usually loses the strict read) — present here so the fixture exercises
-      // the same log shape, and counted by nothing.
+      // FABRICATED boot log inside this scenario fixture. The log AS A WHOLE IS
+      // consumed by the scenario (`pluginsLoaded(bootLog)` at :2690/:2779/:2908,
+      // the anchor scan at :1462, the NOTE census at :5087), but THESE TWO NOTE
+      // LINES are asserted by nothing — `notificationNoteLines` at :5087 is
+      // assigned into the record and never read, and no assertion reads these two
+      // strings. They are here so the
+      // fixture's log SHAPE matches what a real boot carries — the wording is
+      // copied from the production NOTE constants, NOT transcribed from a real
+      // boot of this scenario. P4.5-T2 made the registrar dual-mode, so the
+      // second line now names the GENERATION: this fixture stands for the
+      // CI-pinned 0.1.5-rc.1 surface, hence the v1 wording below verbatim from
+      // `BACKGROUND_NOTE_SUBSCRIBED_ONJOB_DONE`.
       `${BACKGROUND_NOTIFICATION_NOTE_PREFIX}jobs service not active at apply; ctx.inject(["jobs"]) armed (degraded pull path active until it appears)`,
-      `${BACKGROUND_NOTIFICATION_NOTE_PREFIX}jobs service observed; ctx.jobs.onJobDone subscribed (push path live)`,
+      `${BACKGROUND_NOTIFICATION_NOTE_PREFIX}jobs service observed (v1 shape); ctx.jobs.onJobDone subscribed (push path live (onJobDone))`,
       BACKGROUND_NOTIFICATION_EXPECTED_ANCHOR,
       // NOTE: NO session-notification anchor here. The measured shape of this
       // scenario is zero on that channel: the parent is woken by the job's own
@@ -6863,8 +11016,286 @@ async function runMockRoleLandingSelfTest() {
   return problems
 }
 
+/**
+ * P4.5-T8b — hermetic self-test (NO spawn) for the 0.2.x delivery half:
+ * `stampMockRoleMarkersIntoPluginCopy` and `verifyMockRoleMarkersOnReadFace`.
+ *
+ * Both shipped from T8b unexercised under `--self-test`, which is the same hole
+ * A1′ closed for `seedSandbox`: a new code path nothing drives is a hole, not a
+ * feature. This drives them over a staged `system-sections` copy of the REAL
+ * plugin package — the same bytes the stamp sees in production — and mutates
+ * that staging to name the faults the stamp exists to refuse.
+ *
+ * What each leg pins:
+ *   GOOD        every role's carrier starts with its own marker at line 1.
+ *   IDEMPOTENT  a SECOND pass over the SAME staged copy rewrites nothing and
+ *               reports `reStamped:true` — the branch production can never reach,
+ *               because installPlugin wipes the staged dir first. Without this
+ *               leg the field is unobservable and its meaning is a rumour.
+ *   FAULT 1     an unknown role throws (through `personaFileFor`).
+ *   FAULT 2     stamping with NO staged copy throws naming `system-sections` —
+ *               the copy and the stamp are coupled; forgetting the copy must not
+ *               half-succeed.
+ *   FAULT 3     a SECOND file carrying byte-identical conductor bytes throws:
+ *               the carrier must be unambiguous or the marker can land on a file
+ *               nothing assembles.
+ *   FAULT 4-7   the read-face gate must refuse a sibling-prefix marker
+ *               (`MOCKROLE=sisyphus-junior` satisfying `sisyphus`), a duplicated
+ *               marker, an unmarked mounted face, a marker that migrated to a
+ *               role outside the scenario, and an unreadable face.
+ */
+async function runMockRoleCopyStampSelfTest() {
+  const problems = []
+  const sandbox = createSandbox()
+  const roles = [CONDUCTOR_ID, 'explore']
+  try {
+    const copyDir = pluginCopyDir(sandbox)
+    const sectionsDir = join(copyDir, 'system-sections')
+    const stage = () => {
+      rmSync(copyDir, { recursive: true, force: true })
+      mkdirSync(sectionsDir, { recursive: true })
+      cpSync(join(PLUGIN_DIR, 'system-sections'), sectionsDir, { recursive: true })
+    }
+    const bytesOf = (entries) => entries.map((entry) => readFileSync(entry.file, 'utf8')).join('\u0000')
+
+    stage()
+    const landing = await stampMockRoleMarkersIntoPluginCopy(sandbox, roles)
+    if (landing.length !== roles.length) {
+      problems.push(`the copy stamp returned ${landing.length} entries for ${roles.length} roles`)
+    }
+    for (const entry of landing) {
+      const marker = `MOCKROLE=${entry.role}`
+      if (entry.markerLine !== 1) {
+        problems.push(`stamp landing for '${entry.role}' is at line ${entry.markerLine}, the marker must be line 1`)
+      }
+      if (entry.reStamped !== false) {
+        problems.push(`a freshly staged copy must report reStamped:false for '${entry.role}', got ${JSON.stringify(entry.reStamped)}`)
+      }
+      const firstLine = readFileSync(entry.file, 'utf8').split('\n')[0]
+      if (firstLine !== marker) {
+        problems.push(`the stamped carrier for '${entry.role}' starts with ${JSON.stringify(firstLine)}, not ${JSON.stringify(marker)}`)
+      }
+    }
+
+    const before = bytesOf(landing)
+    const second = await stampMockRoleMarkersIntoPluginCopy(sandbox, roles)
+    if (!second.every((entry) => entry.reStamped === true)) {
+      problems.push(
+        'a second pass over an already-stamped copy must report reStamped:true: '
+        + JSON.stringify(second.map((entry) => [entry.role, entry.reStamped])),
+      )
+    }
+    if (bytesOf(second) !== before) {
+      problems.push('a second stamp changed the bytes — the guard is not line-anchored at byte 0')
+    }
+
+    try {
+      await stampMockRoleMarkersIntoPluginCopy(sandbox, ['not-a-roster-agent'])
+      problems.push('the copy stamp must throw for an unknown role')
+    } catch (error) {
+      // Named, not merely "it threw": personaFileFor is the guard and its error
+      // carries the id, so an accidental failure elsewhere cannot masquerade as
+      // a passing fault test.
+      if (!/not-a-roster-agent/.test(error.message)) {
+        problems.push(`the unknown-role fault was not refused by the persona lookup: ${error.message.split('\n')[0]}`)
+      }
+    }
+
+    rmSync(copyDir, { recursive: true, force: true })
+    try {
+      await stampMockRoleMarkersIntoPluginCopy(sandbox, roles)
+      problems.push('stamping without a staged plugin copy must throw, not half-succeed')
+    } catch (error) {
+      if (!/system-sections/.test(error.message)) {
+        problems.push(`stamping without a staged copy threw the wrong thing: ${error.message}`)
+      }
+    }
+
+    stage()
+    const systemPrompt = await import(
+      new URL('../../patches/omo-dsh/omo-agents/src/system-prompt.ts', import.meta.url).href
+    )
+    const sectionLoader = await import(
+      new URL('../../patches/omo-dsh/omo-agents/src/system-sections.ts', import.meta.url).href
+    )
+    const conductorWanted = sectionLoader.loadSystemSections(sectionsDir)[systemPrompt.SISYPHUS_SECTION_ORDER[0]]
+    const carriers = readdirSync(sectionsDir).filter((file) => {
+      try {
+        return readFileSync(join(sectionsDir, file), 'utf8') === conductorWanted
+      } catch {
+        return false
+      }
+    })
+    if (carriers.length !== 1) {
+      problems.push(
+        `in the pristine package the conductor's first persona section must match exactly one `
+        + `file, got ${carriers.length} (${carriers.join(', ')}) — the stamp's carrier is unanchored`,
+      )
+    }
+    writeFileSync(join(sectionsDir, 'ambiguous-carrier.md'), conductorWanted)
+    try {
+      await stampMockRoleMarkersIntoPluginCopy(sandbox, [CONDUCTOR_ID])
+      problems.push('an ambiguous conductor carrier (two byte-identical files) must throw')
+    } catch (error) {
+      // The CARRIER guard must be what refuses, not a later accident: if the
+      // duplicate happens to sort second, the stamp picks the real carrier,
+      // succeeds, and a bare `catch` here would report this fault as caught
+      // while the guard was silently disabled. Measured — that is exactly how
+      // mutation B escaped the first draft of this leg.
+      if (!/unambiguous carrier/.test(error.message)) {
+        problems.push(
+          `an ambiguous conductor carrier must be refused by the carrier guard, not by an `
+          + `accident downstream (got: ${error.message.split('\n')[0]})`,
+        )
+      }
+    }
+
+    // ── the READ-FACE gate ────────────────────────────────────────────────────
+    mkdirSync(join(sandbox.root, 'read-face'), { recursive: true })
+    const facePath = readFaceContentPath(sandbox)
+    const faceFor = (rows) => `# fabricated read face (self-test)\nagentPresets:\n${rows.join('\n')}\n`
+    const markerRow = (role) => {
+      const spec = MOCKROLE_BLOCK_SCALARS.get(role)
+      return `${spec.rowAnchor}\n${spec.header}\n${spec.indent}MOCKROLE=${role}\n${spec.indent}body for ${role}`
+    }
+
+    writeFileSync(facePath, faceFor(roles.map(markerRow)))
+    const good = verifyMockRoleMarkersOnReadFace(sandbox, roles)
+    if (!good.every((entry) => entry.ok === true)) {
+      problems.push(`the read-face gate failed a well-formed face: ${JSON.stringify(good)}`)
+    }
+
+    writeFileSync(facePath, faceFor([markerRow('sisyphus-junior'), markerRow('explore')]))
+    const sisyphus = verifyMockRoleMarkersOnReadFace(sandbox, roles).find((entry) => entry.role === CONDUCTOR_ID)
+    if (sisyphus?.ok !== false) {
+      problems.push(`the read-face gate accepted a sibling role's marker as the conductor's: ${JSON.stringify(sisyphus)}`)
+    }
+
+    writeFileSync(facePath, faceFor([
+      markerRow(CONDUCTOR_ID),
+      `${MOCKROLE_BLOCK_SCALARS.get(CONDUCTOR_ID).indent}MOCKROLE=${CONDUCTOR_ID}`,
+      markerRow('explore'),
+    ]))
+    if (verifyMockRoleMarkersOnReadFace(sandbox, roles).find((entry) => entry.role === CONDUCTOR_ID)?.ok !== false) {
+      problems.push('the read-face gate accepted a duplicated conductor marker')
+    }
+
+    writeFileSync(facePath, faceFor(['    - id: persona', '      prefix: |-', '      no marker here']))
+    const bare = verifyMockRoleMarkersOnReadFace(sandbox, roles)
+    if (!bare.every((entry) => entry.ok === false)) {
+      problems.push(`the read-face gate accepted an unmarked mounted face: ${JSON.stringify(bare)}`)
+    }
+
+    writeFileSync(facePath, faceFor([markerRow(CONDUCTOR_ID), markerRow('oracle')]))
+    const strayed = verifyMockRoleMarkersOnReadFace(sandbox, [CONDUCTOR_ID])
+    if (!strayed.some((entry) => entry.role === '*' && entry.ok === false)) {
+      problems.push(`the read-face gate missed a marker that migrated to a role outside the scenario: ${JSON.stringify(strayed)}`)
+    }
+
+    rmSync(facePath, { force: true })
+    const unreadable = verifyMockRoleMarkersOnReadFace(sandbox, roles)
+    if (!unreadable.every((entry) => entry.ok === false && /cannot read/.test(entry.reason ?? ''))) {
+      problems.push(`a missing read face must be reported per role as unreadable: ${JSON.stringify(unreadable)}`)
+    }
+  } catch (error) {
+    problems.push(`MOCKROLE copy-stamp self-test crashed: ${error.message}`)
+  } finally {
+    rmSync(sandbox.root, { recursive: true, force: true })
+  }
+  return problems
+}
+
 async function runAnalysisSelfTest(routes) {
   const problems = []
+
+  // ── P4.5-T10′: the runtime-catalog SEAT resolver, on fabricated catalogs ─────
+  // Runs FIRST: every other fixture in this file assumes the driver has seats
+  // that the installed runtime can actually serve.
+  seatResolverSelfTest(problems)
+
+  // ── P4.5-T8″: the tool/result SHAPE selection, on REAL captured rows ───────
+  //
+  // This block is the slice. Every other fixture in this file is 0.1.5-wrapper
+  // shaped, so `toolResultParts` could read all of them and still return `[]`
+  // against a real 0.2.x log — 19 call sites believing they had data. The cases
+  // below pin BOTH legs by name, and pin the NEITHER case as a loud failure
+  // rather than a silent skip.
+  const shapeProblems = auditToolResultShapeSelection({
+    events: CAPTURED_TOOL_RESULT_ROWS,
+    expect: { legacyWrapper: 1, firstClassV4: 2 },
+  })
+  problems.push(...shapeProblems.map((problem) => `P4.5-T8″ captured real tool/result rows: ${problem}`))
+  const capturedParts = toolResultParts(CAPTURED_TOOL_RESULT_ROWS)
+  if (capturedParts.length !== 3) {
+    problems.push(
+      `P4.5-T8″ toolResultParts over the 3 captured rows returned ${capturedParts.length} part(s), expected 3 — a reader that has forgotten the V4 shape returns 0 here`,
+    )
+  }
+  // Leg 1 — V4 / 0.2.0-rc.2 ERROR path: identity and isError come off the
+  // MESSAGE, the bytes off a plain text block.
+  // ⚠️ Pinned by (shape, callId), NOT callId alone: the two legs were captured
+  // from two different sandboxes whose runtimes happened to name their first
+  // call the same id (`mock-llm-tool-1-0` on both), so a bare `find` by callId
+  // answers with whichever row comes first in the array and cannot tell a leg
+  // from a leg. Selecting the shape IS the claim under test, so it is pinned.
+  const v4Error = capturedParts.find((part) => part.shape === 'v4-first-class'
+    && part.callId === 'mock-llm-tool-1-0')
+  if (v4Error === undefined || v4Error.isError !== true
+    || !v4Error.text.startsWith('Error: pi-ai provider "deepseek" has no configured model')) {
+    problems.push(`P4.5-T8″ v4-leg-error: the 0.2.x error row's callId/isError/text were not extracted (got ${JSON.stringify(v4Error ?? null).slice(0, 160)})`)
+  }
+  // Leg 2 — V4 / 0.2.0-rc.2 SUCCESS path: the delegation's own reply bytes.
+  const v4Ok = capturedParts.find((part) => part.shape === 'v4-first-class'
+    && part.callId === 'mock-llm-tool-1-1')
+  if (v4Ok === undefined || v4Ok.isError !== false
+    || v4Ok.text !== 'MOCK-PARADE-CHILD-HEPHAESTUS-4b7e') {
+    problems.push(`P4.5-T8″ v4-leg-success: the 0.2.x non-error row's bytes were not extracted verbatim (got ${JSON.stringify(v4Ok ?? null).slice(0, 160)})`)
+  }
+  // Leg 3 — V3 / 0.1.x-shape wrapper: identity, flag AND bytes come from INSIDE
+  // the wrapper block. This leg was CI's non-regression signal while ci.yml sat
+  // on 0.1.5-rc.1 (historical — CI pins 0.2.0-rc.2 since the D17 cutover,
+  // P4.5-T12b); it is KEPT because the v3 wrapper shape still exists in the
+  // parser's vocabulary and the extraction must not silently drop a shape it is
+  // fed — dropping wrapper support would be a regression on this leg, not a
+  // cleanup, on whatever runtime feeds it.
+  const v3Part = capturedParts.find((part) => part.shape === 'v3-wrapper')
+  if (v3Part === undefined || v3Part.isError !== false
+    || !v3Part.text.includes('omo-dsh bash-file-read-guard fixture line one 4c1e9a')) {
+    problems.push(`P4.5-T8″ v3-leg-wrapper: the 0.1.5 wrapper row was not extracted (got ${JSON.stringify(v3Part ?? null).slice(0, 160)})`)
+  }
+  // The legs must be distinguishable, not just both non-empty: a reader that
+  // mis-bucketed every row into one branch would still return 3 parts.
+  const shapeTags = capturedParts.map((part) => part.shape).join(',')
+  if (capturedParts.filter((part) => part.shape === 'v4-first-class').length !== 2
+    || capturedParts.filter((part) => part.shape === 'v3-wrapper').length !== 1) {
+    problems.push(`P4.5-T8″ leg tagging is wrong: shapes [${shapeTags}]`)
+  }
+  // THE NEITHER CASE — the clause that makes the selection falsifiable. A row
+  // with no wrapper and no first-class `role: 'tool'` must be REPORTED, never
+  // skipped: skipping is exactly how the old reader lost 10 rows in silence.
+  const neitherRow = {
+    type: 'tool/result',
+    seq: 99,
+    data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'orphan bytes' }] } },
+  }
+  const neitherCensus = toolResultShapeCensus([neitherRow])
+  if (neitherCensus.malformed.length !== 1 || neitherCensus.parts.length !== 0) {
+    problems.push(
+      `P4.5-T8″ neither-shape row must land in malformed exactly once, got ${neitherCensus.malformed.length} malformed / ${neitherCensus.parts.length} parts`,
+    )
+  }
+  const neitherProblems = auditToolResultShapeSelection({ events: [neitherRow], expect: {} })
+  if (neitherProblems.length === 0) {
+    problems.push('P4.5-T8″ a neither-shape row passed the audit — the shape rule is not falsifiable')
+  }
+  // And the anti-silent-loss invariant on the CAPTURED set: parts must equal
+  // rows, because every captured row is admissible on one of the two legs.
+  if (capturedParts.length !== CAPTURED_TOOL_RESULT_ROWS.length) {
+    problems.push(
+      `P4.5-T8″ ${CAPTURED_TOOL_RESULT_ROWS.length} captured rows yielded ${capturedParts.length} parts — rows silently vanish only if a leg is unread`,
+    )
+  }
+
   const good = analyzeHello(
     {
       log: fabricatedGoodLog(routes),
@@ -8195,7 +12626,7 @@ async function runAnalysisSelfTest(routes) {
         type: 'user/message',
         data: {
           content: [{ type: 'text', text: FABRICATED_ULW_INJECTED_TEXT }],
-          source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+          source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
         },
       })
     }, 'noInjectionWithoutWorkIntent'],
@@ -8251,10 +12682,15 @@ async function runAnalysisSelfTest(routes) {
           : event)
     }, 'atlasPersonaObservable'],
     ['the injected context was NOT delivered with the plugin source contract', (input) => {
+      // A FOREIGN producer's carrier: v4 kinds are producer-owned, so "someone
+      // else" now means a foreign KIND too (the installed migration stamps
+      // non-first-party names as `plugin:<name>`, dsh-session-format-v3-to-v4
+      // lib/index.js:92) — the old defect kept kind 'plugin' and broke only
+      // plugin+form, which no v4 admission would ever have accepted anyway.
       const trigger = input.allLogs[1]
       trigger.events = trigger.events.map((event) =>
         event.type === 'user/message'
-          ? { ...event, data: { ...event.data, source: { kind: 'plugin', plugin: 'someone-else', form: 'notice' } } }
+          ? { ...event, data: { ...event.data, source: { kind: 'plugin:someone-else', plugin: 'someone-else', form: 'instructions' } } }
           : event)
     }, 'injectionSourceContract'],
     ['the injected context never reached the atlas model request', (input) => {
@@ -8268,7 +12704,7 @@ async function runAnalysisSelfTest(routes) {
         type: 'user/message',
         data: {
           content: [{ type: 'text', text: FABRICATED_ULW_INJECTED_TEXT }],
-          source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+          source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
         },
       })
     }, 'noInjectionForSiblingIdentity'],
@@ -8284,7 +12720,7 @@ async function runAnalysisSelfTest(routes) {
         type: 'user/message',
         data: {
           content: [{ type: 'text', text: FABRICATED_ULW_INJECTED_TEXT }],
-          source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+          source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
         },
       }])
     }, 'conductorNotInjected'],
@@ -8423,7 +12859,7 @@ async function runAnalysisSelfTest(routes) {
     // ② the source triple names the hook id instead of the package (the
     //    regression I hit while fixing BLOCKER-1).
     ['the injection source names the hook id instead of the package', (input) => {
-      input.log.events[3].data.inserted[0].source = { kind: 'plugin', plugin: keywordDetectorModule.KEYWORD_DETECTOR_ID, form: 'instructions' }
+      input.log.events[3].data.inserted[0].source = { kind: OMO_KEYWORD_DETECTOR_KIND, plugin: keywordDetectorModule.KEYWORD_DETECTOR_ID, form: 'instructions' }
     }, 'injectionIsFullUserMessage'],
     // ③ a missing / non-uuid id: the inbox pending-uniqueness check reads it.
     ['the injection id was stripped', (input) => {
@@ -8538,7 +12974,23 @@ async function runAnalysisSelfTest(routes) {
     // …and a keyword body arriving through SOME OTHER plugin's channel, which the
     // carrier-count check above would miss (it only knows our own triple).
     ['a foreign plugin carried the keyword body', (input) => {
-      const event = { ...fabricatedKeywordInjectedEvent(`prefix ${KEYWORD_TEXTS.ultrawork.slice(0, 120)} suffix`, { kind: 'plugin', plugin: 'some-other-plugin', form: 'snapshot' }, 'foreign-1'), seq: 16 }
+      const event = { ...fabricatedKeywordInjectedEvent(`prefix ${KEYWORD_TEXTS.ultrawork.slice(0, 120)} suffix`, { kind: 'plugin:some-other-plugin', plugin: 'some-other-plugin', form: 'instructions' }, 'foreign-1'), seq: 16 }
+      input.log.events.splice(2, 0, event)
+    }, 'noForeignPluginCarriedKeywordText'],
+    // ⚠️ THE regression guard for the per-producer keying itself (P4.5-T8′
+    // reviews A+B MAJOR-2): a SIBLING omo producer's carrier — `omo-ulw-execute`,
+    // SAME plugin (KEYWORD_DETECTOR_PLUGIN), SAME form, differing from the
+    // keyword detector's triple ONLY in `kind` — carrying the keyword body.
+    // Per-producer keying sees a foreign carrier and reddens
+    // `noForeignPluginCarriedKeywordText`; a filter regressed to a `'omo-'`
+    // PREFIX test accepts this carrier (kind prefix-matches, plugin and form
+    // arms intact), the foreign count drops to zero, and THAT is what reddens
+    // the battery. Without this case the prefix form escaped the whole ~450-case
+    // suite at exit 0 (measured by both reviews on the pre-guard file) — the
+    // per-producer invariant was true of the code but not falsifiable by the
+    // suite, which is what this defect supplies.
+    ['a sibling omo producer carried the keyword body', (input) => {
+      const event = { ...fabricatedKeywordInjectedEvent(`prefix ${KEYWORD_TEXTS.ultrawork.slice(0, 120)} suffix`, { kind: OMO_ULW_EXECUTE_KIND, plugin: keywordDetectorModule.KEYWORD_DETECTOR_PLUGIN, form: 'instructions' }, 'sibling-1'), seq: 17 }
       input.log.events.splice(2, 0, event)
     }, 'noForeignPluginCarriedKeywordText'],
     // …and on the wire, separately: a banner that reached the model without a
@@ -8834,6 +13286,52 @@ async function runAnalysisSelfTest(routes) {
       }
     }
     ULW_PLAN_SELF_TEST_ATTESTATION.push(...gestureCases.map(([label]) => ['ulw-plan-loads-prometheus-skill', label]))
+    // ⚠️ FALSIFIER for the v3-spelling exclusion arm of the ulw-plan locator
+    // (P4.5-T8′ review B MINOR-1: the arm was REAL, CORRECT, and UNTESTED —
+    // sabotage made nothing red). The 0.1.5 runtime stamps its runtime-context
+    // snapshot as {kind:'plugin', plugin:'@deepseek-ai/dsh-system-prompt'}
+    // (measured today in the AC8 sandbox session.v3.jsonl seq 9); the locator's
+    // third arm excludes it BY PRODUCER so it cannot masquerade as a bridge
+    // injection. Two fabricated shapes pin that arm in both directions:
+    const v3RuntimeSnapshotEvent = () => ({
+      seq: 900,
+      type: 'user/message',
+      data: {
+        id: 'fabricated-v3-runtime-snapshot',
+        role: 'user',
+        content: [{ type: 'text', text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.' }],
+        source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot', sections: [{ name: 'sandbox:policy', text: 'workspace-write' }] },
+      },
+    })
+    // GOOD side: the snapshot rides along; the locator must still count EXACTLY
+    // the two bridge injections. Drop the v3 arm and the count becomes three and
+    // this GOOD case goes RED.
+    {
+      const input = fabricatedUlwPlanInput(routes)
+      input.log.events.push(v3RuntimeSnapshotEvent())
+      const verdict = analyzeUlwPlanLoadsPrometheusSkill(input, routes)
+      if (verdict.result !== 'PASS') {
+        problems.push(`fabricated GOOD ulw-plan-loads-prometheus-skill with a v3-spelling runtime-context snapshot riding along must PASS, got FAIL on: ${verdict.failed.join(', ')}`)
+      }
+      ULW_PLAN_SELF_TEST_ATTESTATION.push(['ulw-plan-loads-prometheus-skill', 'v3-spelling-runtime-context-snapshot-rides-along-still-passes'])
+    }
+    // DEFECT side, on the arm's OWN axis: the snapshot present and ONE bridge
+    // injection removed. Correct code: one candidate → `twoInjectedMessagesArrived`
+    // FAILs (the named check). A locator that lost the v3 arm counts the snapshot
+    // as the second injection → the named check goes GREEN → this case reddens
+    // the battery naming exactly that axis.
+    {
+      const label = 'a-v3-spelling-runtime-context-snapshot-filled-in-for-a-lost-bridge-injection'
+      const input = fabricatedUlwPlanInput(routes)
+      input.log.events.push(v3RuntimeSnapshotEvent())
+      input.log.events = input.log.events.filter(
+        (event) => !(event.type === 'user/message' && event.data?.id === 'fabricated-injected-ulw-plan-2'))
+      const verdict = analyzeUlwPlanLoadsPrometheusSkill(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes('twoInjectedMessagesArrived')) {
+        problems.push(`fabricated ulw-plan-loads-prometheus-skill defect "${label}" must FAIL with twoInjectedMessagesArrived, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+      ULW_PLAN_SELF_TEST_ATTESTATION.push(['ulw-plan-loads-prometheus-skill', label])
+    }
   }
 
   // ── P4-T7 command-channel pilot self-test. Both specs run the SAME defect
@@ -8862,6 +13360,18 @@ async function runAnalysisSelfTest(routes) {
 
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
+  // ── P4.5-T8b the 0.2.x delivery half (hermetic): the plugin-copy stamp and
+  // the read-face gate. Both shipped unexercised; a new path nothing drives is
+  // a hole, not a feature.
+  problems.push(...await runMockRoleCopyStampSelfTest())
+  // ── P4.5-T8a A1′ — the timer-free structural gate over the seeded LLM
+  // wiring. seedSandbox() was never exercised here, which is exactly why
+  // nothing guarded the row shape; it runs here now. It SPAWNS NOTHING, but its
+  // YAML parse borrows the INSTALLED dsh's js-yaml (the loader's own `!!js`
+  // dialect), so this sub-gate needs dsh on PATH — and when it is not
+  // resolvable it declares itself NOT RUN in the banner instead of reading
+  // green. runSandboxSeedingSelfTest's doc carries the pure/borrow split.
+  problems.push(...await runSandboxSeedingSelfTest(routes))
   return problems
 }
 
@@ -9000,7 +13510,7 @@ const { buildAutoSelectedPlanContextInfoOnly, planProgressFromMarkdown } = await
 )
 // H-32's own gate, so the scenario asserts the shipped function's verdict rather
 // than re-implementing the two-marker conjunction.
-const { hasCommandTemplateMarker } = await import(
+const { hasCommandTemplateMarker, buildInjectionMessage: buildUlwExecuteInjectionMessage } = await import(
   new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ulw-execute.ts', import.meta.url).href
 )
 const {
@@ -9284,7 +13794,7 @@ export function analyzeUlwExecuteActivated(
       && triggerText.includes(`**Path**: ${planPath}`)
       && triggerText.includes('**Plan**: alpha'),
     injectionSourceContract:
-      triggerSource?.kind === 'plugin'
+      triggerSource?.kind === OMO_ULW_EXECUTE_KIND
       && triggerSource?.plugin === E2E_ULW_PLUGIN
       && triggerSource?.form === 'instructions',
     injectionReachedTheModel: triggerRequestHasInjection,
@@ -9470,7 +13980,7 @@ function fabricatedUlwChildLog(id, label, persona, note, taskText, injectedText)
       type: 'user/message',
       data: {
         content: [{ type: 'text', text: injectedText }],
-        source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+        source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
       },
     })
   }
@@ -9602,7 +14112,16 @@ function fabricatedUlwExecuteNoIntentInput(routes) {
 // AFTER boot and BEFORE the session is created, for a scenario that must adjust
 // the sandbox-owned materialized preset the session composes from
 // ('background-notification-log' flips one delegation row to the one-shot
-// background mode); `settle(boot, sandbox, sessionId)` runs after the last
+// background mode). Since WP2 MAJOR-1 it MUST RETURN an array of
+// `{ row, key, after }` triples naming every change it made (`after: null` =
+// the key is gone) — see declaredSandboxEdits; returning nothing throws. `key`
+// must be a LEAF path the validator owns (toolName / maxDepth /
+// toolFilter.deny / toolFilter.allow / backgroundMode): a container key such as
+// `toolFilter` is rejected, because one container declaration would exempt every
+// cell beneath it from a single `after`. The list becomes the `sandboxEdits`
+// field of the read-face expectations, which is what lets one assertion hold on
+// both the 0.1.5 file-supplied face and the 0.2.x register()-supplied face;
+// `settle(boot, sandbox, sessionId)` runs after the last
 // turn/end and before `stopDsh` freezes the observations.
 //
 // ── P3-T16: THE 批 C B-MODE PAIR (plan §4.2 模式 B pilot + D) ─────────────────
@@ -9831,28 +14350,50 @@ const PROMETHEUS_PLANS_CONTENT = '# plan\nMOCK-PROMETHEUS-PLAN-BODY-3e7d51\n'
 const PROMETHEUS_DRAFTS_CONTENT = '# note\nMOCK-PROMETHEUS-DRAFT-BODY-9a02bf\n'
 const PROMETHEUS_CONDUCTOR_CONTENT = 'MOCK-CONDUCTOR-NOTES-BODY-6d1c48\n'
 
+// The roster id this fixture's row belongs to — ONE source for the row anchor
+// below and for the read-face edit declaration it returns.
+const PROMETHEUS_ROW_ID = 'prometheus'
+
 /**
- * Lift THIS scenario's sandbox copy of the materialized preset's prometheus
- * row's `toolFilter`. WHY A FIXTURE EDIT IS REQUIRED: the row is
- * `class: 'read-only'`, whose rendered `deny` list hides `write`/`edit` from
- * the child, so the listener under test would never see a write call. The edit
- * is SCENARIO-LOCAL (the sandbox's own DSH_HOME, the same file
- * `appendMockRoleMarker` edits) and touches NOTHING else: the persona, the
- * route and `maxDepth` stay as shipped, which is what keeps the identity gate
- * meaningful. Loud on drift: a template change that moves the row or its
- * `toolFilter`/`deny` lines throws here instead of silently turning the
+ * Lift THIS scenario's prometheus `toolFilter` from the SANDBOX plugin-copy
+ * TEMPLATE, BEFORE boot. WHY A FIXTURE EDIT IS REQUIRED: the row is
+ * `class: 'read-only'`, whose rendered `deny` list hides `write`/`edit` from the
+ * child, so the listener under test would never see a write call. The edit is
+ * SCENARIO-LOCAL (the sandbox's own plugin copy, the same file
+ * `stampMockRoleMarkersIntoPluginCopy` stamps) and touches NOTHING else: the
+ * persona, the route and `maxDepth` stay as shipped, which is what keeps the
+ * identity gate meaningful. Loud on drift: a template change that moves the row or
+ * its `toolFilter`/`deny` lines throws here instead of silently turning the
  * scenario vacuous.
+ *
+ * WHY THE PAIR IS COMMENTED OUT RATHER THAN DELETED (P4.5-T12a): the shipped
+ * renderer replaces this row's deny sentinel with
+ * `replaceSentinelOnce` (src/concerto-preset.ts:194-203), which THROWS when the
+ * sentinel occurs zero times — so a fixture that spliced the two lines away would
+ * fail the boot with `concerto template must carry the sentinel
+ * __OMO_PROMETHEUS_DENY__ exactly once; found 0`. Keeping the sentinel on a
+ * commented line satisfies that guard, leaves the row with no `toolFilter` key
+ * after the parse, and keeps the post-render residue check clean. The rendered
+ * comment therefore reads `# deny: ["write", "edit", …]` — the list the shipped
+ * roster computed, visibly not applied.
+ *
+ * WHY THE TEMPLATE AND NOT THE MATERIALIZED FILE: editing the materialized file
+ * after readiness reached no face on dsh 0.2.0-rc.2 (the machine's installed npm
+ * package) — measured, its prometheus row had no `toolFilter` while the child's
+ * `request/header` advertised no `write`/`edit` and both allowed `.omo` writes
+ * came back `Error: unknown tool "write"`. See `pluginTemplateCompositionPath()`
+ * for the citations on both generations.
  */
 function enablePrometheusWriteTools(sandbox) {
-  const compositionPath = materializedCompositionPath(sandbox)
+  const compositionPath = pluginTemplateCompositionPath(sandbox)
   const lines = readFileSync(compositionPath, 'utf8').split('\n')
-  const rowAnchor = '    - id: tool-subagent-prometheus'
+  const rowAnchor = `    - id: tool-subagent-${PROMETHEUS_ROW_ID}`
   const anchors = lines
     .map((line, index) => (line === rowAnchor ? index : -1))
     .filter((index) => index >= 0)
   if (anchors.length !== 1) {
     throw new Error(
-      `prometheus-md-only scenario: materialized preset must carry `
+      `prometheus-md-only scenario: the sandbox plugin-copy template must carry `
       + `\`${rowAnchor}\` exactly once; found ${anchors.length}`,
     )
   }
@@ -9869,12 +14410,33 @@ function enablePrometheusWriteTools(sandbox) {
   }
   if (filterIndex < 0 || !lines[filterIndex + 1]?.startsWith('          deny: ')) {
     throw new Error(
-      'prometheus-md-only scenario: the materialized prometheus row carries no '
+      'prometheus-md-only scenario: the template prometheus row carries no '
       + '`        toolFilter:` + `          deny: […]` pair to lift',
     )
   }
-  lines.splice(filterIndex, 2)
+  lines.splice(filterIndex, 2,
+    '        # toolFilter lifted by this scenario before boot (e2e sandbox copy only)',
+    '        # deny: __OMO_PROMETHEUS_DENY__')
   writeFileSync(compositionPath, lines.join('\n'))
+  // WP2 MAJOR-1 — THE declaration, not a comment. This is the edit that turned
+  // gate 3 red on dsh 0.1.5: that runtime answers `agentPresets/read` from FILE
+  // DISCOVERY of the materialized file the plugin wrote at boot FROM this
+  // template, so the face the assertion reads is prometheus without `toolFilter`
+  // while the expectation kept coming from the untouched src/roster.ts. Returning
+  // `{ row, key, after }` is how the fixture tells the assertion the fact it
+  // cannot infer; `after: null` means the key is gone.
+  //
+  // LEAF KEY, not the container (review B attack 2 / review A A1j): naming
+  // `toolFilter` would exempt BOTH `toolFilter.deny` and `toolFilter.allow` on
+  // one `after`, so a single sloppy value would silently cover half of what the
+  // declaration claims. The splice above takes away `toolFilter:` plus its
+  // `deny:` line and puts nothing in their place but two comment lines (the
+  // sentinel lives on one of them, see the header), and src/roster.ts gives
+  // prometheus no allow list, so the only compared cell this edit can move on any
+  // face is `toolFilter.deny`. If the roster ever hands prometheus an allow list,
+  // this splice leaves an orphan `allow:` line and c24's declared-vs-written
+  // reconciliation goes red — which is the right place to discover that.
+  return [{ row: PROMETHEUS_ROW_ID, key: 'toolFilter.deny', after: null }]
 }
 
 /**
@@ -10644,6 +15206,49 @@ const keywordDetectorModule = await import(
   '../../patches/omo-dsh/omo-hooks/src/hooks/keyword-detector.ts'
 )
 
+// ── P4.5-T9 producer kinds — the ONE place this file names them ─────────────────────
+// Since P4.5-T9 each of the five OMO producers stamps its OWN `source.kind`; the
+// retired `'plugin'` catch-all is gone. That is not a style choice: the installed
+// dsh 0.2.x's NATIVE v4 source admission REFUSES `kind === 'plugin'` in every
+// durable message slot ("format v4 message requires a producer-owned source kind" —
+// @deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js:126 of the installed
+// @deepseek-ai/dsh@0.2.0-rc.2; the retained v4 session logs under the e2e
+// sandboxes carry zero `kind:"plugin"`, measured). Because `kind` is now the
+// producer's identity, every filter below is keyed PER PRODUCER: an
+// `omo-ulw-execute` carrier can never satisfy the keyword detector's filter, so a
+// wrong-producer emission cannot quietly satisfy another producer's check.
+// The five values are transcribed exactly once from the working-tree producers
+// (each line cited below at its stamp site); the four producers with an exported
+// builder are re-pinned against that builder by the tripwire immediately below, so
+// a producer renaming its kind fails the driver at LOAD time, not mid-scenario.
+// `hard-blocks-injection.ts` stamps its source inline inside
+// `registerHardBlocksInjection` (no exported builder), so its line is the citation.
+const OMO_HARD_BLOCKS_KIND = 'omo-hard-blocks'
+const OMO_BASH_READ_GUARD_KIND = 'omo-bash-read-guard'
+const OMO_KEYWORD_DETECTOR_KIND = 'omo-keyword-detector'
+const OMO_TODO_CONTINUATION_KIND = 'omo-todo-continuation'
+const OMO_ULW_EXECUTE_KIND = 'omo-ulw-execute'
+/** Every kind an OMO producer stamps — for locators that must skip omo's own
+ * injections wholesale (the child-session delegation-task locator reads a child
+ * log where omo injects land NEXT TO the parent's task text). */
+const OMO_INJECTION_KINDS = [
+  OMO_HARD_BLOCKS_KIND,
+  OMO_BASH_READ_GUARD_KIND,
+  OMO_KEYWORD_DETECTOR_KIND,
+  OMO_TODO_CONTINUATION_KIND,
+  OMO_ULW_EXECUTE_KIND,
+]
+for (const [label, expected, stamped] of [
+  ['bash-file-read-guard.ts:183', OMO_BASH_READ_GUARD_KIND, buildBashGuardAdvisoryMessage().source.kind],
+  ['keyword-detector.ts:414', OMO_KEYWORD_DETECTOR_KIND, keywordDetectorModule.buildInjectionMessage('probe').source.kind],
+  ['todo-continuation-enforcer.ts:388', OMO_TODO_CONTINUATION_KIND, buildTodoContinuationMessage('probe').source.kind],
+  ['ulw-execute.ts:520', OMO_ULW_EXECUTE_KIND, buildUlwExecuteInjectionMessage('probe').source.kind],
+]) {
+  if (stamped !== expected) {
+    throw new Error(`P4.5-T9 kind migration: the ${label} producer now stamps kind '${stamped}' but this file pins '${expected}' — update the constant and every site that cites it`)
+  }
+}
+
 /** The real vendored bodies, read through the plugin's own loader. */
 const KEYWORD_TEXTS = (() => {
   const loaded = keywordDetectorMessages.loadInstructionTexts()
@@ -10791,9 +15396,11 @@ function keywordInjectedCarriers(events, needle) {
   ]
 }
 
-/** True when a stored message carries the keyword hook's producer triple. */
+/** True when a stored message carries the keyword hook's producer triple — kind
+ * `OMO_KEYWORD_DETECTOR_KIND`, pinned against the shipped builder's stamp by the
+ * producer-kind tripwire, so this filter follows the producer and nothing else. */
 function isKeywordInjectionSource(message) {
-  return message?.source?.kind === 'plugin'
+  return message?.source?.kind === OMO_KEYWORD_DETECTOR_KIND
     && message.source.plugin === keywordDetectorModule.KEYWORD_DETECTOR_PLUGIN
     && message.source.form === 'instructions'
 }
@@ -11137,22 +15744,34 @@ export function analyzeKeywordNegativeControls(input, routes) {
   // form is what the substring checks below see.
   const userTexts = userMessages.map((event) => messageContentText(event.data))
 
-  // ⚠️ Scoped to the KEYWORD hook's own producer triple, not to "any plugin".
-  // A real run's log carries at least one OTHER plugin-sourced user message —
-  // dsh's own `dsh-system-prompt` snapshot (`form: 'snapshot'`) and the
-  // `skill-catalog` block are both `user/message` events with
-  // `source.kind === 'plugin'`. The first version of this check counted those
-  // and failed the scenario on a perfectly correct run; "some plugin injected
-  // something" is true of every session and therefore not a claim.
+  // ⚠️ Scoped to the KEYWORD hook's own producer triple, not to "any injected
+  // source". A real run's log carries OTHER producer-sourced `user/message`
+  // events too — dsh's runtime-context snapshot and the `skill-catalog` block.
+  // On the retired 0.1.5/V3 format both landed as `source.kind === 'plugin'`
+  // (measured, retained v3 sandbox logs); on 0.2.x/V4 they land as their own
+  // kinds — `runtime-context` and `skill-catalog` (measured, retained v4 sandbox
+  // logs; the installed dsh-session-format-v3-to-v4 resolves them in
+  // `producerKind` lib/index.js:87-93 — renamed rows :51-57,
+  // `RELEASED_SAME_NAME_PRODUCERS` :59-85). The
+  // first version of this check counted those and failed the scenario on a
+  // perfectly correct run; "some producer injected something" is true of every
+  // session and therefore not a claim.
   const keywordCarriers = userMessages.filter((event) => isKeywordInjectionSource(event.data))
-  // …and, separately: no OTHER plugin's message may carry a keyword body. That is
-  // the real leak risk (a mode's text arriving through some other channel), and
-  // `noKeywordBodyInTheLog` below is the log-wide form of it.
-  const foreignCarriersWithKeywordText = userMessages.filter((event) =>
-    event.data?.source?.kind === 'plugin'
-    && !isKeywordInjectionSource(event.data)
-    && (eventTextFlat(event).includes(KEYWORD_TEXTS.ultrawork.slice(0, 120))
-      || eventTextFlat(event).includes(KEYWORD_TEXTS.hyperplan.slice(0, 120))))
+  // …and, separately: no OTHER producer's message may carry a keyword body. That
+  // is the real leak risk (a mode's text arriving through some other channel), and
+  // `noKeywordBodyInTheLog` below is the log-wide form of it. Under v4 "another
+  // plugin" is no longer a shared `kind:'plugin'` — every producer stamps its own
+  // kind (and native admission refuses `'plugin'`, lib/index.js:126) — so the
+  // foreign axis is: a non-empty source kind that is neither the user's nor the
+  // keyword hook's.
+  const foreignCarriersWithKeywordText = userMessages.filter((event) => {
+    const kind = event.data?.source?.kind
+    return typeof kind === 'string' && kind.length > 0
+      && kind !== 'user'
+      && !isKeywordInjectionSource(event.data)
+      && (eventTextFlat(event).includes(KEYWORD_TEXTS.ultrawork.slice(0, 120))
+        || eventTextFlat(event).includes(KEYWORD_TEXTS.hyperplan.slice(0, 120)))
+  })
 
   // The keyword's own banner, on the wire and in the log.
   const bannerOnWire = sisyphusRequests.some((request) =>
@@ -11359,7 +15978,13 @@ export function analyzeKeywordNegativeControls(input, routes) {
       turnCount: turnEnds.length,
       sisyphusRequestCount: sisyphusRequests.length,
       userMessageCount: userMessages.length,
-      pluginSourceCount: userMessages.filter((event) => event.data?.source?.kind === 'plugin').length,
+      // Diagnostic, not a check: how many user/messages carry some OTHER
+      // producer's kind (on 0.2.x: runtime-context/skill-catalog/omo-*). The
+      // retired name counted `kind:'plugin'`, a kind v4 admission refuses.
+      otherInjectionSourceCount: userMessages.filter((event) => {
+        const kind = event.data?.source?.kind
+        return typeof kind === 'string' && kind.length > 0 && kind !== 'user'
+      }).length,
       keywordCarrierCount: keywordCarriers.length,
       foreignCarriersWithKeywordText: foreignCarriersWithKeywordText.length,
       commandKeywordCarrierCount: commandKeywordCarriers.length,
@@ -12650,19 +17275,32 @@ export function analyzeUlwPlanLoadsPrometheusSkill({ log, requests, bootLog, com
   // instead. Exclusion depends on neither, so every source/shape defect stays
   // reachable and each check is independently falsifiable.
   // The two OTHER injections a DSH session always carries — the runtime-context
-  // snapshot (`kind: 'plugin'`) and the skill-catalog `<system-reminder>`
-  // (`kind: 'skill-catalog'`). They are excluded by source KIND for a reason: the
-  // first real run located the runtime snapshot instead of the bridge's injection,
-  // because the locator took the first non-submitted message. Excluding by kind
-  // (rather than SELECTING `skill-invocation`) keeps a relabelled bridge injection
-  // locatable, so the source-contract check stays reachable.
-  const OTHER_INJECTION_KINDS = ['plugin', 'skill-catalog']
+  // snapshot and the skill-catalog `<system-reminder>`. They must be excluded BY
+  // PRODUCER, not by one runtime's spelling — the same producer stamps differently
+  // per generation (measured today, per route):
+  //   * runtime-context producer: 0.2.x/V4 `kind:'runtime-context'` (retained v4
+  //     sandbox logs; dsh-session-format-v3-to-v4 `producerKind` lib/index.js:87-93,
+  //     renamed row :56 maps the legacy wrapper to it) — 0.1.5/V3
+  //     `kind:'plugin', plugin:'@deepseek-ai/dsh-system-prompt'` (measured today in
+  //     the AC8 sandbox session.v3.jsonl seq 9: it entered the candidates once the
+  //     exclusion list dropped the retired `'plugin'` kind, and the scenario failed
+  //     6 checks on the snapshot masquerading as the bridge injection).
+  //   * skill-catalog producer: `kind:'skill-catalog'` on BOTH generations
+  //     (measured: v3 session seq 10, v4 logs; RELEASED_SAME_NAME_PRODUCERS
+  //     lib/index.js:59-85 keeps it same-named).
+  // Excluding the v3 wrapper by its NAME, not by kind `'plugin'` wholesale, keeps
+  // a relabelled bridge injection locatable — exclusion, never selection, so every
+  // source/shape defect stays reachable and the contract check stays falsifiable.
+  const OTHER_INJECTION_PRODUCERS = (source) =>
+    source?.kind === 'runtime-context'
+    || source?.kind === 'skill-catalog'
+    || (source?.kind === 'plugin' && source?.plugin === '@deepseek-ai/dsh-system-prompt')
   const submittedLines = [ULW_PLAN_GESTURE_LINE, ULW_PLAN_BARE_GESTURE_LINE]
   const injectedCandidates = events
     .filter((event) => event.type === 'user/message')
     .map((event) => ({ event, text: messageContentText(event.data) }))
     .filter((candidate) => !submittedLines.includes(candidate.text))
-    .filter((candidate) => !OTHER_INJECTION_KINDS.includes(candidate.event.data?.source?.kind))
+    .filter((candidate) => !OTHER_INJECTION_PRODUCERS(candidate.event.data?.source))
   const firstInjection = injectedCandidates[0]
   const secondInjection = injectedCandidates[1]
   const firstText = firstInjection?.text ?? ''
@@ -12990,6 +17628,41 @@ function stopContinuationScript() {
 }
 
 /**
+ * Wait (bounded) for the FIRST durable goal round of THIS session — a
+ * `user/message` whose `source.kind === 'goal'`, the carrier
+ * `dsh-goal-round-driver` writes through `agent.followup()`.
+ *
+ * WHY THE SCENARIO WAITS FOR IT INSTEAD OF RACING IT (P4.5-T12a): the third
+ * `/stop-continuation` used to be issued the instant `awaitTurnEnd` saw the
+ * prompt-4 `turn/end` land in the JSONL. The round that prompt 4's armed goal
+ * produces is queued AFTER that — on dsh 0.2.0-rc.2 (the machine's installed npm
+ * package) the driver reaches quiescence via `agent/status` and then awaits a
+ * durability checkpoint (`ctx.sessions.flush`) before `agent.followup()`
+ * (dsh-goal-round-driver/lib/index.js:100-155) — so the pause landed first, no
+ * round was ever opened, and `noGoalRoundOpenedAfterThePause` failed on its
+ * second conjunct (`goalRoundMessages.length > 0`) with `goalRoundCount: 0`
+ * measured. dsh 0.1.5-rc.1 won the same race without being asked (measured: 4
+ * rounds, `source.kind:"goal"`). The premise the check needs — at least one round
+ * BEFORE the pause — is now earned by waiting for the durable event, so the
+ * assertion itself is untouched and the timeout path still reports an honest FAIL.
+ *
+ * Returns the count it observed (0 on timeout — never throws, never fatal).
+ */
+async function awaitFirstGoalRound(sandbox, sessionId, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const log = logs.find((candidate) => String(candidate.header.id) === String(sessionId))
+    const rounds = (log?.events ?? []).filter(
+      (event) => event.type === 'user/message'
+        && event.data?.source?.kind === GOAL_ROUND_SOURCE_KIND,
+    ).length
+    if (rounds > 0 || Date.now() >= deadline) return rounds
+    await sleep(250)
+  }
+}
+
+/**
  * The scenario's settle hook: after the third stop paused the goal, the goal
  * driver must go quiet. This waits a bounded window for that silence and
  * records whether a round still opened — the observation is REPORTED here and
@@ -13045,7 +17718,7 @@ function countGoalRoundsAfterLastStop(sandbox, sessionId) {
  *
  *   before the stop — H-03 really steers, TWICE, on two different lists: both
  *     durable carriers exist per boundary, carry the producer triple
- *     {kind:'plugin', plugin:'omo-hooks', form:'instructions'} and the listener's
+ *     {kind:'omo-todo-continuation', plugin:'omo-hooks', form:'instructions'} and the listener's
  *     OWN text for the list that boundary saw, and each steer rides the request
  *     right after its 收尾 step (the turn did not end).
  *   the command — admitted every time, `command/run`/`command/done` paired per
@@ -13636,7 +18309,8 @@ function atlasChildInjectionCarries(ctx) {
   const events = ctx.events ?? []
   const ultraworkNeedle = buildExpectedInjectedText('ultrawork').slice(0, 240)
   const markerSeen = keywordInjectedCarriers(events, E2E_ULW_CONTEXT_MARKER).length > 0
-  // keyword 源的 ultrawork 载体才算（H-32 的 atlas 上下文是 omo-hooks 另一个插件源）。
+  // keyword 源的 ultrawork 载体才算（H-32 的 atlas 上下文是 omo-hooks 里**另一个生产者**
+  // 的 kind `omo-ulw-execute`，与 keyword 源的 `omo-keyword-detector` 互斥，P4.5-T9 起 kind 不再共用）。
   const ultraworkSeen = keywordInjectedCarriers(events, ultraworkNeedle)
     .some((entry) => isKeywordInjectionSource(entry.message))
   return { markerSeen, ultraworkSeen }
@@ -13684,9 +18358,13 @@ export function analyzeUlwExecuteCommandActivatesAtlas(
     return typeof persona === 'string' ? persona : undefined
   }
   // The child's own durable record of the delegation task text it received.
+  // OMO's own injections land NEXT TO the task in a child log (v3 stamped them
+  // `kind:'plugin'`; v4 stamps each producer's dedicated kind), so the locator
+  // excludes every OMO injection kind rather than trusting one shared label —
+  // a relabelled omo injection still cannot masquerade as the parent's task.
   const childFirstUserText = (child) => {
     const first = (child?.events ?? []).find(
-      (event) => event.type === 'user/message' && event.data?.source?.kind !== 'plugin',
+      (event) => event.type === 'user/message' && !OMO_INJECTION_KINDS.includes(event.data?.source?.kind),
     )
     return first === undefined ? undefined : messageContentText(first.data)
   }
@@ -13852,7 +18530,7 @@ export function analyzeUlwExecuteCommandActivatesAtlas(
       && triggerInjectionText.includes(`**Path**: ${planPath}`)
       && triggerInjectionText.includes(`**Plan**: ${ULW_EXECUTE_PLAN_NAME}`),
     injectionSourceContract:
-      triggerInjectionSource?.kind === 'plugin'
+      triggerInjectionSource?.kind === OMO_ULW_EXECUTE_KIND
       && triggerInjectionSource?.plugin === E2E_ULW_PLUGIN
       && triggerInjectionSource?.form === 'instructions',
     injectionReachedTheAtlasModelRequest: atlasRequests.some(
@@ -14089,6 +18767,37 @@ const SCENARIOS = [
     analyze: analyzeJsonErrorRecoveryReminder,
   },
   {
+    // P4.5-T12a LANE B: the SAME malformed tool-call pair, handed to the OTHER
+    // shipped adapter. Lane A above rides `deepseek-official` (dsh-llm-deepseek),
+    // which since 0.2.x validates every `tool_use` `arguments` at `message_stop`
+    // (installed dsh-llm-deepseek/lib/index.js:1983-1991) and dead-turns with a
+    // NAMED MALFORMED_RESPONSE without ever calling the tool; this lane re-seats
+    // sisyphus onto the pi-ai route (`deepseek`, dsh-llm-pi-ai), whose LIVE stream
+    // yields the provider's RAW `arguments` text (:1550-1555 of that installed
+    // artifact) and so still delivers the trigger.
+    //
+    // Together the two scenarios are THE CONTRACT on how the premise splits on
+    // the only supported runtime (0.2.x), and they split it the way the runtime
+    // actually splits it: the json-error listener is NOT retired on
+    // 0.2.x — it is unreachable on ONE route and still fires on the other. If a
+    // future dsh moves the validation onto the pi-ai route too, THIS lane goes red
+    // naming the check, and the reviewer learns the hook has gone fully dark
+    // instead of finding out from a passing gate.
+    //
+    // The seat goes through `scenarioSeat`, so a runtime that stops serving the
+    // pi-ai id fails at the catalog gate naming the seat, not silently here.
+    name: 'json-error-recovery-pi-ai-lane',
+    prompt: JSON_RECOVERY_PROMPT,
+    roles: ['sisyphus'],
+    env: () => {
+      const seat = scenarioSeat('sisyphus', PI_AI_LANE_SEAT_PREFERENCE)
+      const names = MODEL_ROUTE_ENV_VARS.sisyphus
+      return { [names.provider]: seat.provider, [names.model]: seat.model }
+    },
+    script: jsonErrorRecoveryPiAiScript,
+    analyze: analyzeJsonErrorRecoveryOnPiAiLane,
+  },
+  {
     // P3-T14: H-16's listener on ONE real batch of two greps — the big one over
     // the fixed/adaptive budget (truncated, head kept, tail noted) and the small
     // one as the untouched control.
@@ -14304,7 +19013,7 @@ const SCENARIOS = [
     name: 'roster-parade',
     prompt: PARADE_PROMPT,
     roles: [CONDUCTOR_ID, ...PARADE_AGENTS],
-    env: paradeEnv(),
+    env: () => paradeEnv(),
     seed: (sandbox) => {
       writeFileSync(join(sandbox.project, 'README.md'), DEMO_README_CONTENT)
     },
@@ -14320,7 +19029,7 @@ const SCENARIOS = [
     name: 'plan-reviewer-write-denied',
     prompt: PLAN_REVIEWER_DENY_PROMPT,
     roles: [CONDUCTOR_ID, 'plan-reviewer'],
-    env: delegationSeatEnv('plan-reviewer', PLAN_REVIEWER_SEAT),
+    env: () => delegationSeatEnv('plan-reviewer', PLAN_REVIEWER_SEAT()),
     script: planReviewerWriteDeniedScript,
     analysisInput: (sandbox) => ({
       writeTargetPath: join(sandbox.project, PLAN_REVIEWER_WRITE_TARGET_NAME),
@@ -14345,7 +19054,7 @@ const SCENARIOS = [
     name: 'atlas-nested-delegation',
     prompt: ATLAS_NESTED_PROMPT,
     roles: [CONDUCTOR_ID, 'atlas', 'explore'],
-    env: delegationSeatEnv('atlas', ATLAS_SEAT),
+    env: () => delegationSeatEnv('atlas', ATLAS_SEAT()),
     seed: (sandbox) => {
       writeFileSync(join(sandbox.project, 'README.md'), DEMO_README_CONTENT)
     },
@@ -14481,6 +19190,10 @@ const SCENARIOS = [
       // The goal face LAST: an active goal opens rounds of its own, and keeping
       // that nondeterminism after every other claim keeps it from disturbing them.
       { kind: 'prompt', text: STOP_CONTINUATION_PROMPT_4 },
+      // P4.5-T12a: the round the armed goal produces is queued AFTER the
+      // prompt-4 `turn/end` is durable, so the pause has to wait for it —
+      // `awaitFirstGoalRound` carries the measurement and the citations.
+      { kind: 'awaitGoalRound' },
       { kind: 'command', line: STOP_CONTINUATION_COMMAND_LINE },
     ],
     script: stopContinuationScript,
@@ -14534,8 +19247,47 @@ async function runScenario(def, baseRoutes) {
   // P2-T18: the scenario's own env overlay is resolved through the SAME
   // resolver the spawned dsh runs, so agentOptions/settings and the assertions
   // can never disagree about a seat.
-  const env = scenarioEnv(sandbox, def.env)
-  const routes = def.env === undefined ? baseRoutes : resolveModelRoutes(env)
+  //
+  // P4.5-T10′: that overlay now sits ON TOP OF `runtimeSeatEnv()`, the
+  // runtime-catalog-resolved seats for all 11 roster rows. The order is the
+  // point: a scenario that deliberately re-seats a row (the parade, the two
+  // P2-T19 scenarios) still wins, and every OTHER row gets an id the installed
+  // runtime's catalog actually lists instead of a shipped default it may not
+  // serve. On dsh 0.1.5-rc.1 `runtimeSeatEnv()` writes each row's shipped
+  // default back verbatim (no substitution was needed there), so the resolved
+  // `routes` below is byte-identical to `baseRoutes` and nothing about that
+  // generation's behaviour moves; on dsh 0.2.0-rc.2 it is where the explore
+  // child stops dying with UNKNOWN_MODEL. `baseRoutes` stays in the signature
+  // because the AC-5 mutation fixtures pass their own collapsed/swapped maps.
+  const seatOverlay = { ...runtimeSeatEnv(), ...scenarioEnvOverlay(def) }
+  const env = scenarioEnv(sandbox, seatOverlay)
+  const routes = resolveModelRoutes(env)
+  // Anti-drift, and the reason `baseRoutes` is still in the signature: every row
+  // whose EFFECTIVE seat differs from the shipped default must differ for one of
+  // exactly two reasons — the installed catalog forced it, or THIS scenario asked
+  // for it by name. Anything else is an unexplained drift (a mistyped env name,
+  // a stale scenario pin) and stops the run here.
+  const scenarioPinnedAgents = new Set(
+    Object.keys(scenarioEnvOverlay(def))
+      .map((name) => Object.entries(MODEL_ROUTE_ENV_VARS)
+        .find(([, names]) => names.provider === name || names.model === name)?.[0])
+      .filter((agent) => agent !== undefined),
+  )
+  const unexplainedDrift = Object.entries(routes)
+    .filter(([agent, route]) => {
+      const shipped = baseRoutes[agent]
+      if (shipped.provider === route.provider && shipped.model === route.model) return false
+      if (scenarioPinnedAgents.has(agent)) return false
+      if (RUNTIME_RESOLVED_SEATS[agent]?.forcedByEnvVar === 'OMO_E2E_FORCE_SEAT') return false
+      return RUNTIME_RESOLVED_SEATS[agent]?.substituted !== true
+    })
+    .map(([agent, route]) => `${agent}: shipped ${baseRoutes[agent].provider}/${baseRoutes[agent].model} → effective ${route.provider}/${route.model}`)
+  if (unexplainedDrift.length > 0) {
+    throw new Error(
+      `[${def.name}] effective seats drift from roster.ts's shipped defaults for reasons `
+      + `neither the runtime catalog nor this scenario's own env declares: ${unexplainedDrift.join('; ')}`,
+    )
+  }
   // P3-T16 (the webfetch-private-target-unprobed scenario): a scenario may need a
   // PROCESS-LOCAL HTTP fixture whose ephemeral PORT exists only after it is
   // listening, and the mock script's tool arguments must name that URL. `setup`
@@ -14552,23 +19304,276 @@ async function runScenario(def, baseRoutes) {
     console.error(`drive: [${def.name}] stage 0 — dsh plugin add into the sandbox profile`)
     installPlugin(sandbox, env)
 
+    // P4.5-T8b: the 0.2.x MOCKROLE face, BEFORE boot. On this generation
+    // register() renders the template at apply() time and nothing reads the
+    // materialized preset afterwards, so a stamp that lands after readiness is
+    // a stamp nothing will ever mount — the marker has to be in the sandbox
+    // plugin copy before the process starts. Self-verified inside (the plugin's
+    // own assemblers must produce a persona that STARTS with the marker), and
+    // archived so the kept sandbox can be audited without re-running.
+    const copyStamp = await stampMockRoleMarkersIntoPluginCopy(sandbox, def.roles)
+    writeFileSync(join(sandbox.root, 'mock-role-copy-stamp.json'), `${JSON.stringify(copyStamp, null, 2)}\n`)
+    console.error(
+      `drive: [${def.name}] MOCKROLE stamped into the sandbox plugin copy BEFORE boot: `
+      + `${copyStamp.map((entry) => `${entry.role}→${basename(entry.file)}:1`).join(', ')}`,
+    )
+
+    // P3-T13 / P4.5-T12a: a scenario may additionally edit a delegation row of
+    // the SANDBOX plugin-copy TEMPLATE. Used by the background scenario to reach
+    // the one-shot background job path the shipped `continuable` rows cannot
+    // produce, and by the prometheus scenario to lift ONE row's `toolFilter`;
+    // loud on drift (it throws).
+    //
+    // WHY THIS RUNS BEFORE BOOT NOW (P4.5-T12a measurement on dsh 0.2.0-rc.2,
+    // the machine's installed npm package): the same fixtures ran AFTER
+    // `bootDsh` and edited `$DSH_HOME/.agent-presets/concerto/agent.cordis.yml`,
+    // which 0.2.x WRITES at boot and never READS — the mounted face is
+    // `register()`'s rendered composition (src/concerto-preset.ts:845-880). The
+    // edits therefore reached no face at all: the explore child's descriptor still
+    // read `mode=continuable` against a materialized row of `one-shot`, and the
+    // prometheus child's `request/header` still advertised no `write` against a
+    // materialized row with no `toolFilter`. The template is the one face both
+    // generations descend from — `pluginTemplateCompositionPath()` carries the
+    // citations — so the edit moved to it, and to the only point in the sequence
+    // that is upstream of `register()`.
+    //
+    // WP2 MAJOR-1: the fixture's RETURN VALUE is part of the contract — it names
+    // every (row, key, after) it changed, and a fixture that returns nothing
+    // throws HERE instead of letting its edit collide with the roster expectation
+    // further down. The scenario key and the call expression keep their historical
+    // names because scripts/verify-concerto-static.mjs c24 pins both (:2243 the
+    // `augmentMaterialized:` key, :2165 this expression); the FACE they now name
+    // is the pre-boot template, and the comment above is what says so.
+    const declaredEdits = def.augmentMaterialized === undefined
+      ? []
+      : declaredSandboxEdits(def, def.augmentMaterialized(sandbox))
+    const renderEdit = (edit) => `${edit.row}.${edit.key}→${edit.after === null ? '<absent>' : JSON.stringify(edit.after)}`
+    console.error(
+      `drive: [${def.name}] read-face sandbox edits declared by this scenario: `
+      + `${declaredEdits.length === 0 ? 'none (the scenario edits nothing)' : declaredEdits.map(renderEdit).join(', ')}`,
+    )
+
     console.error(`drive: [${def.name}] booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0`)
     const boot = await bootDsh(sandbox, patchPath, env)
     child = boot.child
     console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port} (transport ${boot.transport})`)
 
-    // The plugin sync materializes the concerto preset at boot; then the
-    // MOCKROLE markers ride each role's persona into its child system prompt.
+    // The plugin sync materializes the concerto preset at boot — from the
+    // stamped and (where declared) row-edited copy above — and then
+    // appendMockRoleMarker stamps the same markers into the MATERIALIZED file:
+    // load-bearing on the 0.1.5 pin, where that file IS the mounted face, and a
+    // line-anchored no-op on 0.2.x, where the copy's stamp has already put each
+    // marker on the first content line.
     // P2-T18: verify where each marker LANDED (grep/line-number check) — the
     // parade gates on it, and every scenario carries the raw detail.
     for (const role of def.roles) appendMockRoleMarker(sandbox, role)
     const markerLanding = def.roles.map((role) => verifyMockRoleMarkerLanding(sandbox, role))
-    // P3-T13: a scenario may additionally edit the SANDBOX-OWNED materialized
-    // preset before the session composes its tools (the MOCKROLE markers above
-    // already prove the file is read at session composition, not at boot). Used
-    // by the background scenario to reach the one-shot background job path the
-    // shipped `continuable` rows cannot produce; loud on drift (it throws).
-    def.augmentMaterialized?.(sandbox)
+
+    // P4.5-T6 — the composition ASSERTION face.
+    //
+    // WP2 MAJOR-1 CORRECTION to the comment that sat here: it claimed 'what the
+    // session is about to compose from is asserted here over the READ face' and
+    // that was TRUE ON HALF THE RUNTIMES. The two hosts do not answer
+    // `agentPresets/read` from the same place:
+    //   • 0.2.x answers from register(), which rendered the plugin COPY TEMPLATE
+    //     at apply() time — so `augmentMaterialized`'s row edits ARE on this face
+    //     (they are made in that same copy, before boot), while
+    //     `appendMockRoleMarker`'s post-boot stamp on the materialized file is
+    //     NOT, and never was;
+    //   • 0.1.5 answers from FILE DISCOVERY — this sandbox's own materialized
+    //     file, which the plugin wrote at boot FROM that same copy — so BOTH
+    //     edits are on this face, the fixture's directly and the marker's through
+    //     the copy the render read.
+    // So the read face is not one thing. What holds on both: every value
+    // asserted here is derived from src/roster.ts (the write face's source) or
+    // from the scenario's own declared edit list above — never read off the
+    // bytes under assertion — and a (row, key) the scenario declared it edited
+    // accepts EXACTLY two values, roster ∪ post-edit, so a degraded list matches
+    // neither. The roster half of that set is anchored in src/roster.ts; the
+    // post-edit half is typed by the fixture and has NO external anchor, because
+    // on 0.1.5 the bytes under assertion ARE the file the fixture's edit reached.
+    // That residual trust boundary is why c24 reconciles each declared `after`
+    // against what the fixture body actually writes, and why fixture edits need
+    // review — stated here so nobody reads this as airtight when it is not.
+    // Fixture mechanics stay on the file (they need write access, or line
+    // numbers a read RPC cannot give); the assertion path below never reads the
+    // file, and NO fallback to it is permitted.
+    const readDoc = await readPresetDocument(boot, CONCERTO_PRESET_ID)
+    const readFaceDir = join(sandbox.root, 'read-face')
+    mkdirSync(readFaceDir, { recursive: true })
+    const readContentPath = readFaceContentPath(sandbox)
+    const readExpectPath = join(readFaceDir, 'roster-expectations.json')
+    writeFileSync(readContentPath, readDoc.content)
+    writeFileSync(readExpectPath, JSON.stringify({
+      rows: DELEGATION_ENTRIES.map((entry) => ({
+        id: entry.id,
+        deny: denyToolNamesFor(entry) ?? null,
+        allow: allowToolNamesFor(entry) ?? null,
+        maxDepth: entry.maxDepth,
+      })),
+      // REQUIRED by the validator's contract, and it is the SCENARIO's own
+      // declaration captured above — not a literal, not derived from the face.
+      // `[]` is a real statement: this scenario edited nothing.
+      sandboxEdits: declaredEdits,
+      // Derived, never transcribed: the roster's own uniform cap. If the
+      // roster ever stops being uniform, this throws rather than letting the
+      // validator compare against a stale constant.
+      uniformMaxDepth: (() => {
+        const depths = [...new Set(DELEGATION_ENTRIES.map((entry) => entry.maxDepth))]
+        if (depths.length !== 1) {
+          throw new Error(
+            `[${def.name}] the roster maxDepth is not uniform (${JSON.stringify(depths)})`
+              + ' — the read-face expectation has to be re-derived, not guessed',
+          )
+        }
+        return depths[0]
+      })(),
+    }))
+    // P4.5-T10′ — THE EXPECTATION SOURCE, MADE EXPLICIT.
+    // argv 5/6 of the validator is `readFaceExpectation`, i.e. roster.ts's
+    // SHIPPED explore default mapped through the installed runtime's catalog —
+    // NOT `def.env` (that is the input that produced the bytes under assertion,
+    // and the comment above `PARADE_SEATS` refuses it), NOT the read face
+    // itself. On dsh 0.1.5-rc.1 no substitution was needed, so this is
+    // byte-identical to the previous `resolveModelRoutes()`; on dsh 0.2.0-rc.2
+    // it differs from the shipped default by exactly the one move the pi-ai
+    // catalog forced (deepseek-v4-flash is absent from pi-ai@0.87.1), and that
+    // difference is written into read-face/roster-expectations.json with the
+    // artifact that said so. The shipped default is NOT certified here.
+    const readFaceExpectation = readFaceSeatExpectation()
+    if (routes.explore.provider !== readFaceExpectation.provider
+      || routes.explore.model !== readFaceExpectation.model) {
+      throw new Error(
+        `[${def.name}] the scenario's EFFECTIVE explore seat `
+        + `${routes.explore.provider}/${routes.explore.model} is not the read-face expectation `
+        + `${readFaceExpectation.provider}/${readFaceExpectation.model} `
+        + `(${readFaceExpectation.expectationSource}) — the seat the sandbox is pinned to and `
+        + 'the seat the read face is checked against have come apart; refusing to compare',
+      )
+    }
+    // The per-generation evidence, written per run: every seat, the id pinned,
+    // the artifact the id was read out of, and whether the shipped default moved.
+    // This is what a reviewer audits instead of trusting a report.
+    writeFileSync(join(readFaceDir, 'seat-expectation.json'), `${JSON.stringify({
+      runtime: {
+        dshVersion: RUNTIME_CATALOG_PROBE_DOC.dshVersion ?? null,
+        dshBinary: RUNTIME_CATALOG_PROBE_DOC.dshBinary ?? null,
+        nodeModules: RUNTIME_CATALOG_PROBE_DOC.nodeModules ?? null,
+        note: 'dshVersion is a LABEL only — no selection anywhere in this file branches on it',
+      },
+      catalogs: Object.fromEntries(Object.entries(RUNTIME_CATALOGS).map(([route, catalog]) => [route, {
+        package: catalog.package,
+        artifact: catalog.artifact,
+        kind: catalog.kind,
+        models: catalog.models,
+      }])),
+      expectation: readFaceExpectation,
+      seats: Object.values(RUNTIME_RESOLVED_SEATS),
+      paradeSeats: Object.fromEntries(PARADE_SEATS),
+      paradeSeatPairs: PARADE_SEAT_PAIRS,
+    }, null, 2)}\n`)
+    // The expected `!!js` gate count comes from the WRITE face — the same
+    // materialized file the probe derives it from — NEVER off the bytes under
+    // assertion. Self-counting cannot catch silent degradation: dropping a tag
+    // lowers both sides of the reader's own tally at once (MINOR-2, measured
+    // green under a self-referential check).
+    //
+    // One of the validator's consumers — WHICH ones is not a fact this comment
+    // gets to state: scripts/verify-concerto-static.mjs c23 DISCOVERS the call
+    // sites by scanning scripts/ and tests/ for executable invocations of
+    // assert-concerto-read-face.mjs, pins each one's arity against the
+    // validator's own destructuring, and fails on any mention it cannot
+    // classify. When the validator grew its 6th argument, only the validator and
+    // the probe were updated and THIS call site kept passing 5 —
+    // `Number(undefined)` is NaN, which trips the validator's own integer guard,
+    // so the read-face assertion was RED by construction on every run. A comment
+    // claiming the consumers stay in step is not evidence; the scan is.
+    const readFaceWritePath = materializedCompositionPath(sandbox)
+    const expectedJsCount = (() => {
+      const count = readFileSync(readFaceWritePath, 'utf8')
+        .split('\n')
+        .filter((line) => line.includes('!!js ')).length
+      if (count === 0) {
+        throw new Error(
+          `[${def.name}] the write face ${readFaceWritePath} declares ZERO \`!!js\` gates — `
+            + 'the render changed, so the read-face expectation must be re-derived, not asserted',
+        )
+      }
+      return count
+    })()
+    // stderr, NOT stdout: this driver's stdout is the machine-readable channel
+    // (the final JSON at the foot of main(), plus `SELF-TEST OK`). A progress
+    // line here made `node tests/e2e/drive.mjs > out.json | jq` fail on its
+    // first line. Pre-existing since 51e6ba0 (T6); every neighbouring progress
+    // line already goes through console.error.
+    console.error(
+      `drive: [${def.name}] read-face expected \`!!js\` gates from the write face: ${expectedJsCount}`,
+    )
+    // argv 5/6 — the EXPECTED explore seat: `readFaceExpectation`, i.e. roster.ts's
+    // shipped default mapped through the installed runtime's catalog — NOT `def.env`
+    // (that feeds the bytes under assertion) and NOT the face. The disposition of the
+    // refusal written above `PARADE_SEAT_PREFERENCES` is recorded per run in
+    // read-face/seat-expectation.json next to those bytes.
+    // NOTE the literal below holds EXACTLY 6 elements with no line comments inside
+    // it: gate 6 c23 counts that literal TEXTUALLY, so a comment line here is
+    // counted as a 7th argument and fails the arity check (it did, on this slice).
+    const readFace = spawnSync(
+      process.execPath,
+      [
+        join(REPO_ROOT, 'scripts', 'assert-concerto-read-face.mjs'),
+        resolveDshNodeModules(),
+        readContentPath,
+        readExpectPath,
+        readFaceExpectation.provider,
+        readFaceExpectation.model,
+        String(expectedJsCount),
+      ],
+      { encoding: 'utf8', timeout: 60_000 },
+    )
+    if (readFace.status !== 0) {
+      throw new Error(
+        `[${def.name}] the agentPresets/read content failed the shared read-face validator`
+          + ` (exit ${readFace.status}): ${(readFace.stdout ?? '') + (readFace.stderr ?? '')}`
+          + ' — NO fallback to the materialized file is permitted',
+      )
+    }
+    // P4.5-T8b — the MOCKROLE gate on the MOUNTED face. Everything above
+    // asserts the composition's STRUCTURE over the bytes the read RPC returned;
+    // NONE of it asserted that the markers this slice exists to deliver are
+    // among those bytes. On 0.2.x the materialized-file landing check passes
+    // while the mounted face can be empty, so without this gate the delivery
+    // could rot straight back to the pre-T8b break and the only symptom would
+    // be a mock 400 three hops and a 400-line log away from the cause. A miss
+    // aborts HERE and names the role.
+    const readFaceMarkers = verifyMockRoleMarkersOnReadFace(sandbox, def.roles)
+    writeFileSync(join(readFaceDir, 'mock-role-markers.json'), `${JSON.stringify(readFaceMarkers, null, 2)}\n`)
+    const readFaceMisses = readFaceMarkers.filter((entry) => entry.ok !== true)
+    if (readFaceMisses.length > 0) {
+      throw new Error(
+        `[${def.name}] MOCKROLE markers are missing or duplicated on the READ face `
+        + `${readContentPath}: `
+        + `${readFaceMisses.map((entry) => `${entry.role}[count=${entry.markerCount ?? 0}] ${entry.reason ?? ''}`).join('; ')}`
+        + ' — the mounted composition does not carry the marker, so the mock cannot route that role',
+      )
+    }
+    console.error(
+      `drive: [${def.name}] MOCKROLE read-face gate PASS: `
+      + `${readFaceMarkers.map((entry) => `${entry.role}→L${entry.markerLine}`).join(', ')} `
+      + `in ${readContentPath}`,
+    )
+    // The validator's own accounting goes to the gate log: how many row-keys it
+    // compared, and which of them resolved against THIS scenario's declared
+    // sandbox edit. That line is the machine-readable answer to 'did this
+    // scenario really compare, or did it skip' — visible per scenario in the
+    // gate-3 log instead of reconstructable only from the source.
+    console.error(
+      `drive: [${def.name}] read-face validator: ${(readFace.stdout ?? '').trim()}`,
+    )
+    console.error(
+      `drive: [${def.name}] read-face asserted ${readDoc.content.split('\n').length} lines`
+        + ` / ${Buffer.byteLength(readDoc.content)} bytes of agentPresets/read content`
+        + ` (name ${JSON.stringify(readDoc.name)})`,
+    )
 
     // Wiring proof for BOTH adapters (transport-adaptive; same contract).
     const providers = await listProvidersJoined(boot)
@@ -14613,6 +19618,15 @@ async function runScenario(def, baseRoutes) {
           )
           turnsSeen += 1
           log = await awaitTurnEnd(sandbox, created.sessionId, turnsSeen)
+          continue
+        }
+        if (action.kind === 'awaitGoalRound') {
+          const rounds = await awaitFirstGoalRound(sandbox, created.sessionId)
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} awaited the first goal `
+            + `round before the next action: ${rounds} round(s) durable (0 = the window expired, the `
+            + 'analysis still reports the honest FAIL)',
+          )
           continue
         }
         if (action.kind === 'command') {
@@ -14731,6 +19745,14 @@ async function runScenario(def, baseRoutes) {
         childLog,
         allLogs,
         requests: server.requests,
+        // Which WIRE the mock served, counted by the mock itself from the request
+        // PATH (mock-llm-server.mjs:214 `modeCounts.messages`, :226
+        // `modeCounts.openai`, exposed at :246). `messages` is the
+        // dsh-llm-deepseek Messages dialect (`${baseURL}/messages`); `openai` is
+        // the OpenAI-completions dialect dsh-llm-pi-ai posts to
+        // (`${baseURL}/chat/completions`). A scenario that claims to ride one lane
+        // can now be caught riding the other.
+        modeCounts: server.modeCounts,
         providersJson,
         bootLog: boot.log(),
         markerLanding,
@@ -14740,6 +19762,22 @@ async function runScenario(def, baseRoutes) {
       },
       routes,
     )
+    // P4.5-T8a A1′ — the primary acceptance for the sandbox seeding: audit the
+    // harness's OWN composed output over this overlay (timer-free, so it does
+    // not inherit the boot marker's 8s settle race). Merged into the scenario's
+    // named checks AFTER `...analysis` so it is asserted whatever the analysis
+    // says, and `failed`/`result` are recomputed from the MERGED set.
+    const composedGate = await auditComposedLlmWiring({
+      sandbox, patchPath, env, mockBaseUrl: server.baseUrl, routes,
+    })
+    const mergedChecks = {
+      ...(analysis.checks ?? {}),
+      composedLlmWiringPresent: composedGate.faults.length === 0,
+      composedStderrNoPatchWarnings: composedGate.patchWarnLines.length === 0,
+    }
+    const mergedFailed = Object.entries(mergedChecks)
+      .filter(([, passed]) => passed !== true)
+      .map(([check]) => check)
     // Timing notes: mock arrival offsets relative to the first request.
     const t0 = server.requests[0]?.receivedAt ?? 0
     const timeline = server.requests.map((request) => ({
@@ -14755,11 +19793,46 @@ async function runScenario(def, baseRoutes) {
       timeline,
       // AC-7: every assertion BY NAME, in check order — CI can list what ran
       // without parsing the checks object.
-      assertions: Object.keys(analysis.checks ?? {}),
+      assertions: Object.keys(mergedChecks),
       ...analysis,
+      checks: mergedChecks,
+      failed: mergedFailed,
+      result: mergedFailed.length === 0 ? 'PASS' : 'FAIL',
+      composedLlmWiring: {
+        ok: composedGate.ok,
+        faults: composedGate.faults,
+        patchWarnLines: composedGate.patchWarnLines,
+        dumpPath: composedGate.dumpPath,
+      },
     }
   } catch (error) {
-    scenario = { name: def.name, result: 'FAIL', failed: [`driver error: ${error.message}`] }
+    // P4.5-T13 (kimi K3 challenge (b)): a sandbox that VANISHED mid-scenario
+    // is an ENVIRONMENTAL fact, not a product failure. A concurrent cleanup
+    // eating this run's /tmp/…/omo-dsh-e2e-* directory made the collision
+    // family produce phantom REDs twice in Phase 4.5 — an ENOENT nobody could
+    // explain. Now the vanish reports ITSELF: the scenario records
+    // `bonus.sandboxVanishedMidScenario: <path>` and SKIPs loudly
+    // (`SKIPPED [sandbox-vanished]`) instead of redding. The skip channel is
+    // sealed — SKIP is reachable ONLY while sandbox.root is verifiably absent
+    // at catch time (the driver itself created that directory at scenario
+    // start, so its absence mid-run can only mean someone else deleted it);
+    // any failure with the sandbox still on disk stays RED with its error.
+    if (!existsSync(sandbox.root)) {
+      scenario = {
+        name: def.name,
+        result: 'SKIP',
+        failed: [],
+        skipReason: 'sandbox-vanished',
+        bonus: { sandboxVanishedMidScenario: sandbox.root },
+      }
+      console.error(
+        `drive: [${def.name}] SKIPPED [sandbox-vanished] — sandbox ${sandbox.root} vanished `
+        + 'mid-scenario (environmental, not a product failure; the ENOENT family that '
+        + `produced this phase's phantom reds; last driver error: ${error.message})`,
+      )
+    } else {
+      scenario = { name: def.name, result: 'FAIL', failed: [`driver error: ${error.message}`] }
+    }
   } finally {
     if (child !== undefined) await stopDsh(child)
     await server.close()
@@ -15006,7 +20079,7 @@ function fabricatedUlwCommandChild(id, label, persona, taskText, injected) {
       data: {
         role: 'user',
         content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }],
-        source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' },
+        source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' },
       },
     })
     events.push({ seq: 5, type: 'assistant/message', data: { role: 'assistant', content: [{ type: 'text', text: 'MOCK-FABRICATED-ULW-CHILD-STEP-2' }] } })
@@ -15155,7 +20228,7 @@ function ulwExecuteCommandDefectCases(routes) {
   // 是这两条检查能被称作检查的前提。
   //
   // 载体一律用 `buildInjectionMessage(body)` 的 source——它**就是** keyword 插件的
-  // 三元组 `{kind:'plugin', plugin: KEYWORD_DETECTOR_PLUGIN, form:'instructions'}`，
+  // 三元组 `{kind:'omo-keyword-detector', plugin: KEYWORD_DETECTOR_PLUGIN, form:'instructions'}`（P4.5-T9：kind 自此生产者专属），
   // 所以必须能过 `isKeywordInjectionSource` 那一道轴。若改成 user 源，检查会一直绿
   // 而缺陷「看起来也注入了」——那正是本次插桩查出的那个错误轴，只是换了个方向。
   const keywordCarrier = (id) => {
@@ -15245,7 +20318,7 @@ function ulwExecuteCommandDefectCases(routes) {
     }, 'commandDoneNamesThisSessionAndThePayload'],
     // ── the template injection into the conductor ──
     ['the command never queued its instruction into the session', (input) => {
-      mapEvent(input, (event) => event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes('# /ulw-execute Command'), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin', plugin: 'other', form: 'instructions' } } }))
+      mapEvent(input, (event) => event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes('# /ulw-execute Command'), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin:other', plugin: 'other', form: 'instructions' } } }))
     }, 'instructionCarriedIntoTheConductorSession'],
     ['the second command queued no instruction of its own', (input) => {
       // Located by ORDER (the carrier after the second command/run), never by a
@@ -15304,13 +20377,13 @@ function ulwExecuteCommandDefectCases(routes) {
     }, 'triggerChildIsTheAtlasRow'],
     ['the injected context never reached the atlas child', (input) => {
       const trigger = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_TRIGGER)
-      trigger.events = trigger.events.filter((event) => event.data?.source?.kind !== 'plugin')
+      trigger.events = trigger.events.filter((event) => event.data?.source?.kind !== OMO_ULW_EXECUTE_KIND)
     }, 'injectedContextReachedTheAtlasChild'],
     ['the injected context named another plan', (input) => {
       mapEvent(input, (event) => event.seq === 4 && event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes(E2E_ULW_CONTEXT_MARKER), (event) => ({ ...event, data: { ...event.data, content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT.replace(`**Plan**: ${ULW_EXECUTE_PLAN_NAME}`, '**Plan**: beta') }] } }))
     }, 'injectedContextReachedTheAtlasChild'],
     ['the injection carried the wrong producer', (input) => {
-      mapEvent(input, (event) => event.seq === 4 && event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes(E2E_ULW_CONTEXT_MARKER), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin', plugin: 'omo-commands', form: 'instructions' } } }))
+      mapEvent(input, (event) => event.seq === 4 && event.type === 'user/message' && String(messageContentText(event.data) ?? '').includes(E2E_ULW_CONTEXT_MARKER), (event) => ({ ...event, data: { ...event.data, source: { kind: 'plugin:omo-commands', plugin: 'omo-commands', form: 'instructions' } } }))
     }, 'injectionSourceContract'],
     ['the injection never reached the atlas model request', (input) => {
       input.requests = input.requests.map((request) => (request.role === 'atlas'
@@ -15326,11 +20399,11 @@ function ulwExecuteCommandDefectCases(routes) {
     // ── 幂等 + the controls ──
     ['the trigger child received a second injection', (input) => {
       const trigger = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_TRIGGER)
-      trigger.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
+      trigger.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
     }, 'secondCommandInjectedNothingNew'],
     ['the marker-less control delegation was injected anyway', (input) => {
       const control = input.allLogs.find((child) => child.header.id === FABRICATED_ULW_COMMAND_CHILD_CONTROL)
-      control.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
+      control.events.push({ seq: 7, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' } } })
     }, 'markerlessControlInjectedNothing'],
     ['the control child never existed', (input) => {
       input.allLogs = input.allLogs.filter((child) => child.header.id !== FABRICATED_ULW_COMMAND_CHILD_CONTROL)
@@ -15339,7 +20412,7 @@ function ulwExecuteCommandDefectCases(routes) {
       input.log.events.push({
         seq: 14,
         type: 'user/message',
-        data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: 'plugin', plugin: E2E_ULW_PLUGIN, form: 'instructions' } },
+        data: { role: 'user', content: [{ type: 'text', text: FABRICATED_ULW_CONTEXT }], source: { kind: OMO_ULW_EXECUTE_KIND, plugin: E2E_ULW_PLUGIN, form: 'instructions' } },
       })
     }, 'conductorNotInjected'],
     ['the scaffold kept the upstream /start-work footer', (input) => {
@@ -15417,7 +20490,7 @@ function fabricatedStopContinuationLog() {
       id: `fabricated-steer-${turn}`,
       role: 'user',
       content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
+      source: { kind: OMO_TODO_CONTINUATION_KIND, plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
     }
     push({ type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [message] } })
     push({ type: 'user/message', data: message })
@@ -15475,6 +20548,9 @@ function fabricatedStopContinuationLog() {
     sessionId: FABRICATED_STOP_SESSION_ID,
     cancelledJobIds: Array.from({ length: cancelled }, (_, index) => `job-fabricated-${index}`),
     alreadyFinishedJobIds: [],
+    // PR #12: the third bucket exists now — the formatter reads it, so the
+    // fabricated fixture must carry it (its absence crashes the formatter).
+    stopFailedJobIds: [],
     jobsServicePresent: true,
     goal,
   })
@@ -15778,7 +20854,7 @@ function stopContinuationDefectCases() {
         id: 'fabricated-steer-after-stop',
         role: 'user',
         content: [{ type: 'text', text: buildTodoContinuationText(todos) }],
-        source: { kind: 'plugin', plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
+        source: { kind: OMO_TODO_CONTINUATION_KIND, plugin: TODO_CONTINUATION_ENFORCER_PLUGIN, form: 'instructions' },
       }
       const at = boundary.seq + 1
       input.log.events.push(
@@ -16429,16 +21505,61 @@ function ulwPlanBodyText() {
 async function main() {
   const routes = resolveModelRoutes()
   // §14.4.5: analysis QA runs BEFORE the expensive spawn.
-  const selfTestProblems = await runAnalysisSelfTest(routes)
+  const selfTestAll = await runAnalysisSelfTest(routes)
+  // TWO CLASSES, split on purpose.
+  //   BLOCKING — a broken GATE: a leg failed, a seat refused, a count lied. Nothing
+  //     expensive may exist until those are fixed, so they abort before the spawn.
+  //   DEFERRED — the shipped-default AUDIT FACT. It is true on this runtime whether or
+  //     not one scenario runs. Aborting on it before the spawn SILENTLY DESTROYED the
+  //     AC4 scenario evidence for the only generation where the defaults are broken —
+  //     measured on this file: `result:"FAIL", reason:"analysis self-test: … 4/11 …",
+  //     scenarios:[]`. A ruling that eats its own evidence is not a ruling that was
+  //     implemented, it was implemented until it became inconvenient.
+  // So the fact travels to the FINAL verdict: the run still exits non-zero, but not
+  // before the evidence exists. `--self-test` has no scenarios, so it still reds now.
+  const isAuditFact = (problem) => problem.includes('shipped-default-audit:')
+  const selfTestProblems = selfTestAll.filter((problem) => !isAuditFact(problem))
+  const deferredAuditFacts = selfTestAll.filter(isAuditFact)
+  if (deferredAuditFacts.length > 0) {
+    console.error(`drive: [shipped-defaults] DEFERRED TO FINAL VERDICT — ${deferredAuditFacts.length} fact(s) `
+      + `recorded and carried; this run WILL exit non-zero, but the scenarios still run, `
+      + `because the fact is true with or without them and the evidence is not the fact's enemy.`)
+  }
   if (selfTestProblems.length > 0) {
     console.log(JSON.stringify({ result: 'FAIL', reason: `analysis self-test: ${selfTestProblems.join('; ')}`, scenarios: [] }))
+    process.exit(1)
+  }
+
+  // Runtime seats must be RESOLVED before a single sandbox exists. The self-test
+  // dispatch above never reaches here, so a machine with no `dsh` on PATH still
+  // gets its hermetic legs and a `--self-test` exit 0 (finding ④); a REAL run
+  // without a catalog is a hard, both-channel FAIL naming the reason (AC6 shape).
+  if (!RUNTIME_SEAT_STATE.ok) {
+    const message = String(RUNTIME_SEAT_STATE.error)
+    console.error(`drive: [seats] FATAL — ${message}`)
+    console.log(JSON.stringify({
+      result: 'FAIL',
+      reason: `seat resolution against the installed runtime catalog: ${message}`,
+      scenarios: [],
+    }))
     process.exit(1)
   }
 
   const digestTarget = process.env.DSH_E2E_DIGEST_TARGET ?? join(homedir(), '.dsh')
   const beforeDigest = digestConfigDir(digestTarget)
   console.error(`drive: digest target ${digestTarget} (before: ${beforeDigest.slice(0, 16)}…)`)
-  console.error(`drive: routes sisyphus=${routes.sisyphus.provider}/${routes.sisyphus.model} explore=${routes.explore.provider}/${routes.explore.model}`)
+  // `routes` is roster.ts's SHIPPED default as the ambient env resolves it; the
+  // seats the sandboxes are actually pinned to are `RUNTIME_RESOLVED_SEATS`,
+  // which is what `announceRuntimeSeats()` printed above. Both are printed so a
+  // reader can see the gap instead of inferring it — on dsh 0.1.5-rc.1 the two
+  // lines agree, on dsh 0.2.0-rc.2 they do not, and that difference IS the
+  // finding T12 owns.
+  console.error(`drive: shipped-default routes sisyphus=${routes.sisyphus.provider}/${routes.sisyphus.model} explore=${routes.explore.provider}/${routes.explore.model}`)
+  console.error(
+    `drive: e2e-pinned routes sisyphus=${RUNTIME_RESOLVED_SEATS.sisyphus.provider}/${RUNTIME_RESOLVED_SEATS.sisyphus.model} `
+    + `explore=${RUNTIME_RESOLVED_SEATS.explore.provider}/${RUNTIME_RESOLVED_SEATS.explore.model} `
+    + `(substituted: ${Object.values(RUNTIME_RESOLVED_SEATS).filter((seat) => seat.substituted).map((seat) => seat.agent).join(', ') || 'none'})`,
+  )
 
   const scenarios = []
   const sandboxRoots = []
@@ -16466,8 +21587,54 @@ async function main() {
 
   const afterDigest = digestConfigDir(digestTarget)
   const realDshUntouched = beforeDigest === afterDigest
-  const scenariosPass = scenarios.every((scenario) => scenario.result === 'PASS')
-  const result = scenariosPass && realDshUntouched ? 'PASS' : 'FAIL'
+  // P4.5-T13 (kimi K3 challenge (b)) — SKIP is not RED, and the skip channel
+  // is sealed so it cannot swallow a product failure: a scenario counts as
+  // non-red ONLY if it says SKIP, names `sandbox-vanished` as the reason, AND
+  // carries the vanished path in `bonus.sandboxVanishedMidScenario` (the same
+  // fact runScenario wrote only while sandbox.root was verifiably absent).
+  // Anything else that is not PASS — including a SKIP missing its named path,
+  // which would be an unauditable skip — is RED. The three counts are computed
+  // ONCE here and printed from these same variables (规约⑲o: a total written
+  // in two places forks on the first addition).
+  const isSealedSandboxSkip = (scenario) =>
+    scenario.result === 'SKIP'
+    && scenario.skipReason === 'sandbox-vanished'
+    && typeof scenario.bonus?.sandboxVanishedMidScenario === 'string'
+  const passedScenarios = scenarios.filter((scenario) => scenario.result === 'PASS')
+  const skippedScenarios = scenarios.filter(isSealedSandboxSkip)
+  const redScenarios = scenarios.filter((scenario) =>
+    scenario.result !== 'PASS' && !isSealedSandboxSkip(scenario))
+  const scenariosPass = redScenarios.length === 0
+  if (skippedScenarios.length > 0) {
+    console.error(
+      `drive: SKIPPED [sandbox-vanished] ${skippedScenarios.length}/${scenarios.length} scenario(s): `
+      + skippedScenarios
+        .map((scenario) => `${scenario.name} → ${scenario.bonus.sandboxVanishedMidScenario}`)
+        .join(', '),
+    )
+    console.error(
+      'drive: a vanished sandbox is environmental (concurrent cleanup), not a product failure — '
+      + 'the scenarios named above did NOT run to a verdict; the RED COUNT below excludes them BY NAME.',
+    )
+  }
+  console.error(
+    `drive: verdict counts — ${passedScenarios.length} PASS / ${skippedScenarios.length} SKIPPED [sandbox-vanished]`
+    + ` / ${redScenarios.length} RED (of ${scenarios.length} scenarios)`,
+  )
+  // The deferred audit fact lands here, so the exit code still carries it.
+  const result = scenariosPass && realDshUntouched && deferredAuditFacts.length === 0 ? 'PASS' : 'FAIL'
+  // THE INVARIANT, stated as code rather than as a term somebody can delete quietly:
+  // a carried fact and a PASS verdict cannot both be true. Mutant M51 removed the
+  // `deferredAuditFacts.length === 0` term above and the run stayed red on 0.2.x for
+  // an UNRELATED reason (four scenarios were failing anyway), so the deferral's own
+  // contribution to the exit code was unguarded. This makes the two disagree loudly
+  // instead of silently.
+  if (deferredAuditFacts.length > 0 && result === 'PASS') {
+    console.error(`drive: [verdict] INVARIANT BROKEN — ${deferredAuditFacts.length} audit fact(s) were `
+      + `carried to the final verdict and the verdict is still PASS. Refusing to print it.`)
+    console.log(JSON.stringify({ result: 'FAIL', reason: `deferred audit facts contradicted a PASS verdict: ${deferredAuditFacts.join('; ').slice(0, 400)}`, scenarios: [] }))
+    process.exit(1)
+  }
 
   if (process.env.DSH_E2E_KEEP_SANDBOX !== '1' && result === 'PASS') {
     for (const root of sandboxRoots) {
@@ -16483,6 +21650,20 @@ async function main() {
     JSON.stringify({
       result,
       scenarios,
+      // P4.5-T13 — the same counts the stderr banner printed, machine-readable
+      // (computed once above; this is a projection, not a second tally).
+      scenarioCounts: {
+        total: scenarios.length,
+        pass: passedScenarios.length,
+        skipped: skippedScenarios.length,
+        red: redScenarios.length,
+      },
+      skippedSandboxVanished: skippedScenarios.map((scenario) => ({
+        scenario: scenario.name,
+        path: scenario.bonus.sandboxVanishedMidScenario,
+      })),
+      // Every dropped boot.log mirror, by number, in the machine-readable verdict.
+      bootMirrorDrops: BOOT_MIRROR_DROPS.count,
       realDshUntouched,
       digestTarget,
     }),
@@ -16505,6 +21686,22 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     if (KEYWORD_SELF_TEST_ATTESTATION.length === 0) {
       problems.push('the self-test banner is EMPTY: no P4-T13 keyword case pushed a label, so the attestation below would claim nothing')
     }
+    // P4.5-T8″ — the tool/result SHAPE legs, named in the banner with the counts
+    // the LIVE census produced. Computed (and its guards pushed) BEFORE the
+    // `problems.length` exit below, so a leg that stops being read turns the
+    // self-test RED instead of merely rewording a banner that already printed OK.
+    // Rendered from `CAPTURED_TOOL_RESULT_ROWS` and the census, never hand-typed:
+    // the drift this slice fixes was exactly a green suite whose reader returned
+    // `[]` for every real 0.2.x log.
+    const capturedCensus = toolResultShapeCensus(CAPTURED_TOOL_RESULT_ROWS)
+    if (capturedCensus.parts.length !== CAPTURED_TOOL_RESULT_ROWS.length) {
+      problems.push(`P4.5-T8″: ${CAPTURED_TOOL_RESULT_ROWS.length} captured tool/result rows yielded only ${capturedCensus.parts.length} part(s) — a shape leg is unread`)
+    }
+    if (capturedCensus.legacyWrapper === 0 || capturedCensus.firstClassV4 === 0) {
+      problems.push(`P4.5-T8″: the shape banner would name a leg the census did not read (v3-wrapper=${capturedCensus.legacyWrapper}, v4-first-class=${capturedCensus.firstClassV4})`)
+    }
+    const TOOL_RESULT_SHAPE_SELF_TEST_BANNER =
+      `P4.5-T8″ tool/result shape selection on REAL captured rows — LEG 1 (dsh 0.1.5-rc.1 / session format v3, retired 'tool-result' wrapper: ${capturedCensus.legacyWrapper} row(s), callId+isError+bytes read from INSIDE the wrapper) and LEG 2 (dsh 0.2.0-rc.2 / session format v4 first-class: ${capturedCensus.firstClassV4} row(s), callId+isError read off the MESSAGE, bytes from plain text blocks) both extracted; a NEITHER-shape row is refused loudly, never skipped`
     if (problems.length > 0) {
       console.error(`SELF-TEST FAIL: ${problems.join('; ')}`)
       process.exit(1)
@@ -16572,7 +21769,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T15 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws)`)
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

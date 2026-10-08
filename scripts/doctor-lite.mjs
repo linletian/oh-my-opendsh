@@ -8,8 +8,9 @@
 // object, and any fail exits 1 — so doctor-lite doubles as a CI gate.
 //
 // The five checks (PRD §8 L3; 2b added by P3-T3):
-//   1. dsh-version     `dsh --version` exists and is the pinned 0.1.x
-//                      (decision D7) — fail if missing or outside 0.1.x,
+//   1. dsh-version     `dsh --version` exists and is the pinned 0.2.x
+//                      (decision D7, minor flipped 1→2 by the D17 cutover,
+//                      P4.5-T12b) — fail if missing or outside 0.2.x,
 //                      surfacing the found version.
 //   2. cordis          <repo>/cordis.yml parses with the exact YAML dialect
 //                      dsh loads patch files with (JSON_SCHEMA + !!js) and
@@ -193,7 +194,8 @@ function check(name, status, message, issues = [], meta = undefined) {
     : { name, status, message, issues, meta }
 }
 
-// ── check 1: dsh --version exists and is the pinned 0.1.x (D7) ──────────────
+// ── check 1: dsh --version exists and is the pinned 0.2.x (D7, flipped 1→2
+//    at the D17 cutover, 2323658 — this header said 0.1.x until PR #12) ──────
 
 async function checkDshVersion() {
   try {
@@ -208,18 +210,18 @@ async function checkDshVersion() {
         'dsh-version',
         'fail',
         `dsh --version returned an unrecognized version string: ${JSON.stringify(found)}`,
-        [`expected a semver like 0.1.5-rc.1 (pinned 0.1.x, decision D7), found ${JSON.stringify(found)}`],
+        [`expected a semver like 0.2.0-rc.2 (pinned 0.2.x, decision D7), found ${JSON.stringify(found)}`],
       )
     }
     if (!isPinnedDshVersion(version)) {
       return check(
         'dsh-version',
         'fail',
-        `dsh ${found} is outside the pinned 0.1.x range (decision D7)`,
+        `dsh ${found} is outside the pinned 0.2.x range (decision D7, D17 cutover)`,
         [`found ${found}, pinned ${PINNED_MAJOR}.${PINNED_MINOR}.x`],
       )
     }
-    return check('dsh-version', 'pass', `dsh ${found} (pinned 0.1.x, decision D7)`)
+    return check('dsh-version', 'pass', `dsh ${found} (pinned 0.2.x, decision D7)`)
   } catch (error) {
     if (error.code === 'ENOENT') {
       return check(

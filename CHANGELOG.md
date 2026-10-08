@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### Phase 4.5 code landing (2026-10-06 … 2026-10-08) — declaration-face installer + D17 cutover + four review-fix rounds
+
+- feat(installer): `scripts/install-concerto.sh` rewritten to the declaration face — renders the preset
+  as one `- insert:` row in `profiles/web/cordis.patch.yml` (0.2.x never reads `.agent-presets/`),
+  refuses dsh < 0.2 by name and the nested-group shape loudly, byte-exact backups + retention +
+  `.bak.first` permanent original, idempotent no-op runs write nothing, refused installs leave zero
+  bytes, user comments in old blocks are refused (wrapper-level) or WARNING-named (block-internal),
+  and symlinked patch files are resolved to their real target instead of being silently replaced.
+- feat(cutover): D17 — 0.1.x compatibility dropped; the D7 pin flipped to `0.2.0-rc.2` together with
+  the seat-id re-pin in one commit (`2323658`); T13 cleanup made the 0.2.x eight-gate green the single
+  non-regression signal of record (CI run 37476903377).
+- fix(review): four PR #12 review-fix rounds (qwen 17+5+4 inline findings + kimi 4 rounds of summary
+  findings, every item reproduced before fixing): backup/no-op/refusal leaks, comment-loss paths,
+  non-string YAML keys, SIGINT trap semantics, restore-command quoting, compat-probe exit codes +
+  `--tag` parsing + GH_TOKEN + dist-tag coverage + the install-alias face leg + the label it files
+  under, the d10 gate (hermetic working-tree form) + release.sh step 7b alias content gate,
+  stop-continuation third bucket, disposer ordering, and a ledger-vs-code truthfulness sweep across
+  comments/docs/tests.
+
+### Phase 4.5 kickoff (2026-10-02) — adaptation plan (docs-only; no code, no pin flip)
+
+> *Historical note (superseded 2026-10-06, D17): the "dual-runtime adaptivity" strategy below was
+> abandoned mid-phase — 0.1.x compatibility was dropped by ruling D17 and the D7 pin flipped early
+> (P4.5-T12b, commit `2323658`), so adaptation sites fork on the runtime-identity marker instead of
+> bridging both generations. The entry stays as written for the record.*
+
+- docs(plan): `docs/plans/phase4.5-dev/` — the Phase 4.5 development plan + task list (13 tasks, 8 WPs,
+  ~8.5 person-days), implementing ROADMAP Phase 4.5 against the 0.2.0-rc.2 review. Core strategy:
+  **dual-runtime adaptivity** — every adaptation site carries a capability probe so the same code keeps
+  working on the CI-pinned 0.1.5-rc.1 *and* the locally installed 0.2.x (the repo's feature-probe
+  tradition: `--no-open`, `isSessionLogName`, transport-adaptive T9, the jobs three-tier probe), keeping
+  branch CI green mid-phase; the D7 pin flips only in the closing change, together with the green
+  evidence (exit criterion f). Task order follows the review's forced sequence: jobs surfaces → concerto
+  preset registration (`agentPresets.register()` + held disposer) → installer delivery line (declarative
+  `PresetDefinition` or documented re-scope) → session-log v4 observation channel → (deferrable) source
+  kinds → pin machinery last
+
 ### dsh 0.2.x adaptation docs (2026-10-02) — review + roadmap Phase 4.5 (docs-only; no code, no pin flip)
 
 - docs(review): `docs/dsh-0.2.0-rc.2-review.md` / `_zh-CN.md` — a static, source-verified analysis of the
@@ -36,6 +73,9 @@
   resolved before the D7 pin flips
 - docs(readme): both READMEs' Current Status carry the 0.2.x review row (🔬) and the key-facts DSH row now
   names 0.2.0-rc.2 as reviewed-but-unpinned — **the CI pin stays `0.1.5-rc.1` until Phase 4.5 closes**
+  *(historical by construction — accurate as of this 2026-10-02 docs commit; superseded 2026-10-06: the pin
+  flipped to `0.2.0-rc.2` at the D17 cutover (P4.5-T12b, commit `2323658`) and the compat row migrated to
+  `tested` at T13; the READMEs carry the corrected text)*
 - chore(compat): `0.2.0-rc.2` registered as an `untested` matrix row (`.omo/compat.yaml`, matrix
   re-rendered) — the standing "upstream published a new version" mechanism; **no `tested` row moves**
 

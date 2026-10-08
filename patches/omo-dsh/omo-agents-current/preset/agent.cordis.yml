@@ -274,7 +274,7 @@
           - **Oracle**: Delivering answer without collecting Oracle results
         agentOptions:
           provider: deepseek
-          model: deepseek-v4-flash
+          model: deepseek-flash
         toolFilter:
           deny: [write, edit, call_omo_explore]
         maxDepth: 1

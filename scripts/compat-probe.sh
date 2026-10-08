@@ -27,14 +27,22 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-DSHV="${1:-}"
-OUR_TAG="v0.1"
+# Positional and flag args in ANY order: the old parser read DSHV from $1
+# BEFORE the loop and `*) break`-stopped at the first positional, so
+# `--tag X <ver>` made DSHV="--tag" (exit 3 downstream) and `<ver> --tag X`
+# silently ignored the flag (PR #12 rounds 2/4, kimi — measured OUR_TAG
+# staying at the default in the second order).
+DSHV=""
+# Default rides the CURRENT minor alias (the same one the install one-liner
+# pins); v0.1 was the pre-cutover default whose installer face D17 deleted.
+OUR_TAG="v0.2"
 KEEP=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --tag) OUR_TAG="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
-    *) break ;;
+    -*) echo "compat-probe: unknown option $1" >&2; exit 64 ;;
+    *) if [[ -z "$DSHV" ]]; then DSHV="$1"; shift; else echo "compat-probe: unexpected extra argument $1" >&2; exit 64; fi ;;
   esac
 done
 
@@ -69,14 +77,27 @@ LOG=".omo/evidence/probes/probe-dsh-${DSHV}-${TS}.log"
 
   echo "--- install concerto preset from ${OUR_TAG} (temp DSH_HOME) ---"
   mkdir -p "$TMP/dsh-home"
+  # T12b cutover: deepseek-flash is the id the pinned 0.2.x official route
+  # actually lists (installed dsh-llm-deepseek/lib/index.js:42-56 DEFAULT_MODELS).
+  # CONCERTO_TAG is the ONLY way the tag reaches the installer — it reads
+  # ${CONCERTO_TAG:-v0.2}; until PR #12 this probe logged OUR_TAG but never
+  # passed it, so `--tag v0.1` installed v0.2 while claiming otherwise.
   DSH_HOME="$TMP/dsh-home" NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official \
-    EXPLORE_MODEL=deepseek-v4-flash sh scripts/install-concerto.sh
+    EXPLORE_MODEL=deepseek-flash CONCERTO_TAG="$OUR_TAG" sh scripts/install-concerto.sh
+
+  # Gate results must ACCUMULATE into the exit code: an `if … else echo FAIL`
+  # arm swallows the failure (set -e exempts if-conditions, the brace group's
+  # rc is its last echo) and the probe used to print "finished" and exit 0
+  # with both gates red (PR #12 review, reproduced isomorphically). A red
+  # automatic gate means the matrix row may NOT be flipped to tested.
+  rc=0
 
   echo "--- doctor-lite (against the NEW dsh) ---"
   if node scripts/doctor-lite.mjs --json; then
     echo "doctor-lite: PASS"
   else
     echo "doctor-lite: FAIL — triage needed (see .omo/evidence/probes/${LOG##*/})"
+    rc=1
   fi
 
   echo "--- mock-LLM e2e (boots the REAL new dsh binary) ---"
@@ -84,6 +105,12 @@ LOG=".omo/evidence/probes/probe-dsh-${DSHV}-${TS}.log"
     echo "e2e: PASS — strong signal"
   else
     echo "e2e: FAIL — triage needed (the drive asserts rc-era contracts; a FAIL may be assertion drift, not a dsh regression)"
+    rc=1
+  fi
+
+  if [[ "$rc" -ne 0 ]]; then
+    echo "compat-probe: AUTOMATIC GATES FAILED — do NOT move the matrix row to tested"
+    exit "$rc"
   fi
 
   echo "--- automatic part done ---"

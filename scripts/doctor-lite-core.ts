@@ -12,14 +12,25 @@ export interface DshVersion {
   patch: number
 }
 
-/** Decision D7 pin: minor 0.1.x. */
+/** Decision D7 pin: minor 0.2.x — flipped 1→2 by the D17 cutover
+ *  (P4.5-T12b, same commit as ci.yml's DSH_VERSION: the pin and everything
+ *  derived from it move together — T8d's lesson). Exact minor, not a floor
+ *  (phase4.5-tasks Q1: a >= floor would let untested 0.3.x pass silently).
+ *  Artifact of the target: installed dsh --version = 0.2.0-rc.2. */
 export const PINNED_MAJOR = 0
-export const PINNED_MINOR = 1
+export const PINNED_MINOR = 2
 
-/** The two shipped LLM adapter rows check 3 requires in the composed tree. */
+/** The two shipped LLM adapter rows check 3 requires in the composed tree.
+ *  First row is the package that REGISTERS the `deepseek-official` route on
+ *  the pinned 0.2.x runtime: base composes `-api-key` at installed
+ *  dsh-base/cordis.patch.yml:525-526, and installed
+ *  dsh-llm-deepseek-api-key/lib/index.js:36/:58 registers PROVIDER
+ *  "deepseek-official". The bare `@deepseek-ai/dsh-llm-deepseek` name is the
+ *  0.1.x composed row and does not exist in the 0.2.x tree (T12b cutover;
+ *  0.1.x compatibility dropped). */
 export const LLM_ADAPTER_ROWS = [
-  '@deepseek-ai/dsh-llm-deepseek', // sisyphus seat (entry config route)
-  '@deepseek-ai/dsh-llm-pi-ai', // explore seat (settings-registered route)
+  '@deepseek-ai/dsh-llm-deepseek-api-key', // sisyphus seat (official route, registered by this package on 0.2.x)
+  '@deepseek-ai/dsh-llm-pi-ai', // explore seat (route from entry config: seeded via --patch overlay on 0.2.x; pre-0.2.x settings.yaml)
 ]
 
 /**
@@ -37,7 +48,7 @@ export const EXPECTED_INSERT_ROW_IDS = ['omo-agents', 'omo-hooks', 'omo-commands
 
 /**
  * Parses a `dsh --version` line. Accepts optional leading whitespace and a
- * leading `v`; the prerelease suffix (`0.1.5-rc.1`) is ignored for the pin
+ * leading `v`; the prerelease suffix (`0.2.0-rc.2`) is ignored for the pin
  * (D7 pins the minor). Returns { major, minor, patch } or null when the
  * string is not a recognizable version.
  */
@@ -47,7 +58,7 @@ export function parseDshVersion(raw: string): DshVersion | null {
   return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) }
 }
 
-/** D7 pin predicate: the parsed version must be 0.1.x. */
+/** D7 pin predicate: the parsed version must be 0.2.x (T12b cutover). */
 export function isPinnedDshVersion(version: DshVersion | null): boolean {
   return version !== null && version.major === PINNED_MAJOR && version.minor === PINNED_MINOR
 }

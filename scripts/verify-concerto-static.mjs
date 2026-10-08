@@ -96,7 +96,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { join, relative } from 'node:path'
+import { join, relative, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { REPO_ROOT, loadYamlDialect } from './doctor-lite.mjs'
 // c11 复用 doctor-lite-core 自己的挂载序期望，而不是在本文件重抄插件清单
@@ -369,8 +369,8 @@ async function run() {
       const problems = []
       if (cfg.provider !== 'spawn') problems.push(`provider=${cfg.provider} (want spawn)`)
       if (cfg.backgroundMode !== 'one-shot') problems.push(`backgroundMode=${cfg.backgroundMode} (want one-shot)`)
-      if (!(cfg.agentOptions && cfg.agentOptions.provider === 'deepseek' && cfg.agentOptions.model === 'deepseek-v4-flash')) {
-        problems.push(`agentOptions=${JSON.stringify(cfg.agentOptions)} (want pi-ai deepseek route: provider deepseek, model deepseek-v4-flash)`)
+      if (!(cfg.agentOptions && cfg.agentOptions.provider === 'deepseek' && cfg.agentOptions.model === 'deepseek-flash')) {
+        problems.push(`agentOptions=${JSON.stringify(cfg.agentOptions)} (want pi-ai deepseek route: provider deepseek, model deepseek-flash — the 0.2.x pi-ai catalog id; deepseek-v4-flash was the pre-T12b 0.1.x-era id)`)
       }
       for (const t of ['write', 'edit', 'call_omo_explore']) {
         if (!deny.includes(t)) problems.push(`toolFilter.deny missing "${t}"`)
@@ -1715,6 +1715,776 @@ async function run() {
   } catch (e) {
     results.push(check('c22', 'coverage baseline §1.1/§1.2/§2/§3 status cells carry no forward-looking marker', false,
       `the status-cell check could not run: ${String(e.message ?? e)}`))
+  }
+
+  // c23 — the read-face validator's argument contract, pinned across EVERY
+  // consumer it has — DISCOVERED by scanning the repo, not transcribed into a
+  // list here. 规约⑭: when a shared API changes shape, every consumer must
+  // change in the same round, and the consumer SET must be asserted statically.
+  // Last round the validator grew a 6th parameter (`expected !!js count`) and
+  // only the validator and the probe were updated; tests/e2e/drive.mjs kept
+  // passing 5, so `Number(undefined)` = NaN tripped the validator's own integer
+  // guard and the gate-3 read-face assertion was RED by construction — invisible
+  // on a machine that cannot run gate 3. A comment claiming the consumers agree is
+  // not evidence; this scan is.
+  //
+  // WHY the consumer list below is not hardcoded (MINOR-2, review A, measured):
+  // with a hand-written two-item list, dropping a third consumer into the repo
+  // with a wrong argument count left gate 6 at 32/32 PASS — the check silently
+  // judged only its own list while its banner claimed 'every consumer'.
+  //
+  // SCAN SET: every top-level entry of the repo except installed dependencies
+  // and git internals. An earlier revision scanned only scripts/ + tests/, which
+  // let a consumer written into tools/ or .github/ vanish from the scan entirely
+  // (review B attack 3, review A A2c — measured invisible). Two directories are
+  // excluded, and the exclusion is measured, not assumed:
+  //   • node_modules / .git — installed and internal trees, never consumers here.
+  //   • .omo/ — the EVIDENCE archive. It stores verbatim copies of consumers at
+  //     OLDER revisions (`review-B/probes/drive.orig`, `t6-controlflow-replay.sh`
+  //     and friends), which by design cannot satisfy TODAY's arity; scanning it
+  //     would either pin the gate red forever or force someone to rewrite
+  //     archived evidence to silence it, and rewritten evidence is worthless.
+  //     Measured: including .omo/ reports archived replay scripts at the
+  //     pre-6-argument form (see the §10 ledger in .omo/evidence/wp2-fix1/).
+  // EXECUTABLE SOURCES ONLY, so prose and archived logs cannot pose as consumers.
+  // Classification of every non-comment mention of the validator's basename:
+  //   • NAME=…assert-concerto-read-face.mjs (or = join(..., NAME)) → path binding;
+  //   • [exec|eval|command] node|bun|npx … naming the validator, shell continuations
+  //     joined first, argv arrays expanded through one variable hop → INVOCATION,
+  //     argument count must equal the validator's own declared arity;
+  //   • a JS spawn/exec call whose argv names the validator directly, through a
+  //     bound path variable, or through a bound argv variable → INVOCATION;
+  //   • anything else → PROBLEM, so a mention cannot hide outside the rule.
+  // RESIDUAL ESCAPE BOUNDARY (stated, not claimed closed): argv assembled through
+  // more than one indirection (a variable holding a variable past C23_ARGV_HOPS,
+  // a computed string, `argv.push` after the call site, or a wrapper script that
+  // builds the argv itself) is NOT judged statically — AND, the part the previous
+  // wording of this very comment got backwards, it is NOT NAMED EITHER. A span
+  // whose argv chain never anchors to this validator is dropped BEFORE
+  // classification (`if (!resolved.anchored) continue`), so it leaves no trace in
+  // the counts and no line in the report: measured, review B round 3's A2/A4/A9d
+  // each printed `0 unclassified mention(s)` and A4's file was not even listed as
+  // a consumer. What IS named is the narrower ANCHORED case — a span whose chain
+  // does reach this validator but reaches no countable literal is counted AND
+  // pushed as a PROBLEM, so it surfaces site-by-site in this check's FAIL detail.
+  // Consequence, stated because the banner is a reader's only view of this: each
+  // `unclassified`/`unresolvedArgvSites` increment below is paired with its own
+  // c23Problems.push, so on any PASS run those counters read 0 BY CONSTRUCTION —
+  // a zero there is arithmetic, not evidence about the repository. That is why
+  // NEITHER counter is printed on the PASS side any more: a green banner that
+  // printed `0 unclassified mention(s)` in the same sentence in which it claimed
+  // it carried no such count contradicted its own output (review B round 4,
+  // N-1). Both numbers now live on the FAIL branch only, the one branch where
+  // they can be non-zero. The PASS banner still names what it DOES measure —
+  // invocations, consumers, bindings, source-reads — and says where the
+  // unresolvable-site list is to be found; do not re-widen this comment past it.
+  try {
+    const C23_VALIDATOR = join(REPO_ROOT, 'scripts', 'assert-concerto-read-face.mjs')
+    const C23_BASENAME = 'assert-concerto-read-face.mjs'
+    const C23_ESCAPED = C23_BASENAME.replace(/\./g, '\\.')
+    const C23_SKIP_DIRS = new Set(['node_modules', '.git', '.omo'])
+    const C23_EXT = ['.sh', '.bash', '.mjs', '.cjs', '.js', '.mts', '.cts', '.ts']
+    // The consumers that MUST exist whatever the scan finds: deleting or
+    // renaming one is a change to this contract, not a way to satisfy it.
+    const C23_REQUIRED = ['scripts/concerto-mode-probe.sh', 'tests/e2e/drive.mjs']
+    // How far a JS argv may hide behind variable bindings and still be COUNTED
+    // here. 2 covers `spawn(node, ARGS)` and `const ARGS = MORE`.
+    const C23_ARGV_HOPS = 2
+    const c23IsShell = (name) => name.endsWith('.sh') || name.endsWith('.bash')
+      || (!name.includes('.') && name !== '')
+    const c23AcceptFile = (full, name) => {
+      if (C23_EXT.some((suffix) => name.endsWith(suffix))) return true
+      if (c23IsShell(name)) {
+        // Extension-less launchers (the repo has `install`) are consumers too;
+        // a shebang is what makes them executable source.
+        const head = (readFileSync(full, 'utf8').split('\n', 1)[0] ?? '').trim()
+        return /^#!\s*(?:\/usr\/bin\/env\s+)?(?:\/\S*\/)?(?:node|bun|npx|bash|sh)\b/.test(head)
+      }
+      return false
+    }
+    const c23Walk = (dir, out = []) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          if (C23_SKIP_DIRS.has(entry.name)) continue
+          c23Walk(full, out)
+        } else if (!entry.isFile()) {
+          continue
+        } else if (c23AcceptFile(full, entry.name)) {
+          out.push(full)
+        }
+      }
+      return out
+    }
+    const c23IsComment = (line) => {
+      const t = line.trim()
+      return t.startsWith('#') || t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')
+    }
+    // Shell continuation lines are ONE logical line: `node "$NAME" \` + the next
+    // line was previously invisible to the interpreter-word test, so a consumer
+    // that wraps its call was counted as no call at all (review A A2a).
+    const c23LogicalLines = (lines) => {
+      const out = []
+      let buf = ''
+      let start = -1
+      let end = -1
+      let pending = false
+      const flush = () => {
+        if (buf !== '') out.push({ start, end, text: buf })
+        buf = ''
+        start = -1
+        end = -1
+        pending = false
+      }
+      for (let i = 0; i < lines.length; i += 1) {
+        const raw = lines[i]
+        const opensOperator = /^\s*(?:\|\||&&|[|;&])/.test(raw)
+        if (pending && opensOperator) flush() // `|| fail "…"` is the NEXT statement
+        if (start < 0) start = i
+        end = i
+        const trimmed = raw.replace(/\s+$/, '')
+        buf += (buf === '' ? '' : ' ') + trimmed.replace(/(?:^|[^\\])(?:\\\\)*\\$/, '').replace(/\\$/, '')
+        pending = /(?:^|[^\\])(?:\\\\)*\\$/.test(trimmed) && !c23IsComment(trimmed)
+        if (!pending) flush()
+      }
+      flush()
+      return out
+    }
+    // Shell args: quote-aware whitespace tokens after the interpreter word. A
+    // token that expands an array (`"$ARGS[@]"`) is resolved through the array's
+    // own assignment in the same file — one hop, named if unresolvable.
+    const c23ShellArgs = (text, fileText) => {
+      const after = text.replace(/^\s*(?:(?:exec|eval|command)\s+)?(?:node|bun|npx)\s+/, '').replace(/\\\s*$/, '')
+      const tokens = after.match(/"[^"]*"|'[^']*'|\S+/g) ?? []
+      let count = -1 // the script path token itself
+      for (const token of tokens) {
+        // `2>…`, `2>&1`, `>/dev/null` are redirections, not arguments.
+        if (/^\d*[<>]/.test(token) || token === '2>&1' || /^\d*>&\d+$/.test(token)) continue
+        const spread = token.match(/^"?\$\{?(\w+)\[@\]\}?"?$/)
+        if (spread !== null) {
+          const size = c23ShellArraySize(fileText, spread[1])
+          if (size === null) {
+            c23Problems.push(`a shell call expands \`${spread[0]}\` but \`${spread[1]}=(…)\` is not resolvable in this file — the argv count cannot be judged, so the arity check cannot be trusted here`)
+            continue
+          }
+          count += size
+          continue
+        }
+        count += 1
+      }
+      return count
+    }
+    const c23ShellArraySize = (fileText, name) => {
+      const m = fileText.match(new RegExp(`\\b${name}=\\(([\\s\\S]*?)\\)\\s*(?:$|\\n)`, 'm'))
+      if (m === null) return null
+      const body = m[1].replace(/\\\s*\n/g, ' ')
+      const tokens = body.match(/"[^"]*"|'[^']*'|\S+/g) ?? []
+      return tokens.length
+    }
+    // JS argv arrays: top-level commas, quote- and bracket-aware, so nested
+    // `join(a, b)` and template literals cannot masquerade as extra elements.
+    const c23ArrayElements = (text) => {
+      let depth = 0
+      let quote = null
+      let seen = false
+      let commas = 0
+      for (const ch of text) {
+        if (quote !== null) {
+          if (ch === quote) quote = null
+          seen = true
+          continue
+        }
+        if (ch === '"' || ch === "'" || ch === '`') { quote = ch; seen = true; continue }
+        if (ch === '(' || ch === '[' || ch === '{') { depth += 1; continue }
+        if (ch === ')' || ch === ']' || ch === '}') { depth -= 1; continue }
+        if (ch === ',' && depth === 0) { if (seen) commas += 1; seen = false; continue }
+        if (!/\s/.test(ch)) seen = true
+      }
+      // A trailing comma has already retired the last element via `seen`, so
+      // the element count is commas + (one if a token is still open).
+      return commas + (seen ? 1 : 0)
+    }
+    const insideQuotes = (line, index) => {
+      let quote = null
+      for (let k = 0; k < index; k += 1) {
+        const ch = line[k]
+        if (quote !== null) {
+          if (ch === '\\') k += 1
+          else if (ch === quote) quote = null
+        } else if (ch === '"' || ch === "'" || ch === '`') quote = ch
+      }
+      return quote !== null
+    }
+    const vSrc = readFileSync(C23_VALIDATOR, 'utf8')
+    const destructure = vSrc.match(/const \[([^\]]*)\] = process\.argv\.slice\(2\)/)
+    const c23Problems = []
+    if (!destructure) {
+      c23Problems.push('cannot find the `const [...] = process.argv.slice(2)` signature in the validator')
+    }
+    const arity = destructure ? destructure[1].split(',').map((s) => s.trim()).filter(Boolean).length : -1
+
+    const consumers = []
+    let invocations = 0
+    let bindings = 0
+    let unclassified = 0
+    let sourceReads = 0
+    // Anchored invocation spans whose argv c23 cannot count. They are counted in
+    // `unclassified` AND named individually in the FAIL banner, so that banner's
+    // residual boundary is a list of real sites rather than a promise.
+    const unresolvedArgvSites = []
+    const topLevelEntries = readdirSync(REPO_ROOT, { withFileTypes: true })
+    const scanRoots = topLevelEntries
+      .filter((entry) => entry.isDirectory() && !C23_SKIP_DIRS.has(entry.name))
+      .map((entry) => join(REPO_ROOT, entry.name))
+    // Root-level FILES are consumers too — the `install` launcher lives there,
+    // and a directory-only scanRoots let a wrong-arity consumer sit at the repo
+    // root forever: the escape hatch was exactly where this check's own comment
+    // pointed (PR #12, kimi round 1 — a planted root consumer stayed green).
+    const rootFiles = topLevelEntries
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(REPO_ROOT, entry.name))
+      .filter((full) => c23AcceptFile(full, basename(full)))
+    for (const file of [...rootFiles, ...scanRoots.flatMap((dir) => c23Walk(dir))]) {
+      const rel = relative(REPO_ROOT, file)
+      if (rel === relative(REPO_ROOT, C23_VALIDATOR)) continue
+      const text = readFileSync(file, 'utf8')
+      const lines = text.split('\n')
+      const shell = c23IsShell(file.slice(file.lastIndexOf('/') + 1))
+      const bindingRe = new RegExp(`([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*[^\\n]*${C23_ESCAPED}`)
+      const boundVars = new Set()
+      for (const line of lines) {
+        if (c23IsComment(line)) continue
+        const m = line.match(bindingRe)
+        if (m) boundVars.add(m[1])
+      }
+      // A bound variable may be referenced shell-style (`$NAME`) or JS-style
+      // (bare `NAME`). Matching only the shell form left a real JS consumer
+      // invisible: tests/omo-agents/read-face-contract.test.ts spawns the
+      // validator as `[VALIDATOR, …]`.
+      const mentionsValidator = (line) => line.includes(C23_BASENAME)
+        || [...boundVars].some((name) => new RegExp(`\\b${name}\\b`).test(line))
+      // JS: the argv is the invocation's SECOND argument. It may be an inline
+      // array literal, a variable holding one, or a variable holding a variable
+      // that holds one; the chain is followed through at most C23_ARGV_HOPS
+      // bindings and the count is taken from the literal the chain ends at
+      // (minus that literal's own element 0, the validator path itself).
+      // `anchored` answers what the SPAN ALONE cannot answer: does this argv
+      // reach this validator? It is true when the span, or any hop of the
+      // chain, names the validator's path or a path variable bound to it —
+      // which is what keeps the report about THIS gate instead of about every
+      // spawn in the repository. A chain that is anchored and reaches no literal
+      // is reported with the chain in the message, never skipped silently.
+      const resolveJsArgv = (spanText) => {
+        const anchoredBySpan = mentionsValidator(spanText)
+        const open = spanText.indexOf('[')
+        if (open >= 0) {
+          let arrayDepth = 0
+          for (let k = open; k < spanText.length; k += 1) {
+            const ch = spanText[k]
+            if (ch === '[') arrayDepth += 1
+            else if (ch === ']') {
+              arrayDepth -= 1
+              if (arrayDepth === 0) return { count: c23ArrayElements(spanText.slice(open + 1, k)) - 1, anchored: anchoredBySpan }
+            }
+          }
+          return { unresolved: 'an unterminated array literal', anchored: anchoredBySpan }
+        }
+        // `spawn(node, argv)` / `spawn(node, ARGS)` — the argv is held in a
+        // binding, so it is resolved THROUGH that binding, hop after hop.
+        const argWord = spanText.match(/(?:spawnSync|spawn|execFileSync|execFile|execSync)\s*\(\s*[^,(]+,\s*([A-Za-z_$][\w$]*)\s*[,)]/)
+        if (!argWord) return { unresolved: 'an argv built without a literal c23 can read', anchored: anchoredBySpan }
+        let name = argWord[1]
+        const chain = [name]
+        let anchored = anchoredBySpan
+        for (let hop = 0; hop < C23_ARGV_HOPS; hop += 1) {
+          const lit = text.match(new RegExp(`(?:const|let|var)\\s+${name}\\s*=\\s*(\\[[\\s\\S]*?\\])`))
+          if (lit) {
+            anchored = anchored || mentionsValidator(lit[0])
+            return { count: c23ArrayElements(lit[1].slice(1, -1)) - 1, anchored, via: chain.join(' -> ') }
+          }
+          const bare = text.match(new RegExp(`(?:const|let|var)\\s+${name}\\s*=\\s*([A-Za-z_$][\\w$]*)\\s*(?:[;,)]|[\\r\\n])`))
+          if (bare) {
+            anchored = anchored || mentionsValidator(bare[0])
+            chain.push(bare[1])
+            name = bare[1]
+            continue
+          }
+          const rhs = text.match(new RegExp(`(?:const|let|var)\\s+${name}\\s*=\\s*([^\\n]{0,60})`))
+          if (!rhs) return { unresolved: `argv variable \`${chain[0]}\` has no declaration in this file`, anchored, via: chain.join(' -> ') }
+          anchored = anchored || mentionsValidator(rhs[0])
+          return { unresolved: `argv variable \`${chain[0]}\` is bound to \`${rhs[1].trim()}\`, not to an array literal c23 can count`, anchored, via: chain.join(' -> ') }
+        }
+        return { unresolved: `argv held by \`${chain[0]}\` is still indirect after ${C23_ARGV_HOPS} variable hops (chain ${chain.join(' -> ')})`, anchored, via: chain.join(' -> ') }
+      }
+      // Classify invocation spans first, so their inner mention lines are not
+      // later mistaken for unclassified ones.
+      const covered = new Set()
+      const sites = []
+      if (shell) {
+        for (const logical of c23LogicalLines(lines)) {
+          if (c23IsComment(logical.text)) continue
+          if (!/^\s*(?:(?:exec|eval|command)\s+)?(?:node|bun|npx)\b/.test(logical.text)) continue
+          if (!mentionsValidator(logical.text)) continue
+          sites.push({ start: logical.start, end: logical.end, passed: c23ShellArgs(logical.text, text) })
+        }
+      } else {
+        for (let i = 0; i < lines.length; i += 1) {
+          const line = lines[i]
+          if (c23IsComment(line)) continue
+          if (!/\b(?:spawnSync|spawn|execFileSync|execFile|execSync)\s*\(/.test(line)) continue
+          let depth = 0
+          let spanText = ''
+          let end = -1
+          for (let k = i; k < lines.length && end < 0; k += 1) {
+            spanText += `${lines[k]}\n`
+            for (const ch of lines[k]) {
+              if (ch === '(') depth += 1
+              else if (ch === ')') {
+                depth -= 1
+                if (depth === 0) { end = k; break }
+              }
+            }
+          }
+          if (end < 0) continue
+          // The SPAN is the unit of detection, not the span's own text: a
+          // consumer whose argv sits in a variable (`spawnSync(process.execPath,
+          // ARGS)`) names neither the basename nor a bound path variable inside
+          // the span, so gating on the span text here skipped it BEFORE
+          // resolveJsArgv ever ran — the one indirection the comment above
+          // claims to resolve was the one that escaped. The span is therefore
+          // resolved first, and only a span whose chain is not anchored to this
+          // validator at all drops out.
+          const resolved = resolveJsArgv(spanText)
+          if (!resolved.anchored) continue
+          if (resolved.unresolved !== undefined) {
+            unclassified += 1
+            const where = `${rel}:${i + 1} spawns something naming ${C23_BASENAME} through ${resolved.unresolved} (argv chain ${resolved.via ?? 'the inline literal'})`
+            unresolvedArgvSites.push(where)
+            c23Problems.push(`${where} — c23 cannot count its arguments, so this call is unchecked`)
+            sites.push({ start: i, end, passed: -1 })
+            continue
+          }
+          sites.push({ start: i, end, passed: resolved.count })
+        }
+      }
+      for (const site of sites) for (let k = site.start; k <= site.end; k += 1) covered.add(k)
+      bindings += lines.filter((line, index) => !c23IsComment(line) && bindingRe.test(line) && !covered.has(index)).length
+      // The net: every NON-comment line naming the validator's own path that is
+      // neither a path binding nor part of a classified invocation. A line that
+      // merely names a bound VARIABLE (`[[ -f "$X" ]]`, a fail message) is not a
+      // consumer and not a hole, so it is not swept in here — an earlier draft
+      // swept them and reported the probe's existence test as a violation.
+      for (let k = 0; k < lines.length; k += 1) {
+        if (c23IsComment(lines[k]) || covered.has(k)) continue
+        const line = lines[k]
+        if (!line.includes(C23_BASENAME)) continue
+        if (bindingRe.test(line)) continue
+        // Reading the validator's SOURCE is reconciliation, not running it.
+        if (/(?:readFileSync|readFile|existsSync|pathToFileURL|import)\s*\(/.test(line)) {
+          sourceReads += 1
+          continue
+        }
+        unclassified += 1
+        const inString = insideQuotes(line, line.indexOf(C23_BASENAME))
+        c23Problems.push(`${rel}:${k + 1} names ${C23_BASENAME} ${inString ? 'inside a string literal' : 'outside any invocation c23 can classify'} — a mention that is not a path binding, a source read, or a classified invocation is an unchecked consumer: route it through one, or move it into a comment`)
+      }
+      if (sites.length === 0) continue
+      invocations += sites.length
+      consumers.push(rel)
+      for (const site of sites) {
+        if (site.passed !== arity) {
+          c23Problems.push(`${rel}:${site.start + 1} passes ${site.passed} argument(s) but the validator declares ${arity}`)
+        }
+      }
+    }
+    for (const required of C23_REQUIRED) {
+      if (!consumers.includes(required)) {
+        c23Problems.push(`${required} is a REQUIRED consumer of ${C23_BASENAME} and the scan found no invocation there — the consumer set shrank; the contract has one fewer consumer than the plan assumes`)
+      }
+    }
+    if (arity < 6) {
+      c23Problems.push(`the validator declares only ${arity} parameters — the \`!!js\` expectation argument is gone`)
+    }
+    if (invocations === 0) {
+      c23Problems.push(`the scan found ZERO invocations of ${C23_BASENAME} — the check would be vacuous`)
+    }
+    results.push(check('c23', 'read-face validator arity matches every DISCOVERED consumer',
+      c23Problems.length === 0,
+      c23Problems.length > 0
+        // FAIL detail: the argv-unresolvable sites are named here, where they
+        // actually exist. The count lives on THIS branch only — `unresolvedArgvSites.push`
+        // and `c23Problems.push` fire in the SAME branch (:2048 then :2049), so
+        // any N > 0 routes the check to FAIL and the PASS banner never prints:
+        // printing that number there would mean printing a value pinned to 0 by
+        // structure, which tells a reader of a green banner nothing (review A
+        // round 3, NIT-1 — measured, the PASS banner read "(0 such site(s) right
+        // now)" on every green run of three reviews). The same arithmetic holds
+        // for `unclassified` — its two increments (:2046, :2073) sit beside
+        // their own c23Problems.push (:2049, :2075) — so it was dropped from the
+        // PASS banner too — which used to print `0 unclassified mention(s)` in
+        // the very sentence claiming a green banner carried no such count (review
+        // B round 4, N-1) — and is printed on THIS branch instead, the only one
+        // on which it can ever be anything but zero.
+        ? `${c23Problems.join('; ')} — ${unresolvedArgvSites.length} of the above are argv-unresolvable sites${unresolvedArgvSites.length > 0 ? ` [${unresolvedArgvSites.join('; ')}]` : ' (this FAIL came from another clause)'}; ${unclassified} of the above are unclassified mentions, each named on its own line above — an argv-unresolvable invocation, or a mention outside every rule`
+        : `validator declares ${arity} parameters; the scan of ${scanRoots.length} top-level dir(s) [${scanRoots.map((d) => relative(REPO_ROOT, d)).join(', ')}] PLUS ${rootFiles.length} root-level file(s) (excluding node_modules, .git and the .omo evidence archive) found ${invocations} invocation(s) in ${consumers.length} consumer(s) (${consumers.join(', ')}), each passing exactly ${arity}; ${bindings} path-variable binding(s), ${sourceReads} source-read(s) (reconciliation, not execution) — a new consumer with a wrong arity, a renamed required consumer, a wrapped or continued call, or a mention outside the rule fails HERE at gate 6. RESIDUAL BOUNDARY, not claimed closed: an argv is resolved through at most ${C23_ARGV_HOPS} variable hops and counted from the array literal that chain ENDS at, so a longer chain, a chain whose every hop names neither ${C23_BASENAME} nor a variable bound to it, and an \`argv.push\` that runs after the literal are all invisible to this count. What is NOT skipped: an invocation whose argv chain DOES reach ${C23_BASENAME} but reaches no array literal is named site-by-site — file, line and argv chain — in this check's FAIL detail, and that FAIL detail is the ONLY place this gate names such sites: the counter that records one and the \`c23Problems.push\` that fails this check fire in the same branch, so a run that holds such a site is never green and this PASS banner prints neither that count nor those names — a reader who wants the list reads this check's FAIL banner`))
+  } catch (e) {
+    results.push(check('c23', 'read-face validator arity matches every DISCOVERED consumer', false,
+      `the arity check could not run: ${String(e.message ?? e)}`))
+  }
+
+  // c24 — the `sandboxEdits` contract, pinned across the validator and BOTH of
+  // its consumers in the same breath (规约⑭ again). WP2 MAJOR-1 was a cross-face
+  // same-source assumption: 0.1.5 answers `agentPresets/read` from FILE
+  // DISCOVERY (a scenario's sandbox edit IS on the face), 0.2.x answers it from
+  // register() (the edit is NOT). The fix is a declared (row, leaf key, after)
+  // list that turns one roster expectation into a two-value accepted set for
+  // exactly those cells. A declaration any consumer drops reopens the hole, so
+  // every side is asserted here — STRUCTURALLY: fixture returns are parsed out
+  // of the function body (a bare substring match on 'return [' was measured
+  // green with the real return deleted and a comment left mentioning it — review
+  // B MAJOR-3 / review A MINOR-B), and each declared `after` is reconciled
+  // against what the fixture body actually WRITES (review A M6).
+  try {
+    const c24Validator = readFileSync(join(REPO_ROOT, 'scripts', 'assert-concerto-read-face.mjs'), 'utf8')
+    const c24Drive = readFileSync(join(REPO_ROOT, 'tests', 'e2e', 'drive.mjs'), 'utf8')
+    const c24Probe = readFileSync(join(REPO_ROOT, 'scripts', 'concerto-mode-probe.sh'), 'utf8')
+    const c24Problems = []
+    // (1) the validator requires the field and owns a closed, LEAF-only vocabulary
+    if (!/Array\.isArray\(expectations\.sandboxEdits\)/.test(c24Validator)) {
+      c24Problems.push('the validator no longer REQUIRES `expectations.sandboxEdits` — an absent field would silently mean ' + "'nothing was edited' on a face where something was")
+    }
+    const vocabOf = (src) => {
+      const parsed = []
+      for (const name of ['COMPARED_KEY_PATHS', 'DECLARED_NOT_COMPARED_KEYS']) {
+        const m = src.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`))
+        if (!m) return null
+        parsed.push(...(m[1].match(/'[^']*'/g) ?? []).map((s) => s.replace(/'/g, '')))
+      }
+      if (!/const DECLARATION_KEYS = \[/.test(src)) return null
+      return parsed
+    }
+    const c24Vocab = vocabOf(c24Validator)
+    if (c24Vocab === null) {
+      c24Problems.push('the validator no longer declares its key vocabulary in the shape c24 can parse (`COMPARED_KEY_PATHS` + `DECLARED_NOT_COMPARED_KEYS` + `DECLARATION_KEYS`) — a junk or container edit key would then go unjudged')
+    }
+    const c24Containers = c24Vocab === null ? [] : c24Vocab.filter((k) => c24Vocab.some((other) => other !== k && other.startsWith(`${k}.`)))
+    if (c24Containers.length > 0) {
+      c24Problems.push(`the validator's vocabulary contains CONTAINER key(s) [${c24Containers.join(', ')}] — one container declaration exempts every cell beneath it; declare leaves`)
+    }
+    // (2) drive carries the scenario's declaration into the expectations file…
+    if (!/sandboxEdits: declaredEdits,/.test(c24Drive)) {
+      c24Problems.push('tests/e2e/drive.mjs no longer passes `sandboxEdits: declaredEdits` into the read-face expectations')
+    }
+    // …and captures what each fixture changed instead of dropping it
+    if (!/declaredSandboxEdits\(\s*def,\s*def\.augmentMaterialized\(sandbox\)\s*\)/.test(c24Drive)) {
+      c24Problems.push('tests/e2e/drive.mjs no longer CAPTURES the return value of `def.augmentMaterialized(sandbox)` through `declaredSandboxEdits` — the edit would be undeclared again')
+    }
+    // Comment-free source, so a comment can never satisfy a structural check.
+    const stripJs = (src) => {
+      let out = ''
+      let quote = null
+      let inBlock = false
+      for (let k = 0; k < src.length; k += 1) {
+        const ch = src[k]
+        const next = src[k + 1]
+        if (inBlock) {
+          if (ch === '*' && next === '/') { inBlock = false; k += 1 }
+          else if (ch === '\n') out += '\n'
+          continue
+        }
+        if (quote !== null) {
+          out += ch
+          if (ch === '\\') { out += next ?? ''; k += 1 }
+          else if (ch === quote) quote = null
+          continue
+        }
+        if (ch === '/' && next === '*') { inBlock = true; k += 1; continue }
+        if (ch === '/' && next === '/') {
+          while (k < src.length && src[k] !== '\n') k += 1
+          out += '\n'
+          continue
+        }
+        if (ch === '"' || ch === "'" || ch === '`') quote = ch
+        out += ch
+      }
+      return out
+    }
+    // Complete string literals only — prose inside a longer literal (an error
+    // message quoting `'        toolFilter:'`) is not an edit locator.
+    const literalsOf = (src) => {
+      const out = []
+      let quote = null
+      let buf = ''
+      for (let k = 0; k < src.length; k += 1) {
+        const ch = src[k]
+        if (quote === null) {
+          if (ch === '"' || ch === "'" || ch === '`') { quote = ch; buf = '' }
+          continue
+        }
+        if (ch === '\\') { buf += src[k + 1] ?? ''; k += 1; continue }
+        if (ch === quote) { out.push(buf); quote = null; continue }
+        buf += ch
+      }
+      return out
+    }
+    const bodyOf = (src, name) => {
+      const start = src.indexOf(`function ${name}(`)
+      if (start < 0) return null
+      const open = src.indexOf('{', start)
+      if (open < 0) return null
+      let depth = 0
+      let quote = null
+      for (let k = open; k < src.length; k += 1) {
+        const ch = src[k]
+        if (quote !== null) {
+          if (ch === '\\') k += 1
+          else if (ch === quote) quote = null
+          continue
+        }
+        if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue }
+        if (ch === '{') depth += 1
+        else if (ch === '}') {
+          depth -= 1
+          if (depth === 0) return src.slice(open + 1, k)
+        }
+      }
+      return null
+    }
+    const constOf = (src, name) => {
+      const m = src.match(new RegExp(`(?:const|let|var)\\s+${name}\\s*=\\s*'([^']*)'`))
+      return m === null ? null : m[1]
+    }
+    const fixtureNames = [...c24Drive.matchAll(/augmentMaterialized:\s*([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1])
+    if (fixtureNames.length === 0) {
+      c24Problems.push('no scenario declares `augmentMaterialized` — either the fixtures were removed (then c24 is stale) or the key was renamed (then the call site is dead)')
+    }
+    const c24DriveClean = stripJs(c24Drive)
+    for (const fixtureName of fixtureNames) {
+      // stripJs FIRST: an apostrophe in a comment (`dsh's`) otherwise opens a
+      // phantom string, the brace counter loses the function's real close, and
+      // the 'body' runs into the next function — measured: it picked up an
+      // unrelated `'Error: …'` literal and reported a write that does not exist.
+      const body = bodyOf(c24DriveClean, fixtureName)
+      if (body === null) {
+        c24Problems.push(`could not parse the body of fixture \`${fixtureName}\` to check its return`)
+        continue
+      }
+      // (a) a REAL, REACHABLE return statement whose expression is a non-empty
+      // array literal. Reachability is judged as far as a LITERAL lies, and no
+      // further: a `return` sitting under a literal-false guard (`if (false)
+      // return […]`) never runs, and a `return` nested inside a block is not
+      // the fixture's exit — the contract is that the body RETURNS its triples
+      // at its own top level. A guard that is a real runtime condition is NOT
+      // evaluated here (c24 does not interpret the fixture); if such a guard
+      // never holds, declaredSandboxEdits receives `undefined`, throws, and gate
+      // 3 aborts LOUDLY — the residual is a red gate, not a silent pass.
+      const topReturnSitesOf = (src) => {
+        const out = []
+        let depth = 0
+        let quote = null
+        for (let k = 0; k < src.length; k += 1) {
+          const ch = src[k]
+          if (quote !== null) {
+            if (ch === '\\') k += 1
+            else if (ch === quote) quote = null
+            continue
+          }
+          if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue }
+          if (ch === '{') { depth += 1; continue }
+          if (ch === '}') { depth -= 1; continue }
+          if (depth !== 0) continue
+          const m = /^return\b/.exec(src.slice(k, k + 8))
+          if (m === null) continue
+          if (k > 0 && /[\w$.]/.test(src[k - 1])) continue
+          const prefix = src.slice(Math.max(0, k - 160), k)
+          out.push({
+            at: k,
+            falseGuard: /\b(?:if|while)\s*\(\s*(?:false|0|null|undefined|NaN)\s*\)\s*$/.test(prefix),
+          })
+          k += 'return'.length - 1
+        }
+        return out
+      }
+      const topReturns = topReturnSitesOf(body)
+      const liveReturns = topReturns.filter((r) => !r.falseGuard)
+      if (liveReturns.length === 0) {
+        if (topReturns.length > 0) {
+          c24Problems.push(`fixture \`${fixtureName}\` returns its declared edits ONLY under a literal-false guard (\`if (false) return […]\`) — that statement never runs, so declaredSandboxEdits gets \`undefined\` and throws; gate 3 aborts`)
+        } else if (/\breturn\b/.test(body)) {
+          c24Problems.push(`fixture \`${fixtureName}\` has \`return\` statements but NONE at the top level of its body — c24 does not treat a nested return as the fixture's exit; return the \`[{ row, key, after }]\` triples at the body's top level`)
+        } else {
+          c24Problems.push(`fixture \`${fixtureName}\` edits the sandbox preset and has NO \`return\` statement in its body — declaredSandboxEdits throws at runtime, so gate 3 aborts; declare the edit`)
+        }
+        continue
+      }
+      const returnAt = liveReturns[0].at
+      const afterReturn = body.slice(returnAt + 'return'.length).replace(/^\s+/, '')
+      if (!afterReturn.startsWith('[')) {
+        c24Problems.push(`fixture \`${fixtureName}\` returns \`${afterReturn.slice(0, 24)}…\` instead of an array literal of \`{ row, key, after }\` triples`)
+        continue
+      }
+      let depth = 0
+      let close = -1
+      for (let k = 0; k < afterReturn.length; k += 1) {
+        const ch = afterReturn[k]
+        if (ch === '[') depth += 1
+        else if (ch === ']') {
+          depth -= 1
+          if (depth === 0) { close = k; break }
+        }
+      }
+      if (close < 0) {
+        c24Problems.push(`fixture \`${fixtureName}\` has an unterminated return array literal`)
+        continue
+      }
+      const elements = [...afterReturn.slice(1, close).matchAll(/\{[^{}]*\}/g)].map((m) => m[0])
+      if (elements.length === 0) {
+        c24Problems.push(`fixture \`${fixtureName}\` returns an EMPTY array — it edits the materialized preset and declares nothing`)
+        continue
+      }
+      const declared = []
+      for (const element of elements) {
+        const rowM = element.match(/\brow:\s*([A-Za-z_$][\w$]*|'[^']*')/)?.[1] ?? null
+        const keyM = element.match(/\bkey:\s*'([^']*)'/)?.[1] ?? null
+        const afterM = element.match(/\bafter:\s*(null|'[^']*'|[^\s},]+)/)?.[1] ?? null
+        if (rowM === null || keyM === null || afterM === null) {
+          c24Problems.push(`fixture \`${fixtureName}\` returns \`${element}\` — not a complete \`{ row, key, after }\` triple`)
+          continue
+        }
+        const row = rowM.startsWith("'") ? rowM.slice(1, -1) : constOf(c24DriveClean, rowM)
+        if (row === null) {
+          c24Problems.push(`fixture \`${fixtureName}\` declares row \`${rowM}\`, which c24 cannot resolve to a literal — the declaration is unverifiable`)
+          continue
+        }
+        declared.push({ row, key: keyM, after: afterM === 'null' ? null : afterM.replace(/^'|'$/g, '') })
+      }
+      // (b) vocabulary: every declared key must be one the validator owns, leaf-only
+      if (c24Vocab !== null) {
+        for (const d of declared) {
+          if (!c24Vocab.includes(d.key)) {
+            c24Problems.push(`fixture \`${fixtureName}\` declares key ${JSON.stringify(d.key)}, outside the validator's parsed vocabulary [${c24Vocab.join(', ')}]`)
+          }
+        }
+      }
+      // (c) declared-vs-WRITTEN reconciliation, both directions
+      // removal shape: a `.splice(` plus the locator literals it navigated by
+      const writes = []
+      const locators = literalsOf(body)
+        .map((lit) => lit.match(/^(\s*)([A-Za-z_][\w.]*):(?:\s*(.*))?$/))
+        .filter((m) => m !== null)
+        .map((m) => ({ indent: m[1].length, key: m[2], value: (m[3] ?? '').trim() }))
+      if (/\.splice\s*\(/.test(body)) {
+        const stack = []
+        for (const loc of locators) {
+          while (stack.length > 0 && stack[stack.length - 1].indent >= loc.indent) stack.pop()
+          stack.push(loc)
+          writes.push({ key: stack.map((s) => s.key).join('.'), after: null })
+        }
+      }
+      // assignment shape: `lines[i] = '        key: value'`
+      for (const m of body.matchAll(/lines\[[^\]]*\]\s*=\s*'([^']*)'/g)) {
+        const asgn = m[1].match(/^\s*([A-Za-z_][\w.]*):\s*(.*)$/)
+        if (asgn) writes.push({ key: asgn[1], after: asgn[2].trim() })
+      }
+      const leafWrites = writes.filter((w) => !writes.some((other) => other !== w && other.key.startsWith(`${w.key}.`)))
+      if (leafWrites.length === 0) {
+        c24Problems.push(`fixture \`${fixtureName}\` declares ${declared.length} edit(s) but c24 cannot see a single write in its body (no \`.splice(\` with locators, no \`lines[i] = 'key: value'\`) — an unverifiable declaration`)
+      }
+      for (const d of declared) {
+        const hit = leafWrites.find((w) => w.key === d.key)
+        if (hit === undefined) {
+          c24Problems.push(`fixture \`${fixtureName}\` declares ${d.row}.${d.key}→${JSON.stringify(d.after)} but its body writes no such key (it writes [${leafWrites.map((w) => `${w.key}→${JSON.stringify(w.after)}`).join(', ') || 'nothing'}]) — a declaration of an edit the fixture never performs`)
+          continue
+        }
+        if (hit.after !== d.after) {
+          c24Problems.push(`fixture \`${fixtureName}\` declares ${d.key}→${JSON.stringify(d.after)} but its body writes ${d.key}→${JSON.stringify(hit.after)} — the declared post-edit value and the written value disagree`)
+        }
+      }
+      for (const w of leafWrites) {
+        if (!declared.some((d) => d.key === w.key)) {
+          c24Problems.push(`fixture \`${fixtureName}\` writes ${w.key}→${JSON.stringify(w.after)} but declares no such edit — undeclared edits are exactly the cross-face coin toss this contract removed`)
+        }
+      }
+    }
+    // (3) the probe declares [] AND really edits nothing on that face.
+    // ALLOWLIST, not a denylist: every non-comment line that touches
+    // `$materialized` (directly, or through a one-hop variable alias) must be a
+    // recognisable READ. Anything else is a problem — a denylist of `>>`/`tee`/
+    // `sed -i` was measured bypassable by `cp`, `install`, `mv`, `dd of=` and
+    // `node -e 'fs.writeFileSync'` (review B MAJOR-3 / review A M5).
+    if (!/sandboxEdits: \[\]/.test(c24Probe)) {
+      c24Problems.push('scripts/concerto-mode-probe.sh no longer serializes `sandboxEdits: []` — the validator would reject its expectations file')
+    }
+    // Aliases resolved to a FIXED POINT, not one hop: `a="$materialized"` then
+    // `b="$a"` then a write to `b` used to be invisible.
+    const probeAlias = new Set(['materialized'])
+    const probeLines = c24Probe.split('\n')
+    for (let pass = 0; pass < 4; pass += 1) {
+      let grew = false
+      for (const line of probeLines) {
+        const t = line.trim()
+        if (t.startsWith('#') || t.startsWith('//')) continue
+        const m = t.match(/(?:local\s+|export\s+)?(\w+)=["']?\$\{?(\w+)\}?["']?/)
+        if (m && probeAlias.has(m[2]) && !probeAlias.has(m[1])) { probeAlias.add(m[1]); grew = true }
+      }
+      if (!grew) break
+    }
+    const namesFace = (t) => [...probeAlias].some((name) => new RegExp(`\\$\\{?${name}\\b`).test(t))
+    // WRITE detection: operators and verbs that put bytes somewhere. A denylist
+    // of three literals (>> / tee / sed -i) was measured bypassable by `cp`,
+    // `install`, `mv`, `dd of=` and `node -e 'fs.writeFileSync(…)' (review B
+    // MAJOR-3, review A M5), so the set is broad and the residual boundary is
+    // stated in the banner instead of pretend-covered.
+    const WRITE_SHAPES = [
+      /[12]?>>?\s*"?(?:\$\{?\w+\}?|\/)/, // any redirection into a path or variable
+      // tee/dd WHEREVER they sit: the old pattern required a pipe BEFORE them,
+      // so `tee -a "$face" <<<text` and `dd of=… conv=…` written as the first
+      // command of the line were read shapes to it (review B, round 2).
+      /(?:^|[|;&])\s*(?:command\s+)?(?:tee|dd)\s/,
+      // An in-place flag CLUSTER, not just a lone `-i`: `perl -pi -e`, `sed -i`,
+      // `sed -i.bak`. The old pattern required whitespace directly before `-i`,
+      // so `perl -pi` was invisible (review B, round 2).
+      /\b(?:sed|perl)\b[^|;]*\s-\w*i\b/,
+      /\b(?:sed|perl)\b[^|;]*--in-?place\b/, // the long form of the same flag
+      /\bof=/,
+      /^\s*(?:cp|mv|install|rsync|ln|truncate|touch)\b/,
+      /\b(?:writeFileSync|appendFileSync|writeFile|appendFile|createWriteStream|openSync)\b/,
+      // `\\?` before the quote class: inside a DOUBLE-QUOTED shell string the
+      // natural spelling of the mode quote is backslash-escaped, so the first
+      // byte after the comma is `\` and a pattern that demanded a quote THERE
+      // let `python3 -c "open(\"$face\",\"w\")"` walk straight past this shape
+      // while every unescaped form was caught by it (review B round 3, B8b
+      // GREEN vs B8a/B8c/B8e RED — measured; recomputed green→red here with
+      // `.omo/evidence/wp2-fix4/mut/regex-ab.mjs` and the four real probe runs).
+      /\bopen\s*\([^)]*,\s*\\?['"][wax]/,
+      /\bexecSync\b[^\n]*>/,
+    ]
+    const touching = probeLines.filter((line) => {
+      const t = line.trim()
+      if (t.startsWith('#') || t.startsWith('//')) return false
+      return namesFace(t)
+    })
+    const probeWrites = touching.filter((line) => {
+      const t = line.trim()
+      // Naming the face as a variable ALIAS definition, or as a plain argument to
+      // a read command, is not a write.
+      if (/^(?:local\s+|export\s+)?\w+=["']?\$\{?materialized\}?["']?$/.test(t)) return false
+      if (/^\[\[?/.test(t)) return false // [[ -f "$f" ]]
+      if (/^:\s+/.test(t)) return false // : "${VAR+x}"
+      const offending = WRITE_SHAPES.find((re) => re.test(t))
+      return offending !== undefined
+    })
+    if (probeWrites.length > 0) {
+      c24Problems.push(`scripts/concerto-mode-probe.sh WRITES the materialized face in ${probeWrites.length} place(s) while declaring \`sandboxEdits: []\` (first: ${probeWrites[0].trim().slice(0, 90)}) — declare the edits or keep the face read-only`)
+    }
+    results.push(check('c24', 'sandboxEdits declaration contract holds across validator, drive and probe',
+      c24Problems.length === 0,
+      c24Problems.length > 0
+        ? c24Problems.join('; ')
+        : `validator REQUIRES expectations.sandboxEdits over a parsed LEAF vocabulary [${(c24Vocab ?? []).join(', ')}] with no container key; drive captures \`def.augmentMaterialized(sandbox)\` and passes \`sandboxEdits: declaredEdits\`; ${fixtureNames.length} fixture(s) (${fixtureNames.join(', ')}) each parsed to a non-empty \`return [{ row, key, after }]\` AT THE TOP LEVEL of its body — no \`return\` under a literal-false guard, none nested in a block — whose keys sit inside that vocabulary AND whose \`after\` matches what the body writes, in both directions; the probe declares [] and of the ${touching.length} line(s) that touch the materialized face (aliases [${[...probeAlias].join(', ')}]) 0 match any write shape. RESIDUAL BOUNDARY, not claimed closed: c24 reads TEXT, it does not execute — a \`return\` guarded by a runtime condition that happens never to hold is not evaluated here (it fails closed at gate 3, where declaredSandboxEdits throws), and the write net is this fixed pattern set over the lines that name the face, so a write performed inside a helper the probe calls, or by a command whose name arrives through a variable, is not a shape matched here`))
+  } catch (e) {
+    results.push(check('c24', 'sandboxEdits declaration contract holds across validator, drive and probe', false,
+      `the sandboxEdits contract check could not run: ${String(e.message ?? e)}`))
   }
 
   // Report.

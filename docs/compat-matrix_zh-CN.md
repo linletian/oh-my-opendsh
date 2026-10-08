@@ -17,11 +17,13 @@
 
 | 我们 | dsh | omo | 日期 | 证据（本地文件） |
 |---|---|---|---|---|
+| unreleased | 0.2.0-rc.2 | 4.19.4 | 2026-10-06 | `CI run 37476903377 — commit 2323658 — 8/8 gates green on dsh 0.2.0-rc.2 (D7-pin install with frozen transitive tree / typecheck / unit tests / mock-LLM e2e / doctor-lite / license / concerto-static / docs-consistency / session-free proofs — per-gate sub-counts live in that run's own log, NOT here: they rot the moment a check is added — docs-consistency gained d10 in PR #12, and this string's 'docs 9-9' went stale the same day; task book 四之二十二); local T13 re-run: .omo/evidence/p45t13/T13-cleanup.md` |
 | 0.2.1 | 0.1.5-rc.1 | 4.19.4 | 2026-09-10 | `.omo/evidence/concerto-verify-dsh-0.1.5-rc.1.md` |
 | 0.2.0 | 0.1.5-rc.1 | 4.19.4 | 2026-09-10 | `.omo/evidence/concerto-verify-dsh-0.1.5-rc.1.md` |
 | 0.1.1 | 0.1.0-rc.6 | 4.19.4 | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 | 0.1.0 | 0.1.0-rc.6 | 4.19.4 (architecture reference) | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
 
+> unreleased — P4.5 切换组合，已在 develop 线上验证：register() 出口 + 声明式安装器面取代了被删的 .agent-presets 文件发现（docs/dsh-0.2.0-rc.2-review_zh-CN.md 的静态复核已被运行时证据取代），ctx.jobs 迁至 events.subscribe，会话日志 v4 信封由 e2e 驱动解析。0.1.x 兼容性已放弃（裁决 D17，提交 2323658）——本行是记录在案的非回归信号：0.2.0-rc.2 上的 CI 绿取代 0.1.5-rc.1 上的 CI 绿
 > 0.2.1 — 发布 v0.2（release.sh 自动登记）
 > 0.2.0 — 发布 0.2.0（v0.2 线；release.sh 由 develop 行原地升级）——L2 真机手工验证（自原始会话日志逐条复核 17/17）+ L1 全绿（104 单测 / doctor-lite 4-4 且 16 行经 schema 校验 / static 10-10 / docs 7-7 / e2e 4-4）——2026-09-10 升级。在已发布的安装器路径上验证（静态 preset 落在 $DSH_HOME/.agent-presets，无插件）。注：toolFilter/maxDepth 是工具层护栏而非能力边界——S3/S4 经 explore 子 agent 自带的 bash 绕过，按 R5 威胁模型接受（mvp-pitfalls §8 P-21）
 > 0.1.1 — 发布 v0.1（release.sh 自动登记）
@@ -31,7 +33,6 @@
 
 | dsh | omo | 登记于 | 说明 |
 |---|---|---|---|
-| 0.2.0-rc.2 | 4.19.4 | 2026-10-02 | 静态复核已完成（docs/dsh-0.2.0-rc.2-review_zh-CN.md）：两个 P0 面，全部静默，外加一个 P1（测试基础设施）——agent-preset 重架构删除 .agent-presets 文件发现（协奏不注册；已发布安装器的静态 preset 线同源受损）；ctx.jobs 重写（caller Agent->SessionId、ownerSession->owner、onJobDone->events.subscribe）使 3 处触点失效；会话日志 v4 重构 tool/result 信封。cordis 核心（vendor/cordis/src/{context,registry,service}.ts 零 diff）+ 15 个订阅事件 + 20 个组合包均稳定。适配 = ROADMAP Phase 4.5；D7 pin 翻转是其最后一步，以 L1+L2 证据为门 |
 | 0.1.2-rc.1 | 4.19.4 | 2026-09-05 | 静态复核已完成（docs/archived/dsh-0.1.2-review_zh-CN）；运行时探测待 scripts/compat-probe.sh；D7 的 CI pin 翻转以此行为门（PRD §12）——已被 0.1.5-rc.1 取代，保留为历史记录 |
 
 ## 如何更新

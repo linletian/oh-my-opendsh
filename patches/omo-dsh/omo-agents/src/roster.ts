@@ -122,11 +122,15 @@ const ROSTER_ROWS = [
     id: 'explore',
     personaFile: 'explore-persona.md',
     routeEnvVars: { provider: 'OMO_EXPLORE_PROVIDER', model: 'OMO_EXPLORE_MODEL' },
-    // FAST seat — deepseek (llm-pi-ai catalog route) / deepseek-v4-flash. OMO
+    // FAST seat — deepseek (llm-pi-ai catalog route) / deepseek-flash. OMO
     // chain head (roster §2.1 + plan §4.6): the "gpt-5.6-luna-fast /
-    // deepseek-v4-flash 系" fast row for read-only retrieval. Pre-existing MVP
-    // T14 exploration seat, UNCHANGED (env names included).
-    defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    // deepseek-v4-flash 系" fast row for read-only retrieval — on the pinned
+    // 0.2.x runtime that chain's DeepSeek fast id is `deepseek-flash`: the
+    // installed pi-ai@0.87.1 deepseek.json (under
+    // ~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/) lists
+    // EXACTLY deepseek-flash + deepseek-v4-pro; `deepseek-v4-flash` was the
+    // 0.1.x-era id (pi-ai@0.85.1) and no 0.2.x catalog lists it (T12b cutover).
+    defaultRoute: { provider: 'deepseek', model: 'deepseek-flash' },
     class: 'read-only',
     // maxDepth 2 (roster §1 修正块): pre-Phase-2 this row was 1; under the
     // corrected target-row semantics a maxDepth-1 row could never be invoked by
@@ -170,9 +174,11 @@ const ROSTER_ROWS = [
     routeEnvVars: { provider: 'OMO_LIBRARIAN_PROVIDER', model: 'OMO_LIBRARIAN_MODEL' },
     // FAST seat — documentation / OSS source search. OMO chain head (roster
     // §2.4): gpt-5.6-luna-fast low → deepseek-v4-flash → qwen3.7-plus → …;
-    // the upstream chain already contains deepseek-v4-flash, so the fast seat is
-    // the same direction (cheap exploration volume).
-    defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    // the upstream chain's DeepSeek fast entry lives on the pinned 0.2.x
+    // runtime as `deepseek-flash` (installed pi-ai@0.87.1 deepseek.json lists
+    // it; `deepseek-v4-flash` is the 0.1.x-era id, dropped with the T12b
+    // cutover) — same direction (cheap exploration volume).
+    defaultRoute: { provider: 'deepseek', model: 'deepseek-flash' },
     class: 'read-only',
     maxDepth: 2,
     writeCapable: false,
@@ -224,13 +230,17 @@ const ROSTER_ROWS = [
     id: 'multimodal-looker',
     personaFile: 'multimodal-looker-persona.md',
     routeEnvVars: { provider: 'OMO_MULTIMODAL_LOOKER_PROVIDER', model: 'OMO_MULTIMODAL_LOOKER_MODEL' },
-    // VISION seat — deepseek-official / deepseek-v4-flash-vision-exp, the only
-    // route whose catalog entry advertises image input (inputModalities
-    // ["text","image"]). OMO chain head (roster §2.8): gpt-5.6-sol low →
-    // kimi-k3 → glm-4.6v → gpt-5-nano. The id exists in BOTH catalogs; the
-    // default provider is deepseek-official because it is registered by the base
-    // composition in every profile with no settings dependency (plan §6 R-4).
-    defaultRoute: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' },
+    // VISION seat — deepseek-official / deepseek-flash, the ONLY id on the
+    // pinned 0.2.x official route whose catalog entry advertises image input
+    // (installed dsh-llm-deepseek/lib/index.js DEFAULT_MODELS: deepseek-flash
+    // inputModalities ["text","image"] + deepseek-v4-pro text-only; the
+    // 0.1.x-era deepseek-v4-flash-vision-exp is gone — T12b cutover). NEVER
+    // give this seat a text-only id: the harness would silently project images
+    // to text. OMO chain head (roster §2.8): gpt-5.6-sol low → kimi-k3 →
+    // glm-4.6v → gpt-5-nano. The default provider is deepseek-official because
+    // it is registered by the base composition in every profile with no settings
+    // dependency (plan §6 R-4).
+    defaultRoute: { provider: 'deepseek-official', model: 'deepseek-flash' },
     class: 'allowlist',
     maxDepth: 2,
     // Plan §4.4 H-1 mapping: OMO's single `read` splits in DSH into `read`
@@ -247,8 +257,10 @@ const ROSTER_ROWS = [
     routeEnvVars: { provider: 'OMO_SISYPHUS_JUNIOR_PROVIDER', model: 'OMO_SISYPHUS_JUNIOR_MODEL' },
     // FAST seat — focused executor without delegation rights (volume work). OMO
     // chain head (roster §2.9): the atlas chain plus a big-pickle fallback; as a
-    // category-worker successor it is throughput-oriented, so the fast seat.
-    defaultRoute: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    // category-worker successor it is throughput-oriented, so the fast seat —
+    // deepseek-flash on the pinned 0.2.x pi-ai catalog (installed pi-ai@0.87.1
+    // deepseek.json; the 0.1.x-era deepseek-v4-flash id is dropped, T12b).
+    defaultRoute: { provider: 'deepseek', model: 'deepseek-flash' },
     class: 'worker',
     maxDepth: 2,
     writeCapable: true,

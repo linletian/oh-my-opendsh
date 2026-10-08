@@ -36,15 +36,17 @@ describe('parseDshVersion', () => {
   })
 })
 
-describe('isPinnedDshVersion (decision D7: 0.1.x)', () => {
-  it('accepts every 0.1.x, prerelease or not', () => {
-    expect(isPinnedDshVersion(parseDshVersion('0.1.0-rc.6'))).toBe(true)
-    expect(isPinnedDshVersion(parseDshVersion('0.1.5-rc.1'))).toBe(true)
-    expect(isPinnedDshVersion(parseDshVersion('0.1.42'))).toBe(true)
+describe('isPinnedDshVersion (decision D7: 0.2.x — minor flipped 1→2 by the D17 cutover, P4.5-T12b)', () => {
+  it('accepts every 0.2.x, prerelease or not', () => {
+    expect(isPinnedDshVersion(parseDshVersion('0.2.0-rc.2'))).toBe(true) // the pinned target
+    expect(isPinnedDshVersion(parseDshVersion('0.2.0'))).toBe(true)
+    expect(isPinnedDshVersion(parseDshVersion('0.2.42'))).toBe(true)
   })
 
-  it('rejects everything outside 0.1.x', () => {
-    expect(isPinnedDshVersion(parseDshVersion('0.2.0'))).toBe(false)
+  it('rejects everything outside 0.2.x', () => {
+    // DELIBERATELY NEGATIVE: 0.1.5-rc.1 was the PRE-CUTOVER pin; D17 dropped
+    // 0.1.x compatibility, so the retired pin version must now be REJECTED.
+    expect(isPinnedDshVersion(parseDshVersion('0.1.5-rc.1'))).toBe(false)
     expect(isPinnedDshVersion(parseDshVersion('1.0.0'))).toBe(false)
     expect(isPinnedDshVersion(parseDshVersion('0.0.9'))).toBe(false)
     expect(isPinnedDshVersion(null)).toBe(false)
@@ -142,6 +144,10 @@ describe('expectedDelegationRowContract (P2-T20 per-row contract builder)', () =
 })
 
 describe('delegationRowContractProblems (P2-T20 per-row contract checker)', () => {
+  // 0.1.x-era fixture id feeding the contract checker as inert DATA (the
+  // checker compares handed-in route vs handed-in row; it never consults the
+  // pin or a catalog) — marked per Review A nit, T12b cutover. Shipped
+  // default is deepseek/deepseek-flash (roster.ts).
   const route = { provider: 'deepseek', model: 'deepseek-v4-flash' }
   const contractFor = (shape: { deny?: string[]; allow?: string[]; className?: string }): DelegationRowContract =>
     expectedDelegationRowContract(
@@ -163,6 +169,7 @@ describe('delegationRowContractProblems (P2-T20 per-row contract checker)', () =
     backgroundMode: 'continuable',
     maxDepth: 2,
     toolFilter: { deny: ['write', 'edit', 'explore'] },
+    // 0.1.x-era fixture id — inert data, see the `route` marker above.
     agentOptions: { provider: 'deepseek', model: 'deepseek-v4-flash' },
     persona: '# Explore: Read-Only Retrieval Agent\n…',
   })
@@ -220,6 +227,7 @@ describe('delegationRowContractProblems (P2-T20 per-row contract checker)', () =
       readOnlyContract(),
     )
     expect(problems).toHaveLength(1)
+    // message mirrors the inert fixture route above — 0.1.x-era id, marked.
     expect(problems[0]).toContain('want "deepseek"/"deepseek-v4-flash"')
   })
 

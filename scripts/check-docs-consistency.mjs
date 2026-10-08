@@ -22,6 +22,12 @@
 //       and IDENTICAL (PR #9 round 2, N6). The pin is two tokens carried by two
 //       files; the drift that motivated the check was ci.yml sitting on a
 //       mixed-tree cutoff while compat-probe.yml claimed the same value.
+//   d10 the WORKING TREE's installer carries the declaration face
+//       (DECL_PATCH) and NOT the deleted .agent-presets write target —
+//       content, not pointers (PR #12 review BLOCKER). Hermetic by design:
+//       the remote-alias content assertion lives in release.sh step 7
+//       (post-push) — anywhere pre-tag it deadlocks the release that would
+//       move the alias (round-2 review).
 //
 // Usage: node scripts/check-docs-consistency.mjs [--json]
 // Exit: 1 iff any check FAILs.
@@ -182,6 +188,27 @@ async function run() {
   else if (ciCutoffs[0] !== probeCutoffs[0]) cutoffDetail = `cutoffs differ: ci.yml=${ciCutoffs[0]}, compat-probe.yml=${probeCutoffs[0]}`
   else cutoffDetail = `both install lines pin --before=${ciCutoffs[0]}`
   results.push(check('d09', 'D7 --before cutoffs well-shaped + identical', cutoffsMatch, cutoffDetail))
+
+  // d10 — the WORKING TREE's installer must carry the declaration face, by
+  // CONTENT, not by pointer (PR #12 review BLOCKER, round 1; placement fixed
+  // in round 2).
+  //
+  // d02/d07/d08 prove the docs, the installer pin, and the alias AGREE with
+  // each other; none of them looks at the installer's CONTENT. This check
+  // does: the declaration-face marker must be present and the deleted
+  // .agent-presets write target absent. It is deliberately HERMETIC (this
+  // tree's own file): the first d10 read the REMOTE alias tag's copy, which
+  // can only serve the new face after a release moves the alias — and
+  // release.sh runs this very gate at steps 1 and 3, BEFORE the tags exist
+  // (step 5), so the release could never reach the step that would turn it
+  // green (measured deadlock, round-2 review). The remote-alias content
+  // assertion lives where it can be true: release.sh step 7, post-push.
+  const hasDeclaration = installer.includes('DECL_PATCH=')
+  const servesDeadFace = installer.includes('DEST="${D}/.agent-presets')
+  results.push(check('d10', 'working-tree installer carries the live face', hasDeclaration && !servesDeadFace,
+    hasDeclaration && !servesDeadFace
+      ? 'DECL_PATCH present, no .agent-presets write target'
+      : `DECL_PATCH ${hasDeclaration ? 'present' : 'MISSING'}; dead-face write target DEST=$D/.agent-presets ${servesDeadFace ? 'PRESENT' : 'absent'} (the remote-alias content gate lives in release.sh step 7 — post-push, the only non-deadlocking point)`))
 
   const json = process.argv.includes('--json')
   if (json) {

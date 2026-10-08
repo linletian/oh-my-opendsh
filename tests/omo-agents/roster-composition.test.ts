@@ -252,10 +252,89 @@ describe('roster structure snapshot (P2-T17 · B · exit criterion b)', () => {
     // The snapshot documents all three seat routes the plan §4.6 fixes.
     for (const route of [
       'deepseek-official/deepseek-v4-pro',
-      'deepseek/deepseek-v4-flash',
-      'deepseek-official/deepseek-v4-flash-vision-exp',
+      'deepseek/deepseek-flash',
+      'deepseek-official/deepseek-flash',
     ]) {
       expect(snapshot).toContain(route)
+    }
+  })
+})
+
+// ── P4.5-T5: the R-9 STRUCTURAL INVARIANT on the registered carrier ─────────
+// T5 registers this very composition through `agentPresets.register()` inside
+// the omo-agents inject callback. That is deadlock-safe for exactly ONE reason
+// (plan §4.3 / R-9, review R2-I1): `omo-agents` is NOT a row of what it
+// registers — it rides the repo-root cordis.yml's own insert row
+// (cordis.yml:36-38). The registry's audit waits for the HOST Loader tree to
+// settle (agent-preset-registry/src/index.ts:126-127 @ dsh-v0.2.0-rc.2); if a
+// future "make it self-contained" edit ever moves omo-agents INTO the
+// composition, the settle could wait on the caller's own activation and the
+// deadlock becomes reachable — this pair of tests goes RED the moment the
+// structure changes, which is the entire point (Q-3 §6.1: assert the structure,
+// never a timing).
+describe('R-9 structural invariant on the registered carrier (P4.5-T5)', () => {
+  /** Recursive walk collecting every (id, name) pair at every nesting depth. */
+  function deepIds(rows: unknown): string[] {
+    const ids: string[] = []
+    const walk = (list: unknown): void => {
+      if (!Array.isArray(list)) return
+      for (const row of list) {
+        if (typeof row !== 'object' || row === null) continue
+        const record = row as { id?: unknown; group?: unknown; config?: unknown }
+        if (typeof record.id === 'string') ids.push(record.id)
+        if (record.group === true) walk(record.config)
+      }
+    }
+    walk(rows)
+    return ids
+  }
+
+  it('the FULL rendered composition (all depths) has no omo-agents row', async () => {
+    // The pre-T5 suite only ever looked INSIDE the delegation group; the T5
+    // registration registers the TOP-LEVEL list, so the census must be the
+    // whole document at every depth — that is the row set register() mounts.
+    // Non-vacuity: the census really walks (top-level ids + nested rows).
+    // 'materialized' requires the target NOT to pre-exist (syncConcertoPreset
+    // creates it) — mkdtemp the PARENT only, the sibling suite's shape.
+    const sandbox = mkdtempSync(join(tmpdir(), 'omo-roster-r9-census.'))
+    const target = join(sandbox, '.agent-presets', 'concerto')
+    try {
+      expect(syncConcertoPreset(target)).toBe('materialized')
+      const loaded = await loadYamlDialect(join(target, 'agent.cordis.yml'))
+      const ids = deepIds(loaded)
+      // Non-vacuity: the census really walks (top-level ids + nested rows).
+      expect(ids.length).toBeGreaterThan(12)
+      expect(ids).toContain('delegation')
+      expect(ids).toContain('tool-subagent-explore')
+      // The invariant: neither the plugin id nor its package name appears.
+      expect(ids).not.toContain('omo-agents')
+      const raw = readFileSync(join(target, 'agent.cordis.yml'), 'utf8')
+      expect(raw).not.toContain('@oh-my-opendsh/omo-agents')
+      // And the same for what T5 registers through the pure outlet (same bytes).
+      expect(deepIds(await loadYamlDialect(join(target, 'agent.cordis.yml')))).not.toContain('omo-agents')
+    } finally {
+      rmSync(target, { recursive: true, force: true })
+    }
+  })
+
+  it('omo-agents rides the repo-root host insert row — the deadlock-safe carrier', async () => {
+    // The other half: the plugin IS mounted, but as a HOST row of a DIFFERENT
+    // document — the repo-root cordis.yml `- insert:` row at :36-38. Read the
+    // real file, parse it in the loader dialect, and pin the row's existence
+    // and its insert shape (id + name), so "the caller is external to the
+    // registered tree" is checkable, not folklore.
+    const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+    const rows = await loadYamlDialect(join(repoRoot, 'cordis.yml'))
+    const inserted = (Array.isArray(rows) ? rows : [])
+      .flatMap((patch: any) => (Array.isArray(patch?.insert) ? patch.insert : []))
+    const hostRow = inserted.find((row: any) => row?.id === 'omo-agents')
+    expect(hostRow).toBeDefined()
+    expect(hostRow.name).toBe('@oh-my-opendsh/omo-agents')
+    // And it is NOT inside any group config of the host document either — it
+    // is a top-level insert row (the settle-audit cannot reach through it).
+    const nested = inserted.filter((row: any) => row?.group === true)
+    for (const groupRow of nested) {
+      expect(deepIds(groupRow.config)).not.toContain('omo-agents')
     }
   })
 })

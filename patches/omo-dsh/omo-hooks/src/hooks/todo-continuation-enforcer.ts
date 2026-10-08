@@ -283,15 +283,34 @@ export interface ContinuationTextBlock {
 }
 
 /**
- * The producer declaration on the steering message. `form: 'instructions'` is
- * the DSH vocabulary for "context that instructs the model": it is declared on
- * `ContextFormed` (dsh-llm/lib/types/message.d.ts:71-89) and the
- * `MessageSourceMap['plugin']` arm extends it (`& ContextFormed`,
- * dsh-llm/lib/types/message.d.ts:94-101); `notice` would describe "here is what
- * happened", which is the C-mode advisory's form, not a continuation directive.
+ * The producer declaration on the steering message.
+ *
+ * `kind` is `omo-todo-continuation`, never `plugin`: dsh 0.2.x v4 native
+ * admission refuses `kind === 'plugin'` in every durable message slot —
+ * including the `agent/inbox/spliced` slot a steer lands in — so the steer is
+ * rejected before it is appended. Read first-hand against the INSTALLED
+ * artifact `@deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2`
+ * (`lib/index.js:124-127`, reached from the encode side at `:1097` →
+ * `assertV4RowAdmission` `:1107` → `assertV4SourceRowAdmission` `:142-152`):
+ * the only constraints are that `source` is an object, that `kind` is a
+ * non-empty string, and that `kind !== 'plugin'`. Nothing else on `source` is
+ * constrained, so `plugin` and `form` stay here untouched.
+ *
+ * The `omo-` prefix is a choice, not a rule — v4 neither requires nor forbids
+ * a vendor prefix, and upstream's own producers are unprefixed (`tool-jobs` —
+ * installed `dsh-tool-jobs/lib/index.js:278`). Full rationale lives on
+ * hard-blocks-injection.ts's `InjectedPluginSource`.
+ *
+ * `form: 'instructions'` is the DSH vocabulary for "context that instructs the
+ * model": `ContextFormed` declares that form (installed
+ * `dsh-llm/lib/types/message.d.ts:75-93`), and the same file states that
+ * there is no shared catch-all `plugin` kind and each producer declares its own
+ * (`:94-100`, `MessageSourceMap` `:101-108`). `notice` would describe "here is
+ * what happened", which is the C-mode advisory's form, not a continuation
+ * directive.
  */
 export interface ContinuationPluginSource {
-  readonly kind: 'plugin'
+  readonly kind: 'omo-todo-continuation'
   readonly plugin: string
   readonly form: 'instructions'
 }
@@ -366,7 +385,7 @@ export function buildContinuationMessage(text: string): ContinuationUserMessage 
     role: 'user',
     content: [{ type: 'text', text }],
     source: {
-      kind: 'plugin',
+      kind: 'omo-todo-continuation',
       plugin: TODO_CONTINUATION_ENFORCER_PLUGIN,
       form: 'instructions',
     },

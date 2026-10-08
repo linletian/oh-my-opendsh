@@ -45,8 +45,27 @@ export interface InjectedTextBlock {
   text: string
 }
 
+/**
+ * Producer attribution for the message this module injects.
+ *
+ * `kind` is `omo-hard-blocks`, never `plugin`: dsh 0.2.x v4 native admission
+ * refuses `kind === 'plugin'` in every durable message slot, so the injection
+ * is rejected before it is appended. Read first-hand against the INSTALLED
+ * artifact `@deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2`
+ * (`lib/index.js:124-127`): the only constraints are that `source` is an
+ * object, that `kind` is a non-empty string, and that `kind !== 'plugin'`.
+ * Nothing else on `source` is constrained — which is why `plugin` and `form`
+ * stay on this object untouched.
+ *
+ * The `omo-` prefix is a choice, not a rule: v4 neither requires nor forbids a
+ * vendor prefix. Upstream's own producers are unprefixed (`tool-jobs` —
+ * installed `dsh-tool-jobs/lib/index.js:278`). OMO prefixes so its kinds
+ * cannot collide with that unprefixed namespace, and because four of OMO's five
+ * producers share `plugin: 'omo-hooks'`, `kind` is the only field that tells
+ * those producers apart on a surface that renders one string.
+ */
 export interface InjectedPluginSource {
-  kind: 'plugin'
+  kind: 'omo-hard-blocks'
   plugin: string
   form?: 'instructions' | 'catalog' | 'snapshot' | 'notice'
 }
@@ -118,7 +137,7 @@ export function registerHardBlocksInjection(
         id: crypto.randomUUID(),
         role: 'user',
         content: [{ type: 'text', text }],
-        source: { kind: 'plugin', plugin: HARD_BLOCKS_INJECTION_PLUGIN, form: 'instructions' },
+        source: { kind: 'omo-hard-blocks', plugin: HARD_BLOCKS_INJECTION_PLUGIN, form: 'instructions' },
       })
     }
     return next()

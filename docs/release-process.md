@@ -18,7 +18,7 @@
 - `package.json` carries the full semver `X.Y.Z`.
 - Every release gets **two tags**: an immutable annotated `vX.Y.Z`, and a
   **moving minor alias** `vX.Y` force-moved to the newest patch of the line.
-  The installer pins the alias (`TAG="${CONCERTO_TAG:-v0.1}"`), so
+  The installer pins the alias (`TAG="${CONCERTO_TAG:-v0.2}"`), so
   `curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh` always
   installs the newest stable patch; exact pinning uses the raw `vX.Y.Z` URL.
 - Semantics: **major** = breaking matrix change / dropping an old dsh range;
@@ -304,6 +304,17 @@ Steps (all local; first failure aborts before anything is tagged):
 5. **tags** — `vX.Y.Z` annotated (immutable) + `vX.Y` alias force-moved.
 6. **push** — branch + alias + full tag.
 7. **verify** — sandboxed install from the NEW tag's raw URL (hard gate); Pages `/install` poll (best effort, `--wait-pages`).
+
+> **The alias content gate lives at step 7, post-push — nowhere earlier
+> (PR #12 review, round 2).** Gate 7's d10 checks the WORKING TREE's installer
+> carries the declaration face (hermetic, always satisfiable); the REMOTE
+> alias's own copy is asserted by release.sh after the push (ls-remote peel ==
+> the release commit + `DECL_PATCH` present + no `.agent-presets` write target
+> + a sandboxed install through the alias URL). Any pre-tag placement of the
+> remote check deadlocks: the alias only moves at step 5/6, so steps 1/3 would
+> demand of the alias what only step 7 can make true (measured on the round-1
+> placement). The pointer checks d02/d07/d08 still cover name-drift; content
+> drift is covered here.
 8. **gh release** — notes = CHANGELOG top section + matrix snapshot (falls back to printed instructions without gh auth).
 
 ### The commit step stages everything, and asserts it did

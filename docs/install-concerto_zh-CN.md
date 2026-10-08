@@ -1,16 +1,26 @@
 # 安装协奏模式
 
 > 如何在你自己的 DeepSeek Harness 上安装 oh-my-opendsh 协奏模式（Concerto Mode）MVP。
-> 已在当前 DSH 运行时验证（2026-09-04，`concerto_verify` 22/22 PASS、`standingKeyFor` mounted OK）。
-> 完整实现与验证报告：[docs/concerto-current-dsh_zh-CN.md](./concerto-current-dsh_zh-CN.md)。
+> 已在当前 DSH 运行时验证（2026-09-04，`concerto_verify` 22/22 PASS、`standingKeyFor` mounted OK）
+> ——**那是 0.1.x 时代的事**；dsh ≥ 0.2 上安装面是本指南描述的声明行（`.agent-presets/` 没有
+> 运行时读，`standingKeyFor` 是 0.1.x 机制）。完整实现与验证报告：
+> [docs/concerto-current-dsh_zh-CN.md](./concerto-current-dsh_zh-CN.md)（已加时代锚定）。
 > English: [docs/install-concerto.md](./install-concerto.md)。
 
-## 两种形态
+## 两个部件
 
-| 形态 | 文件 | 生命周期 | 用途 |
+| 部件 | 文件 | 生命周期 | 用途 |
 |---|---|---|---|
-| **持久化 preset（核心）** | `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` 下 `agent.cordis.yml` + `preset.yml` | 磁盘持久，重启无损 | 日常使用：协奏模式进入 preset 选择器 |
+| **持久化 preset（核心）— dsh ≥ 0.2（declaration）** | `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`（web profile，安装器锁定 `web`）里声明的 `preset-concerto` 那一行 | 磁盘持久，重启无损 | 日常使用：0.2 起不读 `.agent-presets/`，preset 声明了才存在 |
 | 动态插件（可选） | `patches/omo-dsh/omo-agents-current/concerto-plugin.host.js` | 进程级，重启即失 | 验证/观测/演示（`concerto_verify`、`concerto_demo`、路由强制与观测、Hard Blocks 注入） |
+
+> 🚫 **dsh < 0.2 不受支持（裁决 D17，2026-10-06，提交 `2323658`）。** 安装器原有的 **0.1.x
+> filediscovery 形态**——把 `agent.cordis.yml` + `preset.yml` 写进
+> `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/`——已在 **P4.5-T13 删除**：版本门现在
+> **具名拒绝 dsh < 0.2**（`error: unsupported dsh version '<ver>' — dsh < 0.2 is NOT supported:
+> 0.1.x compatibility was dropped by ruling D17 …`），**先于一切写盘**，退出码 1。declaration 是
+> 安装器唯一形态：0.2.x 上两个 YAML 文件下到临时目录，内容整体内联（重缩进 8 空格）进声明行——
+> `.agent-presets/` 里不留任何东西。下文的手动 0.1.x 步骤仅作为带标签的历史参考保留。
 
 基础体验只需 preset：指挥 persona 与 explore 绑定（persona + `toolFilter` + `maxDepth:1` +
 双路由）全部烘焙在两个 YAML 文件里，自包含、无仓库依赖。
@@ -26,9 +36,47 @@
 
 - DeepSeek Harness（含 agent preset 体系；依赖与 shipped `standard` preset 同套包）。
 - DSH 凭证里已配置 `DEEPSEEK_API_KEY`（两条路由共用；pi-ai 走 api.deepseek.com 兼容端点）。
-- pi-ai 目录里的 `deepseek-v4-flash` 模型（没有则改 `agentOptions`，见"适配"）。
+- pi-ai 目录里的 `deepseek-flash` 模型（没有则改 `agentOptions`，见"适配"）。
+- **仅 dsh ≥ 0.2**：PATH 上要有 `python3`，**且带 PyYAML 模块**（`pip install pyyaml`）。declaration
+  形态下安装器用 python3 + PyYAML 渲染那条声明行，并在创建任何东西之前先检查；缺模块就停下，打印
+  `error: PyYAML required for the dsh >= 0.2 install path (pip install pyyaml)` 并以非 0 退出码结束。
+  ~~dsh 0.1.x 形态两者都不需要——除非你设了 `EXPLORE_PROVIDER` / `EXPLORE_MODEL`，那本来就是需要
+  `python3` 的场景。~~ *（P4.5-T13，裁决 D17：0.1.x 形态已不存在——安装器在检查任何东西之前就先
+  具名拒绝 dsh < 0.2。）* macOS 自带的 python3 **不带** PyYAML。（与安装器 Usage 头部的 `Requirements:`
+  一段一致。）
 
 ## 快速安装
+
+> ⚠️ **临时警示（v0.2.2 发版后删除本段）**：`v0.2` 别名仍指向切换前的旧版。今天走**方式 A**
+> 拿到的是该 tag 的旧安装器——它把 preset 写进 `.agent-presets/`，而 dsh ≥ 0.2 根本不读这个
+> 目录（静默零 preset 安装）；**方式 B** 的提示词拉的也是该 tag 的 preset 文件（0.1.x 时代的
+> 旧模型 id）。发版前移别名之前，请用**方式 C**——仓库 checkout 里的才是本页描述的声明式
+> 安装器。（PR #12 评审；别名内容由 release.sh step 7b 硬门把关、周哨兵盯梢。）
+
+三种方式跑的是同一个 `scripts/install-concerto.sh`，它在动手前先跑 `dsh --version` 分流：**dsh ≥ 0.2**
+把 preset 渲染成**一条声明行**写进 `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`；
+~~**dsh 0.1.x** 才按老样子把两个 YAML 落到 `.agent-presets/concerto/`。~~
+**dsh < 0.2 会被具名拒绝**——`error: unsupported dsh version '<ver>' — dsh < 0.2 is NOT supported:
+0.1.x compatibility was dropped by ruling D17 …`，退出码 1，零写盘*（P4.5-T13；老形态已删除，
+不再是安装路径）*。版本探测不到（dsh 不在 PATH、或输出里解析不出
+MAJOR.MINOR）就响亮报错停下、提示先装 dsh——绝不瞎猜。0.2 形态下脚本也**不会**创建
+`profiles/web/package.json`（dsh 首次启动时自己补）。
+
+> 🚫 **安装器唯一会响亮拒绝的一种形态（dsh ≥ 0.2）**：如果你的 `cordis.patch.yml` 里已经存在一行
+> `- id: preset-concerto`，而且它**嵌在某个 group 行的 `config:` 列表里面**，安装器会直接打出一条
+> `error: … nested INSIDE the config: list …` 并以非 0 退出码停下。"group 行"按 dsh 自己的定义算——
+> `group: true`、`name: cordis:group`、`name: @deepseek-ai/cordis-plugin-group` **三者任一**，这正是 dsh
+> 自己的 profile 预检所用的并集（dsh-app-boot/lib/index.js:2100），安装器只会比它更宽、绝不更窄。
+> 其中两个 `name:` 写法自己就能把 `config:` 列表挂起来，所以哪怕整个文件里一个 `group:` 键都没有，
+> 嵌在里面的 preset 行照样会生效。安装器没法在不改写你自己 group 结构的前提下替换它，而把它和
+> 新生成的那条一起装进去，就会留下两条 `config.id: concerto`，下次启动 harness 直接抛
+> `Duplicate agent preset: concerto`。
+> 拒绝的时候一个字节都不写：patch 文件不动，连 `.bak` 都不会产生。**手工修**：把那一嵌套的行删掉，
+> 再重跑安装器。（嵌套的 preset 行如果带 `disabled: true`，那**不算**问题，照常装——被禁用的行永远不会
+> 注册，也就永远不会重复；**但除非那一行自己还带着真值 `group:`**：loader 的禁用判定在 `options.group`
+> 上直接短路（cordis-plugin-loader/lib/index.js:335），**自称 group 的行会无视自己的 `disabled`** 照样
+> 挂载，这种行和其它嵌套声明行一样会被拦下。插件行自己 `config:` 里的 `id: preset-concerto` 是那个
+> 插件自己的配置 id，不是 preset 声明，同样不会被拦。）
 
 **方式 A（最快）——一行命令**（脚本锁定 v0.2 标签；默认启用 pi-ai 路由）：
 
@@ -39,7 +87,8 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 （备用直链：`https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/scripts/install-concerto.sh`）
 
 可选环境变量（管道前加前缀即可）：`NO_PIAI=1`（跳过 pi-ai 段）、
-`EXPLORE_PROVIDER`/`EXPLORE_MODEL`（覆盖 explore 第二路由）：
+`EXPLORE_PROVIDER`/`EXPLORE_MODEL`（覆盖 explore 第二路由）——`CONCERTO_TAG`、`DSH_HOME`
+在（唯一的、声明式）安装形态下语义都不变：
 
 ```bash
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_MODEL=my-model sh
@@ -52,9 +101,16 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE
 
 ```
 请在本机 DSH 用户目录安装 oh-my-opendsh 协奏模式（锁定 tag v0.2）：
-1) 用 shell 创建 ${DSH_HOME:-~/.dsh}/.agent-presets/concerto/，并用 curl -fsSL 下载
-   https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml
-   与 …/preset.yml 到该目录；任一下载失败就报错停下，不要臆造内容。
+1) 先跑 `dsh --version`；输出里解析不出 MAJOR.MINOR 就报错停下，不要猜版本。
+   - dsh < 0.2：停下并报告 dsh < 0.2 不受支持（裁决 D17，2026-10-06 放弃）——不要创建
+     .agent-presets/concerto/，不要把 preset 文件下载进去；该形态已删除，官方安装器具名拒绝这些版本。
+   - dsh ≥ 0.2：0.2 起已不读 .agent-presets/——把同样两个文件下载到临时目录，再往
+     ${DSH_HOME:-~/.dsh}/profiles/web/cordis.patch.yml 追加**恰好一个** `- insert:` 块，声明
+     `- id: preset-concerto`（name: '@deepseek-ai/dsh-agent-preset'；config 里 id 为 concerto，
+     name/description 取自 preset.yml，plugins 内联 agent.cordis.yml 的内容并整体右移 8 个空格）。
+     写之前先把该文件备份成 cordis.patch.yml.bak.<时间戳>；只新增/替换 preset-concerto 这一行，
+     用户自己写的其它行一个都不许删改。
+   任一下载失败就报错停下，不要臆造内容。
 2) 若 ${DSH_HOME:-~/.dsh}/settings.yaml 尚无 llm-pi-ai 段，追加
    providers.deepseek.apiKeyEnv=DEEPSEEK_API_KEY；不要改动文件其他部分。
 3) 检查 DEEPSEEK_API_KEY 凭证是否已配置（只看键名，绝不输出值）；缺失则明确提醒我。
@@ -74,7 +130,7 @@ NO_PIAI=1 EXPLORE_MODEL=my-model sh oh-my-opendsh/scripts/install-concerto.sh   
 先记住三句话：
 
 1. 协奏模式有两个人：**指挥**（用你会话的默认模型）+ 检索小弟 **explore**（自己单独一路模型）。
-2. 默认安装已经给 explore 配好了一路模型：pi-ai 的 deepseek 路由 + `deepseek-v4-flash`（快、便宜）。
+2. 默认安装已经给 explore 配好了一路模型：pi-ai 的 deepseek 路由 + `deepseek-flash`（快、便宜）。
 3. 所有选项改的都只是 explore 这一路"**换谁来干活**"。指挥、只读限制、禁嵌套委派，一概不动。
 
 | 选项 | 白话解释 |
@@ -88,8 +144,8 @@ NO_PIAI=1 EXPLORE_MODEL=my-model sh oh-my-opendsh/scripts/install-concerto.sh   
 
 ```bash
 unzstd -c ~/.dsh/sessions/<工作区目录>/<子会话id>/session.v3.jsonl.zstd | grep request/context
-# {"provider":"deepseek","model":"deepseek-v4-flash"}                ← 默认（pi-ai）
-# {"provider":"deepseek-official","model":"deepseek-v4-flash"}       ← 同 provider 降级
+# {"provider":"deepseek","model":"deepseek-flash"}                ← 默认（pi-ai）
+# {"provider":"deepseek-official","model":"deepseek-flash"}       ← 同 provider 降级
 ```
 
 三个常见组合（带白话注释）：
@@ -99,13 +155,16 @@ unzstd -c ~/.dsh/sessions/<工作区目录>/<子会话id>/session.v3.jsonl.zstd 
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | sh
 
 # 没有 pi-ai：换到官方 deepseek 路由 + 同一个模型，回答和默认几乎没差
-curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official EXPLORE_MODEL=deepseek-v4-flash sh
+curl -fsSL https://linletian.github.io/oh-my-opendsh/install | NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official EXPLORE_MODEL=deepseek-flash sh
 
 # 想更省/更快：给 explore 换个小模型
 curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<更小更快的模型名> sh
 ```
 
-<details><summary>手动 3 步（等价参考）</summary>
+<details><summary>手动 3 步（历史参考——dsh 0.1.x，自裁决 D17（2026-10-06）起不受支持）</summary>
+
+> ⚠️ **整段为历史参考**，只面向仍持有切换前 0.1.x 安装的机器。dsh 0.1.x **不是受支持的目标**（裁决 D17）：安装器具名拒绝它，0.1.x 上没有受支持的协奏安装方式。这套手动步骤对应安装器曾有过的 **0.1.x filediscovery** 形态。dsh ≥ 0.2 上 `.agent-presets/` 里的东西根本不会被读到——preset 必须**声明**才存在，请走方式 A/C（安装器会替你改 `profiles/web/cordis.patch.yml`：幂等、只动 `preset-concerto` 那一行、写前自动备份）。
+
 1. **复制 preset**（从 clone，或从任意已有该 preset 的机器拷这两个文件）：
 
    ```bash
@@ -141,10 +200,18 @@ curl -fsSL https://linletian.github.io/oh-my-opendsh/install | EXPLORE_MODEL=<�
 - 给检索任务（"这个仓库的 README 讲了什么？"）→ 指挥调用 `call_omo_explore`，子 agent
   读完回传、指挥总结；子 agent 无 `write`/`edit`、不能再委派。
 
+安装只指向一个结果、落在唯一受支持的运行时上：dsh ≥ 0.2 下 preset 来自 `profiles/web/cordis.patch.yml` 里的声明行——不存在第二个安装形态（0.1.x filediscovery 形态已在 P4.5-T13 删除；dsh < 0.2 被具名拒绝，裁决 D17）。0.2 这条形态已在真机上验证过一次——在 **dsh 0.2.x** 上跑过一次真实的沙箱
+全新安装 + 真实 harness 启动验证：preset 出现在 roster 里（5 个 preset 之一），那一行没有 `broken`
+标记，并且用这个 preset 成功建起了会话。那次验证**没有**跑上面这三条所描述的运行时行为，包括委派
+那条——沙箱里没有真实凭据。这三条得你自己跑。
+
 完整 9 步人工验证见 [docs/concerto-current-dsh_zh-CN.md §10](./concerto-current-dsh_zh-CN.md)。
 
 ## 适配你自己的环境
 
+- **dsh ≥ 0.2**：preset 就住在 `profiles/web/cordis.patch.yml` 里——要换 explore 路由，改那份文件里
+  `preset-concerto` 那条声明的 `agentOptions`；或者带 `EXPLORE_MODEL=…` 重跑安装器（幂等：只换那一行，
+  写前自动备份）。
 - **不想用 pi-ai**：把 preset 里 `tool-subagent-explore` 行的 `agentOptions` 改成你的第二路由，
   例如 `provider: deepseek-official`、`model: <你的小模型>`（AC-5 只要求两对路由不同）。
 - **pi-ai 目录模型不同**：相应调整 `agentOptions.model`。
@@ -159,6 +226,18 @@ Hard Blocks 注入。插件是会话专属、进程级的——不影响其他�
 
 ## 卸载
 
-- 删除 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` 目录即可（preset 从 roster 消失）。
+- **历史遗留 dsh 0.1.x 安装（切换前遗留；自裁决 D17 起不受支持——安装器已不再往那里装，具名拒绝 < 0.2）**：删除 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/concerto/` 目录即可清理切换前安装器留下的东西（在该运行时上 preset 从 roster 消失）。
+- **dsh ≥ 0.2（declaration）**：⚠️ **不要 `rm -rf` `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml` 整个文件**——那里面还有你自己的行。要么手工编辑该文件，只删掉 `- id: preset-concerto` 所在的那个 `- insert:` 块；要么用**安装器**留下的最新备份还原：
+  `cp "$(ls -t "${DSH_HOME:-$HOME/.dsh}"/profiles/web/cordis.patch.yml.bak.[0-9]* 2>/dev/null | head -n 1)" "${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml"`
+  ——通配符**故意**写成带时间戳的形状（`.bak.` 后面紧跟一个数字）：裸的 `.bak.*` 也会匹配**你自己**命名的存档，
+  比如 `cordis.patch.yml.bak.mine`，而 `ls -t` 会把那一份当成最新文件交给你，而不是安装器真正写下的备份
+  （安装器的清理策略从来不吃这类文件，所以它们可以在目录里躺很多年，并且正好是目录里 mtime 最新的那个）。
+  ——但**前提是确实有备份**：安装器只在 patch 文件当时已经存在的情况下才备份，所以之前装过一次才有
+  备份，首次安装一个备份都不会产生。没有备份时通配符展开为空，这条命令就成了 `cp "" …`，只会报一条
+  针对空路径的 stat 错误——它不损坏文件，但读起来像装坏了。首次安装请直接手工编辑该文件，删掉
+  `- id: preset-concerto` 所在的那个 `- insert:` 块。
+  安装器**第一次**改写前的状态还会额外存一份 `cordis.patch.yml.bak.first`——只写一次、永不覆盖，
+  且在保留策略的形状之外（prune 只认 `.bak.<14 位数字>`），所以无论之后重装多少次，安装前的原件
+  都在（PR #12 第二轮：只有「最新 3 份」保留时，真实变更的重装会把它淘汰掉）。
 - 可选：从 `settings.yaml` 删除 `llm-pi-ai` 段。
 - 动态插件随会话消失（或 `cordis_stop` / `cordis_undefine`）。

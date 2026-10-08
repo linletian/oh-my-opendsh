@@ -1,5 +1,14 @@
 # 协奏模式 MVP · 当前 DSH 环境实现与验证报告
 
+> ⚠️ **时代锚定（2026-10-07，PR #12 评审补记）**：本文记录的「当前 DSH」是 **0.1.x 时代**
+> （0.1.5-rc.x，动态插件 + `$DSH_HOME/.agent-presets/` 文件发现面）。自 D17 切换
+> （commit `2323658`）与 P4.5-T13 清场起，0.2.x **不再从磁盘读 `.agent-presets/`**——
+> 下文 §6 follow-up #2 与 §9 第 2 条把「持久化 `~/.dsh/.agent-presets/concerto/` ✅ 已完成」
+> 的表述**只对当时的运行时成立**，在今天（0.2.x）那个目录是死面：写进去的东西没有任何
+> 运行时读。现行安装面是声明式 patch 行（`profiles/web/cordis.patch.yml` 的
+> `- id: preset-concerto` 声明），见 `docs/install-concerto_zh-CN.md`。本文其余内容保留
+> 原样作为该时代的结项记录，不再逐句翻新。
+
 > **结论先行**：协奏模式（Concerto Mode）MVP 已在**当前 DSH 环境**（本会话运行的新版
 > DeepSeek Harness）完整实现并验证通过——`concerto_verify` **22/22 全 PASS（0 失败 0 跳过）**，
 > `concerto_demo` 真实委派链多次 PASS，负向断言（写工具拒绝、嵌套委派物理缺席）拿到子 agent
@@ -116,9 +125,9 @@ provider 异模型 `deepseek-official/v4-flash`）；观测通道在 `agent/crea
    `deepseek-official` / `deepseek-v4-pro` **按 provider 区分**（AC-5 双 provider 运行时观测
    9 次一致）。注：进程内 `settings.update` 被 vm-realm 的 `isPlainObject` 检查拒绝（P-18），
    磁盘写 + 热加载是官方支持路径。
-2. **FR-2 形态（已落地，follow-up #2 完成）**：持久化用户 preset
+2. **FR-2 形态（已落地，follow-up #2 完成——⚠️ 0.1.x 时代事实，见文首时代锚定）**：持久化用户 preset
    `~/.dsh/.agent-presets/concerto/`（trust: user，roster 第 5 项）——`standingKeyFor` 挂载校验
-   **mounted OK**。preset 内容 = 从 shipped `standard` 复制的 composition 按 rc 台账派生：
+   **mounted OK**（0.2.x 起该目录无任何运行时读取，现行面为声明式 patch 行）。preset 内容 = 从 shipped `standard` 复制的 composition 按 rc 台账派生：
    persona=sisyphus 四段组装文本；delegation 组新增 `tool-subagent-explore`
    （persona=explore 三段组装、agentOptions=pi-ai 路由、toolFilter `deny:[write,edit,call_omo_explore]`
    （P-19 加固）、maxDepth 1、toolName `call_omo_explore`）；DROP planning/codex/claude-code/
@@ -145,8 +154,8 @@ provider 异模型 `deepseek-official/v4-flash`）；观测通道在 `agent/crea
 
 1. ✅ **已完成**：激活 pi-ai 路由（`llm-pi-ai` settings 段）并复验 AC-5 双 provider（verify
    `fu1-01` PASS，explore 9 次观测 `deepseek`/v4-flash）。
-2. ✅ **已完成**：持久化 concerto preset（`~/.dsh/.agent-presets/concerto/`，`standingKeyFor`
-   mounted OK，verify `fu2-01` PASS）；人工验证指南见 §10。
+2. ✅ **已完成**（⚠️ 0.1.x 时代事实，见文首时代锚定）：持久化 concerto preset（`~/.dsh/.agent-presets/concerto/`，`standingKeyFor`
+   mounted OK，verify `fu2-01 PASS`）——该路径在 0.2.x 是死面，现行安装面为 `profiles/web/cordis.patch.yml` 声明行；人工验证指南见 §10。
 3. 插件证据落盘改用指挥侧工具或修正部署沙箱 root（P-17）——现状：证据由指挥会话物化。
 4. ✅ **已完成**（2026-09-04）：P-13~P-19 与当前 DSH 版 V1–V4 结论已并入
    `docs/mvp-pitfalls.md` / `docs/mvp-pitfalls_zh-CN.md` §6；插件 pkg-6 源码归档

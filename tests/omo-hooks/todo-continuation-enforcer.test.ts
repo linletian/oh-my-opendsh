@@ -198,13 +198,13 @@ describe('P3-T7 continuation text — semantic port of constants.ts:7-14 + conti
     expect(text).toContain('Remaining tasks:\n- [pending] b\n- [in_progress] c')
   })
 
-  it('④ builds a user message with plugin/instructions source and a fresh id', () => {
+  it('④ builds a user message with omo-todo-continuation/instructions source and a fresh id', () => {
     const first = buildContinuationMessage('hello')
     const second = buildContinuationMessage('hello')
     expect(first.role).toBe('user')
     expect(first.content).toEqual([{ type: 'text', text: 'hello' }])
     expect(first.source).toEqual({
-      kind: 'plugin',
+      kind: 'omo-todo-continuation',
       plugin: TODO_CONTINUATION_ENFORCER_PLUGIN,
       form: 'instructions',
     })

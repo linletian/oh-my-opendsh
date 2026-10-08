@@ -11,7 +11,12 @@
 #
 # Assertions per boot:
 #   plugin side — `[omo-agents] loaded`, `concerto preset <outcome>`, the
-#                 roster line listing `concerto:user`, and no FAILED line.
+#                 roster line listing `concerto:broken=absent` (P4.5-T6: the
+#                 row vocabulary is the registry's own `broken` field, printed
+#                 by the shipped formatConcertoRosterLine; the pre-T6
+#                 `concerto:user` form is DEAD — 0.2.x has no `trust` key on a
+#                 roster row, so it printed `concerto:?`, a placeholder that
+#                 asserted nothing), and no FAILED line.
 #   P3-T3 hooks — the SECOND cordis.yml insert row's mount observable:
 #                 `[omo-hooks] loaded: manifest N entries (…)`, plus one
 #                 `hook <id> registered on <event>` line for EVERY implemented
@@ -83,10 +88,16 @@
 #                 rc.6 POST /api/agentPreset.list, no auth; 0.1.2 POST
 #                 /api/agentPresets/list through the Typert Remote gateway,
 #                 after the launch-token → dsh-auth-* cookie handshake) lists
-#                 concerto at trust "user" alongside the official four at
-#                 trust "system" (rc.6 standard/code/minimal/cordis; 0.1.2
+#                 concerto alongside the official four (rc.6
+#                 standard/code/minimal/cordis; 0.1.2+
 #                 standard/ptc/minimal/cordis), with the name from OUR
-#                 preset.yml (协奏 / Concerto).
+#                 preset.yml (协奏 / Concerto). On the 0.2.x leg the row's
+#                 level field is `isDefault:false` — the roster RPC answers with
+#                 an ENVELOPE {presets:[…]} from remoteExportList(), and
+#                 `trust` is not a key of a 0.2.x row at all; the 0.1.5 leg
+#                 keeps its genuine trust:"user" assertion. The shape actually
+#                 seen is PRINTED by the probe, so this claim is auditable and
+#                 not just asserted.
 #   T14 routes   — the `[omo-agents] model routes: sisyphus=… explore=…` boot
 #                 marker (resolved by the plugin from src/model-routes.ts, the
 #                 single config source of truth), and the provider directory
@@ -94,9 +105,12 @@
 #                 with llm/listConfigurableProviders by the Web UI's own rule)
 #                 showing BOTH route providers `active:true` — the sisyphus
 #                 seat's from the llm-deepseek adapter (entry config), the
-#                 explore seat's from the llm-pi-ai adapter (sandbox-seeded
-#                 settings profile; registration is keyless — no API keys
-#                 exist in the sandbox, and none are needed for this gate).
+#                 explore seat's from the llm-pi-ai adapter seeded through the
+#                 probe's SECOND --patch overlay (present at compose/apply()
+#                 time; NOT settings.yaml — 0.2.x removed that surface and
+#                 its late importer loses the settled-provider check;
+#                 registration is keyless — no API keys exist in the sandbox,
+#                 and none are needed for this gate).
 #   T11 binding  — the omo-explore dsh-tool-subagent instance (form A static
 #                 config) in the MATERIALIZED composition: the row exists with
 #                 toolName `explore`, both T11 sentinels are rendered away,
@@ -159,8 +173,9 @@
 #                 non-vacuity guard; (d) every DISTINCT provider the 11 routes
 #                 use is `active:true` in the provider directory (the
 #                 transport-adaptive RPC join above), so a deployment missing
-#                 e.g. the pi-ai settings section fails here at boot instead of
-#                 at that child's first delegation. The per-row materialized
+#                 e.g. the pi-ai seed row (the probe's second --patch overlay;
+#                 the settings section on pre-0.2.x runtimes) fails here at
+#                 boot instead of at that child's first delegation. The per-row materialized
 #                 greps (toolName / roster-computed deny / roster allow /
 #                 uniform roster maxDepth) generalize the P2-T15 explore pins
 #                 to every roster row.
@@ -231,10 +246,13 @@ timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
 # T14 (FR-5, P-2; AC-5 config half): resolve the two route pairs from the
 # plugin's own config module — the single source of truth (Node 24
 # type-stripping runs the .ts directly, P-8.6) — then pre-seed the sandbox
-# settings.yaml with the llm-pi-ai profile that registers the explore seat's
-# provider route. Adapter REGISTRATION is the gate (no API keys exist in the
-# sandbox): credentials resolve per request, so a route registers keylessly
-# and a missing key would only fail a REQUEST with MISSING_CREDENTIAL.
+# with the llm-pi-ai provider profile that registers the explore seat's
+# route. On 0.2.x that seed is a SECOND --patch overlay composed into the
+# entry list before mount (see the seeding block below); settings.yaml is no
+# longer a config surface there, and writing only settings.yaml is the exact
+# regression this block guards. Adapter REGISTRATION is the gate (no API keys
+# exist in the sandbox): credentials resolve per request, so a route registers
+# keylessly and a missing key would only fail a REQUEST with MISSING_CREDENTIAL.
 # The same resolution reaches into src/roster.ts for the explore row's deny
 # list (P2-T15 shape), so both deny assertions below share one computed
 # expectation instead of an inline literal.
@@ -277,8 +295,14 @@ ROUTES_ENV="$(node --input-type=module -e "
       console.log('DELEGATION_MAXDEPTH=' + entry.id + '=' + String(entry.maxDepth))
       const deny = roster.denyToolNamesFor(entry)
       const allow = roster.allowToolNamesFor(entry)
+      // TWO independent emissions, not if/else-if: a row that carries BOTH a
+      // deny and an allow list used to report only its deny, and the consumer
+      // below then read the missing allow as 'the roster declares none' and
+      // asserted its ABSENCE on a row that legitimately has one (review A
+      // MINOR-C). Today's roster happens to have no such row, which is exactly
+      // the kind of luck a gate must not depend on.
       if (deny !== undefined) console.log('DELEGATION_DENY=' + entry.id + '=' + JSON.stringify(deny))
-      else if (allow !== undefined) console.log('DELEGATION_ALLOW_PLAIN=' + entry.id + '=' + allow.join(', '))
+      if (allow !== undefined) console.log('DELEGATION_ALLOW_PLAIN=' + entry.id + '=' + allow.join(', '))
     }
   })
 ")" || fail "model-routes/roster module resolution failed: $ROUTES_ENV"
@@ -334,6 +358,55 @@ UNIFORM_MAXDEPTH="$(printf '%s\n' "$DELEGATION_MAXDEPTHS" | cut -d= -f2- | sort 
 [[ "$(count_lines "$UNIFORM_MAXDEPTH")" == "1" ]] \
   || fail "roster maxDepth is NOT uniform across the delegation rows: $UNIFORM_MAXDEPTH"
 echo "concerto-probe: P2-T20 roster: $ROSTER_SIZE routes, $DELEGATION_COUNT delegation rows, $DISTINCT_PROVIDER_COUNT distinct providers ($(printf '%s' "$ROUTE_PROVIDERS" | paste -sd' ' -)), uniform maxDepth=$UNIFORM_MAXDEPTH"
+
+# P4.5-T6: the SAME roster-derived expectations, serialized once as JSON so the
+# `agentPresets/read` face can compare PARSED VALUES element by element instead
+# of grepping a rendered line. The values come from the very same $DELEGATION_*
+# lists the materialized-face greps use — one source, two faces — so a roster
+# edit moves both assertions together and neither can go stale alone.
+ROSTER_EXPECTATIONS_JSON="$SANDBOX/roster-expectations.json"
+node -e '
+  const fs = require("node:fs")
+  const [outFile, idsBlob, denyBlob, allowBlob, depthBlob, uniform] = process.argv.slice(1)
+  const lines = (blob) => String(blob).split("\n").filter((l) => l.length > 0)
+  const byId = (blob) => {
+    const map = new Map()
+    for (const line of lines(blob)) {
+      const eq = line.indexOf("=")
+      if (eq < 0) continue
+      map.set(line.slice(0, eq), line.slice(eq + 1))
+    }
+    return map
+  }
+  const denies = byId(denyBlob)
+  const allows = byId(allowBlob)
+  const depths = byId(depthBlob)
+  const rows = lines(idsBlob).map((id) => ({
+    id,
+    deny: denies.has(id) ? JSON.parse(denies.get(id)) : null,
+    allow: allows.has(id) ? allows.get(id).split(", ").filter((n) => n.length > 0) : null,
+    maxDepth: Number(depths.get(id)),
+  }))
+  if (rows.length === 0) { console.error("empty roster expectation set — the read-face comparison would be vacuous"); process.exit(1) }
+  // `sandboxEdits` is REQUIRED by the validator contract (WP2 MAJOR-1). This
+  // probe declares [] because it edits NOTHING on the composition face it
+  // asserts: it reads $materialized with grep/awk/node and never writes it —
+  // scripts/verify-concerto-static.mjs c24 asserts exactly that, so this empty
+  // list is a checked fact here, not a claim of convenience.
+  fs.writeFileSync(outFile, JSON.stringify({ rows, uniformMaxDepth: Number(uniform), sandboxEdits: [] }, null, 2))
+' "$ROSTER_EXPECTATIONS_JSON" "$DELEGATION_IDS" "$DELEGATION_DENIES" "$DELEGATION_ALLOWS" "$DELEGATION_MAXDEPTHS" "$UNIFORM_MAXDEPTH" \
+  || fail "could not serialize the roster-derived expectations for the read face"
+[[ -s "$ROSTER_EXPECTATIONS_JSON" ]] \
+  || fail "the roster expectation file is empty: $ROSTER_EXPECTATIONS_JSON"
+
+# OUR preset.yml display name, read from the template directory the plugin
+# registers from — the single source behind every `协奏 / Concerto` assertion.
+# Read once, then compared against the roster RPC AND the read-document `name`,
+# so neither face can silently disagree with the file we authored.
+PRESET_YML_NAME="$(sed -n 's/^name: //p' "$REPO_ROOT/patches/omo-dsh/omo-agents/concerto/preset.yml" | head -1)"
+[[ -n "$PRESET_YML_NAME" ]] \
+  || fail "could not read OUR display name from patches/omo-dsh/omo-agents/concerto/preset.yml"
+echo "concerto-probe: preset.yml display name: $PRESET_YML_NAME"
 
 # P3-T3: the omo-hooks mount marker's expected text, derived from the plugin's
 # OWN manifest.ts + boot-markers.ts (Node 24 type-stripping, the same
@@ -528,17 +601,52 @@ EXPLORE_DENY_SEQUENCE="$(node -e 'process.stdout.write(JSON.parse(process.argv[1
 echo "concerto-probe: T15 explore deny (roster-computed): $EXPLORE_DENY_JSON"
 
 # The explore seat rides the llm-pi-ai adapter, which the shipped composition
-# mounts DORMANT (zero routes); a settings profile registers the route at
-# boot. If an override points the explore seat at a route another adapter
-# already owns, llm-pi-ai logs the DUPLICATE_ADAPTER refusal and keeps
-# serving — the runtime assertions below then judge the result honestly.
-mkdir -p "$DSH_HOME"
-cat > "$DSH_HOME/settings.yaml" <<EOF
-# T14 probe seed: register the explore seat's pi-ai provider route.
-llm-pi-ai:
-  providers:
-    $EXPLORE_PROVIDER:
-      apiKeyEnv: DEEPSEEK_API_KEY
+# mounts DORMANT (zero routes): dsh-base/cordis.patch.yml:127-128 @ 0.2.0-rc.2
+# is `- id: llm-pi-ai` + `name: '@deepseek-ai/dsh-llm-pi-ai'` with NO config.
+# Pre-0.2.x the seed for its one live route was an `llm-pi-ai:` section in
+# $DSH_HOME/settings.yaml. 0.2.x REMOVED settings.yaml as a config surface; its
+# legacy importer moves the section only AFTER the Loader has settled every
+# entry (dsh-settings/lib/index.js:339 `ctx.root.loader.await().then(() =>
+# this.importLegacyDocument())`; :348 joins profile.home/settings.yaml; :351
+# renames it to settings.yaml.imported; :356 per-section `await this.update(ns,
+# values)`), while omo-agents' settled route-provider check reads the provider
+# registry earlier. Measured on this very probe (dsh 0.2.0-rc.2, the settings-
+# yaml baseline .omo/evidence/p45t8/t10a/probe-baseline.log): boot 1 logs
+# `[omo-agents] route provider not registered: deepseek` (line 83) and the
+# LATER /api/llm.providers RPC in the SAME boot already answers that route
+# `active:true` (line 89) — the import won, just after the check settled. A
+# probe that boots each label once has no second boot to recover on.
+# So the seed is a SECOND --patch overlay: `--patch` is a repeatable collector
+# (dsh/lib/bin.js:27-28 "Repeatable single-value collector: `--patch a.yml
+# --patch b.yml`" + the `.option("--patch <path>", …, collect)` at :105), and
+# overlays apply after the profile layer in argv order (dsh-app-boot
+# readProfilePatches, lib/index.js:1023-1030). A patch row is composed into
+# the entry list BEFORE the entry mounts — applyEntryPatches (dsh-app-boot
+# lib/index.js:61-110): `- id:` matches the mounted row (:96-99), `name:` is
+# an OPTIONAL mismatch guard that skips the row on drift (:100-103), and
+# `config:` REPLACES the row's config key (:104-107 `target[key] = value`) —
+# safe here precisely because the dormant row carries no config to clobber.
+# This row shape (id + name + config, config replaced-not-merged) is the one
+# the legacy importer itself writes (`- id: llm-deepseek` + `name:
+# "@deepseek-ai/dsh-llm-deepseek-api-key"`), and it is proven live on
+# 0.1.5-rc.1 by scripts/smoke-real.mjs's session-persistence override row
+# (:520-521) — the patch engine is byte-identical across the pin
+# (docs/dsh-0.1.5-rc.1-review.md:222, §P-20). If an override points the
+# explore seat at a route another adapter already owns, llm-pi-ai logs the
+# DUPLICATE_ADAPTER refusal and keeps serving — the runtime assertions below
+# then judge the result honestly.
+LLM_SEED_PATCH="$SANDBOX/llm-seed.patch.yml"
+cat > "$LLM_SEED_PATCH" <<EOF
+# T14 probe seed: register the explore seat's pi-ai provider route at COMPOSE
+# time, so the config is present at apply() time on a 0.2.x first boot.
+# Override-by-id row against the dormant llm-pi-ai entry the base bundle
+# mounts; config is REPLACED, not merged (dsh-app-boot applyEntryPatches).
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      $EXPLORE_PROVIDER:
+        apiKeyEnv: DEEPSEEK_API_KEY
 EOF
 
 # T11 schema gate: resolve the INSTALLED dsh's node_modules from the dsh
@@ -658,6 +766,45 @@ console.log(`T11-VALIDATE PASS: tool-subagent-explore row validates against the 
   + `(toolName=explore provider=spawn route=${expectedProvider}/${expectedModel} maxDepth=${expectedMaxDepth} deny=[${validated.toolFilter.deny.join(',')}] persona=${validated.persona.length} chars)`)
 EOF
 
+# P4.5-T6 `agentPresets/read` content-face validator.
+#
+# WHY THIS EXISTS INSTEAD OF THE LINE GREPS: `content` is NOT the file we
+# wrote. readDocument() dumps the PARSED entry list
+# (agent-preset-registry/src/index.ts:194-206 @ dsh-v0.2.0-rc.2 = 639ed0153972:
+# readDocument() opens at :194 and the dump is the single statement at :202,
+# `dump(plugins, { schema: entryListSchema, noRefs: true, lineWidth: -1 })`).
+# An earlier draft of this comment cited src/index.ts:620-631 and
+# "lib/index.js:627"; BOTH are wrong — that src file is 366 lines long and this
+# package ships no lib/index.js at all. A range that does not exist is not a
+# citation, and a filename nobody can open is worse than no filename.
+# and a yaml.dump of parsed data differs from our rendered text in exactly TWO
+# measured ways (both re-verified on a real 0.2.0-rc.2 boot against this
+# preset, see .omo/evidence/p45t6/):
+#   ① flow sequences expand to block sequences — `deny: ["write", "edit", …]`
+#      comes back as `deny:` followed by one `- write` per line, so a
+#      `grep -qxF "          deny: […]"` cannot match, on any spacing;
+#   ② unnecessary quotes drop — `provider: "spawn"` comes back `provider: spawn`.
+# An earlier note claimed a third difference, `!!js` → a two-line `__jsExpr`
+# map. That was a FLAWED SIMULATION (it dumped with a JsExpr type that has no
+# `represent`, while the upstream type declares one at
+# vendor/include/src/index.ts:9-15). Measured against the real face, `content`
+# carries `disabled: !!js process.platform === 'win32'` on ONE line, so no
+# compatibility handling belongs here — and none was written.
+#
+# So the sequence assertions compare PARSED VALUES, element by element, against
+# the roster-derived expectations the probe serialized from src/roster.ts. That
+# is STRONGER than the line grep it replaces: a grep is sensitive to quoting and
+# whitespace and blind to meaning, while an element-wise comparison is sensitive
+# to the meaning (every name, in order, count included) and blind to nothing
+# that matters. Row/indent anchors and block scalars still hold, so they stay.
+# The read-face validator is a REPO SCRIPT, not a sandbox heredoc, because two
+# consumers must run the SAME assertions: this probe (FACE B) and
+# tests/e2e/drive.mjs (the gate-3 scenario). A heredoc copy in each would let
+# the two faces drift apart — the exact failure mode this whole task is about.
+ASSERT_READ_FACE_MJS="$REPO_ROOT/scripts/assert-concerto-read-face.mjs"
+[[ -f "$ASSERT_READ_FACE_MJS" ]] \
+  || fail "the read-face validator script is missing: $ASSERT_READ_FACE_MJS"
+
 # Adaptive web-RPC helper (T9). The readiness line decides the transport:
 # rc.6 serves flat /api/<method> endpoints with no auth beyond the loopback
 # Host-header fence; 0.1.2 mints a dsh-auth-* cookie via GET /?token=<launch>
@@ -671,7 +818,7 @@ EOF
 # server-side — so the grep assertions below stay transport-agnostic.
 WEB_RPC_MJS="$SANDBOX/web-rpc.mjs"
 cat > "$WEB_RPC_MJS" <<'EOF'
-// argv: <roster|providers> <port> [launch-token]
+// argv: <roster|read|providers> <port> [launch-token] [preset-id]
 const [kind, portArg, token] = process.argv.slice(2)
 const port = Number(portArg)
 if (!Number.isInteger(port) || port <= 0) {
@@ -736,6 +883,26 @@ async function rpc(endpoint, payload) {
 if (kind === 'roster') {
   const value = remote ? await rpc('agentPresets/list', { args: {} }) : await rpc('agentPreset.list', {})
   console.log(JSON.stringify({ type: 'server-response', rpcId: 'concerto-probe-roster', result: { ok: true, value } }))
+} else if (kind === 'read') {
+  // P4.5-T6 single content-assertion face: `agentPresets/read` → the
+  // AgentPresetDocument {agentPreset, content, name?, description?}. Both
+  // runtimes serve it (0.1.5 from file discovery, 0.2.x from the registered
+  // definition), so the SAME face carries the composition on either side.
+  // `content` is a yaml.dump() of the PARSED entry list, not our file —
+  // see the READ_* assertion blocks below for the two shapes that differ.
+  // process.argv[2]=kind [3]=port [4]=token [5]=preset id — the id is the
+  // FIFTH slot, not the fourth; reading argv[4] here would send the launch
+  // token as the preset name and every assertion downstream would then be
+  // looking at a preset that does not exist.
+  const agentPreset = process.argv[5]
+  if (typeof agentPreset !== 'string' || agentPreset.length === 0) {
+    console.error('web-rpc: read kind requires the preset id as argv[5]')
+    process.exit(1)
+  }
+  const value = remote
+    ? await rpc('agentPresets/read', { args: { agentPreset } })
+    : await rpc('agentPreset.read', { agentPreset })
+  console.log(JSON.stringify({ type: 'server-response', rpcId: 'concerto-probe-read', result: { ok: true, value } }))
 } else if (kind === 'providers') {
   let value
   if (remote) {
@@ -777,6 +944,15 @@ EOF
 
 # boot_once <label> <expected-sync-outcome>: real boot, bounded; asserts the
 # plugin-side markers and the external roster, then SIGTERMs (exit 0).
+# Top-level, NOT local: the PASS banner at the bottom of this script names the
+# assertion face that was actually used, and it runs OUTSIDE boot_once(). With
+# `set -u` (see the top of this file) a `local composition_source` inside
+# boot_once() leaves the banner referencing an UNBOUND variable, so the script
+# died at its own PASS line with exit 1 and `exit 0` was unreachable
+# (MAJOR-2 — a gate that cannot print its own PASS is not a gate). boot_once()
+# writes the last boot's face here; the banner reads it.
+LAST_COMPOSITION_SOURCE=""
+
 boot_once() {
   local label="$1" expected_outcome="$2"
   local boot_log="$SANDBOX/boot-$label.log"
@@ -793,10 +969,14 @@ boot_once() {
     fi
   fi
 
-  echo "concerto-probe: [$label] booting dsh --profile $PROFILE --patch ./cordis.yml --port 0 $NO_OPEN"
+  echo "concerto-probe: [$label] booting dsh --profile $PROFILE --patch ./cordis.yml --patch $LLM_SEED_PATCH --port 0 $NO_OPEN"
   # NO_OPEN is either empty or exactly one flag; unquoted on purpose so the
   # empty case adds no argument at all. shellcheck disable=SC2086
-  dsh --profile "$PROFILE" --patch ./cordis.yml --port 0 $NO_OPEN >"$boot_log" 2>&1 &
+  # The second --patch is the llm-pi-ai route seed (see the seeding block
+  # above): composed into the entry list before mount, so the explore seat's
+  # provider is registered at apply() time on a 0.2.x FIRST boot — the race
+  # the removed settings.yaml surface lost.
+  dsh --profile "$PROFILE" --patch ./cordis.yml --patch "$LLM_SEED_PATCH" --port 0 $NO_OPEN >"$boot_log" 2>&1 &
   local dsh_pid=$!
 
   local port=""
@@ -838,8 +1018,9 @@ boot_once() {
   # joins ctx.llm.listProviders() (registered routes) with the configurable-
   # provider directory server-side. 0.1.2: the helper performs the client's
   # own two Remote calls and applies the same join (see WEB_RPC_MJS above).
-  # Settings-driven routes register during plugin load, before the readiness
-  # line, so one call suffices.
+  # The seeded pi-ai route registers during plugin load — its config rides the
+  # second --patch overlay composed into the entry list before mount, so it is
+  # registered before the readiness line and one call suffices.
   local llm_resp="$SANDBOX/llm.providers-$label.json"
   local rpc_err="$SANDBOX/web-rpc-$label.err"
   if ! node "$WEB_RPC_MJS" providers "$port" "$token" >"$llm_resp" 2>"$rpc_err"; then
@@ -861,6 +1042,22 @@ boot_once() {
     fi
     sleep 1
   done
+
+  # P4.5-T6 FACE B: the agentPresets/read FETCH happens HERE, inside the live
+  # window, while the server is still up. The first draft issued it down in the
+  # FACE B assertion block (~line 1250), which runs AFTER the SIGTERM below — so
+  # it connected to a dead port and died with ECONNREFUSED. Gate 8 running for
+  # real caught it (gate8-probe-attempt3.log). Only the FETCH is live-bound; the
+  # assertions on the bytes keep running below against the saved file, exactly
+  # like the roster/provider RPCs whose responses are already saved here.
+  local read_json="$SANDBOX/agentPresets.read-$label.json"
+  if ! node "$WEB_RPC_MJS" read "$port" "$token" concerto >"$read_json" 2>"$rpc_err"; then
+    cat "$rpc_err" >&2
+    fail "[$label] FACE B: agentPresets/read RPC failed on the live window — NO fallback to the materialized file is permitted"
+  fi
+  [[ -s "$read_json" ]] \
+    || fail "[$label] FACE B: the agentPresets/read RPC saved no bytes to $read_json"
+  echo "concerto-probe: [$label] FACE B fetched $(wc -c <"$read_json") bytes of agentPresets/read RPC response while the server was still live"
 
   kill -TERM "$dsh_pid" 2>/dev/null || true
   wait "$dsh_pid"
@@ -941,23 +1138,134 @@ boot_once() {
   fi
   grep -q "\[omo-agents\] concerto preset $expected_outcome at " "$boot_log" \
     || fail "[$label] expected sync outcome '$expected_outcome' not logged"
-  grep -q "\[omo-agents\] concerto roster: " "$boot_log" \
-    || fail "[$label] roster line missing (inject callback never ran?)"
-  grep -q "concerto:user" "$boot_log" \
-    || fail "[$label] plugin-side roster does not list concerto as a user preset"
+  # P4.5-T6 roster-line assertions. The pre-T6 pair here was a prefix-only
+  # grep plus `grep -q "concerto:user"`, and BOTH were weak: the prefix
+  # matched an EMPTY roster (T1 Q-3 §1.4 measured that a first list() can
+  # return [] at the inject instant), and `concerto:user` asserted a `trust`
+  # level that 0.2.x never produces — its roster row has no trust key at all
+  # (agent-preset-registry/src/index.ts:156-162 @ dsh-v0.2.0-rc.2), so the
+  # plugin printed `concerto:?` and this grep was RED on every 0.2.x boot.
+  # Now: the whole line is derived from the shipped formatter (never restated
+  # here), it must carry at least one row, it must name concerto, and the
+  # dead `trust` vocabulary plus its `?` placeholder are asserted ABSENT.
+  # The prefix and the concerto row TOKEN are derived separately, both from the
+  # shipped formatter. The first draft derived
+  # formatConcertoRosterLine([{id:'concerto'}]) and grepped that WHOLE string
+  # as a contiguous substring — which is FALSE on a real boot, because the live
+  # roster carries the other rows first:
+  #   [omo-agents] concerto roster: standard:broken=absent,ptc:broken=absent,
+  #       minimal:broken=absent,cordis:broken=absent,concerto:broken=absent
+  # Gate 8 running for real caught it (archived as gate8-probe-attempt.log:
+  # "roster line missing or drifted"). A derived expectation that does not match
+  # reality is still a wrong expectation, even when the code under test is right.
+  local expected_roster_prefix expected_roster_token expected_roster_empty
+  expected_roster_prefix="$(cd "$REPO_ROOT" && node --input-type=module -e "
+    import('./patches/omo-dsh/omo-agents/src/concerto-preset.ts')
+      .then((m) => process.stdout.write(
+        m.formatConcertoRosterLine([]).replace(m.CONCERTO_ROSTER_EMPTY, '')))
+  ")" || fail "[$label] could not derive the roster prefix from the shipped formatter"
+  expected_roster_token="$(cd "$REPO_ROOT" && node --input-type=module -e "
+    import('./patches/omo-dsh/omo-agents/src/concerto-preset.ts')
+      .then((m) => process.stdout.write(
+        m.formatConcertoRosterLine([{ id: 'concerto' }])
+          .slice(m.formatConcertoRosterLine([]).replace(m.CONCERTO_ROSTER_EMPTY, '').length)))
+  ")" || fail "[$label] could not derive the concerto roster token"
+  # The empty roster prints `${prefix}${CONCERTO_ROSTER_EMPTY}` — the token is
+  # NOT a `id:broken=` row, so a guard grepping 'concerto:broken=EMPTY' can
+  # never fire (PR #12 review: dead guard). Derive the empty line itself.
+  expected_roster_empty="$(cd "$REPO_ROOT" && node --input-type=module -e "
+    import('./patches/omo-dsh/omo-agents/src/concerto-preset.ts')
+      .then((m) => process.stdout.write(m.formatConcertoRosterLine([])))
+  ")" || fail "[$label] could not derive the empty-roster line from the shipped formatter"
+  [[ -n "$expected_roster_prefix" && -n "$expected_roster_token" && -n "$expected_roster_empty" ]] \
+    || fail "[$label] the derived roster prefix/token/empty line came back empty"
+  echo "concerto-probe: [$label] derived roster assertion: prefix=\"$expected_roster_prefix\" token=$expected_roster_token empty=\"$expected_roster_empty\""
+  grep -qF "$expected_roster_prefix" "$boot_log" \
+    || fail "[$label] roster line missing or drifted (want the shipped prefix: $expected_roster_prefix)"
+  grep -F "$expected_roster_prefix" "$boot_log" | grep -qF "$expected_roster_token" \
+    || fail "[$label] the booted roster line does not list concerto as an UNBROKEN row — a bare prefix or the EMPTY token is not evidence of a roster (T1 Q-3 §1.4: a first list() may be empty)"
+  if grep -qF "$expected_roster_empty" "$boot_log"; then
+    fail "[$label] the roster read came back EMPTY — registration never landed in the roster the plugin read"
+  fi
+  if grep -F "$expected_roster_prefix" "$boot_log" | grep -qE ':[?]|\buser\b|\bsystem\b'; then
+    fail "[$label] the dead 0.1.5 trust vocabulary is back on the roster line (:? / :user / :system) — P4.5-T6 removed it from the shipped print"
+  fi
+  # P4.5-T5: the registration outlet must be observable in EXACTLY ONE of its
+  # two shapes — the 0.2.x readback-proven success (whole-line -F grep: the
+  # marker carries the id AND the verdict, so an empty roster or a prefix-only
+  # match cannot satisfy it — arbitration 边界B), or the 0.1.5 face-absent
+  # fallback where the materialized path owns the registration. A silent third
+  # outcome — the inject callback never reaching the outlet — fails here. The
+  # register FAILED form is already asserted ABSENT by the `concerto .* FAILED`
+  # grep above; the two positive forms are mutually exclusive below (both in
+  # one boot would mean the capability probe and the outcome disagree).
+  if grep -qF "[omo-agents] concerto preset registered: id=concerto broken=absent" "$boot_log"; then
+    if grep -qF "[omo-agents] concerto preset register face absent, materialized path only" "$boot_log"; then
+      fail "[$label] BOTH registration shapes logged — face probe and outcome disagree"
+    fi
+  else
+    grep -qF "[omo-agents] concerto preset register face absent, materialized path only" "$boot_log" \
+      || fail "[$label] T5 registration outlet not observable (neither success nor face-absent marker)"
+  fi
 
-  # External assertions: the RPC roster lists all 5 presets — the official 4 at
-  # system trust plus concerto at user trust, i.e. the SAME roster level — and
-  # the concerto entry carries OUR preset.yml display name (协奏 / Concerto).
-  # $official_ids is transport-adaptive (0.1.2 renamed code → ptc, see above).
+  # External assertions: the RPC roster lists all 5 presets — the official 4
+  # plus concerto — and the concerto entry carries OUR preset.yml display name
+  # (协奏 / Concerto). $official_ids is transport-adaptive (0.1.2 renamed code
+  # → ptc, see above).
   for id in $official_ids; do
     grep -q "\"id\":\"$id\"" "$api_resp" \
       || fail "[$label] official preset '$id' missing from the roster RPC response"
   done
   [[ "$found" == "1" ]] \
     || fail "[$label] concerto NOT in the roster RPC after 30s — registration broken"
-  grep -q '"trust":"user"[^}]*"id":"concerto"\|"id":"concerto"[^}]*"trust":"user"' "$api_resp" \
-    || fail "[$label] concerto entry does not carry trust:\"user\""
+  # P4.5-T6: the roster-row vocabulary assertion splits by RUNTIME FACE, and
+  # the discriminator is the plugin's OWN outlet marker (asserted mutually
+  # exclusive above), not a version string parsed here.
+  #   * 0.1.5 — the row really does carry trust:"user"; that assertion stays,
+  #     because deleting it would make the 0.1.5 leg WEAKER, which is not
+  #     what a vocabulary migration is for.
+  #   * 0.2.x — `trust` is not a key of the row at all (the row is built by
+  #     one literal at agent-preset-registry/src/index.ts:156-162 @
+  #     dsh-v0.2.0-rc.2: id/name/description/order/broken). The registry's
+  #     own level field is `isDefault`, and it is added ONLY by
+  #     remoteExportList() (:171-174) — which returns an ENVELOPE
+  #     {presets:[…]}, NOT an array. Consuming it as an array throws
+  #     TypeError inside cordis and is swallowed into the logger, i.e. the
+  #     failure is SILENT, so the shape is resolved explicitly here and the
+  #     shape actually seen is PRINTED for the audit.
+  if grep -qF "[omo-agents] concerto preset registered: id=concerto broken=absent" "$boot_log"; then
+    node -e '
+      const fs = require("node:fs")
+      const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+      const value = body?.result?.value
+      let rows
+      let shape
+      if (Array.isArray(value)) { rows = value; shape = "array" }
+      else if (value && Array.isArray(value.presets)) { rows = value.presets; shape = "envelope{presets}" }
+      else { console.error("roster RPC value is neither an array nor an {presets:[…]} envelope: " + JSON.stringify(value).slice(0, 200)); process.exit(1) }
+      const row = rows.find((r) => r && r.id === "concerto")
+      if (row === undefined) { console.error("no concerto row in the roster RPC (" + rows.length + " rows)"); process.exit(1) }
+      if (row.isDefault !== false) { console.error("concerto.isDefault is " + JSON.stringify(row.isDefault) + ", want false"); process.exit(1) }
+      if ("trust" in row) { console.error("concerto row still carries a trust key: " + JSON.stringify(row.trust)); process.exit(1) }
+      if ("broken" in row) { console.error("concerto row is BROKEN: " + JSON.stringify(row.broken)); process.exit(1) }
+      process.stderr.write("roster RPC shape=" + shape + " rows=" + rows.length + " concerto{isDefault:false,trust:ABSENT,broken:ABSENT}\n")
+    ' "$api_resp" \
+      || fail "[$label] the 0.2.x roster RPC row for concerto is not isDefault:false with trust/broken ABSENT (see the shape line above)"
+  else
+    # T13 ADJUDICATION (Review A MINOR): capability-selected fork, KEPT. The
+    # selection above branches on the plugin's OWN boot marker
+    # (`registered: id=concerto broken=absent`), not on a version string —
+    # this else-leg fires exactly when the boot log instead says `register face
+    # absent`, i.e. it is the mutual-exclusion counterpart asserted at
+    # :1195-1201. On the pinned 0.2.x it never fires; it stays (a) to keep
+    # that mutual-exclusion honest — deleting it would leave the face-absent
+    # shape unasserted, so an outlet that flipped back to file-only mode would
+    # pass this probe by falling off its own grep map, and (b) to keep
+    # pre-cutover logs probeable. Not dead weight: the negative half of the
+    # canary.
+    grep -q '"trust":"user"[^}]*"id":"concerto"\|"id":"concerto"[^}]*"trust":"user"' "$api_resp" \
+      || fail "[$label] 0.1.5 leg: concerto entry does not carry trust:\"user\""
+  fi
   grep -q '协奏' "$api_resp" \
     || fail "[$label] concerto entry missing OUR preset.yml name (协奏) — not the real preset?"
   grep -q 'Concerto' "$api_resp" \
@@ -983,93 +1291,243 @@ boot_once() {
   if grep -q "__OMO_SISYPHUS_SYSTEM_PROMPT__" "$materialized"; then
     fail "[$label] materialized composition still carries the persona sentinel (rendering skipped?)"
   fi
-  grep -q "prefix: |-" "$materialized" \
-    || fail "[$label] materialized persona is not a `prefix: |-` block scalar"
-  grep -q "      # Orchestrator Role" "$materialized" \
-    || fail "[$label] materialized persona missing the Orchestrator Role section"
-  grep -q "      # Delegation Discipline" "$materialized" \
-    || fail "[$label] materialized persona missing the Delegation Discipline section"
-  grep -q "      ## Hard Blocks" "$materialized" \
-    || fail "[$label] materialized persona missing the injected Hard Blocks section"
 
-  # T11 (FR-4/FR-5 binding, form A): the explore tool-subagent instance is part
-  # of the mounted composition. Content assertions on the materialized file,
-  # then the real schema gate (the installed dsh's own Config) below.
-  grep -q "^    - id: tool-subagent-explore$" "$materialized" \
-    || fail "[$label] explore tool-subagent row missing from the materialized composition"
-  grep -q "^        toolName: explore$" "$materialized" \
-    || fail "[$label] explore row missing toolName: explore"
-  grep -q "^        provider: spawn$" "$materialized" \
-    || fail "[$label] explore row missing provider: spawn"
-  if grep -q "__OMO_EXPLORE_PERSONA__\|__OMO_EXPLORE_AGENT_OPTIONS__" "$materialized"; then
-    fail "[$label] materialized composition still carries a T11 sentinel (rendering skipped?)"
+  # ── P4.5-T6: TWO content assertion faces, written separately, NO fallback ──
+  #
+  # Which face proves the composition depends on WHO supplies the composition
+  # to the running host, and that is decided by the plugin's OWN capability
+  # marker in this very boot log — not by a version string, and NEVER by
+  # "try the remote face and fall back to the file if it is missing":
+  #
+  #   FACE A — 0.1.5 (`register face absent`): the host composes from the
+  #     MATERIALIZED FILE (file discovery owns `agentPresets/read` there), so
+  #     the file is the honest input and the verbatim line anchors below hold.
+  #     T13 ADJUDICATION (Review A MINOR): KEPT — capability-selected by the
+  #     plugin's own boot marker, never by a version string; post-D17 it is
+  #     the probe's face-absent half (mutual exclusion at :1195-1201) and the
+  #     only way to honestly probe pre-cutover logs. Dead-weight test applied
+  #     and failed: deleting it would leave the face-absent outcome unasserted,
+  #     so an outlet regressing to file-only mode would pass by vanishing from
+  #     this probe's grep map — the exact silent shape the canary guards.
+  #
+  #   FACE B — 0.2.x (`registered: id=concerto broken=absent`): the host
+  #     composes from the REGISTERED DEFINITION, and `agentPresets/read` is
+  #     the face that definition is readable through. The materialized file
+  #     still exists — the write contract stays, gate 4 depends on it — but
+  #     NOTHING READS IT on this runtime, so a passing grep against it proves
+  #     only that we wrote bytes, not that the concerto mode boots with them.
+  #     Falling back to FACE A here would keep the probe green through exactly
+  #     the regression this canary exists to catch (a preset that never
+  #     registers, or registers and then vanishes, while yesterday's file sits
+  #     on disk looking fine) — so if the read RPC fails, this probe FAILS.
+  #
+  # The two faces are NOT merged into one grep list: FACE A keeps the
+  # rendered-text anchors it is entitled to (flow sequences, quoted scalars),
+  # FACE B asserts PARSED VALUES element by element, because `content` is a
+  # yaml.dump() of the parsed entry list and flow sequences/quotes do not
+  # survive it. See ASSERT_READ_FACE_MJS above for the measured shape.
+  local composition_source=""
+  local read_content=""
+  local composition_for_proofs=""
+  if grep -qF "[omo-agents] concerto preset registered: id=concerto broken=absent" "$boot_log"; then
+    composition_source="FACE B / 0.2.x agentPresets/read content (materialized file has no reader here)"
+    read_content="$SANDBOX/agentPresets.read-$label.yml"
+    # NO RPC is issued here. The response was fetched in the live window above
+    # (`read_json` is bound there) because this block runs after the server was
+    # SIGTERM'd; re-issuing it connected to a dead port and died ECONNREFUSED.
+    # The guard below is what keeps that from ever degrading into a silent skip.
+    [[ -f "$read_json" ]] \
+      || fail "[$label] FACE B: no saved agentPresets/read response to assert on — the live-window fetch did not run"
+    # The expected name comes from OUR preset.yml (the same single source the
+    # plugin registers from), re-read here rather than restated as a literal.
+    node -e '
+      const fs = require("node:fs")
+      const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+      const value = body?.result?.value
+      if (!value || typeof value.content !== "string" || value.content.length === 0) {
+        console.error("READ FAIL: the agentPresets/read document carries no content: " + JSON.stringify(body).slice(0, 200))
+        process.exit(1)
+      }
+      if (value.agentPreset !== "concerto") {
+        console.error("READ FAIL: the document is for " + JSON.stringify(value.agentPreset) + ", not concerto")
+        process.exit(1)
+      }
+      // With `node -e <script> A B`, process.argv is [nodePath, A, B] — so
+      // the read JSON is argv[1] and the expected name is argv[2], NOT
+      // argv[3]. (An earlier draft read argv[3] here, which is undefined, so
+      // this comparison was `name !== undefined` and the face could never go
+      // green. Same index class of bug as the web-rpc preset-id argv[4].)
+      if (value.name !== process.argv[2]) {
+        console.error("READ FAIL: document name " + JSON.stringify(value.name) + " is not OUR preset.yml name " + JSON.stringify(process.argv[2]))
+        process.exit(1)
+      }
+      process.stdout.write(value.content)
+     ' "$read_json" "$PRESET_YML_NAME" > "$read_content" \
+      || fail "[$label] FACE B: could not extract the concerto composition from the read RPC document"
+    # The redirection on the line above is the ONLY thing that puts these bytes
+    # on disk, and the guard has to be explicit: without `set -e`, a failed
+    # `wc -c <"$read_content"` inside a command substitution just prints an error
+    # and carries on — so a missing file would surface three lines later as a
+    # misleading "does not match the roster-derived expectations" RED. A
+    # missing/empty extraction is its OWN failure and must say so.
+    # (MAJOR-1: the first draft had NO redirection at all — ~98 KB went to the
+    # probe's OWN stdout while every consumer below read a path that never
+    # existed. t6-scenario.sh:194 HAD the redirect: the two consumers forked and
+    # the fork was the bug. Recorded in the T6 report §修复轮登记.)
+    [[ -s "$read_content" ]] \
+      || fail "[$label] FACE B: read content extraction produced no bytes: $read_content"
+    echo "concerto-probe: [$label] FACE B read $(wc -c <"$read_content") bytes of agentPresets/read content for concerto"
+    # Expected `!!js` gate count, taken from the WRITE face (the materialized
+    # file both faces are rendered from) and handed to the validator as an
+    # EXTERNAL expectation. Self-counting the read face cannot catch a tag that
+    # silently became a string — dropping it lowers both sides of the reader's
+    # own tally at once (MINOR-2, measured). The file is not used as the
+    # assertion INPUT here; it is used only to state how many gates must exist,
+    # which is a property of OUR render, not of the bytes under assertion.
+    local expected_js_count
+    expected_js_count="$(grep -c '!!js ' "$materialized" || true)"
+    [[ "$expected_js_count" =~ ^[0-9]+$ ]] \
+      || fail "[$label] FACE B: could not count the \`!!js\` gates in $materialized"
+    [[ "$expected_js_count" -gt 0 ]] \
+      || fail "[$label] FACE B: the materialized face declares ZERO \`!!js\` gates — the render changed, re-derive the expectation"
+    echo "concerto-probe: [$label] FACE B expected \`!!js\` gates from the write face: $expected_js_count"
+    node "$ASSERT_READ_FACE_MJS" "$DSH_NM_UNION" "$read_content" "$ROSTER_EXPECTATIONS_JSON" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" "$expected_js_count" \
+      || fail "[$label] FACE B: the read-face content does not match the roster-derived expectations element-wise"
+    # The installed dsh's own schema gate runs against the bytes the host can
+    # actually read — on this leg that is the read content, not the file.
+    node "$VALIDATE_EXPLORE_MJS" "$DSH_NM_UNION" "$read_content" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" "$EXPLORE_DENY_JSON" "$EXPLORE_MAXDEPTH" \
+      || fail "[$label] FACE B: the explore row in the read content failed validation against the installed dsh-tool-subagent Config"
+    composition_for_proofs="$read_content"
+  else
+    # T13 ADJUDICATION (Review A MINOR): KEPT — this FACE A branch is reached
+    # only when the FACE B marker was absent from THIS boot log (capability
+    # selection, see the FACE A/B block above and :1195-1201); on the pinned
+    # 0.2.x the probe selects FACE B and this leg never runs.
+    composition_source="FACE A / 0.1.5 materialized file (file discovery owns the composition)"
+    echo "concerto-probe: [$label] $composition_source"
+    grep -q "prefix: |-" "$materialized" \
+      || fail "[$label] materialized persona is not a `prefix: |-` block scalar"
+    grep -q "      # Orchestrator Role" "$materialized" \
+      || fail "[$label] materialized persona missing the Orchestrator Role section"
+    grep -q "      # Delegation Discipline" "$materialized" \
+      || fail "[$label] materialized persona missing the Delegation Discipline section"
+    grep -q "      ## Hard Blocks" "$materialized" \
+      || fail "[$label] materialized persona missing the injected Hard Blocks section"
+
+    # T11 (FR-4/FR-5 binding, form A): the explore tool-subagent instance is
+    # part of the mounted composition. FACE A keeps the rendered-text anchors:
+    # a flow sequence and a quoted scalar are exactly what WE render, so on
+    # this face a whole-line grep is the strictest honest form.
+    grep -q "^    - id: tool-subagent-explore$" "$materialized" \
+      || fail "[$label] explore tool-subagent row missing from the materialized composition"
+    grep -q "^        toolName: explore$" "$materialized" \
+      || fail "[$label] explore row missing toolName: explore"
+    grep -q "^        provider: spawn$" "$materialized" \
+      || fail "[$label] explore row missing provider: spawn"
+    if grep -q "__OMO_EXPLORE_PERSONA__\|__OMO_EXPLORE_AGENT_OPTIONS__" "$materialized"; then
+      fail "[$label] materialized composition still carries a T11 sentinel (rendering skipped?)"
+    fi
+    grep -q "^        persona: |-$" "$materialized" \
+      || fail "[$label] explore persona is not a |- block scalar"
+    grep -q "          # Explore: Read-Only Retrieval Agent" "$materialized" \
+      || fail "[$label] explore persona missing the T10 persona heading"
+    grep -q "^          provider: \"$EXPLORE_PROVIDER\"$" "$materialized" \
+      || fail "[$label] explore agentOptions provider mismatch (want $EXPLORE_PROVIDER)"
+    grep -q "^          model: \"$EXPLORE_MODEL\"$" "$materialized" \
+      || fail "[$label] explore agentOptions model mismatch (want $EXPLORE_MODEL)"
+    # P2-T15 shape (FACE A only): the rendered deny is the roster-computed list
+    # (write/edit + the 10 delegation toolNames, roster order) emitted by the
+    # P2-T15 sentinel renderer as a JSON-quoted YAML FLOW sequence at the row's
+    # 10-space content indent. This is the assertion that cannot survive the read
+    # face — flow expands to block there — so it lives here, on the face whose
+    # bytes really are flow, and never on FACE B.
+    grep -qxF -- "          deny: [$EXPLORE_DENY_SEQUENCE]" "$materialized" \
+      || fail "[$label] explore toolFilter deny list missing or not the roster-computed sequence (T12 + F1, P2-T15 shape: want deny: [$EXPLORE_DENY_SEQUENCE])"
+    # maxDepth pin is ROSTER-DERIVED for the same reason as the deny pin above:
+    # $EXPLORE_MAXDEPTH was resolved from src/roster.ts at probe start, so a
+    # roster edit (like the 2026-09-13 target-row correction, D-2026-09-13-01)
+    # cannot leave a stale literal here.
+    grep -q "^        maxDepth: $EXPLORE_MAXDEPTH$" "$materialized" \
+      || fail "[$label] explore maxDepth: $EXPLORE_MAXDEPTH missing (T13 roster-derived value)"
+
+    # P2-T20 (FACE A): the P2-T15 explore pins above, generalized to EVERY
+    # roster delegation row. Everything asserted here is derived at probe start
+    # from src/roster.ts (toolName ids, per-row deny/allow lists, maxDepth) —
+    # no literal roster list is restated in this script. The explore row is
+    # checked twice (here and by the explicit T11 greps above) by design: the
+    # named explore assertions stay as the pinned T11 evidence.
+    local delegation_id row_maxdepth row_deny_json row_allow_plain row_deny_sequence row_block
+    while IFS= read -r delegation_id; do
+      [[ -n "$delegation_id" ]] || continue
+      grep -q "^    - id: tool-subagent-$delegation_id$" "$materialized" \
+        || fail "[$label] materialized composition has no '- id: tool-subagent-$delegation_id' row"
+      grep -q "^        toolName: $delegation_id$" "$materialized" \
+        || fail "[$label] materialized row tool-subagent-$delegation_id has no 'toolName: $delegation_id'"
+      row_maxdepth="$(printf '%s\n' "$DELEGATION_MAXDEPTHS" | grep "^$delegation_id=" | cut -d= -f2- || true)"
+      [[ -n "$row_maxdepth" ]] || fail "[$label] no roster maxDepth expectation for delegation row '$delegation_id'"
+      grep -q "^        maxDepth: $row_maxdepth$" "$materialized" \
+        || fail "[$label] materialized row '$delegation_id' maxDepth != roster value $row_maxdepth"
+      # WP2 MINOR-1 + review A MINOR-C/NIT-3, same round as the validator's
+      # else branches. Two defects lived here: the greps only fired when the
+      # roster DECLARED a list, so for the orchestrator (`atlas`) and the
+      # allowlist class (`multimodal-looker`) they asserted nothing at all; and
+      # the absence net matched only the flow-sequence shape (`deny: [`), while
+      # its span was the WHOLE row — so a persona line at the same 10-space
+      # indent that merely begins `deny: [read]` was reported as an injected
+      # filter (measured: review A FA7), and an injected block-style
+      # `deny:` + `- read` was invisible.
+      # Now: the span is the row's `toolFilter` SUB-block (the 8-space key's
+      # children, nothing else), both shapes are recognised, and the positive
+      # greps are row-scoped too — a deny list on some OTHER row used to
+      # satisfy them.
+      row_block="$(awk -v id="    - id: tool-subagent-$delegation_id" \
+        'index($0,id)==1{f=1;next} f&&/^    - id: /{exit} f{print}' "$materialized")"
+      [[ -n "$row_block" ]] \
+        || fail "[$label] FACE A: the materialized span of row '$delegation_id' is empty — every absence assertion below would be vacuous"
+      filter_block="$(printf '%s\n' "$row_block" | awk '/^        toolFilter:/{f=1;next} f&&/^        [^ ]/{exit} f{print}')"
+      row_has_deny="$(printf '%s\n' "$filter_block" | grep -c '^          deny:' || true)"
+      row_has_allow="$(printf '%s\n' "$filter_block" | grep -c '^          allow:' || true)"
+      row_deny_json="$(printf '%s\n' "$DELEGATION_DENIES" | grep "^$delegation_id=" | cut -d= -f2- || true)"
+      if [[ -n "$row_deny_json" ]]; then
+        [[ -n "$filter_block" ]] \
+          || fail "[$label] FACE A: row '$delegation_id' renders NO toolFilter sub-block at all, but the roster declares a deny list for it"
+        row_deny_sequence="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).map((n) => JSON.stringify(n)).join(", "))' "$row_deny_json")" \
+          || fail "[$label] could not build the rendered deny sequence for '$delegation_id' from $row_deny_json"
+        printf '%s\n' "$filter_block" | grep -qxF -- "          deny: [$row_deny_sequence]" \
+          || fail "[$label] materialized row '$delegation_id' deny list missing or not the roster-computed sequence (want deny: [$row_deny_sequence] inside this row's toolFilter block)"
+      elif [[ "$row_has_deny" != "0" ]]; then
+        fail "[$label] FACE A: row '$delegation_id' carries a deny list (flow or block) the roster does not declare — the roster gives this class NO toolFilter.deny, so the key must be ABSENT from this row's toolFilter block"
+      fi
+      row_allow_plain="$(printf '%s\n' "$DELEGATION_ALLOWS" | grep "^$delegation_id=" | cut -d= -f2- || true)"
+      if [[ -n "$row_allow_plain" ]]; then
+        [[ -n "$filter_block" ]] \
+          || fail "[$label] FACE A: row '$delegation_id' renders NO toolFilter sub-block at all, but the roster declares an allow list for it"
+        printf '%s\n' "$filter_block" | grep -qxF -- "          allow: [$row_allow_plain]" \
+          || fail "[$label] materialized row '$delegation_id' allow list missing or not the roster-derived list (want allow: [$row_allow_plain] inside this row's toolFilter block)"
+      elif [[ "$row_has_allow" != "0" ]]; then
+        fail "[$label] FACE A: row '$delegation_id' carries an allow list (flow or block) the roster does not declare — only the allowlist class renders toolFilter.allow"
+      fi
+      if [[ -z "$row_deny_json" && -z "$row_allow_plain" ]] \
+        && printf '%s\n' "$row_block" | grep -q '^        toolFilter:'; then
+        fail "[$label] FACE A: row '$delegation_id' renders a toolFilter block the roster declares none of (orchestrator rows carry no filter key at all)"
+      fi
+    done <<< "$DELEGATION_IDS"
+    # Uniform maxDepth: exactly one maxDepth line per delegation row, all equal
+    # to the roster's uniform value (the spec's ④ shape, roster-derived).
+    local materialized_depth_lines
+    materialized_depth_lines="$(grep -c "^        maxDepth: $UNIFORM_MAXDEPTH$" "$materialized" || true)"
+    [[ "$materialized_depth_lines" == "$DELEGATION_COUNT" ]] \
+      || fail "[$label] expected $DELEGATION_COUNT maxDepth lines at the roster-uniform value $UNIFORM_MAXDEPTH, found $materialized_depth_lines"
+    local materialized_toolnames
+    materialized_toolnames="$(grep -c '^        toolName: ' "$materialized" || true)"
+    [[ "$materialized_toolnames" == "$DELEGATION_COUNT" ]] \
+      || fail "[$label] expected $DELEGATION_COUNT delegation toolName lines, found $materialized_toolnames"
+
+    node "$VALIDATE_EXPLORE_MJS" "$DSH_NM_UNION" "$materialized" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" "$EXPLORE_DENY_JSON" "$EXPLORE_MAXDEPTH" \
+      || fail "[$label] FACE A: explore row failed validation against the installed dsh-tool-subagent Config"
+    composition_for_proofs="$materialized"
   fi
-  grep -q "^        persona: |-$" "$materialized" \
-    || fail "[$label] explore persona is not a |- block scalar"
-  grep -q "          # Explore: Read-Only Retrieval Agent" "$materialized" \
-    || fail "[$label] explore persona missing the T10 persona heading"
-  grep -q "^          provider: \"$EXPLORE_PROVIDER\"$" "$materialized" \
-    || fail "[$label] explore agentOptions provider mismatch (want $EXPLORE_PROVIDER)"
-  grep -q "^          model: \"$EXPLORE_MODEL\"$" "$materialized" \
-    || fail "[$label] explore agentOptions model mismatch (want $EXPLORE_MODEL)"
-  # P2-T15 shape: the rendered deny is the roster-computed list (write/edit +
-  # the 10 delegation toolNames, roster order) emitted by the P2-T15 sentinel
-  # renderer as a JSON-quoted YAML flow sequence at the row's 10-space content
-  # indent. The expected line is assembled from the same $EXPLORE_DENY_JSON the
-  # schema gate above compared against, so this pin cannot go stale on its own;
-  # P2-T20 generalizes it to every roster row.
-  grep -qxF -- "          deny: [$EXPLORE_DENY_SEQUENCE]" "$materialized" \
-    || fail "[$label] explore toolFilter deny list missing or not the roster-computed sequence (T12 + F1, P2-T15 shape: want deny: [$EXPLORE_DENY_SEQUENCE])"
-  # maxDepth pin is ROSTER-DERIVED for the same reason as the deny pin above:
-  # $EXPLORE_MAXDEPTH was resolved from src/roster.ts at probe start, so a
-  # roster edit (like the 2026-09-13 target-row correction, D-2026-09-13-01)
-  # cannot leave a stale literal here.
-  grep -q "^        maxDepth: $EXPLORE_MAXDEPTH$" "$materialized" \
-    || fail "[$label] explore maxDepth: $EXPLORE_MAXDEPTH missing (T13 roster-derived value)"
-
-  # P2-T20: the P2-T15 explore pins above, generalized to EVERY roster
-  # delegation row. Everything asserted here is derived at probe start from
-  # src/roster.ts (toolName ids, per-row deny/allow lists, maxDepth) — no
-  # literal roster list is restated in this script. The explore row is checked
-  # twice (here and by the explicit T11 greps above) by design: the named
-  # explore assertions stay as the pinned T11 evidence.
-  local delegation_id row_maxdepth row_deny_json row_allow_plain row_deny_sequence
-  while IFS= read -r delegation_id; do
-    [[ -n "$delegation_id" ]] || continue
-    grep -q "^    - id: tool-subagent-$delegation_id$" "$materialized" \
-      || fail "[$label] materialized composition has no '- id: tool-subagent-$delegation_id' row"
-    grep -q "^        toolName: $delegation_id$" "$materialized" \
-      || fail "[$label] materialized row tool-subagent-$delegation_id has no 'toolName: $delegation_id'"
-    row_maxdepth="$(printf '%s\n' "$DELEGATION_MAXDEPTHS" | grep "^$delegation_id=" | cut -d= -f2- || true)"
-    [[ -n "$row_maxdepth" ]] || fail "[$label] no roster maxDepth expectation for delegation row '$delegation_id'"
-    grep -q "^        maxDepth: $row_maxdepth$" "$materialized" \
-      || fail "[$label] materialized row '$delegation_id' maxDepth != roster value $row_maxdepth"
-    row_deny_json="$(printf '%s\n' "$DELEGATION_DENIES" | grep "^$delegation_id=" | cut -d= -f2- || true)"
-    if [[ -n "$row_deny_json" ]]; then
-      row_deny_sequence="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).map((n) => JSON.stringify(n)).join(", "))' "$row_deny_json")" \
-        || fail "[$label] could not build the rendered deny sequence for '$delegation_id' from $row_deny_json"
-      grep -qxF -- "          deny: [$row_deny_sequence]" "$materialized" \
-        || fail "[$label] materialized row '$delegation_id' deny list missing or not the roster-computed sequence (want deny: [$row_deny_sequence])"
-    fi
-    row_allow_plain="$(printf '%s\n' "$DELEGATION_ALLOWS" | grep "^$delegation_id=" | cut -d= -f2- || true)"
-    if [[ -n "$row_allow_plain" ]]; then
-      grep -qxF -- "          allow: [$row_allow_plain]" "$materialized" \
-        || fail "[$label] materialized row '$delegation_id' allow list missing or not the roster-derived list (want allow: [$row_allow_plain])"
-    fi
-  done <<< "$DELEGATION_IDS"
-  # Uniform maxDepth: exactly one maxDepth line per delegation row, all equal to
-  # the roster's uniform value (the spec's ④ shape, roster-derived).
-  local materialized_depth_lines
-  materialized_depth_lines="$(grep -c "^        maxDepth: $UNIFORM_MAXDEPTH$" "$materialized" || true)"
-  [[ "$materialized_depth_lines" == "$DELEGATION_COUNT" ]] \
-    || fail "[$label] expected $DELEGATION_COUNT maxDepth lines at the roster-uniform value $UNIFORM_MAXDEPTH, found $materialized_depth_lines"
-  local materialized_toolnames
-  materialized_toolnames="$(grep -c '^        toolName: ' "$materialized" || true)"
-  [[ "$materialized_toolnames" == "$DELEGATION_COUNT" ]] \
-    || fail "[$label] expected $DELEGATION_COUNT delegation toolName lines, found $materialized_toolnames"
-
-  node "$VALIDATE_EXPLORE_MJS" "$DSH_NM_UNION" "$materialized" "$EXPLORE_PROVIDER" "$EXPLORE_MODEL" "$EXPLORE_DENY_JSON" "$EXPLORE_MAXDEPTH" \
-    || fail "[$label] explore row failed validation against the installed dsh-tool-subagent Config"
+  echo "concerto-probe: [$label] content assertion face: $composition_source"
 
   # T12 (P-4, AC-6 negative-a): the deny list is not just valid config — it is
   # ENFORCED. scripts/prove-explore-toolfilter.mjs runs the installed dsh's
@@ -1078,7 +1536,12 @@ boot_once() {
   # asserts write/edit never reach the child scope's model-facing tool list
   # (schemas/get/execute all deny), while read/grep/glob and the platform
   # shell survive. A live model session closes the loop in T20.
-  node "$REPO_ROOT/scripts/prove-explore-toolfilter.mjs" "$DSH_NM_UNION" "$materialized" \
+  # P4.5-T6: the row it enforces is read from $composition_for_proofs — the
+  # materialized file on FACE A (0.1.5) and the agentPresets/read content on
+  # FACE B (0.2.x), i.e. the bytes the running host can actually see on the
+  # runtime under test. Never hardcoded to the file: on 0.2.x that file has no
+  # reader, so enforcing against it would prove nothing about the live mode.
+  node "$REPO_ROOT/scripts/prove-explore-toolfilter.mjs" "$DSH_NM_UNION" "$composition_for_proofs" \
     || fail "[$label] explore toolFilter denial proof failed (T12 real-path enforcement)"
 
   # T13 (P-5, AC-6 negative-b): the depth cap is not just valid config — it is
@@ -1093,7 +1556,8 @@ boot_once() {
   # starts with the exact errored tool result "Error: subagent depth 3 exceeds
   # maxDepth 2"; the tool stays model-visible at the cap; a depth-0 parent
   # passes the same gate (control). A live model session closes the loop in T20.
-  node "$REPO_ROOT/scripts/prove-explore-maxdepth.mjs" "$DSH_NM_UNION" "$materialized" \
+  # P4.5-T6: same face-derived input as the T12 proof above.
+  node "$REPO_ROOT/scripts/prove-explore-maxdepth.mjs" "$DSH_NM_UNION" "$composition_for_proofs" \
     || fail "[$label] explore maxDepth=$EXPLORE_MAXDEPTH depth-cap proof failed (T13 real-path enforcement)"
 
   # T15 (P-7, AC-5 observation half): the session JSONL is the route
@@ -1180,7 +1644,8 @@ boot_once() {
   # default three-seat distribution is neither all-identical nor
   # all-delegation-same-seat; rule 3 (`route provider not registered`) is silent
   # because every distinct route provider registers here — the two default seats
-  # come from the llm-deepseek entry config + the llm-pi-ai settings seed above,
+  # come from the llm-deepseek entry config + the llm-pi-ai second --patch
+  # overlay seed above,
   # while any further provider a roster/env change adds would have to be seeded
   # too (the activity check below is the positive counterpart and names the
   # provider set it verified). The ONE summary line asserted just above is the
@@ -1192,7 +1657,29 @@ boot_once() {
     fail "[$label] a non-blocking route warning fired: $(grep -m1 '\[omo-agents\] route warning \[' "$boot_log") — the default three-seat distribution must be silent"
   fi
   if grep -q '\[omo-agents\] route provider not registered: ' "$boot_log"; then
-    fail "[$label] 'route provider not registered' fired although all $DISTINCT_PROVIDER_COUNT route providers are registered in this sandbox: $(grep -m1 '\[omo-agents\] route provider not registered: ' "$boot_log")"
+    # T10a review MINOR 1: the old wording ("…although all $DISTINCT_PROVIDER_COUNT
+    # route providers ARE registered in this sandbox") was honest only while the
+    # seed was the racing settings.yaml import — "registered, just late" was then
+    # the truth. After T10a the seed is structural (a --patch overlay composed
+    # into the row BEFORE mount), so if this marker fires the providers are NOT
+    # all registered and the clause would lie to whoever reads the failure. The
+    # message now reports only what this boot actually establishes, and keeps the
+    # two states distinguishable with observed evidence: the provider directory
+    # ($llm_resp, fetched while the server was live) lists the named provider
+    # active:true ⟺ the route registered LATE (after the settled check — the
+    # pre-T10a shape); absent/inactive ⟺ genuinely not registered. Nothing else
+    # would tell the operator either way: a patch row skipped by id/name drift is
+    # SILENT at boot — the skip-warn sink is renderConfigDump
+    # (dsh-app-boot/lib/index.js:3604), which emits only under --dump-config
+    # (:3639, verified @ 0.2.0-rc.2).
+    local missing_provider dir_state
+    missing_provider="$(grep -m1 '\[omo-agents\] route provider not registered: ' "$boot_log" | sed -n 's/.*route provider not registered: \([^ ]*\).*/\1/p')"
+    if grep -q "\"provider\":\"$missing_provider\"[^}]*\"active\":true" "$llm_resp"; then
+      dir_state="'$missing_provider' IS listed active:true in the provider directory (fetched while the server was live) — the route registered, but AFTER the settled provider check: the seed regressed to a late-registration path"
+    else
+      dir_state="'$missing_provider' is NOT listed active in that directory — the route is genuinely not registered; check the seed row id/name in $LLM_SEED_PATCH against the base bundle row (a skipped patch row never warns at boot — only --dump-config shows it)"
+    fi
+    fail "[$label] 'route provider not registered' fired for '$missing_provider' — $dir_state"
   fi
   if grep -q '\[omo-agents\] route provider check FAILED' "$boot_log"; then
     fail "[$label] route provider check FAILED — see line above"
@@ -1201,7 +1688,7 @@ boot_once() {
   # T14 runtime half → P2-T20(d): EVERY distinct provider the 11 roster routes
   # use holds a REGISTERED route at runtime — the sisyphus seat's provider from
   # the llm-deepseek adapter's entry config, the explore seat's provider from
-  # the llm-pi-ai adapter via the settings profile seeded above. The provider
+  # the llm-pi-ai adapter via the second --patch overlay seeded above. The provider
   # set is resolved from src/model-routes.ts ($ROUTE_PROVIDERS, roster order),
   # so a future third seat is covered automatically. Registration is the gate;
   # no live model call is made (no API keys in the sandbox). The explicit
@@ -1209,7 +1696,7 @@ boot_once() {
   grep -q "\"provider\":\"$SISYPHUS_PROVIDER\"[^}]*\"active\":true" "$llm_resp" \
     || fail "[$label] sisyphus provider '$SISYPHUS_PROVIDER' not ACTIVE in the provider directory (llm-deepseek adapter registration broken?)"
   grep -q "\"provider\":\"$EXPLORE_PROVIDER\"[^}]*\"active\":true" "$llm_resp" \
-    || fail "[$label] explore provider '$EXPLORE_PROVIDER' not ACTIVE in the provider directory (llm-pi-ai settings-profile registration broken?)"
+    || fail "[$label] explore provider '$EXPLORE_PROVIDER' not ACTIVE in the provider directory (llm-pi-ai patch-overlay seed registration broken?)"
   local route_provider
   while IFS= read -r route_provider; do
     [[ -n "$route_provider" ]] || continue
@@ -1217,6 +1704,8 @@ boot_once() {
       || fail "[$label] route provider '$route_provider' (used by the $ROSTER_SIZE roster routes) is NOT active in the provider directory"
     echo "concerto-probe: [$label] P2-T20(d) route provider active: $route_provider"
   done <<< "$ROUTE_PROVIDERS"
+  # Publish the face this boot asserted on, for the top-level PASS banner.
+  LAST_COMPOSITION_SOURCE="$composition_source"
 }
 
 # Boot 1: fresh sandbox — the preset is materialized.
@@ -1225,5 +1714,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (trust:user, name from our preset.yml) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the materialized composition); omo-hooks mounted as the second insert row with the FULL $EXPECTED_HOOK_COUNT-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, $EXPECTED_HOOK_COUNT lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines, derived from the manifest's own ported rows — P4-T16 replaced the stale "at P4-T3 = 0 since all six rows are pending", which has been false since T6) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO `skill … FAILED` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the materialized row, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and the materialized-composition grep both derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row materialized toolName/deny/allow/maxDepth greps generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (P4.5-T6 row vocabulary: the 0.2.x roster row is isDefault:false with trust/broken ABSENT over the {presets:[…]} roster RPC envelope, the 0.1.5 leg keeps its genuine trust:"user"; name from our preset.yml; the boot roster line prints concerto:broken=absent and NEVER the pre-T6 concerto:? placeholder, with an explicit EMPTY token if the roster read came back empty) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the composition ON THE ASSERTION FACE UNDER TEST — $LAST_COMPOSITION_SOURCE — and no __OMO_ residue on that face); omo-hooks mounted as the second insert row with the FULL $EXPECTED_HOOK_COUNT-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, $EXPECTED_HOOK_COUNT lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines, derived from the manifest's own ported rows — P4-T16 replaced the stale "at P4-T3 = 0 since all six rows are pending", which has been false since T6) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO `skill … FAILED` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the row on the assertion face under test, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and BOTH content faces derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row toolName/deny/allow/maxDepth checks generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH — TWO faces written separately with NO fallback between them: FACE A (0.1.5) verbatim line greps of the materialized file including its flow-sequence deny/allow pins, FACE B (0.2.x) the agentPresets/read document PARSED and compared ELEMENT-WISE against src/roster.ts, because content is a yaml.dump() of the parsed entry list where flow sequences expand to block sequences and redundant quotes drop); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS"
 exit 0

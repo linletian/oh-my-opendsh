@@ -1,6 +1,102 @@
 // ulw-execute/live-state.ts — P3-T17: the LIVE halves of the ulw-execute port —
 // 计划清单的读面、notepad 脚手架、以及 `ctx.jobs` 存储面。
 //
+// DUAL-MODE since P4.5-T4 (plan §4.2; review §3.2-3): the `ctx.jobs` STORAGE face
+// this module writes through was WHOLE-PACKAGE-rewritten between the two
+// generations. {@link startWorkJob} forks on exactly **THREE** things — and there
+// is a **fourth difference that needs NO fork**, listed separately because
+// conflating it with the forks is what review F2 caught: the code has THREE fork
+// expressions (`owner`, the terminal key, and the failure-classifier consult),
+// and `run` is written as a ZERO-parameter closure, not a `(job?)` one. (The
+// count used to read TWO — the classifier consult was overlooked until PR #12
+// review counted the third `shape === 'v2' ?` arm.) The fork signal is the
+// SHARED runtime-identity
+// marker `dshRuntimeShape(jobs)` at ../../dsh-runtime-shape.ts (identity, not a
+// capability probe, and never a version string) — the SAME function
+// background-notification.ts (P4.5-T2) and stop-continuation-guard.ts (P4.5-T3)
+// import, so all three touch points answer the generation question with one
+// predicate (plan §4.1 探针表; the consistency assertion is pinned at
+// tests/omo-hooks/dsh-runtime-shape-consistency.test.ts):
+//   * FORK 1 — the OWNER of `start()` (**C2**, the load-bearing fork): **[0.1.5]**
+//     the LIVE `Agent` object, verbatim since P3-T17 and behaviourally unchanged;
+//     **[0.2.x]** the SessionId STRING. The upstream doc says so in as many
+//     words — "Owning session… the owner's live Agent must be the one currently
+//     registered under that id" above `owner?: SessionId`
+//     (packages/jobs/jobs/src/types.ts:131-137, re-opened at the mirror). Hand
+//     the 0.2.x registry an Agent object where it wants an id and `resolveOwner`
+//     misses the registry lookup → preflight throw → this hook degrades
+//     PERMANENTLY and silently. That is why the owner shape is pinned verbatim
+//     per generation by tests, not just "an owner was passed";
+//   * FORK 2 — the RESULT KEY of the terminal payload (**C3**): **[0.1.5]**
+//     `output`, **[0.2.x]** `result` (`JobOutcome.result?: string`,
+//     packages/jobs/jobs/src/types.ts:16-31, re-opened at the mirror — and the
+//     registry's `settle` reads `outcome.result` and NOTHING else,
+//     packages/jobs/jobs-local/src/index.ts:577-592, so writing `output` alone
+//     on 0.2.x drops the fact into a key nobody reads);
+//   * FORK 3 — the FAILURE-CLASSIFIER consult (**C4**): on a `start()` throw,
+//     **[0.2.x]** runs `classifyStartWorkJobFailure(message)` against the
+//     0.2.x registry's own preflight gates, **[0.1.5]** keeps the P3-T17
+//     wording with `{ preflight: false }` — there is no 0.1.5 gate table to
+//     match against and inventing one would be guessing at a binary this
+//     machine cannot run (H2). This third `shape === 'v2' ?` arm is a real
+//     fork: v2 classifies, v1 does not (PR #12 review counted it; the header
+//     used to claim TWO forks, "no third");
+//   * NO FORK — the ARITY of `run` (**C3**, a difference between the two
+//     DECLARATIONS that needs no branch): 0.1.5 declares `run()`, 0.2.x declares
+//     `run(job: JobHandle)` (packages/jobs/jobs/src/types.ts:157, re-opened at
+//     the mirror), and the 0.2.x runtime really does hand the handle over at
+//     `const hooks = spec.run(handle)` (packages/jobs/jobs-local/src/index.ts:239,
+//     re-opened at the mirror; the real-machine observation is `D-run-arity` in
+//     `.omo/evidence/p45t4/logs/T4-scenario.ndjson` — `argType:"object"`,
+//     `id:"t4probe-1"`). **ONE zero-parameter closure serves both**: JS ignores
+//     an argument a closure does not name, so the 0.2.x handle simply lands
+//     nowhere, and this port **deliberately consumes none of it** (the scaffolding
+//     fact is already computed before `start()`, so appending it to the output ring
+//     would duplicate a fact the terminal payload already carries).
+// The WRITE is forked per generation (v1 → `output`, v2 → `result`) so each
+// generation publishes the key ITS registry reads, and the 0.1.5 payload stays
+// byte-identical to the P3-T17 one.
+//
+// READ SIDE, HONESTLY (review F6): **this module WRITES the terminal payload and
+// READS nothing.** {@link readStartWorkJobOutcome} is the single auditable
+// `result ?? output` expression kept for FUTURE read surfaces and for the canary —
+// it currently has **no production caller** in this module, and the claim that
+// "every read goes through it" was false. It stays exported because the canary
+// probe consumes it; do not read its export as evidence of a live read path.
+//
+// ⚠️ **四态可区分（复核 §3.2-3 点名的病灶「日志依旧干净」）**：一个笼统的
+// `catch → degraded` 让「服务没装」「预检拒了」「真炸了」三种情况在日志里长得
+// 一模一样，运维读到一行降级也无处下手。所以失败路径分态并各写各的
+// 日志（编号与函数体内的 态①–态④ 注释一一对应）：**态① 启动成功**（`jobId`
+// 非空 + `degraded:false`，无降级行）/ **态② preflight
+// 拒绝**（`jobId` undefined + `degraded:true` + 日志写明 `preflight rejected` 并
+// 带上命中的那条逐字原因）/ **态③ 服务缺席**（根本不在场；唯一沿用 P3-T17
+// 原文的一态，日志写 `jobs service absent; degraded to the notepad scaffold
+// only`）/ **态④ 真实启动失败**（`jobId` undefined + `degraded:true`
+// + 日志写明 `start failed` + 原因）。分类依据是 jobs-local 的**逐字报错串**
+// （{@link PREFLIGHT_REJECT_MARKERS}），不是猜测：命中标记 = preflight，其余 =
+// 真实失败。返回值形状不变（**C5**），所以分类只走日志。
+//
+// Every section below marked **[0.1.5]** / **[0.2.x]** / **[BOTH]** says which
+// generation it describes; an unmarked section describes both. PIN STATUS
+// (corrected by P4.5-T13 under ruling D17, commit 2323658): CI is pinned to
+// 0.2.0-rc.2 — the earlier sentence claiming 0.1.5-rc.1 was the CI pin is
+// FALSE since the T12b cutover. The **[0.1.5]** text stays as the shape-fork
+// documentation the shared identity marker still answers; the v1 branch is kept
+// as the defensive shape fork and its tests protect the FORK, not a supported
+// runtime — 0.1.x support is dropped. The notepad scaffold, the `cancel`
+// semantics, the H-32 activation semantics and the `StartWorkJobResult` shape are
+// all **zero-change** on this branch (**C5**); only the job CARRIER forks.
+//
+// H2 CITATION STATUS (P4.5-T4): every `dsh-jobs/lib/**` line number below is a
+// **P3-T17-era reading on this repo's pinned 0.1.5 install**, kept **verbatim and
+// NOT re-verified this round** — this machine has no 0.1.5 binary
+// (`.omo/evidence/p45t1/Q5-jobs-subscribe.md` §4.2-1), and a number nobody can
+// check is safer kept than "fixed". Every **[0.2.x]** number was re-opened at the
+// upstream mirror `~/GithubRepo/deepseek-harness` @ `639ed01539`
+// (= `dsh-v0.2.0-rc.2`) during P4.5-T4; see the P2 record in
+// `.omo/evidence/p45t4/T4-live-state.md`.
+//
 // 上游对应（packages/omo-opencode/src/hooks/start-work/ + features/boulder-state/
 // @ v4.19.4）：
 //   * boulder-state/src/storage/plan-progress.ts:10-29 `findPrometheusPlans`
@@ -27,12 +123,14 @@
 // ⚠️ **`ctx.jobs` 作为存储面（任务书口径）**：上游把 work 状态写进
 // `.omo/boulder.json` 并用一套 work-id / session_ids / 计时器 API 维护它。DSH
 // 没有这套跨会话工作表，本移植把「一次 work session 的建立」登记为**一个
-// ctx.jobs job**（`kind` 用本 hook 的 id、label 承载计划名、`output` 承载
-// 落地事实）。逐条对应关系与「跳过段」理由见 ../ulw-execute.ts 头部表格。
+// ctx.jobs job**（`kind` 用本 hook 的 id、label 承载计划名、终态载荷承载落地
+// 事实——键名按代分叉：**[0.1.5]** `output`，**[0.2.x]** `result`，见上）。逐条
+// 对应关系与「跳过段」理由见 ../ulw-execute.ts 头部表格。
 //
 // The `.ts` extension is load-bearing (Node 24 type-stripping; see ../index.ts).
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { dshRuntimeShape } from '../../dsh-runtime-shape.ts'
 import {
   LEGACY_PROMETHEUS_PLANS_DIR,
   NOTEPAD_DIR_SEGMENTS,
@@ -42,6 +140,7 @@ import {
   NOTEPAD_PURPOSES,
   PLAN_FILE_EXTENSION,
   PROMETHEUS_PLANS_DIR,
+  ULW_EXECUTE_ID,
 } from './constants.ts'
 import {
   EMPTY_PLAN_PROGRESS,
@@ -203,19 +302,117 @@ export interface JobsAgentLike {
 }
 
 /**
- * `ctx.jobs` 的最小结构面（`dsh-jobs/lib/types/index.d.ts:51-77` 的 `start`）。
- * 只声明本 hook 用到的成员：`start(spec)` 返回 registry 发的 `<kind>-N` id。
+ * The terminal payload of this hook's job, BOTH generations' result keys declared
+ * OPTIONAL and coexisting — the type-level statement of the **C3** double read:
+ *   * `output` — **[0.1.5]** `JobOutcome.output` (dsh-jobs/lib/types/types.d.ts
+ *     — P3-T17-era reading, H2 unre-verified; the P3-T17 shape of this very
+ *     interface, kept verbatim).
+ *   * `result` — **[0.2.x]** `JobOutcome.result`, whose upstream doc reads
+ *     verbatim "Return value for jobs whose result is a value rather than a
+ *     stream… handed out once by the model's next {@link JobRegistry.read}."
+ *     above `result?: string` (packages/jobs/jobs/src/types.ts:25-30, re-opened
+ *     at the mirror). The registry's `settle` copies `outcome.result` and never
+ *     `outcome.output` (packages/jobs/jobs-local/src/index.ts:577-592), so on
+ *     0.2.x this key is the only one that survives settlement.
+ * `status` is the SAME closed vocabulary on both generations (**[0.1.5]**
+ * dsh-jobs/lib/types/types.d.ts:14 — P3-T17-era reading, H2 unre-verified;
+ * **[0.2.x]** `JobOutcome.status` at packages/jobs/jobs/src/types.ts:18,
+ * re-opened at the mirror), so it is required and unforked.
+ */
+export interface StartWorkJobOutcomeLike {
+  readonly status: 'completed' | 'killed' | 'failed'
+  readonly detail?: string
+  /** **[0.1.5]** the terminal result key. */
+  readonly output?: string
+  /** **[0.2.x]** the terminal result key (types.ts:30). */
+  readonly result?: string
+}
+
+/**
+ * The producer face `run` receives. **[0.2.x]** only: `run(job: JobHandle)`
+ * (packages/jobs/jobs/src/types.ts:157, re-opened at the mirror; `JobHandle`
+ * declared at :86-102 with `id` / `append` / `updateProgress`). ALL THREE members
+ * of the real face are declared, each OPTIONAL:
+ *   * declared, so a test handing us a throwing `append`/`updateProgress` stub is
+ *     type-checked against the REAL contract rather than smuggling extra keys —
+ *     the "this port never writes the ring" claim then has a compiler behind it;
+ *   * optional, because this port calls NONE of them: the scaffolding fact is
+ *     already computed before `start()` is reached, so appending it to the output
+ *     ring would duplicate a fact the terminal payload already carries. The shape
+ *     exists so the fork's arity is stated at the type level and the v2 test can
+ *     pin that a handle really arrives.
+ * **[0.1.5]** `run()` takes no argument at all (dsh-jobs/lib/types/types.d.ts —
+ * P3-T17-era reading, H2 unre-verified), so nothing populates these there.
+ */
+export interface StartWorkJobHandleLike {
+  readonly id?: string
+  /** **[0.2.x]** types.ts:95 — declared, never called by this port. */
+  readonly append?: (text: string, options?: unknown) => void
+  /** **[0.2.x]** types.ts:101 — declared, never called by this port. */
+  readonly updateProgress?: (line: string) => void
+}
+
+/**
+ * The producer hooks this port hands back — identical on both generations
+ * (**[0.1.5]** dsh-jobs/lib/types/types.d.ts — P3-T17-era reading, H2
+ * unre-verified; **[0.2.x]** `JobHooks` at packages/jobs/jobs/src/types.ts:105-118,
+ * re-opened at the mirror: `cancel(reason?)` synchronous + `done: Promise<
+ * JobOutcome>`). **C5**: the `cancel` semantics are unchanged — this job's work
+ * (the notepad scaffold) is already committed to disk before `start()` runs, so
+ * there is nothing to unwind and `cancel` stays a no-op on both generations.
+ */
+export interface StartWorkJobHooksLike {
+  readonly cancel: (reason?: string) => void
+  readonly done: Promise<StartWorkJobOutcomeLike>
+}
+
+/**
+ * The producer declaration handed to `start()` — ONE shape serving BOTH
+ * generations. `run`'s parameter is OPTIONAL **at the type level**, and that is
+ * what makes one shape serve both: an optional parameter is compatible with
+ * **[0.1.5]** `run: () => JobHooks` (the slot is never filled) AND with
+ * **[0.2.x]** `run: (job: JobHandle) => JobHooks` (types.ts:157), so no second
+ * shape and no second call site are needed.
+ *
+ * ⚠️ This is a statement about the TYPE, not about the closure {@link startWorkJob}
+ * actually writes: that closure is **ZERO-parameter** (`run: () => ({…})`), and it
+ * consumes no handle on either generation (**NO FORK** — see the header's third
+ * bullet). The optional parameter is what lets the zero-parameter closure type-check
+ * against the 0.2.x declaration; it is NOT a parameter the written closure names.
+ *
+ * `owner` is `unknown` because the two generations genuinely want different types
+ * there — **C2**, the load-bearing fork: **[0.1.5]** a live `Agent` instance,
+ * **[0.2.x]** the SessionId string (types.ts:131-137). The runtime picks the value
+ * at {@link startWorkJob}; a wider-looking type here is the honest statement of
+ * "the shape is decided at runtime by one marker", not an invitation to pass either
+ * value on either generation.
+ */
+export interface StartWorkJobSpecLike {
+  readonly kind: string
+  readonly label: string
+  /** **[0.1.5]** live `Agent` / **[0.2.x]** SessionId string — see above. */
+  readonly owner?: unknown
+  readonly run: (job?: StartWorkJobHandleLike) => StartWorkJobHooksLike
+}
+
+/**
+ * `ctx.jobs` 的最小结构面（**[0.1.5]** `dsh-jobs/lib/types/index.d.ts:51-77` 的
+ * `start` — P3-T17-era reading, H2 unre-verified; **[0.2.x]** `JobRegistry.start
+ * (spec: JobSpec): JobId` at packages/jobs/jobs/src/index.ts, spec declared at
+ * packages/jobs/jobs/src/types.ts:126-158）。只声明本 hook 用到的成员：
+ * `start(spec)` 返回 registry 发的 `<kind>-N` id。
  */
 export interface JobsSurface {
-  start?(spec: {
-    readonly kind: string
-    readonly label: string
-    readonly owner?: unknown
-    readonly run: () => {
-      readonly cancel: (reason?: string) => void
-      readonly done: Promise<{ readonly status: 'completed' | 'killed' | 'failed'; readonly detail?: string; readonly output?: string }>
-    }
-  }): string
+  start?(spec: StartWorkJobSpecLike): string
+  /**
+   * **[0.2.x]** the `JobEvents` stream — declared OPTIONAL here as the
+   * RUNTIME-IDENTITY SIGNAL only, read through `dshRuntimeShape` and NEVER
+   * called by this module (the capability lives in ../../dsh-runtime-shape.ts;
+   * widening this face past `unknown` would promise a member nothing in this
+   * file consumes). Absent on **[0.1.5]**, where the identity signal is simply
+   * "no `events` key".
+   */
+  readonly events?: unknown
 }
 
 /** true when the value carries the one `ctx.jobs` member this hook calls. */
@@ -224,8 +421,125 @@ export function isJobsSurface(value: unknown): value is JobsSurface {
 }
 
 /**
+ * THE DOUBLE READ of a terminal job payload (**C3**): `result ?? output`, so ONE
+ * expression reads the settled fact off BOTH generations — `result` on 0.2.x
+ * (the key `settle` actually stores, jobs-local/src/index.ts:577-592), `output`
+ * on 0.1.5 (where `result` is absent from the shape entirely). `result` wins
+ * where both keys are present: it is the 0.2.x authority, and a 0.1.5 snapshot
+ * has no `result` key to lose to.
+ *
+ * STATUS (review **F6**): **this module has NO production caller of it.**
+ * `startWorkJob` WRITES the terminal payload and reads nothing back, so this is
+ * the single auditable double-read expression kept for FUTURE read surfaces and for
+ * the canary probe (which does consume it — hence `export`, and do not demote it).
+ * It is deliberately NOT inlined at N call sites, so a flipped `??` order can only
+ * ever go RED in one place; the day a real read surface appears, it should call
+ * THIS rather than re-deriving the `??`.
+ *
+ * ⚠️ **THIS DOUBLE READ IS FOR THE PRODUCER OUTCOME, NOT FOR A `JobView`.** P4
+ * .5-T4's real-machine canary (`.omo/evidence/p45t4/logs/T4-scenario.ndjson`,
+ * marker `C-get`) observed that on 0.2.x the job VIEW also carries an `output`
+ * key — but its value is the ring-position object `{ total, earliest, spillPaths? }`,
+ * NOT a string (`readonly output: { readonly total: number; readonly earliest:
+ * number; readonly spillPaths?: readonly string[] }`, packages/jobs/jobs/src/
+ * view.ts:91-99, re-opened at the mirror). So `result ?? output` aimed at a VIEW
+ * would hand back an OBJECT on v2 instead of the fact. This function is typed over
+ * {@link StartWorkJobOutcomeLike} — the producer/terminal payload, where `output`
+ * is `string | undefined` — which is what keeps it safe. Do NOT widen its
+ * parameter to a view without re-deriving this.
+ */
+export function readStartWorkJobOutcome(outcome: StartWorkJobOutcomeLike): string | undefined {
+  return outcome.result ?? outcome.output
+}
+
+/**
+ * The verbatim reason substrings that `jobs-local`'s `start()` throws BEFORE any
+ * producer runs — i.e. the preflight gate. The word "preflight" is the UPSTREAM's
+ * own, not this port's coinage: the abstract `start` doc reads verbatim "Preflight
+ * access, validation, owner cleanup, and implementation-owned admission before
+ * starting and atomically registering work. Any preflight rejection leaves no job
+ * id or execution resource." above `abstract start(spec: JobSpec): JobId`
+ * (packages/jobs/jobs/src/index.ts:102-110, re-opened at the mirror). That
+ * sentence is the authority for **C4**'s split: a rejection on this table leaves
+ * NO job id, and everything after `run` returns cannot fail registration — so a
+ * throw carrying one of these strings is the registry refusing the DECLARATION,
+ * and any other throw is the machinery breaking.
+ *
+ * Each marker is transcribed character-for-character from the upstream mirror
+ * `~/GithubRepo/deepseek-harness` @ `639ed01539` (= `dsh-v0.2.0-rc.2`) during
+ * P4.5-T4, with the throwing line:
+ *   * `background job ownership requires the agent registry (load @deepseek-ai/
+ *     dsh-agent)` — `packages/jobs/jobs-local/src/index.ts:361`, reached from
+ *     `resolveOwner` `:357-367`;
+ *   * `has no live agent (background job owner must be live)` — the templated
+ *     tail of `` session "<id>" has no live agent (… `` at
+ *     `packages/jobs/jobs-local/src/index.ts:365` (matched by tail because the
+ *     session id is interpolated in front of it);
+ *   * `background jobs unavailable: no job controller serves this agent (load
+ *     @deepseek-ai/dsh-tool-jobs in its composition)` — `:209`;
+ *   * `invalid job kind: expected a non-empty string` — `:211`;
+ *   * `invalid job label: expected a non-empty string` — `:212`;
+ *   * `invalid outputLimitBytes:` — `:215` (unreachable from this hook, which
+ *     never sets the field; kept so the gate is complete rather than convenient);
+ *   * `background job limit reached for this owner` — `:222`, the concurrency
+ *     cap, which IS reachable from this hook under load.
+ *
+ * ⚠️ The order these fire in is the order in `start()`, NOT the order above:
+ * `resolveOwner(spec.owner)` runs at `:207` — BEFORE the controller check at
+ * `:208-210` and the label/kind checks at `:211-212`. So on a real 0.2.x
+ * machine a wrong owner shape surfaces as `:365`, not as `:209`. Classification
+ * here is by SUBSTRING MATCH on the message, so it is order-independent by
+ * construction; the task book's listing order is documentation, not a sequence.
+ *
+ * Anything NOT matching this table is a REAL start failure — a throw from
+ * `spec.run` itself (jobs-local/src/index.ts:239,
+  * `const hooks = spec.run(handle)` — measured at the mirror; `:240` is a blank line), from
+  * ring/controller plumbing, or from any future
+ * gate not in this table. Those get their own log line (**C4**) precisely so a
+ * reader can tell "the service refused my declaration" from "the service broke".
+ * **[0.1.5]** has NO counterpart table: this classifier is consulted on the v2
+ * branch only, so the 0.1.5 path never reads these strings.
+ */
+export const PREFLIGHT_REJECT_MARKERS: readonly string[] = [
+  'background job ownership requires the agent registry',
+  'has no live agent (background job owner must be live)',
+  'background jobs unavailable: no job controller serves this agent',
+  'invalid job kind: expected a non-empty string',
+  'invalid job label: expected a non-empty string',
+  'invalid outputLimitBytes:',
+  'background job limit reached for this owner',
+]
+
+/**
+ * Whether a `start()` throw is a PREFLIGHT rejection (the registry refused the
+ * declaration before any producer ran) or a REAL start failure. Match is on the
+ * verbatim marker, first hit wins, and the hit marker is returned so the log can
+ * name WHICH gate fired instead of just "it failed" (**C4**).
+ */
+export function classifyStartWorkJobFailure(
+  message: string,
+): { readonly preflight: true; readonly marker: string } | { readonly preflight: false } {
+  for (const marker of PREFLIGHT_REJECT_MARKERS) {
+    if (message.includes(marker)) return { preflight: true, marker }
+  }
+  return { preflight: false }
+}
+
+/**
+ * 本模块的诊断行前缀，与 ../ulw-execute.ts 的 `formatUlwExecuteLine` **逐字同形**
+ * （`[omo-hooks] <hook-id>: `）。复制而非 import：`formatUlwExecuteLine` 住在父
+ * 模块 `../ulw-execute.ts`，而父模块已经 import 了本文件——反向 import 会成环。
+ * 四态日志（**C4**）靠这个前缀被 grep 到，所以同形是硬要求；同形由一致性测试钉。
+ */
+function formatLiveStateLine(what: string): string {
+  return `[omo-hooks] ${ULW_EXECUTE_ID}: ${what}`
+}
+
+/**
  * 一次 work-session 建立的结果：job id（`ctx.jobs` 缺席时为 `undefined`）+
- * notepad 脚手架的落地事实。e2e / 单测断言的就是这三个字段。
+ * notepad 脚手架的落地事实。e2e / 单测断言的就是这三个字段。**C5**: this shape
+ * is unchanged by P4.5-T4 — which is exactly why the four states of **C4** are
+ * distinguishable only in the LOG, and why the log lines below are the contract.
  */
 export interface StartWorkJobResult {
   readonly jobId: string | undefined
@@ -239,7 +553,11 @@ export function startWorkJobLabel(planName: string): string {
   return `${ULW_EXECUTE_JOB_KIND}: ${planName}`
 }
 
-/** job 的 output（终态事实，一行；e2e 的 grep 锚点）。 */
+/**
+ * job 的终态事实（一行；e2e 的 grep 锚点）。The TEXT is generation-independent —
+ * only the KEY it is published under forks (**C3**), so this string and the e2e
+ * anchors on it survive both branches unchanged.
+ */
 export function startWorkJobOutput(
   planName: string,
   scaffold: NotepadScaffoldResult,
@@ -254,10 +572,12 @@ export function startWorkJobOutput(
  * 的**副作用半**（`addBoulderWork`/`createBoulderState`/`writeBoulderState` 三个
  * 磁盘写入；`ensureNotepadScaffold` 保留）。DSH 侧的对应物：
  *
- *   ① notepad 脚手架 —— **逐字保留**（同一四文件、同一 `wx` 幂等）；
+ *   ① notepad 脚手架 —— **逐字保留**（同一四文件、同一 `wx` 幂等），且在
+ *      `start()` **之前**完成，顺序不变（**C5**：脚手架副作用先于 job 登记，
+ *      所以 `degraded:true` 时脚手架照常落地）；
  *   ② 「boulder work 建立」—— 登记为 **一个 `ctx.jobs` job**：`start()` 在
  *      预检后同步调用 `run()`，本 hook 的 `run()` 同步完成脚手架并立即结算
- *      （`done` 是一个已 resolve 的 promise，`output` 承载落地事实）。这样
+ *      （`done` 是一个已 resolve 的 promise，终态载荷承载落地事实）。这样
  *      「一次 work 建立了」这件事在 DSH 的作业面上**可观测**（`job_list` /
  *      通知面），而不是落进一个没有读者的平行状态文件。
  *
@@ -265,14 +585,49 @@ export function startWorkJobOutput(
  * 不失败**：`degraded: true`，脚手架照常落地（它是同步文件写，不需要 jobs）。
  * 这与 P3-T13 `background-notification` 的 loud-but-non-fatal 口径一致。
  *
- * `agent` 参数是 `JobStart.owner`：`dsh-jobs/lib/types/types.d.ts:48-55` 逐字要求
- * "Owning live agent… The instance must be the one currently registered under its
- * agent id"，即**活 Agent 实例**，不是它的 session。传 session 会被预检拒绝 →
- * 落到本函数的 catch → 永久降级（job 面静默失效），故调用方传的是 pre-step
- * 载荷里的 `payload.agent`。
+ * ═════════════ THE FORK (**C1** / **C2** / **C3** / **C4**) ═════════════
+ * `dshRuntimeShape(jobs)` — the SHARED identity marker
+ * (../../dsh-runtime-shape.ts), one call, one fork point, no second predicate —
+ * decides exactly THREE things:
+ *   * **owner** (**C2**, load-bearing): **[0.1.5]** `agent`, the live `Agent`
+ *     instance — verbatim since P3-T17, zero change;
+ *     `dsh-jobs/lib/types/types.d.ts:48-55` requires "Owning live agent… The
+ *     instance must be the one currently registered under its agent id"
+ *     (P3-T17-era reading, H2 unre-verified). **[0.2.x]** `sessionId`, the
+ *     SessionId STRING — packages/jobs/jobs/src/types.ts:131-137 says the owner
+ *     IS a session id whose live Agent is looked up under it, and `resolveOwner`
+ *     (packages/jobs/jobs-local/src/index.ts:357-367) does exactly that lookup:
+ *     `agents.get(session)`. Hand it an Agent object and `agents.get` misses →
+ *     `:365` throws → this hook degrades on EVERY call, silently, forever. Both
+ *     values are already in scope here, so the fork costs the call site nothing.
+ *   * **terminal key** (**C3**): **[0.1.5]** publishes `output`; **[0.2.x]**
+ *     publishes `result`, because `settle` copies `outcome.result` alone
+ *     (packages/jobs/jobs-local/src/index.ts:577-592). A FUTURE read surface reads
+ *     both through {@link readStartWorkJobOutcome} (`result ?? output`) and so
+ *     never cares — though THIS module reads nothing back (**F6**).
+ *   * **failure classifier** (**C4**): on a `start()` throw, **[0.2.x]**
+ *     consults `classifyStartWorkJobFailure` against the 0.2.x registry's
+ *     preflight table; **[0.1.5]** classifies nothing (`{ preflight: false }`,
+ *     P3-T17 wording kept) — the third fork, the one the header once missed.
+ * `run`'s arity needs NO fork: the closure written here is ZERO-parameter and one
+ * such closure type-checks against both declarations (see
+ * {@link StartWorkJobSpecLike} and the header's NO FORK bullet).
  *
- * 抛错（目录不可写、job 预检拒绝）由调用方 try/catch 吞掉 —— 主链路（注入）
- * 不受影响（纪律②）。
+ * ⚠️ **四态可区分（C4）**：`log` 是**新增的可选**诊断汇（缺省 no-op，所以既有
+ * 调用点与既有断言零改动）。它必须存在，是因为 **C5** 冻结了返回形状——四态在
+ * 返回值上只剩 `jobId`/`degraded` 两比特，分不出「预检拒了」和「真炸了」，那
+ * 正是复核 §3.2-3 点名的「日志依旧干净」病灶。四行日志（与函数体 态①–态④
+ * 一一对应；逐字串以对齐代码为准——此处曾经写成冒号形，实发是分号形，
+ * PR #12 第二轮评审指出）：
+ *   * 态① 成功 → 不写降级行（`jobId` 非空即是事实）；
+ *   * 态③ 服务缺席 → `… jobs service absent; degraded to the notepad
+ *     scaffold only`（沿用 P3-T17 语义的唯一一态）；
+ *   * 态② preflight 拒绝 → `… preflight rejected by the jobs registry: <原因>
+ *     (matched: <逐字标记>)`；
+ *   * 态④ 真实启动失败 → `… start failed: <原因>`。
+ *
+ * 抛错（目录不可写）由调用方 try/catch 吞掉 —— 主链路（注入）不受影响（纪律②）；
+ * `start()` 的抛出在本函数内分类并降级，绝不上抛。
  */
 export function startWorkJob(params: {
   readonly jobs: JobsSurface | undefined
@@ -280,33 +635,87 @@ export function startWorkJob(params: {
   readonly planName: string
   readonly sessionId: string
   readonly agent: unknown
+  /** 诊断汇（**C4**）；缺省 no-op，故既有调用点可不传（但生产调用点会传）。 */
+  readonly log?: (line: string) => void
 }): StartWorkJobResult {
   const { jobs, directory, planName, sessionId, agent } = params
+  const log = params.log ?? noopLog
+  // ① 脚手架先落地（顺序 **C5**：先写盘，后登记 job）。
   const scaffold = scaffoldNotepad(directory, planName)
 
   if (jobs === undefined || typeof jobs.start !== 'function') {
+    // 态③ 服务缺席 —— 不是拒绝，是压根没有这个服务。
+    log(formatLiveStateLine('work-session job skipped: jobs service absent; '
+      + 'degraded to the notepad scaffold only') + ` (plan=${planName})`)
     return { jobId: undefined, scaffold, degraded: true }
   }
+
+  // THE FORK (**C1**): one shared marker, THREE fork expressions (header list).
+  const shape = dshRuntimeShape(jobs)
+  // **C2** the owner shape. **C3** the terminal key. `run` below gets neither —
+  // it is ZERO-parameter and consumes no handle (NO FORK, header bullet 4).
+  const owner: unknown = shape === 'v2' ? sessionId : agent
+  const terminalKey: 'output' | 'result' = shape === 'v2' ? 'result' : 'output'
+  // ⚠️ **Error-surface note (review F8)**: `fact` is built HERE, OUTSIDE the try
+  // below. In P3-T17 the same call sat INSIDE `run()`, i.e. inside the try, so a
+  // throw from `startWorkJobOutput` was caught and degraded. Hoisting it means such
+  // a throw now escapes `startWorkJob` and is caught by the caller's outer
+  // `try`/`catch` at ../ulw-execute.ts (`plan selection failed`) instead — the
+  // mainline (injection) is still unaffected (discipline ②), but the CATCH is one
+  // frame higher and the result is no longer a degraded-with-scaffold record.
+  // `startWorkJobOutput` is pure string concatenation over already-computed values
+  // and cannot throw, so this is UNREACHABLE today; it is recorded because the
+  // header claims C5 "error surface unchanged", and strictly it moved one frame.
+  const fact = startWorkJobOutput(planName, scaffold, sessionId)
 
   let jobId: string | undefined
   try {
     jobId = jobs.start.call(jobs, {
       kind: ULW_EXECUTE_JOB_KIND,
       label: startWorkJobLabel(planName),
-      owner: agent,
+      owner,
       run: () => ({
         cancel: () => {},
         done: Promise.resolve({
           status: 'completed' as const,
-          output: startWorkJobOutput(planName, scaffold, sessionId),
+          ...(terminalKey === 'result' ? { result: fact } : { output: fact }),
         }),
       }),
     })
-  } catch {
-    // 预检拒绝（owner 不是 registry 里的活实例等）→ 降级，不抛出。
+  } catch (err) {
+    const message = describeError(err)
+    // The classifier is consulted on the v2 branch ONLY (**C4**): the preflight
+    // table is a transcription of the 0.2.x registry's own gates, and the 0.1.5
+    // path has no counterpart table to match against — inventing one would be
+    // guessing at a binary this machine cannot run (H2). On v1 the throw keeps its
+    // P3-T17 wording and takes the real-failure line, which is the honest label
+    // for "we do not have a verified gate table for this generation".
+    const verdict: { readonly preflight: true; readonly marker: string } | { readonly preflight: false }
+      = shape === 'v2' ? classifyStartWorkJobFailure(message) : { preflight: false }
+    if (verdict.preflight === true) {
+      // 态② preflight 拒绝 —— registry 在本 hook 的声明上拒了，带上命中的标记。
+      log(formatLiveStateLine(
+        `work-session job preflight rejected by the jobs registry: ${message} `
+        + `(matched: ${verdict.marker}) [degraded; plan=${planName}]`))
+    } else {
+      // 态④ 真实启动失败 —— 不在预检表上的任何抛出。
+      log(formatLiveStateLine(
+        `work-session job start failed: ${message} [degraded; plan=${planName}]`))
+    }
     return { jobId: undefined, scaffold, degraded: true }
   }
+  // 态① 启动成功 —— 不写降级行；`jobId` 非空 + `degraded:false` 即是事实。
   return { jobId, scaffold, degraded: false }
+}
+
+/** 诊断缺省汇：什么都不做（既有调用点零改动的来源）。 */
+function noopLog(): void {
+  // 刻意空实现：调用方没给汇就不诊断，不抛、不 console。
+}
+
+/** 与本仓其它 listener 相同的取值方式：Error 取 message，其余 String()。 */
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 /**

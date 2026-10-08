@@ -41,7 +41,7 @@ interface InjectedMessage {
   id: string
   role: 'user'
   content: { type: 'text'; text: string }[]
-  source: { kind: 'plugin'; plugin: string; form?: string }
+  source: { kind: 'omo-hard-blocks'; plugin: string; form?: string }
 }
 
 function makeAgent(origin?: 'subagent') {
@@ -121,7 +121,7 @@ describe('hard-blocks injection listener (T16, FR-6, P-3)', () => {
     expect(agent.inject).toHaveBeenCalledTimes(1)
     const message = agent.inject.mock.calls[0]![0]
     expect(message.role).toBe('user')
-    expect(message.source.kind).toBe('plugin')
+    expect(message.source.kind).toBe('omo-hard-blocks')
     expect(message.source.plugin).toBe('omo-agents')
     expect(typeof message.id).toBe('string')
     expect(message.id.length).toBeGreaterThan(0)

@@ -74,14 +74,41 @@
 //   * `[omo-agents] route provider check FAILED: <describeError>` /
 //     `[omo-agents] llm inject FAILED: <describeError>`
 //     — unexpected-error discipline shared with every sibling boot block.
+//   * P4.5-T5 registration outlet (three forms, built by concerto-preset.ts):
+//     `[omo-agents] concerto preset registered: id=concerto broken=absent`
+//     — the ONLY success form: register resolved AND the roster read back
+//     the entry with `broken` ABSENT (arbitration ②: "register did not
+//     throw" is not evidence — mount failures never reject). The line names
+//     the id and the verdict; the probe greps it whole (-qF), never as a
+//     prefix.
+//     `[omo-agents] concerto preset register face absent, materialized path
+//     only` — the no-register-face shape. KEPT by the P4.5-T13 ruling (D17
+//     dropped 0.1.x as a SUPPORTED target; the CAPABILITY PROBE stays because
+//     it is how this outlet selects behaviour on ANY runtime — a future 0.2.x
+//     that moves the face again degrades to this named marker instead of
+//     collapsing into an indistinguishable `register FAILED` line; Review B
+//     MINOR-3 correction: a TypeError on `.register` would have been swallowed
+//     by registerConcertoPreset's try block, so WITHOUT the probe face-absence
+//     stops being a distinct, greppable outcome — the probe is what keeps the
+//     alarm an alarm). Only a 0.1.x-shape handle
+//     answers face-absent, and on that shape the materialized write above really
+//     does own the registration — the sentence is true exactly when it prints,
+//     and seeing it on the pinned 0.2.x runtime is itself the regression alarm
+//     (scripts/concerto-mode-probe.sh asserts the two shapes mutually exclusive).
+//     `[omo-agents] concerto preset register FAILED: <reason>` — loud-but-
+//     non-fatal; already inside the probe's existing negative grep
+//     `\[omo-agents\] concerto .* FAILED` (scripts/concerto-mode-probe.sh:939).
 
 // The `.ts` extension is load-bearing: Node 24 type-stripping (P-8.6) does no
 // specifier resolution, and there is no bundler to rewrite it.
 import {
   CONCERTO_TEMPLATE_DIR,
   concertoPresetDir,
+  formatConcertoRosterLine,
+  registerConcertoPreset,
   syncConcertoPreset,
   type ConcertoSyncOutcome,
+  type PresetDisposer,
 } from './concerto-preset.ts'
 import { SISYPHUS_SECTION_ORDER, buildSisyphusSystemPrompt } from './system-prompt.ts'
 import { resolveModelRoutesWithWarnings, type ModelRoutes } from './model-routes.ts'
@@ -107,14 +134,46 @@ export const name = 'omo-agents'
 // Minimal structural typings — this workspace has no cordis dependency, so
 // the plugin declares only the shape it touches (keeps `pnpm typecheck`
 // honest without importing DSH types).
+// P4.5-T5 shape extension: 0.2.x `agent-preset-registry` rows carry
+// `broken?: string` — ABSENT is the normal form (`...(broken === undefined
+// ? {} : { broken })`, agent-preset-registry/src/index.ts:161 @
+// dsh-v0.2.0-rc.2), so the readback asserts absence, never a value.
+//
+// P4.5-T6: `trust` is GONE from this declaration. The 0.2.x roster row is
+// built by one object literal (agent-preset-registry/src/index.ts:156-162 @
+// dsh-v0.2.0-rc.2) whose ONLY keys are id/name/description/order/broken —
+// `trust` was 0.1.5-only vocabulary, so a field left declared here would be
+// an invitation to read a key that can never exist (it printed `concerto:?`
+// at boot, which is what the probe used to assert). Deleting the key makes
+// the vocabulary DEAD in this repo: any re-introduced `preset.trust` read
+// fails `pnpm typecheck`, so the regression cannot come back silently.
+// `isDefault` is deliberately NOT declared here either: it is NOT a `list()`
+// key — only `remoteExportList()` adds it (:173), and the print line below
+// reads `list()`. Asserting `isDefault` belongs to the roster RPC face in
+// scripts/concerto-mode-probe.sh, never to this in-process row.
 interface RosterEntry {
   id: string
-  trust?: string
   name?: string
+  broken?: string
 }
 
+// P4.5-T5 / kept by the P4.5-T13 ruling (D17): `register` is OPTIONAL on
+// purpose — its presence IS the capability probe's answer, read off the RUNTIME
+// handle by concerto-preset.ts `hasAgentPresetsRegisterFace`, never off a
+// version string. The optionality is what lets the probe answer "no" on ANY
+// future runtime that moves the face again (the pinned target is 0.2.x per
+// D17 — 0.1.x support is dropped — but the probe is capability vocabulary,
+// not 0.1.5 vocabulary: making `register` REQUIRED here would delete the
+// probe's right to answer no and turn a future face regression into a crash).
 interface AgentPresetsLike {
   list(): Promise<RosterEntry[]>
+  register?(definition: {
+    id: string
+    name?: string
+    description?: string
+    order?: number
+    plugins: readonly Record<string, unknown>[]
+  }): Promise<PresetDisposer>
 }
 
 /**
@@ -232,15 +291,72 @@ export function apply(ctx: InjectingContext): void {
 
   try {
     ctx.inject(['agentPresets'], async (injected) => {
+      // P4.5-T5: the registration outlet runs INSIDE this inject callback —
+      // the ONLY call site where the agentPresets handle is measured present
+      // (apply()'s synchronous stretch reads `undefined` 100% of the time,
+      // T1 Q-3 §3.1; registry :126-127 forbids register() inside a Host
+      // row's own activation, and the structural invariant that keeps that
+      // safe is `omo-agents` NOT being a row of the composition it
+      // registers — it is the host insert row cordis.yml:36-38). The
+      // callback RETURNS the disposer so cordis collects it as the injected
+      // child fiber's disposal (fiber.ts:373-374); it is idempotent, so no
+      // once guard is added. If the face probe ever answers no — a runtime
+      // outside the pinned 0.2.x line (0.1.x support is dropped by ruling D17;
+      // this branch is the probe's defensive answer, kept per the P4.5-T13
+      // ruling, not a supported leg) — the marker names it and the host keeps
+      // booting; on the pinned runtime the probe answers yes and register()
+      // owns the registration.
+      //
+      // ⚠️ COST REGISTERED (arbitration #4, 2026-10-04): `inject`'s official
+      // signature is `Plugin.Function<void>` (vendor/cordis/src/registry.ts:300
+      // @ dsh-v0.2.0-rc.2) — the callback is TYPED to return void. Returning
+      // the disposer is RUNTIME-EFFECTIVE but TYPE-LAYER OVER REACH: it rides
+      // cordis's implementation convention that a function plugin's return
+      // value is treated as an effect (fiber.ts:366, :373-374 → safeCollect
+      // :359-361 → collect :230-232 → child-fiber disposal :265-297, chain
+      // one-hand verifiable), NOT its API contract. A cordis upgrade that
+      // stops collecting function returns silently un-holds this disposer —
+      // that is the price of the convention, kept visible here. The local
+      // `let disposer` + return REPLACES the plan's original "module-level
+      // slot" wording (arbitration: cordis collection is automatic; a slot
+      // would be human-memory burden instead).
+      let disposer: PresetDisposer | undefined
       try {
-        const roster = await injected.agentPresets.list()
-        console.log(
-          '[omo-agents] concerto roster: '
-          + roster.map((preset) => `${preset.id}:${preset.trust ?? '?'}`).join(','),
+        disposer = await registerConcertoPreset(
+          injected.agentPresets,
+          console.log,
+          CONCERTO_TEMPLATE_DIR,
         )
+      } catch (err) {
+        // registerConcertoPreset is loud-but-non-fatal by contract; reaching
+        // here means something outside its catch surfaced — same discipline.
+        console.log(`[omo-agents] concerto preset register FAILED: ${describeError(err)}`)
+      }
+      try {
+        // P4.5-T6. A first `list()` can come back EMPTY at the instant the
+        // inject callback fires (T1 Q-3 §1.4, reproduced twice: rows land on
+        // the next microtask). Printing that as a roster line would hand the
+        // probe a prefix-only match on `concerto roster: ` with no rows —
+        // exactly the vacuity the arbitration assigned to T6 — so read once
+        // more after a tick before declaring it empty, and print an explicit
+        // EMPTY token when it really is empty. No wait/retry loop: one
+        // settle re-read, then the honest token (arbitration: 不得设计等待).
+        let roster = await injected.agentPresets.list()
+        if (roster.length === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          roster = await injected.agentPresets.list()
+        }
+        // Vocabulary: the pre-T6 line printed `${id}:${trust ?? '?'}`, and
+        // `trust` is not a 0.2.x roster key at all, so EVERY row printed a
+        // naked `?` (`concerto:?`) — a placeholder dressed as a verdict. The
+        // shipped helper now prints the field the registry really produces
+        // (`broken`, absent on a healthy row) and refuses to invent
+        // `isDefault`, which only `remoteExportList()` returns.
+        console.log(formatConcertoRosterLine(roster))
       } catch (err) {
         console.log(`[omo-agents] concerto roster FAILED: ${describeError(err)}`)
       }
+      return disposer
     })
   } catch (err) {
     console.log(`[omo-agents] agentPresets inject FAILED: ${describeError(err)}`)
