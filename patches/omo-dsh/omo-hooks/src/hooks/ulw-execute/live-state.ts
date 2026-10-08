@@ -64,14 +64,16 @@
 // "every read goes through it" was false. It stays exported because the canary
 // probe consumes it; do not read its export as evidence of a live read path.
 //
-// ⚠️ **三态可区分（复核 §3.2-3 点名的病灶「日志依旧干净」）**：一个笼统的
+// ⚠️ **四态可区分（复核 §3.2-3 点名的病灶「日志依旧干净」）**：一个笼统的
 // `catch → degraded` 让「服务没装」「预检拒了」「真炸了」三种情况在日志里长得
-// 一模一样，运维读到一行降级也无处下手。所以 v2 分支把失败分成三态并各写各的
-// 日志：**启动成功**（`jobId` 非空 + `degraded:false`，无降级行）/ **preflight
+// 一模一样，运维读到一行降级也无处下手。所以失败路径分态并各写各的
+// 日志（编号与函数体内的 态①–态④ 注释一一对应）：**态① 启动成功**（`jobId`
+// 非空 + `degraded:false`，无降级行）/ **态② preflight
 // 拒绝**（`jobId` undefined + `degraded:true` + 日志写明 `preflight rejected` 并
-// 带上命中的那条逐字原因）/ **真实启动失败**（`jobId` undefined + `degraded:true`
-// + 日志写明 `start failed` + 原因）。服务根本不在场是第四种、也是唯一沿用 P3-T17
-// 原文的一态（`jobs service absent`）。分类依据是 jobs-local 的**逐字报错串**
+// 带上命中的那条逐字原因）/ **态③ 服务缺席**（根本不在场；唯一沿用 P3-T17
+// 原文的一态，日志写 `jobs service absent; degraded to the notepad scaffold
+// only`）/ **态④ 真实启动失败**（`jobId` undefined + `degraded:true`
+// + 日志写明 `start failed` + 原因）。分类依据是 jobs-local 的**逐字报错串**
 // （{@link PREFLIGHT_REJECT_MARKERS}），不是猜测：命中标记 = preflight，其余 =
 // 真实失败。返回值形状不变（**C5**），所以分类只走日志。
 //
@@ -527,7 +529,7 @@ export function classifyStartWorkJobFailure(
  * 本模块的诊断行前缀，与 ../ulw-execute.ts 的 `formatUlwExecuteLine` **逐字同形**
  * （`[omo-hooks] <hook-id>: `）。复制而非 import：`formatUlwExecuteLine` 住在父
  * 模块 `../ulw-execute.ts`，而父模块已经 import 了本文件——反向 import 会成环。
- * 三态日志（**C4**）靠这个前缀被 grep 到，所以同形是硬要求；同形由一致性测试钉。
+ * 四态日志（**C4**）靠这个前缀被 grep 到，所以同形是硬要求；同形由一致性测试钉。
  */
 function formatLiveStateLine(what: string): string {
   return `[omo-hooks] ${ULW_EXECUTE_ID}: ${what}`
@@ -611,15 +613,18 @@ export function startWorkJobOutput(
  * such closure type-checks against both declarations (see
  * {@link StartWorkJobSpecLike} and the header's NO FORK bullet).
  *
- * ⚠️ **三态可区分（C4）**：`log` 是**新增的可选**诊断汇（缺省 no-op，所以既有
- * 调用点与既有断言零改动）。它必须存在，是因为 **C5** 冻结了返回形状——三态在
+ * ⚠️ **四态可区分（C4）**：`log` 是**新增的可选**诊断汇（缺省 no-op，所以既有
+ * 调用点与既有断言零改动）。它必须存在，是因为 **C5** 冻结了返回形状——四态在
  * 返回值上只剩 `jobId`/`degraded` 两比特，分不出「预检拒了」和「真炸了」，那
- * 正是复核 §3.2-3 点名的「日志依旧干净」病灶。四行日志：
- *   * 成功 → 不写降级行（`jobId` 非空即是事实）；
- *   * 服务缺席 → `… jobs service absent: …`（沿用 P3-T17 语义的唯一一态）；
- *   * preflight 拒绝 → `… preflight rejected by the jobs registry: <原因>
+ * 正是复核 §3.2-3 点名的「日志依旧干净」病灶。四行日志（与函数体 态①–态④
+ * 一一对应；逐字串以对齐代码为准——此处曾经写成冒号形，实发是分号形，
+ * PR #12 第二轮评审指出）：
+ *   * 态① 成功 → 不写降级行（`jobId` 非空即是事实）；
+ *   * 态③ 服务缺席 → `… jobs service absent; degraded to the notepad
+ *     scaffold only`（沿用 P3-T17 语义的唯一一态）；
+ *   * 态② preflight 拒绝 → `… preflight rejected by the jobs registry: <原因>
  *     (matched: <逐字标记>)`；
- *   * 真实启动失败 → `… start failed: <原因>`。
+ *   * 态④ 真实启动失败 → `… start failed: <原因>`。
  *
  * 抛错（目录不可写）由调用方 try/catch 吞掉 —— 主链路（注入）不受影响（纪律②）；
  * `start()` 的抛出在本函数内分类并降级，绝不上抛。

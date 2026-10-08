@@ -22,11 +22,12 @@
 //       and IDENTICAL (PR #9 round 2, N6). The pin is two tokens carried by two
 //       files; the drift that motivated the check was ci.yml sitting on a
 //       mixed-tree cutoff while compat-probe.yml claimed the same value.
-//   d10 the alias TAG's own copy of the installer carries the declaration
-//       face (DECL_PATCH) and NOT the deleted .agent-presets write target —
-//       the pointer checks (d02/d07/d08) cannot see a stale alias serving the
-//       dead face (PR #12 review BLOCKER). Red until the post-merge release
-//       moves the alias; that red is the enforcement.
+//   d10 the WORKING TREE's installer carries the declaration face
+//       (DECL_PATCH) and NOT the deleted .agent-presets write target —
+//       content, not pointers (PR #12 review BLOCKER). Hermetic by design:
+//       the remote-alias content assertion lives in release.sh step 7
+//       (post-push) — anywhere pre-tag it deadlocks the release that would
+//       move the alias (round-2 review).
 //
 // Usage: node scripts/check-docs-consistency.mjs [--json]
 // Exit: 1 iff any check FAILs.
@@ -188,58 +189,26 @@ async function run() {
   else cutoffDetail = `both install lines pin --before=${ciCutoffs[0]}`
   results.push(check('d09', 'D7 --before cutoffs well-shaped + identical', cutoffsMatch, cutoffDetail))
 
-  // d10 — the install one-liner's tag must SERVE the declaration-face
-  // installer, not merely share its name (PR #12 review BLOCKER).
+  // d10 — the WORKING TREE's installer must carry the declaration face, by
+  // CONTENT, not by pointer (PR #12 review BLOCKER, round 1; placement fixed
+  // in round 2).
   //
   // d02/d07/d08 prove the docs, the installer pin, and the alias AGREE with
-  // each other. None of them looks INSIDE the alias: `v0.2` → v0.2.1 shipped
-  // an installer whose only face wrote into $DSH_HOME/.agent-presets/ — the
-  // directory 0.2.x never reads — so every pointer check stayed green while
-  // the documented install path installed a preset nothing reads. This check
-  // reads the alias tag's own copy of scripts/install-concerto.sh and asserts
-  // the declaration-face marker IS there and the dead face's write target is
-  // NOT. The tag is fetched to a throwaway ref (the alias is force-moved at
-  // every release, so a stale local tag must never be trusted); offline, the
-  // local tag is the fallback and says so in the detail.
-  //
-  // RED HERE IS THE ENFORCEMENT, stated plainly: a merge that changes the
-  // installer must be followed IMMEDIATELY by a release (release.sh moves the
-  // alias and re-verifies from the new tag's raw URL). Until the alias moves,
-  // this gate stays red on purpose.
-  const d10 = (() => {
-    if (!alias) return { pass: false, detail: 'no tag_alias in compat.yaml' }
-    const tmpRef = 'refs/omo-gate-d10/alias'
-    const gitOpts = { cwd: REPO_ROOT, encoding: 'utf8', timeout: 90_000 }
-    const fetched = spawnSync('git',
-      ['fetch', '--depth', '1', '--force', 'origin', `refs/tags/${alias}:${tmpRef}`], gitOpts)
-    let ref = tmpRef
-    let source = `origin tag ${alias} (fetched)`
-    if (fetched.status !== 0) {
-      const local = spawnSync('git', ['rev-parse', '--verify', '-q', `refs/tags/${alias}`], gitOpts)
-      if (local.status !== 0) {
-        return { pass: false, detail: `cannot resolve tag ${alias} (fetch: ${(fetched.stderr || 'failed').trim().split('\n')[0]}; no local tag either)` }
-      }
-      ref = `refs/tags/${alias}`
-      source = `LOCAL tag ${alias} (fetch failed — result may be stale: ${(fetched.stderr || '').trim().split('\n')[0]})`
-    }
-    const show = spawnSync('git', ['show', `${ref}:scripts/install-concerto.sh`],
-      { ...gitOpts, maxBuffer: 4 * 1024 * 1024 })
-    if (ref === tmpRef) spawnSync('git', ['update-ref', '-d', tmpRef], gitOpts)
-    if (show.status !== 0 || !(show.stdout ?? '')) {
-      return { pass: false, detail: `git show ${ref}:scripts/install-concerto.sh failed (${(show.stderr || 'empty').trim().split('\n')[0]})` }
-    }
-    const content = show.stdout
-    const hasDeclaration = content.includes('DECL_PATCH=')
-    const servesDeadFace = content.includes('DEST="${D}/.agent-presets')
-    const pass = hasDeclaration && !servesDeadFace
-    return {
-      pass,
-      detail: pass
-        ? `${source} serves the declaration-face installer`
-        : `${source}: declaration marker DECL_PATCH ${hasDeclaration ? 'present' : 'MISSING'}; dead-face write target DEST=$D/.agent-presets ${servesDeadFace ? 'PRESENT' : 'absent'} — the documented one-liner installs from this tag; a merge that changes the installer must be followed by a release that moves the alias (scripts/release.sh)`,
-    }
-  })()
-  results.push(check('d10', 'alias tag serves the live installer face', d10.pass, d10.detail))
+  // each other; none of them looks at the installer's CONTENT. This check
+  // does: the declaration-face marker must be present and the deleted
+  // .agent-presets write target absent. It is deliberately HERMETIC (this
+  // tree's own file): the first d10 read the REMOTE alias tag's copy, which
+  // can only serve the new face after a release moves the alias — and
+  // release.sh runs this very gate at steps 1 and 3, BEFORE the tags exist
+  // (step 5), so the release could never reach the step that would turn it
+  // green (measured deadlock, round-2 review). The remote-alias content
+  // assertion lives where it can be true: release.sh step 7, post-push.
+  const hasDeclaration = installer.includes('DECL_PATCH=')
+  const servesDeadFace = installer.includes('DEST="${D}/.agent-presets')
+  results.push(check('d10', 'working-tree installer carries the live face', hasDeclaration && !servesDeadFace,
+    hasDeclaration && !servesDeadFace
+      ? 'DECL_PATCH present, no .agent-presets write target'
+      : `DECL_PATCH ${hasDeclaration ? 'present' : 'MISSING'}; dead-face write target DEST=$D/.agent-presets ${servesDeadFace ? 'PRESENT' : 'absent'} (the remote-alias content gate lives in release.sh step 7 — post-push, the only non-deadlocking point)`))
 
   const json = process.argv.includes('--json')
   if (json) {

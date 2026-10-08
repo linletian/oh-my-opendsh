@@ -267,5 +267,10 @@ session-owned and process-local — other users need nothing from it.
   prints a stat error about the empty path. It does not damage the file — it just reads like a
   broken install — so on a first install, hand-edit the file and delete the `- insert:` block that
   carries `- id: preset-concerto`.
+  The state before the installer's **first-ever** rewrite is additionally kept as
+  `cordis.patch.yml.bak.first` — written once, never overwritten, and outside the retention shape
+  (the prune only matches `.bak.<14 digits>`), so the pre-install original survives no matter how
+  many reinstalls follow (PR #12 round 2: with only the newest-3 retention, repeated real-change
+  reinstalls evicted it).
 - Optionally remove the `llm-pi-ai` section from `settings.yaml`.
 - The dynamic plugin disappears with its session (or `cordis_stop` / `cordis_undefine`).

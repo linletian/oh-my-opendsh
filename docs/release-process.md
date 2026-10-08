@@ -305,13 +305,16 @@ Steps (all local; first failure aborts before anything is tagged):
 6. **push** — branch + alias + full tag.
 7. **verify** — sandboxed install from the NEW tag's raw URL (hard gate); Pages `/install` poll (best effort, `--wait-pages`).
 
-> **The alias move is not optional when the installer changed (PR #12 review).**
-> Gate 7's d10 check reads the alias tag's OWN copy of `scripts/install-concerto.sh`
-> and is red until the alias serves the declaration-face installer — pointer
-> checks (d02/d07/d08) cannot see a stale alias serving the deleted
-> `.agent-presets` face. So a merge that touches the installer must be followed
-> by a release in the same session: the red between merge and release is the
-> enforcement, not a flake.
+> **The alias content gate lives at step 7, post-push — nowhere earlier
+> (PR #12 review, round 2).** Gate 7's d10 checks the WORKING TREE's installer
+> carries the declaration face (hermetic, always satisfiable); the REMOTE
+> alias's own copy is asserted by release.sh after the push (ls-remote peel ==
+> the release commit + `DECL_PATCH` present + no `.agent-presets` write target
+> + a sandboxed install through the alias URL). Any pre-tag placement of the
+> remote check deadlocks: the alias only moves at step 5/6, so steps 1/3 would
+> demand of the alias what only step 7 can make true (measured on the round-1
+> placement). The pointer checks d02/d07/d08 still cover name-drift; content
+> drift is covered here.
 8. **gh release** — notes = CHANGELOG top section + matrix snapshot (falls back to printed instructions without gh auth).
 
 ### The commit step stages everything, and asserts it did

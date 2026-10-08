@@ -326,6 +326,17 @@ function backupFiles(sbx: Sandbox): string[] {
     .sort()
 }
 
+/**
+ * The permanent first-ever pre-install backup (PR #12 round 2): written once
+ * next to the timestamped backups, deliberately OUTSIDE the retention shape
+ * (the prune only matches `.bak.<14 digits>`), so the pre-install original
+ * survives any number of later reinstalls — including refused runs' prunes.
+ */
+const FIRST_BACKUP = 'cordis.patch.yml.bak.first'
+function timestampedBackups(sbx: Sandbox): string[] {
+  return backupFiles(sbx).filter((n) => n !== FIRST_BACKUP)
+}
+
 /** A top-level row that IS the target, or an `insert:` block that carries it. */
 function refsTarget(entry: unknown): boolean {
   if (typeof entry !== 'object' || entry === null) return false
@@ -703,6 +714,40 @@ describe('T5 the delete recognises both pre-existing forms', () => {
     expect(backupFiles(sbx)).toEqual([])
   })
 
+  it('a comment written INSIDE the installed block is dropped with a loud WARNING naming the line (PR #12 round 2)', { timeout: 60_000 }, () => {
+    // The block is installer-owned and re-rendered on every install, so an
+    // annotation inside it cannot survive a reinstall — but it must never vanish
+    // SILENTLY (pre-fix: rc=0 and the comment count went 1 → 0 with no sign of
+    // it anywhere). Not a refusal: upgrades legitimately change OUR OWN comments,
+    // so blocking would break every upgrade.
+    const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
+    expect(runWithDsh(sbx).status).toBe(0)
+
+    // Annotate inside the installed block, then re-install.
+    const text = readFileSync(patchPath(sbx), 'utf8')
+    const marker = '        plugins:\n'
+    expect(text).toContain(marker)
+    writeFileSync(patchPath(sbx), text.replace(marker, `${marker}        # MY annotation inside the installed block\n`), 'utf8')
+
+    const r = runWithDsh(sbx)
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).toBe(0)
+    expect(r.stderr).toContain('WARNING')
+    expect(r.stderr).toContain('carried comment line(s) the new block does not have')
+    expect(r.stderr).toContain('# MY annotation inside the installed block')
+    // The fresh block does not carry it (re-rendered), and the run did not
+    // pretend nothing happened.
+    expect(readFileSync(patchPath(sbx), 'utf8')).not.toContain('MY annotation')
+
+    // Control: a REAL content change (route override rewrites the block, so
+    // this is the write path, not the no-op exit) whose dropped comments are
+    // all OURS — present in the new block too — must NOT warn.
+    const r2 = runWithDsh(sbx, { EXPLORE_MODEL: 'other-model' })
+    expect(r2.status, r2.stderr).toBe(0)
+    expect(r2.stderr).not.toContain('carried comment line(s)')
+    // And the override proves the write path really ran (not the no-op exit).
+    expect(r2.stdout).not.toContain('already up to date')
+  })
+
   it('legal YAML with non-string mapping keys installs clean — no bare TypeError (PR #12)', { timeout: 60_000 }, () => {
     // `config: {1: a}` is legal YAML 1.1. The pre-fix installer died on it
     // twice: sorted(node) in the group walk ('<' between str and int) and
@@ -852,9 +897,11 @@ describe('T9 the pre-rewrite backup', () => {
     const r = runWithDsh(sbx)
     expect(r.status, r.stderr).toBe(0)
 
-    const baks = backupFiles(sbx)
+    const baks = timestampedBackups(sbx)
     expect(baks).toHaveLength(1)
     expect(readFileSync(join(dirname(patchPath(sbx)), baks[0]), 'utf8')).toBe(original)
+    // …and the permanent first-ever copy next to it (PR #12 round 2), same bytes.
+    expect(readFileSync(join(dirname(patchPath(sbx)), FIRST_BACKUP), 'utf8')).toBe(original)
     // The live file kept the original as a prefix and declared the preset once.
     const after = readFileSync(patchPath(sbx), 'utf8')
     expect(after.startsWith(original)).toBe(true)
@@ -1368,10 +1415,13 @@ describe('T18 a CRLF patch file is upgradeable', () => {
     expect(text).toContain("user-row'\r\n- insert:\n")
 
     // The backup holds the exact original CRLF bytes — the binary round-trip
-    // of the pre-rewrite file.
-    const baks = backupFiles(sbx)
+    // of the pre-rewrite file. Both the timestamped one and the permanent
+    // first-ever copy (PR #12 round 2).
+    const baks = timestampedBackups(sbx)
     expect(baks).toHaveLength(1)
     expect(readFileSync(join(dirname(patchPath(sbx)), baks[0]))
+      .equals(Buffer.from(crlfText, 'utf8'))).toBe(true)
+    expect(readFileSync(join(dirname(patchPath(sbx)), FIRST_BACKUP))
       .equals(Buffer.from(crlfText, 'utf8'))).toBe(true)
   })
 })
@@ -1445,17 +1495,20 @@ describe('T19 backup retention keeps exactly the newest three', () => {
       }
       const r = runWithDsh(sbx)
       expect(r.status, `run ${i}:\n${r.stdout}\n${r.stderr}`).toBe(0)
-      const present = backupFiles(sbx)
+      // The retention window is the TIMESTAMPED backups; `.bak.first` rides
+      // outside it (written once at run 1, never pruned, always == original).
+      const present = timestampedBackups(sbx)
       // Runs 1-3 stack every backup; from run 4 the oldest is pruned, so
       // the directory holds exactly min(i, 3).
       expect(present, `backup count after run ${i}`).toHaveLength(Math.min(i, 3))
       const fresh = present.filter((n) => !created.includes(n))
       expect(fresh, `run ${i} must create exactly one new backup`).toHaveLength(1)
       created.push(fresh[0])
+      expect(readFileSync(join(dir, FIRST_BACKUP), 'utf8'), 'first backup holds the pre-install original').toBe(original)
     }
 
     expect(created).toHaveLength(5)
-    const survivors = backupFiles(sbx)
+    const survivors = timestampedBackups(sbx)
     // EXACTLY three, and they are the NEWEST three by creation order — the
     // distinct-second timestamps make this readable straight off the names.
     // Every survivor is a REAL previous state (runs 3-5), never a no-op copy
@@ -1485,25 +1538,29 @@ describe('T19 backup retention keeps exactly the newest three', () => {
     const original = '- id: user-row\n  name: \'@acme/user-row\'\n'
     writeFileSync(patchPath(sbx), original, 'utf8')
 
-    // Run 1 installs and backs up the ORIGINAL (the only backup that can
-    // ever hold it).
+    // Run 1 installs and backs up the ORIGINAL — twice over now: the
+    // timestamped backup AND the permanent `.bak.first` copy (PR #12 round 2).
     expect(runWithDsh(sbx).status).toBe(0)
     const afterFirst = readFileSync(patchPath(sbx), 'utf8')
-    const firstBackups = backupFiles(sbx)
-    expect(firstBackups).toHaveLength(1)
-    expect(readFileSync(join(dir, firstBackups[0]), 'utf8')).toBe(original)
+    const afterInstall = backupFiles(sbx)
+    expect(afterInstall).toHaveLength(2)
+    for (const b of afterInstall) {
+      expect(readFileSync(join(dir, b), 'utf8'), `${b} must hold the pre-install original`).toBe(original)
+    }
 
-    // Runs 2-4 change nothing: no write, no backup, and the run-1 backup —
-    // the only automatic copy of the pre-install file — survives them all
+    // Runs 2-4 change nothing: no write, no backup, and BOTH run-1 backups —
+    // the only automatic copies of the pre-install file — survive them all
     // (PR #12 review measured the old form losing it after four no-op runs).
     for (let i = 2; i <= 4; i += 1) {
       const r = runWithDsh(sbx)
       expect(r.status, `no-op run ${i}:\n${r.stdout}\n${r.stderr}`).toBe(0)
       expect(r.stdout, `no-op run ${i} must SAY it wrote nothing`).toContain('already up to date')
       expect(readFileSync(patchPath(sbx), 'utf8'), `no-op run ${i} must not touch the file`).toBe(afterFirst)
-      expect(backupFiles(sbx), `no-op run ${i} must not add a backup`).toEqual(firstBackups)
+      expect(backupFiles(sbx), `no-op run ${i} must not add a backup`).toEqual(afterInstall)
     }
-    expect(readFileSync(join(dir, firstBackups[0]), 'utf8')).toBe(original)
+    for (const b of afterInstall) {
+      expect(readFileSync(join(dir, b), 'utf8')).toBe(original)
+    }
   })
 
   it('a REFUSED install leaves no .bak behind — five refusals, zero backups', { timeout: 60_000 }, () => {
@@ -1934,15 +1991,18 @@ describe('T23 user-named .bak sentinels survive every prune — only timestamp-s
     }
     // The fresh backup exists; retention pruned exactly the oldest shaped
     // candidate (20230101); the two newer planted ones, both sentinels and
-    // the fresh backup remain.
+    // the fresh backup remain. Alongside the fresh TIMESTAMPED backup the
+    // installer also wrote the permanent `.bak.first` (PR #12 round 2) — it
+    // is immune to the prune by the same shape test the sentinels exercise.
     const survivors = backupFiles(sbx)
     const plantedNames = installerShaped.map(([name]) => name)
     const sentinelNames = sentinels.map(([name]) => name)
     const fresh = survivors.filter((n) => !plantedNames.includes(n) && !sentinelNames.includes(n))
-    expect(fresh, 'exactly one fresh installer backup').toHaveLength(1)
-    expect(fresh[0]).toMatch(/^cordis\.patch\.yml\.bak\.\d{14}(\.\d+)?$/)
+    expect(fresh.sort(), 'the fresh timestamped backup + the permanent first copy').toEqual(
+      [FIRST_BACKUP, fresh.find((n) => /\.\d{14}/.test(n)) as string].sort(),
+    )
     expect(survivors).toEqual(
-      [...plantedNames.slice(1), ...sentinelNames, fresh[0]].sort(),
+      [...plantedNames.slice(1), ...sentinelNames, ...fresh].sort(),
     )
     expect(existsSync(join(dir, 'cordis.patch.yml.bak.20230101000001'))).toBe(false)
   })
@@ -2407,11 +2467,14 @@ describe('T28 the backup shape is ASCII — Unicode digits are a user archive, n
       expect(existsSync(join(dir, name)), `${name} was eaten by the prune`).toBe(true)
       expect(readFileSync(join(dir, name), 'utf8'), name).toBe(body)
     }
-    // The prune really ran: 3 shaped + 1 fresh candidates, keep=3.
+    // The prune really ran: 3 shaped + 1 fresh TIMESTAMPED candidates, keep=3
+    // (the permanent `.bak.first` rides outside the window — PR #12 round 2).
     const survivors = backupFiles(sbx)
     const sentinelNames = unicodeSentinels.map(([n]) => n)
     const fresh = survivors.filter((n) => !sentinelNames.includes(n) && !shaped.map(([n]) => n).includes(n))
-    expect(fresh, 'exactly one fresh installer backup').toHaveLength(1)
+    expect(fresh.sort(), 'the fresh timestamped backup + the permanent first copy').toEqual(
+      [FIRST_BACKUP, fresh.find((n) => /\.\d{14}/.test(n)) as string].sort(),
+    )
     expect(survivors).toEqual([...shaped.map(([n]) => n).slice(1), ...sentinelNames, ...fresh].sort())
     expect(existsSync(join(dir, shaped[0][0])), 'the oldest shaped backup must be pruned').toBe(false)
   })
@@ -2459,9 +2522,13 @@ describe('T29 same-second backups sort by their collision suffix as an integer',
 
     const survivors = backupFiles(sbx)
     const fresh = survivors.filter((n) => !created.includes(n))
-    expect(fresh, 'exactly one fresh installer backup').toHaveLength(1)
-    // keep=3 of thirteen candidates → the two highest collision indices of the
-    // colliding second, plus this run's own backup.
+    // This run's own timestamped backup + the permanent `.bak.first` (PR #12
+    // round 2), which the prune's shape test never matches.
+    expect(fresh.sort(), 'the fresh timestamped backup + the permanent first copy').toEqual(
+      [FIRST_BACKUP, fresh.find((n) => /\.\d{14}/.test(n)) as string].sort(),
+    )
+    // keep=3 of thirteen timestamped candidates → the two highest collision
+    // indices of the colliding second, plus this run's own backup.
     expect(survivors).toEqual([
       `cordis.patch.yml.bak.${TS}.10`,
       `cordis.patch.yml.bak.${TS}.11`,

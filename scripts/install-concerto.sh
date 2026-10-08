@@ -307,6 +307,8 @@ def _prune_backups(target_path, keep=3):
     ASCII digits, or 14 ASCII digits plus '.<N>' (this script's same-second
     collision suffix). Anything carrying the same prefix in a DIFFERENT name
     shape is not a file this script made and is KEPT — 'cordis.patch.yml.bak.mine',
+    'cordis.patch.yml.bak.first' (this script's OWN permanent first-ever copy —
+    immune by the same shape test),
     or the 'cordis.patch.yml.bak.before-my-edits' that this script's own uninstall
     hint invites the user to write with `ls -t <patch>.bak.[0-9]*`. Prefix alone
     would delete those silently, and a hand-kept user archive is precisely the
@@ -374,6 +376,7 @@ RE_FORM1 = re.compile(r'^- id:[ \t]*' + _TARGET_SCALAR + r'[ \t]*\r?$')
 RE_INSERT = re.compile(r'^- insert:[ \t]*\r?$')
 RE_SUB_DASH = re.compile(r'^    - ')
 RE_SUB_TARGET = re.compile(r'^    - id:[ \t]*' + _TARGET_SCALAR + r'[ \t]*\r?$')
+RE_COMMENT = re.compile(r'^\s*#')
 
 
 def _is_top_entry(ln):
@@ -381,7 +384,8 @@ def _is_top_entry(ln):
 
 
 def _cuts_target_rows(text):
-    """Return (new_text, dropped) with every preset-concerto row removed.
+    """Return (new_text, dropped, swallowed_comments) with every
+    preset-concerto row removed.
 
     The file is walked as a list of top-level entries: an entry runs from its
     column-0 `- ` line up to the next column-0 `- ` line or EOF, so user rows
@@ -392,6 +396,11 @@ def _cuts_target_rows(text):
     target row is the user's own comments raises _InsertBlockCarriesUserContent
     — the cut cannot keep them (a comment-only `insert:` is not YAML anyone
     meant) and must not drop them silently (PR #12 review).
+
+    `swallowed_comments` collects the comment lines dropped WITH a target row
+    (inside its own subtree — e.g. an annotation the user wrote inside the
+    installed block, PR #12 round 2): those are not YAML nodes either, so the
+    caller warns about any the fresh block does not carry.
     """
     lines = text.split('\n')
     starts = [i for i, ln in enumerate(lines) if _is_top_entry(ln)]
@@ -404,6 +413,7 @@ def _cuts_target_rows(text):
 
     kept = []
     dropped = 0
+    swallowed = []
     for start, end, is_entry in spans:
         chunk = lines[start:end]
         if not is_entry:
@@ -411,6 +421,7 @@ def _cuts_target_rows(text):
             continue
         if RE_FORM1.match(chunk[0]):               # form ① — drop the whole row
             dropped += 1
+            swallowed.extend(ln for ln in chunk[1:] if RE_COMMENT.match(ln))
             continue
         if RE_INSERT.match(chunk[0]) and any(RE_SUB_TARGET.match(ln) for ln in chunk[1:]):
             subs = []
@@ -418,6 +429,11 @@ def _cuts_target_rows(text):
             for ln in chunk[1:]:
                 if RE_SUB_DASH.match(ln):
                     skip = bool(RE_SUB_TARGET.match(ln))
+                elif skip and RE_COMMENT.match(ln):
+                    # A comment line swallowed inside the target row's subtree
+                    # (skip is latched from its `- id:` line to the next
+                    # 4-column dash) — collect it for the caller's WARNING.
+                    swallowed.append(ln)
                 if not skip:
                     subs.append(ln)
             if any(RE_SUB_DASH.match(ln) for ln in subs):
@@ -441,7 +457,7 @@ def _cuts_target_rows(text):
                 dropped += 1
             continue
         kept.extend(chunk)                          # user entry — untouched
-    return '\n'.join(kept), dropped
+    return '\n'.join(kept), dropped, swallowed
 
 
 def _refs_target(entry):
@@ -760,7 +776,7 @@ _refuse_nested_group_target(orig_text)
 # block) — that lands before any byte of the patch file, its backup, or the
 # staging .tmp exists, same boundary as the nested-group refusal above.
 try:
-    cut_text, dropped = _cuts_target_rows(orig_text)
+    cut_text, dropped, swallowed_comments = _cuts_target_rows(orig_text)
 except _InsertBlockCarriesUserContent as e:
     _fail('refusing to install over %s: the `- insert:` block holding the old '
           '%s row also carries your own comment line(s):\n%s\n'
@@ -877,6 +893,20 @@ try:
         if _dump(got) != _dump(want):
             _fail('config.plugins[%d] differs\n  patch:  %s\n  block: %s'
                  % (i, _dump(got)[:400], _dump(want)[:400]))
+    # Comment lines the old target block carried AWAY: they were never YAML
+    # nodes, so no check above could see them (PR #12 round 2 — an annotation
+    # written INSIDE the installed block used to vanish silently on re-install,
+    # rc=0). Not a refusal: the replaced block is installer-owned and upgrades
+    # legitimately change OUR comments, so blocking would break upgrades — but
+    # the dropped lines are named, so a user annotation is never lost silently.
+    unseen_comments = [c for c in swallowed_comments if c.strip() not in block_text]
+    if unseen_comments:
+        print('write_patch_row: WARNING: the replaced %s block carried comment '
+              'line(s) the new block does not have (yours, or ours removed by '
+              'the upgrade). If any was YOURS, re-add it by hand:' % TARGET,
+              file=sys.stderr)
+        for c in unseen_comments:
+            print('    %s' % c.strip(), file=sys.stderr)
     # Every check has passed — the new content is proven. Only NOW is the
     # original backed up, immediately before it is replaced: a backup written
     # earlier outlived every REFUSED install and stacked unpruned (PR #12
@@ -894,6 +924,24 @@ try:
                 f.write(orig_bytes)
         except OSError as e:
             _fail('cannot write backup %s: %s' % (bak_path, e))
+        # The FIRST pre-install original also gets a permanent copy outside
+        # the retention shape: '.first' never matches _prune_backups'
+        # [0-9]{14} test, so it survives every prune — including the ones
+        # refused runs run (PR #12 round 2: with keep=3 alone, four
+        # content-changing reinstalls evicted the only backup that predates
+        # the installer, and the restore hint could only restore the file
+        # onto itself — measured). Written once, never overwritten: it holds
+        # the state before the installer FIRST touched the file.
+        first_path = '%s.bak.first' % patch_path
+        if not os.path.exists(first_path):
+            try:
+                with open(first_path, 'wb') as f:
+                    f.write(orig_bytes)
+            except OSError as e:
+                # The timestamped backup above exists; the safety copy must
+                # not turn a proven install red.
+                print('write_patch_row: WARNING: cannot write %s: %s'
+                      % (first_path, e), file=sys.stderr)
     os.replace(tmp_path, patch_path)
 except SystemExit:
     if os.path.exists(tmp_path):
@@ -1067,7 +1115,7 @@ stage_sources "${TMP_SRC}"
 mkdir -p "${D}/profiles/web"
 render_patch_block "${TMP_SRC}/agent.cordis.yml" "${TMP_SRC}/preset.yml" > "${TMP_SRC}/block.yml"
 write_patch_row "${DECL_PATCH}" "${TMP_SRC}/block.yml"
-echo "==> declared preset-concerto in ${DECL_PATCH}; previous content (if any) backed up to ${DECL_PATCH}.bak.<timestamp> (newest 3 kept)"
+echo "==> declared preset-concerto in ${DECL_PATCH}; previous content (if any) backed up to ${DECL_PATCH}.bak.<timestamp> (newest 3 kept); the FIRST pre-install original is also kept as ${DECL_PATCH}.bak.first (never pruned)"
 
 if [ -n "${NO_PIAI:-}" ]; then
   echo "==> NO_PIAI=1 — skipping pi-ai settings; point agentOptions at your own second route"

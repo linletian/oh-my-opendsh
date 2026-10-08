@@ -17,7 +17,7 @@ Status legend: ✅ tested · 🔬 untested · ❌ broken · 🪦 dropped.
 
 | our | dsh | omo | date | evidence (local file) |
 |---|---|---|---|---|
-| unreleased | 0.2.0-rc.2 | 4.19.4 | 2026-10-06 | `CI run 37476903377 — commit 2323658 — 8/8 gates green on dsh 0.2.0-rc.2 (D7-pin install with frozen transitive tree / gate 1 typecheck / gate 2 unit tests / gate 3 mock-LLM e2e / gate 4 doctor-lite / gate 5 license / gate 6 static 33-33 / gate 7 docs 9-9 / gate 8 proofs 7-7; task book 四之二十二); local T13 re-run: .omo/evidence/p45t13/T13-cleanup.md` |
+| unreleased | 0.2.0-rc.2 | 4.19.4 | 2026-10-06 | `CI run 37476903377 — commit 2323658 — 8/8 gates green on dsh 0.2.0-rc.2 (D7-pin install with frozen transitive tree / typecheck / unit tests / mock-LLM e2e / doctor-lite / license / concerto-static / docs-consistency / session-free proofs — per-gate sub-counts live in that run's own log, NOT here: they rot the moment a check is added — docs-consistency gained d10 in PR #12, and this string's 'docs 9-9' went stale the same day; task book 四之二十二); local T13 re-run: .omo/evidence/p45t13/T13-cleanup.md` |
 | 0.2.1 | 0.1.5-rc.1 | 4.19.4 | 2026-09-10 | `.omo/evidence/concerto-verify-dsh-0.1.5-rc.1.md` |
 | 0.2.0 | 0.1.5-rc.1 | 4.19.4 | 2026-09-10 | `.omo/evidence/concerto-verify-dsh-0.1.5-rc.1.md` |
 | 0.1.1 | 0.1.0-rc.6 | 4.19.4 | 2026-09-04 | `.omo/evidence/concerto-current-dsh-verify.md` |
