@@ -3,9 +3,13 @@
 # dist-tag of @deepseek-ai/dsh and oh-my-openagent (latest/next/alpha/…),
 # compares them with every dsh/omo value already recorded in .omo/compat.yaml
 # (tested OR untested), and opens ONE `compat-probe` issue per NEW version
-# with the local probe instructions (dedup by open issue title). The real
-# verification runs locally: scripts/compat-probe.sh + concerto_verify —
-# cloud stays free.
+# with the local probe instructions (dedup by open issue title). The script
+# ALSO checks the install alias tag's own installer content (DECL_PATCH
+# present / no .agent-presets write target) — the between-releases watch for
+# the face the alias serves, since the hard gate for it can only run
+# post-push in release.sh step 7b (PR #12 rounds 2-3; deliberately NOT in
+# ci.yml's required set, so no deadlock). The real verification runs
+# locally: scripts/compat-probe.sh + concerto_verify — cloud stays free.
 
 name: compat-probe
 

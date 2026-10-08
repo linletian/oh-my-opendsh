@@ -164,10 +164,22 @@ fi
 
 # 7. verify — sandboxed install from the NEW tag's raw URL (deterministic),
 #    then the ALIAS verification, then best-effort Pages /install poll (Pages
-#    builds async).
-echo "release.sh: step 7/8 — install verification (sandboxed, new tag)"
+#    builds async). All REMOTE legs require step 6's push to have happened:
+#    under --no-push the tags exist only locally, the raw URL 404s and
+#    ls-remote answers empty (PR #12 round 3, measured) — so the remote legs
+#    skip by name and the WORKING TREE's installer gets the sandboxed install
+#    instead (it is exactly what a later pushing release would ship).
+echo "release.sh: step 7/8 — install verification"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf "$TMP"; git update-ref -d refs/omo-release-verify/alias 2>/dev/null || true' EXIT
+if [[ "$NO_PUSH" == "1" ]]; then
+  echo "release.sh: step 7 — remote verification SKIPPED (--no-push); verifying the WORKING TREE installer instead"
+  DSH_HOME="$TMP/dsh-home" NO_PIAI=1 EXPLORE_PROVIDER=deepseek-official \
+    EXPLORE_MODEL=deepseek-flash sh scripts/install-concerto.sh
+  grep -q 'preset-concerto' "$TMP/dsh-home/profiles/web/cordis.patch.yml" \
+    && echo "release.sh: working-tree install OK (declared row landed, DSH_HOME=$TMP/dsh-home)" \
+    || { echo "release.sh: FAIL — working-tree install did not land the declared row" >&2; exit 1; }
+else
 curl -fsSL "https://raw.githubusercontent.com/${GH_REPO}/v${NEW}/scripts/install-concerto.sh" -o "$TMP/install.sh"
 # T12b cutover: deepseek-flash is the id the pinned 0.2.x official route
 # actually lists (installed dsh-llm-deepseek/lib/index.js:42-56 DEFAULT_MODELS).
@@ -238,6 +250,7 @@ if [[ "$WAIT_PAGES" -gt 0 ]]; then
     echo "release.sh: WARN — Pages /install not live within ${WAIT_PAGES}s (check the Pages build; raw tag URL already verified)"
   fi
 fi
+fi  # NO_PUSH: remote legs skipped above
 
 # 8. gh release
 if [[ "$NO_GH" == "1" ]]; then

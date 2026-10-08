@@ -1153,3 +1153,4 @@ echo "30s check: ask 'which delegation tools do you see?' -> the CONDUCTOR sees 
 # which `ls -t` would happily hand back over the real backup.
 echo "uninstall: edit ${DECL_PATCH} and delete ONLY the '- insert:' block whose row is '- id: preset-concerto' — do NOT delete the file, it holds your own rows too."
 echo "           or restore the newest INSTALLER backup (timestamp-shaped names only, your own .bak.mine is never matched): cp \"\$(ls -t \"${DECL_PATCH}\".bak.[0-9]* 2>/dev/null | head -n 1)\" \"${DECL_PATCH}\"   (optionally remove the llm-pi-ai section from ${SET})"
+echo "           or your TRUE pre-install original, if it exists (written once, never pruned, and the timestamp glob above never matches it): cp \"${DECL_PATCH}.bak.first\" \"${DECL_PATCH}\""

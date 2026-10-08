@@ -116,8 +116,56 @@ function issueBody(repo, branch, pkg, version, tag) {
   ].join('\n')
 }
 
+// ── the alias-face leg (PR #12 round 3) ─────────────────────────────────
+// The remote-alias CONTENT check lives in release.sh step 7b — i.e. it runs
+// only at release time. Between releases NOTHING watched the alias: a merge
+// that changes the installer without a following release leaves the
+// documented one-liner installing whatever face the stale alias carries, with
+// every required gate green (that is exactly how the round-1 BLOCKER was
+// invisible). This leg restores weekly visibility WITHOUT re-entering any
+// required set: a mismatch opens one deduped compat-probe issue and turns the
+// scheduled run red — neither can deadlock a release.
+//
+// Returns null when the alias serves the right face; a problem description
+// string when it does not; and undefined when the tag could not be fetched at
+// all (transient vs real is indistinguishable — log, do NOT file).
+function aliasFaceProblem(alias) {
+  const tmpRef = 'refs/omo-sentinel/alias'
+  const cleanup = () => { try { exec(`git update-ref -d ${tmpRef} || true`) } catch { /* best effort */ } }
+  let installer
+  try {
+    exec(`git fetch --depth 1 --force origin "refs/tags/${alias}:${tmpRef}" 2>&1`)
+    installer = exec(`git show "${tmpRef}:scripts/install-concerto.sh"`)
+  } catch (e) {
+    cleanup()
+    console.log(`compat-probe: alias leg could not fetch/show tag ${alias} (${String(e.message ?? e).split('\n')[0]}) — skipping the content check, NOT filing`)
+    return undefined
+  }
+  cleanup()
+  const hasFace = installer.includes('DECL_PATCH=')
+  const deadFace = installer.includes('DEST="${D}/.agent-presets')
+  if (hasFace && !deadFace) return null
+  return `declaration-face marker DECL_PATCH ${hasFace ? 'present' : 'MISSING'}; dead-face write target DEST=$D/.agent-presets ${deadFace ? 'PRESENT' : 'absent'}`
+}
+
+function aliasIssueBody(repo, branch, alias, problem) {
+  const base = `https://github.com/${repo}/blob/${branch}`
+  return [
+    `## The install alias \`${alias}\` serves a wrong installer face`,
+    '',
+    `The weekly compat-probe sentinel fetched the alias tag's own \`scripts/install-concerto.sh\`: ${problem}.`,
+    '',
+    '**What this means**: the documented one-liner (README / Pages `/install`) installs from that alias — with the dead face, users get a preset written into a directory no dsh ≥ 0.2 ever reads (a silent zero-preset install).',
+    '',
+    '**Fix**: cut the release that moves the alias (`scripts/release.sh` — its step 7b hard-verifies the alias content post-push), or point the docs at a tag carrying the declaration-face installer.',
+    '',
+    `Context: [docs/release-process.md](${base}/docs/release-process.md) §5; the remote-alias content gate cannot sit in CI (it deadlocks the release that would move the alias — PR #12 round 2), so this sentinel leg is the between-releases watch.`,
+  ].join('\n')
+}
+
 async function main() {
   const repo = repoName()
+  const branch = process.env.GITHUB_REF_NAME || 'main'
   const compat = await loadYamlDialect(join(REPO_ROOT, '.omo', 'compat.yaml'))
   const rows = [...(compat.tested ?? []), ...(compat.untested ?? [])]
   const coveredDsh = new Set(rows.map((r) => String(r.dsh ?? '')).filter(Boolean))
@@ -144,6 +192,26 @@ async function main() {
     }
   }
 
+  // The alias-face leg runs EVERY time — also (especially) when no upstream
+  // version is new: "nothing new upstream" must never mute "the published
+  // alias serves the dead face".
+  const alias = compat.our && compat.our.tag_alias ? String(compat.our.tag_alias) : null
+  if (alias) {
+    const problem = aliasFaceProblem(alias)
+    if (problem) {
+      candidates.push({
+        pkg: 'install alias',
+        version: alias,
+        tag: 'git-tag',
+        dedupKey: `install alias ${alias} serves`,
+        title: `compat-probe: install alias ${alias} serves a wrong installer face`,
+        body: aliasIssueBody(repo, branch, alias, problem),
+      })
+    } else if (problem === null) {
+      console.log(`compat-probe: alias ${alias} serves the declaration-face installer — content OK`)
+    }
+  }
+
   if (candidates.length === 0) {
     const watched = (tags) => tags.map((t) => `${t.tag}=${t.version}`).join(', ')
     console.log(`compat-probe: nothing new — matrix covers every dist-tag (dsh: ${watched(dshTags)}; omo: ${watched(omoTags)})`)
@@ -156,17 +224,18 @@ async function main() {
   } catch { /* gh issue list failing → fall through to create attempt */ }
 
   let created = 0
-  const branch = process.env.GITHUB_REF_NAME || 'main'
   for (const c of candidates) {
-    if (openTitles.includes(c.version)) {
+    const dedupKey = c.dedupKey ?? c.version
+    if (openTitles.includes(dedupKey)) {
       console.log(`compat-probe: open issue already exists for ${c.pkg} ${c.version} — skipping`)
       continue
     }
     const tmp = mkdtempSync(join(tmpdir(), 'compat-probe-'))
     const bodyFile = join(tmp, 'body.md')
-    writeFileSync(bodyFile, issueBody(repo, branch, c.pkg, c.version, c.tag))
+    writeFileSync(bodyFile, c.body ?? issueBody(repo, branch, c.pkg, c.version, c.tag))
+    const title = c.title ?? `compat-probe: ${c.pkg} ${c.version} untested`
     try {
-      exec(`gh issue create --repo "${repo}" --label compat-probe --title "compat-probe: ${c.pkg} ${c.version} untested" --body-file "${bodyFile}"`)
+      exec(`gh issue create --repo "${repo}" --label compat-probe --title "${title}" --body-file "${bodyFile}"`)
       created++
       console.log(`compat-probe: opened issue for ${c.pkg} ${c.version}`)
     } catch (e) {
