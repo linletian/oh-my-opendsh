@@ -11,9 +11,11 @@
 // `deepseek-official` (@deepseek-ai/dsh-llm-deepseek, the DeepSeek *Messages*
 // / Anthropic dialect on dsh 0.2.0-rc.2). So the mode is a property of the
 // request — its path first, then its body — never of configuration or
-// environment: isMessagesRequest(url, body) keys on the endpoint the client
-// posted to (`/messages` vs `/chat/completions`) and falls back to body
-// markers. The path is decisive because the persona can ride EITHER face of a
+// environment: isMessagesRequest(body, requestUrl) keys on the endpoint the
+// client posted to (`/messages` vs `/chat/completions`) and falls back to body
+// markers (the signature order here once read `(url, body)` — backwards;
+// the implementation is `(body, requestUrl)`. PR #12 round 4, kimi). The path
+// is decisive because the persona can ride EITHER face of a
 // Messages request: dsh-llm-deepseek writes a top-level `system`
 // (installed lib/index.js:1701,:1709) but also splices `role:"system"` rows
 // INSIDE `messages[]` for a model whose catalog row declares

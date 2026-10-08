@@ -123,8 +123,11 @@ function issueBody(repo, branch, pkg, version, tag) {
 // documented one-liner installing whatever face the stale alias carries, with
 // every required gate green (that is exactly how the round-1 BLOCKER was
 // invisible). This leg restores weekly visibility WITHOUT re-entering any
-// required set: a mismatch opens one deduped compat-probe issue and turns the
-// scheduled run red — neither can deadlock a release.
+// required set: a mismatch opens one deduped compat-probe issue — the ISSUE
+// is the alarm; the run itself stays green when the issue was filed or
+// already exists (this comment once claimed the run goes red — wrong: only a
+// FAILED issue create sets exitCode=1; PR #12 round 4, kimi) — and neither
+// can deadlock a release.
 //
 // Returns null when the alias serves the right face; a problem description
 // string when it does not; and undefined when the tag could not be fetched at
@@ -203,7 +206,6 @@ async function main() {
         pkg: 'install alias',
         version: alias,
         tag: 'git-tag',
-        dedupKey: `install alias ${alias} serves`,
         title: `compat-probe: install alias ${alias} serves a wrong installer face`,
         body: aliasIssueBody(repo, branch, alias, problem),
       })
@@ -218,22 +220,24 @@ async function main() {
     return
   }
 
-  let openTitles = ''
+  let openTitleList = []
   try {
-    openTitles = exec(`gh issue list --repo "${repo}" --label compat-probe --state open --json title -q '.[].title' || true`)
+    openTitleList = exec(`gh issue list --repo "${repo}" --label compat-probe --state open --json title -q '.[].title' || true`)
+      .split('\n').map((t) => t.trim()).filter(Boolean)
   } catch { /* gh issue list failing → fall through to create attempt */ }
 
   let created = 0
   for (const c of candidates) {
-    const dedupKey = c.dedupKey ?? c.version
-    if (openTitles.includes(dedupKey)) {
+    const title = c.title ?? `compat-probe: ${c.pkg} ${c.version} untested`
+    // EXACT title match for dedup — a substring test lets an existing
+    // "0.2.10" issue swallow a genuinely new "0.2.1" one (PR #12, kimi).
+    if (openTitleList.includes(title)) {
       console.log(`compat-probe: open issue already exists for ${c.pkg} ${c.version} — skipping`)
       continue
     }
     const tmp = mkdtempSync(join(tmpdir(), 'compat-probe-'))
     const bodyFile = join(tmp, 'body.md')
     writeFileSync(bodyFile, c.body ?? issueBody(repo, branch, c.pkg, c.version, c.tag))
-    const title = c.title ?? `compat-probe: ${c.pkg} ${c.version} untested`
     try {
       exec(`gh issue create --repo "${repo}" --label compat-probe --title "${title}" --body-file "${bodyFile}"`)
       created++

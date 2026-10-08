@@ -1,13 +1,15 @@
 # 安装协奏模式
 
 > 如何在你自己的 DeepSeek Harness 上安装 oh-my-opendsh 协奏模式（Concerto Mode）MVP。
-> 已在当前 DSH 运行时验证（2026-09-04，`concerto_verify` 22/22 PASS、`standingKeyFor` mounted OK）。
-> 完整实现与验证报告：[docs/concerto-current-dsh_zh-CN.md](./concerto-current-dsh_zh-CN.md)。
+> 已在当前 DSH 运行时验证（2026-09-04，`concerto_verify` 22/22 PASS、`standingKeyFor` mounted OK）
+> ——**那是 0.1.x 时代的事**；dsh ≥ 0.2 上安装面是本指南描述的声明行（`.agent-presets/` 没有
+> 运行时读，`standingKeyFor` 是 0.1.x 机制）。完整实现与验证报告：
+> [docs/concerto-current-dsh_zh-CN.md](./concerto-current-dsh_zh-CN.md)（已加时代锚定）。
 > English: [docs/install-concerto.md](./install-concerto.md)。
 
-## 形态（单一：declaration）
+## 两个部件
 
-| 形态 | 文件 | 生命周期 | 用途 |
+| 部件 | 文件 | 生命周期 | 用途 |
 |---|---|---|---|
 | **持久化 preset（核心）— dsh ≥ 0.2（declaration）** | `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`（web profile，安装器锁定 `web`）里声明的 `preset-concerto` 那一行 | 磁盘持久，重启无损 | 日常使用：0.2 起不读 `.agent-presets/`，preset 声明了才存在 |
 | 动态插件（可选） | `patches/omo-dsh/omo-agents-current/concerto-plugin.host.js` | 进程级，重启即失 | 验证/观测/演示（`concerto_verify`、`concerto_demo`、路由强制与观测、Hard Blocks 注入） |
@@ -44,6 +46,12 @@
   一段一致。）
 
 ## 快速安装
+
+> ⚠️ **临时警示（v0.2.2 发版后删除本段）**：`v0.2` 别名仍指向切换前的旧版。今天走**方式 A**
+> 拿到的是该 tag 的旧安装器——它把 preset 写进 `.agent-presets/`，而 dsh ≥ 0.2 根本不读这个
+> 目录（静默零 preset 安装）；**方式 B** 的提示词拉的也是该 tag 的 preset 文件（0.1.x 时代的
+> 旧模型 id）。发版前移别名之前，请用**方式 C**——仓库 checkout 里的才是本页描述的声明式
+> 安装器。（PR #12 评审；别名内容由 release.sh step 7b 硬门把关、周哨兵盯梢。）
 
 三种方式跑的是同一个 `scripts/install-concerto.sh`，它在动手前先跑 `dsh --version` 分流：**dsh ≥ 0.2**
 把 preset 渲染成**一条声明行**写进 `${DSH_HOME:-$HOME/.dsh}/profiles/web/cordis.patch.yml`；

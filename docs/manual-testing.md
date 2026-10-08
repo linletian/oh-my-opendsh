@@ -116,24 +116,24 @@ Pick 协奏模式 / Concerto Mode in the mode selector (user-trust roster entry;
 
 ### Five scenarios
 
-Session JSONL lives at `$DSH_HOME/sessions/<path>/session.vN.jsonl` (the filename carries the session-format generation — `v3` today; an at-rest file may be compressed to `session.vN.jsonl.zstd`, in which case pipe through `unzstd -c` first).
+Session JSONL lives at `$DSH_HOME/sessions/<path>/session.vN.jsonl` (the filename carries the session-format generation — `v4` on the pinned dsh ≥ 0.2 runtime; `v3` was the 0.1.x generation; an at-rest file may be compressed to `session.vN.jsonl.zstd`, in which case pipe through `unzstd -c` first).
 
 **S1 — Basic chat.** Ask anything; the conductor answers directly. Verify: the session log's `request/header` shows provider `deepseek-official`, model `deepseek-v4-pro`:
 
 ```bash
-grep -E '"(provider|model)"' "$DSH_HOME/sessions/<path>/session.v3.jsonl"
+grep -E '"(provider|model)"' "$DSH_HOME/sessions/<path>/session.v4.jsonl"
 ```
 
 **S2 — Delegation chain (AC-4/AC-5).** Type e.g. `用 explore 查一下这个仓库的 README 讲了什么，然后总结给我`. Expected: conductor calls the `explore` tool → a CHILD session runs the read-only research → result returns → conductor summarizes. Verify: a second (child) session JSONL appears; the parent's `subagent/descriptor` + the child's `request/header` show the child route `deepseek/deepseek-flash` ≠ parent `deepseek-official/deepseek-v4-pro`:
 
 ```bash
-grep -E '"(provider|model)"' "$DSH_HOME/sessions/<parent>/session.v3.jsonl" "$DSH_HOME/sessions/<child>/session.v3.jsonl"
+grep -E '"(provider|model)"' "$DSH_HOME/sessions/<parent>/session.v4.jsonl" "$DSH_HOME/sessions/<child>/session.v4.jsonl"
 ```
 
 **S3 — Read-only denial (AC-6a).** Ask: `让 explore 把 README 里的项目名改成 foo`. Expected: the explore child's write/edit attempts are rejected with `Error: unknown tool "write"` (or `"edit"`); the file on disk is unchanged. Verify in the child JSONL tool results:
 
 ```bash
-grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v3.jsonl"
+grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v4.jsonl"
 ```
 
 Caveat (P-21, accepted threat-model boundary): the denial is **tool-layer**, not a capability boundary — the child keeps `bash`, so a determined or instructed child can still write via the shell, or even spawn an unrestricted `dsh` process (P-21.2). Do not read S3 as "writes are unreachable".
@@ -141,7 +141,7 @@ Caveat (P-21, accepted threat-model boundary): the denial is **tool-layer**, not
 **S4 — No nested delegation (AC-6b).** Ask: `让 explore 自己再派一个子代理去查别的东西`. Expected (post-F1): the `explore` tool is **physically absent** from the child's roster, so the child either reports honestly that it has no delegation tool, or its attempt is rejected `Error: unknown tool "explore"` — both pass; the depth cap (`maxDepth: 1`) stays on as defense-in-depth but no longer fires. Verify in the child JSONL:
 
 ```bash
-grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v3.jsonl"
+grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v4.jsonl"
 ```
 
 **S5 — Hard-blocks persona (FR-6).** The explore child carries the injected Hard Blocks + Anti-Patterns sections; behaviorally it should cite read-only discipline when refusing writes (observable in its replies). The injection itself is boot-logged as `[omo-agents]` markers and proven structurally by the L0 probe.
@@ -169,7 +169,7 @@ AC-9 (docs) already closed at MVP sign-off.
 | Symptom | Cause / fix |
 |---|---|
 | `patch: entry "omo-agents" not found` / patch silently skipped | Plugin not installed into the profile — run L2 step (a). (P-8: mounting needs the insert form in `cordis.yml`, already correct; the name resolves from the profile dir.) |
-| Concerto missing from the mode roster | Plugin didn't load: check the boot log for `[omo-agents] loaded`; the preset is authored into `$DSH_HOME/.agent-presets/concerto/` at boot — check that dir exists. |
+| Concerto missing from the mode roster | Plugin didn't load: check the boot log for `[omo-agents] loaded`. On dsh ≥ 0.2 the live evidence is the declared row in `$DSH_HOME/profiles/web/cordis.patch.yml` plus the boot-log roster line `[omo-agents] concerto roster: … concerto:broken=absent` — NOT `.agent-presets/` (0.2.x never reads that directory; a preset exists only once declared). |
 | `MISSING_CREDENTIAL` naming the explore route | The `settings.yaml` llm-pi-ai block (L2-b) is missing, or the key is absent from credentials.yaml/env. |
 | `ctx.agents.get is not a function` anywhere | You have rc.8 deps (naive reinstall pulled them) — see P-11.5 for the validated-tree recipe. |
 | Boot readiness line carries `?token=` | Normal on the pinned 0.2.0-rc.2 (browser auth since 0.1.2): open the FULL URL; our harness scripts already handle both transports. |

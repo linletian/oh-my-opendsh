@@ -65,7 +65,7 @@
 // no case renamed, no case removed; the only edits in this file are the timeouts
 // and this note.
 import { spawnSync } from 'node:child_process'
-import { accessSync, appendFileSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { accessSync, appendFileSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -107,9 +107,14 @@ type Json = Record<string, unknown>
 const FETCH_RE = /curl -fsSL "\$\{BASE\}\/patches\/omo-dsh\/omo-agents-current\/preset\/(agent\.cordis\.yml|preset\.yml)" -o "\$1\/\1"/g
 const installerSource = readFileSync(INSTALLER, 'utf8')
 let fetchReplacements = 0
+// Shell single-quote, NOT JSON.stringify: a double-quoted string still
+// expands `$` and backticks, so a checkout path containing either would be
+// re-expanded by the shell (test-infra only, but wrong is wrong — PR #12
+// round 4, kimi). Single quotes with the '\'' escape expand nothing.
+const shQuote = (s: string): string => `'${s.replace(/'/g, "'\\''")}'`
 const offlineInstaller = installerSource.replace(FETCH_RE, (_match, name: string) => {
   fetchReplacements += 1
-  return `  cp ${JSON.stringify(join(PRESET_DIR, name))} "$1/${name}"`
+  return `  cp ${shQuote(join(PRESET_DIR, name))} "$1/${name}"`
 })
 
 /** A `dsh` that answers --version with the version a test claims is installed. */
@@ -407,8 +412,8 @@ describe('installer test harness fixtures (non-vacuity)', () => {
     // which quotes a literal URL and is never run.
     const liveFetchLines = offlineInstaller.split('\n').filter((ln) => /curl -fsSL "\$\{BASE\}/.test(ln))
     expect(liveFetchLines).toEqual([])
-    expect(offlineInstaller).toContain(`cp ${JSON.stringify(AGENT_SRC)} "$1/agent.cordis.yml"`)
-    expect(offlineInstaller).toContain(`cp ${JSON.stringify(PRESET_YML_SRC)} "$1/preset.yml"`)
+    expect(offlineInstaller).toContain(`cp ${shQuote(AGENT_SRC)} "$1/agent.cordis.yml"`)
+    expect(offlineInstaller).toContain(`cp ${shQuote(PRESET_YML_SRC)} "$1/preset.yml"`)
     // The copy is the real script apart from those two lines.
     expect(offlineInstaller.split('\n').length).toBe(installerSource.split('\n').length)
   })
@@ -748,6 +753,55 @@ describe('T5 the delete recognises both pre-existing forms', () => {
     expect(r2.stdout).not.toContain('already up to date')
   })
 
+  it('a symlinked patch file is written THROUGH the link — the link survives and the target gets the row (PR #12 round 4)', { timeout: 60_000 }, () => {
+    // Dotfiles layouts symlink the profile file into place. Pre-fix,
+    // os.replace(tmp, link) silently replaced the LINK with a regular file and
+    // left the real target byte-untouched: rc=0, the install reported success,
+    // and the file dsh reads never changed (measured by kimi, reproduced here).
+    const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
+    const realDir = join(sbx.root, 'real-home', 'profiles', 'web')
+    mkdirSync(realDir, { recursive: true })
+    const realFile = join(realDir, 'cordis.patch.yml')
+    const original = '- id: user-row\n  name: \'@acme/user-row\'\n'
+    writeFileSync(realFile, original, 'utf8')
+    const linkDir = join(sbx.home, 'profiles', 'web')
+    mkdirSync(linkDir, { recursive: true })
+    symlinkSync(realFile, join(linkDir, 'cordis.patch.yml'))
+
+    const r = runWithDsh(sbx)
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).toBe(0)
+    expect(r.stdout).toContain('resolves to a symlinked location — operating on its target')
+    // The link is still a link, and the TARGET carries the declaration.
+    expect(lstatSync(join(linkDir, 'cordis.patch.yml')).isSymbolicLink()).toBe(true)
+    expect(readFileSync(realFile, 'utf8')).toContain('- id: preset-concerto')
+    expect(readFileSync(realFile, 'utf8')).toContain(original.trimEnd())
+    // The backup(s) live next to the TARGET, holding its exact pre-install bytes.
+    expect(readFileSync(`${realFile}.bak.first`, 'utf8')).toBe(original)
+
+    // Control: a plain non-symlinked path must NOT print the note (the note
+    // once fired on every merely-relative path — realpath absolutizes too).
+    const plain = makeSandbox({ dshVersion: '0.2.0-rc.2' })
+    const r2 = runWithDsh(plain)
+    expect(r2.status, r2.stderr).toBe(0)
+    expect(r2.stdout).not.toContain('resolves to a symlinked location')
+  })
+
+  it('a UTF-8 BOM is named as the BOM in the refusal — not misdiagnosed as a shape problem (PR #12 round 4)', { timeout: 60_000 }, () => {
+    // BOM + target row on line 1: the invisible bytes defeat the anchored cut,
+    // and the pre-fix message advised about trailing comments / 6-space indents
+    // — everything except the actual cause.
+    const sbx = makeSandbox({ dshVersion: '0.2.0-rc.2' })
+    mkdirSync(dirname(patchPath(sbx)), { recursive: true })
+    writeFileSync(patchPath(sbx), '\uFEFF- id: preset-concerto\n  name: x\n', 'utf8')
+
+    const r = runWithDsh(sbx)
+    expect(r.status, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`).not.toBe(0)
+    expect(r.stderr).toContain('UTF-8 BOM (EF BB BF)')
+    expect(r.stderr).toContain("sed -i '1s/^")
+    // File byte-untouched, nothing written.
+    expect(readFileSync(patchPath(sbx), 'utf8')).toBe('\uFEFF- id: preset-concerto\n  name: x\n')
+  })
+
   it('legal YAML with non-string mapping keys installs clean — no bare TypeError (PR #12)', { timeout: 60_000 }, () => {
     // `config: {1: a}` is legal YAML 1.1. The pre-fix installer died on it
     // twice: sorted(node) in the group walk ('<' between str and int) and
@@ -988,11 +1042,11 @@ describe('T11 hostile preset.yml survives the full installer (quoting teeth)', (
     // Feed it through the FULL installer: re-point ONLY the preset.yml cp at
     // this fixture; agent.cordis.yml still comes from the repo, so the render,
     // the self-check and write_patch_row all run over the real pipeline.
-    const cpPresetLine = `  cp ${JSON.stringify(PRESET_YML_SRC)} "$1/preset.yml"`
+    const cpPresetLine = `  cp ${shQuote(PRESET_YML_SRC)} "$1/preset.yml"`
     expect(countOccurrences(offlineInstaller, cpPresetLine)).toBe(1)
     const hostileInstaller = offlineInstaller.replace(
       cpPresetLine,
-      `  cp ${JSON.stringify(hostilePreset)} "$1/preset.yml"`,
+      `  cp ${shQuote(hostilePreset)} "$1/preset.yml"`,
     )
     expect(hostileInstaller).not.toBe(offlineInstaller)
     writeFileSync(sbx.script, hostileInstaller, 'utf8')
@@ -1858,9 +1912,9 @@ describe('T22 the render self-check round-trips name/description — quoting is 
 
   /** Swap ONLY the preset.yml fetch of the offline installer for a fixture. */
   function installerWithPreset(sbx: Sandbox, presetPath: string): void {
-    const cpPresetLine = `  cp ${JSON.stringify(PRESET_YML_SRC)} "$1/preset.yml"`
+    const cpPresetLine = `  cp ${shQuote(PRESET_YML_SRC)} "$1/preset.yml"`
     expect(countOccurrences(offlineInstaller, cpPresetLine)).toBe(1)
-    const swapped = offlineInstaller.replace(cpPresetLine, `  cp ${JSON.stringify(presetPath)} "$1/preset.yml"`)
+    const swapped = offlineInstaller.replace(cpPresetLine, `  cp ${shQuote(presetPath)} "$1/preset.yml"`)
     expect(swapped).not.toBe(offlineInstaller)
     writeFileSync(sbx.script, swapped, 'utf8')
     chmodSync(sbx.script, 0o755)

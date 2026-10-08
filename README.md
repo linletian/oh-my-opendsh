@@ -68,6 +68,11 @@ targets**, each on its own route binding.
 
   (fallback direct link: `https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/scripts/install-concerto.sh`)
 
+  > ⚠️ **Temporary (until the v0.2.2 release moves the `v0.2` alias):** the one-liner currently
+  > fetches the PRE-cutover installer, which writes into `.agent-presets/` — a directory dsh ≥ 0.2
+  > never reads (silent no-op). Until then, install from a repo checkout instead (Option C in the
+  > guide). PR #12 review; watched by the weekly compat-probe sentinel.
+
 - **Let DSH install itself** — send any DSH session the copy-paste prompt from
   [docs/install-concerto.md](./docs/install-concerto.md) and it sets itself up.
 

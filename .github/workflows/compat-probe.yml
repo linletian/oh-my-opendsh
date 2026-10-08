@@ -60,6 +60,17 @@ jobs:
       - name: install dsh (parser provider)
         run: npm install --global "@deepseek-ai/dsh@0.2.0-rc.2" --before=2026-10-01T07:24:55.067Z
 
+      - name: ensure the compat-probe label exists
+        # The sentinel files issues under --label compat-probe, but the label
+        # never existed on the repo — `gh issue create` then dies at label
+        # resolution ("could not add label"), which would have made the first
+        # real run red-without-a-voice (PR #12 round 4, kimi: `gh label list`
+        # measured 10 defaults only). Created on the repo out-of-band too;
+        # this step keeps the workflow self-healing if it is ever deleted.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh label create compat-probe --description "upstream drift + install-alias face alarms (weekly sentinel)" --force || true
+
       - name: detect new upstream versions → open issue
         # gh needs the token IN THE ENV — `permissions: issues: write` alone
         # leaves the CLI unauthenticated ("set the GH_TOKEN environment

@@ -96,7 +96,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { join, relative } from 'node:path'
+import { join, relative, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { REPO_ROOT, loadYamlDialect } from './doctor-lite.mjs'
 // c11 复用 doctor-lite-core 自己的挂载序期望，而不是在本文件重抄插件清单
@@ -1792,6 +1792,16 @@ async function run() {
     const C23_ARGV_HOPS = 2
     const c23IsShell = (name) => name.endsWith('.sh') || name.endsWith('.bash')
       || (!name.includes('.') && name !== '')
+    const c23AcceptFile = (full, name) => {
+      if (C23_EXT.some((suffix) => name.endsWith(suffix))) return true
+      if (c23IsShell(name)) {
+        // Extension-less launchers (the repo has `install`) are consumers too;
+        // a shebang is what makes them executable source.
+        const head = (readFileSync(full, 'utf8').split('\n', 1)[0] ?? '').trim()
+        return /^#!\s*(?:\/usr\/bin\/env\s+)?(?:\/\S*\/)?(?:node|bun|npx|bash|sh)\b/.test(head)
+      }
+      return false
+    }
     const c23Walk = (dir, out = []) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const full = join(dir, entry.name)
@@ -1800,13 +1810,8 @@ async function run() {
           c23Walk(full, out)
         } else if (!entry.isFile()) {
           continue
-        } else if (C23_EXT.some((suffix) => entry.name.endsWith(suffix))) {
+        } else if (c23AcceptFile(full, entry.name)) {
           out.push(full)
-        } else if (c23IsShell(entry.name)) {
-          // Extension-less launchers (the repo has `install`) are consumers too;
-          // a shebang is what makes them executable source.
-          const head = (readFileSync(full, 'utf8').split('\n', 1)[0] ?? '').trim()
-          if (/^#!\s*(?:\/usr\/bin\/env\s+)?(?:\/\S*\/)?(?:node|bun|npx|bash|sh)\b/.test(head)) out.push(full)
         }
       }
       return out
@@ -1927,10 +1932,19 @@ async function run() {
     // `unclassified` AND named individually in the FAIL banner, so that banner's
     // residual boundary is a list of real sites rather than a promise.
     const unresolvedArgvSites = []
-    const scanRoots = readdirSync(REPO_ROOT, { withFileTypes: true })
+    const topLevelEntries = readdirSync(REPO_ROOT, { withFileTypes: true })
+    const scanRoots = topLevelEntries
       .filter((entry) => entry.isDirectory() && !C23_SKIP_DIRS.has(entry.name))
       .map((entry) => join(REPO_ROOT, entry.name))
-    for (const file of scanRoots.flatMap((dir) => c23Walk(dir))) {
+    // Root-level FILES are consumers too — the `install` launcher lives there,
+    // and a directory-only scanRoots let a wrong-arity consumer sit at the repo
+    // root forever: the escape hatch was exactly where this check's own comment
+    // pointed (PR #12, kimi round 1 — a planted root consumer stayed green).
+    const rootFiles = topLevelEntries
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(REPO_ROOT, entry.name))
+      .filter((full) => c23AcceptFile(full, basename(full)))
+    for (const file of [...rootFiles, ...scanRoots.flatMap((dir) => c23Walk(dir))]) {
       const rel = relative(REPO_ROOT, file)
       if (rel === relative(REPO_ROOT, C23_VALIDATOR)) continue
       const text = readFileSync(file, 'utf8')
@@ -2112,7 +2126,7 @@ async function run() {
         // B round 4, N-1) — and is printed on THIS branch instead, the only one
         // on which it can ever be anything but zero.
         ? `${c23Problems.join('; ')} — ${unresolvedArgvSites.length} of the above are argv-unresolvable sites${unresolvedArgvSites.length > 0 ? ` [${unresolvedArgvSites.join('; ')}]` : ' (this FAIL came from another clause)'}; ${unclassified} of the above are unclassified mentions, each named on its own line above — an argv-unresolvable invocation, or a mention outside every rule`
-        : `validator declares ${arity} parameters; the scan of ${scanRoots.length} top-level dir(s) [${scanRoots.map((d) => relative(REPO_ROOT, d)).join(', ')}] (excluding node_modules, .git and the .omo evidence archive) found ${invocations} invocation(s) in ${consumers.length} consumer(s) (${consumers.join(', ')}), each passing exactly ${arity}; ${bindings} path-variable binding(s), ${sourceReads} source-read(s) (reconciliation, not execution) — a new consumer with a wrong arity, a renamed required consumer, a wrapped or continued call, or a mention outside the rule fails HERE at gate 6. RESIDUAL BOUNDARY, not claimed closed: an argv is resolved through at most ${C23_ARGV_HOPS} variable hops and counted from the array literal that chain ENDS at, so a longer chain, a chain whose every hop names neither ${C23_BASENAME} nor a variable bound to it, and an \`argv.push\` that runs after the literal are all invisible to this count. What is NOT skipped: an invocation whose argv chain DOES reach ${C23_BASENAME} but reaches no array literal is named site-by-site — file, line and argv chain — in this check's FAIL detail, and that FAIL detail is the ONLY place this gate names such sites: the counter that records one and the \`c23Problems.push\` that fails this check fire in the same branch, so a run that holds such a site is never green and this PASS banner prints neither that count nor those names — a reader who wants the list reads this check's FAIL banner`))
+        : `validator declares ${arity} parameters; the scan of ${scanRoots.length} top-level dir(s) [${scanRoots.map((d) => relative(REPO_ROOT, d)).join(', ')}] PLUS ${rootFiles.length} root-level file(s) (excluding node_modules, .git and the .omo evidence archive) found ${invocations} invocation(s) in ${consumers.length} consumer(s) (${consumers.join(', ')}), each passing exactly ${arity}; ${bindings} path-variable binding(s), ${sourceReads} source-read(s) (reconciliation, not execution) — a new consumer with a wrong arity, a renamed required consumer, a wrapped or continued call, or a mention outside the rule fails HERE at gate 6. RESIDUAL BOUNDARY, not claimed closed: an argv is resolved through at most ${C23_ARGV_HOPS} variable hops and counted from the array literal that chain ENDS at, so a longer chain, a chain whose every hop names neither ${C23_BASENAME} nor a variable bound to it, and an \`argv.push\` that runs after the literal are all invisible to this count. What is NOT skipped: an invocation whose argv chain DOES reach ${C23_BASENAME} but reaches no array literal is named site-by-site — file, line and argv chain — in this check's FAIL detail, and that FAIL detail is the ONLY place this gate names such sites: the counter that records one and the \`c23Problems.push\` that fails this check fire in the same branch, so a run that holds such a site is never green and this PASS banner prints neither that count nor those names — a reader who wants the list reads this check's FAIL banner`))
   } catch (e) {
     results.push(check('c23', 'read-face validator arity matches every DISCOVERED consumer', false,
       `the arity check could not run: ${String(e.message ?? e)}`))

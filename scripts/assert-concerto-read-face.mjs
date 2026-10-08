@@ -1,7 +1,8 @@
 // argv: <dsh nm dir> <content file> <roster expectations json> <explore provider> <explore model> <expected !!js count>
 // SIX arguments, consumed by callers scripts/concerto-mode-probe.sh and
-// tests/e2e/drive.mjs name, and scripts/verify-concerto-static.mjs c23
-// DISCOVERS on a repo scan — a third consumer that passes a different count
+// tests/e2e/drive.mjs; scripts/verify-concerto-static.mjs c23 DISCOVERS this
+// contract on a repo scan (root-level files included since PR #12 round 4) —
+// a third consumer that passes a different count
 // goes red at gate 6, it does not escape. The 6th argument is the expected
 // `!!js` gate count, derived by each caller from the WRITE face. This comment
 // is the contract's only written form, and it previously listed five — the

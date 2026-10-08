@@ -127,6 +127,14 @@ except OSError as e:
     sys.exit(1)
 
 preset = _load(preset_text) or {}
+if not isinstance(preset, dict):
+    # A list/scalar preset is legal YAML and worthless here — without this
+    # guard the next line dies on `list' object has no attribute 'get'`,
+    # a bare traceback out of the one-liner (PR #12, kimi round 1).
+    print('error: render_patch_block: %s must parse to a mapping carrying '
+          'name: and description:, but YAML parsed it as %s — fix preset.yml '
+          'and re-run.' % (preset_path, type(preset).__name__), file=sys.stderr)
+    sys.exit(1)
 name = preset.get('name')
 desc = preset.get('description')
 if name is None or desc is None:
@@ -746,6 +754,20 @@ def _dump(v):
 
 patch_path, block_path = sys.argv[1], sys.argv[2]
 
+# A symlinked patch file (dotfiles layouts) must be operated on THROUGH the
+# link: os.replace(tmp, link) would silently replace the LINK with a regular
+# file and leave the real target byte-untouched — the install would report
+# success while the file dsh actually reads never changes (PR #12 round 4,
+# kimi; measured: rc=0, link gone, target unmodified). realpath resolves the
+# whole chain (including symlinked parent dirs). The note is gated on a REAL
+# link — realpath also absolutizes, and a merely-relative spelling must not
+# print a false "is a symlink" (caught on review of this fix).
+resolved_patch_path = os.path.realpath(patch_path)
+if os.path.islink(patch_path) or resolved_patch_path != os.path.abspath(patch_path):
+    print('write_patch_row: note: %s resolves to a symlinked location — '
+          'operating on its target %s' % (patch_path, resolved_patch_path))
+patch_path = resolved_patch_path
+
 try:
     with open(block_path, 'rb') as f:
         block_text = f.read().decode('utf-8')
@@ -867,13 +889,24 @@ try:
                   '(e.g. `- id: %s` with a trailing comment, or sub-rows indented 6 '
                   'spaces instead of 4 under `- insert:`); delete that row by hand '
                   'and re-run.' % (patch_path, TARGET))
+        # The BOM comes FIRST when the file starts with one: a UTF-8 BOM glues
+        # invisible bytes onto the first line, so a first-line target row fails
+        # the anchored cut for a reason the CRLF/trailing-comment hints cannot
+        # name (PR #12 round 4, kimi — measured: BOM + first-line row got the
+        # 6-space-indent advice).
+        bom = ''
+        if orig_bytes.startswith(b'\xef\xbb\xbf'):
+            bom = ('%s starts with a UTF-8 BOM (EF BB BF) — the invisible bytes '
+                   'glue themselves onto line 1 and defeat every anchored match. '
+                   'Remove them (e.g. `sed -i \'1s/^\\xef\\xbb\\xbf//\' %s`) and '
+                   're-run. ' % (patch_path, patch_path))
         crlf = ''
         if b'\r\n' in orig_bytes:
             crlf = ('If %s has CRLF line endings, convert it to LF first (e.g. '
                     'dos2unix) and re-run — but converting alone does NOT fix this '
                     'one: ' % patch_path)
         _fail('expected exactly 1 %s row after install, found %d (dropped %d '
-              'pre-existing). %s%s' % (TARGET, hits, dropped, crlf, honest))
+              'pre-existing). %s%s%s' % (TARGET, hits, dropped, bom, crlf, honest))
     user_after = sum(1 for e in doc if not _refs_target(e))
     if user_after != user_before:
         _fail('the append disturbed user rows: %d before, %d after'

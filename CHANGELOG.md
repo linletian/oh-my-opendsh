@@ -2,7 +2,31 @@
 
 ## Unreleased
 
+### Phase 4.5 code landing (2026-10-06 … 2026-10-08) — declaration-face installer + D17 cutover + four review-fix rounds
+
+- feat(installer): `scripts/install-concerto.sh` rewritten to the declaration face — renders the preset
+  as one `- insert:` row in `profiles/web/cordis.patch.yml` (0.2.x never reads `.agent-presets/`),
+  refuses dsh < 0.2 by name and the nested-group shape loudly, byte-exact backups + retention +
+  `.bak.first` permanent original, idempotent no-op runs write nothing, refused installs leave zero
+  bytes, user comments in old blocks are refused (wrapper-level) or WARNING-named (block-internal),
+  and symlinked patch files are resolved to their real target instead of being silently replaced.
+- feat(cutover): D17 — 0.1.x compatibility dropped; the D7 pin flipped to `0.2.0-rc.2` together with
+  the seat-id re-pin in one commit (`2323658`); T13 cleanup made the 0.2.x eight-gate green the single
+  non-regression signal of record (CI run 37476903377).
+- fix(review): four PR #12 review-fix rounds (qwen 17+5+4 inline findings + kimi 4 rounds of summary
+  findings, every item reproduced before fixing): backup/no-op/refusal leaks, comment-loss paths,
+  non-string YAML keys, SIGINT trap semantics, restore-command quoting, compat-probe exit codes +
+  `--tag` parsing + GH_TOKEN + dist-tag coverage + the install-alias face leg + the label it files
+  under, the d10 gate (hermetic working-tree form) + release.sh step 7b alias content gate,
+  stop-continuation third bucket, disposer ordering, and a ledger-vs-code truthfulness sweep across
+  comments/docs/tests.
+
 ### Phase 4.5 kickoff (2026-10-02) — adaptation plan (docs-only; no code, no pin flip)
+
+> *Historical note (superseded 2026-10-06, D17): the "dual-runtime adaptivity" strategy below was
+> abandoned mid-phase — 0.1.x compatibility was dropped by ruling D17 and the D7 pin flipped early
+> (P4.5-T12b, commit `2323658`), so adaptation sites fork on the runtime-identity marker instead of
+> bridging both generations. The entry stays as written for the record.*
 
 - docs(plan): `docs/plans/phase4.5-dev/` — the Phase 4.5 development plan + task list (13 tasks, 8 WPs,
   ~8.5 person-days), implementing ROADMAP Phase 4.5 against the 0.2.0-rc.2 review. Core strategy:

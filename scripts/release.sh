@@ -201,7 +201,10 @@ echo "release.sh: raw-tag install OK (DSH_HOME=$TMP/dsh-home)"
 #    3. a sandboxed install THROUGH the alias raw URL lands the declared row
 #       (best-effort: raw CDN may serve the pre-move cache for a few minutes —
 #       a mismatch there is a WARN, the git legs are the authority).
-ALIAS_SHA="$(git ls-remote "$REMOTE" "refs/tags/$NEW_ALIAS^{}" | cut -f1)"
+if ! ALIAS_SHA="$(git ls-remote "$REMOTE" "refs/tags/$NEW_ALIAS^{}" 2>/dev/null | cut -f1)"; then
+  echo "release.sh: FAIL — git ls-remote $REMOTE failed (network/auth); the alias verification cannot run" >&2
+  exit 1
+fi
 HEAD_SHA="$(git rev-parse HEAD)"
 if [[ "$ALIAS_SHA" != "$HEAD_SHA" ]]; then
   echo "release.sh: FAIL — remote alias $NEW_ALIAS peels to ${ALIAS_SHA:-<missing>}, not the release commit $HEAD_SHA (push the alias first)" >&2

@@ -15,6 +15,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   DELEGATION_ENTRIES,
@@ -22,7 +23,10 @@ import {
   denyToolNamesFor,
 } from '../../patches/omo-dsh/omo-agents/src/roster.ts'
 
-const REPO_ROOT = dirname(dirname(dirname(realpathSync(new URL(import.meta.url).pathname))))
+// fileURLToPath, not `new URL(...).pathname` — the latter leaves %20-encoded
+// (a checkout path with a space resolves wrong), and every sibling test file
+// already uses fileURLToPath (PR #12 round 4, kimi).
+const REPO_ROOT = dirname(dirname(dirname(realpathSync(fileURLToPath(import.meta.url)))))
 const VALIDATOR = join(REPO_ROOT, 'scripts', 'assert-concerto-read-face.mjs')
 const EXPLORE_PROVIDER = 'deepseek'
 // The explore seat's shipped default on the pinned 0.2.x runtime (roster.ts

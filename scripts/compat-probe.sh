@@ -27,7 +27,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-DSHV="${1:-}"
+# Positional and flag args in ANY order: the old parser read DSHV from $1
+# BEFORE the loop and `*) break`-stopped at the first positional, so
+# `--tag X <ver>` made DSHV="--tag" (exit 3 downstream) and `<ver> --tag X`
+# silently ignored the flag (PR #12 rounds 2/4, kimi — measured OUR_TAG
+# staying at the default in the second order).
+DSHV=""
 # Default rides the CURRENT minor alias (the same one the install one-liner
 # pins); v0.1 was the pre-cutover default whose installer face D17 deleted.
 OUR_TAG="v0.2"
@@ -36,7 +41,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --tag) OUR_TAG="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
-    *) break ;;
+    -*) echo "compat-probe: unknown option $1" >&2; exit 64 ;;
+    *) if [[ -z "$DSHV" ]]; then DSHV="$1"; shift; else echo "compat-probe: unexpected extra argument $1" >&2; exit 64; fi ;;
   esac
 done
 

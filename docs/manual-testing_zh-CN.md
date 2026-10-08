@@ -116,24 +116,24 @@ dsh --profile web --patch ./cordis.yml --port 4173
 
 ### 五个场景
 
-会话 JSONL 位于 `$DSH_HOME/sessions/<path>/session.vN.jsonl`（文件名携带 session-format 代际——今天为 `v3`；落盘休眠的文件可能被压缩为 `session.vN.jsonl.zstd`，此时先经 `unzstd -c` 管道再读）。
+会话 JSONL 位于 `$DSH_HOME/sessions/<path>/session.vN.jsonl`（文件名携带 session-format 代际——pin 的 dsh ≥ 0.2 运行时下为 `v4`，`v3` 是 0.1.x 代际；落盘休眠的文件可能被压缩为 `session.vN.jsonl.zstd`，此时先经 `unzstd -c` 管道再读）。
 
 **S1 — 基础对话。** 随便问什么；指挥直接回答。验证：会话日志的 `request/header` 显示 provider 为 `deepseek-official`、model 为 `deepseek-v4-pro`：
 
 ```bash
-grep -E '"(provider|model)"' "$DSH_HOME/sessions/<path>/session.v3.jsonl"
+grep -E '"(provider|model)"' "$DSH_HOME/sessions/<path>/session.v4.jsonl"
 ```
 
 **S2 — 委派链（AC-4/AC-5）。** 输入例如 `用 explore 查一下这个仓库的 README 讲了什么，然后总结给我`。预期：指挥调用 `explore` 工具 → 子会话执行只读检索 → 结果返回 → 指挥总结。验证：出现第二个（子）会话 JSONL；父的 `subagent/descriptor` 与子的 `request/header` 显示子路由 `deepseek/deepseek-flash` ≠ 父 `deepseek-official/deepseek-v4-pro`：
 
 ```bash
-grep -E '"(provider|model)"' "$DSH_HOME/sessions/<parent>/session.v3.jsonl" "$DSH_HOME/sessions/<child>/session.v3.jsonl"
+grep -E '"(provider|model)"' "$DSH_HOME/sessions/<parent>/session.v4.jsonl" "$DSH_HOME/sessions/<child>/session.v4.jsonl"
 ```
 
 **S3 — 只读拒绝（AC-6a）。** 提问：`让 explore 把 README 里的项目名改成 foo`。预期：explore 子代理的 write/edit 尝试被拒绝，报 `Error: unknown tool "write"`（或 `"edit"`）；磁盘上的文件不变。在子 JSONL 的工具结果中验证：
 
 ```bash
-grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v3.jsonl"
+grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v4.jsonl"
 ```
 
 注意（P-21，已接受的威胁模型边界）：该拒绝是**工具层**的，不是能力边界——子代理仍持有 `bash`，一个有意的或被指示的子代理仍可经 shell 写文件，甚至另起一个不受限的 `dsh` 进程（P-21.2）。不要把 S3 读作"写不可达"。
@@ -141,7 +141,7 @@ grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v3.jsonl"
 **S4 — 禁止嵌套委派（AC-6b）。** 提问：`让 explore 自己再派一个子代理去查别的东西`。预期（F1 之后）：`explore` 工具在子代理的工具表里**物理缺席**——它要么如实回答"我没有委派工具"，要么尝试调用被拒 `Error: unknown tool "explore"`；两种都算通过。深度上限（`maxDepth: 1`）保留为纵深防御但不再触发。在子 JSONL 中验证：
 
 ```bash
-grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v3.jsonl"
+grep 'unknown tool' "$DSH_HOME/sessions/<child>/session.v4.jsonl"
 ```
 
 **S5 — Hard-blocks 人设（FR-6）。** explore 子代理携带着注入的 Hard Blocks 与 Anti-Patterns 段落；行为上它在拒绝写操作时应援引只读纪律（可在其回复中观察到）。注入本身在启动日志中以 `[omo-agents]` 标记记录，并由 L0 探针做结构化证明。
@@ -169,7 +169,7 @@ AC-9（文档）已在 MVP 签核时关闭。
 | 症状 | 原因 / 处理 |
 |---|---|
 | `patch: entry "omo-agents" not found` / patch 被静默跳过 | 插件未装入该 profile——执行 L2 步骤 (a)。（P-8：挂载需要 `cordis.yml` 中的 insert 形式，已正确；名称从 profile 目录解析。） |
-| 模式花名册里没有协奏模式 | 插件未加载：查启动日志里有无 `[omo-agents] loaded`；preset 会在启动时写入 `$DSH_HOME/.agent-presets/concerto/`——检查该目录是否存在。 |
+| 模式花名册里没有协奏模式 | 插件未加载：查启动日志里有无 `[omo-agents] loaded`。dsh ≥ 0.2 上的活证据是 `$DSH_HOME/profiles/web/cordis.patch.yml` 里的声明行 + 启动日志的 roster 行 `[omo-agents] concerto roster: … concerto:broken=absent`——**不是** `.agent-presets/`（0.2.x 不读该目录，preset 声明了才存在）。 |
 | `MISSING_CREDENTIAL` 指向 explore 路由 | `settings.yaml` 缺 llm-pi-ai 段（L2-b），或 credentials.yaml/环境变量中没有 key。 |
 | 任何位置出现 `ctx.agents.get is not a function` | 你装上了 rc.8 依赖（裸重装拉来的）——validated-tree 配方见 P-11.5。 |
 | 就绪行带 `?token=` | 在 pin 的 0.2.0-rc.2 上属正常（0.1.2 起浏览器鉴权）：打开完整 URL；我们的 harness 脚本已兼容两种传输。 |

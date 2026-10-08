@@ -116,7 +116,10 @@ import { resolveModelRoutes, type ModelRoute, type ModelRoutes } from './model-r
 /** The preset's roster id, which is also its directory name. */
 export const CONCERTO_PRESET_ID = 'concerto'
 
-/** The two files dsh-agent-presets reads per preset directory. */
+/** The two files that MAKE UP a preset — the template pair this repo ships.
+ *  (Said "reads" once, present tense — wrong: dsh ≥ 0.2 never reads preset
+ *  files off disk; the pair is the SOURCE the declaration row is rendered
+ *  from. PR #12 round 4, kimi.) */
 export const CONCERTO_PRESET_FILES = ['preset.yml', 'agent.cordis.yml'] as const
 
 /** Absolute path of the repo-shipped concerto template directory. */

@@ -65,6 +65,10 @@ preset 携带 **11-agent 名册**：指挥 **sisyphus** + **10 个委派目标**
 
   （备用直链：`https://raw.githubusercontent.com/linletian/oh-my-opendsh/v0.2/scripts/install-concerto.sh`）
 
+  > ⚠️ **临时警示（v0.2.2 发版前移别名后删除）**：一行命令今天拿到的是切换前的旧安装器——
+  > 它写进 `.agent-presets/`，而 dsh ≥ 0.2 不读该目录（静默装不上）。发版前请改用仓库
+  > checkout 安装（指南里的方式 C）。PR #12 评审；周哨兵盯梢中。
+
 - **让 DSH 自己装**——把 [docs/install-concerto_zh-CN.md](./docs/install-concerto_zh-CN.md) 里的
   复制即用 prompt 发给任意 DSH 会话即可。
 

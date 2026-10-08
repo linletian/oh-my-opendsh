@@ -2,8 +2,10 @@
 
 > How to install the oh-my-opendsh Concerto Mode (协奏模式) MVP on your own DeepSeek Harness.
 > Verified against the current DSH runtime on 2026-09-04 (`concerto_verify` 22/22 PASS,
-> `standingKeyFor` mounted OK). Full implementation & verification report:
-> [docs/concerto-current-dsh_zh-CN.md](./concerto-current-dsh_zh-CN.md) (Chinese).
+> `standingKeyFor` mounted OK) — *that was the 0.1.x era*; on dsh ≥ 0.2 the install face is the
+> declaration row this guide describes (`.agent-presets/` is read by nothing, and
+> `standingKeyFor` is 0.1.x machinery). Full implementation & verification report:
+> [docs/concerto-current-dsh_zh-CN.md](./concerto-current-dsh_zh-CN.md) (Chinese, era-anchored).
 
 ## The two pieces
 
@@ -51,6 +53,14 @@ The base experience needs only the preset: the conductor persona and the explore
   installer's own usage header.)
 
 ## Quick install
+
+> ⚠️ **Temporary warning (delete on the v0.2.2 release):** the `v0.2` alias still points at the
+> PRE-cutover release. **Option A** today fetches that tag's installer, which writes into
+> `.agent-presets/` — a directory dsh ≥ 0.2 never reads (a silent zero-preset install), and
+> **Option B**'s prompt pulls the same tag's preset files (stale 0.1.x-era model ids). Until the
+> release moves the alias, use **Option C** — the repo checkout carries the declaration-face
+> installer this page describes. (PR #12 review; the alias content is hard-gated at release.sh
+> step 7b and watched weekly by the compat-probe sentinel.)
 
 All three options run the same `scripts/install-concerto.sh`, and the script branches on your dsh
 version (`dsh --version`) before it installs anything: **dsh ≥ 0.2** gets the preset rendered as a

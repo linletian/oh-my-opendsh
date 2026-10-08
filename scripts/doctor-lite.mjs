@@ -194,7 +194,8 @@ function check(name, status, message, issues = [], meta = undefined) {
     : { name, status, message, issues, meta }
 }
 
-// ── check 1: dsh --version exists and is the pinned 0.1.x (D7) ──────────────
+// ── check 1: dsh --version exists and is the pinned 0.2.x (D7, flipped 1→2
+//    at the D17 cutover, 2323658 — this header said 0.1.x until PR #12) ──────
 
 async function checkDshVersion() {
   try {
