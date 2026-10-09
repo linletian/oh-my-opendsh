@@ -28,7 +28,7 @@
 
 > **进度（2026-10-09 仲裁）**：Q-1…Q-8 全闭环（证据 `.omo/evidence/p5t1/`：Q1a/Q1b/Q2/Q3/Q4/Q6/Q7/Q8 + Q5b 金丝雀 + ARBITRATION.md 亲核记录）；**fork = (B)**（`FORK.md`）；覆盖基线 §1/§2/§4/§5 已转实测终态；计划书 §4 已按实测更正（第 3 轮修订记录）。**双评审通过**：评审 A（opencode `opencode-go/step-5-preview-free`）+ 评审 B（mcode）两轮均 APPROVE（轮 1 各 2 MAJOR 收敛 + MINOR/NIT，仲裁后修复；delta 再审双 APPROVE，余 6 项措辞级 findings 已修复并由仲裁独立确认）；2 条评审 NIT/NOTES 经证据驳回（Config 行号 :1688-1694 精确、D18 重开锚已在），仲裁记录 = `ARBITRATION.md`。**（评审注：下述「做法」清单中的 spawnTeammate/agentTeams/Q-3 适配器等字样 = 已执行钉测的历史记录，非执行面；执行面 = fork (B)，以 FORK.md 与计划书第 3 轮修订为准。）**
 
-- **产出**：回填后的 [覆盖基线](./phase5-team.md)（§1 工具对账 / §2 deferred 处置 / §5 待核清单全部转实测）；**fork 裁定书**（(A′)/(B) + 依据，进 `.omo/evidence/p5t1/FORK.md`）；计划书 §4 按实测更正（DoD-d）；fork = (A′) 时起草 **D18 登记文**与 ROADMAP Phase 5 措辞修订（随 T2/T3 首个落地 commit 同发）。**【仲裁注 2026-10-09：fork = (B)，D18 = 不采用 experimental team 面登记 + ROADMAP 修订，同随 T2/T3 首个落地 commit】**
+- **产出**：回填后的 [覆盖基线](./phase5-team.md)（§1 工具对账 / §2 deferred 处置 / §5 待核清单全部转实测）；**fork 裁定书**（(A′)/(B) + 依据，进 `.omo/evidence/p5t1/FORK.md`）；计划书 §4 按实测更正（DoD-d）；fork = (A′) 时起草 **D18 登记文**与 ROADMAP Phase 5 措辞修订（随 T2/T3 首个落地 commit 同发）。**【仲裁注 2026-10-09：fork = (B)，D18 = 不采用 experimental team 面登记 + ROADMAP 修订，**随 T3 挂载 commit 同发**（T2 骨架不含语义落地，首个落地 commit = T3；草稿 `.omo/evidence/p5t1/D18-ROADMAP-DRAFT.md`）】**
 - **做法**（逐 Q 独立交付，哪个先闭环先写证据；Q-2/Q-3 为阻断项）：
   1. **Q-1 上游对账**（全程 `git show/ls-tree` 只读）：12 个 `team_*` 工具逐一枚举（名/参数/语义/lead-member 权限）；`senpi-task/src/team/{normalize,member-validator,spawn-members,member-revival}.ts` 与 `team-core` 的 registry/tasklist/state-store/mailbox 逐文件语义；生命周期五步；mailbox `.delivering-` 预约与 TTL 回收；`team_mode.*` 11 配置字段；`prompts-core/prompts/mode/team.md` 全文；关停握手 request/approve/reject 协议；`describePlanError` 文案语义。
   2. **Q-2 激活钉测**：沙箱 profile 挂载 `dsh-experimental-agent-team` 三行（照搬 profile bundle 形状）→ 真实 boot → `ctx.agentTeams` 在场 marker、`spawn_teammate` 最小组队、`team/message/queued→delivered` 事件对落 v4 日志；持久化前提逐字确认。
@@ -46,17 +46,17 @@
 
 ## WP-1 插件骨架（计划书 §4.2）
 
-### [ ] P5-T2 — `omo-team` 包骨架 + `manifest.ts` 单一事实源
+### [x] P5-T2 — `omo-team` 包骨架 + `manifest.ts` 单一事实源
 
 - **产出**：`patches/omo-dsh/omo-team/`（`package.json` `@oh-my-opendsh/omo-team` / `tsconfig.host.json`（client face 视 Q-7 裁定补 `tsconfig.client.json`）/ `src/index.ts` 空 apply / `src/manifest.ts`）。
-- **做法**：布局镜像 omo-commands（host-only、Node 24 type-stripping、`.ts` 扩展 load-bearing 注释）；manifest 条目 = T1 后的移植/采用清单（形状：id / 上游源路径 / 原生面对应 / 处置枚举（`native-adopt`/`ported`/`recorded-difference`）/ e2e 场景名 / 状态）；派生函数供 boot marker 与一致性测试。
+- **做法**：布局镜像 omo-commands（host-only、Node 24 type-stripping、`.ts` 扩展 load-bearing 注释）；manifest 条目 = T1 后的移植/采用清单（形状：id / 上游源路径 / 原生面对应 / 处置枚举（`native-adopt`/`ported`/`content-vendor`/`recorded-difference`——T1 第 3 轮修订后四值，计划书 §4.2 口径）/ e2e 场景名（canonical 七名 = T1 仲裁定名：team-create-and-message / team-nested-create-denied / team-teardown-no-orphans / **team-shutdown-handshake** / **team-task-claim**（后两者本条与 T7/T8 同注册）/ team-keyword-mode / stop-continuation-team）/ 状态）；派生函数供 boot marker 与一致性测试。
 - **判定**：✅ `pnpm typecheck` 绿；manifest 形状单测（空字段 throw、id 唯一、处置枚举合法）；typecheck 链扩展。
-- **证据**：⬜
+- **证据**：✅ 2026-10-09——`patches/omo-dsh/omo-team/`（package.json 11 行 / tsconfig.host.json 54 行 / src/index.ts 106 行 / src/manifest.ts ~740 行 24 行条目 + validateManifest 12 检查 + 派生函数族）+ `tests/omo-team/manifest.test.ts`（45 用例，变异敏感，含 vendor 行无测试夹具负钉）+ 根 `package.json`（`typecheck:team` + 接入 `typecheck:libs`）+ `pnpm-lock.yaml`（workspace 机械登记）。实测：typecheck/typecheck:team/typecheck:libs 全绿；`tests/omo-team/` 45/45；全量 vitest 60f/1612t；verify-concerto-static 33/33；check-docs-consistency 10/10；**verify-licenses checked=57 violations=0（56→57 跃迁随本任务发生，T3 复核不变即可）**。**双评审通过**：轮 1 双 REJECT（闭包三缺口——session-client 缺失 / reservation-reconciliation 带 mailbox 运行时依赖 / zod 未登记——双通道收敛，仲裁 32 文件 import 全分析后文档先行更正 + 编码者修复）；轮 2 双 APPROVE（残留 4 项注释级 + 1 测试负钉，修复后仲裁独立确认）；2 条 findings 经证据驳回（mcode「§1 行 10」误读；opencode 首议的 D18 时点经统一为「随 T3 同发」非驳回但成文）。编码 NOTES 5 项全部经仲裁采纳（status 三值词表 / licenses 提前跃迁 / pnpm-lock 保留 / 单字段 e2eScenario / §3「升级」→ ported）。
 - **依赖**：P5-T1。**量级**：3 小时。
 
 ### [ ] P5-T3 — 挂载（第四插行）+ boot marker + 同步网 3→4
 
-- **产出**：根 `cordis.yml` 第四个 `- insert:` 行（`id: omo-team`）；apply 注册循环骨架 + boot marker（`[omo-team] loaded: …` 汇总行自 manifest 派生）；**同步网同 commit 全点位**：doctor-lite `EXPECTED_INSERT_ROW_IDS`（3→4）、`tests/omo-hooks/cordis-inserts.test.ts`、cold-start、drive.mjs、probe、smoke-real、cordis.yml 头注释计数；`verify-licenses` checked 56→57 预期登记。
+- **产出**：根 `cordis.yml` 第四个 `- insert:` 行（`id: omo-team`）；apply 注册循环骨架 + boot marker（`[omo-team] loaded: …` 汇总行自 manifest 派生）；**同步网同 commit 全点位**：doctor-lite `EXPECTED_INSERT_ROW_IDS`（3→4）、`tests/omo-hooks/cordis-inserts.test.ts`、cold-start、drive.mjs、probe、smoke-real、cordis.yml 头注释计数；`verify-licenses` checked 预期登记（**注意：56→57 的跃迁已在 T2 随 omo-team 包落位发生——本任务复核 checked=57 不变、violations=0 即可，勿误判为漂移**；D18/ROADMAP 回馈文稿随本任务同 commit——首个落地 commit = 本任务，T1 已起草 `.omo/evidence/p5t1/D18-ROADMAP-DRAFT.md`）。
 - **做法**：P-8 schema 纪律；loud-but-non-fatal；注册表占位形态 = 空表 + 汇总行计数派生（P3-T3/P4-T3 先例）；D18/ROADMAP 回馈文稿若 T1 已起草，随本任务或首个语义任务同 commit。
 - **判定**：✅ cold-start 绿且日志含 omo-team marker；门 4/8 绿；`--dump-config` 含第四行；门 6/7 不回归。
 - **证据**：⬜
@@ -98,7 +98,7 @@
 
 - **产出**：`src/tools/team-shutdown.ts` + `src/tools/team-delete.ts`（**Q-5 已裁 = 语义移植**：lead 询问 → 成员批准/拒绝 → interrupt/drain；握手无自动超时与上游同构——超时语义由提示词承担 + closure invariant，Q1a §5.4 实证）；`team_delete` 的「活跃成员拒删，`force:true` 强删」语义（v5 调查报告 §2.1-4；orphaned/deleting 旁路由 (B) 状态机承接）。
 - **做法**：**(B) 下 delete 底层 = 原生 `interrupt`（保 inbox）+ continuable drain/disposal 组合**；所有拆除走 §4.5 的断言面；握手状态机单测（request/approve/reject/超时四路——超时路 = 提示词语义的确定性部分 + 状态滞留可观测）。
-- **判定**：✅ 单测四路 + e2e 关停场景（成员拒 → team 存活；批准 → 成员 interrupt 且 inbox 保留断言）。
+- **判定**：✅ 单测四路 + e2e 关停场景（**场景名 `team-shutdown-handshake`**——T1 仲裁 canonical 名表，本条与 T14 同注册）（成员拒 → team 存活；批准 → 成员 interrupt 且 inbox 保留断言）。
 - **证据**：⬜
 - **依赖**：P5-T6。**量级**：4 小时。
 
@@ -108,7 +108,7 @@
 
 ### [ ] P5-T8 — 任务板语义映射 + claim 协议
 
-- **产出**：任务板消费层（**(B) 已定：vendored team-tasklist 接线**——子集闭包 = types/member-parser/team-registry/team-tasklist/team-state-store + `config.ts`/`logger.ts`/`tolerant-fsync.ts` + 外部依赖 `@oh-my-opencode/utils`，Q1b N6）+ claim 场景 e2e（`status:"claimed"` → vendored `claimTask`）。
+- **产出**：任务板消费层（**(B) 已定：vendored team-tasklist 接线**——子集闭包 = **T2 双评审后终态**：verbatim = types/member-parser/config/logger/tolerant-fsync/**session-client（纯类型）**/team-registry/team-tasklist（除 test-support）/team-state-store（除 **reservation-reconciliation**——`.delivering-` 预约回收不移植落点）；deviation = active-resume.ts（删预约回收调用/helper，**并连删因此成孤儿的 `log` 导入**——:28 唯一调用点随被删 helper 出局，评审登记）；外部依赖 = `zod`（^4.4.3 npm 引入，verify-licenses 白名单核对）+ `@oh-my-opencode/utils` 一件（**isPlainRecord**，store.ts:1 唯一消费点；isRecord 原消费点随 reservation-reconciliation 排除件出局——二选一 vendor/语义移植，deviations 登记）；resume 族的 TeamSessionContext harness 耦合面执行时复核）+ claim 场景 e2e（**场景名 `team-task-claim`**——T1 仲裁 canonical 名表，本条与 T14 同注册）。
 - **做法**：上游语义原样随 vendor（锁 + 锁内重读、缺依赖视为可领、无环检测、无 `ready`、**无 `failed` 态**——上游提示词三处与 schema 矛盾，DSH 侧不照抄 `failed` 文案、v1 不增设失败终态，记差异，Q1b N1/N2）；`writeScopeWarnings` 的工具描述文案对齐上游 tasklist 语义；**`tasks/claims/` 与 `.highwatermark` 随 vendor 件自然成立**（T1 更正：Q1b §C-4 实证其为瞬时锁目录 + ID 水位，原「不移植」草案作废，覆盖基线 §1 已回填）。
 - **判定**：✅ e2e：lead 建任务 → 成员 claim → `owner`/`claimedAt` 断言 + 依赖未就绪任务 `BlockedByError` 断言（注意：上游缺依赖视为可领，断言须按 vendored 语义钉）。
 - **证据**：⬜
@@ -168,7 +168,7 @@
 
 ### [ ] P5-T14 — team 场景群补全 + 门扩展
 
-- **产出**：drive.mjs 场景群终态（`team-create-and-message` / `team-nested-create-denied` / `team-teardown-no-orphans` / `team-keyword-mode` / `stop-continuation-team` + T8 claim 场景）；门 4（第四插行 + team Config schema 校验）；门 6（c 组延续编号：四插行 / omo-team 署名覆盖 / manifest↔文件集合 / vendor 存在性 / **c14 并集扩展裁定**——phase5-team.md 含 H-号段条目时入 `COVERAGE_BASELINE_MDS`，同 commit）；门 8（probe/proofs 扩展）。
+- **产出**：drive.mjs 场景群终态（**canonical 七名**——T1 仲裁定名并已在 T7/T8/T12 同注册：`team-create-and-message` / `team-nested-create-denied` / `team-teardown-no-orphans` / `team-shutdown-handshake`（T7）/ `team-task-claim`（T8）/ `team-keyword-mode` / `stop-continuation-team`）；门 4（第四插行 + team Config schema 校验）；门 6（c 组延续编号：四插行 / omo-team 署名覆盖 / manifest↔文件集合 / vendor 存在性 / **c14 并集扩展裁定**——phase5-team.md 含 H-号段条目时入 `COVERAGE_BASELINE_MDS`，同 commit）；门 8（probe/proofs 扩展）。
 - **做法**：每场景含对照断言与反向金丝雀（计划书 §2 纪律）；门扩展只加严；变异反跑自证（门 6 新断言至少一条删行/改行变异实证）。
 - **判定**：✅ 8 门全绿；场景 verdict JSON 含明细断言；变异实证记录。
 - **证据**：⬜

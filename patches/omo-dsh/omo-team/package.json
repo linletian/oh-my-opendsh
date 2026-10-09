@@ -1,0 +1,11 @@
+{
+  "name": "@oh-my-opendsh/omo-team",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OMO team-mode semantics as a DSH cordis plugin (Phase 5, fork (B): self-owned team state machine over startContinuable).",
+  "license": "MIT OR SUL-1.0",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

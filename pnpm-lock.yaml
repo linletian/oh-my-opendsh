@@ -28,6 +28,8 @@ importers:
         specifier: ^8.10.0
         version: 8.11.2
 
+  patches/omo-dsh/omo-team: {}
+
   patches/omo-dsh/vendor/hashline-core:
     dependencies:
       diff:
