@@ -159,22 +159,25 @@ const { DELEGATION_TOOL_NAMES, ROSTER } = await import(
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents')
-// P3-T3/P4-T3: the root cordis.yml inserts one row per package (omo-agents +
-// omo-hooks + omo-commands since P4-T3), and a boot whose overlay names a
+// P3-T3/P4-T3/P5-T3: the root cordis.yml inserts one row per package (omo-agents +
+// omo-hooks + omo-commands since P4-T3, plus omo-team since P5-T3), and a boot
+// whose overlay names a
 // package the profile does not carry fails with `plugin tree failed to load …
-// ERR_MODULE_NOT_FOUND` — so ALL THREE are installed before this smoke boots
+// ERR_MODULE_NOT_FOUND` — so ALL FOUR are installed before this smoke boots
 // `--patch ./cordis.yml`.
 const HOOKS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks')
 const COMMANDS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-commands')
-const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR, COMMANDS_PLUGIN_DIR]
+const TEAM_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-team')
+const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR, COMMANDS_PLUGIN_DIR, TEAM_PLUGIN_DIR]
 const PROFILE = 'web'
 const CONCERTO_PRESET_ID = 'concerto'
 
-/** All three mounted plugins' boot markers (see PLUGIN_DIRS above). */
+/** All four mounted plugins' boot markers (see PLUGIN_DIRS above). */
 const LOADED_MARKERS = [
   '[omo-agents] loaded',
   '[omo-hooks] loaded',
   '[omo-commands] loaded',
+  '[omo-team] loaded',
 ]
 
 const INSTALL_TIMEOUT_MS = Number(process.env.DSH_SMOKE_INSTALL_TIMEOUT_MS ?? 300_000)
@@ -530,8 +533,8 @@ function seedSandbox(sandbox, routes, agentId) {
 }
 
 function installPlugin(sandbox, childEnv) {
-  // One `plugin add` per cordis.yml insert row (three rows since P4-T3): the
-  // overlay names all three packages, and missing any one aborts the whole boot.
+  // One `plugin add` per cordis.yml insert row (four rows since P5-T3): the
+  // overlay names all four packages, and missing any one aborts the whole boot.
   let addLog = ''
   for (const pluginDir of PLUGIN_DIRS) {
     const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', pluginDir], {
@@ -1210,7 +1213,7 @@ export function renderTranscript({ analysis, log, childLog, routes, meta }) {
     '',
     '## Wiring observations (auto-checked)',
     '',
-    `- ${checkMark(checks.pluginLoaded)} all three mounted plugins loaded in the booted dsh (omo-agents + omo-hooks + omo-commands)`,
+    `- ${checkMark(checks.pluginLoaded)} all four mounted plugins loaded in the booted dsh (omo-agents + omo-hooks + omo-commands + omo-team)`,
     `- ${checkMark(checks.sisyphusProviderActive)} sisyphus provider active in /api/llm.providers (llm-deepseek)`,
     `- ${checkMark(checks[`${agentId}ProviderActive`])} ${agentId} provider active in /api/llm.providers (${piAi ? 'llm-pi-ai settings profile' : 'llm-deepseek'})`,
     `- ${checkMark(checks.parentSessionLogFound)} parent session log found on disk`,

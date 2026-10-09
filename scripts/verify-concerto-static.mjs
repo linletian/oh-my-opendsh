@@ -36,9 +36,9 @@
 //       (target-row semantics, D-2026-09-13-01). Every expectation is derived
 //       from roster.ts + the renderer's sentinel naming, never restated.)
 //   c11 root cordis.yml mounts EXACTLY the plugin insert rows (P3-T19; two at
-//       P3-T3 — omo-agents + omo-hooks; three since P4-T3 — plus omo-commands,
-//       mount order). The list is read from doctor-lite-core's shared constant,
-//       never restated here.
+//       P3-T3 — omo-agents + omo-hooks; three since P4-T3 — plus omo-commands;
+//       four since P5-T3 — plus omo-team, mount order). The list is read from
+//       doctor-lite-core's shared constant, never restated here.
 //   c12 every src/hooks/**/*.ts implementation file carries the plan §4.9
 //       signature header (upstream tag-relative path + @ v4.19.4 + the
 //       semantic-port declaration)
@@ -698,7 +698,7 @@ async function run() {
     for (const [id] of C10_ASSERTIONS) results.push(check(id, C10_NAMES.get(id), false, reason))
   }
 
-  // ── c11 — the root overlay mounts exactly the plugin insert rows (2 → 3) ───
+  // ── c11 — the root overlay mounts exactly the plugin insert rows (3 → 4) ───
   //
   // 与 doctor-lite check 2b（gate 4）的关系：那是本事实的既有断言，本记录**引用**
   // 它而不是平行重抄插件清单——期望值直接取自 doctor-lite-core 的
@@ -706,7 +706,7 @@ async function run() {
   // 插件」只有一处定义。两条记录并不等价：2b 汇总比较每个 insert 条目里的 mapping
   // id（一个 insert 行塞两个 id 也通过），且 dsh/parser 缺席时 cascade 成 SKIP；
   // 本记录零成本、永远运行，并额外断言 (a) 顶层 patch 条目恰好与期望行数相等
-  // （P4-T3 起 = 3：新增 omo-commands 行时本条随共享常量自动加严，无需改动本文件
+  // （P5-T3 起 = 4：新增 omo-team 行时本条随共享常量自动加严，无需改动本文件
   // 的断言逻辑）、(b) 每条都是
   // insert 形态——非 insert 的顶层条目会被 dsh 静默跳过（P-8）、(c) 每行的
   // `name` 就是 `@oh-my-opendsh/<id>`（2b 只比 id，name 对调它看不见）。只加严，不放松。
@@ -732,7 +732,7 @@ async function run() {
       // 行 id ↔ 包名的耦合断言：doctor-lite 2b 只比 id，而 dsh 是按 `name` 解析
       // 模块的——把任意两行的 name 对调（或改成别的包）会让「omo-hooks」这个标签
       // 挂上别的代码，且现有门全部照绿。本记录把 `@oh-my-opendsh/<id>` 这一约定
-      // 钉死（三个包的 package.json name 实测与之一致，P4-T3 新增的 omo-commands
+      // 钉死（四个包的 package.json name 实测与之一致，P5-T3 新增的 omo-team
       // 同受此断言约束）。
       const nameProblems = []
       for (const row of cordisRows) {
@@ -1009,7 +1009,7 @@ async function run() {
   // manifest row loses its baseline. These records close that, mirroring c12/c13/
   // c14 one-for-one so the two packages read the same way.
 
-  // c15 — the three insert rows resolve to REAL, DISTINCT workspace packages.
+  // c15 — the four insert rows resolve to REAL, DISTINCT workspace packages.
   //
   // c11 pins the ids, the mount order, and the `name` ↔ id coupling. What it
   // cannot see is whether the package that `name` refers to EXISTS in this repo.

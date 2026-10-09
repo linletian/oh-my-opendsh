@@ -66,6 +66,21 @@
 #                 `[omo-commands] skills: 19/19 registered (runtime, vendor
 #                 path)`, derived by running the plugin's own scan over the live
 #                 vendor tree, plus `skill <name> FAILED` asserted ABSENT.
+#   P5-T3 team  — the FOURTH cordis.yml insert row's mount observable: the
+#                 summary line is $EXPECTED_TEAM_SUMMARY, DERIVED below from the
+#                 plugin's own manifest.ts + boot-markers.ts + index.ts (same
+#                 three-module derivation as the commands half; the summary's
+#                 manifest half comes from manifest.ts's own
+#                 formatLoadedSummaryLine, the registration half from
+#                 boot-markers.ts). No census number is written in this header —
+#                 the same P4-T16 再审 ③ rule the hooks and commands blocks above
+#                 learned it by: the header names the DERIVED VARIABLE and the
+#                 PASS line prints the value. At P5-T3 the registry is the
+#                 deliberate empty-table skeleton, so the registered set is empty
+#                 and the derivation is vacuously correct (proven by
+#                 tests/omo-team/boot-markers.test.ts); T5+ fills it without a
+#                 probe edit. Both FAILED forms (`team surface … FAILED`,
+#                 `manifest validation FAILED`) are asserted ABSENT.
 #   T8 persona  — the `omo-sisyphus system prompt assembled` boot marker, and
 #                 the MATERIALIZED $DSH_HOME preset's agent.cordis.yml: the
 #                 sentinel is gone and the persona block scalar carries the
@@ -226,10 +241,10 @@ echo "concerto-probe: sandbox: $SANDBOX"
 echo "concerto-probe: dsh binary: $(command -v dsh)"
 dsh --version || fail "dsh --version failed"
 
-# Stage 0: fresh profile + install ALL THREE plugins into it (one per cordis.yml
+# Stage 0: fresh profile + install ALL FOUR plugins into it (one per cordis.yml
 # insert row — P3-T3 mounted omo-hooks as the second row, P4-T3 mounts
-# omo-commands as the third, so a profile carrying fewer could not compose the
-# overlay).
+# omo-commands as the third, P5-T3 mounts omo-team as the fourth, so a profile
+# carrying fewer could not compose the overlay).
 echo "concerto-probe: installing @oh-my-opendsh/omo-agents into sandbox profile '$PROFILE'"
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-agents" >"$ADD_LOG" 2>&1 \
@@ -242,6 +257,10 @@ echo "concerto-probe: installing @oh-my-opendsh/omo-commands into sandbox profil
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-commands" >>"$ADD_LOG" 2>&1 \
   || fail "dsh plugin add (omo-commands) failed (see $ADD_LOG)"
+echo "concerto-probe: installing @oh-my-opendsh/omo-team into sandbox profile '$PROFILE'"
+timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
+  "$REPO_ROOT/patches/omo-dsh/omo-team" >>"$ADD_LOG" 2>&1 \
+  || fail "dsh plugin add (omo-team) failed (see $ADD_LOG)"
 
 # T14 (FR-5, P-2; AC-5 config half): resolve the two route pairs from the
 # plugin's own config module — the single source of truth (Node 24
@@ -584,6 +603,63 @@ echo "concerto-probe: P4-T5 skills marker: $EXPECTED_SKILLS_SUMMARY"
 if [[ "$EXPECTED_COMMANDS_REGISTERED_COUNT" != "0" ]]; then
   echo "concerto-probe: P4-T3 commands registered markers ($EXPECTED_COMMANDS_REGISTERED_COUNT):"
   printf '%s\n' "$EXPECTED_COMMANDS_REGISTERED_LINES" | sed 's/^/concerto-probe:   /'
+fi
+
+# P5-T3: the omo-team mount marker's expected text, derived from the plugin's
+# OWN manifest.ts + boot-markers.ts + index.ts (Node 24 type-stripping, the same
+# three-module derivation as the commands half above). The node step prints the
+# ONE summary line first and then every expected `registered` line, so a drift in
+# any of those three modules — or a booted plugin whose registry disagrees with
+# this tree — fails the greps in the boot block below.
+#
+# WHY THE REGISTRY IS PART OF THE DERIVATION (and not the circular version): a
+# manifest row registers only when it is 'ported' AND has a registrar, so the
+# expectation is "ported ids ∩ TEAM_REGISTRARS keys". Deriving from the registry
+# alone would shrink to zero lines the moment TEAM_REGISTRARS lost an entry and
+# leave the probe green — the gap both earlier halves document. So the node step
+# FAILS LOUDLY when a ported row has no registrar, and the shell then
+# cross-checks the number of derived `registered` lines against the ported count
+# printed in the summary line itself (both derived, neither hard-coded).
+# At P5-T3 the registry is the deliberate empty-table skeleton AND no row is
+# 'ported' yet, so the derivation yields the summary line and ZERO registered
+# lines — vacuously correct, and the derivation is already proven by
+# tests/omo-team/boot-markers.test.ts. T5+ fills it without a probe edit.
+EXPECTED_TEAM_MARKERS="$(node --input-type=module -e "
+  Promise.all([
+    import('./patches/omo-dsh/omo-team/src/manifest.ts'),
+    import('./patches/omo-dsh/omo-team/src/boot-markers.ts'),
+    import('./patches/omo-dsh/omo-team/src/index.ts'),
+  ]).then(([manifest, markers, plugin]) => {
+    const ported = manifest.TEAM_MANIFEST.filter((entry) => entry.status === 'ported')
+    const missing = ported.filter((entry) => !(entry.id in plugin.TEAM_REGISTRARS))
+    if (missing.length > 0) {
+      throw new Error('a ported manifest row has no registrar (TEAM_REGISTRARS lost this entry — import drift?): '
+        + missing.map((entry) => entry.id).join(', '))
+    }
+    const registeredRows = ported.filter((entry) => entry.id in plugin.TEAM_REGISTRARS)
+    console.log(markers.formatLoadedSummaryLine(manifest.TEAM_MANIFEST, registeredRows))
+    for (const entry of registeredRows) {
+      console.log(markers.formatTeamSurfaceRegisteredLine(entry.id))
+    }
+  })
+")" || fail "omo-team manifest/boot-markers/index module resolution failed: $EXPECTED_TEAM_MARKERS"
+EXPECTED_TEAM_SUMMARY="$(printf '%s\n' "$EXPECTED_TEAM_MARKERS" | head -n 1)"
+EXPECTED_TEAM_REGISTERED_LINES="$(printf '%s\n' "$EXPECTED_TEAM_MARKERS" | tail -n +2)"
+[[ -n "$EXPECTED_TEAM_SUMMARY" ]] \
+  || fail "could not derive the omo-team summary marker from manifest.ts + boot-markers.ts"
+# Cross-check (the commands half's pair, same shape): the derived `registered`
+# line count must equal the ported count the summary line reports — the two
+# derivations of "which rows are ported" must not disagree. At P5-T3 it reads
+# 0 == 0. (The sed anchor drops the commands block's trailing `)`: in the team
+# line `ported=` is followed by `, recorded=`, not by the closing paren.)
+EXPECTED_TEAM_PORTED="$(printf '%s' "$EXPECTED_TEAM_SUMMARY" | sed -n 's/.*ported=\([0-9]\+\).*/\1/p')"
+EXPECTED_TEAM_REGISTERED_COUNT="$(printf '%s\n' "$EXPECTED_TEAM_REGISTERED_LINES" | grep -c . || true)"
+[[ "$EXPECTED_TEAM_PORTED" == "$EXPECTED_TEAM_REGISTERED_COUNT" ]] \
+  || fail "omo-team derivation is inconsistent: summary says ported=$EXPECTED_TEAM_PORTED but $EXPECTED_TEAM_REGISTERED_COUNT registered lines were derived"
+echo "concerto-probe: P5-T3 team marker: $EXPECTED_TEAM_SUMMARY"
+if [[ "$EXPECTED_TEAM_REGISTERED_COUNT" != "0" ]]; then
+  echo "concerto-probe: P5-T3 team registered markers ($EXPECTED_TEAM_REGISTERED_COUNT):"
+  printf '%s\n' "$EXPECTED_TEAM_REGISTERED_LINES" | sed 's/^/concerto-probe:   /'
 fi
 
 # P2-T15 (plan §4.4 deny-sentinel rendering): the explore row's deny is no
@@ -1132,6 +1208,29 @@ boot_once() {
     || fail "[$label] omo-commands skills marker missing or drifted (want: $EXPECTED_SKILLS_SUMMARY)"
   if grep -q '\[omo-commands\] skill .* FAILED' "$boot_log"; then
     fail "[$label] an omo-commands skill FAILED at boot — see FAILED line above"
+  fi
+  # P5-T3: the fourth cordis.yml insert row mounted, its ONE summary marker
+  # matches the source-derived text exactly (-F: the marker carries an em dash
+  # and regex metacharacters), and every PORTED team surface with a registrar
+  # logged its `registered` line — at P5-T3 the derived set is EMPTY (empty
+  # registry skeleton, no row 'ported' yet), so this loop asserts nothing until
+  # T5 lands the first registrar; the summary -F grep carries the mount proof
+  # meanwhile. A FAILED line is a real registration/validation failure and must
+  # never ride along silently, so both FAILED forms are explicitly asserted
+  # ABSENT.
+  grep -qF "$EXPECTED_TEAM_SUMMARY" "$boot_log" \
+    || fail "[$label] omo-team summary marker missing or drifted (want: $EXPECTED_TEAM_SUMMARY)"
+  local expected_team_line
+  while IFS= read -r expected_team_line; do
+    [[ -n "$expected_team_line" ]] || continue
+    grep -qF "$expected_team_line" "$boot_log" \
+      || fail "[$label] omo-team registered marker missing or drifted (want: $expected_team_line) — TEAM_REGISTRARS lost this entry (import drift?) or the loop stopped logging it"
+  done <<<"$EXPECTED_TEAM_REGISTERED_LINES"
+  if grep -q '\[omo-team\] manifest validation FAILED' "$boot_log"; then
+    fail "[$label] omo-team rejected its own manifest at boot — see FAILED line above"
+  fi
+  if grep -q '\[omo-team\] team surface .* FAILED' "$boot_log"; then
+    fail "[$label] an omo-team registration FAILED at boot — see FAILED line above"
   fi
   if grep -q "\[omo-agents\] concerto .* FAILED" "$boot_log"; then
     fail "[$label] registration threw — see FAILED line above"
@@ -1714,5 +1813,5 @@ boot_once fresh materialized
 # no-op and the roster must stay correct (idempotence proof).
 boot_once again unchanged
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (P4.5-T6 row vocabulary: the 0.2.x roster row is isDefault:false with trust/broken ABSENT over the {presets:[…]} roster RPC envelope, the 0.1.5 leg keeps its genuine trust:"user"; name from our preset.yml; the boot roster line prints concerto:broken=absent and NEVER the pre-T6 concerto:? placeholder, with an explicit EMPTY token if the roster read came back empty) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the composition ON THE ASSERTION FACE UNDER TEST — $LAST_COMPOSITION_SOURCE — and no __OMO_ residue on that face); omo-hooks mounted as the second insert row with the FULL $EXPECTED_HOOK_COUNT-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, $EXPECTED_HOOK_COUNT lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines, derived from the manifest's own ported rows — P4-T16 replaced the stale "at P4-T3 = 0 since all six rows are pending", which has been false since T6) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO `skill … FAILED` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the row on the assertion face under test, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and BOTH content faces derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row toolName/deny/allow/maxDepth checks generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH — TWO faces written separately with NO fallback between them: FACE A (0.1.5) verbatim line greps of the materialized file including its flow-sequence deny/allow pins, FACE B (0.2.x) the agentPresets/read document PARSED and compared ELEMENT-WISE against src/roster.ts, because content is a yaml.dump() of the parsed entry list where flow sequences expand to block sequences and redundant quotes drop); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (P4.5-T6 row vocabulary: the 0.2.x roster row is isDefault:false with trust/broken ABSENT over the {presets:[…]} roster RPC envelope, the 0.1.5 leg keeps its genuine trust:"user"; name from our preset.yml; the boot roster line prints concerto:broken=absent and NEVER the pre-T6 concerto:? placeholder, with an explicit EMPTY token if the roster read came back empty) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the composition ON THE ASSERTION FACE UNDER TEST — $LAST_COMPOSITION_SOURCE — and no __OMO_ residue on that face); omo-hooks mounted as the second insert row with the FULL $EXPECTED_HOOK_COUNT-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, $EXPECTED_HOOK_COUNT lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines, derived from the manifest's own ported rows — P4-T16 replaced the stale "at P4-T3 = 0 since all six rows are pending", which has been false since T6) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO `skill … FAILED` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the row on the assertion face under test, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and BOTH content faces derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row toolName/deny/allow/maxDepth checks generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH — TWO faces written separately with NO fallback between them: FACE A (0.1.5) verbatim line greps of the materialized file including its flow-sequence deny/allow pins, FACE B (0.2.x) the agentPresets/read document PARSED and compared ELEMENT-WISE against src/roster.ts, because content is a yaml.dump() of the parsed entry list where flow sequences expand to block sequences and redundant quotes drop); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS; omo-team mounted as the fourth insert row with its source-derived summary marker ($EXPECTED_TEAM_SUMMARY, $EXPECTED_TEAM_REGISTERED_COUNT registered team-surface lines) and NO FAILED / manifest-validation-FAILED line (both boots)"
 exit 0

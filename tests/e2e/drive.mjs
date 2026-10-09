@@ -9,10 +9,11 @@
 //   {result:"PASS"|"FAIL", scenarios:[...]}
 // (report §14.4.5 — CI parses stdout; all diagnostics go to stderr).
 //
-// P3-T3: the root cordis.yml now inserts THREE plugin rows (omo-agents +
-// omo-hooks, plus omo-commands since P4-T3), so stage 0 installs all three
+// P3-T3: the root cordis.yml now inserts FOUR plugin rows (omo-agents +
+// omo-hooks, plus omo-commands since P4-T3, plus omo-team since P5-T3), so
+// stage 0 installs all four
 // packages into the sandbox profile (PLUGIN_DIRS) and `pluginLoaded` asserts all
-// three load markers. What that stage PROVES is mount, not behaviour: each
+// four load markers. What that stage PROVES is mount, not behaviour: each
 // plugin's `pluginLoaded` analysis matches its **summary boot marker prefix**
 // (`[omo-commands] loaded: …`), which every plugin logs whether or not it
 // registers anything. The scenario bodies are where behaviour is asserted.
@@ -580,37 +581,43 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // The concerto/roster package — also the source of the template this driver
 // renders for its own composition checks below.
 const PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents')
-// P3-T3/P4-T3: the root cordis.yml inserts one row per package, so a sandbox
-// profile must carry ALL THREE before it can boot the overlay at all.
+// P3-T3/P4-T3/P5-T3: the root cordis.yml inserts one row per package, so a sandbox
+// profile must carry ALL FOUR before it can boot the overlay at all.
 const HOOKS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks')
 const COMMANDS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-commands')
-const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR, COMMANDS_PLUGIN_DIR]
+const TEAM_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-team')
+const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR, COMMANDS_PLUGIN_DIR, TEAM_PLUGIN_DIR]
 const PROFILE = 'web'
 const CONCERTO_PRESET_ID = 'concerto'
 
 /**
- * The load markers ALL THREE mounted plugins log at boot (P3-T3; third row by
- * P4-T3): omo-agents' plain `loaded` line, omo-hooks' summary marker
- * (`[omo-hooks] loaded: manifest <N> entries (…)`) and omo-commands' summary
- * marker (`[omo-commands] loaded: manifest <N> entries (…)` — the prefix is what
+ * The load markers ALL FOUR mounted plugins log at boot (P3-T3; third row by
+ * P4-T3, fourth by P5-T3): omo-agents' plain `loaded` line, omo-hooks' summary
+ * marker (`[omo-hooks] loaded: manifest <N> entries (…)`), and the two
+ * manifest-summary siblings — omo-commands'
+ * `[omo-commands] loaded: manifest <N> entries (pending=<n>, ported=<n>) —
+ * <r>/<N> commands registered` and omo-team's
+ * `[omo-team] loaded: manifest <N> entries (pending=<n>, ported=<n>,
+ * recorded=<n>) — <r>/<N> team surfaces registered`. The prefix is what
  * boot_log.includes matches, and `<N>`/the status counts are computed at boot
- * from each plugin's own manifest, never transcribed). A boot missing one means
+ * from each plugin's own manifest, never transcribed. A boot missing one means
  * the corresponding cordis.yml insert row did not mount.
  */
 const LOADED_MARKERS = [
   '[omo-agents] loaded',
   '[omo-hooks] loaded',
   '[omo-commands] loaded',
+  '[omo-team] loaded',
 ]
 
-/** `pluginLoaded` for every analysis: all three plugin rows really mounted. */
+/** `pluginLoaded` for every analysis: all four plugin rows really mounted. */
 function pluginsLoaded(bootLog) {
   return LOADED_MARKERS.every((marker) => bootLog.includes(marker))
 }
 
 /**
  * The boot-log text the `--self-test` fixtures feed the analyses that assert
- * `pluginLoaded` (a real boot carries all three markers).
+ * `pluginLoaded` (a real boot carries all four markers).
  */
 const FABRICATED_BOOT_LOG = LOADED_MARKERS.join('\n')
 
@@ -5568,14 +5575,14 @@ function pluginTemplateCompositionPath(sandbox) {
 }
 
 function installPlugin(sandbox, env) {
-  // One `plugin add` per cordis.yml insert row (three rows since P4-T3): a
+  // One `plugin add` per cordis.yml insert row (four rows since P5-T3): a
   // profile missing ANY one of them aborts the whole boot naming that row
   // (`plugin tree failed to load … ERR_MODULE_NOT_FOUND`) — not just a hooks
   // profile.
   //
-  // P4.5-T8b: exactly ONE of the three rows is installed from a sandbox COPY —
+  // P4.5-T8b: exactly ONE of the four rows is installed from a sandbox COPY —
   // omo-agents, the package whose apply() renders the concerto template that
-  // 0.2.x mounts (see pluginCopyDir). The other two keep the repo path, and
+  // 0.2.x mounts (see pluginCopyDir). The other three keep the repo path, and
   // that is not laziness but a measured refusal: omo-hooks declares
   // `dependencies: { undici: ^8.10.0 }` and the repo installs it as a pnpm
   // symlink whose target is RELATIVE to the repo
@@ -5590,10 +5597,12 @@ function installPlugin(sandbox, env) {
   // field at all and every import in its src/*.ts is either `node:*` or
   // relative, so the copy is genuinely self-contained. omo-commands declares no
   // dependencies either, but owns no persona and no template, so copying it
-  // would only add a second face to keep honest.
+  // would only add a second face to keep honest — the same holds for omo-team
+  // (P5-T3: no `dependencies` field, host-only, no persona/template of its
+  // own), which therefore keeps the repo path too.
   //
   // `cwd` moves to the sandbox WITH the copied operand and stays REPO_ROOT
-  // for the two repo operands. It is inert either way — anchorPathSpec only
+  // for the three repo operands. It is inert either way — anchorPathSpec only
   // anchors relative operands (dsh-plugin-manager/lib/index.js:215-219) and
   // pnpm itself runs with cwd = the profile dir (:518) — so the split is made
   // for what it says: each `add` runs from the directory its operand lives in.

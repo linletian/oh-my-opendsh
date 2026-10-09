@@ -294,14 +294,14 @@ async function checkCordis(cordisPath) {
   )
 }
 
-// ── check 2b: cordis.yml mounts exactly the three plugin rows (P3-T3; P4-T3 +1) ─
+// ── check 2b: cordis.yml mounts exactly the four plugin rows (P3-T3; P4-T3 +1; P5-T3 +1)
 
 /**
  * P3-T3's mount assertion: the patch overlay must insert exactly the plugin
  * rows EXPECTED_INSERT_ROW_IDS names (two at P3-T3, three since P4-T3 mounted
- * omo-commands), in mount order. The COUNT is never restated here — it comes
- * from the shared constant, which scripts/verify-concerto-static.mjs's c11 also
- * reads. A NEW check rather than
+ * omo-commands, four since P5-T3 mounted omo-team), in mount order. The COUNT
+ * is never restated here — it comes from the shared constant, which
+ * scripts/verify-concerto-static.mjs's c11 also reads. A NEW check rather than
  * more conditions inside check 2: check 2 owns the P-8 parse question ("does
  * every top-level row use the insert form"), while this one owns "which plugins
  * are mounted" — the fact every sandbox boot site (scripts/cold-start.sh,

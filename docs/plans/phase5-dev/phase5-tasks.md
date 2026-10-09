@@ -54,12 +54,12 @@
 - **证据**：✅ 2026-10-09——`patches/omo-dsh/omo-team/`（package.json 11 行 / tsconfig.host.json 54 行 / src/index.ts 106 行 / src/manifest.ts ~740 行 24 行条目 + validateManifest 12 检查 + 派生函数族）+ `tests/omo-team/manifest.test.ts`（45 用例，变异敏感，含 vendor 行无测试夹具负钉）+ 根 `package.json`（`typecheck:team` + 接入 `typecheck:libs`）+ `pnpm-lock.yaml`（workspace 机械登记）。实测：typecheck/typecheck:team/typecheck:libs 全绿；`tests/omo-team/` 45/45；全量 vitest 60f/1612t；verify-concerto-static 33/33；check-docs-consistency 10/10；**verify-licenses checked=57 violations=0（56→57 跃迁随本任务发生，T3 复核不变即可）**。**双评审通过**：轮 1 双 REJECT（闭包三缺口——session-client 缺失 / reservation-reconciliation 带 mailbox 运行时依赖 / zod 未登记——双通道收敛，仲裁 32 文件 import 全分析后文档先行更正 + 编码者修复）；轮 2 双 APPROVE（残留 4 项注释级 + 1 测试负钉，修复后仲裁独立确认）；2 条 findings 经证据驳回（mcode「§1 行 10」误读；opencode 首议的 D18 时点经统一为「随 T3 同发」非驳回但成文）。编码 NOTES 5 项全部经仲裁采纳（status 三值词表 / licenses 提前跃迁 / pnpm-lock 保留 / 单字段 e2eScenario / §3「升级」→ ported）。
 - **依赖**：P5-T1。**量级**：3 小时。
 
-### [ ] P5-T3 — 挂载（第四插行）+ boot marker + 同步网 3→4
+### [x] P5-T3 — 挂载（第四插行）+ boot marker + 同步网 3→4
 
 - **产出**：根 `cordis.yml` 第四个 `- insert:` 行（`id: omo-team`）；apply 注册循环骨架 + boot marker（`[omo-team] loaded: …` 汇总行自 manifest 派生）；**同步网同 commit 全点位**：doctor-lite `EXPECTED_INSERT_ROW_IDS`（3→4）、`tests/omo-hooks/cordis-inserts.test.ts`、cold-start、drive.mjs、probe、smoke-real、cordis.yml 头注释计数；`verify-licenses` checked 预期登记（**注意：56→57 的跃迁已在 T2 随 omo-team 包落位发生——本任务复核 checked=57 不变、violations=0 即可，勿误判为漂移**；D18/ROADMAP 回馈文稿随本任务同 commit——首个落地 commit = 本任务，T1 已起草 `.omo/evidence/p5t1/D18-ROADMAP-DRAFT.md`）。
 - **做法**：P-8 schema 纪律；loud-but-non-fatal；注册表占位形态 = 空表 + 汇总行计数派生（P3-T3/P4-T3 先例）；D18/ROADMAP 回馈文稿若 T1 已起草，随本任务或首个语义任务同 commit。
 - **判定**：✅ cold-start 绿且日志含 omo-team marker；门 4/8 绿；`--dump-config` 含第四行；门 6/7 不回归。
-- **证据**：⬜
+- **证据**：✅ 2026-10-09——`cordis.yml` 第四插行 + COUNT COUPLING NET 3→4 头注；`patches/omo-dsh/omo-team/src/{index.ts（TEAM_REGISTRARS 空表 + runTeamRegistrations：validate→loop→summary-last，loud-but-non-fatal）, boot-markers.ts（manifest 半场透传 + 注册半场拼接）}`；`tests/omo-team/boot-markers.test.ts` 19 用例；同步网 7 点位同 commit（doctor-lite-core.ts、cordis-inserts.test.ts、cold-start.sh、drive.mjs、concerto-mode-probe.sh、smoke-real.mjs、cordis.yml 头注）。实测：cold-start PASS 且日志逐字 `[omo-team] loaded: manifest 24 entries (pending=22, ported=0, recorded=2) — 0/24 team surfaces registered`；**门 3 drive.mjs 34/34 绿**；门 4 doctor 5/5（cordis-plugins = 4 rows mount order）；门 5 `checked=57 violations=0`（57 不变，未误判）；门 6 33/33；门 7 10/10；门 8 proofs 7/7；`--dump-config` :1267 含第四行；全量 vitest 61f/1631t。**双评审 APPROVE**（轮 1 即双 APPROVE，残留 6 项注释/prose 级 findings——静态门 c11/c15 计数 prose、probe PASS 汇总行补第四行证明、doctor-lite 头注、index.ts 病句/中英混排、drive.mjs marker 注释——修复轮落毕；仲裁者同批扫掉 decisions 双语「D1–D16」→「D1–D18」与 README 双语「14→18 decisions」陈旧计数）。**D18 双语登记（decisions.md/decisions_zh-CN.md）+ ROADMAP Phase 5 设计依据双语锚点（roadmap.md/roadmap_zh-CN.md）+ README 双语 Phase 5 状态行随本 commit 同发**。
 - **依赖**：P5-T2。**量级**：3 小时。
 
 ---
