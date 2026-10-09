@@ -471,11 +471,11 @@ const MANIFEST_ROWS = [
   {
     id: 'vendor-team-core-member-parser',
     upstreamSources: ['packages/team-core/src/member-parser.ts'],
-    nativeFace: 'vendor/team-core/src/member-parser.ts（T5 team_create 的 inline spec 解析消费）',
+    nativeFace: 'vendor/team-core/src/member-parser.ts（v1 消费面 = vendored team-registry/loader 闭包承重，命名 spec 加载 = 记差异未落地；team_create 工具面的 inline spec 解析 = src/team/team-spec.ts 手写收窄，非 vendor 消费）',
     disposition: 'content-vendor',
     e2eScenario: 'team-create-and-message',
     status: 'pending',
-    summary: 'vendor：成员 spec 解析（inline members[] 归一）——与 T4 member-validator 分层：解析随 vendor，资格判定是移植面',
+    summary: 'vendor：成员 spec 解析（inline members[] 归一）——诚实分层：v1 消费面 = vendored team-registry/loader 闭包承重（命名 spec 加载 = 记差异未落地）；team_create 工具面的 inline spec 解析 = src/team/team-spec.ts 手写收窄（T4，上游语义对齐非 vendor 消费）；资格判定是移植面（T4 member-validator）',
   },
   {
     id: 'vendor-team-core-team-registry',

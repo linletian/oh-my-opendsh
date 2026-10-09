@@ -16,7 +16,7 @@
 
 | 工具面 | OMO v4.19.4 来源（Q-1 逐字） | fork (B) 实现面 | 处置（终态） |
 |---|---|---|---|
-| `team_create`（inline spec `{name, members:[…]}`；`teamName` 命名 spec 面） | `features/team-mode/tools/lifecycle-create-tool.ts:60-119`；gating `team-tool-gating/hook.ts:102-108` | omo-team 工具层 → `ctx.subagents.startContinuable` 逐成员三件套（名册席值，Q-3 对照组实证 descriptor 全承载） | **语义移植**（inline spec 解析 + member-validator + 逐成员路由；`teamName` 命名 spec 注册表 = **记差异**，DSH 无 spec 注册表面；`leadSessionId` override = 记差异，lead 恒为当前会话） |
+| `team_create`（inline spec `{name, members:[…]}`；`teamName` 命名 spec 面） | `features/team-mode/tools/lifecycle-create-tool.ts:60-119`；gating `team-tool-gating/hook.ts:102-108` | omo-team 工具层 → `ctx.subagents.startContinuable` 逐成员三件套（名册席值，Q-3 对照组实证 descriptor 全承载） | **语义移植**（inline spec 解析 + member-validator + 逐成员路由；`teamName` 命名 spec 注册表 = **记差异**，DSH 无 spec 注册表面；`leadSessionId` override = 记差异，lead 恒为当前会话）【T4 收窄成文 2026-10-09：① `subagent_type` 记差异（DSH 无用户自定义 agent 注册表，传入具名 `SUBAGENT_TYPE_UNSUPPORTED`）；② prompt 内容政策三码（`EMPTY_PROMPT`/`CATEGORY_PROMPT_TOO_SHORT`/`category-missing-prompt`）v1 不执行，归 T5 引导域；③ spec/member 侧上游在册字段（kind/systemPrompt/loadSkills/role/description + description/leadAgentId/lead/teamAllowedPaths/sessionPermission）closed-shape 具名拒收；④ category 别名 v1 = {quick→sisyphus-junior, deep→hephaestus}；⑤ 判别联合不 throw（throw 归 T5 工具层）；⑥ kebab-case 建议性不归一——实现面 `src/team/{member-validator,team-spec}.ts`（纯函数）】 |
 | `team_delete`（活跃成员拒删，`force:true` 强删） | `tools/lifecycle-shutdown-tools.ts:37-62` + `team-runtime/delete-team.ts:65-104`（`DELETABLE_MEMBER_STATUSES`） | omo-team 工具层纪律 + 原生 `interrupt`（保 inbox）+ continuable drain/disposal 组合 | **语义移植**（「拒活跃除非 force」纪律逐字对齐；orphaned/deleting 旁路 = (B) 状态机骨架承接，T7） |
 | `team_shutdown_request`（lead-only，代码实证） | `tools/lifecycle-shutdown-tools.ts:64-79`（`:74` lead-only）；握手语义 `team-runtime/shutdown.ts:13-55`；senpi 参考 `senpi-task/src/team/shutdown.ts:72-101` | omo-team 握手状态机（vendored state-store 存 shutdownRequests）+ 询问消息经原生投递 | **语义移植**（幂等、无自动超时——超时语义由提示词承担，上游同构，Q1a §5.4） |
 | `team_approve_shutdown`（lead 或目标成员） | 同文件 `:81-96`；`shutdown.ts:57-107` | 同上（批准后 interrupt + drain，inbox 保留断言） | **语义移植** |
@@ -57,7 +57,7 @@
 
 ## 4. 成员资格矩阵（T1 Q-1/Q-5 终态化）
 
-> **类型事实（计划期复核，`roster.ts:51` 逐字）**：`AgentClass = 'read-only' | 'worker' | 'orchestrator' | 'allowlist'`——**无 `conductor` 值**；且 sisyphus 行是「Route-only conductor row: no personaFile / class / maxDepth」（`roster.ts:110-120` 注释逐字），**根本没有 `class` 字段**。11 席真实分布 = read-only 6 / worker 2 / orchestrator 1 / **allowlist 1**（multimodal-looker）/ **无 class 1**（sisyphus）。⇒ 资格规则的输入 = **class 为主 + seat id 兜底**——无 class 的 sisyphus 走结构性排除，不参与 class 匹配。
+> **类型事实（计划期复核，`roster.ts:51` 逐字）**：`AgentClass = 'read-only' | 'worker' | 'orchestrator' | 'allowlist'`——**无 `conductor` 值**；且 sisyphus 行是「Route-only conductor row: no personaFile / class / maxDepth」（`roster.ts:110-120` 注释逐字），**根本没有 `class` 字段**。11 席真实分布 = read-only 6 / worker 2 / orchestrator 1 / **allowlist 1**（multimodal-looker）/ **无 class 1**（sisyphus）。⇒ 资格规则的输入 = **class 为主 + seat id 兜底**——无 class 的 sisyphus 走结构性排除，不参与 class 匹配。**实现面（T4，2026-10-09）**：`patches/omo-dsh/omo-team/src/team/member-validator.ts`（纯函数，判别联合不 throw——throw 归 T5 工具层；声明式复制 roster + 测试期逐位置/集合对账，roster 漂移即红）。
 
 | 名册席 | class | 入队（终态，T1 裁定 2026-10-09） | 依据 |
 |---|---|---|---|

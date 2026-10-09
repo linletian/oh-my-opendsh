@@ -66,12 +66,15 @@
 
 ## WP-2 组建与成员模型（计划书 §4.3）
 
-### [ ] P5-T4 — member-validator + inline spec 解析 ⚖️
+### [x] P5-T4 — member-validator + inline spec 解析 ⚖️
+
+> **仲裁注（manifest 状态翻动规则，2026-10-09）**：manifest 行 `pending → ported` 的翻动时点 = **该行 e2e 场景在门 3 转绿**（scenario 即该行的行为证明）；`recorded-difference` 行自 T2 已为 `recorded`（差异在覆盖基线成文即闭环）。team_create 行的翻动归 T6（`team-create-and-message` 全段绿时）；翻动与场景落地同 commit。
+> **仲裁注 2**：本条产出中的「manifest 条目填入」= 已由 T2 manifest 行覆盖（行粒度 = 上游路径 + 处置，不逐登记本仓产物文件名），无需新增条目（评审疑问澄清）；后续条目同此理解。
 
 - **产出**：`src/team/member-validator.ts` + `src/team/team-spec.ts`（纯函数）+ 单测；manifest 条目填入。
 - **做法**：资格规则以 roster `class` 为**主输入 + seat id 兜底**（`AgentClass` 四值 = `'read-only'|'worker'|'orchestrator'|'allowlist'`，**无 `conductor`**，`roster.ts:51`；read-only 六席拒入；**atlas（orchestrator）与 multimodal-looker（allowlist）= T1 Q-5 终态均拒**（atlas = 有意收紧：Q-6 实证成员工具面无委派通道、orchestrator 职责在 team 内结构性不可行；multimodal-looker = v4 hard-reject 在册收紧——覆盖基线 §4 已终态）；**sisyphus 无 `class` 字段**（route-only 行，`roster.ts:110-120`），按 seat id 结构性排除）；`UNRESOLVABLE_CATEGORY` 与可用项清单文案（上游可用清单语义——**T1 Q-1 实证 `describePlanError` 在 v4.19.4 不存在**，等价物 = `execute.ts:69-81` 内联 suffix / `execute-batch.ts:95-105` / member-validator 文案，语义对齐，署名头注 `member-validator.ts` 上游路径）；inline spec `{name, members:[{name, category|seat, prompt?}]}` 解析与上游对齐、收窄处（category 释义、无 subagent_type）按 Q-5 终态表实现并记差异。
 - **判定**：✅ 资格矩阵全组合单测（**11 席** × 允许/拒绝——含无 class 的 sisyphus 与 allowlist 席的 multimodal-looker，矩阵缺一席即红）；`UNRESOLVABLE_CATEGORY` 文案含可用清单；收窄差异进覆盖基线。
-- **证据**：⬜
+- **证据**：✅ 2026-10-10——`src/team/member-validator.ts`（11 席终态矩阵：允许 {hephaestus, sisyphus-junior}；category 别名 v1 {quick→sisyphus-junior, deep→hephaestus}，词表取自上游 openai-categories.ts；UNRESOLVABLE_CATEGORY 双可用清单排序拼接；subagent_type 具名差异；署名头三上游源）+ `src/team/team-spec.ts`（object/JSON string 双臂、members 1..8、DUPLICATE_MEMBER_NAME、category|seat 恰好其一、v1 不收字段逐枚具名 + closed shape；max-8 文案逐字复用已披露）+ `tests/omo-team/{member-validator,team-spec}.test.ts`（73 用例：11 席全组合逐席硬编码 + toHaveLength 双保险 + roster 行序逐位置对账 + ALL_AGENT_IDS 集合相等 + spec 级五枚逐枚独立 its + 19 错误码逐码钉）。实测：`tests/omo-team/` 137/137；全量 vitest 63f/1704t；typecheck 三链绿；门 6/7 不回归；缺一席即红双变异自证。**双评审 APPROVE**（A 首跑中段停摆无 verdict → 重试后 APPROVE；B APPROVE；findings：prompt 政策第三码 `category-missing-prompt` 补登、校验序注释收敛、max-8 文案披露、spec 级五枚拆分、行序对账补测、行号偏移两枚、manifest member-parser 行 prose 更正——修复轮 8 项落毕；仲裁确认「状态翻动规则注」为仲裁者亲笔；覆盖基线 §1 team_create 行收窄成文 + §4 实现面注 + 计划书 §4.3「名册可委派席」收紧为「名册 worker 席」同 commit）。
 - **依赖**：P5-T1。**量级**：4 小时。
 
 ### [ ] P5-T5 — `team_create` 组建路径 + per-member 路由 ⚖️
