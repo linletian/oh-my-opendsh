@@ -53,13 +53,18 @@ import {
  * derivation it stands in for never needs an edit.
  */
 const EXPECTED_SUMMARY_LINE =
-  '[omo-team] loaded: manifest 24 entries (pending=11, ported=11, recorded=2) — 11/24 team surfaces registered'
+  '[omo-team] loaded: manifest 24 entries (pending=10, ported=12, recorded=2) — 12/24 team surfaces registered'
 
 /**
  * P5-T5 landed the FIRST registrar (`team_create`); P5-T6 added the second
  * (`team_send_message`); **P5-T7 adds five** — `team_delete`,
  * `team_shutdown_request`, `team_approve_shutdown`, `team_reject_shutdown`,
- * `team_status` — so the honest `<r>` is 7 and the pinned line above carries
+ * `team_status`; P5-T8b added the task-board quartet; **P5-T9 adds the
+ * twelfth** — `stop-continuation-team` (manifest row ⑰: the read-only member
+ * query surface the omo-hooks stop-continuation guard consumes; the row's
+ * nativeFace — the guard's team branch — lives in omo-hooks and registers
+ * nothing HERE, which is exactly why the row's omo-team-visible half IS this
+ * registrar) — so the honest `<r>` is 12 and the pinned line above carries
  * it, in MANIFEST ROSTER ORDER (the loop iterates the roster, not this list;
  * the list mirrors it so a reorder turns the boot-line test red). The flip of
  * this list and of the pinned line is the SAME-commit friction the T3 comment
@@ -81,6 +86,7 @@ const REAL_REGISTERED_IDS: readonly string[] = [
   'team_task_update',
   'team_task_get',
   'team_status',
+  'stop-continuation-team',
 ]
 
 function registeredRows(ids: readonly string[]): TeamManifestEntry[] {
@@ -134,6 +140,7 @@ function fullRoster(overrides: ReadonlyArray<Partial<TeamManifestEntry>> = []): 
  * (a loop test that really resolved a live Agent would be the bug this stub
  * catches). Tests override either member when they need to observe more.
  */
+const provided = new Map<string, unknown>()
 function ctx(overrides: Partial<TeamRegistrationContext> = {}): TeamRegistrationContext {
   return {
     on: (_event, _listener) => () => {},
@@ -154,6 +161,15 @@ function ctx(overrides: Partial<TeamRegistrationContext> = {}): TeamRegistration
     agents: {
       get: () => undefined,
     },
+    // P5-T9: the `stop-continuation-team` registrar publishes through
+    // ctx.provide — the fixture answers like a real fiber (the service lands
+    // in a map a test can inspect; the disposer is the fiber's to collect).
+    provide: (name: string, service: unknown) => {
+      provided.set(name, service)
+      return () => {
+        provided.delete(name)
+      }
+    },
     ...overrides,
   }
 }
@@ -173,10 +189,10 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', a
     // reads `1/24`.
     const portedStandIn = registeredRows([]).concat(row({ id: 'team_send_message', status: 'ported' }))
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, [])).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=11, ported=11, recorded=2) — 0/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=10, ported=12, recorded=2) — 0/24 team surfaces registered',
     )
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, portedStandIn)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=11, ported=11, recorded=2) — 1/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=10, ported=12, recorded=2) — 1/24 team surfaces registered',
     )
   })
 
@@ -295,6 +311,7 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
       '[omo-team] team surface team_task_update registered',
       '[omo-team] team surface team_task_get registered',
       '[omo-team] team surface team_status registered',
+      '[omo-team] team surface stop-continuation-team registered',
       EXPECTED_SUMMARY_LINE,
     ])
   })
@@ -316,6 +333,7 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
       'team_task_update',
       'team_task_get',
       'team_status',
+      'stop-continuation-team',
     ])
   })
 

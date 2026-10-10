@@ -66,6 +66,12 @@
 // 裁决面，send.ts:67-80）；team_status 是**查询面**可读 tombstone（上游
 // query.ts 对 deleted 态同样返回聚合，差异不成文即默认同构）。嵌套闸
 // participantOf 只数 ACTIVE 态 + retireRunIndexes 双保险，lead 拆完可再组队。
+// **T7 遗留补句（P5-T9 成文）**：`retireRunIndexes` 的两张参与索引撤账是
+// **member/lead 不对称**的——delete 之后成员再问 `participationOfMember` =
+// 查无此人（`NOT_PARTICIPANT` 具名拒，参与账已撤），而 lead 经 tombstone
+// mirror 的 `get(teamRunId)` 仍读得到 deleted 行（state.json 留盘、镜像留行，
+// 直到重启 sweep）；同一场拆除，两种失明度，这不是漏洞而是「参与账随拆队撤、
+// 事实账留墓碑」的同一裁决的两面（消费面各自具名，不互相冒充）。
 //
 // strip-only 纪律（T5 NOTES-6）：本文件不用参数属性；零 @deepseek-ai
 // import（TeamContinuableChannel/TeamLiveAgents/TeamAgent 复用既有声明）。

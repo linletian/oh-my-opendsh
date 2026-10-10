@@ -124,6 +124,11 @@ import {
 // resumeAllTeams through the session-context adapter (the OMO-shaped client
 // ↔ DSH ctx.agents boundary, documented in session-context-adapter.ts).
 import { buildTeamSessionContext } from './team/session-context-adapter.ts'
+// P5-T9 · manifest 行 ⑰ `stop-continuation-team` 的 omo-team 半：guard 消费的
+// 只读成员查询面（跨包纪律——omo-hooks 不 import omo-team，走 cordis 服务面；
+// 取消动作本身住在 omo-hooks 的 guard，见 tools 侧注册行注与
+// team/team-stop-continuation.ts 头注）。
+import { registerTeamStopContinuationQuerySurface } from './team/team-stop-continuation.ts'
 
 export const name = 'omo-team'
 
@@ -226,6 +231,19 @@ export interface TeamRegistrationContext {
    * cached beyond the call that looked it up.
    */
   readonly agents: TeamLiveAgents
+  /**
+   * Cordis's service provider — PROMOTED TO PRESENT-DECLARED AT P5-T9: the
+   * `stop-continuation-team` registrar publishes the read-only member query
+   * surface the omo-hooks stop-continuation guard consumes through its own
+   * `ctx.get` (the cross-package discipline of the row: omo-hooks never
+   * imports omo-team; the `omoStopContinuation` provider/consumer pair is the
+   * verbatim precedent, mirrored here in the other direction). Typed OPTIONAL
+   * like `get`/`effect` for the same reason — the structural host contract of
+   * this interface — and the registrar answers its absence with a named throw,
+   * which the registration loop turns into the row's own FAILED line: a row
+   * that could not publish does not register and is not counted.
+   */
+  readonly provide?: (name: string, service: unknown) => unknown
 }
 
 /**
@@ -298,6 +316,11 @@ export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
   // task_get 合一行，表格口径此行为第 10 行，manifest.ts 行注保持表格口径，
   // 两套锚各按各的序，逐枚可对（评审 T7-MINOR 的裁决面）。
   team_status: (ctx) => registerTeamStatusSurface(ctx, { store: teamStateStore }),
+  // P5-T9 · ⑰ §行 17：stop-continuation 的 team 分支——本行在 omo-team 侧的
+  // 可见半 = guard 消费的只读成员查询面（ctx.provide 上线，fiber 收编）；
+  // 取消动作的 nativeFace 在 omo-hooks 的 guard（跨包纪律：两侧零 import，
+  // 服务名交叉等值由单测钉死）。行号按名册行序（manifest.ts 第 17 条）。
+  'stop-continuation-team': (ctx) => registerTeamStopContinuationQuerySurface(ctx, { store: teamStateStore }),
 }
 
 /**
@@ -374,15 +397,16 @@ export function runTeamRegistrations(
  * unit-tested functions, so this stays assembly-only and the markers cannot
  * drift from their tests.
  *
- * A correct P5-T8b boot logs ELEVEN `registered` lines from this plugin — the
+ * A correct P5-T9 boot logs TWELVE `registered` lines from this plugin — the
  * loop's landed rows in roster order (`team_create`, `team_delete`, the
  * shutdown trio, `team_send_message`, the task-board quartet added at T8b,
- * `team_status`) — then the summary line carrying the honest `11/24`, then AT
+ * `team_status`, and the `stop-continuation-team` query surface added at T9) —
+ * then the summary line carrying the honest `12/24`, then AT
  * MOST the resume lines of the persistence boot (below): no FAILED line, no
  * validation line. (At P5-T3 it logged exactly ONE line, the summary with the
  * loop's honest zero, because the registry was empty; T5/T6 grew it to two;
- * T7 grew it to seven; T8b grew it to eleven; the flips are the markers the
- * probe re-derives without an edit.)
+ * T7 grew it to seven; T8b grew it to eleven; T9 grew it to twelve; the flips
+ * are the markers the probe re-derives without an edit.)
  *
  * PERSISTENCE BOOT (T8b换装): after the registration loop, the store rebuilds
  * its read mirror from disk and runs the vendored `resumeAllTeams` through

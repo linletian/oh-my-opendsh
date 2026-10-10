@@ -222,6 +222,16 @@ export interface StopContinuationOutcome {
   readonly stopFailedJobIds: readonly string[]
   /** False when no jobs service was mounted: nothing was cancelled, loudly. */
   readonly jobsServicePresent: boolean
+  /**
+   * P5-T9 · the team branch's verdict (manifest row `stop-continuation-team`):
+   * the member-tree facts of THIS call, ADDITIVE and OPTIONAL — every
+   * pre-T9 consumer reads only the fields above and sees byte-identical
+   * behaviour. Absent only when the guard was built without the team seams
+   * (a pre-T9 harness); with the seams wired it is always present, and its
+   * own `teamServicePresent`/`note`/empty-lists spell "no team, nothing to
+   * touch" without claiming anything.
+   */
+  readonly team?: StopContinuationTeamOutcome
 }
 
 /**
@@ -325,6 +335,98 @@ export const STOP_CONTINUATION_GUARD_DISPOSED_EVENT = 'session/disposed'
 /** The reason string forwarded to `kill` (upstream's `reason` field, same wording). */
 export const STOP_CANCELLATION_REASON = 'Continuation stopped via /stop-continuation'
 
+// ── P5-T9 · manifest 行 ⑰ `stop-continuation-team` 的消费半 ──────────────────
+//
+// NOTES-7 的同步契约裁决（Q-6 §NOTES-7 留给本任务的形状仲裁，落地即裁决）：
+// `stop()` 的同步契约**不破**——返回值仍是同步 verdict，一个 await 都不引入。
+// 成员树的取消天然分成两段，各按各的原生契约走：
+//   * `interrupt` 是**同步**的 fire-and-return（**[0.2.x]** dsh-subagent
+//     lib/index.js:2857 的 doc 逐字 "Fire-and-return: the cancel signal is
+//     issued before this returns"，P5-T9 在镜像重开）——guard 在 stop() 内
+//     同步逐成员开火，返回时取消信号已全部签发；
+//   * `drainContinuableChildren` 是**异步**的（同文件 :2910 `async`，驻留
+//     Activation 的释放要等每个 `AgentHandle` 落地）——guard 只**发起**它，
+//     不在 stop() 里 await；drain 的 promise 作为 verdict 的**附加异步出口**
+//     挂在 outcome 的 `team.teamDrain` 上（永不 reject：settle 打自己的
+//     marker 行、失败打 FAILED marker 行并把 promise 落成 false），
+//     需要 join 的调用方（单测/未来的 UI）可 await 它，不 await 的调用方
+//     （现下的 omo-commands）语义零变化。
+// 「同步 verdict + 可 join 的异步出口 + 独立 marker」三者合起来就是 NOTES-7
+// 要的「另开 async 出口」；把 stop() 改成 async 会把 H-34 的同步契约连锅端掉
+// （命令面、todo enforcer 的读取时序都骑在它上），不在选项里。
+//
+// marker 纪律（Phase 4.5 金丝雀纪律，任务书交付面 2 点名）：team 分支的每一行
+// 都带 `stop-continuation-guard team` 这个 jobs 级联行**不可能**含的前缀 token
+// （jobs 行是 `stop-continuation-guard: continuation stopped …`，冒号紧跟 id），
+// 于是「team 分支触达了」与「降级路径触达了（NOTE）」都是可 grep 的正/反断言。
+// 无队的普通会话停摆时 team 分支**完全静默**（39 个非 team 场景的 boot log
+// 一个字节都不多）——「没队」由 outcome 的 `team` 字段自证，不占日志。
+
+/**
+ * 消费侧的服务名拼写（提供侧 = omo-team `team/team-stop-continuation.ts`，
+ * 两侧零 import，交叉等值由 tests/omo-hooks/stop-continuation-team.test.ts
+ * 钉死——`omoStopContinuation` 的 R-5 双拼写先例，同族镜像）。
+ */
+export const OMO_TEAM_MEMBER_QUERY_SERVICE = 'omoTeamMemberQuery'
+
+/**
+ * 只读成员查询面（omo-team 提供，guard 消费）。结构声明只点到消费为止：
+ * `liveMembersOfLead` 回的是 ACTIVE run 的可寻址成员行（状态过滤与空集
+ * 语义见提供侧头注；guard 侧对应纪律 = 空集静默）。
+ */
+export interface StopContinuationTeamQueryLike {
+  liveMembersOfLead(leadSessionId: string): readonly StopContinuationTeamMemberLike[]
+}
+
+/** 查询面的一行：guard 只消费这三列（runId 进 marker，sessionId 进取消）。 */
+export interface StopContinuationTeamMemberLike {
+  readonly teamRunId: string
+  readonly memberName: string
+  readonly sessionId: string
+}
+
+/**
+ * `ctx.subagents` 的 continuable 臂——guard 只调用这两枚（T5/T7 在 omo-team
+ * 侧已实测过的同一对）：`interrupt` 同步 fire-and-return（absent target 是
+ * 被接受的 no-op，UNAUTHORIZED 只在 authority 不匹配活体目标时抛）；
+ * `drainContinuableChildren` 异步释放选定驻留 Activation（absent targets
+ * 同为 no-op）。authority 用 `{ kind:'ancestor', agent }`——与 T7 team_delete
+ * 同一祖先权威，agent 必须是活体精确实例（dsh-subagent 的 exact-live 检查）。
+ */
+export interface StopContinuationSubagentsLike {
+  interrupt(targetSessionId: string, authority: { kind: 'ancestor'; agent: unknown }): unknown
+  drainContinuableChildren(parent: unknown, childIds: readonly string[]): Promise<unknown>
+}
+
+/** `ctx.agents` 的最小活体注册表面：guard 只 `get` 一下 lead 的活体 Agent。 */
+export interface StopContinuationAgentsLike {
+  get(sessionId: string): unknown
+}
+
+/**
+ * team 分支的 verdict（`StopContinuationOutcome.team` 的内容）。全部字段是
+ * **同步**事实（drain 只记「发起了没有」）；异步的落地经 `teamDrain` 出口。
+ */
+export interface StopContinuationTeamOutcome {
+  /** false = 查询面缺席（omo-team 未挂载）——降级路径，marker 独立可 grep。 */
+  readonly teamServicePresent: boolean
+  /** 本次取消所依据的 run；无队/降级时缺席。 */
+  readonly teamRunId?: string
+  /** 本次同步签发 interrupt 的成员会话（名单 = 查询面的行序）。 */
+  readonly interruptedMemberSessionIds: readonly string[]
+  /** interrupt **抛错**的成员会话——可能仍活着，与成功桶分账（PR #12 同族）。 */
+  readonly interruptFailedMemberSessionIds: readonly string[]
+  /** drain 是否已发起（异步落地的 join 点在 `teamDrain`）。 */
+  readonly drainInitiated: boolean
+  /**
+   * NOTES-7 裁决的 async 出口：永不 reject；true = 驻留已全部释放，
+   * false = drain 抛错（marker 行已打）。未发起时缺席。
+   */
+  readonly teamDrain?: Promise<boolean>
+  /** 降级原因的具名一句话（缺席 = 无降级）。 */
+  readonly note?: string
+}
+
 /**
  * Injection seams. `readJobs` is a LAZY accessor, never a cached service handle:
  * the provider runs inside `apply()`, and a jobs service that appears later (or in a
@@ -334,6 +436,29 @@ export const STOP_CANCELLATION_REASON = 'Continuation stopped via /stop-continua
 export interface StopContinuationGuardDeps {
   /** Lazily read the jobs service; `undefined` means "not mounted" (degraded). */
   readonly readJobs: () => StopContinuationJobsLike | undefined
+  /**
+   * P5-T9 · Lazily read the omo-team-provided read-only member query service
+   * (`ctx.get(OMO_TEAM_MEMBER_QUERY_SERVICE)` at the moment of the stop, never
+   * a handle frozen at apply time — the same H-11 deferred-get discipline as
+   * `readJobs`, and for the same reason: omo-team mounts on its own fiber and
+   * may appear after this one). OPTIONAL: a pre-T9 caller (or a profile without
+   * omo-team) gets the degraded NOTE marker, not a crash.
+   */
+  readonly readTeamQuery?: () => StopContinuationTeamQueryLike | undefined
+  /**
+   * P5-T9 · Lazily read the native `subagents` service's continuable arm
+   * (interrupt + drain). OPTIONAL like `readTeamQuery`; absent → the members
+   * are NOT interrupted, with its own named NOTE marker.
+   */
+  readonly readSubagents?: () => StopContinuationSubagentsLike | undefined
+  /**
+   * P5-T9 · Lazily read the live `agents` registry — the guard resolves the
+   * lead's live Agent through it (the ancestor authority `interrupt` and the
+   * exact-live parent `drainContinuableChildren` both demand the exact live
+   * instance, dsh-subagent's exact-live checks; T7 team-delete reads the same
+   * face). OPTIONAL; a stale/absent lead degrades with its own NOTE marker.
+   */
+  readonly readAgents?: () => StopContinuationAgentsLike | undefined
   /** Diagnostic sink. Never throws out of the guard. */
   readonly log: (line: string) => void
 }
@@ -358,7 +483,14 @@ export function createStopContinuationGuard(
       + `, stop failed ${cascade.stopFailedJobIds.length}`
       + `, jobs service ${cascade.jobsServicePresent ? 'present' : 'absent — nothing cancelled'})`,
     )
-    return { sessionId, ...cascade }
+    // P5-T9 · manifest 行 ⑰ 的并联分支（Q-6 §4 的裁决面：members 不进 jobs，
+    // jobs 级联摸不到成员树，team 分支必须在 guard 内并联接线）。排在 jobs
+    // 行**之后**：jobs 级联的既有行一个字节不变（既有消费者按前缀 grep），
+    // team 分支打自己的 `stop-continuation-guard team` 行族。整个分支同步
+    // 返回、永不抛（NOTES-7 的同步契约裁决见文件头 §P5-T9 段：interrupt
+    // 同步开火，drain 只发起、经 outcome.team.teamDrain 可 join）。
+    const team = cascadeTeamMembers(deps, sessionId)
+    return { sessionId, ...cascade, team }
   }
 
   const isStopped = (sessionId: string): boolean => stoppedSessions.has(sessionId)
@@ -453,6 +585,195 @@ function cascadeCancelJobs(
     }
   }
   return { cancelledJobIds, alreadyFinishedJobIds, stopFailedJobIds, jobsServicePresent: true }
+}
+
+/**
+ * P5-T9 · manifest 行 ⑰ `stop-continuation-team` 的 team 分支（jobs 级联的
+ * 并联臂，Q-6 §4：members 不进 jobs，jobs 级联对成员树结构性失明）。
+ *
+ * 执行序（与 T7 team_delete 的「逐成员 interrupt → 一把 drain」同序，任务书
+ * 交付面 2 钉）：
+ *   ① 惰性取查询面（omo-team 的服务）——缺席 = 降级 NOTE（marker 与 jobs 的
+ *      `jobs service absent` 从句**词汇级可区分**）；
+ *   ② `liveMembersOfLead(sessionId)` 取成员清单（只读；抛错 = 降级 NOTE）；
+ *   ③ 空集 = 本会话没队 = **完全静默**（普通会话的停摆不多打一行日志；
+ *      「team 分支未触达」的反向断言因此可写：非 team 场景的 boot log 里
+ *      `stop-continuation-guard team` 这个前缀必须一个都不出现）；
+ *   ④ 取活体 lead Agent（ancestor authority + drain 的 exact-live parent）——
+ *      不在场 = 响亮 NOTE，成员**不**被取消（权威不给就不开火，T7
+ *      LEAD_NOT_LIVE 同一裁决的 guard 侧降级版：guard 不能把降级冒成失败，
+ *      stop() 的 verdict 里 note 具名报出）；
+ *   ⑤ 逐成员 `interrupt(sessionId, {kind:'ancestor', agent})`——同步
+ *      fire-and-return；单成员抛错进 `interruptFailedMemberSessionIds`
+ *      自己的桶并打自己的行，不放弃其余成员（jobs 级联 try-per-job 同序）；
+ *   ⑥ `drainContinuableChildren(lead, interruptedIds)`——**只发起不 await**
+ *      （NOTES-7：异步出口经 `teamDrain` promise + 自己的 settle/FAILED
+ *      marker 行落地）。集合语义如实两态（评审 MINOR 修正——旧注曾 claim
+ *      「与 T7 同一集合语义」，不成立）：T7 team_delete 的 drain 集合 =
+ *      **尝试全集**（`interruptedSessionIds` 先 push 后开火、interrupt 抛了
+ *      的成员照样进 drain，team-delete.ts:227-241）；guard 的 drain 集合 =
+ *      **成功开火集**（只有 `interruptedMemberSessionIds` 交给 drain）。
+ *      未成功开火的成员不进 drain 批次——它可能还活着，拖进拆驻留批次是
+ *      风险不是清理；失败者既不毒化 drain 批次，也不被 drain 误伤。
+ *
+ * 全程同步返回、永不抛：每个 await 面（drain）都被就地转成
+ * 「发起 + 自带 catch 的 marker」，每个可能抛的同步面（三次 ctx.get、
+ * liveMembersOfLead、逐成员 interrupt）都被就地接住并具名记录。guard 的
+ * 契约是「命令结果已经 settle 了，记录比抛错更有用」（jobs 级联的同一句）。
+ */
+function cascadeTeamMembers(
+  deps: StopContinuationGuardDeps,
+  sessionId: string,
+): StopContinuationTeamOutcome {
+  const teamLog = (line: string): void => {
+    deps.log(`[omo-hooks] ${STOP_CONTINUATION_GUARD_ID} team: ${line}`)
+  }
+  const teamNote = (line: string): void => {
+    deps.log(`[omo-hooks] ${STOP_CONTINUATION_GUARD_ID} team NOTE: ${line}`)
+  }
+
+  // ① 查询面缺席 = 降级（NOTE marker 与 jobs 降级从句词汇级可区分）。
+  // SEAM 缺席（构造期事实：pre-T9 的 harness 或没接线的调用方）**静默**——
+  // 构造方 never 在运行时变宽，为它每次 stop 打一行是纯噪音（pre-T9 的
+  // 单测逐字钉着"一次 stop 一行日志"）；诚实由 outcome 的
+  // `teamServicePresent:false + note` 承载。运行时真降级（seam 在、服务没
+  // 挂上）才是 NOTE 的对象——那是 e2e 反金丝雀要 grep 的那条线。
+  if (deps.readTeamQuery === undefined) {
+    return { teamServicePresent: false, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false, note: 'query service seam not wired' }
+  }
+  let query: StopContinuationTeamQueryLike | undefined
+  try {
+    query = deps.readTeamQuery()
+  } catch (error) {
+    teamNote(`query service lookup failed: ${describeError(error)} — no member tree consulted`)
+    return { teamServicePresent: false, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false, note: `query service lookup failed: ${describeError(error)}` }
+  }
+  if (query === undefined) {
+    teamNote('team query service absent — no member tree consulted')
+    return { teamServicePresent: false, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false, note: 'team query service absent' }
+  }
+
+  // ② 成员清单。
+  let members: readonly StopContinuationTeamMemberLike[]
+  try {
+    members = query.liveMembersOfLead(sessionId)
+  } catch (error) {
+    teamNote(`liveMembersOfLead failed: ${describeError(error)} — no member tree consulted`)
+    return { teamServicePresent: true, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false, note: `liveMembersOfLead failed: ${describeError(error)}` }
+  }
+  // ③ 无队 = 静默。普通会话的每一次 /stop-continuation 都走到这里然后原样
+  // 离开；team 前缀的一行都不打（反向断言的可写性就在这里）。
+  if (members.length === 0) {
+    return { teamServicePresent: true, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false }
+  }
+  // 单 run 契约（评审 MINOR 成文，provider 侧裁决）：`liveMembersOfLead` 经
+  // `store.teamOfLead` 的 lead→teamRunId **单值索引**取数（team-state.ts:754-
+  // 757，Map 一键一值），同一 lead 的一个快照里所有成员行同源同 run——
+  // `members[0]!.teamRunId` 不是「猜第一行」，是单 run 契约的合法读法。
+  // 契约由提供侧单测钉死（tests/omo-team/team-stop-continuation.test.ts 的
+  // single-run pin）；嵌套第二队被 participantOf 结构性拦死（T5 裁决）。
+  const teamRunId = members[0]!.teamRunId
+
+  // ④ 活体 lead = 权威载体。缺席 = 响亮 NOTE，不开火。
+  if (deps.readAgents === undefined || deps.readSubagents === undefined) {
+    teamNote(`subagents/agents seam not wired — ${members.length} member(s) NOT interrupted`)
+    return { teamServicePresent: true, teamRunId, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false, note: 'subagents/agents seam not wired' }
+  }
+  let leadAgent: unknown
+  try {
+    leadAgent = deps.readAgents()?.get(sessionId)
+  } catch (error) {
+    teamNote(`live lead lookup failed: ${describeError(error)} — ${members.length} member(s) NOT interrupted`)
+    return { teamServicePresent: true, teamRunId, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false, note: `live lead lookup failed: ${describeError(error)}` }
+  }
+  if (leadAgent === undefined) {
+    teamNote(`live lead agent for session ${sessionId} absent — ${members.length} member(s) NOT interrupted`)
+    return { teamServicePresent: true, teamRunId, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false, note: 'live lead agent absent' }
+  }
+
+  // ⑤ 逐成员 interrupt（同步开火；单成员失败不放弃其余）。
+  // 取 subagents 服务面套 try——never-throw 契约（Q-6 NOTES-7）下「抛」与
+  // 「缺席」是同一降级事实的两种形态：缺席走下面的 NOTE，抛也必须在同一扇
+  // 门里降级（与 :640-647 query 面、:672-677 live lead 面的同款 catch，
+  // 评审 MINOR 补位——此前这枚裸调用是级联里唯一没接住的同步面）。
+  let subagents: StopContinuationSubagentsLike | undefined
+  try {
+    subagents = deps.readSubagents()
+  } catch (error) {
+    teamNote(`subagents lookup failed: ${describeError(error)} — ${members.length} member(s) NOT interrupted`)
+    return { teamServicePresent: true, teamRunId, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false, note: `subagents lookup failed: ${describeError(error)}` }
+  }
+  if (subagents === undefined) {
+    teamNote(`subagents service absent — ${members.length} member(s) NOT interrupted`)
+    return { teamServicePresent: true, teamRunId, interruptedMemberSessionIds: [], interruptFailedMemberSessionIds: [], drainInitiated: false, note: 'subagents service absent' }
+  }
+  const interruptedMemberSessionIds: string[] = []
+  const interruptFailedMemberSessionIds: string[] = []
+  for (const member of members) {
+    try {
+      subagents.interrupt(member.sessionId, { kind: 'ancestor', agent: leadAgent })
+      interruptedMemberSessionIds.push(member.sessionId)
+    } catch (error) {
+      interruptFailedMemberSessionIds.push(member.sessionId)
+      teamLog(`interrupt ${member.sessionId} (${member.memberName}) failed: ${describeError(error)}`)
+    }
+  }
+
+  // ⑥ drain 只发起不 await（NOTES-7 裁决）。drain 的 promise 就地 catch：
+  // marker 各打各的，promise 落成 true/false，永不 reject——guard 的
+  // "never throws" 契约延伸到这根异步尾巴上。
+  // `drainInitiated` 是显式旗子不是 `teamDrain !== undefined` 的缩写——
+  // 同步抛支里 teamDrain 会被落成 Promise.resolve(false)（可 join 的降级
+  // 出口），若拿 undefined 判发起，那一支就冒报了「initiated」（评审补测
+  // 抓出的真形：旗子必须跟着发起成功走）。
+  let teamDrain: Promise<boolean> | undefined
+  let drainInitiated = false
+  if (interruptedMemberSessionIds.length > 0) {
+    try {
+      teamDrain = subagents
+        .drainContinuableChildren(leadAgent, interruptedMemberSessionIds)
+        .then(
+          () => {
+            teamLog(`drain settled — resident member activation(s) of team ${teamRunId} released`)
+            return true
+          },
+          (error: unknown) => {
+            // 手工前缀拼接是**有意的**（评审 NIT 互引登记）：FAILED 行走
+            // `${GUARD} team drain FAILED:` 形状、不经 teamLog() 的 `team: `
+            // 冒号位——drive 侧按 token `team drain FAILED` 取证（drive.mjs
+            // 的 GUARD_TEAM_DRAIN_FAILED 常量按名引用），两侧以 token
+            // 为约，改形状必须同 commit 对齐两文件。
+            deps.log(`[omo-hooks] ${STOP_CONTINUATION_GUARD_ID} team drain FAILED: team ${teamRunId}: ${describeError(error)} (loud-but-non-fatal)`)
+            return false
+          },
+        )
+      drainInitiated = true
+    } catch (error) {
+      // `drainContinuableChildren` 是 async——同步抛只可能来自服务本身坏了
+      // （比如 face 上根本没有这枚方法）。就地接住，降级具名。
+      teamNote(`drain could not even be initiated: ${describeError(error)} — ${interruptedMemberSessionIds.length} interrupted member(s) stay resident`)
+      teamDrain = Promise.resolve(false)
+    }
+  }
+
+  // 一行汇总（marker 纪律：`stop-continuation-guard team:` 前缀 + 真实计数；
+  // drain 从句只说发起与否，interrupt 失败数只在 >0 时出现——不谎报零失败）。
+  const failedClause = interruptFailedMemberSessionIds.length > 0
+    ? `, interrupt failed ${interruptFailedMemberSessionIds.length}`
+    : ''
+  const drainClause = drainInitiated ? `initiated${failedClause}` : `not initiated${failedClause}`
+  teamLog(
+    `interrupted ${interruptedMemberSessionIds.length} member session(s) of team ${teamRunId}`
+    + ` rooted at session ${sessionId} (drain ${drainClause})`,
+  )
+  return {
+    teamServicePresent: true,
+    teamRunId,
+    interruptedMemberSessionIds,
+    interruptFailedMemberSessionIds,
+    drainInitiated,
+    teamDrain,
+  }
 }
 
 /**

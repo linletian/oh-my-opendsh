@@ -491,6 +491,16 @@ const MANIFEST_ROWS = [
   // ⑰ §3 行 4。(B) 形态 = continuable 子女树的 interrupt/drain 分支
   // （drainContinuableDescendants 族，FORK.md §2.4：成员与既有委派子女同族）；
   // guard 同步契约注意（Q-6 NOTES-7）。落点在 omo-hooks 的 guard 模块（T9）。
+  // **P5-T9 翻 'ported'（任务书授权翻行）**：消费半 = omo-hooks guard 的
+  // `stop()` 并联 team 分支（逐成员 interrupt 同步开火 → drain 只发起不
+  // await，NOTES-7 的同步契约裁决 = 「同步 verdict + outcome.team.teamDrain
+  // 可 join 异步出口 + `stop-continuation-guard team` 独立 marker 行族」，
+  // 裁决全文在 stop-continuation-guard.ts §P5-T9 头注）；提供半 = omo-team
+  // `team/team-stop-continuation.ts` 的只读成员查询面（跨包纪律：两侧零
+  // import，服务名交叉等值由单测钉死），registrar 在本包 TEAM_REGISTRARS
+  // 的 ⑰ 号位落账（census 11/24→12/24）。e2e 证据 = 同名场景
+  // `stop-continuation-team`（drive.mjs）+ 无孤儿拆除场景
+  // `team-teardown-no-orphans`（同一 marker 纪律的反向对照）。
   {
     id: 'stop-continuation-team',
     upstreamSources: [
@@ -500,7 +510,7 @@ const MANIFEST_ROWS = [
     nativeFace: 'omo-hooks stop-continuation guard 的 team 分支（continuable 子女树 interrupt/drain，与既有 jobs 级联并列）',
     disposition: 'ported',
     e2eScenario: 'stop-continuation-team',
-    status: 'pending',
+    status: 'ported',
     summary:
       'stop-continuation 的 team 后代取消分支：成员树 drain + 独立降级 marker 可区分（Phase 4.5 金丝雀纪律）；guard 同步契约按 Q-6 NOTES-7',
   },
