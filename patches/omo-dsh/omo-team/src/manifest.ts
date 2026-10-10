@@ -223,7 +223,16 @@ const MANIFEST_ROWS = [
     nativeFace: 'omo-team 工具层纪律 + 原生 interrupt（保 inbox）+ continuable drain/disposal 组合',
     disposition: 'ported',
     e2eScenario: 'team-teardown-no-orphans',
-    status: 'pending',
+    // P5-T7 翻行（pending→ported，refined 规则：语义落地 + e2e 绿同 commit）：
+    // 交付面 = src/tools/team-delete.ts（DELETABLE 门禁 `members still active`
+    // 逐字 + force 旁路 + lead-only 具名拒 + 迁移序 active/shutdown_requested
+    // →deleting→deleted + tombstone 留行）+ 单测 tests/omo-team/
+    // team-delete.test.ts（门禁/旁路/迁移序/interrupt+drain 调用序）。
+    // e2eScenario 行名**不动**（canonical 七名之一，T9 的 no-orphans 断言
+    // 面归它）；T7 的拆除证据（interrupt 保 inbox + deleted 具名拒）落在
+    // 同 commit 新增的 `team-shutdown-handshake` 场景里——两景共证一行的
+    // 两个断言面，boot marker 已随本 commit 记 team_delete registered。
+    status: 'ported',
     summary:
       '拆除命令：拒活跃除非 force 的纪律移植；底层 = 原生 interrupt 保 inbox + continuable drain/disposal（T7/T9 断言面 listDescendants 空 + roster 清空）',
   },
@@ -240,7 +249,14 @@ const MANIFEST_ROWS = [
     nativeFace: 'omo-team 握手状态机（vendored team-state-store 存 shutdownRequests）+ 询问消息经原生投递',
     disposition: 'ported',
     e2eScenario: 'team-shutdown-handshake',
-    status: 'pending',
+    // P5-T7 翻行：交付面 = src/tools/team-shutdown.ts（lead-only 具名拒
+    // `team_shutdown_request is lead-only` 逐字 + 幂等臂 + 询问帧经原生
+    // sendMessage 承 'agent-message'，回复指引内嵌）+ src/team/team-state.ts
+    // 握手账三段 + 单测四路 + e2e `team-shutdown-handshake`（request→
+    // reject→存活→再 request→approve/delete 全链）。无自动超时 = 上游同构
+    // （§5.4），超时语义由提示词承担（addendum :123 的代批准路由 approve
+    // 的 lead 权限臂承载）。
+    status: 'ported',
     summary:
       '关停请求（lead-only）：幂等、无自动超时——超时语义由提示词承担（上游同构，Q1a §5.4）；询问消息走原生 sendMessage（T7）',
   },
@@ -255,7 +271,15 @@ const MANIFEST_ROWS = [
     nativeFace: '握手状态机：批准后 → 原生 interrupt + drain（inbox 保留断言）',
     disposition: 'ported',
     e2eScenario: 'team-shutdown-handshake',
-    status: 'pending',
+    // P5-T7 翻行：交付面 = team-shutdown.ts approve 臂（无请求具名抛
+    // `shutdown request missing for '<name>'` 逐字 + 已批幂等 + 成员翻
+    // shutdown_approved 且 completed/errored 保留终态 + 结果帧发 lead）；
+    // **interrupt+drain 的联动归属**：批准本身只翻账投帧，收停动作在
+    // team_delete（本 commit）与 T9 拆除路径——上游 interrupt 联动本就住
+    // 在 delete/拆除侧（delete-team.ts），任务书 P5-T7 判定同口径（差异
+    // 成文于 team-shutdown.ts 文件头）。lead 代批准 = 第四路（e2e lead
+    // 亲批 builder + 单测钉）。
+    status: 'ported',
     summary: '关停批准（lead 或目标成员）：批准 → interrupt + drain，成员 inbox 保留（T7 单测四路之一）',
   },
   // ⑤ §1 行 5。reject 路径：shutdown.ts:109-148；reason 必填是上游 schema
@@ -269,7 +293,11 @@ const MANIFEST_ROWS = [
     nativeFace: '握手状态机：拒绝（reason 必填）→ team 存活、成员不 interrupt',
     disposition: 'ported',
     e2eScenario: 'team-shutdown-handshake',
-    status: 'pending',
+    // P5-T7 翻行：交付面 = team-shutdown.ts reject 臂（reason 必填 = 上游
+    // zod min(1) 的运行时对应 + 同 reason 已拒幂等 + 成员 phase 不动、
+    // 团队 status 不变 = team 存活语义）+ e2e `team-shutdown-handshake`
+    // 的「成员拒 → team 存活」半边（状态 active + 成员仍跑 + 消息仍可投）。
+    status: 'ported',
     summary: '关停拒绝（lead 或目标成员，reason 必填）：拒 → team 存活（T7 e2e「成员拒 → team 存活」半边）',
   },
   // ⑥ §1 行 6。fire-and-forget；to:"*" 广播 lead-only；MESSAGE_TOOL_KINDS =
@@ -358,7 +386,14 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendored team-state-store runtime state 读取 + 工具层聚合',
     disposition: 'ported',
     e2eScenario: 'team-create-and-message',
-    status: 'pending',
+    // P5-T7 翻行（仲裁补位 2026-10-10）：交付面 = src/tools/team-status.ts
+    // （聚合 runtime state：成员/状态/握手态投影/bounds + UNIVERSAL 双面
+    // 分发 + 非参与者 gating 文案逐字）+ 单测聚合形状 + e2e 在两个 T7 已
+    // 绿的场景里读它（shutdown-handshake 的存活/批准断言全走 team_status
+    // 返回值——在场性由 boot registered 行与场景调用共证）。**tasks 段此刻
+    // 恒空数组**：任务板的数据源 = vendored team-tasklist，接线归 T8
+    // （team-status.ts 文件头成文；聚合形状自 T7 稳定，T8 填内容不改形）。
+    status: 'ported',
     summary: '状态聚合：(B) 无 projection；聚合 runtime state（成员/任务/握手态）自 vendored state-store（T8/T10 probe marker 的在场性锚）',
   },
   // ⑫ §1 行 11。**记差异**：声明式命名团队 v1 不落地——spec 注册表是 OMO

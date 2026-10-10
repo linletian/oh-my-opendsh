@@ -476,6 +476,92 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
     })
   })
 
+  it('P5-T7 dedup: a re-materialized member gets the briefing EXACTLY ONCE', () => {
+    // T6 e2e 观测过 frameCount:2——同一成员会话被重复物化（wake 后的二次
+    // agent/created）时 briefings 重注。治理 = team-state.ts 的
+    // briefingInjectedMembers 账：claimBriefingInjection 原子「查+记」，
+    // 第二次物化 claim 失败即跳过（console 记 skip，不静默）。
+    const channel = makeChannel()
+    const store = new TeamStateMemoryStore()
+    const { ctx, fire } = makeCtx()
+    registerTeamCreateSurface(ctx, { subagents: channel, store })
+    const { agent: lead } = makeLeadAgent('lead-1')
+    fire(lead)
+    return executeTeamCreate({ inline_spec: VALID_SPEC }, exec(lead), { subagents: channel, store }).then((result) => {
+      const memberSessionId = channel.starts[0]!.childId!
+      const member = childAgent(memberSessionId, 'lead-1')
+      fire(member.agent)
+      expect(member.injected).toHaveLength(1)
+      // 第二次物化（同一 member 会话再过一遍闸）：claim 失败，不重注。
+      fire(member.agent)
+      fire(member.agent)
+      expect(member.injected).toHaveLength(1)
+      // 账本记名：该 run 的 briefingInjectedMembers 含且仅含该成员一次。
+      const ledger = store.get(result.teamRunId)!.briefingInjectedMembers
+      expect(ledger).toEqual([ledger[0]])
+      expect(ledger).toHaveLength(1)
+      // 别的成员不受牵连：第二席（reserved childId 的另一枚）首过照注、
+      // 重过不重注。
+      const second = childAgent(channel.starts[1]!.childId!, 'lead-1')
+      fire(second.agent)
+      expect(second.injected).toHaveLength(1)
+      fire(second.agent)
+      expect(second.injected).toHaveLength(1)
+      expect(store.get(result.teamRunId)!.briefingInjectedMembers).toHaveLength(2)
+    })
+  })
+
+  it('P5-T7 review-MINOR: an inject throw releases the briefing ledger — next materialization re-injects', () => {
+    // 未送达不占幂等位（与 releaseShutdownRequest/unmarkMessageProcessed 同
+    // 一不变量）：agent.inject 抛错 → releaseBriefingInjection 退账 + 错误
+    // 响亮冒泡；下一次物化再 claim 再注入成功、账重新武装；第三过 claim
+    // 再挡——退账只救未送达，不破恰一次的治理。
+    const channel = makeChannel()
+    const store = new TeamStateMemoryStore()
+    const { ctx, fire } = makeCtx()
+    registerTeamCreateSurface(ctx, { subagents: channel, store })
+    const { agent: lead } = makeLeadAgent('lead-1')
+    fire(lead)
+    return executeTeamCreate({ inline_spec: VALID_SPEC }, exec(lead), { subagents: channel, store }).then((result) => {
+      const memberSessionId = channel.starts[0]!.childId!
+      const injected: InjectedFrame[] = []
+      let failNextInject = true
+      const raw = {
+        session: { header: { id: memberSessionId, parentSession: 'lead-1', origin: 'subagent' } },
+        ctx: { tools: { register: (_d: unknown) => undefined } },
+        inject: (frame: InjectedFrame) => {
+          if (failNextInject) {
+            failNextInject = false
+            throw new Error('mock: inject refused (host channel down)')
+          }
+          injected.push(frame)
+        },
+      }
+      const agent = raw as unknown as TeamAgent
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      try {
+        // 第一次物化：inject 抛 → 退账（账面空）→ 错误冒（不吞）。
+        expect(() => fire(agent)).toThrow('mock: inject refused')
+        expect(store.get(result.teamRunId)!.briefingInjectedMembers).toEqual([])
+        expect(injected).toHaveLength(0)
+        // 退账须响亮：console.error 点名成员与「ledger released」。
+        expect(errSpy).toHaveBeenCalledTimes(1)
+        expect(String(errSpy.mock.calls[0]![0])).toContain('structure-analyst')
+        expect(String(errSpy.mock.calls[0]![0])).toContain('ledger released')
+        // 下一次物化：claim 可再入账，注入成功，账重新武装。
+        fire(agent)
+        expect(injected).toHaveLength(1)
+        expect(injected[0]!.source).toEqual({ kind: TEAM_BRIEFING_SOURCE_KIND, plugin: TEAM_BRIEFING_SOURCE_PLUGIN, form: 'instructions' })
+        expect(store.get(result.teamRunId)!.briefingInjectedMembers).toEqual(['structure-analyst'])
+        // 第三过：已送达的账挡重注（恰一次治理回归防护）。
+        fire(agent)
+        expect(injected).toHaveLength(1)
+      } finally {
+        errSpy.mockRestore()
+      }
+    })
+  })
+
   it("state-gates the member face: a terminal run's ledger installs NO briefing", () => {
     const channel = makeChannel()
     const store = new TeamStateMemoryStore()

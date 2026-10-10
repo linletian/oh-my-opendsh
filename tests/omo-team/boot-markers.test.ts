@@ -53,19 +53,31 @@ import {
  * derivation it stands in for never needs an edit.
  */
 const EXPECTED_SUMMARY_LINE =
-  '[omo-team] loaded: manifest 24 entries (pending=20, ported=2, recorded=2) — 2/24 team surfaces registered'
+  '[omo-team] loaded: manifest 24 entries (pending=15, ported=7, recorded=2) — 7/24 team surfaces registered'
 
 /**
- * P5-T5 landed the FIRST registrar (`team_create`); P5-T6 lands the second
- * (`team_send_message`), so the honest `<r>` is 2 and the pinned line above
- * carries it — the flip of this list and of the pinned line is the SAME-commit
- * friction the T3 comment predicted: the row flipped status in manifest.ts, the
- * registrar landed in TEAM_REGISTRARS, and both halves meet in the line the
- * probe re-derives without an edit (scripts/concerto-mode-probe.sh). Ids are
- * resolved through a lookup that throws on a renamed id (a rename must fail
- * HERE, not silently register less).
+ * P5-T5 landed the FIRST registrar (`team_create`); P5-T6 added the second
+ * (`team_send_message`); **P5-T7 adds five** — `team_delete`,
+ * `team_shutdown_request`, `team_approve_shutdown`, `team_reject_shutdown`,
+ * `team_status` — so the honest `<r>` is 7 and the pinned line above carries
+ * it, in MANIFEST ROSTER ORDER (the loop iterates the roster, not this list;
+ * the list mirrors it so a reorder turns the boot-line test red). The flip of
+ * this list and of the pinned line is the SAME-commit friction the T3 comment
+ * predicted: the rows flipped status in manifest.ts, the registrars landed in
+ * TEAM_REGISTRARS, and both halves meet in the line the probe re-derives
+ * without an edit (scripts/concerto-mode-probe.sh). Ids are resolved through a
+ * lookup that throws on a renamed id (a rename must fail HERE, not silently
+ * register less).
  */
-const REAL_REGISTERED_IDS: readonly string[] = ['team_create', 'team_send_message']
+const REAL_REGISTERED_IDS: readonly string[] = [
+  'team_create',
+  'team_delete',
+  'team_shutdown_request',
+  'team_approve_shutdown',
+  'team_reject_shutdown',
+  'team_send_message',
+  'team_status',
+]
 
 function registeredRows(ids: readonly string[]): TeamManifestEntry[] {
   return ids.map((id) => {
@@ -152,15 +164,15 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', (
   it('reports the loop outcome, never a rounding of the manifest statuses', () => {
     // The `registered` half of the line comes from the loop's real output, not
     // from the manifest's statuses — so the REAL roster with NOTHING registered
-    // reads `0/24` even though two rows are ported (the state between T6's
+    // reads `0/24` even though seven rows are ported (the state between the
     // manifest flip and the loop's run is exactly this), and one registered row
     // reads `1/24`.
     const portedStandIn = registeredRows([]).concat(row({ id: 'team_send_message', status: 'ported' }))
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, [])).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=20, ported=2, recorded=2) — 0/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=15, ported=7, recorded=2) — 0/24 team surfaces registered',
     )
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, portedStandIn)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=20, ported=2, recorded=2) — 1/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=15, ported=7, recorded=2) — 1/24 team surfaces registered',
     )
   })
 
@@ -258,28 +270,41 @@ describe('P5-T3 per-surface and failure lines', () => {
 })
 
 describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal', () => {
-  it('P5-T6: the real manifest + the real registry log the registered lines THEN the summary', () => {
+  it('P5-T7: the real manifest + the real registry log the registered lines THEN the summary', () => {
     // The mount-state proof cold-start.sh and the probe grep for: at P5-T3 the
     // registry was empty and the summary stood alone; with `team_create` landed
-    // the honest boot was TWO lines; with the message surface landed at T6 the
-    // honest boot is exactly THREE lines — two per-surface registered lines in
-    // roster order and the summary carrying `2/24` — still no FAILED /
-    // validation line.
+    // the honest boot was TWO lines at T6; P5-T7 lands five rows (delete +
+    // the shutdown trio + status), so the honest boot is exactly SEVEN lines —
+    // seven per-surface registered lines in roster order and the summary
+    // carrying `7/24` — still no FAILED / validation line.
     const lines: string[] = []
     runTeamRegistrations(ctx(), TEAM_MANIFEST, TEAM_REGISTRARS, (line) => lines.push(line))
     expect(lines).toEqual([
       '[omo-team] team surface team_create registered',
+      '[omo-team] team surface team_delete registered',
+      '[omo-team] team surface team_shutdown_request registered',
+      '[omo-team] team surface team_approve_shutdown registered',
+      '[omo-team] team surface team_reject_shutdown registered',
       '[omo-team] team surface team_send_message registered',
+      '[omo-team] team surface team_status registered',
       EXPECTED_SUMMARY_LINE,
     ])
   })
 
-  it('the registry table is exactly the landed rows (T7+ must flip this red)', () => {
+  it('the registry table is exactly the landed rows (T8+ must flip this red)', () => {
     // Hand-placed pin, same intended friction as the summary line above: T5
-    // landed `team_create`, T6 landed the message surface; when T7 lands the
-    // shutdown pair, this goes red in the same commit and the flip is reviewed,
-    // not discovered.
-    expect(Object.keys(TEAM_REGISTRARS)).toEqual(['team_create', 'team_send_message'])
+    // landed `team_create`, T6 the message surface, T7 the delete + shutdown
+    // trio + status; when T8 lands the task rows, this goes red in the same
+    // commit and the flip is reviewed, not discovered.
+    expect(Object.keys(TEAM_REGISTRARS)).toEqual([
+      'team_create',
+      'team_delete',
+      'team_shutdown_request',
+      'team_approve_shutdown',
+      'team_reject_shutdown',
+      'team_send_message',
+      'team_status',
+    ])
   })
 
   it('a registrar that throws logs FAILED and the loop keeps going (P2-T16)', () => {

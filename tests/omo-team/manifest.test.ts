@@ -201,26 +201,25 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
     expect([...teamStatusSet].sort()).toEqual(['pending', 'ported', 'recorded'])
   })
 
-  it('splits the roster by status as of P5-T6 (20 pending, TWO ported, 2 recorded)', () => {
+  it('splits the roster by status as of P5-T7 (15 pending, SEVEN ported, 2 recorded)', () => {
     // The hard-coded facts, not lengths. ZERO ported was the load-bearing half
     // at P5-T2; P5-T5 flips team_create to 'ported' (the delivery surface —
     // src/tools/team-create.ts + team-state.ts + roster-seats.ts — landed);
     // P5-T6 flips team_send_message (src/tools/team-message.ts + the
-    // team-state.ts dedup ledger + the full-segment e2e scenario). A row
-    // silently flipping to 'ported' without a delivery surface would claim a
-    // port that does not exist (T7+ owns the next flip). The two recorded rows
-    // are the honest terminal for recorded-difference rows — their deliverable
-    // IS the recorded difference (§1 行 11/12).
+    // team-state.ts dedup ledger + the full-segment e2e scenario); **P5-T7
+    // flips five** — team_delete / team_shutdown_request / team_approve_shutdown
+    // / team_reject_shutdown / team_status (src/tools/{team-shutdown,
+    // team-delete,team-status}.ts + the team-state.ts handshake ledger + the
+    // handshake unit suites + the `team-shutdown-handshake` e2e scenario). A
+    // row silently flipping to 'ported' without a delivery surface would claim
+    // a port that does not exist (T8 owns the next flip). The two recorded
+    // rows are the honest terminal for recorded-difference rows — their
+    // deliverable IS the recorded difference (§1 行 11/12).
     expect(teamsByStatus(TEAM_MANIFEST, 'pending').map((row) => row.id)).toEqual([
-      'team_delete',
-      'team_shutdown_request',
-      'team_approve_shutdown',
-      'team_reject_shutdown',
       'team_task_create',
       'team_task_list',
       'team_task_update',
       'team_task_get',
-      'team_status',
       'team-keyword-injection',
       'hyperplan-upgrade',
       'remove-ai-slops-team-addendum',
@@ -235,7 +234,12 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
     ])
     expect(teamsByStatus(TEAM_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'team_create',
+      'team_delete',
+      'team_shutdown_request',
+      'team_approve_shutdown',
+      'team_reject_shutdown',
       'team_send_message',
+      'team_status',
     ])
     expect(teamsByStatus(TEAM_MANIFEST, 'recorded').map((row) => row.id)).toEqual([
       'team_list',
@@ -705,8 +709,8 @@ describe('P5-T2 derived helpers', () => {
     // P5-T5 flipped team_create to ported: 21/1/2 (was 22/0/2 at P5-T2);
     // P5-T6 flipped team_send_message: 20/2/2.
     const counts = countsByStatus(TEAM_MANIFEST)
-    expect(counts.get('pending')).toBe(20)
-    expect(counts.get('ported')).toBe(2)
+    expect(counts.get('pending')).toBe(15)
+    expect(counts.get('ported')).toBe(7)
     expect(counts.get('recorded')).toBe(2)
     // Every vocabulary key exists even at 0, so two boots stay line-comparable.
     expect([...counts.keys()]).toEqual([...TEAM_MANIFEST_STATUSES])
@@ -753,9 +757,10 @@ describe('P5-T2 derived helpers', () => {
   it('formatLoadedSummaryLine renders the exact P5-T2 census line from the real roster', () => {
     // 手打的整行——与上面 countsByStatus 的手打数字（22/0/2）互为对账；
     // T3 的 boot marker 若并入注册计数，格式扩展归 probe 侧（manifest.ts 注）。
-    // P5-T6 census: pending=20, ported=2 (team_create + team_send_message)。
+    // P5-T7 census: pending=15, ported=7 (create + delete + shutdown trio +
+    // send_message + status), recorded=2。
     expect(formatLoadedSummaryLine(TEAM_MANIFEST)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=20, ported=2, recorded=2)',
+      '[omo-team] loaded: manifest 24 entries (pending=15, ported=7, recorded=2)',
     )
   })
 

@@ -439,20 +439,46 @@ export function registerTeamCreateSurface(
     // team_send_message 已由 tools/team-message.ts 的 registerTeamMessageSurface
     // 在同一 scoped 口落此（T6 转正，双面各装各的）；briefing 独立注入：
     // prompt 正文与 briefing 帧两源（Q-8 分离命题），帧形 = hard-blocks 先例。
-    // 每次 member 物化都注一次（NOTES-7）：冷启重 materialize 会让本臂再跑，
-    // 于是 wake 时也补一帧 briefing——它是 instructions 不是 turn 事件，落在
-    // 冻结窗只作 omo-team-* 注入（e2e wake 金丝雀的窗口例外已据此放行），不
-    // 产生第二个 agent-message、也不改变 team_send_message 的 dedup 账。
-    agent.inject({
-      id: randomUUID(),
-      role: 'user',
-      content: [{ type: 'text', text: buildTeamBriefingText(state.teamName, participation.memberName, participation.teamRunId) }],
-      source: {
-        kind: TEAM_BRIEFING_SOURCE_KIND,
-        plugin: TEAM_BRIEFING_SOURCE_PLUGIN,
-        form: 'instructions',
-      },
-    })
+    //
+    // P5-T7 briefing 重注入治理（仲裁增补，T6 NOTES-7 实证 frameCount:2）：
+    // 本臂在冷启 wake 的**再物化**时会再 fire（agent/created 对同一成员
+    // 会话可多次到达——T6 e2e 实测每物化一帧），briefing 是 standing orders，
+    // 一个成员一份就够。注入前先向状态骨架**原子claim**（账 = team-state.ts
+    // 的 briefingInjectedMembers，键 = teamRunId+memberName——任务书钉死的
+    // 去重键；claim 语义与 processedMessageIds 的去重账同一族）：claim 到
+    // → 注入并记账；claim 空 → 已注过，跳过（重物化/重放不再补帧）；
+    // inject 抛错 → releaseBriefingInjection 退账（未送达不占幂等位，见下臂）。
+    // 工具面照常装（scoped 贡献随各 agent 实例，与 briefing 的账无关——
+    // 去重的是**帧**，不是**面**）。e2e 硬断言：离线唤醒后 briefing 帧数
+    // 恰 1（drive.mjs `team-create-and-message` 的 exactly-once 检查）。
+    if (!deps.store.claimBriefingInjection(participation.teamRunId, participation.memberName)) {
+      console.log(
+        `${LOG_PREFIX} briefing already injected for member '${participation.memberName}' of team ${participation.teamRunId} — skipping re-injection on re-materialization of session ${header.id}`,
+      )
+      return
+    }
+    // 退账臂（评审 T7-MINOR）：inject 抛错 = **未送达**，未送达不占幂等位
+    // （与 releaseShutdownRequest/unmarkMessageProcessed 同一不变量）——
+    // releaseBriefingInjection 退账后，下一次物化才可能再 claim 再投；
+    // 错误照常冒（监听方异常由宿主处置，响亮不吞）。
+    try {
+      agent.inject({
+        id: randomUUID(),
+        role: 'user',
+        content: [{ type: 'text', text: buildTeamBriefingText(state.teamName, participation.memberName, participation.teamRunId) }],
+        source: {
+          kind: TEAM_BRIEFING_SOURCE_KIND,
+          plugin: TEAM_BRIEFING_SOURCE_PLUGIN,
+          form: 'instructions',
+        },
+      })
+    } catch (err) {
+      deps.store.releaseBriefingInjection(participation.teamRunId, participation.memberName)
+      console.error(
+        `${LOG_PREFIX} briefing injection FAILED for member '${participation.memberName}' of team ${participation.teamRunId} — ledger released, the next materialization may re-inject: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
     console.log(`${LOG_PREFIX} member surface + briefing on session ${header.id} (team ${participation.teamRunId})`)
   })
   return () => {

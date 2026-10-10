@@ -98,6 +98,17 @@ import {
   type TeamLiveAgents,
   type TeamMessageSendChannel,
 } from './tools/team-message.ts'
+// P5-T7: the shutdown handshake trio (request/approve/reject), the teardown
+// row (team_delete) and the status query row (team_status) land through the
+// same door — five registrars, three files (one file may own several manifest
+// rows; the row↔registrar map is one row per registrar, not one per file).
+import {
+  registerTeamApproveShutdownSurface,
+  registerTeamRejectShutdownSurface,
+  registerTeamShutdownRequestSurface,
+} from './tools/team-shutdown.ts'
+import { registerTeamDeleteSurface } from './tools/team-delete.ts'
+import { registerTeamStatusSurface } from './tools/team-status.ts'
 
 export const name = 'omo-team'
 
@@ -245,9 +256,23 @@ export type TeamRegistrar = (
 export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
   // P5-T5 · ① §1 行 1（manifest.ts 行序 = 本表读序，boot-markers.test.ts 钉）。
   team_create: (ctx) => registerTeamCreateSurface(ctx, { subagents: ctx.subagents, store: teamStateStore }),
+  // P5-T7 · ② §1 行 2：拆除面——interrupt（保 inbox）+ drain 走 subagents
+  // 的 T5 臂，lead 活体经 agents 注册表取，状态迁移/清账走同一骨架。
+  team_delete: (ctx) => registerTeamDeleteSurface(ctx, { subagents: ctx.subagents, agents: ctx.agents, store: teamStateStore }),
+  // P5-T7 · ③④⑤ §1 行 3/4/5：关停握手三件——询问/结果帧走 sendMessage
+  // 臂（Q-8 B1 原生 kind），握手账走 team-state.ts 的三段账法。
+  team_shutdown_request: (ctx) => registerTeamShutdownRequestSurface(ctx, { subagents: ctx.subagents, store: teamStateStore }),
+  team_approve_shutdown: (ctx) => registerTeamApproveShutdownSurface(ctx, { subagents: ctx.subagents, store: teamStateStore }),
+  team_reject_shutdown: (ctx) => registerTeamRejectShutdownSurface(ctx, { subagents: ctx.subagents, store: teamStateStore }),
   // P5-T6 · ⑥ §1 行 6：消息面——同一 subagents 服务的 sendMessage 臂 +
   // 活体 agents 注册表（lead 中转/驻留观测）+ 同一状态骨架（去重账）。
   team_send_message: (ctx) => registerTeamMessageSurface(ctx, { subagents: ctx.subagents, agents: ctx.agents, store: teamStateStore }),
+  // P5-T7 · ⑪ §1 行 11：查询面——纯读骨架（UNIVERSAL 双面），tasks 段的
+  // T8 接缝在 tools/team-status.ts 文件头成文。行号按名册行序（manifest.ts
+  // 的 24 条目读序，team_status 是第 11 条）——plan §1 表格把 task_list/
+  // task_get 合一行，表格口径此行为第 10 行，manifest.ts 行注保持表格口径，
+  // 两套锚各按各的序，逐枚可对（评审 T7-MINOR 的裁决面）。
+  team_status: (ctx) => registerTeamStatusSurface(ctx, { store: teamStateStore }),
 }
 
 /**
@@ -324,13 +349,15 @@ export function runTeamRegistrations(
  * unit-tested functions, so this stays assembly-only and the markers cannot
  * drift from their tests.
  *
- * A correct P5-T6 boot logs THREE lines from this plugin — the per-surface
- * `registered` lines for `team_create` and `team_send_message` (the loop's
- * two landed rows, in roster order) and the summary line carrying the honest
- * `2/24` — and nothing else: no FAILED line, no validation line. (At P5-T3 it
- * logged exactly ONE line, the summary with the loop's honest zero, because
- * the registry was empty; T5 grew it to two; the flips are the markers the
- * probe re-derives without an edit.)
+ * A correct P5-T7 boot logs SEVEN lines from this plugin — the per-surface
+ * `registered` lines for `team_create`, `team_delete`, `team_shutdown_request`,
+ * `team_approve_shutdown`, `team_reject_shutdown`, `team_send_message` and
+ * `team_status` (the loop's seven landed rows, in roster order) and the
+ * summary line carrying the honest `7/24` — and nothing else: no FAILED line,
+ * no validation line. (At P5-T3 it logged exactly ONE line, the summary with
+ * the loop's honest zero, because the registry was empty; T5/T6 grew it to
+ * two; T7 grew it to seven; the flips are the markers the probe re-derives
+ * without an edit.)
  */
 export function apply(ctx: TeamRegistrationContext): void {
   const log = (line: string): void => {

@@ -6437,6 +6437,14 @@ function eventText(event) {
   }
 }
 
+/** RAW text of a tool/result's content blocks (eventText's JSON.stringify
+ *  escapes the inner quotes — a `"status":"x"` needle can never match it;
+ *  this is the extractor for durable-JSON-IN-text needles). */
+function toolResultTextOf(event) {
+  const content = event?.data?.message?.content ?? event?.data?.content ?? []
+  return content.map((block) => (typeof block?.text === 'string' ? block.text : '')).join('\n')
+}
+
 /**
  * Tool names advertised to the model in a session's LATEST request/header
  * (dsh-agent-loop appends header.tools only when non-empty —
@@ -18872,6 +18880,72 @@ const TEAM_MEMBER_ANALYST_WAKE_SUMMARY =
 const TEAM_MEMBER_BUILDER_WAKE_SUMMARY =
   'MOCK-TEAM-BUILDER-WAKE-9d4b: announcement received and acked back to the lead.'
 
+// ── P5-T7 shutdown handshake full segment: prompts, replies, survive corridor ─
+// The inquiry/result frame ids are RUNTIME-BORN (randomUUID inside the tool —
+// unlike team_send_message's author-time correlationId, the shutdown frames
+// carry no model-supplied id in v1), so the durable assertions match frame
+// PREFIXES (`Team shutdown request|approved|rejected`) plus the naming words
+// (from lead / from analyst / the reason text), never a guessed uuid. The
+// reason and every summary are static and named; teamRunId rides {{teamRunId}}.
+const TEAM_CORRID_SURVIVE = 'e5e5e5e5-5555-4555-8555-eeeeeeeeeeee' // lead → analyst post-reject
+const TEAM_SHUTDOWN_REASON =
+  'MOCK-T7-REJECT-6d17: halfway through the dependency map, two more turns needed.'
+const TEAM_MSG_SURVIVE_BODY =
+  'MOCK-T7-SURVIVE-4b8e: keep going on the analysis — the shutdown was refused, the channel stays open.'
+
+const TEAM_SHUTDOWN_REQUEST_ANALYST_PROMPT =
+  'Request shutdown for the analyst now. If it refuses, that is allowed — report what happened.'
+const TEAM_SHUTDOWN_SURVIVAL_PROMPT =
+  'The analyst refused shutdown. Confirm with team_status that the team is still active, and send the builder a working message to prove the channel stays open.'
+const TEAM_SHUTDOWN_REREQUEST_PROMPT =
+  'Request shutdown again for the analyst, and request shutdown for the builder as well.'
+const TEAM_SHUTDOWN_DELEGATE_PROMPT =
+  'The builder has not answered within a reasonable window — approve the builder shutdown yourself, on its behalf.'
+const TEAM_SHUTDOWN_STATUS_PROMPT =
+  'Show team status: both members should now be shutdown_approved.'
+const TEAM_DELETE_PROMPT =
+  'Delete the team now — both members are shutdown_approved, no force needed.'
+const TEAM_DELETED_SEND_PROMPT =
+  'Try to message the analyst again now that the team is deleted.'
+
+const TEAM_LEAD_REQUESTED_SUMMARY =
+  'MOCK-T7-REQUESTED-9b41: shutdown requested from the analyst; awaiting its reply.'
+const TEAM_LEAD_SURVIVAL_SUMMARY =
+  'MOCK-T7-SURVIVAL-3f8c: analyst refused; team confirmed active and the channel still delivers.'
+const TEAM_LEAD_REREQUEST_SUMMARY =
+  'MOCK-T7-REREQUEST-7d25: fresh shutdown requests out to analyst and builder.'
+const TEAM_LEAD_DELEGATE_SUMMARY =
+  'MOCK-T7-DELEGATE-1e6a: the builder did not self-approve in the window — approved on its behalf.'
+const TEAM_LEAD_APPROVED_STATUS_SUMMARY =
+  'MOCK-T7-STATUS-4a7e: team_status confirms both members shutdown_approved.'
+const TEAM_LEAD_DELETED_SUMMARY =
+  'MOCK-T7-DELETED-6c2b: team deleted; member sessions interrupted with inbox preserved.'
+const TEAM_LEAD_REFUSED_SUMMARY =
+  'MOCK-T7-REFUSED-8f5d: messaging the deleted team was refused by name.'
+const TEAM_ANALYST_REJECT_SUMMARY =
+  'MOCK-T7-ANALYST-REJECT-8a3f: shutdown rejected with a reason; the team stays alive.'
+const TEAM_ANALYST_APPROVE_SUMMARY =
+  'MOCK-T7-ANALYST-APPROVE-5c92: second shutdown request approved; ready for teardown.'
+const TEAM_BUILDER_INQUIRY_SUMMARY =
+  'MOCK-T7-BUILDER-WAKE-2e7d: shutdown inquiry received; deferring the decision to the lead.'
+// The hard-block-answer text the analyst's SPAWN turn consumes so the reject
+// tool_call survives for the real inquiry (see the lane comment).
+const TEAM_ANALYST_SPAWN_GUARD =
+  'MOCK-T7-ANALYST-GUARD-3d5e: standing by for the lead.'
+
+// P5-T7 review-MAJOR anchor: the body of the NATIVE post-delete follow-up.
+// The text exists NOWHERE ELSE — not in any lane script, not in any tool
+// frame — so its appearance in the analyst's log after the delete is only
+// producible by the driver's post-delete `subagents/prompt` delivery. The
+// tool layer refuses the deleted teamRunId BY NAME; this probe deliberately
+// bypasses the tool layer and rides the HOST's native continuation channel
+// (Remote `subagents/prompt` → deliverToChild/coldResume — the same pipeline
+// team_send_message uses), so what it proves is the channel fact: the
+// interrupted-and-drained member session survives teardown and STILL accepts
+// native deliveries into its preserved inbox.
+const TEAM_NATIVE_POST_DELETE_BODY =
+  'MOCK-T7-POST-DELETE-NATIVE-9f3c: the team is deleted; this frame probes the preserved member inbox over the native channel.'
+
 /**
  * The Q-8 canary anchor: a sentence that exists ONLY inside buildTeamBriefingText
  * (team-create.ts). It must be observable on the injected frame and absent from the
@@ -18990,6 +19064,129 @@ function teamNestedCreateDeniedScript() {
       { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
     ],
     [TEAM_SEAT_BUILDER]: [{ type: 'text', text: TEAM_MEMBER_BUILDER_REPLY }],
+  }
+}
+
+/**
+ * `team-shutdown-handshake` script — the P5-T7 FULL HANDSHAKE segment.
+ * Lead lane (8 turns, three parks between them):
+ *   t1 team_create; [park: both members settled AND offline];
+ *   t2 team_shutdown_request(analyst) — the inquiry wakes the analyst;
+ *   [park: the analyst's reject is durable (its tool result AND the result
+ *    frame spliced at the lead)];
+ *   t3 team_status (survival: status active + state rejected) + a WORKING
+ *    message to the analyst (the channel stays open after a refusal);
+ *   t4 batch: team_shutdown_request(analyst AGAIN — the resolved row never
+ *    blocks) + team_shutdown_request(builder);
+ *   [park: the analyst's SELF-approval is durable];
+ *   t5 team_approve_shutdown(builder) — the FOURTH PATH: the builder never
+ *    self-approves (its lane scripts NO approve), the lead approves inside
+ *    the reasonable window exactly as the upstream addendum routes it;
+ *   t6 team_status (both shutdown_approved);
+ *   t7 team_delete (non-force: every member is deletable);
+ *   t8 team_send_message — refused BY NAME (`team <id> is deleted`);
+ *   then the DRIVER itself (not the scripted lane): ONE native follow-up to
+ *   the interrupted analyst over Remote `subagents/prompt` — the tool layer
+ *   is bypassed on purpose; landing at the member's log is the anchor.
+ * Analyst lane: spawn reply → WAKE 1 reject(reason) + summary → WAKE 2
+ * approve + summary. Builder lane: spawn reply → WAKE text only — it NEVER
+ * calls team_approve_shutdown, which is what makes t5 an honest delegation.
+ */
+function teamShutdownHandshakeScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_shutdown_request',
+        arguments: { teamRunId: '{{teamRunId}}', targetMemberName: TEAM_MEMBER_ANALYST },
+      },
+      { type: 'text', text: TEAM_LEAD_REQUESTED_SUMMARY },
+      {
+        type: 'tool_calls',
+        calls: [
+          { name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+          {
+            name: 'team_send_message',
+            arguments: {
+              teamRunId: '{{teamRunId}}',
+              to: TEAM_MEMBER_BUILDER,
+              body: TEAM_MSG_SURVIVE_BODY,
+              correlationId: TEAM_CORRID_SURVIVE,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: TEAM_LEAD_SURVIVAL_SUMMARY },
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'team_shutdown_request',
+            arguments: { teamRunId: '{{teamRunId}}', targetMemberName: TEAM_MEMBER_ANALYST },
+          },
+          {
+            name: 'team_shutdown_request',
+            arguments: { teamRunId: '{{teamRunId}}', targetMemberName: TEAM_MEMBER_BUILDER },
+          },
+        ],
+      },
+      { type: 'text', text: TEAM_LEAD_REREQUEST_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_approve_shutdown',
+        arguments: { teamRunId: '{{teamRunId}}', memberName: TEAM_MEMBER_BUILDER },
+      },
+      { type: 'text', text: TEAM_LEAD_DELEGATE_SUMMARY },
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_LEAD_APPROVED_STATUS_SUMMARY },
+      { type: 'tool_call', name: 'team_delete', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_LEAD_DELETED_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: TEAM_MEMBER_ANALYST,
+          body: 'MOCK-T7-POST-DELETE-0a1b: are you still reachable?',
+        },
+      },
+      { type: 'text', text: TEAM_LEAD_REFUSED_SUMMARY },
+    ],
+    // The cursor is TURN-BLIND and the omo-hard-blocks inbox frame re-opens a
+    // request INSIDE every turn that answers with text (measured at T7: the
+    // spawn turn consumed text→tool→text). Each turn therefore consumes its
+    // steps as [answer, hard-block-answer] pairs, and the handshake tool_calls
+    // must sit exactly where a WAKE turn begins consuming: reject on wake 1
+    // (inquiry 1), approve on wake 2 (inquiry 2). The text-guard step below
+    // is what keeps the reject out of the SPAWN turn — without it the spawn
+    // turn ate text→reject→text and the reject answered an inquiry that had
+    // not been requested yet (`shutdown request missing`, the honest refusal
+    // that turned this scenario red on its first run).
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
+      { type: 'text', text: TEAM_ANALYST_SPAWN_GUARD },
+      {
+        type: 'tool_call',
+        name: 'team_reject_shutdown',
+        arguments: { teamRunId: '{{teamRunId}}', memberName: TEAM_MEMBER_ANALYST, reason: TEAM_SHUTDOWN_REASON },
+      },
+      { type: 'text', text: TEAM_ANALYST_REJECT_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_approve_shutdown',
+        arguments: { teamRunId: '{{teamRunId}}', memberName: TEAM_MEMBER_ANALYST },
+      },
+      { type: 'text', text: TEAM_ANALYST_APPROVE_SUMMARY },
+    ],
+    // The builder's lane is TEXT-ONLY by design: every wake (inquiry, the
+    // survival message routed here precisely BECAUSE its lane is inert) can
+    // only replay text — the fourth-path delegation stays honest.
+    [TEAM_SEAT_BUILDER]: [
+      { type: 'text', text: TEAM_MEMBER_BUILDER_REPLY },
+      { type: 'text', text: TEAM_BUILDER_INQUIRY_SUMMARY },
+    ],
   }
 }
 
@@ -19118,6 +19315,213 @@ async function awaitTeamMessagingSettled(_boot, sandbox, sessionId, timeoutMs = 
   return false
 }
 
+/**
+ * P5-T7 `await` action — the analyst's REFUSAL is durable: its own
+ * team_reject_shutdown tool/result (`"status":"shutdown_rejected"`) AND the
+ * result frame `Team shutdown rejected … from analyst:` spliced at the lead.
+ * Both surfaces must agree before the conductor's survival turn — the
+ * handshake's refuse half is a fact, not an assumption.
+ */
+async function awaitTeamAnalystRejected(_boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
+    const analyst = logs.find(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId)
+        && (candidate.events ?? []).some(
+          (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"shutdown_rejected"'),
+        ),
+    )
+    if (analyst !== undefined && leadLog !== undefined) {
+      const frameAtLead = (leadLog.events ?? []).some(
+        (event) =>
+          agentMessageSplice(event, String(analyst.header.id)) !== undefined
+          && splicedFrameText(event).includes('Team shutdown rejected'),
+      )
+      if (frameAtLead) return true
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/**
+ * P5-T7 `await` action — the analyst's SELF-approval is durable (tool/result
+ * `"status":"shutdown_approved"` + `Team shutdown approved … from analyst:`
+ * at the lead) before the lead's fourth-path turn — so the builder's
+ * delegated approval provably follows a window in which the analyst already
+ * answered and the builder stayed silent.
+ */
+async function awaitTeamAnalystApproved(_boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
+    const analyst = logs.find(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId)
+        && (candidate.events ?? []).some(
+          (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"shutdown_approved"'),
+        ),
+    )
+    if (analyst !== undefined && leadLog !== undefined) {
+      const frameAtLead = (leadLog.events ?? []).some(
+        (event) =>
+          agentMessageSplice(event, String(analyst.header.id)) !== undefined
+          && splicedFrameText(event).includes('Team shutdown approved'),
+      )
+      if (frameAtLead) return true
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/**
+ * P5-T7 settle: the teardown half is durable — the lead's team_delete result
+ * (`"status":"deleted"`) AND the post-delete team_send_message answered with
+ * the named tombstone refusal (`is deleted`). NOTE (review T7-MAJOR): the
+ * inbox-preservation claim is NOT settled here and NOT proven by the
+ * analyst's pre-delete frames surviving in the append-only log — the durable
+ * anchor is the `nativeFollowupAfterDelete` action below (a NEW native
+ * delivery landing AT the stopped member after the delete); the surviving
+ * pre-delete frames are auxiliary evidence only.
+ */
+async function awaitTeamShutdownSettled(_boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
+    if (leadLog !== undefined) {
+      const events = leadLog.events ?? []
+      const deleted = events.some(
+        (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'),
+      )
+      const refused = events.some(
+        (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('is deleted'),
+      )
+      if (deleted && refused) return true
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/**
+ * P5-T7 review-MAJOR — the NATIVE post-delete follow-up, the falsifiable
+ * anchor of the inbox-preservation claim. After team_delete has interrupted
+ * (keepInbox — host-pinned at dsh-subagent index.js:855) and drained the
+ * members, the driver addresses the analyst DIRECTLY over the host's native
+ * continuation channel — Remote `subagents/prompt` (the gateway door onto the
+ * SAME deliverToChild/coldResume pipeline team_send_message rides, stamped
+ * source kind 'user' by the host, never forged by omo). The tool layer is
+ * deliberately bypassed: team_send_message refuses the deleted teamRunId BY
+ * NAME (the tombstone refusal `deletedTeamRefusedByName` pins), so landing a
+ * frame here can only happen through the member's SURVIVING native inbox.
+ * If teardown had dismantled the member's channel (a dispose-instead-of-
+ * interrupt implementation, a keepInbox-clearing cancel that dropped the
+ * resumable session), this delivery could NOT land — the anchor turns red.
+ *
+ * The park is honest: the action RECORDS whether the landing became durable
+ * (canary frame in the analyst's log + turn activity after it, ordered after
+ * the lead's delete result by same-clock epoch ms) and never silently skips.
+ * Transport-adaptive like every other RPC here; rc6-flat has NO measured
+ * flat counterpart for the subagent continuation prompt — fail LOUD there.
+ */
+async function nativeFollowupAfterDelete(boot, sandbox, leadSessionId, timeoutMs = 60_000) {
+  const logs = () => findSessionLogs(join(sandbox.dshHome, 'sessions'))
+  const leadLog = logs().find((candidate) => String(candidate.header?.id) === String(leadSessionId))
+  if (leadLog === undefined) {
+    return { reached: false, childSessionId: undefined, detail: 'lead log missing before the follow-up' }
+  }
+  // Address the analyst BY NAME: the durable descriptor label is
+  // `team:<teamRunId>:analyst` (buildTeamMemberLabel, team-create.ts) — the
+  // same naming discipline every member frame carries, no positional guessing.
+  const teamRunId = /"teamRunId":"([^"]+)"/.exec(
+    toolResultParts(leadLog.events ?? []).find((part) => part.text.includes('teamRunId'))?.text ?? '',
+  )?.[1]
+  if (teamRunId === undefined) {
+    return { reached: false, childSessionId: undefined, detail: 'teamRunId not durable in the lead log yet' }
+  }
+  const analyst = logs().find(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadSessionId)
+      && (candidate.events ?? []).some(
+        (event) =>
+          event.type === 'subagent/descriptor'
+          && String(event.data?.label ?? '') === `team:${teamRunId}:${TEAM_MEMBER_ANALYST}`,
+      ),
+  )
+  if (analyst === undefined) {
+    return { reached: false, childSessionId: undefined, detail: 'analyst child session not found by descriptor label' }
+  }
+  const childSessionId = String(analyst.header?.id ?? '')
+  // The native delivery itself — the host stamps kind 'user' + the rpcId;
+  // omo never touches this carrier (Q-8 honesty: this is the host's own door).
+  let rpcDetail = 'accepted'
+  try {
+    if (boot.transport === 'rc6-flat') {
+      throw new Error('subagents/prompt: no measured rc6-flat endpoint for the subagent continuation prompt — this probe runs on the 0.2.x web-remote transport')
+    }
+    await rpc(boot, 'subagents/prompt', {
+      args: {
+        request: {
+          requestId: randomUUID(),
+          parentSessionId: String(leadSessionId),
+          childSessionId,
+          mode: 'continuable',
+          delivery: 'queue',
+          content: [{ type: 'text', text: TEAM_NATIVE_POST_DELETE_BODY }],
+        },
+      },
+    })
+  } catch (err) {
+    return { reached: false, childSessionId, detail: `native prompt refused: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  // The durable landing: the canary text appears in the analyst's log (the
+  // ONLY source of that string is this delivery) AND the cold-resumed member
+  // shows turn activity after it — spliced/accepted frame, turn/start, a
+  // completed turn/end. Cross-log same-clock ordering against the lead's
+  // delete result (the epoch-ms discipline of deliveryPairAt).
+  const deleteResult = (leadLog.events ?? []).find(
+    (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'),
+  )
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() <= deadline) {
+    const analystNow = logs().find((candidate) => String(candidate.header?.id) === childSessionId)
+    const analystEvents = analystNow?.events ?? []
+    const canaryEvent = analystEvents.find((event) => eventTextFlat(event).includes(TEAM_NATIVE_POST_DELETE_BODY))
+    if (canaryEvent !== undefined) {
+      const after = analystEvents.filter((event) => Number(event.seq ?? 0) > Number(canaryEvent.seq ?? 0))
+      const turnStarted = after.some((event) => event.type === 'turn/start')
+      const turnCompleted = after.some(
+        (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+      )
+      // Timing-gate hardening (review T7-NIT): same discipline as the delete
+      // side — NO `?? 0` fallback; a missing time coerces to NaN and isFinite
+      // fails the ordering gate RED, never `0 >= 0` GREEN.
+      const orderedAfterDelete = deleteResult !== undefined
+        && Number.isFinite(Number(canaryEvent.time))
+        && Number.isFinite(Number(deleteResult.time))
+        && Number(canaryEvent.time) >= Number(deleteResult.time)
+      if (turnStarted && turnCompleted && orderedAfterDelete) {
+        return {
+          reached: true,
+          childSessionId,
+          detail: `${rpcDetail}; canary seq=${canaryEvent.seq ?? '?'} after delete seq=${deleteResult.seq ?? '?'}`,
+        }
+      }
+    }
+    await sleep(400)
+  }
+  return { reached: false, childSessionId, detail: `${rpcDetail}; landing never became durable (canary/turn activity not both durable after the delete within the window)` }
+}
+
 /** The event is an `agent/inbox/spliced` whose inserted carrier is a native
  *  'agent-message' frame from `senderSessionId` (Q-8: omo never rewrites the
  *  kind — this exact shape is the proof). Returns the splice event or undefined. */
@@ -19228,14 +19632,15 @@ export function analyzeTeamCreateAndMessage(
 
   // Q-5b wake canary at one member: frame splices AFTER the completed spawn
   // turn, then turn/start, then a SECOND completed turn. Reverse canary: the
-  // frozen window (turn/end, splice) carries no turn/step/assistant/user/
-  // request traffic. ONE documented exception rides in the window: the omo-team
-  // briefing re-injection (briefingFrames at wake — cold resume re-materializes
-  // the member, agent/created re-fires, the briefing arm injects again; kind
-  // 'omo-team-briefing', NOT turn traffic; NOTES-7 of the task book records the
-  // per-materialization re-injection as a T7 dedup candidate). The window still
-  // forbids every OTHER splice — above all any second 'agent-message' carrier,
-  // which would mean traffic the scenario never sent.
+  // frozen window (turn/end, splice) carries NO traffic at all — no turn/
+  // step/assistant/user/request event and, as of P5-T7, NO spliced frame of
+  // ANY kind. The one exception this window used to whitelist — the wake-time
+  // briefing re-injection (cold resume re-materialized the member, agent/created
+  // re-fired, the briefing arm injected again: the T6-observed frameCount:2) —
+  // is FIXED AWAY by the P5-T7 briefing ledger (claimBriefingInjection claims
+  // once per (teamRunId, member) and the re-materialization skips), exactly as
+  // review T6-4 predicted when it narrowed the kind whitelist and deferred the
+  // hard assertion to T7.
   const wakeCanaryAt = (childLog, correlationId) => {
     const childEvents = childLog?.events ?? []
     const firstEnd = childEvents.findIndex(
@@ -19254,16 +19659,12 @@ export function analyzeTeamCreateAndMessage(
       if (String(event.type).startsWith('assistant')) return false
       if (String(event.type).startsWith('request')) return false
       if (event.type === 'agent/inbox/spliced') {
-        // The frozen window admits EXACTLY one kind: 'omo-team-briefing' —
-        // the sole legal frame there today (the cold-resume briefing
-        // re-injection). The old 'omo-team-*' PREFIX was too wide: any future
-        // omo-team frame could have parked in the window unremarked. Narrowed
-        // per review T6-4; the frame-count-frozen hard assertion belongs to
-        // T7, and when it lands this kind-whitelist exception is removed.
-        const carriers = event.data?.inserted ?? []
-        return carriers.length > 0 && carriers.every((inserted) =>
-          String((inserted?.source ?? {}).kind ?? '') === 'omo-team-briefing',
-        )
+        // P5-T7: NO splice is legal in the frozen window anymore — the
+        // briefing kind-whitelist that lived here was the T6 mark of the
+        // re-injection bug the briefing ledger dedup now fixes (see the
+        // wakeCanaryAt header comment). A splice here means traffic the
+        // scenario never sent: freeze broken, FAIL.
+        return false
       }
       return true
     })
@@ -19302,12 +19703,14 @@ export function analyzeTeamCreateAndMessage(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // The boot marker flipped 1/24 → 2/24 in THIS commit: team_create AND
-    // team_send_message registered (the registration loop prints one line per
-    // registered row; the summary counts 2/24).
+    // The boot census is 7/24 as of P5-T7 (create + delete + the shutdown
+    // trio + send_message + status registered; the registration loop prints one
+    // line per registered row). The T5/T6 pair stays pinned; the T7 rows are
+    // pinned in full by the `team-shutdown-handshake` scenario's bootSevenSurfaces.
     teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
     teamMessageSurfaceRegisteredAtBoot:
       (bootLog ?? '').includes('[omo-team] team surface team_send_message registered'),
+    bootCensusSevenOfTwentyFour: (bootLog ?? '').includes('— 7/24 team surfaces registered'),
     leadCalledTeamCreate: createCall !== undefined,
     teamCreateResultCarriesTeamRunId: createResult !== undefined,
     teamCreateResultNotAnError: createResult !== undefined && createResult.isError !== true,
@@ -19344,8 +19747,11 @@ export function analyzeTeamCreateAndMessage(
     membersRoutedOnDistinctSeats:
       routes[TEAM_SEAT_ANALYST]?.model !== routes[TEAM_SEAT_BUILDER]?.model,
     // Q-8: briefing injected as its OWN frame, never merged into the spawn prompt.
-    analystBriefingInjected: briefingFrames(analystLog).length >= 1 && briefingCarriesCanary(analystLog),
-    builderBriefingInjected: briefingFrames(builderLog).length >= 1 && briefingCarriesCanary(builderLog),
+    // P5-T7 dedup governance: EXACTLY once per member, not "at least once" —
+    // the briefing ledger (claimBriefingInjection) makes the T6-observed
+    // frameCount:2 structurally impossible; the count is the assertion now.
+    analystBriefingInjected: briefingFrames(analystLog).length === 1 && briefingCarriesCanary(analystLog),
+    builderBriefingInjected: briefingFrames(builderLog).length === 1 && briefingCarriesCanary(builderLog),
     analystPromptFreeOfBriefing: nativePromptLeaksCanary(analystLog) === false,
     builderPromptFreeOfBriefing: nativePromptLeaksCanary(builderLog) === false,
     // Both members answered their lanes and ended their turns on their own terms.
@@ -19450,6 +19856,277 @@ export function analyzeTeamCreateAndMessage(
       analystAckFrame: splicedFrameText(memberAcksAtLead(analystLog?.header?.id, TEAM_MEMBER_ANALYST, TEAM_CORRID_ACK_A)[0]) ?? null,
       leadSendResultTexts: leadSendResults.map((part) => part.text),
       actionObservations: actionObservations ?? null,
+    },
+  }
+}
+
+/**
+ * `team-shutdown-handshake` assertions — the P5-T7 FULL HANDSHAKE. Every
+ * fact is read OUT of the durable logs; the four handshake paths and the
+ * teardown each get their own named proof:
+ *   1. REQUEST: `Team shutdown request …` inquiry splices at the members
+ *      (analyst EXACTLY twice — refuse then re-request; builder EXACTLY
+ *      once), each carrying the reply guidance (approve/reject tool names)
+ *      and the LIVE teamRunId;
+ *   2. REJECT + SURVIVAL: the analyst's own reject result, the rejected
+ *      frame at the lead, team_status confirming `active` + `state":"rejected"`,
+ *      AND a working message still delivered after the refusal;
+ *   3. APPROVE (self): the analyst's own approve result flips it, the
+ *      approved frame rides back to the lead;
+ *   4. APPROVE (lead delegate): the builder's lane NEVER calls
+ *      team_approve_shutdown; the lead's delegate result names
+ *      approverName lead + self-addressed (no lead→lead splice exists and
+ *      none was forged — the reverse canary pins zero approved-from-lead
+ *      splices at the lead);
+ *   5. DELETE + TOMBSTONE: team_delete non-force lands `deleted`; messaging
+ *      the deleted teamRunId is refused BY NAME (bound to the post-delete
+ *      team_send_message by seq order); and the inbox-preservation ANCHOR —
+ *      after the delete, the DRIVER delivers ONE new message to the stopped
+ *      analyst over the host's native channel (Remote `subagents/prompt`,
+ *      tool layer bypassed) and it LANDS at the analyst (canary frame +
+ *      turn activity, ordered after the delete). The analyst's inquiry
+ *      frames surviving in the append-only log are auxiliary evidence only
+ *      — pre-delete bytes cannot prove keepInbox (review T7-MAJOR);
+ *   6. BRIEFING DEDUP (the T7 governance this scenario hard-pins): each
+ *      member's log carries the briefing EXACTLY ONCE across all wakes.
+ * The reverse canaries: no forged native kind, no grandchildren, no
+ * self-addressed result splices at the lead.
+ */
+export function analyzeTeamShutdownHandshake(
+  { log, allLogs, requests, bootLog, settleReached, actionObservations },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadId),
+  )
+  const descriptorOf = (childLog) =>
+    (childLog?.events ?? []).find((event) => event.type === 'subagent/descriptor')?.data
+  const analystLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+  )
+  const builderLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_BUILDER]?.model,
+  )
+  const analystId = String(analystLog?.header?.id ?? '')
+  const teamRunId = /"teamRunId":"([^"]+)"/.exec(
+    toolResultParts(events).find((part) => part.text.includes('teamRunId'))?.text ?? '',
+  )?.[1]
+
+  const briefingFrames = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        event.type === 'user/message'
+        && event.data?.source?.kind === 'omo-team-briefing'
+        && event.data?.source?.form === 'instructions',
+    )
+  const inquiryFramesAt = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        agentMessageSplice(event, String(leadId)) !== undefined
+        && splicedFrameText(event).includes('Team shutdown request'),
+    )
+  const framesAtLeadFrom = (senderSessionId, prefix) =>
+    events.filter(
+      (event) =>
+        agentMessageSplice(event, senderSessionId) !== undefined
+        && splicedFrameText(event).includes(prefix),
+    )
+  const leadResults = toolResultParts(events)
+  const analystEvents = analystLog?.events ?? []
+  const builderEvents = builderLog?.events ?? []
+  const resultAt = (childLog, needle) =>
+    (childLog?.events ?? []).some((event) => event.type === 'tool/result' && toolResultTextOf(event).includes(needle))
+  const callAt = (childLog, name) =>
+    (childLog?.events ?? []).filter((event) => event.type === 'tool/call' && event.data?.name === name)
+  const leadCalls = (name) => events.filter((event) => event.type === 'tool/call' && event.data?.name === name)
+  const resultWith = (needle) => leadResults.filter((part) => part.text.includes(needle))
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    // The boot census THIS commit flipped to 7/24 — all five new rows plus
+    // the two T5/T6 rows printed their registered lines.
+    bootSevenSurfaces:
+      (bootLog ?? '').includes('[omo-team] team surface team_shutdown_request registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_approve_shutdown registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_reject_shutdown registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_delete registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_status registered')
+      && (bootLog ?? '').includes('— 7/24 team surfaces registered'),
+    teamCreated: teamRunId !== undefined,
+    twoMemberSessionsRan:
+      analystLog !== undefined && builderLog !== undefined && analystId !== String(builderLog?.header?.id ?? ''),
+
+    // ① REQUEST — inquiries at the members.
+    leadCalledShutdownRequestThrice: leadCalls('team_shutdown_request').length === 3,
+    shutdownRequestResultsDelivered:
+      resultWith('"status":"shutdown_requested"').length === 3
+      && resultWith('"inquiryDelivered":true').length === 3,
+    analystInquiryExactlyTwice: inquiryFramesAt(analystLog).length === 2,
+    builderInquiryExactlyOnce: inquiryFramesAt(builderLog).length === 1,
+    inquiryCarriesReplyGuidance:
+      inquiryFramesAt(analystLog).every((event) => {
+        const text = splicedFrameText(event)
+        return text.includes('team_approve_shutdown') && text.includes('team_reject_shutdown')
+      }),
+    inquiryCarriesLiveTeamRunId:
+      teamRunId !== undefined
+      && inquiryFramesAt(analystLog).every((event) => splicedFrameText(event).includes(`"teamRunId":"${teamRunId}"`)),
+
+    // ② REJECT + SURVIVAL.
+    analystRejectedWithReason: resultAt(analystLog, '"status":"shutdown_rejected"') && resultAt(analystLog, TEAM_SHUTDOWN_REASON),
+    rejectedFrameAtLead:
+      framesAtLeadFrom(analystId, 'Team shutdown rejected').length === 1
+      && splicedFrameText(framesAtLeadFrom(analystId, 'Team shutdown rejected')[0]).includes(TEAM_SHUTDOWN_REASON),
+    statusConfirmsSurvival: resultWith('"status":"active"').some((part) => part.text.includes('"state":"rejected"')),
+    channelOpenAfterRefusal:
+      resultWith('"delivered":true').length >= 1
+      && builderEvents.filter((event) =>
+        agentMessageSplice(event, String(leadId)) !== undefined
+        && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_SURVIVE} from lead:`),
+      ).length === 1,
+
+    // ③ APPROVE (self) at the analyst.
+    analystSelfApproved: resultAt(analystLog, '"status":"shutdown_approved"') && resultAt(analystLog, '"approverName":"analyst"'),
+    approvedFrameAtLead: framesAtLeadFrom(analystId, 'Team shutdown approved').length === 1,
+
+    // ④ APPROVE (lead delegate) — the fourth path, honestly delegated.
+    builderNeverSelfApproved: callAt(builderLog, 'team_approve_shutdown').length === 0,
+    leadApprovedBuilder: resultWith('"approverName":"lead"').some((part) => part.text.includes(`"memberName":"${TEAM_MEMBER_BUILDER}"`)),
+    delegateSelfAddressedNotRelayed: resultWith('"resultDelivered":false').some((part) => part.text.includes('self-addressed')),
+    noSelfAddressedResultSplices:
+      events.filter((event) =>
+        agentMessageSplice(event, String(leadId)) !== undefined
+        && /Team shutdown (approved|rejected)/.test(splicedFrameText(event)),
+      ).length === 0,
+    statusConfirmsBothApproved: resultWith('"phase":"shutdown_approved"').some(
+      (part) => (part.text.match(/"phase":"shutdown_approved"/g) ?? []).length === 2,
+    ),
+
+    // ⑤ DELETE + tombstone.
+    leadCalledTeamDelete: leadCalls('team_delete').length === 1,
+    teamDeletedNonForce: resultWith('"status":"deleted"').some((part) => part.text.includes('"forced":false')),
+    deleteInterruptedBothMembers: resultWith('"status":"deleted"').some((part) => {
+      const hit = /"interruptedSessionIds":\[([^\]]+)\]/.exec(part.text)
+      return hit !== null && hit[1].split(',').length === 2
+    }),
+    // The refusal must be BOUND to a team_send_message that ran AFTER the
+    // delete — a stale 'is deleted' text anywhere in the log proves nothing
+    // (review T7-NIT). The seq-ordering is read off the lead's own log.
+    deletedTeamRefusedByName: (() => {
+      const deleteResult = events.find(
+        (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'),
+      )
+      if (deleteResult === undefined) return false
+      const sendsAfter = events.filter(
+        (event) =>
+          event.type === 'tool/call'
+          && event.data?.name === 'team_send_message'
+          && Number(event.seq ?? 0) > Number(deleteResult.seq ?? 0),
+      )
+      const refusalsAfter = events.filter(
+        (event) =>
+          event.type === 'tool/result'
+          && toolResultTextOf(event).includes('is deleted')
+          && Number(event.seq ?? 0) > Number(deleteResult.seq ?? 0),
+      )
+      return sendsAfter.length >= 1 && refusalsAfter.length === sendsAfter.length && refusalsAfter.length >= 1
+    })(),
+    // AUXILIARY evidence only (review T7-MAJOR): every frame this reads was
+    // written BEFORE team_delete, and the session log is append-only — even a
+    // teardown that cleared the inbox would still pass this. It corroborates
+    // the handshake history survived; it does NOT prove keepInbox. The
+    // falsifiable anchor is `postDeleteNativeDeliveryLandedAtAnalyst` below.
+    inboxPreservedThroughDelete:
+      inquiryFramesAt(analystLog).length === 2
+      && resultAt(analystLog, '"status":"shutdown_rejected"')
+      && resultAt(analystLog, '"status":"shutdown_approved"'),
+    // THE inbox-preservation ANCHOR (review T7-MAJOR): after approve+delete
+    // stopped the analyst, the driver delivered ONE new message over the
+    // host's native channel (Remote `subagents/prompt`, tool layer bypassed).
+    // The canary text exists nowhere else, so its landing in the analyst's
+    // log — frame accepted, turn started, turn completed, ordered after the
+    // lead's delete result by same-clock epoch ms — is only producible if the
+    // interrupted-and-drained member session and its inbox SURVIVED teardown
+    // and still accepts native traffic. Delete that delivery and this check
+    // goes red; that is the falsifiability the old pair lacked.
+    postDeleteNativeDeliveryLandedAtAnalyst: (() => {
+      const canaryEvent = analystEvents.find(
+        (event) => eventTextFlat(event).includes(TEAM_NATIVE_POST_DELETE_BODY),
+      )
+      if (canaryEvent === undefined) return false
+      const deleteResult = events.find(
+        (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'),
+      )
+      // Timing-gate hardening (review T7-NIT): NO `?? 0` fallback — a missing
+      // time coerces to NaN and Number.isFinite turns the gate RED at the
+      // source, instead of `0 < 0` letting a double-missing pair pass GREEN.
+      if (deleteResult === undefined
+        || !Number.isFinite(Number(canaryEvent.time))
+        || !Number.isFinite(Number(deleteResult.time))
+        || Number(canaryEvent.time) < Number(deleteResult.time)) return false
+      const after = analystEvents.filter((event) => Number(event.seq ?? 0) > Number(canaryEvent.seq ?? 0))
+      return after.some((event) => event.type === 'turn/start')
+        && after.some((event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed')
+    })(),
+    // The park that drove the anchor reported honestly (reached must be true;
+    // an expired window is stated, never skipped) — the fourth park.
+    postDeleteFollowupParkReached: (actionObservations ?? []).some(
+      (row) => String(row.note ?? '').startsWith('post-delete NATIVE follow-up') && row.reached === true,
+    ),
+
+    // ⑥ BRIEFING DEDUP — exactly once per member across ALL wakes.
+    analystBriefingExactlyOnce: briefingFrames(analystLog).length === 1,
+    builderBriefingExactlyOnce: briefingFrames(builderLog).length === 1,
+
+    // Parks reached (the awaits reported honestly) — FOUR since the review
+    // MAJOR fix: idle / rejected / approved / the post-delete native landing.
+    parksReached:
+      (actionObservations ?? []).filter((row) => row.reached === true).length === 4,
+    settleReached: settleReached !== false,
+
+    // Reverse canaries: no forged native kind, no grandchildren, all lanes live.
+    noForgedNativeMessageKind: (allLogs ?? []).every(
+      (candidate) => (candidate.events ?? []).every(
+        (event) => event.type !== 'agent/inbox/spliced'
+          || !(event.data?.inserted ?? []).some((inserted) => (inserted?.source ?? {}).kind === 'team-message'),
+      ),
+    ),
+    noGrandchildrenUnderMembers: (allLogs ?? []).every(
+      (candidate) =>
+        String(candidate.header?.parentSession) !== analystId
+        && String(candidate.header?.parentSession) !== String(builderLog?.header?.id ?? ''),
+    ),
+    mockSawAllThreeLanes:
+      requests.filter((r) => r.role === 'sisyphus').length >= 8
+      && requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 6
+      && requests.filter((r) => r.role === TEAM_SEAT_BUILDER).length >= 2,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      teamRunId: teamRunId ?? null,
+      analystInquiryFrameCount: inquiryFramesAt(analystLog).length,
+      builderInquiryFrameCount: inquiryFramesAt(builderLog).length,
+      analystBriefingFrameCount: briefingFrames(analystLog).length,
+      builderBriefingFrameCount: briefingFrames(builderLog).length,
+      leadShutdownResultTexts: leadResults
+        .filter((part) => /shutdown_requested|shutdown_approved|shutdown_rejected|deleted/.test(part.text))
+        .map((part) => part.text),
+      rejectedFrameText: splicedFrameText(framesAtLeadFrom(analystId, 'Team shutdown rejected')[0]) ?? null,
+      approvedFrameText: splicedFrameText(framesAtLeadFrom(analystId, 'Team shutdown approved')[0]) ?? null,
+      actionObservations: actionObservations ?? null,
+      // The anchor's raw rows: the canary event(s) that landed at the analyst
+      // post-delete (seq/type) — null when nothing landed.
+      postDeleteNativeFramesAtAnalyst: analystEvents
+        .filter((event) => eventTextFlat(event).includes(TEAM_NATIVE_POST_DELETE_BODY))
+        .map((event) => ({ seq: event.seq ?? null, type: event.type ?? null })),
     },
   }
 }
@@ -20199,6 +20876,62 @@ const SCENARIOS = [
     settle: awaitTeamMembersSettled,
     analyze: analyzeTeamNestedCreateDenied,
   },
+  {
+    // P5-T7 — the FULL SHUTDOWN HANDSHAKE (manifest rows team_shutdown_request
+    // / team_approve_shutdown / team_reject_shutdown / team_delete / team_status
+    // all flip 'ported' in THIS commit and this scenario is their shared e2e
+    // evidence): request → member REJECT → team SURVIVAL (status + a working
+    // message) → re-request (resolved never blocks) → member SELF-APPROVE →
+    // lead DELEGATE-approve of the silent builder (the fourth path) → status
+    // confirms both shutdown_approved → team_delete non-force (interrupt keeps
+    // the inboxes) → messaging the deleted teamRunId refused BY NAME → the
+    // NATIVE post-delete follow-up lands at the interrupted analyst over the
+    // host's own channel (review T7-MAJOR: this, not the surviving pre-delete
+    // frames, is the falsifiable inbox-preservation anchor). The briefing
+    // dedup this commit introduced is hard-pinned here: each member's log
+    // carries the briefing EXACTLY ONCE across all wakes.
+    name: 'team-shutdown-handshake',
+    actions: [
+      { kind: 'prompt', text: TEAM_CREATE_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamMembersIdle,
+        note: 'both members settled and offline (cold-wake precondition)',
+      },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_REQUEST_ANALYST_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamAnalystRejected,
+        note: 'analyst refusal durable (tool result + rejected frame at lead)',
+      },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_SURVIVAL_PROMPT },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_REREQUEST_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamAnalystApproved,
+        note: 'analyst self-approval durable (tool result + approved frame at lead)',
+      },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_DELEGATE_PROMPT },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_STATUS_PROMPT },
+      { kind: 'prompt', text: TEAM_DELETE_PROMPT },
+      { kind: 'prompt', text: TEAM_DELETED_SEND_PROMPT },
+      // P5-T7 review-MAJOR anchor: AFTER the delete is durable and the tool
+      // layer refuses the teamRunId by name, deliver ONE new message to the
+      // stopped analyst over the HOST's native channel and park until the
+      // landing is durable at the member (spliced/turn activity). The team
+      // tool layer is bypassed on purpose — see nativeFollowupAfterDelete.
+      {
+        kind: 'nativeFollowupAfterDelete',
+        note: 'post-delete NATIVE follow-up lands at the interrupted analyst (the inbox-preservation anchor)',
+      },
+    ],
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    script: teamShutdownHandshakeScript,
+    settle: awaitTeamShutdownSettled,
+    analyze: analyzeTeamShutdownHandshake,
+  },
 ]
 
 /**
@@ -20622,6 +21355,19 @@ async function runScenario(def, baseRoutes) {
           console.error(
             `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} await `
             + `${JSON.stringify(action.note ?? '')} → reached=${reached === true}`,
+          )
+          continue
+        }
+        // P5-T7 review-MAJOR: a scenario step that ACTS on the host's native
+        // channel and then parks until the act is durable. Distinct from
+        // `await` (which only waits) because the delivery is the point — the
+        // verdict (reached + detail) is RECORDED, never silently skipped.
+        if (action.kind === 'nativeFollowupAfterDelete') {
+          const observation = await nativeFollowupAfterDelete(boot, sandbox, created.sessionId)
+          actionObservations.push({ note: action.note ?? 'native post-delete follow-up landed at the member', reached: observation.reached === true })
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} nativeFollowupAfterDelete `
+            + `→ reached=${observation.reached === true} (child=${observation.childSessionId ?? '?'}, ${observation.detail ?? '?'})`,
           )
           continue
         }
