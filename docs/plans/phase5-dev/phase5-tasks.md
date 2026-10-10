@@ -68,7 +68,7 @@
 
 ### [x] P5-T4 — member-validator + inline spec 解析 ⚖️
 
-> **仲裁注（manifest 状态翻动规则，2026-10-09）**：manifest 行 `pending → ported` 的翻动时点 = **该行 e2e 场景在门 3 转绿**（scenario 即该行的行为证明）；`recorded-difference` 行自 T2 已为 `recorded`（差异在覆盖基线成文即闭环）。team_create 行的翻动归 T6（`team-create-and-message` 全段绿时）；翻动与场景落地同 commit。
+> **仲裁注（manifest 状态翻动规则，2026-10-09；T5  refined 2026-10-10）**：manifest 行 `pending → ported` 的翻动时点 = **该行自身语义落地且其 e2e 覆盖转绿**（注册循环只挂载 `ported` 行——翻动是挂载前提而非事后标记；共享场景名的另一半归属对应行，如 team-create-and-message 的消息半段归 team_send_message 行、T6 翻动）。`recorded-difference` 行自 T2 已为 `recorded`（差异在覆盖基线成文即闭环）。翻动与语义落地同 commit。（T5 编码者按旧注「归 T6」与本注义务的冲突提出质疑——注册循环只注册 ported 行、不翻则工具永不挂载——经仲裁采纳并按本 refined 规则追认 T5 翻动；纪律提醒：manifest 是禁改面，正确流程 = NOTES 先行、仲裁同 commit 追认，本次已破例一次，下不为例。）
 > **仲裁注 2**：本条产出中的「manifest 条目填入」= 已由 T2 manifest 行覆盖（行粒度 = 上游路径 + 处置，不逐登记本仓产物文件名），无需新增条目（评审疑问澄清）；后续条目同此理解。
 
 - **产出**：`src/team/member-validator.ts` + `src/team/team-spec.ts`（纯函数）+ 单测；manifest 条目填入。
@@ -77,12 +77,12 @@
 - **证据**：✅ 2026-10-10——`src/team/member-validator.ts`（11 席终态矩阵：允许 {hephaestus, sisyphus-junior}；category 别名 v1 {quick→sisyphus-junior, deep→hephaestus}，词表取自上游 openai-categories.ts；UNRESOLVABLE_CATEGORY 双可用清单排序拼接；subagent_type 具名差异；署名头三上游源）+ `src/team/team-spec.ts`（object/JSON string 双臂、members 1..8、DUPLICATE_MEMBER_NAME、category|seat 恰好其一、v1 不收字段逐枚具名 + closed shape；max-8 文案逐字复用已披露）+ `tests/omo-team/{member-validator,team-spec}.test.ts`（73 用例：11 席全组合逐席硬编码 + toHaveLength 双保险 + roster 行序逐位置对账 + ALL_AGENT_IDS 集合相等 + spec 级五枚逐枚独立 its + 19 错误码逐码钉）。实测：`tests/omo-team/` 137/137；全量 vitest 63f/1704t；typecheck 三链绿；门 6/7 不回归；缺一席即红双变异自证。**双评审 APPROVE**（A 首跑中段停摆无 verdict → 重试后 APPROVE；B APPROVE；findings：prompt 政策第三码 `category-missing-prompt` 补登、校验序注释收敛、max-8 文案披露、spec 级五枚拆分、行序对账补测、行号偏移两枚、manifest member-parser 行 prose 更正——修复轮 8 项落毕；仲裁确认「状态翻动规则注」为仲裁者亲笔；覆盖基线 §1 team_create 行收窄成文 + §4 实现面注 + 计划书 §4.3「名册可委派席」收紧为「名册 worker 席」同 commit）。
 - **依赖**：P5-T1。**量级**：4 小时。
 
-### [ ] P5-T5 — `team_create` 组建路径 + per-member 路由 ⚖️
+### [x] P5-T5 — `team_create` 组建路径 + per-member 路由 ⚖️
 
 - **产出**：`src/tools/team-create.ts`（**fork 已裁 (B)（2026-10-09，FORK.md）：`startContinuable` 直驱 + team 状态机骨架**——~~(A′) = `ctx.agentTeams.spawnTeammate` 逐成员 + provider 适配器~~ Q-3 三重封死链证伪）+ 成员引导（**T1 Q-8 形态裁定写死：成员会话独立注入消息**（hard-blocks-injection 形态，`origin === 'subagent'` 门 + `form:'instructions'`），专属 source kind `omo-team-briefing`，**禁止并入 spawn prompt 正文**——原生 stamp `'user'` 会静默丢专属 kind）+ 单测 + e2e `team-create-and-message` 的组队半段。
 - **做法**：引导 = 成员角色/姓名/「不再派生子女」纪律（上游 member guidance 语义移植——omo-opencode 45 行版与 senpi 5 行版均已逐字入档 Q1b §6，择语义对齐）；路由断言面 = 成员 descriptor v3 的 `agentProvider`/`agentModel`/`persona`/`toolFilter`（**(B) 由 startContinuable request 三件套直驱，Q-3 对照组实证逐字承载**）；**嵌套拒绝**：成员工具面结构性无 `team_create` + 服务强制具名拒绝（对齐上游 `TEAM_LEAD_REQUIRED` 语义族——T1 Q-4 实证原生面即「同面 + 执行期具名拒绝」形态），e2e `team-nested-create-denied` 断言具名拒绝。
 - **判定**：✅ 门 2/门 3 绿；成员 descriptor 断言名册路由值；嵌套拒绝场景绿且**反向金丝雀**（成员尝试组建不产生任何子会话——`listDescendants` 前后一致）。
-- **证据**：⬜
+- **证据**：✅ 2026-10-10——`src/team/team-state.ts`（纯内存状态机骨架，全形镜像上游 RuntimeStateSchema，三索引，ALLOWED 转移合法性，T8 vendored 持久化接缝注；strip-only 无参数属性约束）+ `src/team/roster-seats.ts`（席位三件套声明表，persona 内嵌文本与 personaFile 逐字节对账）+ `src/tools/team-create.ts`（parse→validator→嵌套闸→creating→逐成员 startContinuable→active；首败回滚先翻 failed 再 interrupt/drain；briefing 独立注入 kind 'omo-team-briefing'；宿主预留身份违约响亮）+ `src/index.ts`（agent/created 角色分发：根会话 lead 面 / team 子女成员面结构性无 team_create / 其他子女不装）+ 单测 55→58 例 + **e2e 双场景**：`team-create-and-message`（22 断言：descriptor 四字段逐席值、briefing 帧 1+1 且 kind:'user' 帧零泄漏反例、两成员 lane 真实到 mock、无孙代）+ `team-nested-create-denied`（12 断言：lead 二次 = participant 具名 / 成员 = unknown tool 结构缺席 / lead 恰 2 子女）。实测：**门 3 drive.mjs 36/36（仲裁者独立复跑 EXIT 0）**；vitest 66f/1762t；typecheck 三链绿；cold-start marker `[omo-team] loaded: manifest 24 entries (pending=21, ported=1, recorded=2) — 1/24 team surfaces registered`；门 4/5/6/7/8 不回归。**双评审 APPROVE**（B 直过 + A 亲跑 ci-local 8 门复核后 APPROVE；修复轮 6 项：宿主违约分支补测/名不副实测试重写为成员臂直达/deny 排序全等/成员面状态闸+warn 日志/对称断言/drain 空闸前置；manifest 翻行 pending→ported 经 refined 翻动规则追认）。**执行面约束登记**：Node 24 type-stripping strip-only 模式不支持参数属性（`constructor(readonly x)`）——omo-team 全包禁用该写法（T5 NOTES-6）。
 - **依赖**：P5-T4（**(B) 另依赖 T1 Q-3 对照组已证的 raw 通道三件套承载**）。**量级**：1 天。
 
 ---

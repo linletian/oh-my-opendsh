@@ -10,12 +10,14 @@
 // 是从覆盖基线与裁定书**手抄**的。若某行变更，本文件必须同 commit 修改——
 // 那份刻意的摩擦正是计划书 §4.2 单一事实源规则 + 门 6 一致性门要的阻力。
 //
-// 骨架阶段（P5-T2）的事实前提：**22 行 status='pending'、2 行 status=
+// 骨架阶段（P5-T2）的事实前提曾是 **22 行 status='pending'、2 行 status=
 // 'recorded'**——recorded 是 team_list / team_wait 两条 recorded-difference
 // 行的诚实终态（差异本身就是交付面，已成文于覆盖基线 §1 行 11/12）；其余行
-// 的任何实现、单测或 e2e 场景都属 T3+。这些断言是硬编码的事实而非长度，
-// 所以「行偷偷翻转」无法蒙混过关——翻转须与交付面同 commit 落地（manifest.ts
-// 头部的 STATUS 段）。
+// 的任何实现、单测或 e2e 场景都属 T3+。P5-T5 落了第一行 ported（team_create，
+// 交付面见 manifest.ts 该行行注），现状 census 是 **21 pending / 1 ported /
+// 2 recorded**（下方逐行 split 测试逐字钉死）。这些断言是硬编码的事实而非
+// 长度，所以「行偷偷翻转」无法蒙混过关——翻转须与交付面同 commit 落地
+// （manifest.ts 头部的 STATUS 段）。
 //
 // The `.ts` extension in the import path is load-bearing: Node 24
 // type-stripping does no specifier resolution and this workspace has no
@@ -199,14 +201,16 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
     expect([...teamStatusSet].sort()).toEqual(['pending', 'ported', 'recorded'])
   })
 
-  it('splits the roster by status as of P5-T2 (22 pending, ZERO ported, 2 recorded)', () => {
-    // The hard-coded facts, not lengths. ZERO ported is the load-bearing half:
-    // a row silently flipping to 'ported' at skeleton stage would claim a
-    // delivery surface that does not exist yet (T3+ owns flips). The two
-    // recorded rows are the honest terminal for recorded-difference rows —
-    // their deliverable IS the recorded difference (§1 行 11/12).
+  it('splits the roster by status as of P5-T5 (21 pending, ONE ported, 2 recorded)', () => {
+    // The hard-coded facts, not lengths. ZERO ported was the load-bearing half
+    // at P5-T2; P5-T5 flips team_create to 'ported' (the delivery surface —
+    // src/tools/team-create.ts + team-state.ts + roster-seats.ts — landed), so
+    // the honest ported tally is now exactly that one row. A row silently
+    // flipping to 'ported' without a delivery surface would claim a port that
+    // does not exist (T6+ owns the next flip). The two recorded rows are the
+    // honest terminal for recorded-difference rows — their deliverable IS the
+    // recorded difference (§1 行 11/12).
     expect(teamsByStatus(TEAM_MANIFEST, 'pending').map((row) => row.id)).toEqual([
-      'team_create',
       'team_delete',
       'team_shutdown_request',
       'team_approve_shutdown',
@@ -229,7 +233,7 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
       'vendor-team-core-closure',
       'vendor-team-prompts',
     ])
-    expect(teamsByStatus(TEAM_MANIFEST, 'ported').map((row) => row.id)).toEqual([])
+    expect(teamsByStatus(TEAM_MANIFEST, 'ported').map((row) => row.id)).toEqual(['team_create'])
     expect(teamsByStatus(TEAM_MANIFEST, 'recorded').map((row) => row.id)).toEqual([
       'team_list',
       'team_wait',
@@ -309,7 +313,9 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.nativeFace).toContain('startContinuable')
     expect(entry?.disposition).toBe('ported')
     expect(entry?.e2eScenario).toBe('team-create-and-message')
-    expect(entry?.status).toBe('pending')
+    // P5-T5 翻行：status 'pending'→'ported'（交付面见 manifest.ts 行注与
+    // boot-markers.test.ts 的同 commit 翻针）——本 pin 随翻行同步。
+    expect(entry?.status).toBe('ported')
     // 嵌套拒绝与两项记差异必须留在摘要里（T5 的判据面）。
     expect(entry?.summary).toContain('嵌套拒绝')
     expect(entry?.summary).toContain('记差异')
@@ -687,12 +693,13 @@ describe('P5-T2 derived helpers', () => {
     expect(total).toBe(TEAM_MANIFEST.length)
   })
 
-  it('countsByStatus derives the summary counts (22/0/2) with every key present at all times', () => {
+  it('countsByStatus derives the summary counts (21/1/2) with every key present at all times', () => {
     // The T3 summary line's fields come from here, never from a hard-coded
     // string — so this test pins the DERIVATION against hand-typed numbers.
+    // P5-T5 flipped team_create to ported: 21/1/2 (was 22/0/2 at P5-T2).
     const counts = countsByStatus(TEAM_MANIFEST)
-    expect(counts.get('pending')).toBe(22)
-    expect(counts.get('ported')).toBe(0)
+    expect(counts.get('pending')).toBe(21)
+    expect(counts.get('ported')).toBe(1)
     expect(counts.get('recorded')).toBe(2)
     // Every vocabulary key exists even at 0, so two boots stay line-comparable.
     expect([...counts.keys()]).toEqual([...TEAM_MANIFEST_STATUSES])
@@ -740,7 +747,7 @@ describe('P5-T2 derived helpers', () => {
     // 手打的整行——与上面 countsByStatus 的手打数字（22/0/2）互为对账；
     // T3 的 boot marker 若并入注册计数，格式扩展归 probe 侧（manifest.ts 注）。
     expect(formatLoadedSummaryLine(TEAM_MANIFEST)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=22, ported=0, recorded=2)',
+      '[omo-team] loaded: manifest 24 entries (pending=21, ported=1, recorded=2)',
     )
   })
 

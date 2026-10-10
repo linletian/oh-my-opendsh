@@ -5544,6 +5544,30 @@ function pluginCopyDir(sandbox) {
 }
 
 /**
+ * P5-T5: the sandbox COPY of the omo-team package, staged ONLY for the two team
+ * scenarios. omo-team's member persona bytes ship INSIDE its roster-seats.ts (as
+ * template literals), not in the concerto template, so the ONLY way a member's
+ * MOCKROLE lane marker reaches the mounted bytes is to stamp a copy of omo-team
+ * before boot — the same P4.5-T8b copy+stamp discipline, now for the second
+ * package. Non-team scenarios never stage it (installPlugin keeps omo-team on the
+ * repo path, exactly as P5-T3 shipped it), so the 34 prior scenarios are untouched.
+ */
+function teamCopyDir(sandbox) {
+  return join(sandbox.root, 'plugins', basename(TEAM_PLUGIN_DIR))
+}
+
+/**
+ * The omo-team roster seat → the persona template-literal constant that carries its
+ * persona bytes in roster-seats.ts. This is the ONLY stamp anchor for the member
+ * lanes: the marker is spliced in right after the opening backtick so the persona
+ * string STARTS with `MOCKROLE=<seat>` and the mock's system-row scan routes it.
+ */
+const OMO_TEAM_SEAT_PERSONA_CONST = {
+  hephaestus: 'OMO_TEAM_SEAT_PERSONA_HEPHAESTUS',
+  'sisyphus-junior': 'OMO_TEAM_SEAT_PERSONA_SISYPHUS_JUNIOR',
+}
+
+/**
  * The sandbox plugin copy's concerto TEMPLATE — the file the running plugin
  * reads as `CONCERTO_TEMPLATE_DIR` (src/concerto-preset.ts:122, read at :381 by
  * `renderConcertoComposition`), because `dsh plugin add` installs this copy as a
@@ -5574,7 +5598,7 @@ function pluginTemplateCompositionPath(sandbox) {
   return join(pluginCopyDir(sandbox), CONCERTO_PRESET_ID, 'agent.cordis.yml')
 }
 
-function installPlugin(sandbox, env) {
+function installPlugin(sandbox, env, def) {
   // One `plugin add` per cordis.yml insert row (four rows since P5-T3): a
   // profile missing ANY one of them aborts the whole boot naming that row
   // (`plugin tree failed to load … ERR_MODULE_NOT_FOUND`) — not just a hooks
@@ -5613,16 +5637,31 @@ function installPlugin(sandbox, env) {
   rmSync(stagedAgentsDir, { recursive: true, force: true })
   mkdirSync(stagedAgentsDir, { recursive: true })
   cpSync(PLUGIN_DIR, stagedAgentsDir, { recursive: true })
+  // P5-T5: only the two team scenarios stage a COPY of omo-team, so a member's
+  // MOCKROLE lane marker (stamped into roster-seats.ts BEFORE boot) reaches the
+  // mounted bytes. Self-contained like omo-agents (no `dependencies`, imports are
+  // all `node:*` or relative), so the copy is genuinely portable — the same audit
+  // that keeps omo-hooks on the repo path does not apply here.
+  const stageOmoTeam = def?.stageOmoTeamCopy === true
+  const stagedTeamDir = teamCopyDir(sandbox)
+  if (stageOmoTeam) {
+    rmSync(stagedTeamDir, { recursive: true, force: true })
+    mkdirSync(stagedTeamDir, { recursive: true })
+    cpSync(TEAM_PLUGIN_DIR, stagedTeamDir, { recursive: true })
+  }
   for (const pluginDir of PLUGIN_DIRS) {
-    const operand = pluginDir === PLUGIN_DIR ? stagedAgentsDir : pluginDir
+    const operand = pluginDir === PLUGIN_DIR
+      ? stagedAgentsDir
+      : (stageOmoTeam && pluginDir === TEAM_PLUGIN_DIR ? stagedTeamDir : pluginDir)
     const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', operand], {
-      cwd: operand === stagedAgentsDir ? sandbox.root : REPO_ROOT,
+      cwd: operand === stagedAgentsDir || operand === stagedTeamDir ? sandbox.root : REPO_ROOT,
       env,
       encoding: 'utf8',
       timeout: INSTALL_TIMEOUT_MS,
     })
     addLog += `$ dsh plugin --profile ${PROFILE} add ${operand}\n`
       + (operand === stagedAgentsDir ? `(copied from ${PLUGIN_DIR})\n` : '')
+      + (operand === stagedTeamDir ? `(copied from ${TEAM_PLUGIN_DIR})\n` : '')
       + `${add.stdout ?? ''}\n${add.stderr ?? ''}\n`
     if (add.status !== 0) {
       writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
@@ -5665,6 +5704,36 @@ function installPlugin(sandbox, env) {
     )
   }
   addLog += `realpath ${installedOmoAgents} -> ${installedReal} (== the plugin copy)\n`
+  // P5-T5: when omo-team was staged, its profile entry must realpath to the SAME
+  // staged copy — otherwise the roster-seats stamp lands on bytes nothing mounts
+  // and the member lanes collapse to a mock 400. Pinned, not trusted, exactly as
+  // the omo-agents link above.
+  if (stageOmoTeam) {
+    const installedOmoTeam = join(
+      sandbox.dshHome,
+      'profiles',
+      PROFILE,
+      'node_modules',
+      '@oh-my-opendsh',
+      basename(TEAM_PLUGIN_DIR),
+    )
+    if (!existsSync(installedOmoTeam)) {
+      throw new Error(
+        `the profile has no @oh-my-opendsh/${basename(TEAM_PLUGIN_DIR)} entry at `
+        + `${installedOmoTeam} after \`plugin add\` — the staged omo-team install did not land`,
+      )
+    }
+    const teamReal = realpathSync(installedOmoTeam)
+    const teamCopyReal = realpathSync(stagedTeamDir)
+    if (teamReal !== teamCopyReal) {
+      throw new Error(
+        `the profile's ${basename(TEAM_PLUGIN_DIR)} realpaths to ${teamReal}, not to the `
+        + `staged copy ${teamCopyReal} — a MOCKROLE stamp into the omo-team copy would reach `
+        + 'nothing, so the run aborts instead of failing later as a mock 400',
+      )
+    }
+    addLog += `realpath ${installedOmoTeam} -> ${teamReal} (== the omo-team copy)\n`
+  }
   writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
 }
 
@@ -6254,6 +6323,78 @@ export async function stampMockRoleMarkersIntoPluginCopy(sandbox, roles) {
       markerLine: 1,
       reStamped: before.startsWith(`${marker}\n`),
     })
+  }
+  return landing
+}
+
+/**
+ * P5-T5 — the SECOND MOCKROLE face: stamp `MOCKROLE=<seat>` into the STAGED omo-
+ * team copy's roster-seats.ts persona literals, BEFORE boot, then SELF-VERIFY on
+ * the READ face (import the stamped copy's resolveTeamSeat and assert each seat's
+ * trio.persona STARTS with the marker). The conductor lanes use
+ * stampMockRoleMarkersIntoPluginCopy (the concerto template); the MEMBER lanes live
+ * inside omo-team's own shipped persona bytes, so they need this second stamp — the
+ * two faces are independent and both must land.
+ *
+ * The marker is spliced right after the persona constant's opening backtick, so the
+ * persona string BEGINS with `MOCKROLE=<seat>\n`. Idempotent and byte-anchored: a
+ * second run finds the marker already there and writes nothing.
+ */
+export async function stampTeamSeatPersonasIntoOmoTeamCopy(sandbox, seats) {
+  const rosterSeatsPath = join(teamCopyDir(sandbox), 'src', 'team', 'roster-seats.ts')
+  if (!existsSync(rosterSeatsPath)) {
+    throw new Error(
+      `the staged omo-team copy has no roster-seats.ts at ${rosterSeatsPath} `
+      + '(installPlugin did not stage the omo-team copy — is def.stageOmoTeamCopy set?)',
+    )
+  }
+  const landing = []
+  for (const seat of seats) {
+    const constName = OMO_TEAM_SEAT_PERSONA_CONST[seat]
+    if (constName === undefined) {
+      throw new Error(
+        `no omo-team seat persona constant is mapped for seat '${seat}' `
+        + `(OMO_TEAM_SEAT_PERSONA_CONST knows: ${Object.keys(OMO_TEAM_SEAT_PERSONA_CONST).join(', ')})`,
+      )
+    }
+    const marker = `MOCKROLE=${seat}`
+    const before = readFileSync(rosterSeatsPath, 'utf8')
+    const stampedHead = new RegExp(`export const ${constName} = \\\`${marker}\\n`)
+    if (stampedHead.test(before)) {
+      landing.push({ seat, file: rosterSeatsPath, reStamped: true })
+      continue
+    }
+    const anchor = new RegExp(`(export const ${constName} = \`)(<!-- Source:)`)
+    if (!anchor.test(before)) {
+      throw new Error(
+        `roster-seats.ts has no stampable persona literal for '${constName}' — `
+        + 'the persona constant moved or no longer opens with its source comment',
+      )
+    }
+    writeFileSync(rosterSeatsPath, before.replace(anchor, `$1${marker}\n$2`))
+    landing.push({ seat, file: rosterSeatsPath, reStamped: false })
+  }
+  // SELF-VERIFY on the READ face: import the COPY's roster-seats.ts by absolute
+  // file URL (cache-busted so we read the bytes just written, not a prior module)
+  // and assert each seat's resolveTeamSeat().trio.persona STARTS with its marker.
+  // The repo's own module resolves to UNSTAMPED bytes, so the COPY must be read
+  // directly — this is the face the child's startContinuable consumes; if the stamp
+  // did not reach it, abort loudly instead of failing later as a mock 400.
+  const copyModule = await import(
+    `file://${rosterSeatsPath}?stamp=${Date.now()}`
+  )
+  for (const seat of seats) {
+    const marker = `MOCKROLE=${seat}`
+    const resolution = copyModule.resolveTeamSeat(seat)
+    if (resolution.ok !== true) {
+      throw new Error(`the stamped copy's resolveTeamSeat('${seat}') failed: ${resolution.reason}`)
+    }
+    if (!String(resolution.trio.persona).startsWith(`${marker}\n`)) {
+      throw new Error(
+        `MOCKROLE stamp for seat '${seat}' did not reach the head of the persona the omo-team `
+        + `copy assembles: ${JSON.stringify(String(resolution.trio.persona).slice(0, 60))}`,
+      )
+    }
   }
   return landing
 }
@@ -18631,6 +18772,366 @@ export function analyzeUlwExecuteCommandActivatesAtlas(
   }
 }
 
+// ── P5-T5 · team_create 组建路径 + per-member 路由（fork (B) 执行面）──────────
+//
+// WHAT THESE TWO SCENARIOS PROVE, and nothing more (plan §4.4 fork (B); task
+// book P5-T5). omo-team self-owns a team state machine over
+// `ctx.subagents.startContinuable`; the experimental `tool-agent-team` bundle is
+// NOT mounted (mechanism-learning only). A root (lead) session gets `team_create`
+// scoped onto its surface; a team-member child session gets NO team_create
+// (structural absence) plus an injected briefing frame that is a SEPARATE
+// UserMessage from the spawn prompt.
+//
+// THE ROUTING IS THE POINT: each member's provider/model/persona/tool-filter come
+// from the roster SEAT (roster-seats.ts), not from the caller. `analyst` selects
+// `category:'quick'` (→ seat sisyphus-junior → deepseek/deepseek-flash), `builder`
+// selects `seat:'hephaestus'` (→ deepseek-official/deepseek-v4-pro). The child's
+// durable `subagent/descriptor` must persist exactly that trio — the same surface
+// the harness routes on — so "per-member routing" is a measured fact, not a claim.
+//
+// MOCKROLE LANES (the honest part): the lead is the conductor (MOCKROLE=sisyphus,
+// stamped into the omo-agents copy as in all 34 prior scenarios). The two MEMBERS
+// are omo-team children whose persona bytes ship inside omo-team's roster-seats.ts
+// — NOT the concerto template — so their MOCKROLE lane marker must be stamped into
+// a STAGED sandbox COPY of omo-team before boot (the P4.5-T8b copy+stamp+self-
+// verify discipline, now for the second package). `stageOmoTeamCopy` triggers the
+// copy in installPlugin; `teamRoles` names the seats whose persona literals carry
+// the lane marker.
+//
+// Q-8 SEPARATION (the negative that cannot be laundered): the briefing discipline
+// text ("must NOT spawn or delegate further children") rides ONLY on the injected
+// frame (source.kind === 'omo-team-briefing'); it must NEVER appear inside the
+// member's native spawn prompt (source.kind === 'user'). Two frames, two sources.
+
+const TEAM_SCENARIO_NAME = 'drive-team'
+const TEAM_MEMBER_ANALYST = 'analyst' // category:'quick' → seat sisyphus-junior
+const TEAM_MEMBER_BUILDER = 'builder' // seat:'hephaestus'
+const TEAM_SEAT_ANALYST = 'sisyphus-junior'
+const TEAM_SEAT_BUILDER = 'hephaestus'
+
+/** The inline_spec the lead sends (object arm — T4's parser eats object | JSON). */
+function teamInlineSpec() {
+  return {
+    name: TEAM_SCENARIO_NAME,
+    members: [
+      { name: TEAM_MEMBER_ANALYST, category: 'quick', prompt: 'Summarize the repository structure.' },
+      { name: TEAM_MEMBER_BUILDER, seat: 'hephaestus', prompt: 'Draft the changelog entry.' },
+    ],
+  }
+}
+
+const TEAM_CREATE_PROMPT =
+  'Create a team named "drive-team" with two members: an analyst on the quick category and a builder on the hephaestus seat.'
+
+const TEAM_NESTED_FOLLOWUP_PROMPT =
+  'Now create a second team with the same two members.'
+
+// The lead's final turn text, per scenario (named so a wrong replay is visible).
+const TEAM_LEAD_CREATED_SUMMARY =
+  'MOCK-TEAM-CREATED-9f2a1c: team drive-team is active with analyst and builder seated.'
+const TEAM_LEAD_DENIED_SUMMARY =
+  'MOCK-TEAM-DENIED-4b7e88: the second team_create was refused — this session is already a team participant.'
+
+// Member replies (one lane each; the tail replays, so each member ends its turn).
+const TEAM_MEMBER_ANALYST_REPLY =
+  'MOCK-TEAM-ANALYST-DONE-7c3d: structure summarized, reporting to lead.'
+const TEAM_MEMBER_BUILDER_REPLY =
+  'MOCK-TEAM-BUILDER-DONE-1a9f: changelog drafted, reporting to lead.'
+
+/**
+ * The Q-8 canary anchor: a sentence that exists ONLY inside buildTeamBriefingText
+ * (team-create.ts). It must be observable on the injected frame and absent from the
+ * member's native spawn prompt. If the briefing were ever merged into the prompt,
+ * this anchor moves into the kind:'user' frame and the negative check turns red.
+ */
+const TEAM_BRIEFING_CANARY = 'must NOT spawn or delegate further children'
+
+/**
+ * `team-create-and-message` script. The conductor (lead) lane: turn 1 emits the
+ * team_create tool_call, then a summary text once the tool returns; turn 2 (the
+ * followup) is the second team_create, which the gate refuses. The two member
+ * lanes each reply once and end their turns.
+ */
+function teamCreateAndMessageScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+    ],
+    [TEAM_SEAT_ANALYST]: [{ type: 'text', text: TEAM_MEMBER_ANALYST_REPLY }],
+    [TEAM_SEAT_BUILDER]: [{ type: 'text', text: TEAM_MEMBER_BUILDER_REPLY }],
+  }
+}
+
+/**
+ * `team-nested-create-denied` script. Same lead lane up to turn 1, then turn 2
+ * (the followup) attempts team_create AGAIN — the gate refuses it by name. The
+ * analyst member lane SCRIPTS a team_create tool_call that the host must reject
+ * with UNKNOWN_TOOL (the member surface structurally lacks team_create), then the
+ * member replies and ends its turn — proving the member could not create a child
+ * even when its model tried.
+ */
+function teamNestedCreateDeniedScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_DENIED_SUMMARY },
+    ],
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
+    ],
+    [TEAM_SEAT_BUILDER]: [{ type: 'text', text: TEAM_MEMBER_BUILDER_REPLY }],
+  }
+}
+
+/**
+ * Settle hook: wait until BOTH team-member children (subagent sessions under the
+ * lead) have completed a turn AND the lead's own session log carries the
+ * team_create tool/result. The observation is the same durable JSONL the analysis
+ * reads (P3-T13 discipline) — never a name guess: children are matched by
+ * parentSession === lead, exactly as awaitUlwExecuteChildren does.
+ */
+async function awaitTeamMembersSettled(boot, sandbox, sessionId, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const children = logs.filter(
+      (candidate) =>
+        candidate.header.origin === 'subagent'
+        && String(candidate.header.parentSession) === String(sessionId),
+    )
+    const completed = children.filter((child) =>
+      (child.events ?? []).some(
+        (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+      ),
+    )
+    const leadCreated = logs
+      .find((candidate) => String(candidate.header?.id) === String(sessionId))
+      ?.events?.some(
+        (event) => event.type === 'tool/result' && eventText(event).includes('teamRunId'),
+      )
+    if (completed.length >= 2 && leadCreated === true) return true
+    await sleep(250)
+  }
+  return false
+}
+
+/**
+ * `team-create-and-message` assertions. Every fact is read back OUT of the durable
+ * child logs and descriptors — the same surfaces the harness itself routes on — so
+ * "per-member routing + injected briefing" cannot be a synthetic claim.
+ */
+export function analyzeTeamCreateAndMessage(
+  { log, allLogs, requests, providersJson, bootLog, settleReached },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadId),
+  )
+  const descriptorOf = (childLog) =>
+    (childLog?.events ?? []).find((event) => event.type === 'subagent/descriptor')?.data
+  const analystLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+  )
+  const builderLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_BUILDER]?.model,
+  )
+  const analystDescriptor = descriptorOf(analystLog)
+  const builderDescriptor = descriptorOf(builderLog)
+
+  // The lead really called team_create and the tool RESULT carries the state the
+  // machine derived (teamRunId + both members with their session ids).
+  const createCall = events.find(
+    (event) => event.type === 'tool/call' && event.data?.name === 'team_create',
+  )
+  const createResult = toolResultParts(events).find((part) => part.text.includes('teamRunId'))
+
+  // Q-8: the briefing rides ONLY the injected frame; the spawn prompt never carries it.
+  const briefingFrames = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        event.type === 'user/message'
+        && event.data?.source?.kind === 'omo-team-briefing'
+        && event.data?.source?.form === 'instructions',
+    )
+  const nativePromptFrames = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) => event.type === 'user/message' && event.data?.source?.kind === 'user',
+    )
+  const briefingCarriesCanary = (childLog) =>
+    briefingFrames(childLog).some((event) => messageContentText(event.data).includes(TEAM_BRIEFING_CANARY))
+  const nativePromptLeaksCanary = (childLog) =>
+    nativePromptFrames(childLog).some((event) => messageContentText(event.data).includes(TEAM_BRIEFING_CANARY))
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    // The boot marker flipped 0/24 → 1/24 in THIS commit: team_create registered.
+    teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
+    leadCalledTeamCreate: createCall !== undefined,
+    teamCreateResultCarriesTeamRunId: createResult !== undefined,
+    teamCreateResultNotAnError: createResult !== undefined && createResult.isError !== true,
+    // Two distinct member sessions really ran under the lead.
+    twoMemberSessionsRan:
+      analystLog !== undefined
+      && builderLog !== undefined
+      && String(analystLog.header.id) !== String(builderLog.header.id),
+    // THE routing invariant: each child's durable descriptor persists its seat trio
+    // verbatim — provider/model/persona/tool-filter come from the seat, not the spec.
+    analystRoutedToQuickSeat:
+      analystDescriptor?.agentProvider === routes[TEAM_SEAT_ANALYST]?.provider
+      && analystDescriptor?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+    builderRoutedToHephaestusSeat:
+      builderDescriptor?.agentProvider === routes[TEAM_SEAT_BUILDER]?.provider
+      && builderDescriptor?.agentModel === routes[TEAM_SEAT_BUILDER]?.model,
+    analystDescriptorCarriesSeatPersona:
+      typeof analystDescriptor?.persona === 'string'
+      && analystDescriptor.persona.includes('omo-sisyphus-junior'),
+    builderDescriptorCarriesSeatPersona:
+      typeof builderDescriptor?.persona === 'string'
+      && builderDescriptor.persona.includes('omo-hephaestus'),
+    // Exact-set equality on the persisted deny lists (both members pinned
+    // independently): sorted toEqual the ten delegation tools. The old
+    // length+containment shape is restated as the stricter literal it always
+    // meant to be — sorted full-list equality, so no duplicate/replacement
+    // pair at constant length can slip through a contains-shaped check.
+    analystDescriptorCarriesSeatToolFilter:
+      Array.isArray(analystDescriptor?.toolFilter?.deny)
+      && JSON.stringify([...analystDescriptor.toolFilter.deny].sort()) === JSON.stringify([...DELEGATION_TOOL_NAMES].sort()),
+    builderDescriptorCarriesSeatToolFilter:
+      Array.isArray(builderDescriptor?.toolFilter?.deny)
+      && JSON.stringify([...builderDescriptor.toolFilter.deny].sort()) === JSON.stringify([...DELEGATION_TOOL_NAMES].sort()),
+    membersRoutedOnDistinctSeats:
+      routes[TEAM_SEAT_ANALYST]?.model !== routes[TEAM_SEAT_BUILDER]?.model,
+    // Q-8: briefing injected as its OWN frame, never merged into the spawn prompt.
+    analystBriefingInjected: briefingFrames(analystLog).length >= 1 && briefingCarriesCanary(analystLog),
+    builderBriefingInjected: briefingFrames(builderLog).length >= 1 && briefingCarriesCanary(builderLog),
+    analystPromptFreeOfBriefing: nativePromptLeaksCanary(analystLog) === false,
+    builderPromptFreeOfBriefing: nativePromptLeaksCanary(builderLog) === false,
+    // Both members answered their lanes and ended their turns on their own terms.
+    bothMembersCompletedTurns:
+      (analystLog?.events ?? []).some((e) => e.type === 'turn/end' && e.data?.reason?.kind === 'completed')
+      && (builderLog?.events ?? []).some((e) => e.type === 'turn/end' && e.data?.reason?.kind === 'completed'),
+    mockSawAllThreeLanes:
+      requests.filter((r) => r.role === 'sisyphus').length >= 2
+      && requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 1
+      && requests.filter((r) => r.role === TEAM_SEAT_BUILDER).length >= 1,
+    // Reverse canary: team members spawn NO grandchildren (fork (B) no-child rule).
+    noGrandchildrenUnderMembers: (allLogs ?? []).every(
+      (candidate) =>
+        String(candidate.header?.parentSession) !== String(analystLog?.header?.id)
+        && String(candidate.header?.parentSession) !== String(builderLog?.header?.id),
+    ),
+    settleReachedChildren: settleReached !== false,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      analystDescriptor: analystDescriptor ?? null,
+      builderDescriptor: builderDescriptor ?? null,
+      analystBriefingFrameCount: briefingFrames(analystLog).length,
+      builderBriefingFrameCount: briefingFrames(builderLog).length,
+      nativePromptFrameCount: nativePromptFrames(analystLog).length + nativePromptFrames(builderLog).length,
+      mockRequestRoles: requests.map((request) => request.role),
+    },
+  }
+}
+
+/**
+ * `team-nested-create-denied` assertions. Two independent denials, both named:
+ *   (1) the LEAD's second team_create is refused with the upstream participant
+ *       text (`team_create denied: session is already a participant of team <id>`);
+ *   (2) a MEMBER's team_create attempt is refused with UNKNOWN_TOOL — the member
+ *       surface structurally lacks team_create (deliverable 4's structural absence,
+ *       the strongest enforcement).
+ * The reverse canary: neither denial spawned a child — the lead's children are
+ * still exactly the two members, and no session was parented under a member.
+ */
+export function analyzeTeamNestedCreateDenied(
+  { log, allLogs, requests, bootLog, settleReached },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadId),
+  )
+  const analystLog = memberLogs.find((candidate) =>
+    (candidate.events ?? []).some(
+      (event) => event.type === 'subagent/descriptor'
+        && event.data?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+    ),
+  )
+  const analystEvents = analystLog?.events ?? []
+
+  const createCalls = events.filter(
+    (event) => event.type === 'tool/call' && event.data?.name === 'team_create',
+  )
+  const createResults = toolResultParts(events).filter((part) =>
+    part.text.includes('teamRunId') || part.text.includes('already a participant'),
+  )
+  const deniedResult = createResults.find((part) => part.text.includes('already a participant'))
+  const memberTeamCreateAttempt = findToolCall(analystEvents, 'team_create')
+  const memberTeamCreateResult = toolResultForCall(toolResultParts(analystEvents), memberTeamCreateAttempt)
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
+    // (1) the lead tried team_create TWICE and the second was refused by name.
+    leadAttemptedTeamCreateTwice: createCalls.length >= 2,
+    leadSecondAttemptDeniedByParticipantGate:
+      deniedResult !== undefined
+      && deniedResult.isError === true
+      && /team_create denied: session is already a participant of team /.test(deniedResult.text),
+    // (2) the member tried team_create and the host refused UNKNOWN_TOOL (structural
+    // absence — deliverable 4: the member surface has no team_create).
+    memberAttemptedTeamCreate: memberTeamCreateAttempt !== undefined,
+    memberTeamCreateDeniedUnknownTool:
+      memberTeamCreateResult !== undefined
+      && memberTeamCreateResult.isError === true
+      && /unknown tool "team_create"/i.test(memberTeamCreateResult.text),
+    // The member's advertised tool list structurally lacks team_create.
+    memberSurfaceLacksTeamCreate:
+      (advertisedToolNames(analystEvents) ?? []).includes('team_create') === false,
+    // Reverse canary: the two denials spawned nothing new — the lead still has
+    // exactly the two members, and no session is parented under any member.
+    leadHasExactlyTwoChildren: memberLogs.length === 2,
+    noSessionParentedUnderMembers: (allLogs ?? []).every(
+      (candidate) => memberLogs.every(
+        (member) => String(candidate.header?.parentSession) !== String(member.header?.id),
+      ),
+    ),
+    mockSawNestedAttempts:
+      requests.filter((r) => r.role === 'sisyphus').length >= 3
+      && requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 2,
+    settleReachedChildren: settleReached !== false,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      createCallCount: createCalls.length,
+      deniedText: deniedResult?.text ?? null,
+      memberTeamCreateText: memberTeamCreateResult?.text ?? null,
+      memberToolNames: advertisedToolNames(analystEvents) ?? null,
+      memberChildCount: memberLogs.length,
+    },
+  }
+}
+
 const SCENARIOS = [
   {
     name: 'hello',
@@ -19244,6 +19745,38 @@ const SCENARIOS = [
     script: ulwPlanGestureScript,
     analyze: analyzeUlwPlanLoadsPrometheusSkill,
   },
+  {
+    // P5-T5 (fork (B) 执行面核心; plan §4.4): the lead really组建 a two-member team
+    // and each member really routes through its own roster seat — the trio on the
+    // child's durable descriptor is the seat's, not the caller's — and each member
+    // receives its standing orders as an injected briefing frame (source.kind
+    // 'omo-team-briefing') that is SEPARATE from the native spawn prompt (Q-8).
+    name: 'team-create-and-message',
+    prompt: TEAM_CREATE_PROMPT,
+    // The lead lane is the conductor (stamped into the omo-agents copy as usual);
+    // the two MEMBER lanes are omo-team seats, stamped into a STAGED omo-team copy.
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    script: teamCreateAndMessageScript,
+    settle: awaitTeamMembersSettled,
+    analyze: analyzeTeamCreateAndMessage,
+  },
+  {
+    // P5-T5 nested gate: the lead's second team_create is refused with the upstream
+    // participant text, and a MEMBER's team_create attempt is refused UNKNOWN_TOOL
+    // (the member surface structurally lacks team_create). Neither denial spawns a
+    // new session — the reverse canary pins that.
+    name: 'team-nested-create-denied',
+    prompt: TEAM_CREATE_PROMPT,
+    followupPrompts: [TEAM_NESTED_FOLLOWUP_PROMPT],
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    script: teamNestedCreateDeniedScript,
+    settle: awaitTeamMembersSettled,
+    analyze: analyzeTeamNestedCreateDenied,
+  },
 ]
 
 /**
@@ -19311,7 +19844,7 @@ async function runScenario(def, baseRoutes) {
     const patchPath = seedSandbox(sandbox, routes, server.baseUrl)
     def.seed?.(sandbox) // fixtures land after seedSandbox mkdirs the project dir
     console.error(`drive: [${def.name}] stage 0 — dsh plugin add into the sandbox profile`)
-    installPlugin(sandbox, env)
+    installPlugin(sandbox, env, def)
 
     // P4.5-T8b: the 0.2.x MOCKROLE face, BEFORE boot. On this generation
     // register() renders the template at apply() time and nothing reads the
@@ -19326,6 +19859,20 @@ async function runScenario(def, baseRoutes) {
       `drive: [${def.name}] MOCKROLE stamped into the sandbox plugin copy BEFORE boot: `
       + `${copyStamp.map((entry) => `${entry.role}→${basename(entry.file)}:1`).join(', ')}`,
     )
+
+    // P5-T5: the SECOND MOCKROLE face. Team members are omo-team children whose
+    // persona bytes ship inside roster-seats.ts, so their lane markers are stamped
+    // into the staged omo-team copy — same before-boot, self-verified discipline.
+    // Only the two team scenarios carry `teamRoles`; every other scenario is
+    // unchanged (the block is skipped entirely).
+    if (def.stageOmoTeamCopy === true) {
+      const teamStamp = await stampTeamSeatPersonasIntoOmoTeamCopy(sandbox, def.teamRoles)
+      writeFileSync(join(sandbox.root, 'mock-role-team-stamp.json'), `${JSON.stringify(teamStamp, null, 2)}\n`)
+      console.error(
+        `drive: [${def.name}] MOCKROLE stamped into the staged omo-team copy BEFORE boot: `
+        + `${teamStamp.map((entry) => `${entry.seat}→${basename(entry.file)}`).join(', ')}`,
+      )
+    }
 
     // P3-T13 / P4.5-T12a: a scenario may additionally edit a delegation row of
     // the SANDBOX plugin-copy TEMPLATE. Used by the background scenario to reach

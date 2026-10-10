@@ -202,7 +202,13 @@ const MANIFEST_ROWS = [
     nativeFace: 'omo-team 工具层 → ctx.subagents.startContinuable 逐成员三件套（名册席值，Q-3 对照组实证 descriptor 全承载）',
     disposition: 'ported',
     e2eScenario: 'team-create-and-message',
-    status: 'pending',
+    // P5-T5 翻行（pending→ported，交付面 = src/tools/team-create.ts +
+    // src/team/{team-state,roster-seats}.ts + 单测三件 + e2e 两场景）：任务书
+    // 把 boot marker 0/24→1/24 钉为本任务的同 commit 义务，而注册循环只注册
+    // 'ported' 行——status 不翻则工具面永不挂载，marker 义务无法兑现。T4 曾
+    // 把本行翻行记为「归 T6 的完整半段」，T5 任务文（更新裁决）先行落地组队
+    // 半段；差异在交卷 NOTES 登记。
+    status: 'ported',
     summary:
       '组建命令：inline spec 解析 + member-validator（T4）+ 逐成员路由（T5）；嵌套拒绝 = 成员工具面无 team_create + 服务具名拒绝（TEAM_LEAD_REQUIRED 语义族）；teamName/leadSessionId 记差异',
   },

@@ -83,8 +83,32 @@ import {
   formatTeamSurfaceFailedLine,
   formatTeamSurfaceRegisteredLine,
 } from './boot-markers.ts'
+// P5-T5: the first real registrar's module pair — the state machine (pure,
+// host-singleton) and the team_create surface (tool + agent/created dispatch).
+import { teamStateStore } from './team/team-state.ts'
+import {
+  registerTeamCreateSurface,
+  type TeamAgent,
+  type TeamContinuableChannel,
+} from './tools/team-create.ts'
 
 export const name = 'omo-team'
+
+/**
+ * P5-T5 SERVICE INJECTION (the P4-T3 promotion pair, verbatim discipline): a
+ * member of this interface becomes REQUIRED exactly when the loop starts
+ * calling through it, and the service the registrar calls through is declared
+ * here in the same commit so the host orders the dependency before apply()
+ * runs (the omo-commands `inject = ['commands', 'skills']` precedent; the
+ * continuable channel is proven injectable on this host by the P5-T1 Q-3
+ * sandbox plugin, which declared `inject = ['subagents', 'tools']`).
+ * 'tools' is deliberately NOT listed: this plugin registers nothing on the
+ * plugin-level tools service — every registration is agent-scoped through
+ * `agent.ctx.tools.register` inside the `agent/created` listener (the
+ * tool-agent-team :230-241/:539-546 mechanism, learned for shape only; its
+ * semantics are not adopted — experimental surfaces never are).
+ */
+export const inject = ['subagents'] as const
 
 /** A cordis-style disposal: what an effect's execute callback RETURNS to be collected. */
 export type TeamDisposer = () => void
@@ -92,22 +116,21 @@ export type TeamDisposer = () => void
 /**
  * Minimal structural typing for the surface apply() touches — declared here
  * rather than imported from DSH for the reason in the header (this workspace has
- * no dsh dependency). EVERY member stays OPTIONAL at P5-T3, and that is not
- * laziness but the mount's real shape: the registration registry below is EMPTY,
- * so the loop calls nothing on `ctx` yet. The promotion precedent is
- * omo-commands' `commands` at P4-T3 — a member becomes REQUIRED (and joins the
- * `inject` declaration) exactly when the loop starts calling through it.
+ * no dsh dependency). EVERY member was OPTIONAL at P5-T3, and that was not
+ * laziness but the mount's real shape: the registry was EMPTY, so the loop
+ * called nothing on `ctx`. The promotion precedent is omo-commands' `commands`
+ * at P4-T3 — a member becomes REQUIRED (and joins the `inject` declaration)
+ * exactly when the loop starts calling through it.
  *
- * WHY NO `inject` AT P5-T3 (and why that is the honest choice, not a gap):
- * the team surfaces' native landing spots are adjudicated per row in
- * src/manifest.ts (`ctx.subagents.startContinuable` at T5, the vendored
- * tasklist/state-store at T7/T8), and no single registry service owns them all
- * — declaring an `inject` for a service the loop cannot yet register through
- * would park this fiber in `waiting` forever, which means the `[omo-team]
- * loaded` marker never prints and every mount gate goes red on a plugin that IS
- * installed. So the loop runs against the empty registry, the marker prints, and
- * the first registrar that needs a service promotes this interface and declares
- * the dependency together (the P4-T3 pair, verbatim discipline).
+ * P5-T5 EXERCISES THAT DOCTRINE: `on` and `subagents` are REQUIRED now (the
+ * `team_create` registrar subscribes to `agent/created` and closes over the
+ * continuable channel), and `inject = ['subagents']` went up in the same
+ * commit. The T3 paragraph's WHY-NO-INJECT reasoning stays true of T3 and is
+ * kept for the record: declaring an `inject` the loop could not yet register
+ * through would park the fiber in `waiting`, swallow the `[omo-team] loaded`
+ * marker, and redden every mount gate on an installed plugin — the pair (the
+ * first registrar that needs a service + its `inject` entry) is the only legal
+ * moment to widen, and T5 is that moment for exactly these two members.
  */
 export interface TeamRegistrationContext {
   /**
@@ -120,6 +143,27 @@ export interface TeamRegistrationContext {
   readonly get?: (name: string) => unknown
   /** cordis's fiber-scoped effect collector — used only to adopt a returned disposer. */
   readonly effect?: (execute: () => TeamDisposer | void) => unknown
+  /**
+   * Cordis event subscription — PROMOTED TO REQUIRED AT P5-T5 (the promotion
+   * doctrine of this interface's header, exercised by the first registrar):
+   * the `team_create` registrar subscribes to `agent/created` to install the
+   * role-scoped tool surfaces — the lead face on every root session, the
+   * member face (structurally WITHOUT team_create) plus the injected briefing
+   * on team-member children, nothing on other children (task P5-T5 deliverable
+   * 4; the payload's `agent` is the live TeamAgent from tools/team-create.ts's
+   * structural declaration).
+   */
+  readonly on: (event: 'agent/created', listener: (payload: { agent: TeamAgent }) => unknown) => unknown
+  /**
+   * The native subagents service — PROMOTED TO REQUIRED AT P5-T5, declared in
+   * `inject` in the same commit. The team_create registrar closes over this
+   * channel and calls `startContinuable` / `interrupt` /
+   * `drainContinuableChildren` per tools/team-create.ts's execution chain;
+   * the channel is NOT cached beyond the registrar's closure (the T3 note's
+   * per-invocation reading discipline holds — the closure reads through the
+   * service object on every call).
+   */
+  readonly subagents: TeamContinuableChannel
 }
 
 /**
@@ -134,11 +178,17 @@ export type TeamRegistrar = (
 ) => TeamDisposer | void
 
 /**
- * The implementation registry — EMPTY at P5-T3, and that is the P3-T3 / P4-T3
- * skeleton precedent verbatim: the loop below is complete and unit-tested
- * against synthetic registrars (tests/omo-team/boot-markers.test.ts); T5 adds
- * the first real entry (`team_create`), T6 the message surface, T7 the shutdown
- * pair, and so on, one row per landed task.
+ * The implementation registry — the P3-T3 / P4-T3 skeleton precedent kept
+ * verbatim (the loop below is complete and unit-tested against synthetic
+ * registrars in tests/omo-team/boot-markers.test.ts), with P5-T5 landing its
+ * FIRST real entry: `team_create`. T6 adds the message surface, T7 the
+ * shutdown pair, and so on, one row per landed task.
+ *
+ * KEY SHAPE honored by the T5 row: a one-liner over its module — every
+ * semantic (execution chain, briefing, rollback, dispatch) lives in
+ * src/tools/team-create.ts with its attribution header; this record owns the
+ * row's manifest id, the channel it injects, and the process-singleton state
+ * machine it hands the surface — nothing else.
  *
  * A row is registered only when BOTH hold: its status is 'ported' (the manifest
  * row says the delivery surface — code + unit test + e2e — landed; 'recorded'
@@ -156,7 +206,10 @@ export type TeamRegistrar = (
  * in MANIFEST ROSTER ORDER (manifest.ts's row order is the coverage baseline's
  * read order); the order is pinned by tests/omo-team/boot-markers.test.ts.
  */
-export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {}
+export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
+  // P5-T5 · ① §1 行 1（manifest.ts 行序 = 本表读序，boot-markers.test.ts 钉）。
+  team_create: (ctx) => registerTeamCreateSurface(ctx, { subagents: ctx.subagents, store: teamStateStore }),
+}
 
 /**
  * The registration loop, exported so its loud-but-non-fatal behaviour is
@@ -232,9 +285,12 @@ export function runTeamRegistrations(
  * unit-tested functions, so this stays assembly-only and the markers cannot
  * drift from their tests.
  *
- * A correct P5-T3 boot logs exactly ONE line from this plugin — the summary
- * with the loop's honest zero — and nothing else: no per-surface `registered`
- * line (the registry is empty), no FAILED line, no validation line.
+ * A correct P5-T5 boot logs TWO lines from this plugin — the per-surface
+ * `registered` line for `team_create` (the loop's first real registration) and
+ * the summary line carrying the honest `1/24` — and nothing else: no FAILED
+ * line, no validation line. (At P5-T3 it logged exactly ONE line, the summary
+ * with the loop's honest zero, because the registry was empty; the flip is the
+ * marker the probe re-derives without an edit.)
  */
 export function apply(ctx: TeamRegistrationContext): void {
   const log = (line: string): void => {
