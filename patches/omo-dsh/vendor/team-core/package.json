@@ -1,0 +1,39 @@
+{
+  "name": "@oh-my-opencode/team-core",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Harness-neutral team-mode registry, mailbox, tasklist, state, worktree, and tmux layout domain primitives.",
+  "license": "SUL-1.0",
+  "exports": {
+    "./config": {
+      "types": "./src/config.ts",
+      "import": "./src/config.ts"
+    },
+    "./team-registry": {
+      "types": "./src/team-registry/index.ts",
+      "import": "./src/team-registry/index.ts"
+    },
+    "./team-tasklist": {
+      "types": "./src/team-tasklist/index.ts",
+      "import": "./src/team-tasklist/index.ts"
+    },
+    "./team-state-store": {
+      "types": "./src/team-state-store/index.ts",
+      "import": "./src/team-state-store/index.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "import": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "test": "bun test src/*.test.ts src/**/*.test.ts",
+    "test:vitest": "pnpm -w exec vitest run patches/omo-dsh/vendor/team-core"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "sideEffects": false
+}

@@ -636,6 +636,160 @@ empty work-state projection, the no-ledger difference and the marker constants a
 all registered in `omo-hooks/src/hooks/ulw-execute.ts` + `ulw-execute/constants.ts`
 and are referenced, not restated, by the template's carrier note.
 
+### Phase 5 vendored package: `@oh-my-opencode/team-core` (OMO v4.19.4)
+
+- **Source repository:** https://github.com/code-yeongyu/oh-my-openagent
+- **Tag:** `v4.19.4`
+- **Commit:** `b072d279110bdda2c6ac2525d0d24dc54d16148a`
+- **Upstream path:** `packages/team-core`
+- **License:** SUL-1.0 ([LICENSES/oh-my-openagent.LICENSE.md](LICENSES/oh-my-openagent.LICENSE.md)).
+  The upstream package manifest carries no `license` field (all 19 OMO core packages
+  are alike); the license is the OMO repository-root `LICENSE.md`, vendored here
+  byte-for-byte (sha256 `b61ac928f152d13517328263e6bee9175b928f9ab696a2d2ca2b6cfd961ddc32`).
+- **Vendored into this repository at:** [`patches/omo-dsh/vendor/team-core`](patches/omo-dsh/vendor/team-core)
+  (a pnpm workspace package; the upstream package name `@oh-my-opencode/team-core@0.1.0` is
+  kept unchanged as the provenance anchor, so the D16 name gate releases its `SUL-1.0` field).
+
+> ⚠️ **MODIFIED COPY — prominent notice required by SUL-1.0 "Notices".**
+> This project has **modified** the vendored copy of `team-core`. The
+> modifications are declared in the package-root
+> [`NOTICE.md`](patches/omo-dsh/vendor/team-core/NOTICE.md) and itemized,
+> with per-file sha256 and reasons, in
+> [`VENDOR-MANIFEST.json`](patches/omo-dsh/vendor/team-core/VENDOR-MANIFEST.json)
+> (`deviations[]`, 13 entries: 9 modifications, 3 project additions, 1 explanatory note).
+> Copyright in the upstream work remains with the original author (code-yeongyu);
+> this project claims only its modifications. No commercial use or distribution
+> is authorized.
+
+**Subset carve-outs (deliberately NOT vendored, decision D4 + the phase 5 scope
+guardrails):** `src/team-mailbox/**`, `src/team-layout-tmux/**`, `src/team-worktree/**`,
+the root barrel `src/index.ts` (it re-exports exactly the three excluded directories),
+`src/resolve-caller-team-lead.ts`, `src/shell-quote.ts`,
+`src/team-state-store/reservation-reconciliation.ts` (the only team-core file with a
+team-mailbox runtime dependency — the `.delivering-` reservation reclaim is not ported,
+T1 ruling) and the package `AGENTS.md` (not part of the T2-arbitrated 31-file
+implementation subset). The package `exports` map is narrowed accordingly (D4).
+
+**Tests — carried vs not (measured 2026-10-10):** all 14 upstream subset tests are
+`bun:test` imports; 10 run byte-identically under this repo's vitest via the existing
+`bun:test`→`vitest` alias (shim S-1) and are carried; 4 are not carried, each for a
+measured reason registered in `VENDOR-MANIFEST.json` `subset.testsNotCarried[]`: two
+import `../resolve-caller-team-lead` (outside the arbitrated subset), one uses the
+bun-only chai matcher `toBeObject()` (red under vitest: `Invalid Chai property`), one
+imports `mock` from `bun:test` (vitest exports no `mock`) and doubly tests the not-ported
+reservation-reclaim semantics. `team-tasklist/test-support.ts` is carried verbatim as the
+test helper the five tasklist tests import. The root tsconfig/vitest vendor-test exclusion
+surfaces already cover this tree generically and were **not** widened (D16 discipline).
+
+**External dependencies:** `zod` `^4.4.3` is declared in the vendor package's
+`package.json` — the same value upstream `packages/team-core/package.json` declares —
+as a normal npm dependency (locked `zod@4.6.5`, MIT, license-gate covered). This is
+**not** a port of the zod validators: the upstream schemas ride along verbatim inside
+`src/types.ts` / `src/config.ts` (the S-10 "zod 校验器不移植" narrowing boundary from
+Phase 4 applies identically here). The single cross-package import of
+`@oh-my-opencode/utils` (`isPlainRecord` at upstream `team-state-store/store.ts:1`,
+the vendored tree's only such consumer) is resolved by a one-function **semantic port**
+at [`src/plain-record.ts`](patches/omo-dsh/vendor/team-core/src/plain-record.ts),
+attributed to `packages/utils/src/record-type-guard.ts` in its header; `isRecord` is
+not ported (its consumers all live in the excluded files). The upstream `workspace:*`
+dependencies `@oh-my-opencode/tmux-core` and `@oh-my-opencode/utils` are **removed**
+from the vendored manifest — the first one's only upstream team-core consumers sit in
+`src/team-layout-tmux/**` (not vendored, D4), the second one's only vendored consumer
+was `team-state-store/store.ts:1` (now the `plain-record.ts` port), and both
+`workspace:*` specifiers are unresolvable in this repo's workspace (measured:
+`ERR_PNPM_WORKSPACE_PKG_NOT_FOUND` in a scratch workspace — leaving them would break
+`pnpm install`); registered as `deviations[]` kind=`dependencies-narrowed`.
+
+**Strip-only compliance (T5 NOTES-6):** vendored files are imported by the omo-team
+runtime under Node 24 type-stripping, which rejects TypeScript parameter properties.
+A multi-line scan found 4 upstream files using them; all 4 were rewritten
+deviation-registered, semantically equivalent (declared fields + post-`super()`
+assignments, the exact position `tsc` emits): `src/member-parser.ts`,
+`src/team-registry/validator.ts`, `src/team-tasklist/claim.ts`,
+`src/team-state-store/store.ts`. Evidence: per-file amaro parse probe across all 43
+`.ts` files — 0 syntax failures (remaining probe errors are upstream's extensionless
+import shape and the `bun:` scheme, both handled by the vitest toolchain, same as the
+hashline-core precedent). Behavioral pinning, stated exactly (review-round calibration):
+`TeamSpecValidationError` is constructed on the carried tests' code path —
+validator.test.ts pins class + messages and loader.test.ts `toMatchObject` pins
+`code` / `field` / `memberName` on the thrown instance; `claim.test.ts` and
+`store.test.ts` pin only instance identity (`toBeInstanceOf(BlockedByError)` /
+`toBeInstanceOf(RuntimeStateError)`) and do **not** read `err.blockers` /
+`RuntimeStateError.code` (the only `.code` read in `store.test.ts`, L81, is on a Node
+`ErrnoException` — `nodeError.code === "ENOENT"` after a failed `stat` — not on that class);
+no carried test constructs `MemberValidationError` at all (0 construction sites measured).
+The remaining fields are pinned by live construction instead: a one-shot instrumented
+vitest probe against the real modules (`new BlockedByError(['1'])` → `blockers=['1']`;
+`RuntimeStateError.code`; `TeamSpecValidationError.code/.field/.memberName` — probe file
+deleted after the run, vendored file set unchanged) and a `node --experimental-strip-types`
+run (`new MemberValidationError('msg','lead','both-kinds')` keeps `memberName` / `issue`);
+per-class evidence is registered in the corresponding `deviations[]` entries.
+
+Every file in the vendored package is listed below (decision D15 ¶2; rows are numbered
+`P5-n` to keep the numbering space disjoint from the phase 1/4 tables). The
+`Disposition` column mirrors the manifest's per-file `origin`: `verbatim` (**37**),
+`已修改` → `modified` (**7**), `本项目新增` → `project-new` (**3**) — **47 files**
+total, aligned one-to-one with `VENDOR-MANIFEST.json` `files[]` (47 entries). Per-file
+sha256 values live in the manifest and are not duplicated here; every `modified` entry
+also carries its pre-change upstream blob sha256 (R-8 two-way anchor). Drift detection
+is mechanical and auto-discovers this package: `node scripts/vendor-manifest.mjs`.
+
+| # | File (relative to package root) | Disposition | Notes |
+|---|---|---|---|
+| P5-1 | `package.json` | `已修改` | Added `license: "SUL-1.0"` (D15 ¶1) + `test:vitest` script; `exports` narrowed to the vendored subpaths (D4 — `.`, `./team-mailbox`, `./team-worktree`, `./team-layout-tmux` and the dangling `types` removed); `dependencies` narrowed — `@oh-my-opencode/tmux-core` + `@oh-my-opencode/utils` (both upstream `workspace:*`) removed, `zod` kept verbatim (consumers excluded/ported; `workspace:*` unresolvable here — `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND` measured); all other fields unchanged (field-by-field diff vs the pinned upstream manifest verified 2026-10-10); `scripts.typecheck` kept upstream-shape (`tsgo`) as drift reference — no `tsgo` in this repo, package not in the typecheck gate (deviations kind=`notes`) |
+| P5-2 | `tsconfig.json` | `已修改` | Rewritten to the `ES2022` + `node` shape and excludes test files (upstream uses `bun-types`; hashline-core precedent) |
+| P5-3 | `src/config.ts` | `verbatim` | — |
+| P5-4 | `src/logger.ts` | `verbatim` | — |
+| P5-5 | `src/member-parser.ts` | `已修改` | **Strip-only rewrite:** `MemberValidationError` parameter properties → declared fields + post-`super()` assignments (Node 24 type-stripping, T5 NOTES-6); tsc-emit position-equivalent — no carried test constructs this class (0 sites measured), so evidence is a `node --experimental-strip-types` construction probe: `memberName` / `issue` preserved (2026-10-10) |
+| P5-6 | `src/plain-record.ts` | `本项目新增` | **Not upstream-package content:** the `isPlainRecord` function, upstream expression byte-for-byte from `packages/utils/src/record-type-guard.ts`, with attribution header (the only project-written `.ts` in this copy) |
+| P5-7 | `src/session-client.ts` | `verbatim` | — |
+| P5-8 | `src/team-registry/caller-team-lead.ts` | `verbatim` | — |
+| P5-9 | `src/team-registry/index.ts` | `verbatim` | — |
+| P5-10 | `src/team-registry/loader.test.ts` | `verbatim` | — |
+| P5-11 | `src/team-registry/loader.ts` | `verbatim` | — |
+| P5-12 | `src/team-registry/paths.ts` | `verbatim` | — |
+| P5-13 | `src/team-registry/team-spec-input-normalizer.ts` | `verbatim` | — |
+| P5-14 | `src/team-registry/validator.test.ts` | `verbatim` | — |
+| P5-15 | `src/team-registry/validator.ts` | `已修改` | **Strip-only rewrite:** `TeamSpecValidationError` parameter properties → declared fields + post-`super()` assignments (T5 NOTES-6); pinned by validator.test.ts (class + messages) and loader.test.ts `toMatchObject` (`code` / `field` / `memberName` on the thrown instance) |
+| P5-16 | `src/team-state-store/active-resume.ts` | `已修改` | **Removals (T1 ruling):** upstream L2 orphaned `log` import, L5 `reservation-reconciliation` import, L12-36 `reconcileMemberReservations` helper, L56 its call — `.delivering-` reservation reclaim not ported |
+| P5-17 | `src/team-state-store/creating-resume.ts` | `verbatim` | — |
+| P5-18 | `src/team-state-store/deleting-resume.ts` | `verbatim` | — |
+| P5-19 | `src/team-state-store/error-normalization.ts` | `verbatim` | — |
+| P5-20 | `src/team-state-store/index.ts` | `verbatim` | Barrel exports only `./store` — verified clean of excluded modules |
+| P5-21 | `src/team-state-store/locks.test.ts` | `verbatim` | — |
+| P5-22 | `src/team-state-store/locks.ts` | `verbatim` | — |
+| P5-23 | `src/team-state-store/resume-report.ts` | `verbatim` | — |
+| P5-24 | `src/team-state-store/resume.ts` | `verbatim` | — |
+| P5-25 | `src/team-state-store/runtime-cleanup.ts` | `verbatim` | — |
+| P5-26 | `src/team-state-store/session-liveness.ts` | `verbatim` | — |
+| P5-27 | `src/team-state-store/store.test.ts` | `verbatim` | — |
+| P5-28 | `src/team-state-store/store.ts` | `已修改` | **Import rewrite + strip-only rewrite:** `isPlainRecord` now resolves to `../plain-record` (semantic port); `RuntimeStateError.code` parameter property → declared field + post-`super()` assignment (T5 NOTES-6); pinned by store.test.ts (`toBeInstanceOf`; the test does not read `RuntimeStateError.code` — the only `.code` read in that file, L81, is on a Node `ErrnoException` (`nodeError.code === "ENOENT"`), not on this class — construction-time preservation confirmed by the instrumented probe, 2026-10-10) |
+| P5-29 | `src/team-state-store/worker-resume-status.ts` | `verbatim` | — |
+| P5-30 | `src/team-tasklist/claim.test.ts` | `verbatim` | — |
+| P5-31 | `src/team-tasklist/claim.ts` | `已修改` | **Strip-only rewrite:** `BlockedByError.blockers` parameter property → declared field + post-`super()` assignment (T5 NOTES-6); claim.test.ts pins `toBeInstanceOf(BlockedByError)` only (no test reads `err.blockers`) — instrumented probe measured `new BlockedByError(['1'])` → `blockers=['1']` preserved (2026-10-10) |
+| P5-32 | `src/team-tasklist/dependencies.test.ts` | `verbatim` | — |
+| P5-33 | `src/team-tasklist/dependencies.ts` | `verbatim` | — |
+| P5-34 | `src/team-tasklist/get.test.ts` | `verbatim` | — |
+| P5-35 | `src/team-tasklist/get.ts` | `verbatim` | — |
+| P5-36 | `src/team-tasklist/index.ts` | `verbatim` | Barrel re-exports only vendored files — verified |
+| P5-37 | `src/team-tasklist/list.test.ts` | `verbatim` | — |
+| P5-38 | `src/team-tasklist/list.ts` | `verbatim` | — |
+| P5-39 | `src/team-tasklist/store.test.ts` | `verbatim` | — |
+| P5-40 | `src/team-tasklist/store.ts` | `verbatim` | — |
+| P5-41 | `src/team-tasklist/test-support.ts` | `verbatim` | Test helper imported by the five tasklist tests — carried as test support, not implementation |
+| P5-42 | `src/team-tasklist/update.test.ts` | `verbatim` | — |
+| P5-43 | `src/team-tasklist/update.ts` | `verbatim` | — |
+| P5-44 | `src/tolerant-fsync.ts` | `verbatim` | — |
+| P5-45 | `src/types.ts` | `verbatim` | — |
+| P5-46 | `NOTICE.md` | `本项目新增` | **Not upstream content:** the prominent "modified" notice required by SUL-1.0 (D15 ¶3, N-1) |
+| P5-47 | `VENDOR-MANIFEST.json` | `本项目新增` | **Not upstream content:** source tag/commit + per-file sha256 + `deviations[]` |
+
+**Totals:** 37 `verbatim` + 7 `已修改` + 3 `本项目新增` = **47 files**
+= 31 upstream implementation files of the T2-arbitrated subset (5 of them modified)
++ 10 carried upstream tests + `src/team-tasklist/test-support.ts` (test helper)
++ `src/plain-record.ts` (semantic port) + 4 package-root files
+(`package.json`, `tsconfig.json`, `NOTICE.md`, `VENDOR-MANIFEST.json`).
+
 ## oh-my-pi
 
 - **Author:** can1357

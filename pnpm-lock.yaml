@@ -38,6 +38,12 @@ importers:
 
   patches/omo-dsh/vendor/shared-skills: {}
 
+  patches/omo-dsh/vendor/team-core:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.6.5
+
 packages:
 
   '@jridgewell/sourcemap-codec@1.5.5':
@@ -580,6 +586,9 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+
 snapshots:
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
@@ -948,3 +957,5 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  zod@4.6.5: {}

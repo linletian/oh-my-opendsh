@@ -112,13 +112,25 @@
 
 ## WP-4 任务板与生命周期（计划书 §4.5）
 
-### [ ] P5-T8 — 任务板语义映射 + claim 协议
+### [x] P5-T8a — vendor team-core 子集（playbook 全套）⚖️
 
-- **产出**：任务板消费层（**(B) 已定：vendored team-tasklist 接线**——子集闭包 = **T2 双评审后终态**：verbatim = types/member-parser/config/logger/tolerant-fsync/**session-client（纯类型）**/team-registry/team-tasklist（除 test-support）/team-state-store（除 **reservation-reconciliation**——`.delivering-` 预约回收不移植落点）；deviation = active-resume.ts（删预约回收调用/helper，**并连删因此成孤儿的 `log` 导入**——:28 唯一调用点随被删 helper 出局，评审登记）；外部依赖 = `zod`（^4.4.3 npm 引入，verify-licenses 白名单核对）+ `@oh-my-opencode/utils` 一件（**isPlainRecord**，store.ts:1 唯一消费点；isRecord 原消费点随 reservation-reconciliation 排除件出局——二选一 vendor/语义移植，deviations 登记）；resume 族的 TeamSessionContext harness 耦合面执行时复核）+ claim 场景 e2e（**场景名 `team-task-claim`**——T1 仲裁 canonical 名表，本条与 T14 同注册）。
-- **做法**：上游语义原样随 vendor（锁 + 锁内重读、缺依赖视为可领、无环检测、无 `ready`、**无 `failed` 态**——上游提示词三处与 schema 矛盾，DSH 侧不照抄 `failed` 文案、v1 不增设失败终态，记差异，Q1b N1/N2）；`writeScopeWarnings` 的工具描述文案对齐上游 tasklist 语义；**`tasks/claims/` 与 `.highwatermark` 随 vendor 件自然成立**（T1 更正：Q1b §C-4 实证其为瞬时锁目录 + ID 水位，原「不移植」草案作废，覆盖基线 §1 已回填）。**【T7 评审遗留登记（2026-10-10）**：① `TeamStatusResult.tasks` 现为 `readonly []` 占位——本任务把它放宽为具名元素类型并同步测试断言，勿让 `[]` 类型变成需推翻的谎言类型；② briefing 去重账 `briefingInjectedMembers` 与 processedMessageIds 同为进程内保证域——本任务落 vendored 持久化（state.json）时**同 commit 携带**这两本账，否则冷启重物化重注/重投；③ briefing 账键 = (run, memberName)——若出现「同名成员换新 sessionId 重开」路径，新会话须重新武装该账（契约成文）。】
-- **判定**：✅ e2e：lead 建任务 → 成员 claim → `owner`/`claimedAt` 断言 + 依赖未就绪任务 `BlockedByError` 断言（注意：上游缺依赖视为可领，断言须按 vendored 语义钉）。
+> **仲裁注（T8 拆分，2026-10-10）**：T8 原条体量超出单任务评审面（vendor 合规 + 任务板接线 + 状态持久化换装三族），拆分为 T8a（vendor）→ T8b（接线+换装+e2e）。T8 原「产出/做法」两段的 vendor 闭包清单与语义纪律由两子条共同继承。
+
+- **产出**：`patches/omo-dsh/vendor/team-core/`（playbook 全套：`VENDOR-MANIFEST.json`（逐文件 sha256 + origin + deviations[]）+ `NOTICE.md`（modified-copy 声明）+ `package.json`（license 字段，D15）+ src/ 树）+ 漂移检测/license 登记同 commit。
+- **vendor 子集终态**（T2 双评审 32 文件 import 全分析）：**verbatim** = types.ts / member-parser.ts / config.ts / logger.ts / tolerant-fsync.ts / session-client.ts / team-registry 六件 / team-tasklist 七件（除 test-support.ts）/ team-state-store 十二件（除 reservation-reconciliation.ts）；**deviation** = team-state-store/active-resume.ts（删 `reconcileStaleReservationsForMember` 导入与 `reconcileMemberReservations` 调用/helper + 连删孤儿 `log` 导入——deviations[] 逐条登记）；**排除** = reservation-reconciliation.ts（`.delivering-` 预约回收不移植落点）；**不 vendor** = team-mailbox / team-layout-tmux / team-worktree（D4 + 范围护栏）。
+- **外部依赖**：`zod ^4.4.3`（npm 依赖入 vendor 包 package.json，verify-licenses 白名单核对——非「移植 zod 校验器」）+ `@oh-my-opencode/utils` 的 isPlainRecord 一件（语义移植进闭包文件（如 `src/plain-record.ts`，署名头注上游 packages/utils 源路径，origin = 本项目新增/语义移植成文）或 vendor 原文件——二选一成文）。
+- **合规钉**：上游测试文件若 vitest 兼容则随 vendor 携带并在 `pnpm vitest run` 跑绿（bun:test 则不携带 + 根 tsconfig 排除面不扩，D16 纪律）；**strip-only 合规实证**（vendored 件将被 omo-team 运行时 import（T8b），Node 24 type-stripping 不支持参数属性——逐文件 grep 证明无该写法或 deviation 改写并登记）；`THIRD_PARTY_NOTICES.md` Phase 5 小节新增（语义移植表先例格式）随本任务同 commit——注意该文件是合规面、由编码者按先例编辑（docs/plans 禁改面不含它）。
+- **判定**：✅ vendor 漂移检测绿（`scripts/vendor-manifest.mjs` 族）；`verify-licenses` 绿且计数变化全对应（57→57+zod/team-core 包——实测登记）； vendored 测试（若携带）绿；typecheck 三链不回归。
+- **证据**：✅ 2026-10-10——`patches/omo-dsh/vendor/team-core/` **47 件**（verbatim 37（逐字节 = 上游 blob，程序化全查）+ modified 7（active-resume 四点删节 + strip-only 参数属性改写 4 件 + exports 收窄 + package.json）+ 项目新增 3（plain-record.ts 语义移植 isPlainRecord / NOTICE.md / VENDOR-MANIFEST.json）+ 携带上游测试 10 件（bun:test→vitest alias）+ test-support 1 件）；playbook 全套（VENDOR-MANIFEST 47 files + 13 deviations + subset/counts 扩展 + NOTICE.md modified-copy + package.json license D15 + zod ^4.4.3 依赖）。实测：漂移门 `checked=367 violations=0`（team-core 自动发现）；`verify-licenses` **57→59**（+team-core SUL-1.0（D16 名门）+zod MIT，全对应）；vendored 测试 59/59（team-core）+137/137（vendor 域合计）；typecheck 三链不回归；全量 vitest 80f/1921t。**双评审通过**：轮 1 双 REJECT（收敛 MAJOR = tmux-core/utils 依赖删除未登记 + 「无其他变更」假话；opencode 另 MAJOR = member-parser/claim deviation 的测试证据不存在——插桩实证零构造）→ 修复轮 5 项（dependencies-narrowed 登记 + 假话尾句改实 + 证据改写为 tsc 位次等价 + strip-only 实跑构造验证 + NOTICE 计数 three→four + plain-record 措辞 + tsgo 脚本 note 登记）；delta 双 APPROVE（opencode FINDINGS none；mcode 1 NIT 措辞精确化——修复后仲裁独立确认）。**裁决注记**：test-support.ts 以测试辅助件携带（不计 31 件实现清单，FORK.md §3.3 已同步注记）；T8b 遗留 = 依赖边登记 + zod range 锁文件说明（见 T8b 判定行）。
+- **依赖**：P5-T7。**量级**：半天。
+
+### [ ] P5-T8b — 任务板接线 + 状态持久化换装 + claim 协议
+
+- **产出**：`src/tools/team-task.ts`（**team_task_create/list/get/update 四工具薄壳接线 vendored team-tasklist**（T8a 落地件）；claim 路由 `status:"claimed"` → vendored `claimTask`）+ **状态骨架 → vendored team-state-store 持久化换装**（T5 接缝转正：state.json 落盘 + resume；**同 commit 携带 briefingInjectedMembers + processedMessageIds 双账**——T7 评审遗留②）+ `team_status` 的 tasks 段接线（`readonly []` 占位放宽为具名元素类型——T7 评审遗留①）+ claim 场景 e2e（**场景名 `team-task-claim`**——T1 仲裁 canonical 名表，本条与 T14 同注册）。
+- **做法**：上游语义原样随 vendor（锁 + 锁内重读、缺依赖视为可领、无环检测、无 `ready`、**无 `failed` 态**——上游提示词三处与 schema 矛盾，DSH 侧不照抄 `failed` 文案、v1 不增设失败终态，记差异，Q1b N1/N2）；`writeScopeWarnings` 的工具描述文案对齐上游 tasklist 语义；**`tasks/claims/` 与 `.highwatermark` 随 vendor 件自然成立**（T1 更正：Q1b §C-4 实证其为瞬时锁目录 + ID 水位，原「不移植」草案作废，覆盖基线 §1 已回填）。**【T7 评审遗留登记（2026-10-10）**：① 见上（tasks 类型放宽）；② 见上（双账携带）；③ briefing 账键 = (run, memberName)——若出现「同名成员换新 sessionId 重开」路径，新会话须重新武装该账（契约成文）。】
+- **判定**：✅ e2e：lead 建任务 → 成员 claim → `owner`/`claimedAt` 断言 + 依赖未就绪任务 `BlockedByError` 断言（注意：上游缺依赖视为可领，断言须按 vendored 语义钉）+ **持久化换装断言**（重启后 team 状态/任务板/双账可恢复——resume 路径）；门 2/3 绿。**【T8a 评审遗留（2026-10-10）**：① **依赖边登记**——vendored `@oh-my-opencode/team-core` 目前无任何 workspace 包声明依赖（pnpm 严格 node_modules 下子路径不可解析），本任务开工第一件事 = omo-team/package.json 增依赖边；② vendored 依赖 range（zod ^4.4.3 现解析 4.6.5）随本仓锁文件走的成文说明（本任务或 T15 收口补）。】
 - **证据**：⬜
-- **依赖**：P5-T5。**量级**：4 小时。
+- **依赖**：P5-T8a + P5-T5。**量级**：1 天。
 
 ### [ ] P5-T9 — 拆除无孤儿 + stop-continuation team 语义
 
