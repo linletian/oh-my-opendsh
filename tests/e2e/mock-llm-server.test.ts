@@ -462,3 +462,104 @@ describe("wire-dialect rule (T8c)", () => {
     }
   });
 });
+
+// ── P5-T6 context capture: {{teamRunId}} in tool-call arguments ──────────────
+// The team lanes address a runtime-born UUID they cannot know at authoring
+// time; the capture reads it OUT OF THE REQUEST BODY (what a real model
+// copies from its own context), and an unsatisfiable placeholder answers 500.
+describe("P5-T6 mock context capture ({{teamRunId}})", () => {
+  const RUN_ID = "0f0e0d0c-0b0a-4908-8706-050403020100";
+
+  it("substitutes the placeholder from a teamRunId riding in a prior tool-result string", async () => {
+    const script: MockScript = {
+      lead: [
+        {
+          type: "tool_call",
+          name: "team_send_message",
+          arguments: { teamRunId: "{{teamRunId}}", to: "analyst", body: "hello" },
+        },
+      ],
+    };
+    const server = await startMockLlmServer({ script });
+    try {
+      // The request body carries the value where the real loop would carry
+      // it: inside a prior tool-result text (a nested JSON string).
+      const body = openAiBody("MOCKROLE=lead");
+      (body as { messages: unknown[] }).messages.push({
+        role: "tool",
+        content: JSON.stringify({ teamRunId: RUN_ID, status: "active" }),
+      });
+      const response = await postChat(server.baseUrl, body);
+      const capture = await readSseFully(response);
+      const args = capture.frames
+        .flatMap((frame) => frame.choices?.[0]?.delta?.tool_calls ?? [])
+        .map((call) => call.function?.arguments ?? "")
+        .join("");
+      expect(args).toContain(`"teamRunId":"${RUN_ID}"`);
+      expect(args).not.toContain("{{teamRunId}}");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("answers 500 LOUD when the placeholder has no source in this request body", async () => {
+    const script: MockScript = {
+      lead: [
+        { type: "tool_call", name: "team_send_message", arguments: { teamRunId: "{{teamRunId}}", to: "analyst", body: "x" } },
+      ],
+    };
+    const server = await startMockLlmServer({ script });
+    try {
+      const response = await postChat(server.baseUrl, openAiBody("MOCKROLE=lead"));
+      expect(response.status).toBe(500);
+      const payload = await response.json();
+      expect(String(JSON.stringify(payload))).toContain("mock_capture_failed");
+      expect(String(JSON.stringify(payload))).toContain("teamRunId");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("a step WITHOUT the placeholder replays byte-identical (capture is opt-in)", async () => {
+    const script: MockScript = {
+      lead: [{ type: "tool_call", name: "team_send_message", arguments: { teamRunId: "static-run-1", to: "lead" } }],
+    };
+    const server = await startMockLlmServer({ script });
+    try {
+      const response = await postChat(server.baseUrl, openAiBody("MOCKROLE=lead"));
+      const capture = await readSseFully(response);
+      const args = capture.frames
+        .flatMap((frame) => frame.choices?.[0]?.delta?.tool_calls ?? [])
+        .map((call) => call.function?.arguments ?? "")
+        .join("");
+      expect(args).toContain('"teamRunId":"static-run-1"');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("the LAST teamRunId in the body wins (freshest copy, multi-team history)", async () => {
+    const OTHER = "1a1a1a1a-2b2b-4c3c-4d4d-5e5e5e5e5e5e";
+    const script: MockScript = {
+      lead: [{ type: "tool_call", name: "team_send_message", arguments: { teamRunId: "{{teamRunId}}" } }],
+    };
+    const server = await startMockLlmServer({ script });
+    try {
+      const body = openAiBody("MOCKROLE=lead");
+      (body as { messages: unknown[] }).messages.push(
+        { role: "tool", content: JSON.stringify({ teamRunId: RUN_ID }) },
+        { role: "tool", content: JSON.stringify({ teamRunId: OTHER }) },
+      );
+      const response = await postChat(server.baseUrl, body);
+      const capture = await readSseFully(response);
+      const args = capture.frames
+        .flatMap((frame) => frame.choices?.[0]?.delta?.tool_calls ?? [])
+        .map((call) => call.function?.arguments ?? "")
+        .join("");
+      expect(args).toContain(`"teamRunId":"${OTHER}"`);
+      expect(args).not.toContain(RUN_ID);
+    } finally {
+      await server.close();
+    }
+  });
+});

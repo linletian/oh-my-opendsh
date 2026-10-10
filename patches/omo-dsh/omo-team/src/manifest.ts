@@ -287,7 +287,13 @@ const MANIFEST_ROWS = [
     nativeFace: '原生 ctx.subagents.sendMessage 相邻投递（lead↔member 直通；member↔member 非相邻 → lead 中转，记差异）；广播 = 工具层「仅 lead」纪律',
     disposition: 'ported',
     e2eScenario: 'team-create-and-message',
-    status: 'pending',
+    // P5-T6 翻行（refined 翻动规则：本行自身语义 + 全段场景绿）：交付面 =
+    // src/tools/team-message.ts（team_send_message 双面 + 错误族 + R-6 去重
+    // 账走 team-state.ts processedMessageIds）+ 单测 tests/omo-team/
+    // team-message.test.ts + e2e `team-create-and-message` 全段（双向消息 +
+    // 投递事件对 + 同 id 重投去重 + 离线唤醒金丝雀，Q-5b 模板）；boot
+    // marker 1/24→2/24 同 commit（boot-markers.test.ts / manifest.test.ts）。
+    status: 'ported',
     summary:
       '消息工具：帧格式 `Team message <id> from <name>:` 语义对齐；kind 载体——经原生投递承原生 \'agent-message\'，omo 自有帧 omo-team-*（Q-8）；同 id 重投去重 + 离线唤醒金丝雀（T6）；.delivering- 预约/TTL 记差异',
   },

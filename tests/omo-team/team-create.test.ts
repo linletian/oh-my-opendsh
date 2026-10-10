@@ -545,7 +545,7 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
 
 describe('P5-T5 briefing text discipline (Q-8 canary, unit half)', () => {
   it('briefing carries the no-delegation + report-to-lead + idle-is-fine sentences', () => {
-    const text = buildTeamBriefingText('pilot', 'worker-1')
+    const text = buildTeamBriefingText('pilot', 'worker-1', 'run-abc-123')
     expect(text).toContain('# Team Briefing')
     expect(text).toContain("'worker-1'")
     expect(text).toContain("'pilot'")
@@ -553,11 +553,18 @@ describe('P5-T5 briefing text discipline (Q-8 canary, unit half)', () => {
     expect(text).toContain('report your result to the lead')
     expect(text).toContain('idle is not an error')
     expect(text).toContain('team_send_message')
+    // P5-T6: the team coordinates paragraph — the machine-readable
+    // {"teamRunId":"<id>"} fragment is the member's ONLY durable source for
+    // the required teamRunId argument of team_send_message (the e2e mock
+    // captures it from the member lane's request body, verbatim).
+    expect(text).toContain('{"teamRunId":"run-abc-123"}')
+    expect(text).toContain('pass that teamRunId verbatim')
+    expect(text).toContain("'lead' is a valid `to` value")
   })
 
   it('briefing never embeds a member prompt (two-source separation)', () => {
     const canary = 'UNIQUE-CANARY-PROMPT-TEXT-9137'
-    const text = buildTeamBriefingText('pilot', 'worker-1')
+    const text = buildTeamBriefingText('pilot', 'worker-1', 'run-abc-123')
     expect(text).not.toContain(canary)
   })
 

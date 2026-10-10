@@ -18838,6 +18838,40 @@ const TEAM_MEMBER_ANALYST_REPLY =
 const TEAM_MEMBER_BUILDER_REPLY =
   'MOCK-TEAM-BUILDER-DONE-1a9f: changelog drafted, reporting to lead.'
 
+// ── P5-T6 messaging full segment: named bodies, static correlation ids ────────
+// The correlation ids are STATIC so the durable assertions can name the exact
+// frame text (`Team message <id> from <name>:`) on both sides, and so the
+// resend in lead turn 3 re-sends the SAME id — the dedup proof needs the id
+// to be knowable at authoring time. Only teamRunId is runtime-born, and the
+// mock captures it out of each lane's own request body ({{teamRunId}}).
+const TEAM_CORRID_A = 'a1a1a1a1-1111-4111-8111-aaaaaaaaaaaa' // lead → analyst
+const TEAM_CORRID_B = 'b2b2b2b2-2222-4222-8222-bbbbbbbbbbbb' // lead → builder (announcement)
+const TEAM_CORRID_ACK_A = 'c3c3c3c3-3333-4333-8333-cccccccccccc' // analyst → lead
+const TEAM_CORRID_ACK_B = 'd4d4d4d4-4444-4444-8444-dddddddddddd' // builder → lead
+
+const TEAM_MSG_TO_ANALYST_BODY =
+  'MOCK-T6-MSG-A-77e1: report your structure findings to the lead now.'
+const TEAM_MSG_TO_BUILDER_BODY =
+  'MOCK-T6-MSG-B-33c9: the changelog draft is due — announce status to the lead.'
+const TEAM_ACK_ANALYST_BODY =
+  'MOCK-T6-ACK-ANALYST-5f31: structure summarized, replying to lead over the native channel.'
+const TEAM_ACK_BUILDER_BODY =
+  'MOCK-T6-ACK-BUILDER-2c94: changelog drafted, replying to lead over the native channel.'
+
+const TEAM_MSG_PROMPT =
+  'Message both team members now: ask the analyst to report its structure findings, and announce to the builder that the changelog draft is due.'
+const TEAM_RESEND_PROMPT =
+  'Re-send the exact same analyst message with the SAME correlation id.'
+
+const TEAM_LEAD_MSG_SUMMARY =
+  'MOCK-TEAM-MSG-SENT-2e5d: both members messaged; acks are expected back here.'
+const TEAM_LEAD_RESEND_SUMMARY =
+  'MOCK-TEAM-MSG-DUP-b8f4: the resend was deduplicated — the analyst already has that message.'
+const TEAM_MEMBER_ANALYST_WAKE_SUMMARY =
+  'MOCK-TEAM-ANALYST-WAKE-6a2e: lead message received and acked back to the lead.'
+const TEAM_MEMBER_BUILDER_WAKE_SUMMARY =
+  'MOCK-TEAM-BUILDER-WAKE-9d4b: announcement received and acked back to the lead.'
+
 /**
  * The Q-8 canary anchor: a sentence that exists ONLY inside buildTeamBriefingText
  * (team-create.ts). It must be observable on the injected frame and absent from the
@@ -18847,19 +18881,91 @@ const TEAM_MEMBER_BUILDER_REPLY =
 const TEAM_BRIEFING_CANARY = 'must NOT spawn or delegate further children'
 
 /**
- * `team-create-and-message` script. The conductor (lead) lane: turn 1 emits the
- * team_create tool_call, then a summary text once the tool returns; turn 2 (the
- * followup) is the second team_create, which the gate refuses. The two member
- * lanes each reply once and end their turns.
+ * `team-create-and-message` script — the P5-T6 FULL SEGMENT (three lead turns,
+ * two member wake turns):
+ *   lead turn 1: team_create + created summary (the T5 shape, unchanged);
+ *   [driver parks here until BOTH members are settled AND offline — the
+ *    cold-wake precondition, see awaitTeamMembersIdle];
+ *   lead turn 2: ONE parallel batch — team_send_message to the analyst
+ *    (correlationId A) and to the builder (kind 'announcement', id B); the
+ *    teamRunId is captured out of the turn's own request body ({{teamRunId}},
+ *    the copy a real model reads off the team_create result);
+ *   lead turn 3: re-send to the analyst with the SAME id A → the tool's
+ *    dedup note must be the answer, not a second delivery;
+ *   member lanes: reply (turn 1), then on the WAKE turn ack to 'lead'
+ *    (member→lead is the native sendToParent edge — adjacency, not relay),
+ *    then a wake summary text; the tail replays so every lane closes.
  */
 function teamCreateAndMessageScript() {
   return {
     sisyphus: [
       { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
       { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'team_send_message',
+            arguments: {
+              teamRunId: '{{teamRunId}}',
+              to: TEAM_MEMBER_ANALYST,
+              body: TEAM_MSG_TO_ANALYST_BODY,
+              correlationId: TEAM_CORRID_A,
+            },
+          },
+          {
+            name: 'team_send_message',
+            arguments: {
+              teamRunId: '{{teamRunId}}',
+              to: TEAM_MEMBER_BUILDER,
+              body: TEAM_MSG_TO_BUILDER_BODY,
+              kind: 'announcement',
+              correlationId: TEAM_CORRID_B,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: TEAM_LEAD_MSG_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: TEAM_MEMBER_ANALYST,
+          body: TEAM_MSG_TO_ANALYST_BODY,
+          correlationId: TEAM_CORRID_A,
+        },
+      },
+      { type: 'text', text: TEAM_LEAD_RESEND_SUMMARY },
     ],
-    [TEAM_SEAT_ANALYST]: [{ type: 'text', text: TEAM_MEMBER_ANALYST_REPLY }],
-    [TEAM_SEAT_BUILDER]: [{ type: 'text', text: TEAM_MEMBER_BUILDER_REPLY }],
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: 'lead',
+          body: TEAM_ACK_ANALYST_BODY,
+          correlationId: TEAM_CORRID_ACK_A,
+        },
+      },
+      { type: 'text', text: TEAM_MEMBER_ANALYST_WAKE_SUMMARY },
+    ],
+    [TEAM_SEAT_BUILDER]: [
+      { type: 'text', text: TEAM_MEMBER_BUILDER_REPLY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: 'lead',
+          body: TEAM_ACK_BUILDER_BODY,
+          correlationId: TEAM_CORRID_ACK_B,
+        },
+      },
+      { type: 'text', text: TEAM_MEMBER_BUILDER_WAKE_SUMMARY },
+    ],
   }
 }
 
@@ -18920,12 +19026,136 @@ async function awaitTeamMembersSettled(boot, sandbox, sessionId, timeoutMs = 30_
 }
 
 /**
- * `team-create-and-message` assertions. Every fact is read back OUT of the durable
- * child logs and descriptors — the same surfaces the harness itself routes on — so
- * "per-member routing + injected briefing" cannot be a synthetic claim.
+ * P5-T6 `await` action — the cold-wake PRECONDITION: both member sessions have
+ * completed their spawn turn AND their durable logs have been QUIESCENT for
+ * `offlineQuiescenceMs` (no new events across the window). Turn completion is
+ * the settlement signal; the quiescence window covers the residency eviction
+ * that follows it (q5b measured ~4s between turn/end and Activation eviction —
+ * the window is deliberately past that), so the send in lead turn 2 is
+ * provably addressed to an OFFLINE member: a delivery that still starts a
+ * turn there is a WAKE, not a steer. The verdict is recorded (`reached`), a
+ * window that expires reports itself honestly.
+ */
+async function awaitTeamMembersIdle(
+  _boot, sandbox, sessionId, { timeoutMs = 60_000, offlineQuiescenceMs = 6_000 } = {},
+) {
+  const deadline = Date.now() + timeoutMs
+  let settledAt = 0
+  let snapshot = ''
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const children = logs.filter(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId),
+    )
+    const allSettled = children.length >= 2 && children.every((child) =>
+      (child.events ?? []).some(
+        (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+      ),
+    )
+    const nowSnapshot = children.map((child) => `${child.header.id}:${(child.events ?? []).length}`).sort().join('|')
+    if (!allSettled) {
+      settledAt = 0
+      snapshot = ''
+    } else if (settledAt === 0 || nowSnapshot !== snapshot) {
+      // settled now (or the logs moved again since the last look): the
+      // quiescence window RESTARTS on every movement — only silence counts.
+      settledAt = Date.now()
+      snapshot = nowSnapshot
+    } else if (Date.now() - settledAt >= offlineQuiescenceMs) {
+      return true
+    }
+    await sleep(500)
+  }
+  return false
+}
+
+/**
+ * P5-T6 settle hook for the messaging full segment. Waits (before stopDsh
+ * freezes the logs) until the whole round-trip is durable:
+ *   * the lead's log carries the dedup tool/result ('duplicate message id' —
+ *     the resend turn really ran and really deduplicated);
+ *   * BOTH members' acks spliced into the LEAD's log as native 'agent-message'
+ *     frames naming each member's senderSessionId;
+ *   * BOTH members received the lead's frame as a native 'agent-message'
+ *     splice AFTER their completed turn (the wake) and completed a second turn.
+ * A false return means the observation window expired — reported, not hidden.
+ */
+async function awaitTeamMessagingSettled(_boot, sandbox, sessionId, timeoutMs = 45_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
+    const children = logs.filter(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId),
+    )
+    if (leadLog !== undefined && children.length >= 2) {
+      const leadEvents = leadLog.events ?? []
+      const dedupDurable = leadEvents.some(
+        (event) => event.type === 'tool/result' && eventText(event).includes('duplicate message id'),
+      )
+      const ackedBack = children.every((child) =>
+        leadEvents.some((event) => agentMessageSplice(event, String(child.header.id)) !== undefined),
+      )
+      const membersAwake = children.every((child) => {
+        const events = child.events ?? []
+        const firstEnd = events.findIndex(
+          (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+        )
+        const spliceIndex = events.findIndex((event) => agentMessageSplice(event, String(sessionId)) !== undefined)
+        if (firstEnd < 0 || spliceIndex < 0 || spliceIndex <= firstEnd) return false
+        const after = events.slice(spliceIndex + 1)
+        return after.some((event) => event.type === 'turn/start')
+          && after.some((event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed')
+      })
+      if (dedupDurable && ackedBack && membersAwake) return true
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/** The event is an `agent/inbox/spliced` whose inserted carrier is a native
+ *  'agent-message' frame from `senderSessionId` (Q-8: omo never rewrites the
+ *  kind — this exact shape is the proof). Returns the splice event or undefined. */
+function agentMessageSplice(event, senderSessionId) {
+  if (event?.type !== 'agent/inbox/spliced') return undefined
+  const hit = (event.data?.inserted ?? []).find((inserted) => {
+    const source = inserted?.source ?? {}
+    return source.kind === 'agent-message' && String(source.senderSessionId ?? '') === String(senderSessionId)
+  })
+  return hit === undefined ? undefined : event
+}
+
+/** Concatenated text of every content block of every inserted carrier. */
+function splicedFrameText(event) {
+  return (event?.data?.inserted ?? [])
+    .map((inserted) => (inserted?.content ?? []).map((block) => (typeof block?.text === 'string' ? block.text : '')).join('\n'))
+    .join('\n')
+}
+
+/**
+ * `team-create-and-message` assertions — the P5-T6 FULL SEGMENT. Every fact is
+ * read back OUT of the durable logs and descriptors — the same surfaces the
+ * harness itself routes on — so "per-member routing + injected briefing +
+ * bidirectional messaging" cannot be a synthetic claim. The messaging half adds
+ * three families of proof:
+ *   1. DELIVERY: lead→member frames spliced at the members as native
+ *      'agent-message' carriers (target 'next-step', frame text verbatim
+ *      `Team message <id> from lead:`), member→lead acks spliced at the lead
+ *      naming each member's senderSessionId;
+ *   2. WAKE: each member's frame splices AFTER its completed turn and is
+ *      followed by turn/start + a second completed turn (Q-5b template), with
+ *      the REVERSE canary — the frozen window between turn/end and the splice
+ *      carries NO turn/step/assistant/user traffic;
+ *   3. DEDUP: the lead's resend (same correlation id) answers with the dedup
+ *      note and the analyst's log carries the frame EXACTLY once.
  */
 export function analyzeTeamCreateAndMessage(
-  { log, allLogs, requests, providersJson, bootLog, settleReached },
+  { log, allLogs, requests, providersJson, bootLog, settleReached, actionObservations },
   routes,
 ) {
   const events = log?.events ?? []
@@ -18970,10 +19200,114 @@ export function analyzeTeamCreateAndMessage(
   const nativePromptLeaksCanary = (childLog) =>
     nativePromptFrames(childLog).some((event) => messageContentText(event.data).includes(TEAM_BRIEFING_CANARY))
 
+  // ── P5-T6 messaging extractions (durable-log facts only) ─────────────────────
+  // The teamRunId the lanes actually addressed: read off the lead's OWN
+  // team_create result (the same copy the mock captured from the request body),
+  // so the briefing check below names the live run, not an authoring constant.
+  const teamRunIdFromResult = /"teamRunId":"([^"]+)"/.exec(createResult?.text ?? '')?.[1]
+
+  // lead→member frames at a member: native 'agent-message' splices authored by
+  // the LEAD whose frame text names the correlation id.
+  const leadFramesAt = (childLog, correlationId) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        agentMessageSplice(event, leadId) !== undefined
+        && splicedFrameText(event).includes(`Team message ${correlationId} from lead:`),
+    )
+  // member→lead acks at the LEAD: native 'agent-message' splices authored by
+  // the member (senderSessionId), frame naming the member.
+  const memberAcksAtLead = (memberId, memberName, correlationId) =>
+    events.filter(
+      (event) =>
+        agentMessageSplice(event, memberId) !== undefined
+        && splicedFrameText(event).includes(`Team message ${correlationId} from ${memberName}:`),
+    )
+  // The member's own team_send_message tool/result JSON (its ack decision).
+  const memberSendResults = (childLog) =>
+    toolResultParts(childLog?.events ?? []).filter((part) => part.text.includes('"delivered"'))
+
+  // Q-5b wake canary at one member: frame splices AFTER the completed spawn
+  // turn, then turn/start, then a SECOND completed turn. Reverse canary: the
+  // frozen window (turn/end, splice) carries no turn/step/assistant/user/
+  // request traffic. ONE documented exception rides in the window: the omo-team
+  // briefing re-injection (briefingFrames at wake — cold resume re-materializes
+  // the member, agent/created re-fires, the briefing arm injects again; kind
+  // 'omo-team-briefing', NOT turn traffic; NOTES-7 of the task book records the
+  // per-materialization re-injection as a T7 dedup candidate). The window still
+  // forbids every OTHER splice — above all any second 'agent-message' carrier,
+  // which would mean traffic the scenario never sent.
+  const wakeCanaryAt = (childLog, correlationId) => {
+    const childEvents = childLog?.events ?? []
+    const firstEnd = childEvents.findIndex(
+      (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+    )
+    if (firstEnd < 0) return false
+    const spliceIndex = childEvents.findIndex(
+      (event) => leadFramesAt(childLog, correlationId).includes(event),
+    )
+    if (spliceIndex < 0 || spliceIndex <= firstEnd) return false
+    const window = childEvents.slice(firstEnd + 1, spliceIndex)
+    const frozen = window.every((event) => {
+      if (event.type === 'turn/start' || event.type === 'turn/end') return false
+      if (event.type === 'user/message') return false
+      if (String(event.type).startsWith('step')) return false
+      if (String(event.type).startsWith('assistant')) return false
+      if (String(event.type).startsWith('request')) return false
+      if (event.type === 'agent/inbox/spliced') {
+        // The frozen window admits EXACTLY one kind: 'omo-team-briefing' —
+        // the sole legal frame there today (the cold-resume briefing
+        // re-injection). The old 'omo-team-*' PREFIX was too wide: any future
+        // omo-team frame could have parked in the window unremarked. Narrowed
+        // per review T6-4; the frame-count-frozen hard assertion belongs to
+        // T7, and when it lands this kind-whitelist exception is removed.
+        const carriers = event.data?.inserted ?? []
+        return carriers.length > 0 && carriers.every((inserted) =>
+          String((inserted?.source ?? {}).kind ?? '') === 'omo-team-briefing',
+        )
+      }
+      return true
+    })
+    const after = childEvents.slice(spliceIndex + 1)
+    return frozen
+      && after.some((event) => event.type === 'turn/start')
+      && after.some((event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed')
+  }
+  // Delivery event PAIR across the process boundary (same-clock epoch ms):
+  // lead's send tool/call ≤ member's splice ≤ member's wake turn/start.
+  const sendCallTime = correlationId => {
+    const hit = events.find(
+      (event) => event.type === 'tool/call' && event.data?.name === 'team_send_message'
+        && eventText(event).includes(correlationId),
+    )
+    return hit?.time
+  }
+  const deliveryPairAt = (childLog, correlationId) => {
+    const callTime = sendCallTime(correlationId)
+    const splices = leadFramesAt(childLog, correlationId)
+    if (callTime === undefined || splices.length === 0) return false
+    const spliceTime = splices[0].time
+    const wakeStart = (childLog?.events ?? []).find(
+      (event) => event.type === 'turn/start' && event.time >= spliceTime,
+    )
+    return splices.length === 1 && spliceTime >= callTime && wakeStart !== undefined
+  }
+
+  const leadSendCalls = events.filter(
+    (event) => event.type === 'tool/call' && event.data?.name === 'team_send_message',
+  )
+  const leadSendResults = toolResultParts(events).filter((part) => part.text.includes('"delivered"'))
+  const dedupResult = toolResultParts(events).find(
+    (part) => part.text.includes('duplicate message id') && part.text.includes(TEAM_CORRID_A),
+  )
+
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // The boot marker flipped 0/24 → 1/24 in THIS commit: team_create registered.
+    // The boot marker flipped 1/24 → 2/24 in THIS commit: team_create AND
+    // team_send_message registered (the registration loop prints one line per
+    // registered row; the summary counts 2/24).
     teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
+    teamMessageSurfaceRegisteredAtBoot:
+      (bootLog ?? '').includes('[omo-team] team surface team_send_message registered'),
     leadCalledTeamCreate: createCall !== undefined,
     teamCreateResultCarriesTeamRunId: createResult !== undefined,
     teamCreateResultNotAnError: createResult !== undefined && createResult.isError !== true,
@@ -19018,10 +19352,6 @@ export function analyzeTeamCreateAndMessage(
     bothMembersCompletedTurns:
       (analystLog?.events ?? []).some((e) => e.type === 'turn/end' && e.data?.reason?.kind === 'completed')
       && (builderLog?.events ?? []).some((e) => e.type === 'turn/end' && e.data?.reason?.kind === 'completed'),
-    mockSawAllThreeLanes:
-      requests.filter((r) => r.role === 'sisyphus').length >= 2
-      && requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 1
-      && requests.filter((r) => r.role === TEAM_SEAT_BUILDER).length >= 1,
     // Reverse canary: team members spawn NO grandchildren (fork (B) no-child rule).
     noGrandchildrenUnderMembers: (allLogs ?? []).every(
       (candidate) =>
@@ -19029,6 +19359,76 @@ export function analyzeTeamCreateAndMessage(
         && String(candidate.header?.parentSession) !== String(builderLog?.header?.id),
     ),
     settleReachedChildren: settleReached !== false,
+
+    // ── P5-T6 messaging full segment ────────────────────────────────────────────
+    // The park happened: both members were settled AND quiescent before the
+    // send turn (the `await` action's recorded verdict, not an assumption).
+    membersIdleBeforeMessaging: (actionObservations ?? []).some(
+      (row) => row.reached === true && String(row.note).includes('cold-wake precondition'),
+    ),
+    // The member face really carries the tool: the seat lanes called it and
+    // the advertised tool list of the member requests names it.
+    membersAdvertisedTeamSendMessage:
+      (advertisedToolNames(analystLog?.events ?? []) ?? []).includes('team_send_message')
+      && (advertisedToolNames(builderLog?.events ?? []) ?? []).includes('team_send_message'),
+    // The briefing coordinates carry the LIVE teamRunId (the same value the
+    // lead's team_create result derived) — the copy source for the member lanes.
+    briefingCarriesLiveTeamRunId:
+      teamRunIdFromResult !== undefined
+      && briefingFrames(analystLog).some(
+        (event) => messageContentText(event.data).includes(`"teamRunId":"${teamRunIdFromResult}"`),
+      ),
+    // lead turn 2 called team_send_message TWICE in one parallel batch and
+    // turn 3 once more (the resend): three calls total, all three results
+    // durable, none an error.
+    leadCalledTeamSendMessageThreeTimes: leadSendCalls.length === 3,
+    leadSendResultsAllDeliveredOrDedup:
+      leadSendResults.length === 3 && leadSendResults.every((part) => part.isError !== true),
+    // DELIVERY at the members: native 'agent-message' splices, target
+    // 'next-step', frame text verbatim — analyst got A once, builder got B once.
+    analystReceivedLeadFrame:
+      leadFramesAt(analystLog, TEAM_CORRID_A).length === 1
+      && leadFramesAt(analystLog, TEAM_CORRID_A)[0].data?.target === 'next-step',
+    builderReceivedLeadFrame:
+      leadFramesAt(builderLog, TEAM_CORRID_B).length === 1
+      && leadFramesAt(builderLog, TEAM_CORRID_B)[0].data?.target === 'next-step',
+    // The body rode inside the frame (not just the id in the prefix).
+    analystFrameCarriesBody: splicedFrameText(leadFramesAt(analystLog, TEAM_CORRID_A)[0]).includes(TEAM_MSG_TO_ANALYST_BODY),
+    builderFrameCarriesBody: splicedFrameText(leadFramesAt(builderLog, TEAM_CORRID_B)[0]).includes(TEAM_MSG_TO_BUILDER_BODY),
+    // member→lead acks spliced at the LEAD, native kind, senderSessionId named.
+    analystAckReachedLead: memberAcksAtLead(analystLog?.header?.id, TEAM_MEMBER_ANALYST, TEAM_CORRID_ACK_A).length >= 1,
+    builderAckReachedLead: memberAcksAtLead(builderLog?.header?.id, TEAM_MEMBER_BUILDER, TEAM_CORRID_ACK_B).length >= 1,
+    // The acks were the MEMBERS' own tool decisions (delivered:true, not relayed).
+    analystAckDeliveredDirect: memberSendResults(analystLog).some((part) => part.text.includes('"delivered":true')),
+    builderAckDeliveredDirect: memberSendResults(builderLog).some((part) => part.text.includes('"delivered":true')),
+    // WAKE canary (Q-5b template) at BOTH members: frame AFTER the completed
+    // spawn turn, frozen window between, turn/start then a second completed turn.
+    offlineWakeCanaryAnalyst: wakeCanaryAt(analystLog, TEAM_CORRID_A),
+    offlineWakeCanaryBuilder: wakeCanaryAt(builderLog, TEAM_CORRID_B),
+    // Delivery event pair across the process boundary (same-clock epoch ms).
+    deliveryEventPairAnalyst: deliveryPairAt(analystLog, TEAM_CORRID_A),
+    deliveryEventPairBuilder: deliveryPairAt(builderLog, TEAM_CORRID_B),
+    // DEDUP: the same-id resend answered with the named dedup note, and the
+    // analyst's log carries the A-frame EXACTLY once (no second delivery).
+    sameIdResendDeduplicated: dedupResult !== undefined,
+    analystFrameDeliveredExactlyOnce: leadFramesAt(analystLog, TEAM_CORRID_A).length === 1,
+    // Q-8: nobody forged a native-kind frame — no splice anywhere carries a
+    // self-invented 'team-message' kind (omo's own frames are omo-team-*).
+    noForgedNativeMessageKind: (allLogs ?? []).every(
+      (candidate) => (candidate.events ?? []).every(
+        (event) => event.type !== 'agent/inbox/spliced'
+          || !(event.data?.inserted ?? []).some((inserted) => (inserted?.source ?? {}).kind === 'team-message'),
+      ),
+    ),
+    // The lanes really ran the messaging turns (lead 6+ requests across three
+    // turns, each member 3+ across spawn + wake). THE ONLY definition of this
+    // check: the T5 spawn-only gate (lead 2+, each member 1+) was a duplicate
+    // object key silently overridden by this stricter one — removed per review
+    // T6-5, its intent subsumed here (6+ ⊇ 2+, 3+ ⊇ 1+).
+    mockSawAllThreeLanes:
+      requests.filter((r) => r.role === 'sisyphus').length >= 6
+      && requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 3
+      && requests.filter((r) => r.role === TEAM_SEAT_BUILDER).length >= 3,
   }
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
   return {
@@ -19042,6 +19442,14 @@ export function analyzeTeamCreateAndMessage(
       builderBriefingFrameCount: briefingFrames(builderLog).length,
       nativePromptFrameCount: nativePromptFrames(analystLog).length + nativePromptFrames(builderLog).length,
       mockRequestRoles: requests.map((request) => request.role),
+      // P5-T6: the frame texts and the lead's three send results, verbatim,
+      // so a reviewer can read the exact wire the tool produced.
+      teamRunId: teamRunIdFromResult ?? null,
+      analystLeadFrame: splicedFrameText(leadFramesAt(analystLog, TEAM_CORRID_A)[0]) ?? null,
+      builderLeadFrame: splicedFrameText(leadFramesAt(builderLog, TEAM_CORRID_B)[0]) ?? null,
+      analystAckFrame: splicedFrameText(memberAcksAtLead(analystLog?.header?.id, TEAM_MEMBER_ANALYST, TEAM_CORRID_ACK_A)[0]) ?? null,
+      leadSendResultTexts: leadSendResults.map((part) => part.text),
+      actionObservations: actionObservations ?? null,
     },
   }
 }
@@ -19752,14 +20160,28 @@ const SCENARIOS = [
     // receives its standing orders as an injected briefing frame (source.kind
     // 'omo-team-briefing') that is SEPARATE from the native spawn prompt (Q-8).
     name: 'team-create-and-message',
-    prompt: TEAM_CREATE_PROMPT,
+    // P5-T6 FULL SEGMENT (the T5 create-and-listen shape grew its messaging
+    // half): three lead turns with a PARK between them — create, then WAIT
+    // until both members are settled AND offline (the cold-wake precondition),
+    // then the send batch, then the same-id resend that must deduplicate.
+    // `actions` is the only shape that expresses the park BETWEEN turns.
+    actions: [
+      { kind: 'prompt', text: TEAM_CREATE_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamMembersIdle,
+        note: 'both members settled and offline (cold-wake precondition)',
+      },
+      { kind: 'prompt', text: TEAM_MSG_PROMPT },
+      { kind: 'prompt', text: TEAM_RESEND_PROMPT },
+    ],
     // The lead lane is the conductor (stamped into the omo-agents copy as usual);
     // the two MEMBER lanes are omo-team seats, stamped into a STAGED omo-team copy.
     roles: ['sisyphus'],
     teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
     stageOmoTeamCopy: true,
     script: teamCreateAndMessageScript,
-    settle: awaitTeamMembersSettled,
+    settle: awaitTeamMessagingSettled,
     analyze: analyzeTeamCreateAndMessage,
   },
   {
@@ -20150,6 +20572,9 @@ async function runScenario(def, baseRoutes) {
     // prompt instead — the Web UI's own fallback
     // (dsh-client-ui-commands/lib/client.js:796) — which becomes the 对照 turn.
     const commandResults = []
+    // P5-T6: the verdicts of `await` actions, in order, so the analysis can
+    // distinguish 'the condition was observed' from 'the window expired'.
+    const actionObservations = []
     let turnsSeen = 0
     let log
 
@@ -20182,6 +20607,21 @@ async function runScenario(def, baseRoutes) {
             `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} awaited the first goal `
             + `round before the next action: ${rounds} round(s) durable (0 = the window expired, the `
             + 'analysis still reports the honest FAIL)',
+          )
+          continue
+        }
+        // P5-T6: a scenario may need to WAIT for a durable-log condition between
+        // two turns (the messaging scenario parks the conductor until both members
+        // are settled AND offline, so the delivery is provably a wake, not a steer).
+        // The hook returns a boolean (or a truthy observation); the verdict is
+        // RECORDED into `actionObservations` — a window that expired is reported,
+        // never silently skipped.
+        if (action.kind === 'await') {
+          const reached = await action.until(boot, sandbox, created.sessionId)
+          actionObservations.push({ note: action.note ?? 'await', reached: reached === true })
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} await `
+            + `${JSON.stringify(action.note ?? '')} → reached=${reached === true}`,
           )
           continue
         }
@@ -20313,6 +20753,7 @@ async function runScenario(def, baseRoutes) {
         bootLog: boot.log(),
         markerLanding,
         commandResults,
+        actionObservations,
         settleReached,
         ...(def.analysisInput?.(sandbox, setup) ?? {}),
       },

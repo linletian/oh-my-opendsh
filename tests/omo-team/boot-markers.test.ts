@@ -53,18 +53,19 @@ import {
  * derivation it stands in for never needs an edit.
  */
 const EXPECTED_SUMMARY_LINE =
-  '[omo-team] loaded: manifest 24 entries (pending=21, ported=1, recorded=2) — 1/24 team surfaces registered'
+  '[omo-team] loaded: manifest 24 entries (pending=20, ported=2, recorded=2) — 2/24 team surfaces registered'
 
 /**
- * P5-T5 landed the FIRST registrar (`team_create`), so the honest `<r>` is 1
- * and the pinned line above carries it — the flip of this list and of the
- * pinned line is the SAME-commit friction the T3 comment predicted: the row
- * flipped status in manifest.ts, the registrar landed in TEAM_REGISTRARS, and
- * both halves meet in the line the probe re-derives without an edit
- * (scripts/concerto-mode-probe.sh). Ids are resolved through a lookup that
- * throws on a renamed id (a rename must fail HERE, not silently register less).
+ * P5-T5 landed the FIRST registrar (`team_create`); P5-T6 lands the second
+ * (`team_send_message`), so the honest `<r>` is 2 and the pinned line above
+ * carries it — the flip of this list and of the pinned line is the SAME-commit
+ * friction the T3 comment predicted: the row flipped status in manifest.ts, the
+ * registrar landed in TEAM_REGISTRARS, and both halves meet in the line the
+ * probe re-derives without an edit (scripts/concerto-mode-probe.sh). Ids are
+ * resolved through a lookup that throws on a renamed id (a rename must fail
+ * HERE, not silently register less).
  */
-const REAL_REGISTERED_IDS: readonly string[] = ['team_create']
+const REAL_REGISTERED_IDS: readonly string[] = ['team_create', 'team_send_message']
 
 function registeredRows(ids: readonly string[]): TeamManifestEntry[] {
   return ids.map((id) => {
@@ -110,10 +111,12 @@ function fullRoster(overrides: ReadonlyArray<Partial<TeamManifestEntry>> = []): 
 /**
  * The loop's ctx stand-in. P5-T3 widened nothing (every member optional, the
  * registry empty); P5-T5 promoted `on` + `subagents` to REQUIRED (index.ts's
- * promotion pair), so the stand-in carries inert stubs of exactly those two:
- * `on` records nothing and hands back a disposer, `subagents` throws on any
- * call — a loop test that actually spawned a member would be the bug this
- * stub catches. Tests override either member when they need to observe more.
+ * promotion pair); P5-T6 promoted `agents` and widened `subagents` with
+ * `sendMessage` (the same pair, exercised a second time) — so the stand-in
+ * carries inert stubs of exactly those: `on` records nothing and hands back a
+ * disposer, `subagents` throws on any call, `agents.get` answers `undefined`
+ * (a loop test that really resolved a live Agent would be the bug this stub
+ * catches). Tests override either member when they need to observe more.
  */
 function ctx(overrides: Partial<TeamRegistrationContext> = {}): TeamRegistrationContext {
   return {
@@ -128,6 +131,12 @@ function ctx(overrides: Partial<TeamRegistrationContext> = {}): TeamRegistration
       drainContinuableChildren: async () => {
         throw new Error('ctx-stub: drainContinuableChildren must not be called by a registration-loop test')
       },
+      sendMessage: async () => {
+        throw new Error('ctx-stub: sendMessage must not be called by a registration-loop test')
+      },
+    },
+    agents: {
+      get: () => undefined,
     },
     ...overrides,
   }
@@ -143,14 +152,15 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', (
   it('reports the loop outcome, never a rounding of the manifest statuses', () => {
     // The `registered` half of the line comes from the loop's real output, not
     // from the manifest's statuses — so the REAL roster with NOTHING registered
-    // reads `0/24` even though one row is ported (T5's row before the loop ran
-    // is exactly this state), and one registered row reads `1/24`.
+    // reads `0/24` even though two rows are ported (the state between T6's
+    // manifest flip and the loop's run is exactly this), and one registered row
+    // reads `1/24`.
     const portedStandIn = registeredRows([]).concat(row({ id: 'team_send_message', status: 'ported' }))
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, [])).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=21, ported=1, recorded=2) — 0/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=20, ported=2, recorded=2) — 0/24 team surfaces registered',
     )
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, portedStandIn)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=21, ported=1, recorded=2) — 1/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=20, ported=2, recorded=2) — 1/24 team surfaces registered',
     )
   })
 
@@ -248,24 +258,28 @@ describe('P5-T3 per-surface and failure lines', () => {
 })
 
 describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal', () => {
-  it('P5-T5: the real manifest + the real registry log the registered line THEN the summary', () => {
+  it('P5-T6: the real manifest + the real registry log the registered lines THEN the summary', () => {
     // The mount-state proof cold-start.sh and the probe grep for: at P5-T3 the
     // registry was empty and the summary stood alone; with `team_create` landed
-    // the honest boot is exactly TWO lines — the per-surface registered line and
-    // the summary carrying `1/24` — and still no FAILED / validation line.
+    // the honest boot was TWO lines; with the message surface landed at T6 the
+    // honest boot is exactly THREE lines — two per-surface registered lines in
+    // roster order and the summary carrying `2/24` — still no FAILED /
+    // validation line.
     const lines: string[] = []
     runTeamRegistrations(ctx(), TEAM_MANIFEST, TEAM_REGISTRARS, (line) => lines.push(line))
     expect(lines).toEqual([
       '[omo-team] team surface team_create registered',
+      '[omo-team] team surface team_send_message registered',
       EXPECTED_SUMMARY_LINE,
     ])
   })
 
-  it('the registry table is exactly the landed rows (T6+ must flip this red)', () => {
+  it('the registry table is exactly the landed rows (T7+ must flip this red)', () => {
     // Hand-placed pin, same intended friction as the summary line above: T5
-    // landed `team_create`; when T6 lands the message surface, this goes red in
-    // the same commit and the flip is reviewed, not discovered.
-    expect(Object.keys(TEAM_REGISTRARS)).toEqual(['team_create'])
+    // landed `team_create`, T6 landed the message surface; when T7 lands the
+    // shutdown pair, this goes red in the same commit and the flip is reviewed,
+    // not discovered.
+    expect(Object.keys(TEAM_REGISTRARS)).toEqual(['team_create', 'team_send_message'])
   })
 
   it('a registrar that throws logs FAILED and the loop keeps going (P2-T16)', () => {

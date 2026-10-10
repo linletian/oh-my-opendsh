@@ -94,13 +94,15 @@
 - **产出**：`src/tools/team-message.ts`（`team_send` 语义 → **(B) 已定：原生 `ctx.subagents.sendMessage` 相邻投递——lead↔member 直通；member↔member 非相邻，经 lead 中转并记差异**）+ 广播「仅 lead」工具层纪律（Q-5 已成文）；重投去重 e2e 断言（R-6）。
 - **做法**：消息帧格式对齐上游（`Team message <id> from <name>:` 帧语义——**经原生投递的载体承原生 kind `'agent-message'`，omo 自有帧才用 `omo-team-*`**，T1 Q-8 裁定）；离线成员投递 → 醒来的金丝雀断言（fallback-wake 原生覆盖的承重场景，Q-5 终态：原生投递统一经 inbox 准入、无 live-fallback 岔路——Q-5b 实证 warm 唤醒，cold 恢复本任务 e2e 断言）；不移植 `.delivering-` 预约语义，差异成文。
 - **判定**：✅ `team-create-and-message` 全段绿（双向消息 + 投递事件对 + 同 id 重投去重断言 + 离线唤醒断言）。
-- **证据**：⬜
+- **证据**：✅ 2026-10-10——`src/tools/team-message.ts`（相邻投递 lead↔member 直通；member↔member 经 lead 中转帧注 `(relayed via lead)`，活 lead 判别式联合随 target 复用无竞态；广播仅 lead 具名拒「broadcast requires lead role」；R-6 去重账先记后投 reservation 语义——单投失败补偿退账、广播部分失败不退（宁漏不重）+ 错误文本携已投计数；帧格式 `Team message <id> from <name>:`；载体承原生 'agent-message' kind 不改写；payload 32KB 具名上限、maxMessagesPerRun v1 不执法记差异）+ `team-state.ts`（processedMessageIds 台账三方法 + TEAM_MESSAGE_DELIVERABLE_PHASES）+ 角色分发接线（成员面/lead 面同装）+ 单测 34 例 + **e2e `team-create-and-message` 全段**（43 检查：双向消息帧逐字 + 投递事件对跨进程同钟 + 同 id 重投恰一次 + 离线唤醒正反金丝雀 + 冻结窗收窄至恰 omo-team-briefing）+ mock-llm-server `{{teamRunId}}` 捕获（无源响亮 500）。实测：门 3 **36/36**（双评审各自独立复跑 EXIT 0）；vitest 67f/1800t；typecheck 三链；cold-start marker 2/24；门 4/5/6/7/8 不回归。**双评审通过**：轮 1 B REJECT（MAJOR「R-6 头注与实现矛盾」——头注写「受理后入账」实现是 reserve-first——+3 MINOR）/ A APPROVE（1 MINOR+3 NIT）；修复轮 8 项落毕；delta 再审双 APPROVE（残留 3 项 nit 级：reservation 消歧/先判后取/广播计数文案——修复后仲裁独立确认提交）。**manifest team_send_message 行翻 ported（refined 规则）**。遗留登记：briefing 重注入治理（T6 NOTES-7 实证）已归 T7 仲裁增补；relay/broadcast e2e 承重断言已归 T14 仲裁增补。
 - **依赖**：P5-T5。**量级**：1 天。
 
 ### [ ] P5-T7 — 关停握手与 `team_delete` 语义
 
+> **仲裁注（team_status 归属，2026-10-10）**：任务书未给 `team_status` 派任务——规划缝隙，仲裁补位：**team_status 随本任务（T7）落地**（生命周期查询与握手/拆除同族；聚合面 = 状态骨架成员/状态/握手态，任务板段在 T8 vendored tasklist 到位后接线——T7 落地时 tasks 段为空并注释成文，T8 同 commit 补全）。
+
 - **产出**：`src/tools/team-shutdown.ts` + `src/tools/team-delete.ts`（**Q-5 已裁 = 语义移植**：lead 询问 → 成员批准/拒绝 → interrupt/drain；握手无自动超时与上游同构——超时语义由提示词承担 + closure invariant，Q1a §5.4 实证）；`team_delete` 的「活跃成员拒删，`force:true` 强删」语义（v5 调查报告 §2.1-4；orphaned/deleting 旁路由 (B) 状态机承接）。
-- **做法**：**(B) 下 delete 底层 = 原生 `interrupt`（保 inbox）+ continuable drain/disposal 组合**；所有拆除走 §4.5 的断言面；握手状态机单测（request/approve/reject/超时四路——超时路 = 提示词语义的确定性部分 + 状态滞留可观测）。
+- **做法**：**(B) 下 delete 底层 = 原生 `interrupt`（保 inbox）+ continuable drain/disposal 组合**；所有拆除走 §4.5 的断言面；握手状态机单测（request/approve/reject/超时四路——超时路 = 提示词语义的确定性部分 + 状态滞留可观测）。**【仲裁增补（T6 NOTES-7 实证，2026-10-10）**：briefing 重注入治理随本任务——冷启 wake 会重 materialize 成员 → `agent/created` 重放 → briefing 每物化重注一帧（T6 e2e 实测 `analystBriefingFrameCount:2`）；本任务把 briefing 改为**按 teamRunId+member 去重注入**（状态骨架记已注入账，重放跳过），并补单测 + e2e 断言（重唤醒后 briefing 帧数不增）。】
 - **判定**：✅ 单测四路 + e2e 关停场景（**场景名 `team-shutdown-handshake`**——T1 仲裁 canonical 名表，本条与 T14 同注册）（成员拒 → team 存活；批准 → 成员 interrupt 且 inbox 保留断言）。
 - **证据**：⬜
 - **依赖**：P5-T6。**量级**：4 小时。
@@ -172,7 +174,7 @@
 ### [ ] P5-T14 — team 场景群补全 + 门扩展
 
 - **产出**：drive.mjs 场景群终态（**canonical 七名**——T1 仲裁定名并已在 T7/T8/T12 同注册：`team-create-and-message` / `team-nested-create-denied` / `team-teardown-no-orphans` / `team-shutdown-handshake`（T7）/ `team-task-claim`（T8）/ `team-keyword-mode` / `stop-continuation-team`）；门 4（第四插行 + team Config schema 校验）；门 6（c 组延续编号：四插行 / omo-team 署名覆盖 / manifest↔文件集合 / vendor 存在性 / **c14 并集扩展裁定**——phase5-team.md 含 H-号段条目时入 `COVERAGE_BASELINE_MDS`，同 commit）；门 8（probe/proofs 扩展）。
-- **做法**：每场景含对照断言与反向金丝雀（计划书 §2 纪律）；门扩展只加严；变异反跑自证（门 6 新断言至少一条删行/改行变异实证）。
+- **做法**：每场景含对照断言与反向金丝雀（计划书 §2 纪律）；门扩展只加严；变异反跑自证（门 6 新断言至少一条删行/改行变异实证）。**【仲裁增补（双评审收敛，2026-10-10）**：T6 的 relay（member↔member lead 中转）与 broadcast（仅 lead）两面当前只有单测、无 e2e——本任务给 team-create-and-message 或新场景补**至少一条真实中转断言 + 一条广播断言**（帧注 `(relayed via lead)` + durable source = lead 的 'agent-message'），否则该路径回归网只有结构 mock（mcode NOTES-3 / opencode NOTES 双登记）。】
 - **判定**：✅ 8 门全绿；场景 verdict JSON 含明细断言；变异实证记录。
 - **证据**：⬜
 - **依赖**：P5-T5…P5-T13 全部。**量级**：1.5 天。

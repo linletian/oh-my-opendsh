@@ -118,10 +118,40 @@ export const TEAM_LEAD_SENTINEL = 'lead'
 export const TEAM_RUNTIME_STATE_VERSION = 1
 
 /**
+ * 单条消息 payload 上限，上游 team_mode 配置 `message_payload_max_bytes`
+ * （Q1a §7 / Q1b :391 逐字：`z.number().int().min(1024).default(32768)`）的
+ * **同名常量默认值**——v1 不可配置（配置面随 T8 vendored config 落地，差异
+ * 记此），执法在 tools/team-message.ts 的 PayloadTooLarge 臂（上游
+ * PayloadTooLargeError「payload exceeds 32 KB」语义，send.ts §8 错误族在档）。
+ */
+export const TEAM_MESSAGE_PAYLOAD_MAX_BYTES = 32768
+
+/**
+ * 消息可投递的成员阶段（v1 词表收窄，记差异）：上游 mailbox 的收件人合法集
+ * = activeMembers + reservedRecipients + leadRecipient（send.ts:82-90，Q1a §8
+ * 在档）——「active」在上游是成员注册账语义。(B) 形态没有独立成员注册账，
+ * 活跃判定落在本状态骨架的 phase 上：**running（在途 turn）与 idle（turn 间
+ * 驻留/离线，Q-5b：原生 coldResume 把缺席成员原样唤醒）两态可收件**；
+ * pending（startContinuable 未竟，无稳定收件身份）、errored / completed /
+ * shutdown_approved（终态或准终态，T7 前除握手域外无人写入）拒收——
+ * `unknown or inactive team recipient: <name>` 具名（上游 InvalidRecipientError
+ * 语义逐字承载，send.ts:46-51）。**idle 写入方待 T9**：当前无生产者写
+ * idle（v1 的 phase 写入面只产 pending/running/终态族），常量实际等价
+ * {running}——'idle' 是为 cold-resume 驻留语义预置的席位，不是现役投递面。
+ */
+export const TEAM_MESSAGE_DELIVERABLE_PHASES: ReadonlySet<TeamMemberPhase> = new Set<TeamMemberPhase>([
+  'running',
+  'idle',
+])
+
+/**
  * bounds 默认五值，上游 RuntimeBoundsSchema（types.ts:175-181）逐字同值：
  * 8 / 4 / 10000 / 120 / 500。v1 只有 maxMembers 被 team_create 执行链
  * **实际执法**（成员数上限在 team-spec.ts 解析层同值双闸）；其余四枚是
- * 形状事实 + T6/T7 的执法锚。
+ * 形状事实 + T6/T7 的执法锚。**执法面差异**：T6 消息域 v1 仅执法 payload
+ * 32 KB（team-message.ts 的 PayloadTooLarge 臂）；`maxMessagesPerRun`
+ * （10000/run）v1 不执法，差异记此（Q1a §7 对账口径；team-message.ts
+ * 文件头差异段同词登记）。
  */
 export const TEAM_RUNTIME_BOUNDS_DEFAULTS = {
   maxMembers: 8,
@@ -220,6 +250,17 @@ export interface TeamRuntimeState {
   readonly members: readonly TeamRuntimeStateMember[]
   readonly shutdownRequests: readonly TeamShutdownRequest[]
   readonly bounds: TeamRuntimeBounds
+  /**
+   * R-6 重投去重账（**非**上游 RuntimeStateSchema 字段——上游的去重住在
+   * mailbox 的 messageId 唯一性里（DuplicateMessageIdError「duplicate message
+   * id」，send.ts 错误族，Q1a §8 在档）；mailbox 本体不 vendor（FORK.md
+   * §3.3），去重账遂借本状态骨架承载，执法在 tools/team-message.ts）。
+   * 记的是**已受理投递**的消息 id（correlationId ?? 生成 uuid）。
+   * 持久化接缝（文件头成文的同一纪律）：T8 vendored store 换持久化时此账
+   * 随 state.json 落盘；v1 内存态进程死即清——「同 id 重投」的保证域 =
+   * 本进程生命周期，差异记此（与上游跨进程去重的差距，NOTES 同步登记）。
+   */
+  readonly processedMessageIds: readonly string[]
 }
 
 /**
@@ -362,6 +403,7 @@ export class TeamStateMemoryStore {
       })),
       shutdownRequests: [],
       bounds,
+      processedMessageIds: [],
     }
     this.statesByTeamRunId.set(teamRunId, state)
     this.teamRunIdByLeadSession.set(input.leadSessionId, teamRunId)
@@ -459,6 +501,52 @@ export class TeamStateMemoryStore {
       )
     }
     return this.replaceState(teamRunId, { ...state, members })
+  }
+
+  /**
+   * R-6 去重账查询（只读；调用方 = tools/team-message.ts 的诊断/断言面）。
+   * 一切写入走 markMessageProcessed——查与记不拆成两次调用是给业务面的，
+   * 这个方法存在的理由是观测，不是判重。
+   */
+  hasProcessedMessage(teamRunId: string, messageId: string): boolean {
+    return this.requireState(teamRunId).processedMessageIds.includes(messageId)
+  }
+
+  /**
+   * 原子「查+记」（R-6 去重闸的账本体）：未见过该 id → 入账并返回 true
+   * （放行投递）；见过 → 不入账返回 false（去重拒投）。原子性在内存形态下
+   * 由单线程事件循环天然成立；换持久化（T8 vendored store）时落进 withLock
+   * 的锁内重读三段序——方法签名不变，锁语义随 vendor 件获得（接缝注见
+   * 文件头）。
+   * **先记后投**（reservation 语义）：并发同 id 的两个调用只有一个能拿到
+   * true——先入账才去碰原生通道，「不重复投递」才不是查与投之间的竞态空话。
+   * 单投递失败时由调用方 unmarkMessageProcessed 补偿退账（从未送达的消息
+   * 不该被「已送达」的账拦住）；广播部分失败**不退**（宁漏不重，差异在
+   * team-message.ts 文件头成文）。
+   */
+  markMessageProcessed(teamRunId: string, messageId: string): boolean {
+    const state = this.requireState(teamRunId)
+    if (state.processedMessageIds.includes(messageId)) return false
+    this.replaceState(teamRunId, {
+      ...state,
+      processedMessageIds: [...state.processedMessageIds, messageId],
+    })
+    return true
+  }
+
+  /**
+   * 补偿退账（reservation 的回执作废）：单收件人投递抛错后把预约退掉，
+   * 同 id 重试才可能真正送达——「duplicate」判定的事实源是「已受理/已送达」，
+   * 不是「已尝试」。广播的部分失败**不调用本方法**（整条消息一个账，退了
+   * 会对已收到的成员重投——宁漏不重的裁决见 team-message.ts 文件头）。
+   */
+  unmarkMessageProcessed(teamRunId: string, messageId: string): void {
+    const state = this.requireState(teamRunId)
+    if (!state.processedMessageIds.includes(messageId)) return
+    this.replaceState(teamRunId, {
+      ...state,
+      processedMessageIds: state.processedMessageIds.filter((id) => id !== messageId),
+    })
   }
 
   /**

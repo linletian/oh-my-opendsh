@@ -163,14 +163,21 @@ export function buildTeamMemberLabel(teamRunId: string, memberName: string): str
  * （identity / work-arrives / report-then-end / no-delegation / wrap-up），
  * 载体措辞换为 DSH 的注入消息模型。**不得**掺入 member.prompt（两帧两源，
  * Q-8 分离命题；单测逐字钉死）。lead 称谓用 TEAM_LEAD_SENTINEL。
+ *
+ * P5-T6 追加第 6 段——**team coordinates**（`{"teamRunId":"<uuid>"}` 机器可
+ * 读片段）：team_send_message 的 teamRunId 必填（上游 messaging.ts:28-36 zod
+ * 形状，Q1a §2.6 逐字在档），成员模型只能从自己的持久语境里抄到这个 id，
+ * briefing 是成员会话里唯一由 omo-team 书写的帧——coordinates 落在这里是
+ * 该参数可填的唯一诚实位置（briefing kind 不变，仍是 omo-team-briefing）。
  */
-export function buildTeamBriefingText(teamName: string, memberName: string): string {
+export function buildTeamBriefingText(teamName: string, memberName: string, teamRunId: string): string {
   return [
     '# Team Briefing',
     `You are '${memberName}', a member of team '${teamName}' running under the omo-team runtime on DSH. The team lead is addressed as '${TEAM_LEAD_SENTINEL}'.`,
     'Work arrives as injected messages steered into this resident session. Finish the instructions you were given, report your result to the lead, then end your turn — going idle after reporting is the expected flow: idle is not an error and does not end your membership; the next injected message wakes this session with more work.',
     'You must NOT spawn or delegate further children: team members never create sub-sessions and never create teams. No child-delegation channel exists on this surface and you must not attempt to create one — do the assigned work yourself with the tools you keep.',
     'When you complete assigned work, address a concise summary to the lead via the team messaging surface (team_send_message, once it is mounted in your tool set), then end your turn.',
+    `Your team coordinates for the messaging surface: {"teamRunId":"${teamRunId}"} — pass that teamRunId verbatim to team_send_message; 'lead' is a valid \`to\` value, addressed to the session that leads this team.`,
   ].join('\n\n')
 }
 
@@ -401,8 +408,10 @@ export function registerTeamCreateSurface(
     const isChild = header.origin === 'subagent' || header.parentSession !== undefined
     if (!isChild) {
       // lead 面：每个根会话都收 team_create（lead 恒为当前会话——无独立
-      // lead 席位可指，Q1a §4 的同一裁决）。T6/T7 占位：lead 面后续追加
-      // team_send_message（T6）与 team_delete（T7），同一 scoped 口。
+      // lead 席位可指，Q1a §4 的同一裁决）。team_send_message 已由
+      // tools/team-message.ts 的 registerTeamMessageSurface 在同一 scoped 口
+      // 装上（T6 转正）；T7 占位：lead 面后续追加 team_delete（T7），
+      // 同一 scoped 口。
       agent.ctx.tools.register(createTeamCreateDefinition(deps))
       console.log(`${LOG_PREFIX} lead surface installed on root session ${header.id}`)
       return
@@ -427,12 +436,17 @@ export function registerTeamCreateSurface(
     // 先于 startContinuable 解析、彼时状态恒 'creating'，闸不误伤正常时序。
     if (!ACTIVE_TEAM_RUNTIME_STATUSES.has(state.status)) return
     // member 面：结构上无 team_create（上面的「其他子女不装」是其退化形）；
-    // T6 占位：team_send_message 随 T6 落此 scoped 口。briefing 独立注入：
+    // team_send_message 已由 tools/team-message.ts 的 registerTeamMessageSurface
+    // 在同一 scoped 口落此（T6 转正，双面各装各的）；briefing 独立注入：
     // prompt 正文与 briefing 帧两源（Q-8 分离命题），帧形 = hard-blocks 先例。
+    // 每次 member 物化都注一次（NOTES-7）：冷启重 materialize 会让本臂再跑，
+    // 于是 wake 时也补一帧 briefing——它是 instructions 不是 turn 事件，落在
+    // 冻结窗只作 omo-team-* 注入（e2e wake 金丝雀的窗口例外已据此放行），不
+    // 产生第二个 agent-message、也不改变 team_send_message 的 dedup 账。
     agent.inject({
       id: randomUUID(),
       role: 'user',
-      content: [{ type: 'text', text: buildTeamBriefingText(state.teamName, participation.memberName) }],
+      content: [{ type: 'text', text: buildTeamBriefingText(state.teamName, participation.memberName, participation.teamRunId) }],
       source: {
         kind: TEAM_BRIEFING_SOURCE_KIND,
         plugin: TEAM_BRIEFING_SOURCE_PLUGIN,

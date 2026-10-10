@@ -85,12 +85,19 @@ import {
 } from './boot-markers.ts'
 // P5-T5: the first real registrar's module pair — the state machine (pure,
 // host-singleton) and the team_create surface (tool + agent/created dispatch).
+// P5-T6: the message surface (team_send_message + its own agent/created
+// dispatch) lands the second row through the same door.
 import { teamStateStore } from './team/team-state.ts'
 import {
   registerTeamCreateSurface,
   type TeamAgent,
   type TeamContinuableChannel,
 } from './tools/team-create.ts'
+import {
+  registerTeamMessageSurface,
+  type TeamLiveAgents,
+  type TeamMessageSendChannel,
+} from './tools/team-message.ts'
 
 export const name = 'omo-team'
 
@@ -107,8 +114,11 @@ export const name = 'omo-team'
  * `agent.ctx.tools.register` inside the `agent/created` listener (the
  * tool-agent-team :230-241/:539-546 mechanism, learned for shape only; its
  * semantics are not adopted — experimental surfaces never are).
+ * 'agents' joins the list AT P5-T6: the message registrar reads the live
+ * agent registry through it (lead relay + residency observation), never
+ * caching an Agent beyond the call that looked it up.
  */
-export const inject = ['subagents'] as const
+export const inject = ['subagents', 'agents'] as const
 
 /** A cordis-style disposal: what an effect's execute callback RETURNS to be collected. */
 export type TeamDisposer = () => void
@@ -125,12 +135,19 @@ export type TeamDisposer = () => void
  * P5-T5 EXERCISES THAT DOCTRINE: `on` and `subagents` are REQUIRED now (the
  * `team_create` registrar subscribes to `agent/created` and closes over the
  * continuable channel), and `inject = ['subagents']` went up in the same
- * commit. The T3 paragraph's WHY-NO-INJECT reasoning stays true of T3 and is
- * kept for the record: declaring an `inject` the loop could not yet register
- * through would park the fiber in `waiting`, swallow the `[omo-team] loaded`
- * marker, and redden every mount gate on an installed plugin — the pair (the
- * first registrar that needs a service + its `inject` entry) is the only legal
- * moment to widen, and T5 is that moment for exactly these two members.
+ * commit. P5-T6 EXERCISES IT AGAIN: `agents` is REQUIRED now (the
+ * `team_send_message` registrar resolves the live lead agent through
+ * `ctx.agents.get` for the member-to-member lead relay, and observes target
+ * residency at send time), and `inject = ['subagents', 'agents']` goes up in
+ * THIS commit — the same pair discipline, the same proof on this host
+ * (q5b-seat-plugin declared `inject = ['agents', 'subagents', 'tools']` and
+ * read `ctx.agents.get` live). The T3 paragraph's WHY-NO-INJECT reasoning
+ * stays true of T3 and is kept for the record: declaring an `inject` the loop
+ * could not yet register through would park the fiber in `waiting`, swallow
+ * the `[omo-team] loaded` marker, and redden every mount gate on an installed
+ * plugin — the pair (the first registrar that needs a service + its `inject`
+ * entry) is the only legal moment to widen, and T5 was that moment for `on` +
+ * `subagents`; T6 is that moment for `agents`.
  */
 export interface TeamRegistrationContext {
   /**
@@ -162,8 +179,27 @@ export interface TeamRegistrationContext {
    * the channel is NOT cached beyond the registrar's closure (the T3 note's
    * per-invocation reading discipline holds — the closure reads through the
    * service object on every call).
+   *
+   * P5-T6 widens the SAME service object with `sendMessage` (the adjacent
+   * delivery call of tools/team-message.ts) — an intersection over the two
+   * structural subdeclarations, not a second service: dsh's `subagents` is
+   * ONE service (dsh-subagent types/index.d.ts), and each consuming module
+   * narrows the face it calls through (team-create.ts declared the T5
+   * subset; team-message.ts declares the delivery subset).
    */
-  readonly subagents: TeamContinuableChannel
+  readonly subagents: TeamContinuableChannel & TeamMessageSendChannel
+  /**
+   * The live Agent registry — PROMOTED TO REQUIRED AT P5-T6, declared in
+   * `inject` in the same commit (the header's pair doctrine, exercised a
+   * second time). The `team_send_message` registrar closes over this
+   * registry and calls `get` at send time only: the member-to-member lead
+   * relay resolves the live lead through it (the native channel's own
+   * exact-live-sender check, dsh-subagent index.js:1763, reads the same
+   * face), and every delivery observes target residency before sending
+   * (the tool-level half of the Q-5b offline-wake canary). No Agent is
+   * cached beyond the call that looked it up.
+   */
+  readonly agents: TeamLiveAgents
 }
 
 /**
@@ -209,6 +245,9 @@ export type TeamRegistrar = (
 export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
   // P5-T5 · ① §1 行 1（manifest.ts 行序 = 本表读序，boot-markers.test.ts 钉）。
   team_create: (ctx) => registerTeamCreateSurface(ctx, { subagents: ctx.subagents, store: teamStateStore }),
+  // P5-T6 · ⑥ §1 行 6：消息面——同一 subagents 服务的 sendMessage 臂 +
+  // 活体 agents 注册表（lead 中转/驻留观测）+ 同一状态骨架（去重账）。
+  team_send_message: (ctx) => registerTeamMessageSurface(ctx, { subagents: ctx.subagents, agents: ctx.agents, store: teamStateStore }),
 }
 
 /**
@@ -285,12 +324,13 @@ export function runTeamRegistrations(
  * unit-tested functions, so this stays assembly-only and the markers cannot
  * drift from their tests.
  *
- * A correct P5-T5 boot logs TWO lines from this plugin — the per-surface
- * `registered` line for `team_create` (the loop's first real registration) and
- * the summary line carrying the honest `1/24` — and nothing else: no FAILED
- * line, no validation line. (At P5-T3 it logged exactly ONE line, the summary
- * with the loop's honest zero, because the registry was empty; the flip is the
- * marker the probe re-derives without an edit.)
+ * A correct P5-T6 boot logs THREE lines from this plugin — the per-surface
+ * `registered` lines for `team_create` and `team_send_message` (the loop's
+ * two landed rows, in roster order) and the summary line carrying the honest
+ * `2/24` — and nothing else: no FAILED line, no validation line. (At P5-T3 it
+ * logged exactly ONE line, the summary with the loop's honest zero, because
+ * the registry was empty; T5 grew it to two; the flips are the markers the
+ * probe re-derives without an edit.)
  */
 export function apply(ctx: TeamRegistrationContext): void {
   const log = (line: string): void => {
