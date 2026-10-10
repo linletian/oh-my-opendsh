@@ -3,10 +3,10 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 
-import { TeamModeConfigSchema } from "../config"
-import type { TeamModeConfig } from "../config"
-import { getTasksDir, resolveBaseDir } from "../team-registry"
-import type { Task } from "../types"
+import { TeamModeConfigSchema } from "../config.ts"
+import type { TeamModeConfig } from "../config.ts"
+import { getTasksDir, resolveBaseDir } from "../team-registry/index.ts"
+import type { Task } from "../types.ts"
 
 export async function createTasklistFixture(): Promise<{
   config: TeamModeConfig

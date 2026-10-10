@@ -46,14 +46,14 @@
   },
   "counts": {
     "total": 47,
-    "verbatim": 37,
-    "modified": 7,
+    "verbatim": 7,
+    "modified": 37,
     "projectNew": 3,
     "upstreamImplementationFiles": 31,
     "carriedTestFiles": 10,
-    "deviations": 13,
+    "deviations": 17,
     "deviationsByClass": {
-      "modification": 9,
+      "modification": 13,
       "addition": 3,
       "note": 1
     }
@@ -108,57 +108,73 @@
     },
     {
       "path": "src/team-registry/index.ts",
-      "sha256": "3d865f220587028317b638412726eb2e71d416273a7ff499bfc152e4911f36f2",
-      "origin": "verbatim"
+      "sha256": "8a8e6247d86d86c68ca0d122db6c76b80a076ab6495e12f8e24ea85d959d6d8e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/index.ts",
+      "upstreamSha256": "3d865f220587028317b638412726eb2e71d416273a7ff499bfc152e4911f36f2"
     },
     {
       "path": "src/team-registry/loader.test.ts",
-      "sha256": "c4ebcc36bb3604a3820f9a477dd5374fcfb6e5b5d0780cf7ba4a3c4a4a8fbaff",
-      "origin": "verbatim"
+      "sha256": "9338b096c5157791674a69cfe39fdc64ff0806f76eed0a96e3c3611c0b1ad36f",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/loader.test.ts",
+      "upstreamSha256": "c4ebcc36bb3604a3820f9a477dd5374fcfb6e5b5d0780cf7ba4a3c4a4a8fbaff"
     },
     {
       "path": "src/team-registry/loader.ts",
-      "sha256": "03c102376577314f05f3d37b679261e5965528eddcb130ba65d18b428cc012a8",
-      "origin": "verbatim"
+      "sha256": "33c45202d3419536039baa2a2fbbec6c03a67bb581434c7d9c744efd00c3ecb0",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/loader.ts",
+      "upstreamSha256": "03c102376577314f05f3d37b679261e5965528eddcb130ba65d18b428cc012a8"
     },
     {
       "path": "src/team-registry/paths.ts",
-      "sha256": "4ecd8282a8b254ec237a1b0442a94d4619cdabdc4057b6fc9a90e2d361ed64de",
-      "origin": "verbatim"
+      "sha256": "5f27869f02eec06d98015cda44f68a3b7af7d2be953af7810da8d66d5a1722e0",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/paths.ts",
+      "upstreamSha256": "4ecd8282a8b254ec237a1b0442a94d4619cdabdc4057b6fc9a90e2d361ed64de"
     },
     {
       "path": "src/team-registry/team-spec-input-normalizer.ts",
-      "sha256": "8efe56bedb3f12966b9588815c0915fe4349f2db303992db4d76e51e8b1358e7",
-      "origin": "verbatim"
+      "sha256": "e0d8d0fa4dd6b8e510e911fee4bbb46f839507a54fd266677cda6d63f70fb0dd",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/team-spec-input-normalizer.ts",
+      "upstreamSha256": "8efe56bedb3f12966b9588815c0915fe4349f2db303992db4d76e51e8b1358e7"
     },
     {
       "path": "src/team-registry/validator.test.ts",
-      "sha256": "091314441c92eba612a0eb04e23b9f25c57c7e33610f953efa04151e16b5fe25",
-      "origin": "verbatim"
+      "sha256": "b05cdb6aecd91be2dc1aa79dc86617d64af378a5ef744d46fad027cb07c29a0d",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/validator.test.ts",
+      "upstreamSha256": "091314441c92eba612a0eb04e23b9f25c57c7e33610f953efa04151e16b5fe25"
     },
     {
       "path": "src/team-registry/validator.ts",
-      "sha256": "e72e86a7c7de71c32c727ab68aa4973e655a47e215f6c346d87df4529088f40b",
+      "sha256": "a815d85c03ab9f565da0fe320d564a66d812abd5c368a368bde7758cb2a63e0c",
       "origin": "modified",
       "upstreamPath": "packages/team-core/src/team-registry/validator.ts",
       "upstreamSha256": "2645eabe3e6ec6054e526641fba4fe141ba8f1902f5b3cd5d76ebf5bae895186"
     },
     {
       "path": "src/team-state-store/active-resume.ts",
-      "sha256": "03e81cc31df4971a7986d721bdaa6893f3ab95929541c6b21bbd2bf34b97fc8c",
+      "sha256": "5868faf5cc427319f1cbb41b6c755cc9c1c37b1bce9acb6da755038141c158e1",
       "origin": "modified",
       "upstreamPath": "packages/team-core/src/team-state-store/active-resume.ts",
       "upstreamSha256": "57660b10521489a4a62b4a247ac4d6d154e47d6f71cd9bddb554a2e2ffeea65e"
     },
     {
       "path": "src/team-state-store/creating-resume.ts",
-      "sha256": "2a583f20a7b049f620c6c3f64c2ae6dbc78cf06d5dedb35ee775d7cfe5ff8cab",
-      "origin": "verbatim"
+      "sha256": "d214274e5f4ac3b860c14d322985774d8a5e4a541e29fcdf0e206c8585962469",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/creating-resume.ts",
+      "upstreamSha256": "2a583f20a7b049f620c6c3f64c2ae6dbc78cf06d5dedb35ee775d7cfe5ff8cab"
     },
     {
       "path": "src/team-state-store/deleting-resume.ts",
-      "sha256": "bdff3656c30466bf02050a4c38b1d6c032a4da8e5c064d1e5de15b2efb0e7c37",
-      "origin": "verbatim"
+      "sha256": "5b0a41295d8cfd52b910f6c9eff7b94ffaf6c65ed2235c704f4dda872fcf5720",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/deleting-resume.ts",
+      "upstreamSha256": "bdff3656c30466bf02050a4c38b1d6c032a4da8e5c064d1e5de15b2efb0e7c37"
     },
     {
       "path": "src/team-state-store/error-normalization.ts",
@@ -167,18 +183,24 @@
     },
     {
       "path": "src/team-state-store/index.ts",
-      "sha256": "105ebf318cdc5fab61b7609d5765b978d2b1fe1aed41d1fc2515d964d827c8ab",
-      "origin": "verbatim"
+      "sha256": "c9ed478461bee830cd003be7ee897ea2c6f17a465e1eac7de167c9483d16edba",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/index.ts",
+      "upstreamSha256": "105ebf318cdc5fab61b7609d5765b978d2b1fe1aed41d1fc2515d964d827c8ab"
     },
     {
       "path": "src/team-state-store/locks.test.ts",
-      "sha256": "8e378fb016862cebb2e411d7c7e4304d0935664ea71be9b713e6ecb69adb09cd",
-      "origin": "verbatim"
+      "sha256": "14f8f0b61bd24d25e4c2454287fee0b18f6854781080f7fec872c0241b0c019d",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/locks.test.ts",
+      "upstreamSha256": "8e378fb016862cebb2e411d7c7e4304d0935664ea71be9b713e6ecb69adb09cd"
     },
     {
       "path": "src/team-state-store/locks.ts",
-      "sha256": "9c53a04e19c33406806d89c55ee79e431b750cfdf056bb35e5b91c26c7e96e16",
-      "origin": "verbatim"
+      "sha256": "4970590843d53376561e318808b587d35644a3fba00d94e6f10dee1a249ce88e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/locks.ts",
+      "upstreamSha256": "9c53a04e19c33406806d89c55ee79e431b750cfdf056bb35e5b91c26c7e96e16"
     },
     {
       "path": "src/team-state-store/resume-report.ts",
@@ -187,107 +209,143 @@
     },
     {
       "path": "src/team-state-store/resume.ts",
-      "sha256": "85e646115b84a0338691066559f7bcf4b2b0e7b0dab63f5d10875ab657a25b8e",
-      "origin": "verbatim"
+      "sha256": "e5820c4ca209d8036fc8c756fb14a52ff37ccae50d650e8929b42fb1f770d444",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/resume.ts",
+      "upstreamSha256": "85e646115b84a0338691066559f7bcf4b2b0e7b0dab63f5d10875ab657a25b8e"
     },
     {
       "path": "src/team-state-store/runtime-cleanup.ts",
-      "sha256": "f5ce9e0768f0c89207f70c86791dcf8621c31f372c1be22b5bfd511b02b90d44",
-      "origin": "verbatim"
+      "sha256": "3539f084a48c972358989ead5b1706abe98bf5559173b120a7f9ff410845ebb2",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/runtime-cleanup.ts",
+      "upstreamSha256": "f5ce9e0768f0c89207f70c86791dcf8621c31f372c1be22b5bfd511b02b90d44"
     },
     {
       "path": "src/team-state-store/session-liveness.ts",
-      "sha256": "3d6203f3d293e0c7802c5206b34c083d67a4061ff1c17c41b90854f8fefd2317",
-      "origin": "verbatim"
+      "sha256": "60b8452854dd915d2272f36ce8cc3f1918504786333d657ed40966ea1a2808a9",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/session-liveness.ts",
+      "upstreamSha256": "3d6203f3d293e0c7802c5206b34c083d67a4061ff1c17c41b90854f8fefd2317"
     },
     {
       "path": "src/team-state-store/store.test.ts",
-      "sha256": "02617be548bb65fa117be825e41010bae84571143e887cc10a8996cd255cc5da",
-      "origin": "verbatim"
+      "sha256": "e3d3c855f78384bf2b91989f628610bd70e52b7023b4ded35fd9468548b0767f",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/store.test.ts",
+      "upstreamSha256": "02617be548bb65fa117be825e41010bae84571143e887cc10a8996cd255cc5da"
     },
     {
       "path": "src/team-state-store/store.ts",
-      "sha256": "7612df7918fa83eb8a114ee237b620d4d54d76876efc1daeb99ae407c16a3775",
+      "sha256": "f2a7b38fbcf06e8ee383cf231f0ecc06bcb7dcbe41d87d684eb65d37462a0ddc",
       "origin": "modified",
       "upstreamPath": "packages/team-core/src/team-state-store/store.ts",
       "upstreamSha256": "29d44fa4e4bf12a669ec6459f0b209169756f92f6d5d184618c11edba6563440"
     },
     {
       "path": "src/team-state-store/worker-resume-status.ts",
-      "sha256": "4c46dee99282afc8467a6964b46cee36bcfeabcb23bb7361d9f98680599f396b",
-      "origin": "verbatim"
+      "sha256": "73f6c335d36a4618330059ac95b11780b5a12bb78ad8051b3a6288571b8e8d96",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/worker-resume-status.ts",
+      "upstreamSha256": "4c46dee99282afc8467a6964b46cee36bcfeabcb23bb7361d9f98680599f396b"
     },
     {
       "path": "src/team-tasklist/claim.test.ts",
-      "sha256": "84946ee0dfe99ce602417a3cd98a8360d8db76383fd98ef3f7f8bec2a872a3e3",
-      "origin": "verbatim"
+      "sha256": "3297d38172b1e0a084ba4896fdaea5120619d37ffd5553886278ad6aead53f0d",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/claim.test.ts",
+      "upstreamSha256": "84946ee0dfe99ce602417a3cd98a8360d8db76383fd98ef3f7f8bec2a872a3e3"
     },
     {
       "path": "src/team-tasklist/claim.ts",
-      "sha256": "64ed6fc6cd77249664012f6faa59d228642e4368a71a9189262a1f087d29c954",
+      "sha256": "b4e2affb13ebe1454c663901bf95172e9d380a4fb06fc924f619c4689d124e01",
       "origin": "modified",
       "upstreamPath": "packages/team-core/src/team-tasklist/claim.ts",
       "upstreamSha256": "603cbcf41e042e1f7a0de2ec5c134f89d5019370cba7f5277ef10a8d2e12419f"
     },
     {
       "path": "src/team-tasklist/dependencies.test.ts",
-      "sha256": "4dc7a4d75980d522a1675db475d81b0432fdacb28bd54a14db62760957a77dc2",
-      "origin": "verbatim"
+      "sha256": "afb64048c0af1bc6ee3854fc0164720f908019f6bf33e2227b3a732d9583705d",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/dependencies.test.ts",
+      "upstreamSha256": "4dc7a4d75980d522a1675db475d81b0432fdacb28bd54a14db62760957a77dc2"
     },
     {
       "path": "src/team-tasklist/dependencies.ts",
-      "sha256": "f49f6ac874cac78b2b5718becce471a588678b6bbf1ba15031e32e62778b1e86",
-      "origin": "verbatim"
+      "sha256": "2aff010e5359a7f1b3f3918c9212509db7a5efbc38bbe53ce26a1889a980736b",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/dependencies.ts",
+      "upstreamSha256": "f49f6ac874cac78b2b5718becce471a588678b6bbf1ba15031e32e62778b1e86"
     },
     {
       "path": "src/team-tasklist/get.test.ts",
-      "sha256": "1d372bc47bb838bf45dd810fb3551f9b12aa8db4f0f20d6de35cd24f476489a9",
-      "origin": "verbatim"
+      "sha256": "d3fe2c98df03d0dc0141a1e82e9d7ca9dd8f7d0cfd9eaf3c077340107c138841",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/get.test.ts",
+      "upstreamSha256": "1d372bc47bb838bf45dd810fb3551f9b12aa8db4f0f20d6de35cd24f476489a9"
     },
     {
       "path": "src/team-tasklist/get.ts",
-      "sha256": "bc063a9eebfec5ea0386afb5d67dfa62c9bf7cacda1e815f06e8435cce4139e3",
-      "origin": "verbatim"
+      "sha256": "7bfa92c5f80bef71d0504f80f5e95d523a971f9d88883aab4f29aca2ca3893a7",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/get.ts",
+      "upstreamSha256": "bc063a9eebfec5ea0386afb5d67dfa62c9bf7cacda1e815f06e8435cce4139e3"
     },
     {
       "path": "src/team-tasklist/index.ts",
-      "sha256": "fef04ec8909c83fa90412063697fb5f29a73489a5ca6852c699c4b0a978624db",
-      "origin": "verbatim"
+      "sha256": "42d699be838ae1ed78068dfde0b1e085c33de5b3aea1f176bf85751de4424145",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/index.ts",
+      "upstreamSha256": "fef04ec8909c83fa90412063697fb5f29a73489a5ca6852c699c4b0a978624db"
     },
     {
       "path": "src/team-tasklist/list.test.ts",
-      "sha256": "5aeaada45c9645a24a75386cf3948060524f8783036bf6d1be2ec7dda658cb44",
-      "origin": "verbatim"
+      "sha256": "25ae6ccd3bd18a4f95fe52118a6dbe2164d3a829db674a9fd313042bb689d732",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/list.test.ts",
+      "upstreamSha256": "5aeaada45c9645a24a75386cf3948060524f8783036bf6d1be2ec7dda658cb44"
     },
     {
       "path": "src/team-tasklist/list.ts",
-      "sha256": "de5d0eec138ed7f9997e08eaa061cea839573617da31346074adfa296e512f2c",
-      "origin": "verbatim"
+      "sha256": "6691d83c39178356350d83413454f7b2a34cbac604fe104eb95b2ce5aedd6b3e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/list.ts",
+      "upstreamSha256": "de5d0eec138ed7f9997e08eaa061cea839573617da31346074adfa296e512f2c"
     },
     {
       "path": "src/team-tasklist/store.test.ts",
-      "sha256": "1e8e404087f31bd3ed249dd765a6095dc2eb305f7c251d882f894d689a887b93",
-      "origin": "verbatim"
+      "sha256": "71d7d3c0aba9165799ca81ee1c26b33082ab93825c75efe7a90c06d5588b9009",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/store.test.ts",
+      "upstreamSha256": "1e8e404087f31bd3ed249dd765a6095dc2eb305f7c251d882f894d689a887b93"
     },
     {
       "path": "src/team-tasklist/store.ts",
-      "sha256": "ff54bfe855e160523c1becfffb61a8f74537dc30af4960ca825ba57e4df85a51",
-      "origin": "verbatim"
+      "sha256": "b45c5a391294d15b2d580f0a1e0b547f88a765d36533f071f308a71954eb802e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/store.ts",
+      "upstreamSha256": "ff54bfe855e160523c1becfffb61a8f74537dc30af4960ca825ba57e4df85a51"
     },
     {
       "path": "src/team-tasklist/test-support.ts",
-      "sha256": "529388c9e9920d9817c268c86ec024512321f9ebc9f67091b6715d8740d640ec",
-      "origin": "verbatim"
+      "sha256": "cdb2a14128c3bcfe3c1942b63efb3138a6a1f410d2e039f2f005b00181437b0e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/test-support.ts",
+      "upstreamSha256": "529388c9e9920d9817c268c86ec024512321f9ebc9f67091b6715d8740d640ec"
     },
     {
       "path": "src/team-tasklist/update.test.ts",
-      "sha256": "f50fd41df06a0ed658a16d2dcf633aaadc0ce32ff0dc019fa6ba23ddd9e4f066",
-      "origin": "verbatim"
+      "sha256": "8f90b2d0bcff85668211530055ec253e36f2bd65c4b10750a74e34120b5d2f1f",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/update.test.ts",
+      "upstreamSha256": "f50fd41df06a0ed658a16d2dcf633aaadc0ce32ff0dc019fa6ba23ddd9e4f066"
     },
     {
       "path": "src/team-tasklist/update.ts",
-      "sha256": "ce433a265de968664f255fceb95ce7e1a7553a07edba05e0c17beb709448a8ac",
-      "origin": "verbatim"
+      "sha256": "e44b23a4061599c7a25acfb90afe19e46ae32b735a67a27e49c258b6462a4ddc",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/update.ts",
+      "upstreamSha256": "ce433a265de968664f255fceb95ce7e1a7553a07edba05e0c17beb709448a8ac"
     },
     {
       "path": "src/tolerant-fsync.ts",
@@ -296,14 +354,16 @@
     },
     {
       "path": "src/types.ts",
-      "sha256": "02efe749e145fd7221002936bfdd6bf22b008748ab8be08eca74a2d2e8f90e45",
-      "origin": "verbatim"
+      "sha256": "03a147bb056315d85ca01e7f874ed0bc54c9cd26903bca8d669318e6b92b5471",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/types.ts",
+      "upstreamSha256": "02efe749e145fd7221002936bfdd6bf22b008748ab8be08eca74a2d2e8f90e45"
     },
     {
       "path": "NOTICE.md",
-      "sha256": "2799413e1818dc57fc7e35e1f2a794b81d2c92585c14d30034864f818363b864",
+      "sha256": "119c4a2f9b8963eed75c95e7550e104301d78923f443838175714a1745e34a0b",
       "origin": "project-new",
-      "note": "review-round count fix only (three → four upstream test files not carried, per-file enumeration added); hash re-pinned to the current bytes"
+      "note": "review-round count fix only (three → four upstream test files not carried, per-file enumeration added); hash re-pinned to the current bytes. P5-T8b: dependency-range addendum added (zod ^4.4.3 declared upstream lives nowhere else; root pnpm-lock.yaml resolves zod@4.6.5; omo-team's workspace:* consumer edge lands in the same single lockfile); hash re-pinned to the current bytes"
     },
     {
       "path": "VENDOR-MANIFEST.json",
@@ -428,6 +488,178 @@
       "field": "scripts.typecheck",
       "decision": "hashline-core precedent (isomorphic)",
       "why": "Explanatory note — no byte change: `typecheck: \"tsgo --noEmit -p tsconfig.json\"` is byte-identical to upstream and is retained in upstream shape as a drift reference (the hashline-core vendored copy keeps the same upstream shape — isomorphic precedent). This repository has no `tsgo` binary (measured 2026-10-10: `which tsgo` → not found), so executing this script here is red by construction; that is a known surface, not a regression. This package is NOT inside this repo's typecheck gate: the gate is the root `tsc --noEmit` + `typecheck:libs` (host/client/hooks/commands/team projects enumerated explicitly in the root package.json), and no root script or CI entry invokes `pnpm -r typecheck` (grep measured 2026-10-10)"
+    },
+    {
+      "class": "modification",
+      "path": "src/*.ts",
+      "kind": "esm-extension-completion",
+      "decision": "T8b arbitration ruling 2026-10-10 (path A) — docs/plans/phase5-dev/phase5-tasks.md P5-T8b arbitration note; evidence .omo/evidence/p5t1/t8b-vendor-import-wall/",
+      "files": [
+        {
+          "path": "src/types.ts",
+          "specifiers": 1
+        }
+      ],
+      "why": "Node 24 native type-stripping resolves NO extensionless relative specifier (ERR_MODULE_NOT_FOUND; host-level gold-standard probe measured RED at STOP, GREEN after completion — host-probe-boot-after-completion.log). Every extensionless relative specifier in this directory group gained its `.ts` (file form) or `/index.ts` (dir form) — a semantically-zero-change completion, machine-proven: diff-face lint (141 pairs, stripping the completion reproduces the pre-image byte-for-byte), upstream-blob equality for every file that was verbatim at registration, and base-commit equality for all affected files (deviation faces untouched) — prove-zero-semantic-change.mjs, PROOF: GREEN. Uniform rule across implementation AND test files (one grammar, no split shape). upstreamSha256 anchors stay pinned at the v4.19.4 blobs."
+    },
+    {
+      "class": "modification",
+      "path": "src/team-registry/*.ts",
+      "kind": "esm-extension-completion",
+      "decision": "T8b arbitration ruling 2026-10-10 (path A) — docs/plans/phase5-dev/phase5-tasks.md P5-T8b arbitration note; evidence .omo/evidence/p5t1/t8b-vendor-import-wall/",
+      "files": [
+        {
+          "path": "src/team-registry/index.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-registry/loader.test.ts",
+          "specifiers": 2
+        },
+        {
+          "path": "src/team-registry/loader.ts",
+          "specifiers": 10
+        },
+        {
+          "path": "src/team-registry/paths.ts",
+          "specifiers": 2
+        },
+        {
+          "path": "src/team-registry/team-spec-input-normalizer.ts",
+          "specifiers": 1
+        },
+        {
+          "path": "src/team-registry/validator.test.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-registry/validator.ts",
+          "specifiers": 2
+        }
+      ],
+      "why": "Node 24 native type-stripping resolves NO extensionless relative specifier (ERR_MODULE_NOT_FOUND; host-level gold-standard probe measured RED at STOP, GREEN after completion — host-probe-boot-after-completion.log). Every extensionless relative specifier in this directory group gained its `.ts` (file form) or `/index.ts` (dir form) — a semantically-zero-change completion, machine-proven: diff-face lint (141 pairs, stripping the completion reproduces the pre-image byte-for-byte), upstream-blob equality for every file that was verbatim at registration, and base-commit equality for all affected files (deviation faces untouched) — prove-zero-semantic-change.mjs, PROOF: GREEN. Uniform rule across implementation AND test files (one grammar, no split shape). upstreamSha256 anchors stay pinned at the v4.19.4 blobs."
+    },
+    {
+      "class": "modification",
+      "path": "src/team-state-store/*.ts",
+      "kind": "esm-extension-completion",
+      "decision": "T8b arbitration ruling 2026-10-10 (path A) — docs/plans/phase5-dev/phase5-tasks.md P5-T8b arbitration note; evidence .omo/evidence/p5t1/t8b-vendor-import-wall/",
+      "files": [
+        {
+          "path": "src/team-state-store/active-resume.ts",
+          "specifiers": 6
+        },
+        {
+          "path": "src/team-state-store/creating-resume.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-state-store/deleting-resume.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-state-store/index.ts",
+          "specifiers": 1
+        },
+        {
+          "path": "src/team-state-store/locks.test.ts",
+          "specifiers": 10
+        },
+        {
+          "path": "src/team-state-store/locks.ts",
+          "specifiers": 1
+        },
+        {
+          "path": "src/team-state-store/resume.ts",
+          "specifiers": 10
+        },
+        {
+          "path": "src/team-state-store/runtime-cleanup.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-state-store/session-liveness.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-state-store/store.test.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-state-store/store.ts",
+          "specifiers": 6
+        },
+        {
+          "path": "src/team-state-store/worker-resume-status.ts",
+          "specifiers": 2
+        }
+      ],
+      "why": "Node 24 native type-stripping resolves NO extensionless relative specifier (ERR_MODULE_NOT_FOUND; host-level gold-standard probe measured RED at STOP, GREEN after completion — host-probe-boot-after-completion.log). Every extensionless relative specifier in this directory group gained its `.ts` (file form) or `/index.ts` (dir form) — a semantically-zero-change completion, machine-proven: diff-face lint (141 pairs, stripping the completion reproduces the pre-image byte-for-byte), upstream-blob equality for every file that was verbatim at registration, and base-commit equality for all affected files (deviation faces untouched) — prove-zero-semantic-change.mjs, PROOF: GREEN. Uniform rule across implementation AND test files (one grammar, no split shape). upstreamSha256 anchors stay pinned at the v4.19.4 blobs."
+    },
+    {
+      "class": "modification",
+      "path": "src/team-tasklist/*.ts",
+      "kind": "esm-extension-completion",
+      "decision": "T8b arbitration ruling 2026-10-10 (path A) — docs/plans/phase5-dev/phase5-tasks.md P5-T8b arbitration note; evidence .omo/evidence/p5t1/t8b-vendor-import-wall/",
+      "files": [
+        {
+          "path": "src/team-tasklist/claim.test.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/claim.ts",
+          "specifiers": 8
+        },
+        {
+          "path": "src/team-tasklist/dependencies.test.ts",
+          "specifiers": 2
+        },
+        {
+          "path": "src/team-tasklist/dependencies.ts",
+          "specifiers": 1
+        },
+        {
+          "path": "src/team-tasklist/get.test.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-tasklist/get.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-tasklist/index.ts",
+          "specifiers": 6
+        },
+        {
+          "path": "src/team-tasklist/list.test.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/list.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/store.test.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-tasklist/store.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/test-support.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-tasklist/update.test.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/update.ts",
+          "specifiers": 7
+        }
+      ],
+      "why": "Node 24 native type-stripping resolves NO extensionless relative specifier (ERR_MODULE_NOT_FOUND; host-level gold-standard probe measured RED at STOP, GREEN after completion — host-probe-boot-after-completion.log). Every extensionless relative specifier in this directory group gained its `.ts` (file form) or `/index.ts` (dir form) — a semantically-zero-change completion, machine-proven: diff-face lint (141 pairs, stripping the completion reproduces the pre-image byte-for-byte), upstream-blob equality for every file that was verbatim at registration, and base-commit equality for all affected files (deviation faces untouched) — prove-zero-semantic-change.mjs, PROOF: GREEN. Uniform rule across implementation AND test files (one grammar, no split shape). upstreamSha256 anchors stay pinned at the v4.19.4 blobs."
     }
   ]
 }

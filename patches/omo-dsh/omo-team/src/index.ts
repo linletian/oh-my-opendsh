@@ -109,6 +109,21 @@ import {
 } from './tools/team-shutdown.ts'
 import { registerTeamDeleteSurface } from './tools/team-delete.ts'
 import { registerTeamStatusSurface } from './tools/team-status.ts'
+// P5-T8b: the task-board quartet (create/list/update/get) — thin shells over
+// the vendored team-tasklist, UNIVERSAL per the upstream gating roster; one
+// registrar per row, four subscriptions, four disposers (the registration loop's
+// one-row-per-registrar discipline keeps the `<r>/<N>` census honest).
+import {
+  TEAM_TASK_CREATE_TOOL_NAME,
+  TEAM_TASK_GET_TOOL_NAME,
+  TEAM_TASK_LIST_TOOL_NAME,
+  TEAM_TASK_UPDATE_TOOL_NAME,
+  registerTeamTaskSurface,
+} from './tools/team-task.ts'
+// P5-T8b: the vendored state-store换装's boot pair — persistence rebuild +
+// resumeAllTeams through the session-context adapter (the OMO-shaped client
+// ↔ DSH ctx.agents boundary, documented in session-context-adapter.ts).
+import { buildTeamSessionContext } from './team/session-context-adapter.ts'
 
 export const name = 'omo-team'
 
@@ -267,6 +282,16 @@ export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
   // P5-T6 · ⑥ §1 行 6：消息面——同一 subagents 服务的 sendMessage 臂 +
   // 活体 agents 注册表（lead 中转/驻留观测）+ 同一状态骨架（去重账）。
   team_send_message: (ctx) => registerTeamMessageSurface(ctx, { subagents: ctx.subagents, agents: ctx.agents, store: teamStateStore }),
+  // P5-T8b · ⑦⑧⑨⑩ §1 行 7/8/9/10：任务板四件——四行各自一个 registrar
+  // 位（一 registrar 一行的注册循环纪律，marker 的 `<r>/<N>` 因此诚实计四），
+  // 同一 tools/team-task.ts 的薄壳面（vendored team-tasklist 的接线点单
+  // 在 store；claim 路由 = status:'claimed' → vendored claimTask，上游
+  // tasks.ts:128-130 的同一岔口）。UNIVERSAL 双面（上游 gating hook.ts:12-19
+  // 名单含四枚 team_task_*，Q1a §3 逐字在档）。
+  team_task_create: (ctx) => registerTeamTaskSurface(ctx, { store: teamStateStore }, TEAM_TASK_CREATE_TOOL_NAME),
+  team_task_list: (ctx) => registerTeamTaskSurface(ctx, { store: teamStateStore }, TEAM_TASK_LIST_TOOL_NAME),
+  team_task_update: (ctx) => registerTeamTaskSurface(ctx, { store: teamStateStore }, TEAM_TASK_UPDATE_TOOL_NAME),
+  team_task_get: (ctx) => registerTeamTaskSurface(ctx, { store: teamStateStore }, TEAM_TASK_GET_TOOL_NAME),
   // P5-T7 · ⑪ §1 行 11：查询面——纯读骨架（UNIVERSAL 双面），tasks 段的
   // T8 接缝在 tools/team-status.ts 文件头成文。行号按名册行序（manifest.ts
   // 的 24 条目读序，team_status 是第 11 条）——plan §1 表格把 task_list/
@@ -349,19 +374,48 @@ export function runTeamRegistrations(
  * unit-tested functions, so this stays assembly-only and the markers cannot
  * drift from their tests.
  *
- * A correct P5-T7 boot logs SEVEN lines from this plugin — the per-surface
- * `registered` lines for `team_create`, `team_delete`, `team_shutdown_request`,
- * `team_approve_shutdown`, `team_reject_shutdown`, `team_send_message` and
- * `team_status` (the loop's seven landed rows, in roster order) and the
- * summary line carrying the honest `7/24` — and nothing else: no FAILED line,
- * no validation line. (At P5-T3 it logged exactly ONE line, the summary with
- * the loop's honest zero, because the registry was empty; T5/T6 grew it to
- * two; T7 grew it to seven; the flips are the markers the probe re-derives
- * without an edit.)
+ * A correct P5-T8b boot logs ELEVEN `registered` lines from this plugin — the
+ * loop's landed rows in roster order (`team_create`, `team_delete`, the
+ * shutdown trio, `team_send_message`, the task-board quartet added at T8b,
+ * `team_status`) — then the summary line carrying the honest `11/24`, then AT
+ * MOST the resume lines of the persistence boot (below): no FAILED line, no
+ * validation line. (At P5-T3 it logged exactly ONE line, the summary with the
+ * loop's honest zero, because the registry was empty; T5/T6 grew it to two;
+ * T7 grew it to seven; T8b grew it to eleven; the flips are the markers the
+ * probe re-derives without an edit.)
+ *
+ * PERSISTENCE BOOT (T8b换装): after the registration loop, the store rebuilds
+ * its read mirror from disk and runs the vendored `resumeAllTeams` through
+ * the session-context adapter (creating>30min→failed / liveness-checked
+ * orphaning / terminal-dir sweep — upstream semantics verbatim, owned by the
+ * vendored resume artifacts). The boot awaits nothing: `apply` stays
+ * synchronous (the cordis contract), the async boot reports itself loudly —
+ * a resume report line on success, a `[omo-team] boot resume FAILED` line
+ * otherwise (loud-but-non-fatal, the registration loop's same discipline: a
+ * dead disk must not mean a dead plugin; the mirror simply stays boot-empty).
+ * Consumers grep by prefix (`[omo-team]`), never by position, so the extra
+ * lines cannot break the loaded-marker contract.
  */
 export function apply(ctx: TeamRegistrationContext): void {
   const log = (line: string): void => {
     console.log(line)
   }
   runTeamRegistrations(ctx, TEAM_MANIFEST, TEAM_REGISTRARS, log)
+  // Boot persistence pass — fire-and-forget by contract (apply is sync), loud
+  // either way. The adapter maps the OMO-shaped session client onto the live
+  // ctx.agents registry (session-context-adapter.ts, boundary documented).
+  teamStateStore
+    .rebuildIndexes()
+    .then(() => teamStateStore.resume(buildTeamSessionContext(ctx.agents)))
+    .then((report) => {
+      log(
+        `[omo-team] boot resume: resumed=${report.resumed}, failed=${report.marked_failed}, orphaned=${report.marked_orphaned}, cleaned=${report.cleaned}, errors=${report.errors.length}`,
+      )
+      for (const issue of report.errors) {
+        console.warn(`[omo-team] boot resume error: ${issue.message}`)
+      }
+    })
+    .catch((err: unknown) => {
+      console.warn(`[omo-team] boot resume FAILED (loud-but-non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    })
 }

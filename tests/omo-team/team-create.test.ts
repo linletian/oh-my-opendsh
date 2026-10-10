@@ -24,6 +24,7 @@
 //
 // The `.ts` extension in the import paths is load-bearing (Node 24 type-stripping).
 import { describe, expect, it, vi } from 'vitest'
+import { ephemeralConfig, makeStore } from './support/ephemeral-store.ts'
 import {
   TEAM_BRIEFING_SOURCE_KIND,
   TEAM_BRIEFING_SOURCE_PLUGIN,
@@ -42,7 +43,7 @@ import {
   TEAM_ROSTER_SEATS,
   OMO_TEAM_DELEGATION_TOOL_NAMES,
 } from '../../patches/omo-dsh/omo-team/src/team/roster-seats.ts'
-import { TeamStateMemoryStore } from '../../patches/omo-dsh/omo-team/src/team/team-state.ts'
+import { TeamStateStore } from '../../patches/omo-dsh/omo-team/src/team/team-state.ts'
 
 interface RecordedStart {
   provider: string
@@ -112,10 +113,10 @@ const VALID_SPEC = {
   ],
 }
 
-describe('P5-T5 executeTeamCreate — happy path: per-member routing field-by-field', () => {
+describe('P5-T5 executeTeamCreate — happy path: per-member routing field-by-field', async () => {
   it('parses, spawns two continuable children with the seat trio verbatim, then activates', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
 
     const result = await executeTeamCreate({ inline_spec: VALID_SPEC }, exec(agent), { subagents: channel, store })
@@ -164,7 +165,7 @@ describe('P5-T5 executeTeamCreate — happy path: per-member routing field-by-fi
 
   it('accepts a JSON-string inline_spec through the same chain', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
     const result = await executeTeamCreate({ inline_spec: JSON.stringify(VALID_SPEC) }, exec(agent), { subagents: channel, store })
     expect(result.status).toBe('active')
@@ -173,7 +174,7 @@ describe('P5-T5 executeTeamCreate — happy path: per-member routing field-by-fi
 
   it('uses the default initial prompt when a member omits prompt, and it is NOT the briefing', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
     await executeTeamCreate(
       { inline_spec: { name: 't', members: [{ name: 'solo', seat: 'hephaestus' }] } },
@@ -188,7 +189,7 @@ describe('P5-T5 executeTeamCreate — happy path: per-member routing field-by-fi
 
   it('each child gets a DISTINCT reserved childId (no identity collision)', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
     const result = await executeTeamCreate({ inline_spec: VALID_SPEC }, exec(agent), { subagents: channel, store })
     const ids = channel.starts.map((s) => s.childId)
@@ -197,10 +198,10 @@ describe('P5-T5 executeTeamCreate — happy path: per-member routing field-by-fi
   })
 })
 
-describe('P5-T5 executeTeamCreate — named rejections bubble verbatim', () => {
+describe('P5-T5 executeTeamCreate — named rejections bubble verbatim', async () => {
   it('parse failure surfaces the T4 message under a team_create: prefix', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
     await expect(executeTeamCreate({ inline_spec: { name: 't' } }, exec(agent), { subagents: channel, store }))
       .rejects.toThrow(/team_create: .*members/)
@@ -209,7 +210,7 @@ describe('P5-T5 executeTeamCreate — named rejections bubble verbatim', () => {
 
   it('nested gate: a lead already leading an active run is refused by the upstream text', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent('shared-lead')
     // First team succeeds and makes the lead a participant.
     const first = await executeTeamCreate({ inline_spec: VALID_SPEC }, exec(agent), { subagents: channel, store })
@@ -226,7 +227,7 @@ describe('P5-T5 executeTeamCreate — named rejections bubble verbatim', () => {
 
   it('eligibility rejection names the member and bubbles the validator reason', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
     // 'explore' is a read-only seat, ineligible. parseTeamSpec runs the SAME
     // member-validator first, so the rejection bubbles from the parse gate with
@@ -246,7 +247,7 @@ describe('P5-T5 executeTeamCreate — named rejections bubble verbatim', () => {
 
   it('a lead that is a member of another run is refused by the nested gate', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     // 'worker' is a MEMBER of a run created by a DIFFERENT lead.
     const owner = makeLeadAgent('owner-lead')
     const first = await executeTeamCreate(
@@ -276,10 +277,10 @@ describe('P5-T5 executeTeamCreate — named rejections bubble verbatim', () => {
   })
 })
 
-describe('P5-T5 executeTeamCreate — first-failure rollback', () => {
+describe('P5-T5 executeTeamCreate — first-failure rollback', async () => {
   it('interrupts + drains already-created members, flips failed, names the failure', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
 
     // Reserve ids are random, so we cannot predict which childId is member 2.
@@ -321,7 +322,7 @@ describe('P5-T5 executeTeamCreate — first-failure rollback', () => {
 
   it('a host that breaks the reserved-identity contract throws and rolls back', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
 
     // Child 0 honors the reserved id and really exists; child 1 comes back
@@ -365,7 +366,7 @@ describe('P5-T5 executeTeamCreate — first-failure rollback', () => {
 
   it('rollback faults are surfaced, not swallowed (interrupt throws → fault in message)', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
     let startCount = 0
     channel.startContinuable = async function patchedStart(this: MockChannel, spec: Parameters<TeamContinuableChannel['startContinuable']>[0]) {
@@ -384,7 +385,7 @@ describe('P5-T5 executeTeamCreate — first-failure rollback', () => {
 
   it('a first-member failure rolls back nothing (nothing created yet) but still fails', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { agent } = makeLeadAgent()
     channel.startContinuable = async function patchedStart(this: MockChannel, spec: Parameters<TeamContinuableChannel['startContinuable']>[0]) {
       this.starts.push({ provider: spec.provider, label: spec.label, childId: spec.childId, request: spec.request })
@@ -402,7 +403,7 @@ describe('P5-T5 executeTeamCreate — first-failure rollback', () => {
   })
 })
 
-describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/created', () => {
+describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/created', async () => {
   /** A ctx that captures the single agent/created listener. */
   function makeCtx() {
     const listeners: Array<(payload: { agent: TeamAgent }) => unknown> = []
@@ -426,33 +427,33 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
     return { agent: raw as unknown as TeamAgent, registered, injected }
   }
 
-  it('installs the lead surface on a root session (registers team_create)', () => {
+  it('installs the lead surface on a root session (registers team_create)', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { ctx, fire } = makeCtx()
     registerTeamCreateSurface(ctx, { subagents: channel, store })
     const { agent, registered } = makeLeadAgent('root-1')
-    fire(agent)
+    await fire(agent)
     expect(registered).toHaveLength(1)
     const definition = registered[0] as { name: string }
     expect(definition.name).toBe(TEAM_CREATE_TOOL_NAME)
   })
 
-  it('installs briefing + no team_create on a team-member child, nothing on a foreign child', () => {
+  it('installs briefing + no team_create on a team-member child, nothing on a foreign child', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { ctx, fire } = makeCtx()
     registerTeamCreateSurface(ctx, { subagents: channel, store })
 
     // Create a run so the member index carries 'worker-1'.
     const { agent: lead } = makeLeadAgent('lead-1')
     // Fire the lead so future member children dispatch correctly.
-    fire(lead)
+    await fire(lead)
     // The run: reserve childId via the tool so the index is populated.
-    return executeTeamCreate({ inline_spec: VALID_SPEC }, exec(lead), { subagents: channel, store }).then((result) => {
+    return executeTeamCreate({ inline_spec: VALID_SPEC }, exec(lead), { subagents: channel, store }).then(async (result) => {
       const memberSessionId = channel.starts[0]!.childId!
       const member = childAgent(memberSessionId, 'lead-1')
-      fire(member.agent)
+      await fire(member.agent)
       // Member face: structurally NO team_create registered.
       expect(member.registered).toHaveLength(0)
       // Exactly one injected briefing frame.
@@ -468,7 +469,7 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
 
       // Foreign child (no team ledger): nothing installed, nothing injected.
       const foreign = childAgent('foreign-1', 'lead-1')
-      fire(foreign.agent)
+      await fire(foreign.agent)
       expect(foreign.registered).toHaveLength(0)
       expect(foreign.injected).toHaveLength(0)
 
@@ -476,25 +477,25 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
     })
   })
 
-  it('P5-T7 dedup: a re-materialized member gets the briefing EXACTLY ONCE', () => {
+  it('P5-T7 dedup: a re-materialized member gets the briefing EXACTLY ONCE', async () => {
     // T6 e2e 观测过 frameCount:2——同一成员会话被重复物化（wake 后的二次
     // agent/created）时 briefings 重注。治理 = team-state.ts 的
     // briefingInjectedMembers 账：claimBriefingInjection 原子「查+记」，
     // 第二次物化 claim 失败即跳过（console 记 skip，不静默）。
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { ctx, fire } = makeCtx()
     registerTeamCreateSurface(ctx, { subagents: channel, store })
     const { agent: lead } = makeLeadAgent('lead-1')
-    fire(lead)
-    return executeTeamCreate({ inline_spec: VALID_SPEC }, exec(lead), { subagents: channel, store }).then((result) => {
+    await fire(lead)
+    return executeTeamCreate({ inline_spec: VALID_SPEC }, exec(lead), { subagents: channel, store }).then(async (result) => {
       const memberSessionId = channel.starts[0]!.childId!
       const member = childAgent(memberSessionId, 'lead-1')
-      fire(member.agent)
+      await fire(member.agent)
       expect(member.injected).toHaveLength(1)
       // 第二次物化（同一 member 会话再过一遍闸）：claim 失败，不重注。
-      fire(member.agent)
-      fire(member.agent)
+      await fire(member.agent)
+      await fire(member.agent)
       expect(member.injected).toHaveLength(1)
       // 账本记名：该 run 的 briefingInjectedMembers 含且仅含该成员一次。
       const ledger = store.get(result.teamRunId)!.briefingInjectedMembers
@@ -503,26 +504,26 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
       // 别的成员不受牵连：第二席（reserved childId 的另一枚）首过照注、
       // 重过不重注。
       const second = childAgent(channel.starts[1]!.childId!, 'lead-1')
-      fire(second.agent)
+      await fire(second.agent)
       expect(second.injected).toHaveLength(1)
-      fire(second.agent)
+      await fire(second.agent)
       expect(second.injected).toHaveLength(1)
       expect(store.get(result.teamRunId)!.briefingInjectedMembers).toHaveLength(2)
     })
   })
 
-  it('P5-T7 review-MINOR: an inject throw releases the briefing ledger — next materialization re-injects', () => {
+  it('P5-T7 review-MINOR: an inject throw releases the briefing ledger — next materialization re-injects', async () => {
     // 未送达不占幂等位（与 releaseShutdownRequest/unmarkMessageProcessed 同
     // 一不变量）：agent.inject 抛错 → releaseBriefingInjection 退账 + 错误
     // 响亮冒泡；下一次物化再 claim 再注入成功、账重新武装；第三过 claim
     // 再挡——退账只救未送达，不破恰一次的治理。
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { ctx, fire } = makeCtx()
     registerTeamCreateSurface(ctx, { subagents: channel, store })
     const { agent: lead } = makeLeadAgent('lead-1')
-    fire(lead)
-    return executeTeamCreate({ inline_spec: VALID_SPEC }, exec(lead), { subagents: channel, store }).then((result) => {
+    await fire(lead)
+    return executeTeamCreate({ inline_spec: VALID_SPEC }, exec(lead), { subagents: channel, store }).then(async (result) => {
       const memberSessionId = channel.starts[0]!.childId!
       const injected: InjectedFrame[] = []
       let failNextInject = true
@@ -541,7 +542,7 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
       try {
         // 第一次物化：inject 抛 → 退账（账面空）→ 错误冒（不吞）。
-        expect(() => fire(agent)).toThrow('mock: inject refused')
+        await expect(fire(agent)).rejects.toThrow('mock: inject refused')
         expect(store.get(result.teamRunId)!.briefingInjectedMembers).toEqual([])
         expect(injected).toHaveLength(0)
         // 退账须响亮：console.error 点名成员与「ledger released」。
@@ -549,12 +550,12 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
         expect(String(errSpy.mock.calls[0]![0])).toContain('structure-analyst')
         expect(String(errSpy.mock.calls[0]![0])).toContain('ledger released')
         // 下一次物化：claim 可再入账，注入成功，账重新武装。
-        fire(agent)
+        await fire(agent)
         expect(injected).toHaveLength(1)
         expect(injected[0]!.source).toEqual({ kind: TEAM_BRIEFING_SOURCE_KIND, plugin: TEAM_BRIEFING_SOURCE_PLUGIN, form: 'instructions' })
         expect(store.get(result.teamRunId)!.briefingInjectedMembers).toEqual(['structure-analyst'])
         // 第三过：已送达的账挡重注（恰一次治理回归防护）。
-        fire(agent)
+        await fire(agent)
         expect(injected).toHaveLength(1)
       } finally {
         errSpy.mockRestore()
@@ -562,42 +563,42 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
     })
   })
 
-  it("state-gates the member face: a terminal run's ledger installs NO briefing", () => {
+  it("state-gates the member face: a terminal run's ledger installs NO briefing", async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { ctx, fire } = makeCtx()
     registerTeamCreateSurface(ctx, { subagents: channel, store })
 
     // A run that reached a terminal status keeps its member ledger for
     // diagnostics (participationOfMember deliberately does NOT status-filter)
     // — but the DISPATCH is state-gated: briefing is a live-run face only.
-    const provisioned = store.create({
+    const provisioned = await store.create({
       teamName: 'gated',
       leadSessionId: 'lead-1',
       members: [{ name: 'helper', seat: 'hephaestus', childId: 'reserved-gated-1' }],
     })
-    store.transition(provisioned.teamRunId, 'failed')
+    await store.transition(provisioned.teamRunId, 'failed')
     expect(store.participationOfMember('reserved-gated-1')?.role).toBe('member')
 
     const member = childAgent('reserved-gated-1', 'lead-1')
-    fire(member.agent)
+    await fire(member.agent)
     expect(member.registered).toHaveLength(0)
     expect(member.injected).toHaveLength(0)
   })
 
-  it('member ledger without run state is an impossible state: warns loudly, installs nothing', () => {
+  it('member ledger without run state is an impossible state: warns loudly, installs nothing', async () => {
     // Simulate the should-be-impossible divergence (participation row present,
     // state row gone) by blinding ONLY get() — the dispatch must WARN rather
     // than return silently, and must inject nothing built on a missing state.
-    class StateBlindStore extends TeamStateMemoryStore {
+    class StateBlindStore extends TeamStateStore {
       override get(_teamRunId: string) { return undefined }
     }
     const channel = makeChannel()
-    const store = new StateBlindStore()
+    const store = new StateBlindStore(ephemeralConfig())
     const { ctx, fire } = makeCtx()
     registerTeamCreateSurface(ctx, { subagents: channel, store })
 
-    const provisioned = store.create({
+    const provisioned = await store.create({
       teamName: 'ghost',
       leadSessionId: 'lead-1',
       members: [{ name: 'helper', seat: 'hephaestus', childId: 'reserved-ghost-1' }],
@@ -605,7 +606,7 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const member = childAgent('reserved-ghost-1', 'lead-1')
-      fire(member.agent)
+      await fire(member.agent)
       expect(member.registered).toHaveLength(0)
       expect(member.injected).toHaveLength(0)
       expect(warn).toHaveBeenCalledTimes(1)
@@ -616,21 +617,21 @@ describe('P5-T5 registerTeamCreateSurface — role-scoped dispatch on agent/crea
     }
   })
 
-  it('returns a disposer that unsubscribes the listener', () => {
+  it('returns a disposer that unsubscribes the listener', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const { ctx, listeners, fire } = makeCtx()
     const dispose = registerTeamCreateSurface(ctx, { subagents: channel, store })
     expect(listeners).toHaveLength(1)
     dispose()
     expect(listeners).toHaveLength(0)
     // Firing after disposal is inert (no listener); guard the call shape.
-    expect(() => { if (listeners[0]) fire(makeLeadAgent('late').agent) }).not.toThrow()
+    if (listeners[0]) await fire(makeLeadAgent('late').agent) // late fire must not reject
   })
 })
 
-describe('P5-T5 briefing text discipline (Q-8 canary, unit half)', () => {
-  it('briefing carries the no-delegation + report-to-lead + idle-is-fine sentences', () => {
+describe('P5-T5 briefing text discipline (Q-8 canary, unit half)', async () => {
+  it('briefing carries the no-delegation + report-to-lead + idle-is-fine sentences', async () => {
     const text = buildTeamBriefingText('pilot', 'worker-1', 'run-abc-123')
     expect(text).toContain('# Team Briefing')
     expect(text).toContain("'worker-1'")
@@ -648,15 +649,15 @@ describe('P5-T5 briefing text discipline (Q-8 canary, unit half)', () => {
     expect(text).toContain("'lead' is a valid `to` value")
   })
 
-  it('briefing never embeds a member prompt (two-source separation)', () => {
+  it('briefing never embeds a member prompt (two-source separation)', async () => {
     const canary = 'UNIQUE-CANARY-PROMPT-TEXT-9137'
     const text = buildTeamBriefingText('pilot', 'worker-1', 'run-abc-123')
     expect(text).not.toContain(canary)
   })
 
-  it('createTeamCreateDefinition exposes the dsh-tools contract {name, parameters, output{schema,render}}', () => {
+  it('createTeamCreateDefinition exposes the dsh-tools contract {name, parameters, output{schema,render}}', async () => {
     const channel = makeChannel()
-    const store = new TeamStateMemoryStore()
+    const store = makeStore()
     const definition = createTeamCreateDefinition({ subagents: channel, store }) as {
       name: string
       parameters: { type: string; required: string[]; properties: Record<string, { oneOf: unknown[] }> }
@@ -674,7 +675,7 @@ describe('P5-T5 briefing text discipline (Q-8 canary, unit half)', () => {
     expect(rendered).toEqual([{ type: 'text', text: JSON.stringify({ teamRunId: 'x' }) }])
   })
 
-  it('buildTeamMemberLabel is the senpi team:<runId>:<name> namespace', () => {
+  it('buildTeamMemberLabel is the senpi team:<runId>:<name> namespace', async () => {
     expect(buildTeamMemberLabel('abc-123', 'analyst')).toBe('team:abc-123:analyst')
   })
 })

@@ -79,12 +79,12 @@ const MATRIX: ReadonlyArray<{
   { seat: 'sisyphus', allowed: false, seatClass: undefined, code: 'SEAT_NOT_ELIGIBLE', fragments: ['structurally excluded', 'route-only conductor', 'no \'class\' field', 'lead is always the current session', 'not by class match'] },
 ]
 
-describe('资格矩阵 — 11 席全组合（覆盖基线 §4 终态）', () => {
-  it('矩阵本身恰好 11 行（缺一席即红的测试侧保险丝）', () => {
+describe('资格矩阵 — 11 席全组合（覆盖基线 §4 终态）', async () => {
+  it('矩阵本身恰好 11 行（缺一席即红的测试侧保险丝）', async () => {
     expect(MATRIX).toHaveLength(11)
   })
 
-  it('矩阵席集 == 手抄 11 席 id（按允许/收紧/排除分组序；roster 对账见后两条）', () => {
+  it('矩阵席集 == 手抄 11 席 id（按允许/收紧/排除分组序；roster 对账见后两条）', async () => {
     expect(MATRIX.map((row) => row.seat)).toEqual([
       'hephaestus',
       'sisyphus-junior',
@@ -100,11 +100,11 @@ describe('资格矩阵 — 11 席全组合（覆盖基线 §4 终态）', () => 
     ])
   })
 
-  it('被测表的席集与 roster.ts 的 ALL_AGENT_IDS 集合相等（跨包对账，src 禁 import 的测试期补偿）', () => {
+  it('被测表的席集与 roster.ts 的 ALL_AGENT_IDS 集合相等（跨包对账，src 禁 import 的测试期补偿）', async () => {
     expect([...TEAM_SEAT_IDS].sort()).toEqual([...ALL_AGENT_IDS].sort())
   })
 
-  it('TEAM_SEAT_IDS 逐位置等于 roster.ts 的 ALL_AGENT_IDS（行序对账——钉死 member-validator.ts:74「顺序 = roster.ts 行序」声明）', () => {
+  it('TEAM_SEAT_IDS 逐位置等于 roster.ts 的 ALL_AGENT_IDS（行序对账——钉死 member-validator.ts:74「顺序 = roster.ts 行序」声明）', async () => {
     // 集合相等只拦增删，拦不住转抄时 reordered 的席表；逐位置 toEqual 把
     // 「序也照抄」这一声明钉死（roster.ts:110-270 的 id 行序为事实源）。
     expect([...ALL_AGENT_IDS]).toEqual([
@@ -123,7 +123,7 @@ describe('资格矩阵 — 11 席全组合（覆盖基线 §4 终态）', () => 
     expect([...TEAM_SEAT_IDS]).toEqual([...ALL_AGENT_IDS])
   })
 
-  it('TEAM_SEAT_IDS 恰好 11 席（缺一席即红的被测侧保险丝）', () => {
+  it('TEAM_SEAT_IDS 恰好 11 席（缺一席即红的被测侧保险丝）', async () => {
     expect(TEAM_SEAT_IDS).toHaveLength(11)
   })
 
@@ -143,27 +143,27 @@ describe('资格矩阵 — 11 席全组合（覆盖基线 §4 终态）', () => 
   }
 })
 
-describe('可入队席与词表', () => {
-  it('TEAM_ELIGIBLE_SEATS === worker 两席（手抄覆盖基线 §4 允许列）', () => {
+describe('可入队席与词表', async () => {
+  it('TEAM_ELIGIBLE_SEATS === worker 两席（手抄覆盖基线 §4 允许列）', async () => {
     expect(TEAM_ELIGIBLE_SEATS).toEqual(['hephaestus', 'sisyphus-junior'])
   })
 
-  it('TEAM_AGENT_CLASSES === roster.ts:51 四值，无 conductor', () => {
+  it('TEAM_AGENT_CLASSES === roster.ts:51 四值，无 conductor', async () => {
     expect(TEAM_AGENT_CLASSES).toEqual(['read-only', 'worker', 'orchestrator', 'allowlist'])
     expect((TEAM_AGENT_CLASSES as readonly string[]).includes('conductor')).toBe(false)
   })
 
-  it('CURATED_READONLY_SEATS_V1 === 上游 v5 拒绝清单四席（调查报告 §2.1-3 逐字名单）', () => {
+  it('CURATED_READONLY_SEATS_V1 === 上游 v5 拒绝清单四席（调查报告 §2.1-3 逐字名单）', async () => {
     expect(CURATED_READONLY_SEATS_V1).toEqual(['explore', 'librarian', 'plan-consultant', 'plan-reviewer'])
   })
 })
 
-describe('category 别名表 v1（quick→sisyphus-junior / deep→hephaestus）', () => {
-  it('别名表恰好两枚 key（词表封闭）', () => {
+describe('category 别名表 v1（quick→sisyphus-junior / deep→hephaestus）', async () => {
+  it('别名表恰好两枚 key（词表封闭）', async () => {
     expect(Object.keys(TEAM_CATEGORY_SEAT_ALIASES_V1).sort()).toEqual(['deep', 'quick'])
   })
 
-  it('quick → sisyphus-junior（FAST 席）', () => {
+  it('quick → sisyphus-junior（FAST 席）', async () => {
     const resolution = resolveCategorySeat('quick')
     expect(resolution.ok).toBe(true)
     if (resolution.ok) {
@@ -173,7 +173,7 @@ describe('category 别名表 v1（quick→sisyphus-junior / deep→hephaestus）
     }
   })
 
-  it('deep → hephaestus（STRONG 席）', () => {
+  it('deep → hephaestus（STRONG 席）', async () => {
     const resolution = resolveCategorySeat('deep')
     expect(resolution.ok).toBe(true)
     if (resolution.ok) {
@@ -183,7 +183,7 @@ describe('category 别名表 v1（quick→sisyphus-junior / deep→hephaestus）
     }
   })
 
-  it('表外 category（含上游在册的 ultrabrain）→ UNRESOLVABLE_CATEGORY', () => {
+  it('表外 category（含上游在册的 ultrabrain）→ UNRESOLVABLE_CATEGORY', async () => {
     for (const category of ['ultrabrain', 'unspecified-low', 'git', 'QUICK', 'deep ']) {
       const resolution = resolveCategorySeat(category)
       expect(resolution.ok).toBe(false)
@@ -195,48 +195,48 @@ describe('category 别名表 v1（quick→sisyphus-junior / deep→hephaestus）
   })
 })
 
-describe('UNRESOLVABLE_CATEGORY 可用清单文案（上游语义 = 排序拼接）', () => {
-  it('含逐字可用 category 清单（排序：deep 先于 quick）', () => {
+describe('UNRESOLVABLE_CATEGORY 可用清单文案（上游语义 = 排序拼接）', async () => {
+  it('含逐字可用 category 清单（排序：deep 先于 quick）', async () => {
     expect(unresolvableCategoryReason('nope')).toContain('Available categories: deep, quick.')
   })
 
-  it('含逐字可用 seat 清单（排序：hephaestus 先于 sisyphus-junior）', () => {
+  it('含逐字可用 seat 清单（排序：hephaestus 先于 sisyphus-junior）', async () => {
     expect(unresolvableCategoryReason('nope')).toContain('Available seats: hephaestus, sisyphus-junior.')
   })
 
-  it('点名肇事 category 并指两臂自救路径', () => {
+  it('点名肇事 category 并指两臂自救路径', async () => {
     const reason = unresolvableCategoryReason('nope')
     expect(reason).toContain("unknown category 'nope'")
     expect(reason).toContain("Specify exactly one of 'category' or 'seat'")
   })
 
-  it('resolveCategorySeat 的失败 reason 与生成器同源（一文案一住所）', () => {
+  it('resolveCategorySeat 的失败 reason 与生成器同源（一文案一住所）', async () => {
     const resolution = resolveCategorySeat('nope')
     expect(!resolution.ok && resolution.reason).toBe(unresolvableCategoryReason('nope'))
   })
 })
 
-describe('拒绝文案逐类锚点 + 表外席 + subagent_type 差异', () => {
-  it('seatRejectionReason 对 read-only 分岔：curated 四席 vs oracle/prometheus 收紧注', () => {
+describe('拒绝文案逐类锚点 + 表外席 + subagent_type 差异', async () => {
+  it('seatRejectionReason 对 read-only 分岔：curated 四席 vs oracle/prometheus 收紧注', async () => {
     expect(seatRejectionReason('explore', 'read-only')).toContain('matching the upstream v5 parse-reject list')
     expect(seatRejectionReason('oracle', 'read-only')).toContain('intentional tightening')
     expect(seatRejectionReason('oracle', 'read-only')).not.toContain('matching the upstream v5 parse-reject list')
   })
 
-  it('atlas 文案携带三条依据锚（委派通道缺失 / 上游 eligible 对照 / 重开前置）', () => {
+  it('atlas 文案携带三条依据锚（委派通道缺失 / 上游 eligible 对照 / 重开前置）', async () => {
     const reason = seatRejectionReason('atlas', 'orchestrator')
     expect(reason).toContain('no delegation channel')
     expect(reason).toContain('structurally impossible')
     expect(reason).toContain('reopening')
   })
 
-  it('multimodal-looker 文案钉 v4 收紧与 v5 沉默', () => {
+  it('multimodal-looker 文案钉 v4 收紧与 v5 沉默', async () => {
     const reason = seatRejectionReason('multimodal-looker', 'allowlist')
     expect(reason).toContain('v4 registry')
     expect(reason).toContain('v5 reject list never mentions')
   })
 
-  it('sisyphus 结构性排除文案不经 class 匹配（文案自证 + verdict.seatClass undefined）', () => {
+  it('sisyphus 结构性排除文案不经 class 匹配（文案自证 + verdict.seatClass undefined）', async () => {
     const verdict = validateMemberSeat('sisyphus')
     expect(verdict.ok).toBe(false)
     if (!verdict.ok) {
@@ -246,7 +246,7 @@ describe('拒绝文案逐类锚点 + 表外席 + subagent_type 差异', () => {
     }
   })
 
-  it('表外 seat id → UNKNOWN_SEAT + 可用席清单 + seatClass undefined', () => {
+  it('表外 seat id → UNKNOWN_SEAT + 可用席清单 + seatClass undefined', async () => {
     const verdict = validateMemberSeat('not-a-seat')
     expect(verdict.ok).toBe(false)
     if (!verdict.ok) {
@@ -257,7 +257,7 @@ describe('拒绝文案逐类锚点 + 表外席 + subagent_type 差异', () => {
     }
   })
 
-  it('subagent_type 差异文案：具名 v1 记差异 + 无用户自定义 agent 注册表 + 两臂自救', () => {
+  it('subagent_type 差异文案：具名 v1 记差异 + 无用户自定义 agent 注册表 + 两臂自救', async () => {
     expect(SUBAGENT_TYPE_UNSUPPORTED_REASON).toContain("'subagent_type' is recorded-difference in v1")
     expect(SUBAGENT_TYPE_UNSUPPORTED_REASON).toContain('no user-defined agent registry')
     expect(SUBAGENT_TYPE_UNSUPPORTED_REASON).toContain("'category' (deep, quick) or 'seat'")

@@ -1,13 +1,13 @@
-import { isPlainRecord } from "../plain-record"
+import { isPlainRecord } from "../plain-record.ts"
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises"
 import path from "node:path"
 
-import type { TeamModeConfig } from "../config"
-import { log } from "../logger"
-import { type ActiveTeamSummary, type RuntimeState, RuntimeStateSchema, type TeamSpec } from "../types"
-import { getRuntimeStateDir, resolveBaseDir } from "../team-registry/paths"
-import { atomicWrite, withLock } from "./locks"
+import type { TeamModeConfig } from "../config.ts"
+import { log } from "../logger.ts"
+import { type ActiveTeamSummary, type RuntimeState, RuntimeStateSchema, type TeamSpec } from "../types.ts"
+import { getRuntimeStateDir, resolveBaseDir } from "../team-registry/paths.ts"
+import { atomicWrite, withLock } from "./locks.ts"
 
 const STATE_FILE_NAME = "state.json"
 export const STALE_DELETING_TTL_MS = 60_000

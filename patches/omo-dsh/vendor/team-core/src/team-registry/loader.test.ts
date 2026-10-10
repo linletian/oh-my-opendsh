@@ -6,12 +6,12 @@ import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
-import { TeamModeConfigSchema } from "../config"
+import { TeamModeConfigSchema } from "../config.ts"
 
 const ORACLE_REJECTION_MESSAGE =
   "Agent 'oracle' is read-only (cannot write files). Team members must write to mailbox inbox files. Use delegate-task with subagent_type: 'oracle' for read-only analysis instead."
 
-const { TeamSpecValidationError, loadAllTeamSpecs, loadTeamSpec } = await import("./loader")
+const { TeamSpecValidationError, loadAllTeamSpecs, loadTeamSpec } = await import("./loader.ts")
 
 function createBaseSpec(teamName: string): {
   version: 1

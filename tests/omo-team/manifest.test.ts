@@ -150,8 +150,8 @@ function rejectionMessage(rows: readonly RowFixture[]): string {
   }
 }
 
-describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
-  it('① accepts the real TEAM_MANIFEST as currently authored', () => {
+describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
+  it('① accepts the real TEAM_MANIFEST as currently authored', async () => {
     // Non-vacuous by construction, not by this line: validateManifest's first
     // statement is the EXPECTED_TEAM_MANIFEST_COUNT equality (manifest.ts
     // check 0 — the guard BEFORE the per-row loop), so an empty table throws
@@ -160,7 +160,7 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
     expect(() => validateManifest(TEAM_MANIFEST)).not.toThrow()
   })
 
-  it('② declares exactly 24 entries — 13 §1 tool rows + 4 §3 handoff + 7 vendor subset', () => {
+  it('② declares exactly 24 entries — 13 §1 tool rows + 4 §3 handoff + 7 vendor subset', async () => {
     // Pins phase5-team.md §1（12 工具 + team_wait）+ §3 表四行 + FORK.md §3.3
     // 子集七行。Without the non-empty assertion a dropped collection (suite
     // never ran) would look like a green.
@@ -168,16 +168,16 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
     expect(TEAM_MANIFEST.length).toBe(EXPECTED_TEAM_MANIFEST_COUNT)
   })
 
-  it('③ ids equal the hard-coded 24-id list, in coverage-baseline order', () => {
+  it('③ ids equal the hard-coded 24-id list, in coverage-baseline order', async () => {
     expect(TEAM_IDS).toEqual([...EXPECTED_IDS])
     expect([...new Set(TEAM_IDS)].length).toBe(EXPECTED_IDS.length)
   })
 
-  it('③ the raw entry ids match too — TEAM_IDS cannot disagree with the table', () => {
+  it('③ the raw entry ids match too — TEAM_IDS cannot disagree with the table', async () => {
     expect(TEAM_MANIFEST.map((entry) => entry.id)).toEqual([...EXPECTED_IDS])
   })
 
-  it('declares exactly the four-value disposition vocabulary (T1 更正后), as array and as set', () => {
+  it('declares exactly the four-value disposition vocabulary (T1 更正后), as array and as set', async () => {
     // Both halves are asserted against EXTERNAL literals on purpose: the array
     // pins the declared order, the set pins the CONTENTS. Asserting the set
     // against the array instead is a construction equation that any widening
@@ -196,12 +196,12 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
     ])
   })
 
-  it('declares exactly the three-value status vocabulary (omo-commands discipline + recorded terminal), as array and as set', () => {
+  it('declares exactly the three-value status vocabulary (omo-commands discipline + recorded terminal), as array and as set', async () => {
     expect([...TEAM_MANIFEST_STATUSES]).toEqual(['pending', 'ported', 'recorded'])
     expect([...teamStatusSet].sort()).toEqual(['pending', 'ported', 'recorded'])
   })
 
-  it('splits the roster by status as of P5-T7 (15 pending, SEVEN ported, 2 recorded)', () => {
+  it('splits the roster by status as of P5-T8b (11 pending, ELEVEN ported, 2 recorded)', async () => {
     // The hard-coded facts, not lengths. ZERO ported was the load-bearing half
     // at P5-T2; P5-T5 flips team_create to 'ported' (the delivery surface —
     // src/tools/team-create.ts + team-state.ts + roster-seats.ts — landed);
@@ -216,10 +216,6 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
     // rows are the honest terminal for recorded-difference rows — their
     // deliverable IS the recorded difference (§1 行 11/12).
     expect(teamsByStatus(TEAM_MANIFEST, 'pending').map((row) => row.id)).toEqual([
-      'team_task_create',
-      'team_task_list',
-      'team_task_update',
-      'team_task_get',
       'team-keyword-injection',
       'hyperplan-upgrade',
       'remove-ai-slops-team-addendum',
@@ -239,6 +235,10 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
       'team_approve_shutdown',
       'team_reject_shutdown',
       'team_send_message',
+      'team_task_create',
+      'team_task_list',
+      'team_task_update',
+      'team_task_get',
       'team_status',
     ])
     expect(teamsByStatus(TEAM_MANIFEST, 'recorded').map((row) => row.id)).toEqual([
@@ -247,7 +247,7 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
     ])
   })
 
-  it('splits the roster by disposition (0 native-adopt / 11 ported / 11 content-vendor / 2 recorded-difference)', () => {
+  it('splits the roster by disposition (0 native-adopt / 11 ported / 11 content-vendor / 2 recorded-difference)', async () => {
     // Zero native-adopt rows is a hard-coded INTENTIONAL fact (manifest.ts
     // header: fork (B) 下 §1 无「零移植原生覆盖」的工具行；原生覆盖的事实
     // 住在覆盖基线 §2). A row flipping INTO native-adopt without a baseline
@@ -285,7 +285,7 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
     ])
   })
 
-  it('every row names exactly one canonical e2e scenario (七名封闭集)', () => {
+  it('every row names exactly one canonical e2e scenario (七名封闭集)', async () => {
     for (const entry of TEAM_MANIFEST) {
       expect(CANONICAL_SCENARIOS, `${entry.id} ${entry.e2eScenario}`)
         .toContain(entry.e2eScenario)
@@ -307,8 +307,8 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', () => {
   })
 })
 
-describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md / FORK.md)', () => {
-  it('④ team_create is the first §1 row: 2 sources incl. hooks/ gating, startContinuable face', () => {
+describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md / FORK.md)', async () => {
+  it('④ team_create is the first §1 row: 2 sources incl. hooks/ gating, startContinuable face', async () => {
     const entry = TEAM_MANIFEST.find((row) => row.id === 'team_create')
     expect(entry).toBeDefined()
     // gating 源实测住在 packages/omo-opencode/src/hooks/team-tool-gating/（不在
@@ -329,7 +329,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(TEAM_IDS[0]).toBe('team_create')
   })
 
-  it('④ team_send_message carries the lead-relay difference and the kind discipline', () => {
+  it('④ team_send_message carries the lead-relay difference and the kind discipline', async () => {
     const entry = TEAM_MANIFEST.find((row) => row.id === 'team_send_message')
     expect(entry).toBeDefined()
     // mailbox 本体不 vendor（FORK.md §3.3）但错误族语义源必须点名 team-core。
@@ -349,7 +349,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.e2eScenario).toBe('team-create-and-message')
   })
 
-  it('④ team_task_update is the claim-routing row: 4 sources incl. claim/dependencies', () => {
+  it('④ team_task_update is the claim-routing row: 4 sources incl. claim/dependencies', async () => {
     const entry = TEAM_MANIFEST.find((row) => row.id === 'team_task_update')
     expect(entry).toBeDefined()
     expect(entry?.upstreamSources).toEqual([
@@ -360,12 +360,12 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     ])
     expect(entry?.disposition).toBe('content-vendor')
     expect(entry?.e2eScenario).toBe('team-task-claim')
-    expect(entry?.status).toBe('pending')
+    expect(entry?.status).toBe('ported')
     expect(entry?.summary).toContain('claimTask')
     expect(entry?.summary).toContain('BlockedByError')
   })
 
-  it('④ team_wait is the empty-upstream recorded row (the explicit exemption)', () => {
+  it('④ team_wait is the empty-upstream recorded row (the explicit exemption)', async () => {
     const entry = TEAM_MANIFEST.find((row) => row.id === 'team_wait')
     expect(entry).toBeDefined()
     // v4.19.4 的 12 工具名单**无 team_wait**（Q-1 复核）——空 upstreamSources
@@ -376,7 +376,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.nativeFace).toContain('steer')
   })
 
-  it('④ team_list is the spec-registry difference row, inherited via team_status', () => {
+  it('④ team_list is the spec-registry difference row, inherited via team_status', async () => {
     const entry = TEAM_MANIFEST.find((row) => row.id === 'team_list')
     expect(entry).toBeDefined()
     expect(entry?.upstreamSources).toEqual([
@@ -388,7 +388,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.summary).toContain('ephemeral-per-lead-session')
   })
 
-  it('④ vendor-team-core-closure names the closure four-piece set and BOTH external deps (T2 双评审终态)', () => {
+  it('④ vendor-team-core-closure names the closure four-piece set and BOTH external deps (T2 双评审终态)', async () => {
     const entry = TEAM_MANIFEST.find((row) => row.id === 'vendor-team-core-closure')
     expect(entry).toBeDefined()
     // 闭包四件逐字（FORK.md §3.3 T2 双评审后终态——session-client.ts 补入：
@@ -415,7 +415,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.status).toBe('pending')
   })
 
-  it('④ vendor-team-core-team-state-store is 12 files + 1 deviation + 1 excluded (T2 双评审终态)', () => {
+  it('④ vendor-team-core-team-state-store is 12 files + 1 deviation + 1 excluded (T2 双评审终态)', async () => {
     const entry = TEAM_MANIFEST.find((row) => row.id === 'vendor-team-core-team-state-store')
     expect(entry).toBeDefined()
     // 13 → 12 文件手抄钉死：reservation-reconciliation.ts 已排除（唯一带
@@ -451,7 +451,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.status).toBe('pending')
   })
 
-  it('④ vendor-team-prompts is the two-item prompt vendor row (Q1b N5 扩清单)', () => {
+  it('④ vendor-team-prompts is the two-item prompt vendor row (Q1b N5 扩清单)', async () => {
     const entry = TEAM_MANIFEST.find((row) => row.id === 'vendor-team-prompts')
     expect(entry).toBeDefined()
     expect(entry?.upstreamSources).toEqual([
@@ -463,7 +463,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.status).toBe('pending')
   })
 
-  it('④ team-keyword-injection is the §3 handoff row on the H-33 slot', () => {
+  it('④ team-keyword-injection is the §3 handoff row on the H-33 slot', async () => {
     const entry = TEAM_MANIFEST.find((row) => row.id === 'team-keyword-injection')
     expect(entry).toBeDefined()
     expect(entry?.upstreamSources).toEqual([
@@ -478,7 +478,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.status).toBe('pending')
   })
 
-  it('④ no row cites AGENTS.md and every cited path is tag-relative', () => {
+  it('④ no row cites AGENTS.md and every cited path is tag-relative', async () => {
     // N-03 + provenance, cross-row: a row that lost its 署名 anchor to the
     // frozen v4.19.4 tag (`Packages/`, an absolute path, a stray space) is
     // caught here before any gate runs.
@@ -491,7 +491,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     }
   })
 
-  it('④ negative pin: NO row cites a test file or test fixture in upstreamSources', () => {
+  it('④ negative pin: NO row cites a test file or test fixture in upstreamSources', async () => {
     // 轮检不变量（把 manifest.ts vendor 组头 :453-456 的排除措辞从注释升级为
     // 机器钉）：`*.test.ts` 与 `test-support` 等测试夹具不进 upstreamSources
     // ——测试种子的登记处是覆盖基线与 NOTICES playbook，不是逐文件列。
@@ -513,7 +513,7 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(checkedPaths).toBeGreaterThan(0)
   })
 
-  it('④ no row cites the two NOT-vendored trees (team-mailbox body / team-layout-tmux)', () => {
+  it('④ no row cites the two NOT-vendored trees (team-mailbox body / team-layout-tmux)', async () => {
     // FORK.md §3.3 显式不 vendor：team-mailbox（原生 inbox 替代）与
     // team-layout-tmux（D4）。team_send_message 行引 send.ts 是**错误族语义
     // 参照**，不是 vendor 范围；vendor 组的任何行都不得把这两棵树纳入。
@@ -537,20 +537,20 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
   })
 })
 
-describe('P5-T2 validateManifest — rejection branches', () => {
-  it('② throws on an empty id', () => {
+describe('P5-T2 validateManifest — rejection branches', async () => {
+  it('② throws on an empty id', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows[0] = legalRow({ id: '' })
     expect(rejectionMessage(rows)).toContain('empty id')
   })
 
-  it('② throws on a duplicate id', () => {
+  it('② throws on a duplicate id', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows[1] = legalRow({ id: rows[0]?.id ?? '' })
     expect(rejectionMessage(rows)).toContain('duplicate team id')
   })
 
-  it('② throws on an empty upstreamSources for a NON-exempt disposition', () => {
+  it('② throws on an empty upstreamSources for a NON-exempt disposition', async () => {
     // The exemption is recorded-difference-ONLY. FULL message: the tail names
     // the exemption rule and its exemplar (team_wait) — the two things a
     // future author needs when a legitimately-empty row gets rejected.
@@ -562,7 +562,7 @@ describe('P5-T2 validateManifest — rejection branches', () => {
     )
   })
 
-  it('② ACCEPTS an empty upstreamSources on a recorded-difference row (the exemption is real)', () => {
+  it('② ACCEPTS an empty upstreamSources on a recorded-difference row (the exemption is real)', async () => {
     // Positive control for the exemption above: the difference row must be
     // constructible with no upstream file to cite, or team_wait's honest
     // emptiness would be unrepresentable.
@@ -571,37 +571,37 @@ describe('P5-T2 validateManifest — rejection branches', () => {
     expect(() => validateManifest(rows as readonly TeamManifestEntry[])).not.toThrow()
   })
 
-  it('② throws on an empty nativeFace', () => {
+  it('② throws on an empty nativeFace', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows[0] = legalRow({ nativeFace: '' })
     expect(rejectionMessage(rows)).toContain('empty nativeFace')
   })
 
-  it('② throws on an empty summary', () => {
+  it('② throws on an empty summary', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows[0] = legalRow({ summary: '' })
     expect(rejectionMessage(rows)).toContain('empty summary')
   })
 
-  it('② throws on an empty e2eScenario', () => {
+  it('② throws on an empty e2eScenario', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows[0] = legalRow({ e2eScenario: '' })
     expect(rejectionMessage(rows)).toContain('empty e2eScenario')
   })
 
-  it('② throws on an illegal disposition (outside the four-value vocabulary)', () => {
+  it('② throws on an illegal disposition (outside the four-value vocabulary)', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows[0] = legalRow({ disposition: 'native-invent' })
     expect(rejectionMessage(rows)).toContain("illegal disposition 'native-invent'")
   })
 
-  it('② throws on an illegal status (outside the three-value vocabulary)', () => {
+  it('② throws on an illegal status (outside the three-value vocabulary)', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows[0] = legalRow({ status: 'shipped' })
     expect(rejectionMessage(rows)).toContain("illegal status 'shipped'")
   })
 
-  it('② throws on an empty status (the empty string is not a vocabulary value)', () => {
+  it('② throws on an empty status (the empty string is not a vocabulary value)', async () => {
     // The unset-variable case reaching the status branch rather than being
     // silently accepted: `teamStatusSet.has('')` is false.
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
@@ -609,7 +609,7 @@ describe('P5-T2 validateManifest — rejection branches', () => {
     expect(rejectionMessage(rows)).toContain("illegal status ''")
   })
 
-  it("② throws on status 'recorded' for a row whose disposition carries code", () => {
+  it("② throws on status 'recorded' for a row whose disposition carries code", async () => {
     // The disposition↔status coupling (manifest.ts check 9): a ported row may
     // not claim the difference-terminal to skip its delivery surface.
     // FULL message: it names the offending row, the illegal pair, AND the
@@ -622,7 +622,7 @@ describe('P5-T2 validateManifest — rejection branches', () => {
     )
   })
 
-  it('② throws on a non-tag-relative upstream path', () => {
+  it('② throws on a non-tag-relative upstream path', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows[0] = legalRow({ upstreamSources: ['/abs/path/team-core/types.ts'] })
     // FULL message — same rationale as the exemption case above.
@@ -633,7 +633,7 @@ describe('P5-T2 validateManifest — rejection branches', () => {
     )
   })
 
-  it('② throws when AGENTS.md leaks into upstreamSources', () => {
+  it('② throws when AGENTS.md leaks into upstreamSources', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows[0] = legalRow({
       upstreamSources: ['packages/team-core/AGENTS.md'],
@@ -645,7 +645,7 @@ describe('P5-T2 validateManifest — rejection branches', () => {
     )
   })
 
-  it('② accepts a full-length roster that changes nothing', () => {
+  it('② accepts a full-length roster that changes nothing', async () => {
     // The positive control for every negative case above: the fixture shape
     // itself is legal, so a rejection proves the field under test, not the
     // fixture.
@@ -653,20 +653,20 @@ describe('P5-T2 validateManifest — rejection branches', () => {
       .not.toThrow()
   })
 
-  it('⑤ throws when the roster is short (a dropped row is not a valid roster)', () => {
+  it('⑤ throws when the roster is short (a dropped row is not a valid roster)', async () => {
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT)
     rows.pop()
     expect(rejectionMessage(rows)).toContain('expected 24 team entries, got 23')
   })
 
-  it('⑤ throws when the roster is LONG (an extra row is not a valid roster either)', () => {
+  it('⑤ throws when the roster is LONG (an extra row is not a valid roster either)', async () => {
     // The count guard is an EQUALITY, not a floor: a 25th row — added without
     // its coverage-baseline line — must fail loudly, not quietly validate.
     const rows = legalRows(EXPECTED_TEAM_MANIFEST_COUNT + 1)
     expect(rejectionMessage(rows)).toContain('expected 24 team entries, got 25')
   })
 
-  it('⑤ the count guard fires BEFORE any per-row check (a 1-row roster with a bad id is still a count error)', () => {
+  it('⑤ the count guard fires BEFORE any per-row check (a 1-row roster with a bad id is still a count error)', async () => {
     // Proves the guard is check 0 and not a per-row check a later fix could
     // reorder: the roster is both wrong-length AND malformed, and the reported
     // message must be the count one.
@@ -675,8 +675,8 @@ describe('P5-T2 validateManifest — rejection branches', () => {
   })
 })
 
-describe('P5-T2 derived helpers', () => {
-  it('teamsByStatus / teamsByDisposition match nothing for an empty value, preserve roster order', () => {
+describe('P5-T2 derived helpers', async () => {
+  it('teamsByStatus / teamsByDisposition match nothing for an empty value, preserve roster order', async () => {
     // An empty filter value matches nothing rather than everything: a caller
     // passing an unset variable must not be told the whole roster is in that
     // state (two-package precedent). `as never` mirrors the widened-fixture
@@ -703,14 +703,15 @@ describe('P5-T2 derived helpers', () => {
     expect(total).toBe(TEAM_MANIFEST.length)
   })
 
-  it('countsByStatus derives the summary counts (20/2/2) with every key present at all times', () => {
+  it('countsByStatus derives the summary counts (20/2/2) with every key present at all times', async () => {
     // The T3 summary line's fields come from here, never from a hard-coded
     // string — so this test pins the DERIVATION against hand-typed numbers.
     // P5-T5 flipped team_create to ported: 21/1/2 (was 22/0/2 at P5-T2);
-    // P5-T6 flipped team_send_message: 20/2/2.
+    // P5-T6 flipped team_send_message: 20/2/2; P5-T7 five more: 15/7/2;
+    // P5-T8b flipped the task quartet: 11/11/2.
     const counts = countsByStatus(TEAM_MANIFEST)
-    expect(counts.get('pending')).toBe(15)
-    expect(counts.get('ported')).toBe(7)
+    expect(counts.get('pending')).toBe(11)
+    expect(counts.get('ported')).toBe(11)
     expect(counts.get('recorded')).toBe(2)
     // Every vocabulary key exists even at 0, so two boots stay line-comparable.
     expect([...counts.keys()]).toEqual([...TEAM_MANIFEST_STATUSES])
@@ -719,12 +720,12 @@ describe('P5-T2 derived helpers', () => {
     expect(total).toBe(TEAM_MANIFEST.length)
   })
 
-  it('countsByStatus reports zeros for an empty roster, not an empty map', () => {
+  it('countsByStatus reports zeros for an empty roster, not an empty map', async () => {
     const counts = countsByStatus([])
     expect([...counts.entries()]).toEqual([['pending', 0], ['ported', 0], ['recorded', 0]])
   })
 
-  it('countsByStatus adds an out-of-vocabulary status as its own key, never dropping it', () => {
+  it('countsByStatus adds an out-of-vocabulary status as its own key, never dropping it', async () => {
     // Defensive tail (两包 boot-markers 的 `other=` 纪律): a widened fixture
     // carrying a status outside the union must stay visible in the counts — a
     // silent drop would make "sum < row count" invisible.
@@ -739,7 +740,7 @@ describe('P5-T2 derived helpers', () => {
     expect([...counts.keys()].length).toBe(4)
   })
 
-  it('countsByDisposition derives the group counts (0/11/11/2) for the consistency gate', () => {
+  it('countsByDisposition derives the group counts (0/11/11/2) for the consistency gate', async () => {
     const counts = countsByDisposition(TEAM_MANIFEST)
     expect(counts.get('native-adopt')).toBe(0)
     expect(counts.get('ported')).toBe(11)
@@ -754,17 +755,17 @@ describe('P5-T2 derived helpers', () => {
     ])
   })
 
-  it('formatLoadedSummaryLine renders the exact P5-T2 census line from the real roster', () => {
+  it('formatLoadedSummaryLine renders the exact P5-T2 census line from the real roster', async () => {
     // 手打的整行——与上面 countsByStatus 的手打数字（22/0/2）互为对账；
     // T3 的 boot marker 若并入注册计数，格式扩展归 probe 侧（manifest.ts 注）。
-    // P5-T7 census: pending=15, ported=7 (create + delete + shutdown trio +
-    // send_message + status), recorded=2。
+    // P5-T8b census: pending=11, ported=11 (T7's seven + the task quartet),
+    // recorded=2。
     expect(formatLoadedSummaryLine(TEAM_MANIFEST)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=15, ported=7, recorded=2)',
+      '[omo-team] loaded: manifest 24 entries (pending=11, ported=11, recorded=2)',
     )
   })
 
-  it('formatLoadedSummaryLine derives from ANY roster, not from the shipped census', () => {
+  it('formatLoadedSummaryLine derives from ANY roster, not from the shipped census', async () => {
     // Synthetic roster: the derivation must follow the input, so a hand-copied
     // census inside the formatter would fail here.
     const rows = legalRows(3)

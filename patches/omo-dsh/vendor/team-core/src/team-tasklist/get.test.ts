@@ -2,9 +2,9 @@
 
 import { expect, test } from "bun:test"
 
-import { createTask } from "./store"
-import { createTaskInput, createTasklistFixture } from "./test-support"
-import { getTask } from "./get"
+import { createTask } from "./store.ts"
+import { createTaskInput, createTasklistFixture } from "./test-support.ts"
+import { getTask } from "./get.ts"
 
 test("getTask returns a persisted task", async () => {
   // given

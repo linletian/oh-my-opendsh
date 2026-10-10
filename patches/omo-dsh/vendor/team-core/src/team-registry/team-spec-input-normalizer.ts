@@ -1,4 +1,4 @@
-import type { CallerTeamLead } from "./caller-team-lead"
+import type { CallerTeamLead } from "./caller-team-lead.ts"
 
 type JsonRecord = Record<string, unknown>
 

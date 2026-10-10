@@ -70,7 +70,7 @@
 // strip-only 纪律（T5 NOTES-6）：本文件不用参数属性；零 @deepseek-ai
 // import（TeamContinuableChannel/TeamLiveAgents/TeamAgent 复用既有声明）。
 
-import { TEAM_DELETABLE_MEMBER_PHASES, type TeamStateMemoryStore } from '../team/team-state.ts'
+import { TEAM_DELETABLE_MEMBER_PHASES, type TeamStateStore } from '../team/team-state.ts'
 import type { TeamAgent, TeamContinuableChannel } from './team-create.ts'
 import type { TeamLiveAgents } from './team-message.ts'
 
@@ -112,7 +112,7 @@ export class TeamDeleteError extends Error {
 export interface TeamDeleteDeps {
   readonly subagents: TeamContinuableChannel
   readonly agents: TeamLiveAgents
-  readonly store: TeamStateMemoryStore
+  readonly store: TeamStateStore
 }
 
 /** execute 的第二参（同族工具同一形状）。 */
@@ -197,13 +197,13 @@ export async function executeTeamDelete(
   }
 
   // ③ force 的成员预清账（上游 :114-123）+ 入 deleting（:125-141）。
-  const forceCompletedMembers = forced ? deps.store.forceCompleteMembers(teamRunId) : []
+  const forceCompletedMembers = forced ? await deps.store.forceCompleteMembers(teamRunId) : []
   if (state.status === 'creating' || state.status === 'orphaned') {
     // force 绕表臂（上游 saveRuntimeState 绕 VALIDATION 的同一语义，收窄
     // 成显式入口 team-state.ts:forceTransitionToDeleting）。
-    deps.store.forceTransitionToDeleting(teamRunId)
+    await deps.store.forceTransitionToDeleting(teamRunId)
   } else if (state.status === 'active' || state.status === 'shutdown_requested') {
-    deps.store.transition(teamRunId, 'deleting')
+    await deps.store.transition(teamRunId, 'deleting')
   }
   // deleting/deleted：同态放行（幂等重删入口，上游 :126 同一早判）。
 
@@ -244,7 +244,7 @@ export async function executeTeamDelete(
   }
 
   // ⑤ → deleted + ⑥ 参与索引撤账（tombstone 留行）。
-  deps.store.transition(teamRunId, 'deleted')
+  await deps.store.transition(teamRunId, 'deleted')
   deps.store.retireRunIndexes(teamRunId)
   console.log(
     `${LOG_PREFIX} team ${teamRunId} deleted (${interruptedSessionIds.length} member session(s) interrupted + drained, forced=${forced}${forceCompletedMembers.length > 0 ? `, force-completed: ${forceCompletedMembers.join(', ')}` : ''})`,

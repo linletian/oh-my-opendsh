@@ -1,11 +1,11 @@
 import { mkdir, readFile } from "node:fs/promises"
 import path from "node:path"
 
-import type { TeamModeConfig } from "../config"
-import { getTaskFilePath, getTasksDir, resolveBaseDir } from "../team-registry"
-import { atomicWrite, withLock } from "../team-state-store/locks"
-import { TaskSchema } from "../types"
-import type { Task } from "../types"
+import type { TeamModeConfig } from "../config.ts"
+import { getTaskFilePath, getTasksDir, resolveBaseDir } from "../team-registry/index.ts"
+import { atomicWrite, withLock } from "../team-state-store/locks.ts"
+import { TaskSchema } from "../types.ts"
+import type { Task } from "../types.ts"
 
 const HIGH_WATERMARK_FILE = ".highwatermark"
 

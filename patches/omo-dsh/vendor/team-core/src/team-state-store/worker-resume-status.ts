@@ -1,5 +1,5 @@
-import type { RuntimeState } from "../types"
-import type { WorkerLiveness } from "./session-liveness"
+import type { RuntimeState } from "../types.ts"
+import type { WorkerLiveness } from "./session-liveness.ts"
 
 export interface WorkerResumeStatus {
   readonly deadWorkerNames: readonly string[]

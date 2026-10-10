@@ -2,15 +2,15 @@
 
 import { describe, expect, test } from "bun:test"
 
-import { TeamSpecSchema } from "../types"
+import { TeamSpecSchema } from "../types.ts"
 
-import type { Member, TeamSpec } from "../types"
+import type { Member, TeamSpec } from "../types.ts"
 import {
   TeamSpecValidationError,
   validateDualSupport,
   validateMemberEligibility,
   validateSpec,
-} from "./validator"
+} from "./validator.ts"
 
 const PROMETHEUS_REJECTION_MESSAGE =
   "Agent 'prometheus' is plan-mode-only; can only write to .omo/*.md (enforced by prometheusMdOnly hook). Cannot write to team mailbox. Use delegate-task with subagent_type: 'plan' instead."

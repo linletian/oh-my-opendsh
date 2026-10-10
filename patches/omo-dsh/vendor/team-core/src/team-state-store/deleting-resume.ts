@@ -1,7 +1,7 @@
-import type { TeamModeConfig } from "../config"
-import type { RuntimeState } from "../types"
-import { cleanupMemberWorktrees, removeRuntimeDirectory } from "./runtime-cleanup"
-import { transitionRuntimeState } from "./store"
+import type { TeamModeConfig } from "../config.ts"
+import type { RuntimeState } from "../types.ts"
+import { cleanupMemberWorktrees, removeRuntimeDirectory } from "./runtime-cleanup.ts"
+import { transitionRuntimeState } from "./store.ts"
 
 export async function finishDeletingTeam(
   runtimeState: RuntimeState,

@@ -1,10 +1,10 @@
-import type { TeamModeConfig } from "../config"
-import { getTaskFilePath, resolveBaseDir } from "../team-registry"
-import { atomicWrite } from "../team-state-store/locks"
-import { TaskSchema } from "../types"
-import type { Task } from "../types"
-import { claimTask } from "./claim"
-import { getTask } from "./get"
+import type { TeamModeConfig } from "../config.ts"
+import { getTaskFilePath, resolveBaseDir } from "../team-registry/index.ts"
+import { atomicWrite } from "../team-state-store/locks.ts"
+import { TaskSchema } from "../types.ts"
+import type { Task } from "../types.ts"
+import { claimTask } from "./claim.ts"
+import { getTask } from "./get.ts"
 
 const ALLOWED_TRANSITIONS: Readonly<Record<Task["status"], ReadonlyArray<Task["status"]>>> = {
   pending: ["claimed", "deleted"],

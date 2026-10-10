@@ -1,13 +1,13 @@
 import { access, mkdir } from "node:fs/promises"
 
-import type { TeamModeConfig } from "../config"
-import { getTaskClaimLockPath, getTaskClaimsDir, getTaskFilePath, resolveBaseDir } from "../team-registry"
-import { atomicWrite, detectStaleLock, reapStaleLock, withLock } from "../team-state-store/locks"
-import { TaskSchema } from "../types"
-import type { Task } from "../types"
-import { canClaim } from "./dependencies"
-import { getTask } from "./get"
-import { listTasks } from "./list"
+import type { TeamModeConfig } from "../config.ts"
+import { getTaskClaimLockPath, getTaskClaimsDir, getTaskFilePath, resolveBaseDir } from "../team-registry/index.ts"
+import { atomicWrite, detectStaleLock, reapStaleLock, withLock } from "../team-state-store/locks.ts"
+import { TaskSchema } from "../types.ts"
+import type { Task } from "../types.ts"
+import { canClaim } from "./dependencies.ts"
+import { getTask } from "./get.ts"
+import { listTasks } from "./list.ts"
 
 const CLAIM_STALE_AFTER_MS = 300_000
 

@@ -49,12 +49,12 @@ const SEAT_PERSONA_FILES: Readonly<Record<string, string>> = {
   'sisyphus-junior': 'sisyphus-junior-persona.md',
 }
 
-describe('P5-T5 TEAM_ROSTER_SEATS — 表就是 v1 可入队两席', () => {
-  it('carries exactly hephaestus + sisyphus-junior, no more', () => {
+describe('P5-T5 TEAM_ROSTER_SEATS — 表就是 v1 可入队两席', async () => {
+  it('carries exactly hephaestus + sisyphus-junior, no more', async () => {
     expect(Object.keys(TEAM_ROSTER_SEATS).sort()).toEqual(['hephaestus', 'sisyphus-junior'])
   })
 
-  it('OMO_TEAM_DELEGATION_TOOL_NAMES is the ten-name roster-order deny list', () => {
+  it('OMO_TEAM_DELEGATION_TOOL_NAMES is the ten-name roster-order deny list', async () => {
     // 逐位相等 roster 序（手抄转抄的钉，member-validator.test.ts 同款序纪律）。
     expect([...OMO_TEAM_DELEGATION_TOOL_NAMES]).toEqual([
       'explore',
@@ -71,19 +71,19 @@ describe('P5-T5 TEAM_ROSTER_SEATS — 表就是 v1 可入队两席', () => {
   })
 })
 
-describe('P5-T5 field-wise reconciliation against roster.ts (ONE-WAY SYNC)', () => {
+describe('P5-T5 field-wise reconciliation against roster.ts (ONE-WAY SYNC)', async () => {
   for (const seatId of ['hephaestus', 'sisyphus-junior']) {
     describe(seatId, () => {
       const trio = TEAM_ROSTER_SEATS[seatId]!
       const row = rosterRow(seatId)
 
-      it('agentOptions.provider/model == roster defaultRoute', () => {
+      it('agentOptions.provider/model == roster defaultRoute', async () => {
         // 对账面 1：手抄的 defaultRoute 不许漂。
         expect(trio.agentOptions.provider).toBe(row.defaultRoute.provider)
         expect(trio.agentOptions.model).toBe(row.defaultRoute.model)
       })
 
-      it('toolFilter.deny == denyToolNamesFor(roster row), roster order', () => {
+      it('toolFilter.deny == denyToolNamesFor(roster row), roster order', async () => {
         // 对账面 2：worker 席的 deny 由 roster 的 denyToolNamesFor 计算，
         // 逐位相等（序也是事实，roster 序）。
         const rosterDeny = denyToolNamesFor(row)
@@ -101,7 +101,7 @@ describe('P5-T5 field-wise reconciliation against roster.ts (ONE-WAY SYNC)', () 
     })
   }
 
-  it('the two embedded persona consts are the same bytes the table carries', () => {
+  it('the two embedded persona consts are the same bytes the table carries', async () => {
     // 常量与表引用同一文本（防「表指新值、旧常量留档」的双源漂移）。
     expect(TEAM_ROSTER_SEATS.hephaestus!.persona).toBe(OMO_TEAM_SEAT_PERSONA_HEPHAESTUS)
     expect(TEAM_ROSTER_SEATS['sisyphus-junior']!.persona).toBe(OMO_TEAM_SEAT_PERSONA_SISYPHUS_JUNIOR)
@@ -109,7 +109,7 @@ describe('P5-T5 field-wise reconciliation against roster.ts (ONE-WAY SYNC)', () 
     expect(OMO_TEAM_SEAT_PERSONA_HEPHAESTUS).not.toBe(OMO_TEAM_SEAT_PERSONA_SISYPHUS_JUNIOR)
   })
 
-  it('embedded personas carry their upstream Source: attribution header intact', () => {
+  it('embedded personas carry their upstream Source: attribution header intact', async () => {
     // persona 文件第 1 行是出处账（Source: oh-my-openagent …），内嵌必须保真，
     // 不得在复制时删署名头（c16 署名纪律随字节走）。
     expect(OMO_TEAM_SEAT_PERSONA_HEPHAESTUS.startsWith('<!-- Source:')).toBe(true)
@@ -117,8 +117,8 @@ describe('P5-T5 field-wise reconciliation against roster.ts (ONE-WAY SYNC)', () 
   })
 })
 
-describe('P5-T5 resolveTeamSeat — 先资格后查表，两关各自具名拒绝', () => {
-  it('resolves both eligible seats with their full trio', () => {
+describe('P5-T5 resolveTeamSeat — 先资格后查表，两关各自具名拒绝', async () => {
+  it('resolves both eligible seats with their full trio', async () => {
     const h = resolveTeamSeat('hephaestus')
     expect(h.ok).toBe(true)
     if (h.ok) {
@@ -133,7 +133,7 @@ describe('P5-T5 resolveTeamSeat — 先资格后查表，两关各自具名拒�
     }
   })
 
-  it('rejects an ineligible roster seat by the validator reason (read-only)', () => {
+  it('rejects an ineligible roster seat by the validator reason (read-only)', async () => {
     const explore = resolveTeamSeat('explore')
     expect(explore.ok).toBe(false)
     if (!explore.ok) {
@@ -141,7 +141,7 @@ describe('P5-T5 resolveTeamSeat — 先资格后查表，两关各自具名拒�
     }
   })
 
-  it('rejects the conductor seat by structural-exclusion reason', () => {
+  it('rejects the conductor seat by structural-exclusion reason', async () => {
     const sisyphus = resolveTeamSeat('sisyphus')
     expect(sisyphus.ok).toBe(false)
     if (!sisyphus.ok) {
@@ -149,7 +149,7 @@ describe('P5-T5 resolveTeamSeat — 先资格后查表，两关各自具名拒�
     }
   })
 
-  it('rejects an unknown seat id with the available-seats list', () => {
+  it('rejects an unknown seat id with the available-seats list', async () => {
     const nope = resolveTeamSeat('qixi-bot')
     expect(nope.ok).toBe(false)
     if (!nope.ok) {
@@ -158,7 +158,7 @@ describe('P5-T5 resolveTeamSeat — 先资格后查表，两关各自具名拒�
     }
   })
 
-  it('teamSeatClass reports worker for eligible seats and undefined otherwise', () => {
+  it('teamSeatClass reports worker for eligible seats and undefined otherwise', async () => {
     expect(teamSeatClass('hephaestus')).toBe('worker')
     expect(teamSeatClass('sisyphus-junior')).toBe('worker')
     expect(teamSeatClass('explore')).toBeUndefined()

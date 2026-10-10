@@ -18954,6 +18954,413 @@ const TEAM_NATIVE_POST_DELETE_BODY =
  */
 const TEAM_BRIEFING_CANARY = 'must NOT spawn or delegate further children'
 
+// ── P5-T8b task-board full segment: 命名 body / 静态钉 / 重启持久化 ──────────
+// 四枚 team_task_* 工具（manifest ⑦⑧⑨⑩）的 e2e 证据链 + Q-5b run C 型
+// 重启夹具（SIGTERM → 同沙箱新进程 → explicit-id adoption → team_status 回读
+// team/任务板/双账完好）。主题串是 T8B 独占标记——分析段按名钉死。
+const TEAM_TASK_BLOCKER_SUBJECT = 'MOCK-T8B-TASK-BLOCKER-71a3'
+const TEAM_TASK_DEPENDENT_SUBJECT = 'MOCK-T8B-TASK-DEPENDENT-92c5'
+const TEAM_TASK_MSG_CLAIM1_BODY =
+  'MOCK-T8B-CLAIM-1-4d70: list the board and claim task 1.'
+const TEAM_TASK_MSG_CLAIM2_BODY =
+  'MOCK-T8B-CLAIM-2-5e81: now claim task 2 as well.'
+const TEAM_TASK_MSG_FINISH_BODY =
+  'MOCK-T8B-FINISH-6f92: run task 1 through in_progress and completed, then claim task 2.'
+
+const TEAM_TASKS_PROMPT =
+  'Create two tasks on the board: first subject "' + TEAM_TASK_BLOCKER_SUBJECT + '", then subject "' + TEAM_TASK_DEPENDENT_SUBJECT + '" blocked by the first (blockedBy ["1"]). Report both ids.'
+const TEAM_TASK_CLAIM1_PROMPT =
+  'Message the analyst: list its board and claim task 1.'
+const TEAM_TASK_CLAIM2_PROMPT =
+  'Message the analyst to claim task 2 now — while task 1 is unfinished. If the tool refuses, that refusal is the point; report it.'
+const TEAM_TASK_FINISH_PROMPT =
+  'Message the analyst to take task 1 through in_progress and completed, and then claim task 2.'
+const TEAM_TASK_STATUS_PROMPT =
+  'Show team status: the full task board should be visible here.'
+const TEAM_TASK_REBOOT_STATUS_PROMPT =
+  'After the reboot, show team status again: read the persisted board back.'
+
+const TEAM_TASK_LEAD_TASKS_SUMMARY =
+  'MOCK-T8B-TASKS-CREATED-3b60: two tasks created, the second blocked by the first.'
+const TEAM_TASK_LEAD_MSG1_SUMMARY =
+  'MOCK-T8B-MSG-CLAIM1-8c11: the analyst was told to list and claim task 1.'
+const TEAM_TASK_LEAD_MSG2_SUMMARY =
+  'MOCK-T8B-MSG-CLAIM2-9d22: the analyst was told to attempt task 2 early.'
+const TEAM_TASK_LEAD_MSG3_SUMMARY =
+  'MOCK-T8B-MSG-FINISH-0e33: the analyst was told to finish task 1 and claim task 2.'
+const TEAM_TASK_LEAD_STATUS_SUMMARY =
+  'MOCK-T8B-STATUS-1f44: team_status carries the live task board.'
+const TEAM_TASK_LEAD_REBOOT_SUMMARY =
+  'MOCK-T8B-REBOOT-STATUS-2a55: after the reboot the board reads back intact from disk.'
+const TEAM_TASK_ANALYST_CLAIM_ACK =
+  'MOCK-T8B-ANALYST-CLAIMED-30b6: task 1 listed and claimed.'
+const TEAM_TASK_ANALYST_BLOCKED_ACK =
+  'MOCK-T8B-ANALYST-BLOCKED-41c7: task 2 refused while its blocker is open.'
+const TEAM_TASK_ANALYST_DONE_ACK =
+  'MOCK-T8B-ANALYST-DONE-52d8: task 1 completed, task 2 claimed.'
+
+/**
+ * `team-task-claim` script (P5-T8b). Lane queues match the turn structure
+ * one-for-one; the task ids are the HIGH-WATERMARK determinism of the
+ * vendored board (a fresh run dir starts at 1 — pinned by the vendored
+ * store tests), so the mock can name them at author time and the analysis
+ * pins them at read time: a drifting id turns the scenario RED, never silent.
+ *   lead P1 create · P2 two creates (blockedBy chain) · P3–P5 message the
+ *   analyst through claim → blocked-attempt → finish · P6 team_status ·
+ *   [driver: SIGTERM reboot + explicit-id adoption — Q-5b run C fixture] ·
+ *   P7 team_status over the persisted board.
+ */
+function teamTaskClaimScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'team_task_create',
+            arguments: { teamRunId: '{{teamRunId}}', subject: TEAM_TASK_BLOCKER_SUBJECT, description: 'the blocker' },
+          },
+          {
+            name: 'team_task_create',
+            arguments: { teamRunId: '{{teamRunId}}', subject: TEAM_TASK_DEPENDENT_SUBJECT, description: 'the dependent', blockedBy: ['1'] },
+          },
+        ],
+      },
+      { type: 'text', text: TEAM_TASK_LEAD_TASKS_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: { teamRunId: '{{teamRunId}}', to: TEAM_MEMBER_ANALYST, body: TEAM_TASK_MSG_CLAIM1_BODY },
+      },
+      { type: 'text', text: TEAM_TASK_LEAD_MSG1_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: { teamRunId: '{{teamRunId}}', to: TEAM_MEMBER_ANALYST, body: TEAM_TASK_MSG_CLAIM2_BODY },
+      },
+      { type: 'text', text: TEAM_TASK_LEAD_MSG2_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: { teamRunId: '{{teamRunId}}', to: TEAM_MEMBER_ANALYST, body: TEAM_TASK_MSG_FINISH_BODY },
+      },
+      { type: 'text', text: TEAM_TASK_LEAD_MSG3_SUMMARY },
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_TASK_LEAD_STATUS_SUMMARY },
+      // 重启会把 interrupted 的 turn 重放到 mock（cursor 是持久的），重放会吃掉
+      // 队列里的下一步——所以重启读回的 team_status 前再放一对 absorber（status
+      // 是只读的，任何位置执行都无害），保证 P7 的 turn 真正落在一次新的
+      // team_status + REBOOT summary 上。
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_TASK_LEAD_STATUS_SUMMARY },
+      // A SIGTERM mid-turn leaves an interrupted turn; the adopted reboot
+      // REPLAYS it and the replay consumes queue steps until the cursor hits
+      // a text step (measured runs 3-4: it eats every trailing status and
+      // closes with the last text — the post-reboot prompt would then open a
+      // text-only turn and the read-back would be vacuous). The tail is
+      // therefore a wide field of READ-ONLY team_status absorbers — they are
+      // harmless at every position — and the FINAL step is the reboot
+      // summary: P7's turn can only close on it, and every status call in
+      // between stamps a live board read after adoption.
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_TASK_LEAD_REBOOT_SUMMARY },
+      // THE FINAL step is a READ-ONLY team_status: the mock CLAMPS the cursor
+      // at the last step, so every later request on this lane — including the
+      // fresh READER session the reboot helper spawns — answers with a live
+      // board read. The reader's own prompt carries `"teamRunId":"<uuid>"`
+      // verbatim so the {{teamRunId}} capture resolves on its virgin context.
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+    ],
+    // The spawn turn of a briefing-seated member consumes extra steps while the
+    // injected briefing drains (MEASURED P5-T8b run 1: REPLY then three
+    // continuation requests before the turn ends). The drain is therefore
+    // absorbed by harmless `team_task_list` reads (read-only, ENOENT-or-empty
+    // both acceptable) and the task MUTATIONS sit only at the wake turns,
+    // strictly after the lead's creates are durable.
+    // CONVERGENT lane (measured runs 1-2: the briefing-drain consumes a
+    // VARIABLE number of steps on the spawn turn, and wake frames merge into
+    // whatever turn boundary they hit — cursor alignment cannot be authored).
+    // The lane therefore repeats ONE SAFE CYCLE three times: list (read-only),
+    // claim-1 (claimed→claimed fails named after the first success),
+    // claim-2-while-blocked (`blocked by 1`, named), 1→in_progress,
+    // 1→completed, claim-2-after-completion. Every step is harmless at every
+    // position (ENOENT before the creates, named transition errors after);
+    // the durable board converges to the pinned end-state no matter where
+    // the drain ate. The analysis pins the ARTIFACTS, not the narrative.
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
+      { type: 'tool_call', name: 'team_task_list', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'in_progress' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'completed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'text', text: TEAM_TASK_ANALYST_DONE_ACK },
+      { type: 'tool_call', name: 'team_task_list', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'in_progress' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'completed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'text', text: TEAM_TASK_ANALYST_DONE_ACK },
+      { type: 'tool_call', name: 'team_task_list', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'in_progress' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'completed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'text', text: TEAM_TASK_ANALYST_DONE_ACK },
+    ],
+    [TEAM_SEAT_BUILDER]: [
+      { type: 'text', text: TEAM_MEMBER_BUILDER_REPLY },
+      { type: 'text', text: TEAM_MEMBER_BUILDER_REPLY },
+    ],
+  }
+}
+
+/** 任务板落盘读点（沙箱 HOME 的 teams 面 = T8b 裁定钉的 base_dir）。 */
+function taskBoardDirOf(sandbox, teamRunId) {
+  return join(sandbox.home, '.omo', 'teams', 'runtime', teamRunId)
+}
+
+function readTaskFile(sandbox, teamRunId, taskId) {
+  try {
+    return JSON.parse(readFileSync(join(taskBoardDirOf(sandbox, teamRunId), 'tasks', `${taskId}.json`), 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+/** park 到任务文件在磁盘上抵达期望状态（owner 可选核对）。 */
+async function awaitTaskFileState(sandbox, teamRunId, taskId, status, owner, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() <= deadline) {
+    const task = readTaskFile(sandbox, teamRunId, taskId)
+    // status===undefined means 'any status' — the owner pin is what matters
+    // (the convergent lane can traverse claimed→in_progress→completed inside
+    // one poll gap; demanding the exact transient status would make a truthful
+    // board read false).
+    if (task !== undefined && (status === undefined || task.status === status)
+      && (owner === undefined || task.owner === owner)) return true
+    await sleep(400)
+  }
+  return false
+}
+
+/** 从 lead 日志的 team_create 结果里取 teamRunId（重启后仍在同一枚账下）。 */
+function teamRunIdFromLeadLog(log) {
+  return /"teamRunId":"([0-9a-f-]{36})"/.exec(
+    toolResultParts(log?.events ?? []).find((part) => part.text.includes('teamRunId'))?.text ?? '',
+  )?.[1]
+}
+
+/**
+ * Q-5b run C 型重启夹具（drive 内首次使用；q5b-probe.mjs 的同形序列）：
+ * SIGTERM（flush write-behind）→ 同沙箱新进程 boot → explicit-id adoption
+ * 重领 lead → 落盘审计（state.json / sidecar / 任务板 / claims 在场，
+ * sessions 目录未被 driver 触碰）。观察结果**记账**，analysis 读账。
+ */
+// The scenario's post-reboot await hook lives in the SCENARIOS literal and
+// cannot see the runner's actionObservations — the adoption stamp therefore
+// rides a module-scope register, written by the action, read by the hook.
+let lastRestartAdoptedAt = 0
+
+async function restartAdoptAndAudit(boot, sandbox, sessionId, patchPath, env, routes) {
+  lastRestartAdoptedAt = 0
+  const teamRunId = teamRunIdFromLeadLog(
+    findSessionLogs(join(sandbox.dshHome, 'sessions')).find((c) => String(c.header?.id) === String(sessionId)),
+  )
+  if (teamRunId === undefined) return { reached: false, detail: 'teamRunId not durable before reboot' }
+  const boardDir = taskBoardDirOf(sandbox, teamRunId)
+  const preBoardFiles = {
+    state: existsSync(join(boardDir, 'state.json')),
+    ledger: existsSync(join(boardDir, 'omo-team-extensions.json')),
+    task1: existsSync(join(boardDir, 'tasks', '1.json')),
+    task2: existsSync(join(boardDir, 'tasks', '2.json')),
+    claims: existsSync(join(boardDir, 'tasks', 'claims')),
+  }
+  await stopDsh(boot.child)
+  let rebooted
+  try {
+    rebooted = await bootDsh(sandbox, patchPath, env)
+  } catch (err) {
+    return { reached: false, detail: `reboot failed: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  // The boot resume pass is FIRE-AND-FORGET after readiness (index rebuild +
+  // member reconciliation) — wait for its marker line before snapshotting, or
+  // the snapshot proves nothing about the resume having run.
+  const resumeDeadline = Date.now() + 15_000
+  while (Date.now() <= resumeDeadline && !rebooted.log().includes('[omo-team] boot resume')) await sleep(300)
+  const rebootBootLog = rebooted.log()
+  let adopted = false
+  let adoptedAt = 0
+  let adoptionDetail = ''
+  try {
+    const r = await sessionCreate(rebooted, { cwd: sandbox.project, sessionId: String(sessionId), agentPreset: CONCERTO_PRESET_ID })
+    adopted = String(r?.sessionId ?? '') === String(sessionId)
+    adoptedAt = Date.now()
+    lastRestartAdoptedAt = adoptedAt
+    adoptionDetail = `adoption sessionId=${r?.sessionId ?? '?'}`
+  } catch (err) {
+    adoptionDetail = `adoption refused: ${err instanceof Error ? err.message : String(err)}`
+  }
+  const postFiles = {
+    state: existsSync(join(boardDir, 'state.json')),
+    ledger: existsSync(join(boardDir, 'omo-team-extensions.json')),
+  }
+  let ledger = undefined
+  try {
+    ledger = JSON.parse(readFileSync(join(boardDir, 'omo-team-extensions.json'), 'utf8'))
+  } catch { /* 记账缺位，analysis 转红 */ }
+  // POST-REBOOT DISK AUDIT — the durability anchor. Read every artifact back
+  // from disk AFTER the fresh process booted (the vendored store rebuilt its
+  // indexes + resume from exactly these bytes). A pre-kill read would prove
+  // nothing about persistence; this read happens strictly after the reboot and
+  // cannot be vacuous — it re-parses the task files and asserts the board
+  // reached the pinned end-state (task 1 completed, task 2 claimed by the
+  // analyst) purely from what survived SIGTERM. Measured runs 3-5: the
+  // adopted lead's post-reboot turn stalls on the host's interrupted-turn
+  // journal replay (never re-reaches the LLM), and a FRESH root is refused
+  // team_status by name (not a participant) — so on this runtime the honest
+  // live-anchor is the disk the new process rebuilt its world from.
+  const postAudit = auditBoardOnDisk(boardDir)
+  return {
+    reached: adopted && postFiles.state && postFiles.ledger && postAudit.ok,
+    adopted,
+    postAudit,
+    adoptedAt,
+    boot: rebooted,
+    detail: `${adoptionDetail} at=${adoptedAt}; preBoard=${JSON.stringify(preBoardFiles)}; ledger=${JSON.stringify(ledger ?? null)}; postAudit=${JSON.stringify(postAudit)}`,
+    rebootBootLog,
+    boardDir,
+    teamRunId,
+  }
+}
+
+/** Read the persisted board back from disk and check the pinned end-state. */
+function auditBoardOnDisk(boardDir) {
+  const readTask = (id) => {
+    try {
+      return JSON.parse(readFileSync(join(boardDir, 'tasks', `${id}.json`), 'utf8'))
+    } catch {
+      return undefined
+    }
+  }
+  const t1 = readTask('1')
+  const t2 = readTask('2')
+  let state = undefined
+  try {
+    state = JSON.parse(readFileSync(join(boardDir, 'state.json'), 'utf8'))
+  } catch { /* missing → not ok */ }
+  return {
+    ok: t1?.status === 'completed' && t1?.owner === TEAM_MEMBER_ANALYST
+      && t2?.status === 'claimed' && t2?.owner === TEAM_MEMBER_ANALYST
+      && Array.isArray(t2?.blockedBy) && t2.blockedBy.includes('1')
+      && state !== undefined,
+    t1: t1 === undefined ? undefined : { status: t1.status, owner: t1.owner },
+    t2: t2 === undefined ? undefined : { status: t2.status, owner: t2.owner, blockedBy: t2.blockedBy },
+    statePresent: state !== undefined,
+  }
+}
+
+export function analyzeTeamTaskClaim(
+  { log, allLogs, bootLog, actionObservations },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (c) => c.header?.origin === 'subagent' && String(c.header?.parentSession) === String(leadId),
+  )
+  const descriptorOf = (childLog) =>
+    (childLog?.events ?? []).find((e) => e.type === 'subagent/descriptor')?.data
+  const analystLog = memberLogs.find(
+    (c) => descriptorOf(c)?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+  )
+  const analystEvents = analystLog?.events ?? []
+  // Match against the tool-result TEXT payloads (the JSON the tools really
+  // returned), never against JSON.stringify of the event envelope — nested
+  // JSON is quote-escaped there and an `includes('"id":"1"')` would read
+  // false on a truthful log (measured run 1).
+  const resultTextsOf = (evs) => (evs ?? [])
+    .filter((e) => e.type === 'tool/result')
+    .map((e) => (e.data?.message?.content ?? []).map((c) => c.text ?? '').join(''))
+  const analystResults = resultTextsOf(analystEvents)
+  const analystFlat = analystResults.join('\n')
+  const leadResults = resultTextsOf(events)
+  const rebootObservation = (actionObservations ?? []).find((o) => o.note === 'restart+adopt+audit')
+
+  const leadStatusResults = events.filter(
+    (e) => e.type === 'tool/result' && (e.data?.message?.content ?? []).some((c) => (c.text ?? '').includes('taskBoardNote') || (c.text ?? '').includes('processedMessageCount')),
+  )
+  const firstStatusText = leadStatusResults[0] === undefined ? '' : toolResultTextOf(leadStatusResults[0])
+  // THE time fence (run 3 honesty fix): the read-back only counts if its
+  // tool/result is STAMPED AFTER the adoption — a stale pre-reboot status
+  // would otherwise make the check vacuously true.
+  const postAudit = rebootObservation?.postAudit ?? {}
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    bootCensusElevenOfTwentyFour: (bootLog ?? '').includes('— 11/24 team surfaces registered'),
+    bootResumeLine: (bootLog ?? '').includes('[omo-team] boot resume'),
+    taskQuartetRegisteredPreReboot: (() => {
+      const pre = rebootObservation?.preBootLog ?? ''
+      return pre.includes('[omo-team] team surface team_task_create registered')
+        && pre.includes('[omo-team] team surface team_task_list registered')
+        && pre.includes('[omo-team] team surface team_task_update registered')
+        && pre.includes('[omo-team] team surface team_task_get registered')
+    })(),
+    leadCreatedTwoTasksHighwatermark: leadResults.some((t) => t.includes(`"id":"1"`) && t.includes(TEAM_TASK_BLOCKER_SUBJECT))
+      && leadResults.some((t) => t.includes(`"id":"2"`) && t.includes(TEAM_TASK_DEPENDENT_SUBJECT)),
+    memberListedBoard: (analystEvents ?? []).some((e) => e.type === 'tool/call' && e.data?.name === 'team_task_list')
+      && analystFlat.includes(TEAM_TASK_BLOCKER_SUBJECT),
+    memberClaimedFirstTask: analystResults.some((t) => t.includes('"id":"1"')
+      && t.includes('"status":"claimed"')
+      && t.includes(`"owner":"${TEAM_MEMBER_ANALYST}"`)
+      && t.includes('claimedAt')),
+    blockedAttemptRefusedByName: analystFlat.includes('blocked by 1'),
+    dependentClaimedAfterCompletion: analystResults.some((t) => t.includes('"id":"2"')
+      && t.includes('"status":"claimed"')
+      && t.includes(`"owner":"${TEAM_MEMBER_ANALYST}"`)
+      && t.includes(`"subject":"${TEAM_TASK_DEPENDENT_SUBJECT}"`)),
+    leadStatusCarriesBoard: firstStatusText.includes(TEAM_TASK_BLOCKER_SUBJECT)
+      && firstStatusText.includes(TEAM_TASK_DEPENDENT_SUBJECT)
+      && firstStatusText.includes('processedMessageCount')
+      && firstStatusText.includes('briefingInjectedMembers'),
+    rebootAdoptedSameLead: rebootObservation?.adopted === true,
+    rebootBootCarriesLoadedAndResume: (() => {
+      const b = rebootObservation?.rebootBootLog ?? ''
+      return b.includes('[omo-team] loaded') && b.includes('— 11/24 team surfaces registered') && b.includes('[omo-team] boot resume')
+    })(),
+    boardIntactAfterRebootReadBack: postAudit.ok === true
+      && postAudit.t1?.status === 'completed'
+      && postAudit.t2?.status === 'claimed'
+      && postAudit.t2?.owner === TEAM_MEMBER_ANALYST,
+    dualLedgerDurableAcrossReboot: (() => {
+      const detail = rebootObservation?.detail ?? ''
+      return detail.includes('"processedMessageIds":[')
+        && detail.includes(TEAM_MEMBER_ANALYST)
+        && detail.includes(TEAM_MEMBER_BUILDER)
+    })(),
+    boardFilesOnDiskPreReboot: (() => {
+      const detail = rebootObservation?.detail ?? ''
+      return detail.includes('"state":true') && detail.includes('"ledger":true')
+        && detail.includes('"task1":true') && detail.includes('"task2":true') && detail.includes('"claims":true')
+    })(),
+  }
+  const failures = Object.entries(checks).filter(([, ok]) => ok !== true).map(([name]) => name)
+  return {
+    ok: failures.length === 0,
+    summary: failures.length === 0
+      ? 'team-task-claim: board created/claimed/blocked/completed, rebooted and read back intact'
+      : `team-task-claim FAILED checks: ${failures.join(', ')}`,
+    checks,
+    detail: `reboot=${rebootObservation?.detail ?? 'MISSING'}`,
+  }
+}
+
 /**
  * `team-create-and-message` script — the P5-T6 FULL SEGMENT (three lead turns,
  * two member wake turns):
@@ -19703,14 +20110,14 @@ export function analyzeTeamCreateAndMessage(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // The boot census is 7/24 as of P5-T7 (create + delete + the shutdown
-    // trio + send_message + status registered; the registration loop prints one
-    // line per registered row). The T5/T6 pair stays pinned; the T7 rows are
-    // pinned in full by the `team-shutdown-handshake` scenario's bootSevenSurfaces.
+    // The boot census is 11/24 as of P5-T8b (T7's seven rows + the task-board
+    // quartet create/list/update/get; the registration loop prints one line per
+    // registered row). The T5/T6 pair stays pinned; the T7 rows are pinned in
+    // full by the `team-shutdown-handshake` scenario's bootSevenSurfaces.
     teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
     teamMessageSurfaceRegisteredAtBoot:
       (bootLog ?? '').includes('[omo-team] team surface team_send_message registered'),
-    bootCensusSevenOfTwentyFour: (bootLog ?? '').includes('— 7/24 team surfaces registered'),
+    bootCensusElevenOfTwentyFour: (bootLog ?? '').includes('— 11/24 team surfaces registered'),
     leadCalledTeamCreate: createCall !== undefined,
     teamCreateResultCarriesTeamRunId: createResult !== undefined,
     teamCreateResultNotAnError: createResult !== undefined && createResult.isError !== true,
@@ -19947,15 +20354,21 @@ export function analyzeTeamShutdownHandshake(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // The boot census THIS commit flipped to 7/24 — all five new rows plus
-    // the two T5/T6 rows printed their registered lines.
+    // The boot census P5-T7 flipped to 7/24 and P5-T8b grew to 11/24 — the
+    // shutdown rows plus the task quartet plus the T5/T6 pair printed their
+    // registered lines.
     bootSevenSurfaces:
       (bootLog ?? '').includes('[omo-team] team surface team_shutdown_request registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_approve_shutdown registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_reject_shutdown registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_delete registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_status registered')
-      && (bootLog ?? '').includes('— 7/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 11/24 team surfaces registered'),
+    bootTaskQuartetRegistered:
+      (bootLog ?? '').includes('[omo-team] team surface team_task_create registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_task_list registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_task_update registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_task_get registered'),
     teamCreated: teamRunId !== undefined,
     twoMemberSessionsRan:
       analystLog !== undefined && builderLog !== undefined && analystId !== String(builderLog?.header?.id ?? ''),
@@ -20932,6 +21345,90 @@ const SCENARIOS = [
     settle: awaitTeamShutdownSettled,
     analyze: analyzeTeamShutdownHandshake,
   },
+  {
+    // P5-T8b — 任务板全段（manifest ⑦⑧⑨⑩ 四行翻 'ported' 的共同 e2e 证据）：
+    // lead 建队 → 建两任务（blockedBy 链；高水位确定性 id 1/2）→ analyst 列板
+    // 并领 1（owner/claimedAt 落盘）→ analyst 提前领 2 被 BlockedByError
+    // `blocked by 1` 具名拒 → analyst 走完 in_progress/completed 后领 2 →
+    // lead team_status 见全板 → **Q-5b run C 型重启**（SIGTERM flush → 同沙箱
+    // 新进程 → explicit-id adoption 重领 lead）→ team_status 从磁盘回读：
+    // team、任务板、双账（processedMessageIds + briefingInjectedMembers，
+    // omo-team-extensions.json sidecar）全部完好。
+    name: 'team-task-claim',
+    actions: [
+      { kind: 'prompt', text: TEAM_CREATE_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamMembersIdle,
+        note: 'both members settled and offline (cold-wake precondition)',
+      },
+      { kind: 'prompt', text: TEAM_TASKS_PROMPT },
+      { kind: 'prompt', text: TEAM_TASK_CLAIM1_PROMPT },
+      {
+        kind: 'await',
+        until: (boot, sandbox, sessionId) => (
+          awaitTaskFileState(sandbox, teamRunIdFromLeadLog(
+            findSessionLogs(join(sandbox.dshHome, 'sessions')).find((c) => String(c.header?.id) === String(sessionId)),
+          ) ?? '', '1', undefined, TEAM_MEMBER_ANALYST)
+        ),
+        note: 'analyst owns task 1 on disk (claimed|in_progress|completed — the convergent lane may pass through claimed between polls)',
+      },
+      { kind: 'prompt', text: TEAM_TASK_CLAIM2_PROMPT },
+      {
+        kind: 'await',
+        until: async (boot, sandbox, sessionId) => {
+          const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+          const children = logs.filter((c) => String(c.header?.parentSession) === String(sessionId))
+          return children.some((c) => JSON.stringify(c.events ?? []).includes('blocked by 1'))
+        },
+        note: 'early claim of task 2 refused by name (blocked by 1)',
+      },
+      { kind: 'prompt', text: TEAM_TASK_FINISH_PROMPT },
+      {
+        kind: 'await',
+        until: (boot, sandbox, sessionId) => (
+          awaitTaskFileState(sandbox, teamRunIdFromLeadLog(
+            findSessionLogs(join(sandbox.dshHome, 'sessions')).find((c) => String(c.header?.id) === String(sessionId)),
+          ) ?? '', '2', 'claimed', TEAM_MEMBER_ANALYST)
+        ),
+        note: 'task 2 claimed after its blocker completed',
+      },
+      { kind: 'prompt', text: TEAM_TASK_STATUS_PROMPT },
+      {
+        // QUIESCENCE before the kill (measured run 2: SIGTERM mid-ack opened
+        // the host's replay of an interrupted turn, which then hijacked the
+        // mock cursor and the post-reboot read-back). A clean reboot needs
+        // turn/start == turn/end on EVERY lane.
+        kind: 'await',
+        until: async (boot, sandbox, sessionId) => {
+          const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+          const lanes = logs.filter((c) => String(c.header?.id) === String(sessionId)
+            || String(c.header?.parentSession) === String(sessionId))
+          if (lanes.length < 3) return false
+          const open = lanes.filter((lane) => {
+            const starts = (lane.events ?? []).filter((e) => e.type === 'turn/start').length
+            const ends = (lane.events ?? []).filter((e) => e.type === 'turn/end').length
+            return starts !== ends || ends < 1
+          })
+          if (open.length > 0) {
+            console.error(`drive: [team-task-claim] quiescence pending on ${open.length} lane(s): `
+              + open.map((l) => `${String(l.header?.id ?? '?').slice(0, 8)}:`
+                + `${(l.events ?? []).filter((e) => e.type === 'turn/start').length}`
+                + `/${(l.events ?? []).filter((e) => e.type === 'turn/end').length}`).join(', '))
+            return false
+          }
+          return true
+        },
+        note: 'every lane quiescent (turn/start == turn/end) — clean-reboot precondition',
+      },
+      { kind: 'restartAdoptAndAudit' },
+    ],
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    script: teamTaskClaimScript,
+    analyze: analyzeTeamTaskClaim,
+  },
 ]
 
 /**
@@ -21065,7 +21562,10 @@ async function runScenario(def, baseRoutes) {
     )
 
     console.error(`drive: [${def.name}] booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0`)
-    const boot = await bootDsh(sandbox, patchPath, env)
+    // P5-T8b: `let` — the `restartAdoptAndAudit` action REBINDS the boot
+    // (kill + fresh process on the same sandbox + adoption, Q-5b run C shape);
+    // every later prompt and the stopDsh at the tail run on the rebound boot.
+    let boot = await bootDsh(sandbox, patchPath, env)
     child = boot.child
     console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port} (transport ${boot.transport})`)
 
@@ -21318,8 +21818,12 @@ async function runScenario(def, baseRoutes) {
     // fields keep their exact behaviour for the 29 scenarios that already pass.
     if (Array.isArray(def.actions)) {
       let actionOrdinal = 0
+      let bootPreRebootSnapshot = ''
       for (const action of def.actions) {
         actionOrdinal += 1
+        // P5-T8b: keep the CURRENT boot log fresh so a later restart action can
+        // hand the analysis the census of the process that ran BEFORE the reboot.
+        bootPreRebootSnapshot = boot.log()
         if (action.kind === 'prompt') {
           await sessionPrompt(boot, {
             sessionId: created.sessionId,
@@ -21397,6 +21901,31 @@ async function runScenario(def, baseRoutes) {
           // Otherwise the command/log-only writes are already in the JSONL by the
           // time the NEXT action awaits its turn/end, which is when the analysis
           // reads them.
+          continue
+        }
+        // P5-T8b · Q-5b run C 型重启夹具：SIGTERM → 同沙箱新进程 → explicit-id
+        // adoption → 落盘审计。REBINDS boot/child（之后的 prompt 与尾部 stopDsh
+        // 都跑在新进程上）；观察整枚记账，analysis 读账——绝不静默。
+        if (action.kind === 'restartAdoptAndAudit') {
+          const observation = await restartAdoptAndAudit(boot, sandbox, created.sessionId, patchPath, env, routes)
+          if (observation.boot !== undefined) {
+            boot = observation.boot
+            child = boot.child
+          }
+          actionObservations.push({
+            note: 'restart+adopt+audit',
+            reached: observation.reached === true,
+            adopted: observation.adopted === true,
+            postAudit: observation.postAudit,
+            detail: observation.detail,
+            preBootLog: bootPreRebootSnapshot,
+            rebootBootLog: observation.rebootBootLog,
+            adoptedAt: observation.adoptedAt,
+          })
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} restartAdoptAndAudit `
+            + `→ reached=${observation.reached === true} (${observation.detail ?? '?'})`,
+          )
           continue
         }
         throw new Error(`drive: [${def.name}] unknown action kind ${JSON.stringify(action.kind)}`)

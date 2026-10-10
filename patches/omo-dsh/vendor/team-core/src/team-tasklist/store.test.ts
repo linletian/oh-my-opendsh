@@ -4,9 +4,9 @@ import { expect, test } from "bun:test"
 import { readFile, stat } from "node:fs/promises"
 import path from "node:path"
 
-import { getTasksDir, resolveBaseDir } from "../team-registry"
-import { createTask } from "./store"
-import { createTaskInput, createTasklistFixture } from "./test-support"
+import { getTasksDir, resolveBaseDir } from "../team-registry/index.ts"
+import { createTask } from "./store.ts"
+import { createTaskInput, createTasklistFixture } from "./test-support.ts"
 
 test("createTask assigns distinct ids during concurrent creation", async () => {
   // given

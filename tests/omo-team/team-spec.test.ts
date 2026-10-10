@@ -38,8 +38,8 @@ function happySpec(): unknown {
   }
 }
 
-describe('happy path — 三臂与解析产物', () => {
-  it('object 臂：category 臂解析到别名席（quick→sisyphus-junior，保留原词）', () => {
+describe('happy path — 三臂与解析产物', async () => {
+  it('object 臂：category 臂解析到别名席（quick→sisyphus-junior，保留原词）', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick' }] })
     expect(result.ok).toBe(true)
     if (result.ok) {
@@ -56,7 +56,7 @@ describe('happy path — 三臂与解析产物', () => {
     }
   })
 
-  it('object 臂：seat 臂直指定两席（hephaestus 与 sisyphus-junior 各一）', () => {
+  it('object 臂：seat 臂直指定两席（hephaestus 与 sisyphus-junior 各一）', async () => {
     const result = parseTeamSpec({
       name: 'two-worker-team',
       members: [
@@ -73,7 +73,7 @@ describe('happy path — 三臂与解析产物', () => {
     }
   })
 
-  it('JSON string 臂（上游 union string 臂语义，lifecycle-create-tool.ts:43）：与 object 臂同产物', () => {
+  it('JSON string 臂（上游 union string 臂语义，lifecycle-create-tool.ts:43）：与 object 臂同产物', async () => {
     const objectResult = parseTeamSpec(happySpec())
     const stringResult = parseTeamSpec(JSON.stringify(happySpec()))
     expect(stringResult.ok).toBe(true)
@@ -83,7 +83,7 @@ describe('happy path — 三臂与解析产物', () => {
     }
   })
 
-  it('prompt 原样透传（内容政策不在本层；EMPTY_PROMPT/CATEGORY_PROMPT_TOO_SHORT 记差异）', () => {
+  it('prompt 原样透传（内容政策不在本层；EMPTY_PROMPT/CATEGORY_PROMPT_TOO_SHORT 记差异）', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', seat: 'hephaestus', prompt: '' }] })
     expect(result.ok).toBe(true)
     if (result.ok) {
@@ -91,14 +91,14 @@ describe('happy path — 三臂与解析产物', () => {
     }
   })
 
-  it('恰好 8 名成员通过（MAX_TEAM_MEMBERS=8 的上边界绿）', () => {
+  it('恰好 8 名成员通过（MAX_TEAM_MEMBERS=8 的上边界绿）', async () => {
     const members = Array.from({ length: 8 }, (_, i) => ({ name: `worker-${i}`, category: 'quick' }))
     const result = parseTeamSpec({ name: 'eight-team', members })
     expect(result.ok).toBe(true)
     expect(MAX_TEAM_MEMBERS).toBe(8)
   })
 
-  it('非 kebab 名不拒但进 advisories（宽严自定成文：建议性，保真不归一）', () => {
+  it('非 kebab 名不拒但进 advisories（宽严自定成文：建议性，保真不归一）', async () => {
     const result = parseTeamSpec({ name: 'My Team', members: [{ name: 'Fast Guy', category: 'quick' }] })
     expect(result.ok).toBe(true)
     if (result.ok) {
@@ -110,7 +110,7 @@ describe('happy path — 三臂与解析产物', () => {
     }
   })
 
-  it('kebab 谓词本身：正例/反例各钉（advisory 的判据不漂移）', () => {
+  it('kebab 谓词本身：正例/反例各钉（advisory 的判据不漂移）', async () => {
     expect(KEBAB_CASE_PATTERN.test('structure-analyst')).toBe(true)
     expect(KEBAB_CASE_PATTERN.test('team-1')).toBe(true)
     expect(KEBAB_CASE_PATTERN.test('Structure-Analyst')).toBe(false)
@@ -120,8 +120,8 @@ describe('happy path — 三臂与解析产物', () => {
   })
 })
 
-describe('members 边界（上游 MAX_TEAM_MEMBERS=8 / min 1）', () => {
-  it('9 名成员 → TEAM_MEMBER_LIMIT_EXCEEDED（上边界红，上游同码）', () => {
+describe('members 边界（上游 MAX_TEAM_MEMBERS=8 / min 1）', async () => {
+  it('9 名成员 → TEAM_MEMBER_LIMIT_EXCEEDED（上边界红，上游同码）', async () => {
     const members = Array.from({ length: 9 }, (_, i) => ({ name: `worker-${i}`, category: 'quick' }))
     const result = parseTeamSpec({ name: 'nine-team', members })
     expect(result.ok).toBe(false)
@@ -132,7 +132,7 @@ describe('members 边界（上游 MAX_TEAM_MEMBERS=8 / min 1）', () => {
     }
   })
 
-  it('空 members → MEMBERS_EMPTY（「Provide 1-8 members」下半边）', () => {
+  it('空 members → MEMBERS_EMPTY（「Provide 1-8 members」下半边）', async () => {
     const result = parseTeamSpec({ name: 't', members: [] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -140,7 +140,7 @@ describe('members 边界（上游 MAX_TEAM_MEMBERS=8 / min 1）', () => {
     }
   })
 
-  it('members 缺失 / 非数组 → MEMBERS_REQUIRED', () => {
+  it('members 缺失 / 非数组 → MEMBERS_REQUIRED', async () => {
     for (const raw of [{ name: 't' }, { name: 't', members: { a: 1 } }, { name: 't', members: 'x' }]) {
       const result = parseTeamSpec(raw)
       expect(result.ok).toBe(false)
@@ -151,7 +151,7 @@ describe('members 边界（上游 MAX_TEAM_MEMBERS=8 / min 1）', () => {
     }
   })
 
-  it('重名 → DUPLICATE_MEMBER_NAME（上游同码同语义，报后出现的那枚）', () => {
+  it('重名 → DUPLICATE_MEMBER_NAME（上游同码同语义，报后出现的那枚）', async () => {
     const result = parseTeamSpec({
       name: 't',
       members: [
@@ -170,8 +170,8 @@ describe('members 边界（上游 MAX_TEAM_MEMBERS=8 / min 1）', () => {
   })
 })
 
-describe('category | seat 恰好其一', () => {
-  it('同给两臂 → CATEGORY_SEAT_BOTH（对齐上游 both-kinds issue）', () => {
+describe('category | seat 恰好其一', async () => {
+  it('同给两臂 → CATEGORY_SEAT_BOTH（对齐上游 both-kinds issue）', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick', seat: 'hephaestus' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -181,7 +181,7 @@ describe('category | seat 恰好其一', () => {
     }
   })
 
-  it('两臂都不给 → CATEGORY_SEAT_MISSING（对齐上游 missing-kind issue）', () => {
+  it('两臂都不给 → CATEGORY_SEAT_MISSING（对齐上游 missing-kind issue）', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -190,7 +190,7 @@ describe('category | seat 恰好其一', () => {
     }
   })
 
-  it('表外 category → UNRESOLVABLE_CATEGORY + 可用清单（上游语义 = 排序拼接）', () => {
+  it('表外 category → UNRESOLVABLE_CATEGORY + 可用清单（上游语义 = 排序拼接）', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'ultrabrain' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -203,7 +203,7 @@ describe('category | seat 恰好其一', () => {
     }
   })
 
-  it('read-only 席直指定 → SEAT_NOT_ELIGIBLE（资格知识住 member-validator，本层搬运）', () => {
+  it('read-only 席直指定 → SEAT_NOT_ELIGIBLE（资格知识住 member-validator，本层搬运）', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', seat: 'explore' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -214,7 +214,7 @@ describe('category | seat 恰好其一', () => {
     }
   })
 
-  it('表外 seat → UNKNOWN_SEAT + 可用席清单', () => {
+  it('表外 seat → UNKNOWN_SEAT + 可用席清单', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', seat: 'nobody' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -224,7 +224,7 @@ describe('category | seat 恰好其一', () => {
     }
   })
 
-  it('sisyphus 走结构性排除（经 parse 同样具名拒绝）', () => {
+  it('sisyphus 走结构性排除（经 parse 同样具名拒绝）', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', seat: 'sisyphus' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -234,8 +234,8 @@ describe('category | seat 恰好其一', () => {
   })
 })
 
-describe('v1 不收字段逐枚具名拒绝（Q1a §2.1:21-44 全集，诚实优于静默）', () => {
-  it('member 级：kind → V1_UNSUPPORTED_FIELD', () => {
+describe('v1 不收字段逐枚具名拒绝（Q1a §2.1:21-44 全集，诚实优于静默）', async () => {
+  it('member 级：kind → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick', kind: 'category' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -246,7 +246,7 @@ describe('v1 不收字段逐枚具名拒绝（Q1a §2.1:21-44 全集，诚实优
     }
   })
 
-  it('member 级：subagent_type → 专属 SUBAGENT_TYPE_UNSUPPORTED（旗舰差异码，先于通用表命中）', () => {
+  it('member 级：subagent_type → 专属 SUBAGENT_TYPE_UNSUPPORTED（旗舰差异码，先于通用表命中）', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', subagent_type: 'sisyphus-junior' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -257,62 +257,62 @@ describe('v1 不收字段逐枚具名拒绝（Q1a §2.1:21-44 全集，诚实优
   })
 
   // 逐枚立用例（不循环塞一条）：删一枚即少一格防线。
-  it('member 级：systemPrompt → V1_UNSUPPORTED_FIELD', () => {
+  it('member 级：systemPrompt → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', seat: 'hephaestus', systemPrompt: 'x' }] })
     expect(!result.ok && result.code).toBe('V1_UNSUPPORTED_FIELD')
     expect(!result.ok && result.field).toBe('systemPrompt')
   })
 
-  it('member 级：loadSkills → V1_UNSUPPORTED_FIELD', () => {
+  it('member 级：loadSkills → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', seat: 'hephaestus', loadSkills: ['s'] }] })
     expect(!result.ok && result.code).toBe('V1_UNSUPPORTED_FIELD')
     expect(!result.ok && result.field).toBe('loadSkills')
   })
 
-  it('member 级：role → V1_UNSUPPORTED_FIELD', () => {
+  it('member 级：role → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', seat: 'hephaestus', role: 'reviewer' }] })
     expect(!result.ok && result.code).toBe('V1_UNSUPPORTED_FIELD')
     expect(!result.ok && result.field).toBe('role')
   })
 
-  it('member 级：description → V1_UNSUPPORTED_FIELD', () => {
+  it('member 级：description → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', seat: 'hephaestus', description: 'd' }] })
     expect(!result.ok && result.code).toBe('V1_UNSUPPORTED_FIELD')
     expect(!result.ok && result.field).toBe('description')
   })
 
   // spec 级五枚同样逐枚立用例（与 member 级同纪律）：删一枚即少一格防线。
-  it('spec 级：teamAllowedPaths → V1_UNSUPPORTED_FIELD', () => {
+  it('spec 级：teamAllowedPaths → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick' }], teamAllowedPaths: ['src'] })
     expect(!result.ok && result.code).toBe('V1_UNSUPPORTED_FIELD')
     expect(!result.ok && result.field).toBe('teamAllowedPaths')
   })
 
-  it('spec 级：sessionPermission → V1_UNSUPPORTED_FIELD', () => {
+  it('spec 级：sessionPermission → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick' }], sessionPermission: 'allow' })
     expect(!result.ok && result.code).toBe('V1_UNSUPPORTED_FIELD')
     expect(!result.ok && result.field).toBe('sessionPermission')
   })
 
-  it('spec 级：leadAgentId → V1_UNSUPPORTED_FIELD', () => {
+  it('spec 级：leadAgentId → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick' }], leadAgentId: 'a' })
     expect(!result.ok && result.code).toBe('V1_UNSUPPORTED_FIELD')
     expect(!result.ok && result.field).toBe('leadAgentId')
   })
 
-  it('spec 级：lead → V1_UNSUPPORTED_FIELD', () => {
+  it('spec 级：lead → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick' }], lead: { name: 'a', seat: 'hephaestus' } })
     expect(!result.ok && result.code).toBe('V1_UNSUPPORTED_FIELD')
     expect(!result.ok && result.field).toBe('lead')
   })
 
-  it('spec 级：description → V1_UNSUPPORTED_FIELD', () => {
+  it('spec 级：description → V1_UNSUPPORTED_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick' }], description: 'team description' })
     expect(!result.ok && result.code).toBe('V1_UNSUPPORTED_FIELD')
     expect(!result.ok && result.field).toBe('description')
   })
 
-  it('member 级 v1 不收表逐字 = 上游五件（subagent_type 有专属码，不入通用表）', () => {
+  it('member 级 v1 不收表逐字 = 上游五件（subagent_type 有专属码，不入通用表）', async () => {
     expect(TEAM_MEMBER_UNSUPPORTED_UPSTREAM_FIELDS_V1).toEqual(['kind', 'systemPrompt', 'loadSkills', 'role', 'description'])
     expect(TEAM_MEMBER_ALLOWED_FIELDS_V1).toEqual(['name', 'category', 'seat', 'prompt'])
     expect(TEAM_SPEC_ALLOWED_FIELDS_V1).toEqual(['name', 'members'])
@@ -320,8 +320,8 @@ describe('v1 不收字段逐枚具名拒绝（Q1a §2.1:21-44 全集，诚实优
   })
 })
 
-describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () => {
-  it('spec 级未知字段 → UNKNOWN_SPEC_FIELD（不静默吞）', () => {
+describe('closed shape — 表外字段具名拒绝 + 其余形状错误', async () => {
+  it('spec 级未知字段 → UNKNOWN_SPEC_FIELD（不静默吞）', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick' }], inline_spec: {} })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -331,7 +331,7 @@ describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () =>
     }
   })
 
-  it('member 级未知字段 → UNKNOWN_MEMBER_FIELD', () => {
+  it('member 级未知字段 → UNKNOWN_MEMBER_FIELD', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick', nickname: 'x' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -340,7 +340,7 @@ describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () =>
     }
   })
 
-  it('team name 缺失 / 非串 / 纯空白 → TEAM_NAME_REQUIRED（三形同码，message 点名）', () => {
+  it('team name 缺失 / 非串 / 纯空白 → TEAM_NAME_REQUIRED（三形同码，message 点名）', async () => {
     for (const raw of [{ members: [{ name: 'a', category: 'quick' }] }, { name: 7, members: [{ name: 'a', category: 'quick' }] }, { name: '   ', members: [{ name: 'a', category: 'quick' }] }]) {
       const result = parseTeamSpec(raw)
       expect(result.ok).toBe(false)
@@ -351,7 +351,7 @@ describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () =>
     }
   })
 
-  it('member name 缺失 / 非串 / 空白 → MEMBER_NAME_REQUIRED', () => {
+  it('member name 缺失 / 非串 / 空白 → MEMBER_NAME_REQUIRED', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ category: 'quick' }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -364,7 +364,7 @@ describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () =>
     }
   })
 
-  it('成员不是对象 → MEMBER_NOT_OBJECT', () => {
+  it('成员不是对象 → MEMBER_NOT_OBJECT', async () => {
     const result = parseTeamSpec({ name: 't', members: ['hephaestus'] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -372,7 +372,7 @@ describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () =>
     }
   })
 
-  it('prompt 非串 → FIELD_NOT_STRING', () => {
+  it('prompt 非串 → FIELD_NOT_STRING', async () => {
     const result = parseTeamSpec({ name: 't', members: [{ name: 'a', category: 'quick', prompt: 1 }] })
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -381,7 +381,7 @@ describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () =>
     }
   })
 
-  it('两臂之外的输入（null / 数组 / number / undefined）→ SPEC_NOT_OBJECT', () => {
+  it('两臂之外的输入（null / 数组 / number / undefined）→ SPEC_NOT_OBJECT', async () => {
     for (const raw of [null, 42, undefined, [{ name: 't' }]]) {
       const result = parseTeamSpec(raw)
       expect(result.ok).toBe(false)
@@ -391,7 +391,7 @@ describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () =>
     }
   })
 
-  it('坏 JSON string → INVALID_JSON_STRING（文案形随上游 :77）', () => {
+  it('坏 JSON string → INVALID_JSON_STRING（文案形随上游 :77）', async () => {
     const result = parseTeamSpec('{name: "t", oops')
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -400,7 +400,7 @@ describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () =>
     }
   })
 
-  it('JSON string 臂 parse 出非对象（如 "42"）→ SPEC_NOT_OBJECT（臂语义只覆盖 object JSON）', () => {
+  it('JSON string 臂 parse 出非对象（如 "42"）→ SPEC_NOT_OBJECT（臂语义只覆盖 object JSON）', async () => {
     const result = parseTeamSpec('42')
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -408,12 +408,12 @@ describe('closed shape — 表外字段具名拒绝 + 其余形状错误', () =>
     }
   })
 
-  it('校验序成文兑现：name 缺失先于 members 畸形报（TEAM_NAME_REQUIRED 赢）', () => {
+  it('校验序成文兑现：name 缺失先于 members 畸形报（TEAM_NAME_REQUIRED 赢）', async () => {
     const result = parseTeamSpec({ members: 'nope' })
     expect(!result.ok && result.code).toBe('TEAM_NAME_REQUIRED')
   })
 
-  it('错误码词表封闭且逐字（删码/加码/改名即红；19 枚）', () => {
+  it('错误码词表封闭且逐字（删码/加码/改名即红；19 枚）', async () => {
     expect(TEAM_SPEC_ERROR_CODES).toHaveLength(19)
     expect([...TEAM_SPEC_ERROR_CODES]).toContain('DUPLICATE_MEMBER_NAME')
     expect([...TEAM_SPEC_ERROR_CODES]).toContain('TEAM_MEMBER_LIMIT_EXCEEDED')

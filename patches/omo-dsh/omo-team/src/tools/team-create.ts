@@ -66,7 +66,7 @@ import { resolveTeamSeat, type TeamSeatTrio } from '../team/roster-seats.ts'
 import {
   ACTIVE_TEAM_RUNTIME_STATUSES,
   TEAM_LEAD_SENTINEL,
-  type TeamStateMemoryStore,
+  type TeamStateStore,
 } from '../team/team-state.ts'
 
 /** 工具名（manifest.ts team_create 行的 id 同一词汇）。 */
@@ -144,7 +144,7 @@ interface TeamToolExec {
 /** 工具层装配依赖：通道 + 状态机（单测注入 mock，生产由 index.ts 供真件）。 */
 export interface TeamCreateDeps {
   readonly subagents: TeamContinuableChannel
-  readonly store: TeamStateMemoryStore
+  readonly store: TeamStateStore
 }
 
 const describeError = (err: unknown): string =>
@@ -244,7 +244,7 @@ export async function executeTeamCreate(
 
   // 4) 状态机 creating（成员索引随 create 在场；bounds 执法在 team-spec 与
   // store.create 双闸）。
-  const state = deps.store.create({
+  const state = await deps.store.create({
     teamName: parsed.spec.name,
     leadSessionId,
     members: plans.map((plan) => ({
@@ -280,12 +280,12 @@ export async function executeTeamCreate(
         )
       }
       startedChildIds.push(plan.childId)
-      deps.store.setMemberPhase(state.teamRunId, plan.name, 'running')
+      await deps.store.setMemberPhase(state.teamRunId, plan.name, 'running')
       console.log(`${LOG_PREFIX} member '${plan.name}' seated at '${plan.seat}' -> session ${started.childId}`)
     } catch (err) {
       // 首败回滚（先翻 failed 让嵌套闸即时松绑，再 interrupt/drain 已建成员；
       // 语义对齐上游 spawn-members 的首败回滚 + 任务书 P5-T5 钉死序）。
-      deps.store.transition(state.teamRunId, 'failed')
+      await deps.store.transition(state.teamRunId, 'failed')
       const faults: string[] = []
       for (const childId of startedChildIds) {
         try {
@@ -313,7 +313,7 @@ export async function executeTeamCreate(
 
   // 全员就位 → active。briefing 注入与成员工具面已在各自的 agent/created 里
   // 完成（监听串行 await，startContinuable 解析前已发生——时序注见注册段）。
-  deps.store.transition(state.teamRunId, 'active')
+  await deps.store.transition(state.teamRunId, 'active')
   console.log(`${LOG_PREFIX} team ${state.teamRunId} active`)
   return {
     teamRunId: state.teamRunId,
@@ -403,7 +403,7 @@ export function registerTeamCreateSurface(
   },
   deps: TeamCreateDeps,
 ): () => void {
-  const off = ctx.on('agent/created', ({ agent }) => {
+  const off = ctx.on('agent/created', async ({ agent }) => {
     const header = agent.session.header
     const isChild = header.origin === 'subagent' || header.parentSession !== undefined
     if (!isChild) {
@@ -451,7 +451,7 @@ export function registerTeamCreateSurface(
     // 工具面照常装（scoped 贡献随各 agent 实例，与 briefing 的账无关——
     // 去重的是**帧**，不是**面**）。e2e 硬断言：离线唤醒后 briefing 帧数
     // 恰 1（drive.mjs `team-create-and-message` 的 exactly-once 检查）。
-    if (!deps.store.claimBriefingInjection(participation.teamRunId, participation.memberName)) {
+    if (!(await deps.store.claimBriefingInjection(participation.teamRunId, participation.memberName))) {
       console.log(
         `${LOG_PREFIX} briefing already injected for member '${participation.memberName}' of team ${participation.teamRunId} — skipping re-injection on re-materialization of session ${header.id}`,
       )
@@ -473,7 +473,7 @@ export function registerTeamCreateSurface(
         },
       })
     } catch (err) {
-      deps.store.releaseBriefingInjection(participation.teamRunId, participation.memberName)
+      await deps.store.releaseBriefingInjection(participation.teamRunId, participation.memberName)
       console.error(
         `${LOG_PREFIX} briefing injection FAILED for member '${participation.memberName}' of team ${participation.teamRunId} — ledger released, the next materialization may re-inject: ${err instanceof Error ? err.message : String(err)}`,
       )

@@ -89,7 +89,7 @@ import {
   TEAM_LEAD_SENTINEL,
   TEAM_MESSAGE_DELIVERABLE_PHASES,
   TEAM_MESSAGE_PAYLOAD_MAX_BYTES,
-  type TeamStateMemoryStore,
+  type TeamStateStore,
 } from '../team/team-state.ts'
 import type { TeamAgent } from './team-create.ts'
 
@@ -134,7 +134,7 @@ export interface TeamLiveAgents {
 export interface TeamMessageDeps {
   readonly subagents: TeamMessageSendChannel
   readonly agents: TeamLiveAgents
-  readonly store: TeamStateMemoryStore
+  readonly store: TeamStateStore
 }
 
 /** execute 的第二参（与 team-create.ts 的 TeamToolExec 同一形状）。 */
@@ -427,7 +427,7 @@ export async function executeTeamSendMessage(
 
   // 6) R-6 去重原子闸：整条消息一个 id（广播 = 整条一个 id，扇出部分
   //    失败的后果成文于文件头）。见过 → 不再调用原生通道，返回去重说明。
-  if (!deps.store.markMessageProcessed(clean.teamRunId, messageId)) {
+  if (!(await deps.store.markMessageProcessed(clean.teamRunId, messageId))) {
     const note = `duplicate message id: ${messageId} was already delivered for team ${clean.teamRunId} — not delivered again (deduplicated)`
     console.log(`${LOG_PREFIX} deduplicated ${messageId} for team ${clean.teamRunId}`)
     return {
@@ -460,7 +460,7 @@ export async function executeTeamSendMessage(
       // 补偿退账的不对称（文件头成文）：单收件人投递失败 → 退账，同 id
       // 重试可再投（消息从未送达，不该被「已送达」的账拦）；广播部分失败
       // → **不退**（退了会对已收到的成员重投——宁漏不重，补投须换新 id）。
-      if (!isBroadcast) deps.store.unmarkMessageProcessed(clean.teamRunId, messageId)
+      if (!isBroadcast) await deps.store.unmarkMessageProcessed(clean.teamRunId, messageId)
       // 广播臂实况计数（文件头差异段「点名成员与已投计数」的成文兑现）：
       // deliveries 此刻 = 扇出序中失败点之前已投成功的成员——随 throw 丢弃
       // 会白丢实况，拼进错误文本 `(N delivered before failure)`。

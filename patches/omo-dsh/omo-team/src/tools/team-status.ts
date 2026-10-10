@@ -29,13 +29,14 @@
 // 的 leader 行在 (B) 形态不存在于 members，lead 身份由 leadSessionId 承载，
 // 形状差异见 team-state.ts 成员行注）。
 //
-// ── tasks 段：本阶段为空数组 + 注释成文（不是遗漏，是接缝）─────────────────
-// `tasks: []` 与 `taskBoardNote`：任务板的语义源 = team-core/team-tasklist
-// （manifest.ts §1 行 7-10 的 content-vendor 组），其 vendored 件与接线归
-// **T8**（FORK.md §3.3 vendor 子集 + 任务书 P5-T8「vendored tasklist 到位
-// 后接线」）——T7 的聚合面**不伪造任务数据**：空数组是此刻的唯一诚实值，
-// 键位先占让聚合形状自 T7 起稳定（e2e/单测的 shape 断言此刻就能钉，T8 只
-// 填内容不改形）。
+// ── tasks 段：T8b 已接线（T7 的「空数组接缝」翻正为真读）───────────────────
+// 任务板的语义源 = team-core/team-tasklist（manifest.ts §1 行 7-10 的
+// content-vendor 组），T8a vendored 件落地、**T8b 接线落地**：tasks 段 =
+// deps.store.listTasks（vendored listTasks 的薄直通：status/owner 过滤、
+// id 数值升序、malformed 宽容跳过、点文件/目录排除——上游原样），板不存在
+// 时上游 ENOENT→[] 的宽容让聚合面对「无板 team」天然诚实。元素类型自 T8b
+// 起为**具名** TeamStatusTask（= vendored Task 的字段镜像，T7 预留的键位
+// 与形状不变——只把 `readonly []` 放宽为具名元素，任务书钉的 T7 遗留①）。
 //
 // strip-only 纪律（T5 NOTES-6）：本文件不用参数属性；零 @deepseek-ai import。
 
@@ -44,8 +45,10 @@ import {
   TEAM_LEAD_SENTINEL,
   type TeamRuntimeState,
   type TeamShutdownRequest,
-  type TeamStateMemoryStore,
+  type TeamStateStore,
 } from '../team/team-state.ts'
+import type { Task } from '@oh-my-opencode/team-core/types'
+
 import type { TeamAgent } from './team-create.ts'
 
 /** 工具名（manifest.ts team_status 行的 id 同一词汇）。 */
@@ -64,9 +67,10 @@ export class TeamStatusError extends Error {
   }
 }
 
-/** 工具层装配依赖（只需状态骨架——纯读面，零通道调用）。 */
+/** 工具层装配依赖（状态骨架——纯读面，零通道调用；tasks 段经 store 的
+ *  vendored listTasks 薄直通臂读取，T8b）。 */
 export interface TeamStatusDeps {
-  readonly store: TeamStateMemoryStore
+  readonly store: TeamStateStore
 }
 
 /** execute 的第二参（同族工具同一形状）。 */
@@ -93,7 +97,15 @@ export interface TeamStatusMember {
   }
 }
 
-/** team_status 的聚合返回（shape 自 T7 稳定，tasks 段的接缝见文件头）。 */
+/**
+ * 任务板行（T8b 具名元素类型，T7 遗留①的放宽落地）：= vendored Task
+ * （@oh-my-opencode/team-core/types 的 TaskSchema 推断形）的字段镜像别名——
+ * **不重抄字段**：类型直接从 vendored 件取，形状漂移在编译期即红（vendored
+ * schema 不改的裁定面下，这里是 omo 侧唯一的读侧别名指针）。
+ */
+export type TeamStatusTask = Task
+
+/** team_status 的聚合返回（shape 自 T7 稳定；tasks 段 T8b 起为真读）。 */
 export interface TeamStatusResult {
   readonly teamRunId: string
   readonly teamName: string
@@ -104,8 +116,8 @@ export interface TeamStatusResult {
   readonly bounds: TeamRuntimeState['bounds']
   readonly members: readonly TeamStatusMember[]
   readonly shutdownRequests: readonly TeamShutdownRequest[]
-  /** T8 vendored team-tasklist 到位后在此填板（此刻恒 []，文件头成文）。 */
-  readonly tasks: readonly []
+  /** 任务板（T8b 真读：vendored listTasks 直通；板不存在 = [] 上游宽容）。 */
+  readonly tasks: readonly TeamStatusTask[]
   readonly taskBoardNote: string
   /** 消息面观测（去重账的规模——lead 排障一眼可见，非上游字段，同账待遇）。 */
   readonly processedMessageCount: number
@@ -197,10 +209,10 @@ export async function executeTeamStatus(
     bounds: state.bounds,
     members,
     shutdownRequests: state.shutdownRequests,
-    // T8 接缝（文件头成文）：任务板此刻无 vendored 数据源，空数组 + note
-    // 是诚实值；T8 落 team-tasklist 后本臂换真读，形状不变。
-    tasks: [],
-    taskBoardNote: 'task board lands with the vendored team-tasklist at P5-T8; empty here is the honest seam, not a missing feature',
+    // T8b 真读（文件头成文）：vendored listTasks 直通，id 升序、malformed
+    // 宽容跳过、无 ready 字段——上游形状零改写；板不存在时上游回 []。
+    tasks: await deps.store.listTasks(teamRunId),
+    taskBoardNote: 'tasks are read live from the vendored team-tasklist board (P5-T8b); an empty list means the board has no task files yet — the board itself exists from team_create onward',
     processedMessageCount: state.processedMessageIds.length,
     briefingInjectedMembers: state.briefingInjectedMembers,
   }
@@ -212,7 +224,7 @@ export function createTeamStatusDefinition(deps: TeamStatusDeps): unknown {
     name: TEAM_STATUS_TOOL_NAME,
     description:
       'Return full status for a team run. '
-      + 'Aggregates runtime state from the team state skeleton: run status, bounds, every member with its handshake state (pending/approved/rejected shutdown), the shutdown request ledger, and the task board (empty until the vendored tasklist lands). '
+      + 'Aggregates runtime state from the team state skeleton: run status, bounds, every member with its handshake state (pending/approved/rejected shutdown), the shutdown request ledger, and the live task board read through the vendored team-tasklist (P5-T8b). '
       + `Callable by the lead and by team members; non-participants are refused by name. Deleted tombstones stay readable here — messaging and shutdown tools are the ones that refuse a deleted teamRunId.`,
     parameters: {
       type: 'object',

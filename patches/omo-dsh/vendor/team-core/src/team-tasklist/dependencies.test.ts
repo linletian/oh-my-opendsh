@@ -2,8 +2,8 @@
 
 import { describe, expect, test } from "bun:test"
 
-import type { Task } from "../types"
-import { canClaim } from "./dependencies"
+import type { Task } from "../types.ts"
+import { canClaim } from "./dependencies.ts"
 
 function buildTask(id: string, status: Task["status"], blockedBy: string[] = []): Task {
   const now = Date.now()

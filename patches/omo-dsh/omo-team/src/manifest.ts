@@ -336,7 +336,12 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendored team-tasklist（harness-neutral 子集）+ omo-team 工具薄壳',
     disposition: 'content-vendor',
     e2eScenario: 'team-task-claim',
-    status: 'pending',
+    // P5-T8b 翻行（仲裁裁定后执行）：交付面 = src/tools/team-task.ts 的
+    // create 薄壳（参数校验 + 参与者闸 + 上游 tasks.ts:84-90 写死形状
+    // status:'pending'/blocks:[]）→ vendored createTask（高水位 + 锁 +
+    // TaskSchema.parse）+ 单测 tests/omo-team/team-task.test.ts + e2e
+    // `team-task-claim`。
+    status: 'ported',
     summary:
       '任务创建：上游语义原样随 vendor（锁 + 锁内重读、无 revision-CAS、无 failed 态，Q1b N1/N2）；比原生弱的治理差异已在 T1 成文，v1 不增设失败终态',
   },
@@ -347,7 +352,9 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendored team-tasklist 读取 + 工具薄壳',
     disposition: 'content-vendor',
     e2eScenario: 'team-task-claim',
-    status: 'pending',
+    // P5-T8b 翻行：list 薄壳 → vendored listTasks（过滤仅 status/owner，
+    // 无 ready——上游事实）。
+    status: 'ported',
     summary: '任务列表读取：随 vendored team-tasklist 语义（无 ready 派生——上游事实，不照抄原生 ready）',
   },
   // ⑨ §1 行 9。claim 路由：status:"claimed" → vendored claimTask；
@@ -364,7 +371,15 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendored team-tasklist claim/update + 工具薄壳',
     disposition: 'content-vendor',
     e2eScenario: 'team-task-claim',
-    status: 'pending',
+    // P5-T8b 翻行：update 薄壳的 claimed 岔口直通 vendored claimTask，
+    // 其余走 updateTaskStatus（owner 缺省 = senderName，上游 tasks.ts:130）。
+    // **锁面精确化（双评审 NIT）**：锁 + 锁内重读 = claim 专属（vendored
+    // claimTask 的 withLock 内 refreshedTask 重读，claim.ts:77-85）；update
+    // 走**无锁 RMW**（getTask 读 → atomicWrite 写，上游 vendored update.ts
+    // :43-70 事实）——防「锁+锁内重读」 blanket 措辞被误读为 update 面全
+    // 覆盖；同一文件 team_task_create 行的 blanket 措辞指 create 自身
+    // （store 层锁），与本行不冲突。
+    status: 'ported',
     summary:
       '任务更新：claimed → vendored claimTask（owner/claimedAt 断言）；AlreadyClaimedError/BlockedByError 族随 vendor；依赖未就绪 BlockedByError 按 vendored 语义钉',
   },
@@ -375,7 +390,8 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendored team-tasklist 读取 + 工具薄壳',
     disposition: 'content-vendor',
     e2eScenario: 'team-task-claim',
-    status: 'pending',
+    // P5-T8b 翻行：get 薄壳 → vendored getTask（畸形即抛，与 list 宽容不同）。
+    status: 'ported',
     summary: '任务单读：随 vendored team-tasklist 语义（T8 claim 场景的读取半边）',
   },
   // ⑪ §1 行 10。(B) 无原生 projection——状态面 = vendored state-store +
@@ -390,9 +406,10 @@ const MANIFEST_ROWS = [
     // （聚合 runtime state：成员/状态/握手态投影/bounds + UNIVERSAL 双面
     // 分发 + 非参与者 gating 文案逐字）+ 单测聚合形状 + e2e 在两个 T7 已
     // 绿的场景里读它（shutdown-handshake 的存活/批准断言全走 team_status
-    // 返回值——在场性由 boot registered 行与场景调用共证）。**tasks 段此刻
-    // 恒空数组**：任务板的数据源 = vendored team-tasklist，接线归 T8
-    // （team-status.ts 文件头成文；聚合形状自 T7 稳定，T8 填内容不改形）。
+    // 返回值——在场性由 boot registered 行与场景调用共证）。**tasks 段
+    // T8b 起为真读**（vendored listTasks 直通，team-status.ts 文件头成文；
+    // 聚合形状自 T7 稳定，T8b 只把 `readonly []` 放宽为具名 TeamStatusTask，
+    // 不改键位）。
     status: 'ported',
     summary: '状态聚合：(B) 无 projection；聚合 runtime state（成员/任务/握手态）自 vendored state-store（T8/T10 probe marker 的在场性锚）',
   },

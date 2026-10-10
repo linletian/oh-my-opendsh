@@ -27,7 +27,7 @@ function createErrnoError(code: string): Error & { code: string } {
 
 test("withLock serializes concurrent work", async () => {
   // given
-  const { withLock } = await import("./locks")
+  const { withLock } = await import("./locks.ts")
   const rootDirectory = await createTempDirectory("locks-serialize-")
   const lockPath = join(rootDirectory, "lock")
   const probePath = join(rootDirectory, "probe.txt")
@@ -75,7 +75,7 @@ test("atomicWrite leaves no partial file when rename fails", async () => {
   await writeFile(targetPath, "old content")
   const renameCalls: string[] = []
 
-  const { atomicWrite } = await import("./locks")
+  const { atomicWrite } = await import("./locks.ts")
 
   // when
   const result = atomicWrite(targetPath, "new content", {
@@ -97,7 +97,7 @@ test("atomicWrite leaves no partial file when rename fails", async () => {
 
 test("lock open treats EPERM as contention when the lock path exists", async () => {
   // given
-  const { assertRetryableLockOpenError } = await import("./locks")
+  const { assertRetryableLockOpenError } = await import("./locks.ts")
   const rootDirectory = await createTempDirectory("locks-eperm-existing-")
   const lockPath = join(rootDirectory, "lock")
   await writeFile(lockPath, "owner\n123\n456\n")
@@ -112,7 +112,7 @@ test("lock open treats EPERM as contention when the lock path exists", async () 
 
 test("lock open treats EPERM access probes as possible contention", async () => {
   // given
-  const { assertRetryableLockOpenError } = await import("./locks")
+  const { assertRetryableLockOpenError } = await import("./locks.ts")
   const rootDirectory = await createTempDirectory("locks-eperm-access-")
   const lockPath = join(rootDirectory, "lock")
   const accessCalls: string[] = []
@@ -133,7 +133,7 @@ test("lock open treats EPERM access probes as possible contention", async () => 
 
 test("lock open treats Windows EPERM with an existing parent as possible contention", async () => {
   // given
-  const { assertRetryableLockOpenError } = await import("./locks")
+  const { assertRetryableLockOpenError } = await import("./locks.ts")
   const rootDirectory = await createTempDirectory("locks-eperm-win-parent-")
   const lockPath = join(rootDirectory, "lock")
   const accessCalls: string[] = []
@@ -157,7 +157,7 @@ test("lock open treats Windows EPERM with an existing parent as possible content
 
 test("lock open rethrows EPERM when the lock path does not exist", async () => {
   // given
-  const { assertRetryableLockOpenError } = await import("./locks")
+  const { assertRetryableLockOpenError } = await import("./locks.ts")
   const rootDirectory = await createTempDirectory("locks-eperm-missing-")
   const lockPath = join(rootDirectory, "lock")
 
@@ -171,7 +171,7 @@ test("lock open rethrows EPERM when the lock path does not exist", async () => {
 
 test("lock open rethrows Windows EPERM when the lock parent does not exist", async () => {
   // given
-  const { assertRetryableLockOpenError } = await import("./locks")
+  const { assertRetryableLockOpenError } = await import("./locks.ts")
   const rootDirectory = await createTempDirectory("locks-eperm-win-missing-")
   const lockPath = join(rootDirectory, "missing", "lock")
 
@@ -185,7 +185,7 @@ test("lock open rethrows Windows EPERM when the lock parent does not exist", asy
 
 test("lock release retries transient EPERM before removing the lock file", async () => {
   // given
-  const { reapStaleLock } = await import("./locks")
+  const { reapStaleLock } = await import("./locks.ts")
   const rootDirectory = await createTempDirectory("locks-release-eperm-")
   const lockPath = join(rootDirectory, "lock")
   await writeFile(lockPath, "owner\n123\n456\n")
@@ -220,7 +220,7 @@ test("atomicWrite syncs temp files through a writable handle", async () => {
   const targetPath = join(rootDirectory, "target.txt")
   const openFlags: string[] = []
 
-  const { atomicWrite } = await import("./locks")
+  const { atomicWrite } = await import("./locks.ts")
 
   // when
   await atomicWrite(targetPath, "new content", {
@@ -239,7 +239,7 @@ test("atomicWrite syncs temp files through a writable handle", async () => {
 
 test("detects and reaps stale lock entries", async () => {
   // given
-  const { detectStaleLock, reapStaleLock } = await import("./locks")
+  const { detectStaleLock, reapStaleLock } = await import("./locks.ts")
   const rootDirectory = await createTempDirectory("locks-stale-")
   const lockPath = join(rootDirectory, "lock")
   const staleContent = `fake-owner-name\n999999999\n${Date.now() - 600_000}\n`

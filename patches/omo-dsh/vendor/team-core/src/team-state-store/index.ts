@@ -6,4 +6,4 @@ export {
   loadRuntimeState,
   saveRuntimeState,
   transitionRuntimeState,
-} from "./store"
+} from "./store.ts"

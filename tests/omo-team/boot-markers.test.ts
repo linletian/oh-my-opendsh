@@ -53,7 +53,7 @@ import {
  * derivation it stands in for never needs an edit.
  */
 const EXPECTED_SUMMARY_LINE =
-  '[omo-team] loaded: manifest 24 entries (pending=15, ported=7, recorded=2) — 7/24 team surfaces registered'
+  '[omo-team] loaded: manifest 24 entries (pending=11, ported=11, recorded=2) — 11/24 team surfaces registered'
 
 /**
  * P5-T5 landed the FIRST registrar (`team_create`); P5-T6 added the second
@@ -76,6 +76,10 @@ const REAL_REGISTERED_IDS: readonly string[] = [
   'team_approve_shutdown',
   'team_reject_shutdown',
   'team_send_message',
+  'team_task_create',
+  'team_task_list',
+  'team_task_update',
+  'team_task_get',
   'team_status',
 ]
 
@@ -154,14 +158,14 @@ function ctx(overrides: Partial<TeamRegistrationContext> = {}): TeamRegistration
   }
 }
 
-describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', () => {
-  it('renders the REAL manifest as the hard-coded line above', () => {
+describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', async () => {
+  it('renders the REAL manifest as the hard-coded line above', async () => {
     // The single most load-bearing assertion in this file: it pins what
     // cold-start.sh and the probe will look for.
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, registeredRows(REAL_REGISTERED_IDS))).toBe(EXPECTED_SUMMARY_LINE)
   })
 
-  it('reports the loop outcome, never a rounding of the manifest statuses', () => {
+  it('reports the loop outcome, never a rounding of the manifest statuses', async () => {
     // The `registered` half of the line comes from the loop's real output, not
     // from the manifest's statuses — so the REAL roster with NOTHING registered
     // reads `0/24` even though seven rows are ported (the state between the
@@ -169,14 +173,14 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', (
     // reads `1/24`.
     const portedStandIn = registeredRows([]).concat(row({ id: 'team_send_message', status: 'ported' }))
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, [])).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=15, ported=7, recorded=2) — 0/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=11, ported=11, recorded=2) — 0/24 team surfaces registered',
     )
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, portedStandIn)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=15, ported=7, recorded=2) — 1/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=11, ported=11, recorded=2) — 1/24 team surfaces registered',
     )
   })
 
-  it('derives the status counts from the roster, in TEAM_MANIFEST_STATUSES order', () => {
+  it('derives the status counts from the roster, in TEAM_MANIFEST_STATUSES order', async () => {
     const entries = [
       row({ id: 'a', status: 'ported' }),
       row({ id: 'b' }),
@@ -188,7 +192,7 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', (
     )
   })
 
-  it('reports the loop outcome as <r>/<N> — registered rows, never a hard-coded zero', () => {
+  it('reports the loop outcome as <r>/<N> — registered rows, never a hard-coded zero', async () => {
     const entries = [row({ id: 'a', status: 'ported' }), row({ id: 'b', status: 'ported' })]
     // A partial registration must be visible in the summary rather than hidden:
     // "<r> below the ported count" is how a 'ported' row with no registrar (or a
@@ -201,7 +205,7 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', (
     )
   })
 
-  it('renders an empty roster as all-zero counts, never as an empty field list', () => {
+  it('renders an empty roster as all-zero counts, never as an empty field list', async () => {
     // The summary must stay diffable across boots: a zero roster line still
     // prints every status field, in order.
     expect(formatLoadedSummaryLine([], [])).toBe(
@@ -211,14 +215,14 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', (
     )
   })
 
-  it('keeps the `[omo-team] loaded` prefix every consumer greps by', () => {
+  it('keeps the `[omo-team] loaded` prefix every consumer greps by', async () => {
     // cold-start.sh greps `\[omo-team\] loaded`; drive.mjs and smoke-real.mjs
     // match the same prefix inside their boot logs; the probe greps the whole
     // line with -F. The prefix is a contract, not decoration.
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, [])).toMatch(/^\[omo-team\] loaded: /)
   })
 
-  it('is pure — the same inputs render the same line and nothing is mutated', () => {
+  it('is pure — the same inputs render the same line and nothing is mutated', async () => {
     const entries = [row({ id: 'a', status: 'ported' }), row({ id: 'b' })]
     const snapshot = JSON.stringify(entries)
     const first = formatLoadedSummaryLine(entries, [entries[0]!])
@@ -228,13 +232,13 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', (
   })
 })
 
-describe('P5-T3 per-surface and failure lines', () => {
-  it('renders one registered line per team surface id', () => {
+describe('P5-T3 per-surface and failure lines', async () => {
+  it('renders one registered line per team surface id', async () => {
     expect(formatTeamSurfaceRegisteredLine('team_create')).toBe('[omo-team] team surface team_create registered')
     expect(formatTeamSurfaceRegisteredLine('team_send_message')).toBe('[omo-team] team surface team_send_message registered')
   })
 
-  it('renders the FAILED line with the error name AND message', () => {
+  it('renders the FAILED line with the error name AND message', async () => {
     // `describeError`'s `${name}: ${message}` form is what makes a registration
     // failure diagnosable from a boot log alone.
     expect(formatTeamSurfaceFailedLine('team_create', new TypeError('boom'))).toBe(
@@ -242,7 +246,7 @@ describe('P5-T3 per-surface and failure lines', () => {
     )
   })
 
-  it('renders a non-Error throw through String() so it is still visible', () => {
+  it('renders a non-Error throw through String() so it is still visible', async () => {
     expect(formatTeamSurfaceFailedLine('team_create', 'plain string failure')).toBe(
       '[omo-team] team surface team_create FAILED: plain string failure',
     )
@@ -251,7 +255,7 @@ describe('P5-T3 per-surface and failure lines', () => {
     )
   })
 
-  it('renders the manifest-validation failure line (the summary is withheld on that path)', () => {
+  it('renders the manifest-validation failure line (the summary is withheld on that path)', async () => {
     const line = formatManifestValidationFailedLine(new Error('expected 24 team entries, got 23'))
     expect(line).toBe(
       '[omo-team] manifest validation FAILED: Error: expected 24 team entries, got 23',
@@ -262,15 +266,15 @@ describe('P5-T3 per-surface and failure lines', () => {
     expect(formatTeamSurfaceFailedLine('x', new Error('y'))).not.toContain('manifest validation')
   })
 
-  it('describeError handles both throwable shapes', () => {
+  it('describeError handles both throwable shapes', async () => {
     expect(describeError(new RangeError('r'))).toBe('RangeError: r')
     expect(describeError(42)).toBe('42')
     expect(describeError({ code: 'X' })).toBe('[object Object]')
   })
 })
 
-describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal', () => {
-  it('P5-T7: the real manifest + the real registry log the registered lines THEN the summary', () => {
+describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal', async () => {
+  it('P5-T7: the real manifest + the real registry log the registered lines THEN the summary', async () => {
     // The mount-state proof cold-start.sh and the probe grep for: at P5-T3 the
     // registry was empty and the summary stood alone; with `team_create` landed
     // the honest boot was TWO lines at T6; P5-T7 lands five rows (delete +
@@ -286,12 +290,16 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
       '[omo-team] team surface team_approve_shutdown registered',
       '[omo-team] team surface team_reject_shutdown registered',
       '[omo-team] team surface team_send_message registered',
+      '[omo-team] team surface team_task_create registered',
+      '[omo-team] team surface team_task_list registered',
+      '[omo-team] team surface team_task_update registered',
+      '[omo-team] team surface team_task_get registered',
       '[omo-team] team surface team_status registered',
       EXPECTED_SUMMARY_LINE,
     ])
   })
 
-  it('the registry table is exactly the landed rows (T8+ must flip this red)', () => {
+  it('the registry table is exactly the landed rows (T8+ must flip this red)', async () => {
     // Hand-placed pin, same intended friction as the summary line above: T5
     // landed `team_create`, T6 the message surface, T7 the delete + shutdown
     // trio + status; when T8 lands the task rows, this goes red in the same
@@ -303,11 +311,15 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
       'team_approve_shutdown',
       'team_reject_shutdown',
       'team_send_message',
+      'team_task_create',
+      'team_task_list',
+      'team_task_update',
+      'team_task_get',
       'team_status',
     ])
   })
 
-  it('a registrar that throws logs FAILED and the loop keeps going (P2-T16)', () => {
+  it('a registrar that throws logs FAILED and the loop keeps going (P2-T16)', async () => {
     // The loud-but-non-fatal discipline: "one surface bad" must never mean "the
     // rest never registered". Row 0 throws, row 1 still registers, the summary
     // still prints — with the honest `1/24`.
@@ -329,7 +341,7 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
     ])
   })
 
-  it("skips rows that are not 'ported' — a registrar on a pending row stays SILENT", () => {
+  it("skips rows that are not 'ported' — a registrar on a pending row stays SILENT", async () => {
     // 'pending' rows have no delivery surface yet and 'recorded' rows deliver
     // prose (status/`disposition` coupling, manifest.ts check 9) — registering
     // either would print a success the tree has not earned.
@@ -347,7 +359,7 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
     ])
   })
 
-  it('a ported row with no registrar registers nothing and is NOT counted', () => {
+  it('a ported row with no registrar registers nothing and is NOT counted', async () => {
     // The honest `<r>`: the manifest claims the port, the registry cannot
     // register it, and the summary reads the gap instead of hiding it.
     const roster = fullRoster([{ id: 'team_create', status: 'ported' }])
@@ -358,7 +370,7 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
     ])
   })
 
-  it('a broken roster logs ONE validation line and WITHHOLDS the summary', () => {
+  it('a broken roster logs ONE validation line and WITHHOLDS the summary', async () => {
     // A count from an untrusted roster would read like a successful mount — so
     // the `[omo-team] loaded` marker must be ABSENT on this path (cold-start's
     // grep fails loudly, which is the point), and nothing registers.
@@ -377,7 +389,7 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
     expect(lines.join('\n')).not.toContain('[omo-team] loaded')
   })
 
-  it('a returned disposer is REGISTERED, never invoked, at the fiber seam', () => {
+  it('a returned disposer is REGISTERED, never invoked, at the fiber seam', async () => {
     // cordis runs the effect's execute callback immediately and collects its
     // RETURN value as the fiber's disposal (Fiber#_execute) — so the forwarding
     // arrow must return the disposer. Calling it at registration time would

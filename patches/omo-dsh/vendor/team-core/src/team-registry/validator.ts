@@ -1,6 +1,6 @@
-import { AGENT_ELIGIBILITY_REGISTRY } from "../types"
+import { AGENT_ELIGIBILITY_REGISTRY } from "../types.ts"
 
-import type { Member, TeamSpec } from "../types"
+import type { Member, TeamSpec } from "../types.ts"
 
 const MAX_TEAM_MEMBERS = 8
 const HYPERPLAN_REQUIRED_CATEGORIES = [

@@ -2,8 +2,8 @@ import { mkdir, readdir, stat, chmod } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
 
-import type { TeamModeConfig } from "../config"
-import { log } from "../logger"
+import type { TeamModeConfig } from "../config.ts"
+import { log } from "../logger.ts"
 
 type TeamSpecEntry = {
   name: string

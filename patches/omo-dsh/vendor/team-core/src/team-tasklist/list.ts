@@ -2,11 +2,11 @@ import type { Dirent } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 
-import type { TeamModeConfig } from "../config"
-import { log } from "../logger"
-import { getTasksDir, resolveBaseDir } from "../team-registry"
-import { TaskSchema } from "../types"
-import type { Task } from "../types"
+import type { TeamModeConfig } from "../config.ts"
+import { log } from "../logger.ts"
+import { getTasksDir, resolveBaseDir } from "../team-registry/index.ts"
+import { TaskSchema } from "../types.ts"
+import type { Task } from "../types.ts"
 
 type TaskListFilter = {
   status?: Task["status"]

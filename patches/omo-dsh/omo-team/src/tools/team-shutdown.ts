@@ -74,7 +74,7 @@ import {
   TeamStateError,
   type TeamRuntimeState,
   type TeamShutdownRequest,
-  type TeamStateMemoryStore,
+  type TeamStateStore,
 } from '../team/team-state.ts'
 import type { TeamAgent } from './team-create.ts'
 import type { TeamMessageSendChannel } from './team-message.ts'
@@ -110,7 +110,7 @@ export class TeamShutdownError extends Error {
 /** 工具层装配依赖（单测注入 mock，生产由 index.ts 供真件）。 */
 export interface TeamShutdownDeps {
   readonly subagents: TeamMessageSendChannel
-  readonly store: TeamStateMemoryStore
+  readonly store: TeamStateStore
 }
 
 /** execute 的第二参（与 team-create.ts / team-message.ts 同一形状）。 */
@@ -350,7 +350,7 @@ export async function executeTeamShutdownRequest(
     )
   }
 
-  const { alreadyPending } = deps.store.requestShutdown(teamRunId, targetMemberName, TEAM_LEAD_SENTINEL)
+  const { alreadyPending } = await deps.store.requestShutdown(teamRunId, targetMemberName, TEAM_LEAD_SENTINEL)
   if (alreadyPending) {
     // 上游幂等臂的同一早退（shutdown.ts:24-28）：有未决请求 → 直接返回，
     // 不重发询问帧（成员已经欠着一个回复，再问只是噪声）。
@@ -379,7 +379,7 @@ export async function executeTeamShutdownRequest(
     // 未送达的询问不占幂等位：退账让 lead 的下一拍 request 可以重投
     // （上游 send→record 序里 send 抛则无痕的等价承载，见 team-state.ts
     // releaseShutdownRequest 注）。
-    deps.store.releaseShutdownRequest(teamRunId, targetMemberName)
+    await deps.store.releaseShutdownRequest(teamRunId, targetMemberName)
     throw new TeamShutdownError(
       `${TEAM_SHUTDOWN_REQUEST_TOOL_NAME}: inquiry delivery to '${targetMemberName}' failed: ${err instanceof Error ? err.message : String(err)}`,
       'DELIVERY_FAILED',
@@ -441,7 +441,7 @@ export async function executeTeamApproveShutdown(
   let approvedAt: number
   let memberPhaseFlipped: boolean
   try {
-    ({ alreadyApproved, approvedAt, memberPhaseFlipped } = deps.store.approveShutdown(teamRunId, memberName))
+    ({ alreadyApproved, approvedAt, memberPhaseFlipped } = await deps.store.approveShutdown(teamRunId, memberName))
   } catch (err) {
     throw wrapStoreError(err)
   }
@@ -555,7 +555,7 @@ export async function executeTeamRejectShutdown(
   let alreadyRejected: boolean
   let request: TeamShutdownRequest
   try {
-    ({ alreadyRejected, request } = deps.store.rejectShutdown(teamRunId, memberName, reason))
+    ({ alreadyRejected, request } = await deps.store.rejectShutdown(teamRunId, memberName, reason))
   } catch (err) {
     throw wrapStoreError(err)
   }

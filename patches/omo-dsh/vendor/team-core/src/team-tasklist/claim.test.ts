@@ -4,11 +4,11 @@ import { expect, test } from "bun:test"
 import { writeFile } from "node:fs/promises"
 import path from "node:path"
 
-import { getTasksDir, resolveBaseDir } from "../team-registry"
-import { claimTask, AlreadyClaimedError, BlockedByError } from "./claim"
-import { createTask } from "./store"
-import { createTaskInput, createTasklistFixture } from "./test-support"
-import { updateTaskStatus } from "./update"
+import { getTasksDir, resolveBaseDir } from "../team-registry/index.ts"
+import { claimTask, AlreadyClaimedError, BlockedByError } from "./claim.ts"
+import { createTask } from "./store.ts"
+import { createTaskInput, createTasklistFixture } from "./test-support.ts"
+import { updateTaskStatus } from "./update.ts"
 
 test("claimTask allows exactly one concurrent claimant", async () => {
   // given

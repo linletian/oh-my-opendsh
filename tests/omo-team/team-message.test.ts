@@ -25,6 +25,7 @@
 //
 // The `.ts` extension in the import paths is load-bearing (Node 24 type-stripping).
 import { describe, expect, it } from 'vitest'
+import { makeStore } from './support/ephemeral-store.ts'
 import {
   TEAM_BROADCAST_RECIPIENT,
   TEAM_MESSAGE_TOOL_KINDS,
@@ -42,7 +43,7 @@ import type { TeamAgent } from '../../patches/omo-dsh/omo-team/src/tools/team-cr
 import {
   TEAM_LEAD_SENTINEL,
   TEAM_MESSAGE_PAYLOAD_MAX_BYTES,
-  TeamStateMemoryStore,
+  TeamStateStore,
 } from '../../patches/omo-dsh/omo-team/src/team/team-state.ts'
 
 // ── mocks ─────────────────────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ function execOf(agent: TeamAgent) {
 }
 
 interface TeamFixture {
-  store: TeamStateMemoryStore
+  store: TeamStateStore
   teamRunId: string
   leadSessionId: string
   analystSessionId: string
@@ -128,22 +129,21 @@ interface TeamFixture {
 
 /** A real store seeded through the REAL create/activate path (no hand-built rows).
  *  `suffix` namespaces the child ids so two teams on ONE store stay distinct. */
-function seedTeam(store: TeamStateMemoryStore, leadSessionId = 'lead-session-1', suffix = '1'): TeamFixture {
+async function seedTeam(store: TeamStateStore, leadSessionId = 'lead-session-1', suffix = '1'): Promise<TeamFixture> {
   const analystSessionId = `child-analyst-${suffix}`
   const builderSessionId = `child-builder-${suffix}`
-  const state = store.create({
+  const state = await store.create({
     teamName: 'drive-team',
     leadSessionId,
     members: [
       { name: 'analyst', seat: 'sisyphus-junior', childId: analystSessionId },
       { name: 'builder', seat: 'hephaestus', childId: builderSessionId },
     ],
-    now: 1700000000000,
   })
-  store.transition(state.teamRunId, 'active')
+  await store.transition(state.teamRunId, 'active')
   // Members become deliverable once running (pending is not a deliverable phase).
-  store.setMemberPhase(state.teamRunId, 'analyst', 'running')
-  store.setMemberPhase(state.teamRunId, 'builder', 'running')
+  await store.setMemberPhase(state.teamRunId, 'analyst', 'running')
+  await store.setMemberPhase(state.teamRunId, 'builder', 'running')
   return { store, teamRunId: state.teamRunId, leadSessionId, analystSessionId, builderSessionId }
 }
 
@@ -162,19 +162,19 @@ const CORRID_B = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 
 // ── frame format ──────────────────────────────────────────────────────────────
 
-describe('P5-T6 frame format (native deliveryContent semantics, Q-8 B1)', () => {
-  it('direct frame prefix is `Team message <id> from <name>:`', () => {
+describe('P5-T6 frame format (native deliveryContent semantics, Q-8 B1)', async () => {
+  it('direct frame prefix is `Team message <id> from <name>:`', async () => {
     expect(buildTeamMessageFramePrefix('msg-7', TEAM_LEAD_SENTINEL, false)).toBe('Team message msg-7 from lead:')
     expect(buildTeamMessageFramePrefix('msg-7', 'analyst', false)).toBe('Team message msg-7 from analyst:')
   })
 
-  it('relay frame names the sender AND the lead relay inside the same prefix', () => {
+  it('relay frame names the sender AND the lead relay inside the same prefix', async () => {
     expect(buildTeamMessageFramePrefix('msg-7', 'analyst', true)).toBe(
       'Team message msg-7 from analyst (relayed via lead):',
     )
   })
 
-  it('content is the two-block frame: prefix block then body block', () => {
+  it('content is the two-block frame: prefix block then body block', async () => {
     const content = buildTeamMessageContent('msg-7', 'lead', 'hello analyst', false)
     expect(content).toEqual([
       { type: 'text', text: 'Team message msg-7 from lead:' },
@@ -185,10 +185,10 @@ describe('P5-T6 frame format (native deliveryContent semantics, Q-8 B1)', () => 
 
 // ── lead→member / member→lead direct ─────────────────────────────────────────
 
-describe('P5-T6 direct delivery (adjacent native channel)', () => {
+describe('P5-T6 direct delivery (adjacent native channel)', async () => {
   it('lead→member: sender is the live lead, target the member childId, frame verbatim', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
 
     const result = await executeTeamSendMessage(
@@ -213,8 +213,8 @@ describe('P5-T6 direct delivery (adjacent native channel)', () => {
   })
 
   it('member→lead: sender is the live member, target the lead session', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const analyst = makeAgent(fixture.analystSessionId)
 
     const result = await executeTeamSendMessage(
@@ -233,8 +233,8 @@ describe('P5-T6 direct delivery (adjacent native channel)', () => {
   })
 
   it('announcement kind rides the same frame; the kind lands on the result', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
 
     const result = await executeTeamSendMessage(
@@ -253,10 +253,10 @@ describe('P5-T6 direct delivery (adjacent native channel)', () => {
 
 // ── member→member lead relay ──────────────────────────────────────────────────
 
-describe('P5-T6 member↔member: no native sibling edge → lead relay', () => {
+describe('P5-T6 member↔member: no native sibling edge → lead relay', async () => {
   it('relay delivery: sender is the LIVE LEAD, frame names from + relay', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const analyst = makeAgent(fixture.analystSessionId)
 
     const result = await executeTeamSendMessage(
@@ -284,8 +284,8 @@ describe('P5-T6 member↔member: no native sibling edge → lead relay', () => {
   })
 
   it('relay without a live lead is a NAMED refusal, never a silent sibling send', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     deps.agents.setLive(fixture.leadSessionId, false)
     const analyst = makeAgent(fixture.analystSessionId)
 
@@ -300,10 +300,10 @@ describe('P5-T6 member↔member: no native sibling edge → lead relay', () => {
 
 // ── broadcast (lead-only) ─────────────────────────────────────────────────────
 
-describe('P5-T6 broadcast: lead-only discipline, fan-out per member', () => {
+describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () => {
   it('member broadcast is refused with the upstream verbatim text', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const analyst = makeAgent(fixture.analystSessionId)
 
     const err = await rejectionOf(executeTeamSendMessage(
@@ -316,8 +316,8 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', () => {
   })
 
   it('lead broadcast fans out one send per member, lead excluded, same frame id', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
 
     const result = await executeTeamSendMessage(
@@ -339,8 +339,8 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', () => {
   })
 
   it('broadcast partial failure bubbles NAMED and keeps the reservation (宁漏不重)', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     deps.subagents.failOn.add(fixture.builderSessionId)
     const lead = makeAgent(fixture.leadSessionId)
 
@@ -365,8 +365,8 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', () => {
     // of the failure slot; here the fan-out order analyst→builder→courier
     // fails at the SECOND member, so `(1 delivered before failure)` is the
     // deliveries.length snapshot the file header diff段 promises 已投计数).
-    const store = new TeamStateMemoryStore()
-    const state = store.create({
+    const store = makeStore()
+    const state = await store.create({
       teamName: 'count-team',
       leadSessionId: 'lead-session-9',
       members: [
@@ -374,12 +374,11 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', () => {
         { name: 'builder', seat: 'hephaestus', childId: 'child-builder-9' },
         { name: 'courier', seat: 'hephaestus', childId: 'child-courier-9' },
       ],
-      now: 1700000000000,
     })
-    store.transition(state.teamRunId, 'active')
-    store.setMemberPhase(state.teamRunId, 'analyst', 'running')
-    store.setMemberPhase(state.teamRunId, 'builder', 'running')
-    store.setMemberPhase(state.teamRunId, 'courier', 'running')
+    await store.transition(state.teamRunId, 'active')
+    await store.setMemberPhase(state.teamRunId, 'analyst', 'running')
+    await store.setMemberPhase(state.teamRunId, 'builder', 'running')
+    await store.setMemberPhase(state.teamRunId, 'courier', 'running')
     const subagents = makeSendChannel()
     subagents.failOn.add('child-builder-9') // the SECOND member in fan-out order
     const agents = makeAgentsRegistry([
@@ -412,8 +411,8 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', () => {
   })
 
   it('single-target delivery failure COMPENSATES the reservation (retry may deliver)', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     deps.subagents.failOn.add(fixture.analystSessionId)
     const lead = makeAgent(fixture.leadSessionId)
 
@@ -433,10 +432,10 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', () => {
 
 // ── R-6 dedup ─────────────────────────────────────────────────────────────────
 
-describe('P5-T6 R-6: same-id re-send dedup (DuplicateMessageIdError semantics)', () => {
+describe('P5-T6 R-6: same-id re-send dedup (DuplicateMessageIdError semantics)', async () => {
   it('second send with the same correlationId: no channel call, dedup note', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
 
     const first = await executeTeamSendMessage(
@@ -457,8 +456,8 @@ describe('P5-T6 R-6: same-id re-send dedup (DuplicateMessageIdError semantics)',
   })
 
   it('a DIFFERENT correlationId is a different message (no false dedup)', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
 
     await executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'a', correlationId: CORRID_A }, execOf(lead), deps)
@@ -468,9 +467,9 @@ describe('P5-T6 R-6: same-id re-send dedup (DuplicateMessageIdError semantics)',
   })
 
   it('ledger is per team: the same id on another team is a fresh message', async () => {
-    const store = new TeamStateMemoryStore()
-    const fixtureA = seedTeam(store)
-    const fixtureB = seedTeam(store, 'lead-session-2', '2')
+    const store = makeStore()
+    const fixtureA = await seedTeam(store)
+    const fixtureB = await seedTeam(store, 'lead-session-2', '2')
     const subagents = makeSendChannel()
     const lead = makeAgent(fixtureA.leadSessionId)
 
@@ -491,8 +490,8 @@ describe('P5-T6 R-6: same-id re-send dedup (DuplicateMessageIdError semantics)',
   })
 
   it('empty-string correlationId preprocesses to absent (upstream zod verbatim)', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
 
     const first = await executeTeamSendMessage(
@@ -510,10 +509,10 @@ describe('P5-T6 R-6: same-id re-send dedup (DuplicateMessageIdError semantics)',
 
 // ── named rejections (error families) ─────────────────────────────────────────
 
-describe('P5-T6 named error families (send.ts semantics, non-verbatim except where pinned)', () => {
+describe('P5-T6 named error families (send.ts semantics, non-verbatim except where pinned)', async () => {
   it('unknown recipient: the upstream `unknown or inactive team recipient` text', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
 
     const err = await rejectionOf(executeTeamSendMessage(
@@ -524,10 +523,10 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('inactive member (terminal phase) is refused the same named way', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
+    const fixture = await seedTeam(makeStore())
     // Drive the member row to a non-deliverable phase through the real API.
-    fixture.store.setMemberPhase(fixture.teamRunId, 'analyst', 'completed')
-    const deps = makeDeps(fixture)
+    await fixture.store.setMemberPhase(fixture.teamRunId, 'analyst', 'completed')
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
 
     await expect(
@@ -536,8 +535,8 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('team missing: named TEAM_NOT_FOUND', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
     await expect(
       executeTeamSendMessage({ teamRunId: 'no-such-run', to: 'analyst', body: 'x' }, execOf(lead), deps),
@@ -545,10 +544,10 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('deleting team refuses delivery (TeamDeletingError semantics)', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    fixture.store.transition(fixture.teamRunId, 'shutdown_requested')
-    fixture.store.transition(fixture.teamRunId, 'deleting')
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    await fixture.store.transition(fixture.teamRunId, 'shutdown_requested')
+    await fixture.store.transition(fixture.teamRunId, 'deleting')
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
     const err = await rejectionOf(executeTeamSendMessage(
       { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x' }, execOf(lead), deps,
@@ -558,8 +557,8 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('payload over 32768 bytes: PayloadTooLargeError semantics with the upstream text', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
     const oversized = 'x'.repeat(TEAM_MESSAGE_PAYLOAD_MAX_BYTES + 1)
 
@@ -579,8 +578,8 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('non-participant caller: the upstream gating text', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const stranger = makeAgent('stranger-session')
     const err = await rejectionOf(executeTeamSendMessage(
       { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x' }, execOf(stranger), deps,
@@ -592,11 +591,11 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('a member of team A cannot message into team B (participation must match)', async () => {
-    const store = new TeamStateMemoryStore()
-    const fixtureA = seedTeam(store)
+    const store = makeStore()
+    const fixtureA = await seedTeam(store)
     // team B needs a DIFFERENT lead — one session leads at most one live run
     // (the nested gate's storage half, ALREADY_PARTICIPANT).
-    const fixtureB = seedTeam(store, 'lead-session-2', '2')
+    const fixtureB = await seedTeam(store, 'lead-session-2', '2')
     const subagents = makeSendChannel()
     const analystOfA = makeAgent(fixtureA.analystSessionId)
     await expect(
@@ -610,8 +609,8 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('correlationId must be a UUID (the upstream task-ID admonition enforced)', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
     await expect(
       executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: 'task-1' }, execOf(lead), deps),
@@ -619,8 +618,8 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('unknown kind is refused against the MESSAGE_TOOL_KINDS vocabulary', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
     await expect(
       executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', kind: 'shutdown_request' }, execOf(lead), deps),
@@ -629,8 +628,8 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('lead messaging itself is refused as the non-edge it is', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     const lead = makeAgent(fixture.leadSessionId)
     await expect(
       executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: TEAM_LEAD_SENTINEL, body: 'dear me' }, execOf(lead), deps),
@@ -638,8 +637,8 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
   })
 
   it('missing exec.agent is loud, never a silent no-op', async () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    const deps = makeDeps(fixture)
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
     await expect(
       executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'x' }, { signal: new AbortController().signal }, deps),
     ).rejects.toMatchObject({ code: 'CALLER_MISSING' })
@@ -648,7 +647,7 @@ describe('P5-T6 named error families (send.ts semantics, non-verbatim except whe
 
 // ── surface dispatch (both faces, UNIVERSAL roster semantics) ─────────────────
 
-describe('P5-T6 registerTeamMessageSurface — lead AND member faces', () => {
+describe('P5-T6 registerTeamMessageSurface — lead AND member faces', async () => {
   interface CapturedListener {
     listener: (payload: { agent: TeamAgent }) => unknown
   }
@@ -685,8 +684,8 @@ describe('P5-T6 registerTeamMessageSurface — lead AND member faces', () => {
     return registered.map((def) => (def as { name: string }).name)
   }
 
-  it('root session: the message tool lands on the lead face', () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
+  it('root session: the message tool lands on the lead face', async () => {
+    const fixture = await seedTeam(makeStore())
     const ctx = makeCtx()
     registerTeamMessageSurface(ctx, makeDeps(fixture))
     const { agent, registered } = makeRegisteringAgent(fixture.leadSessionId)
@@ -694,8 +693,8 @@ describe('P5-T6 registerTeamMessageSurface — lead AND member faces', () => {
     expect(namesOf(registered)).toEqual([TEAM_SEND_MESSAGE_TOOL_NAME])
   })
 
-  it('team-member child: the message tool lands on the member face', () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
+  it('team-member child: the message tool lands on the member face', async () => {
+    const fixture = await seedTeam(makeStore())
     const ctx = makeCtx()
     registerTeamMessageSurface(ctx, makeDeps(fixture))
     const { agent, registered } = makeRegisteringAgent(fixture.analystSessionId, fixture.leadSessionId)
@@ -703,8 +702,8 @@ describe('P5-T6 registerTeamMessageSurface — lead AND member faces', () => {
     expect(namesOf(registered)).toEqual([TEAM_SEND_MESSAGE_TOOL_NAME])
   })
 
-  it('NON-team child gets NOTHING (the structural absence half)', () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
+  it('NON-team child gets NOTHING (the structural absence half)', async () => {
+    const fixture = await seedTeam(makeStore())
     const ctx = makeCtx()
     registerTeamMessageSurface(ctx, makeDeps(fixture))
     const { agent, registered } = makeRegisteringAgent('unrelated-child', fixture.leadSessionId)
@@ -712,10 +711,10 @@ describe('P5-T6 registerTeamMessageSurface — lead AND member faces', () => {
     expect(namesOf(registered)).toEqual([])
   })
 
-  it('member face is gated by team status like team-create (terminal states install nothing)', () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
-    fixture.store.transition(fixture.teamRunId, 'shutdown_requested')
-    fixture.store.transition(fixture.teamRunId, 'deleting')
+  it('member face is gated by team status like team-create (terminal states install nothing)', async () => {
+    const fixture = await seedTeam(makeStore())
+    await fixture.store.transition(fixture.teamRunId, 'shutdown_requested')
+    await fixture.store.transition(fixture.teamRunId, 'deleting')
     const ctx = makeCtx()
     registerTeamMessageSurface(ctx, makeDeps(fixture))
     const { agent, registered } = makeRegisteringAgent(fixture.analystSessionId, fixture.leadSessionId)
@@ -723,8 +722,8 @@ describe('P5-T6 registerTeamMessageSurface — lead AND member faces', () => {
     expect(namesOf(registered)).toEqual([])
   })
 
-  it('the disposer is handed back (subscription unwind, no late installs)', () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
+  it('the disposer is handed back (subscription unwind, no late installs)', async () => {
+    const fixture = await seedTeam(makeStore())
     const ctx = makeCtx()
     const dispose = registerTeamMessageSurface(ctx, makeDeps(fixture))
     expect(ctx.captured).toHaveLength(1)
@@ -735,9 +734,9 @@ describe('P5-T6 registerTeamMessageSurface — lead AND member faces', () => {
 
 // ── definition shape (upstream zod mirror on the JSON-Schema face) ────────────
 
-describe('P5-T6 tool definition mirrors the upstream zod shape (Q1a §2.6)', () => {
-  it('parameters: teamRunId/to/body required; kind enum; correlationId documented verbatim', () => {
-    const fixture = seedTeam(new TeamStateMemoryStore())
+describe('P5-T6 tool definition mirrors the upstream zod shape (Q1a §2.6)', async () => {
+  it('parameters: teamRunId/to/body required; kind enum; correlationId documented verbatim', async () => {
+    const fixture = await seedTeam(makeStore())
     const definition = createTeamSendMessageDefinition(makeDeps(fixture)) as {
       name: string
       description: string

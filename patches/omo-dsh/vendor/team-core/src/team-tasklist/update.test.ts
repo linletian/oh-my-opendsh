@@ -2,11 +2,11 @@
 
 import { expect, test } from "bun:test"
 
-import { claimTask } from "./claim"
-import { getTask } from "./get"
-import { createTask } from "./store"
-import { createTaskInput, createTasklistFixture } from "./test-support"
-import { CrossOwnerUpdateError, InvalidTaskTransitionError, updateTaskStatus } from "./update"
+import { claimTask } from "./claim.ts"
+import { getTask } from "./get.ts"
+import { createTask } from "./store.ts"
+import { createTaskInput, createTasklistFixture } from "./test-support.ts"
+import { CrossOwnerUpdateError, InvalidTaskTransitionError, updateTaskStatus } from "./update.ts"
 
 test("updateTaskStatus supports the one-way claim to complete flow", async () => {
   // given

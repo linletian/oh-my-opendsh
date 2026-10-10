@@ -1,3 +1,3 @@
-export * from "./paths"
-export * from "./loader"
-export * from "./validator"
+export * from "./paths.ts"
+export * from "./loader.ts"
+export * from "./validator.ts"

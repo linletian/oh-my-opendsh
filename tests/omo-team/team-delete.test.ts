@@ -13,6 +13,7 @@
 // The `.ts` extension in the import paths is load-bearing (Node 24
 // type-stripping).
 import { describe, expect, it } from 'vitest'
+import { makeStore } from './support/ephemeral-store.ts'
 import {
   TEAM_DELETE_TOOL_NAME,
   TEAM_DELETABLE_STATUSES,
@@ -28,7 +29,7 @@ import type { TeamAgent, TeamMemberStartRequest } from '../../patches/omo-dsh/om
 import {
   TEAM_DELETABLE_MEMBER_PHASES,
   TEAM_FORCE_COMPLETABLE_MEMBER_PHASES,
-  TeamStateMemoryStore,
+  TeamStateStore,
 } from '../../patches/omo-dsh/omo-team/src/team/team-state.ts'
 
 const LEAD = 'lead-session-1'
@@ -80,20 +81,19 @@ function makeChannel(): MockChannel {
 const abortSignal = new AbortController().signal
 
 /** lead + 两成员（analyst/builder）的 active 团队。**活体 lead 是稳定单例**
-// ——ancestor authority 的同一性断言（评审 T7-MAJOR）必须读 agents.get 返回
-// 的那枚精确实例；每次 get 造新对象会让同一性假绿/假红。 */
-function makeFixture(): { deps: TeamDeleteDeps; teamRunId: string; store: TeamStateMemoryStore; channel: MockChannel; leadAgent: TeamAgent } {
-  const store = new TeamStateMemoryStore()
-  const state = store.create({
+ * ——ancestor authority 的同一性断言（评审 T7-MAJOR）必须读 agents.get 返回
+ * 的那枚精确实例；每次 get 造新对象会让同一性假绿/假红。 */
+async function makeFixture(): Promise<{ deps: TeamDeleteDeps; teamRunId: string; store: TeamStateStore; channel: MockChannel; leadAgent: TeamAgent }> {
+  const store = makeStore()
+  const state = await store.create({
     teamName: 'teardown-team',
     leadSessionId: LEAD,
     members: [
       { name: 'analyst', seat: 'sisyphus-junior', childId: 'child-analyst' },
       { name: 'builder', seat: 'hephaestus', childId: 'child-builder' },
     ],
-    now: 1700000000000,
   })
-  store.transition(state.teamRunId, 'active')
+  await store.transition(state.teamRunId, 'active')
   const channel = makeChannel()
   const leadAgent = makeAgent(LEAD)
   const agents = {
@@ -104,15 +104,14 @@ function makeFixture(): { deps: TeamDeleteDeps; teamRunId: string; store: TeamSt
 }
 
 /** 建队但停在指定态（creating 原样；failed 走 creating→failed 合法边）。 */
-function makeFixtureInStatus(status: 'creating' | 'failed'): { deps: TeamDeleteDeps; teamRunId: string; store: TeamStateMemoryStore } {
-  const store = new TeamStateMemoryStore()
-  const state = store.create({
+async function makeFixtureInStatus(status: 'creating' | 'failed'): Promise<{ deps: TeamDeleteDeps; teamRunId: string; store: TeamStateStore }> {
+  const store = makeStore()
+  const state = await store.create({
     teamName: 'stalled-team',
     leadSessionId: LEAD,
     members: [{ name: 'analyst', seat: 'sisyphus-junior', childId: 'child-analyst' }],
-    now: 1700000000000,
   })
-  if (status === 'failed') store.transition(state.teamRunId, 'failed')
+  if (status === 'failed') await store.transition(state.teamRunId, 'failed')
   const channel = makeChannel()
   const agents = { get: (sessionId: string) => (sessionId === LEAD ? makeAgent(LEAD) : undefined) }
   return { deps: { subagents: channel, agents, store }, teamRunId: state.teamRunId, store }
@@ -128,18 +127,18 @@ async function rejectionOf(promise: Promise<unknown>): Promise<TeamDeleteError> 
   throw new Error('expected a rejection, the promise resolved')
 }
 
-function approveBoth(store: TeamStateMemoryStore, teamRunId: string): void {
-  store.requestShutdown(teamRunId, 'analyst', 'lead')
-  store.requestShutdown(teamRunId, 'builder', 'lead')
-  store.approveShutdown(teamRunId, 'analyst')
-  store.approveShutdown(teamRunId, 'builder')
+async function approveBoth(store: TeamStateStore, teamRunId: string): Promise<void> {
+  await store.requestShutdown(teamRunId, 'analyst', 'lead')
+  await store.requestShutdown(teamRunId, 'builder', 'lead')
+  await store.approveShutdown(teamRunId, 'analyst')
+  await store.approveShutdown(teamRunId, 'builder')
 }
 
-describe('P5-T7 executeTeamDelete — DELETABLE 门禁', () => {
+describe('P5-T7 executeTeamDelete — DELETABLE 门禁', async () => {
   it('non-force with a RUNNING member is refused verbatim: members still active', async () => {
-    const { deps, teamRunId, store } = makeFixture()
-    store.setMemberPhase(teamRunId, 'analyst', 'running')
-    store.setMemberPhase(teamRunId, 'builder', 'running')
+    const { deps, teamRunId, store } = await makeFixture()
+    await store.setMemberPhase(teamRunId, 'analyst', 'running')
+    await store.setMemberPhase(teamRunId, 'builder', 'running')
     const err = await rejectionOf(executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps))
     expect(err.code).toBe('MEMBERS_STILL_ACTIVE')
     expect(err.message).toContain('members still active')
@@ -151,8 +150,8 @@ describe('P5-T7 executeTeamDelete — DELETABLE 门禁', () => {
   })
 
   it('non-force with ALL members shutdown_approved deletes through deleting→deleted', async () => {
-    const { deps, teamRunId, store, channel, leadAgent } = makeFixture()
-    approveBoth(store, teamRunId)
+    const { deps, teamRunId, store, channel, leadAgent } = await makeFixture()
+    await approveBoth(store, teamRunId)
     // caller **就是** agents.get(LEAD) 那枚活体（fixture 单例）——executeTeamDelete
     // 的 carrier 选择在 caller 即 lead 时取 caller（team-delete.ts:214），
     // 同一实例让「携 lead 活体」的同一性钉读的是真身而非复刻。
@@ -195,8 +194,8 @@ describe('P5-T7 executeTeamDelete — DELETABLE 门禁', () => {
   })
 
   it('the deleted tombstone makes the teamRunId unusable BY NAME on messaging', async () => {
-    const { deps, teamRunId, store } = makeFixture()
-    approveBoth(store, teamRunId)
+    const { deps, teamRunId, store } = await makeFixture()
+    await approveBoth(store, teamRunId)
     await executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     // team_send_message 对 deleted 团队具名拒（TEAM_DELETED，assertTeamAccepts
     // Messages 对齐——team-message.ts 的既有错误族）。
@@ -216,8 +215,8 @@ describe('P5-T7 executeTeamDelete — DELETABLE 门禁', () => {
   })
 
   it('a re-delete of a deleted team is idempotent success (上游白名单含 deleted)', async () => {
-    const { deps, teamRunId, store } = makeFixture()
-    approveBoth(store, teamRunId)
+    const { deps, teamRunId, store } = await makeFixture()
+    await approveBoth(store, teamRunId)
     await executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     const again = await executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     expect(again.status).toBe('deleted')
@@ -225,11 +224,11 @@ describe('P5-T7 executeTeamDelete — DELETABLE 门禁', () => {
   })
 })
 
-describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', () => {
+describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', async () => {
   it('force tears down RUNNING members: force-complete first, then interrupt + drain', async () => {
-    const { deps, teamRunId, store, channel } = makeFixture()
-    store.setMemberPhase(teamRunId, 'analyst', 'running')
-    store.setMemberPhase(teamRunId, 'builder', 'running')
+    const { deps, teamRunId, store, channel } = await makeFixture()
+    await store.setMemberPhase(teamRunId, 'analyst', 'running')
+    await store.setMemberPhase(teamRunId, 'builder', 'running')
     const result = await executeTeamDelete(
       { teamRunId, force: true },
       { agent: makeAgent(LEAD), signal: abortSignal },
@@ -246,14 +245,14 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', () => {
   it('force from CREATING bypasses the transition table into deleting, then lands deleted', async () => {
     // creating 态专用 fixture（迁移表 creating→{active,failed}——把 active
     // 队「拉回」creating 本身就是表违规，所以这里从建队就不推 active）。
-    const { deps, teamRunId, store } = makeFixtureInStatus('creating')
+    const { deps, teamRunId, store } = await makeFixtureInStatus('creating')
     expect(store.get(teamRunId)!.status).toBe('creating')
     // 非 force 先撞**成员门**（上游 delete-team.ts 的序：:74 members-still-
     // active 在 :81 状态白名单之前——creating 队的成员是 pending，先落成员门）。
     const polite = await rejectionOf(executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps))
     expect(polite.code).toBe('MEMBERS_STILL_ACTIVE')
     // 成员全清后仍撞白名单（creating ∉ DELETABLE_TEAM_STATUSES，非 force）。
-    for (const m of store.get(teamRunId)!.members) store.setMemberPhase(teamRunId, m.name, 'shutdown_approved')
+    for (const m of store.get(teamRunId)!.members) await store.setMemberPhase(teamRunId, m.name, 'shutdown_approved')
     const whitelisted = await rejectionOf(executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps))
     expect(whitelisted.code).toBe('TEAM_NOT_DELETABLE')
     expect(whitelisted.message).toBe(`team cannot be deleted from 'creating'`)
@@ -266,7 +265,7 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', () => {
   })
 
   it('failed teams cannot be deleted even with force (上游 FORCE 集不含 failed)', async () => {
-    const { deps, teamRunId, store } = makeFixtureInStatus('failed')
+    const { deps, teamRunId, store } = await makeFixtureInStatus('failed')
     expect(store.get(teamRunId)!.status).toBe('failed')
     const err = await rejectionOf(executeTeamDelete(
       { teamRunId, force: true },
@@ -278,7 +277,7 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', () => {
   })
 
   it('a non-lead caller is refused lead-only by name', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     const err = await rejectionOf(executeTeamDelete(
       { teamRunId },
       { agent: makeAgent('child-analyst'), signal: abortSignal },
@@ -289,9 +288,9 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', () => {
   })
 
   it('force + deleting + a participant caller rides the upstream force-bypass', async () => {
-    const { deps, teamRunId, store } = makeFixture()
-    approveBoth(store, teamRunId)
-    store.transition(teamRunId, 'deleting')
+    const { deps, teamRunId, store } = await makeFixture()
+    await approveBoth(store, teamRunId)
+    await store.transition(teamRunId, 'deleting')
     // builder 是本队成员：force + deleting + participant = 上游 hook :87-98 旁路。
     const bypassAgents = {
       get: (sessionId: string) => (sessionId === LEAD ? makeAgent(LEAD) : sessionId === 'child-builder' ? makeAgent('child-builder') : undefined),
@@ -309,7 +308,7 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', () => {
   })
 
   it('a foreign non-lead caller with force is STILL refused lead-only', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     const err = await rejectionOf(executeTeamDelete(
       { teamRunId, force: true },
       { agent: makeAgent('foreign-session'), signal: abortSignal },
@@ -319,8 +318,8 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', () => {
   })
 
   it('interrupt faults are surfaced, not swallowed; the run stays deleting for retry', async () => {
-    const { deps, teamRunId, store, channel } = makeFixture()
-    approveBoth(store, teamRunId)
+    const { deps, teamRunId, store, channel } = await makeFixture()
+    await approveBoth(store, teamRunId)
     channel.failInterruptOn.add('child-builder')
     const err = await rejectionOf(executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps))
     expect(err.code).toBe('TEARDOWN_FAULT')
@@ -336,7 +335,7 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', () => {
   })
 
   it('unknown teamRunId is refused TEAM_NOT_FOUND (senpi 缺账 no-op 不采，差异成文)', async () => {
-    const { deps } = makeFixture()
+    const { deps } = await makeFixture()
     const err = await rejectionOf(executeTeamDelete(
       { teamRunId: 'no-such-run' },
       { agent: makeAgent(LEAD), signal: abortSignal },
@@ -346,15 +345,15 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', () => {
   })
 })
 
-describe('P5-T7 team-delete vocabulary & surface', () => {
-  it('the deletable vocab mirrors upstream word-for-word', () => {
+describe('P5-T7 team-delete vocabulary & surface', async () => {
+  it('the deletable vocab mirrors upstream word-for-word', async () => {
     expect([...TEAM_DELETABLE_MEMBER_PHASES].sort()).toEqual(['completed', 'errored', 'shutdown_approved'])
     expect([...TEAM_FORCE_COMPLETABLE_MEMBER_PHASES].sort()).toEqual(['idle', 'pending', 'running'])
     expect([...TEAM_DELETABLE_STATUSES].sort()).toEqual(['active', 'deleted', 'deleting', 'shutdown_requested'])
   })
 
-  it('the definition carries the upstream description first sentence verbatim', () => {
-    const def = createTeamDeleteDefinition({ subagents: makeChannel(), agents: { get: () => undefined }, store: new TeamStateMemoryStore() }) as {
+  it('the definition carries the upstream description first sentence verbatim', async () => {
+    const def = createTeamDeleteDefinition({ subagents: makeChannel(), agents: { get: () => undefined }, store: makeStore() }) as {
       name: string
       description: string
     }
@@ -362,16 +361,15 @@ describe('P5-T7 team-delete vocabulary & surface', () => {
     expect(def.description.startsWith('Delete a completed or shutdown-approved team run. Pass force=true to tear it down even while members are still active.')).toBe(true)
   })
 
-  it('lead face YES, member face structurally absent', () => {
+  it('lead face YES, member face structurally absent', async () => {
     const names: string[] = []
-    const store = new TeamStateMemoryStore()
-    const state = store.create({
+    const store = makeStore()
+    const state = await store.create({
       teamName: 't',
       leadSessionId: LEAD,
       members: [{ name: 'analyst', seat: 'sisyphus-junior', childId: 'child-analyst' }],
-      now: 1700000000000,
     })
-    store.transition(state.teamRunId, 'active')
+    await store.transition(state.teamRunId, 'active')
     let captured: ((payload: { agent: TeamAgent }) => unknown) | undefined
     registerTeamDeleteSurface({ on: (_event, listener) => { captured = listener; return () => {} } }, {
       subagents: makeChannel(),

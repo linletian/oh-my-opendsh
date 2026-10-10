@@ -20,6 +20,7 @@
 // The `.ts` extension in the import paths is load-bearing (Node 24
 // type-stripping).
 import { describe, expect, it } from 'vitest'
+import { makeStore } from './support/ephemeral-store.ts'
 import {
   TEAM_APPROVE_SHUTDOWN_TOOL_NAME,
   TEAM_REJECT_SHUTDOWN_TOOL_NAME,
@@ -44,7 +45,7 @@ import type { TeamAgent } from '../../patches/omo-dsh/omo-team/src/tools/team-cr
 import {
   TEAM_DELETABLE_MEMBER_PHASES,
   TEAM_LEAD_SENTINEL,
-  TeamStateMemoryStore,
+  TeamStateStore,
 } from '../../patches/omo-dsh/omo-team/src/team/team-state.ts'
 
 // ── mocks ─────────────────────────────────────────────────────────────────────
@@ -93,18 +94,17 @@ const ANALYST_SESSION = 'child-analyst'
 const BUILDER_SESSION = 'child-builder'
 
 /** 一个 active 的两成员团队（analyst + builder），账本随 store 走。 */
-function makeFixture(): { deps: TeamShutdownDeps; teamRunId: string; store: TeamStateMemoryStore } {
-  const store = new TeamStateMemoryStore()
-  const state = store.create({
+async function makeFixture(): Promise<{ deps: TeamShutdownDeps; teamRunId: string; store: TeamStateStore }> {
+  const store = makeStore()
+  const state = await store.create({
     teamName: 'handshake-team',
     leadSessionId: LEAD,
     members: [
       { name: 'analyst', seat: 'sisyphus-junior', childId: ANALYST_SESSION },
       { name: 'builder', seat: 'hephaestus', childId: BUILDER_SESSION },
     ],
-    now: 1700000000000,
   })
-  store.transition(state.teamRunId, 'active')
+  await store.transition(state.teamRunId, 'active')
   const deps: TeamShutdownDeps = { subagents: makeSendChannel(), store }
   return { deps, teamRunId: state.teamRunId, store }
 }
@@ -128,9 +128,9 @@ function frameText(content: readonly { type: string; text: string }[]): string {
 
 // ── ① team_shutdown_request ──────────────────────────────────────────────────
 
-describe('P5-T7 executeTeamShutdownRequest — 询问路（lead-only）', () => {
+describe('P5-T7 executeTeamShutdownRequest — 询问路（lead-only）', async () => {
   it('lead request delivers the inquiry frame to the member and records the pending row', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     const result = await executeTeamShutdownRequest(
       { teamRunId, targetMemberName: 'analyst' },
       { agent: makeAgent(LEAD), signal: abortSignal },
@@ -165,7 +165,7 @@ describe('P5-T7 executeTeamShutdownRequest — 询问路（lead-only）', () => 
   })
 
   it('a non-lead caller is refused by the upstream verbatim text', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     const err = await rejectionOf(executeTeamShutdownRequest(
       { teamRunId, targetMemberName: 'analyst' },
       { agent: makeAgent(ANALYST_SESSION), signal: abortSignal },
@@ -177,7 +177,7 @@ describe('P5-T7 executeTeamShutdownRequest — 询问路（lead-only）', () => 
   })
 
   it('unknown member is refused by the upstream shutdown-helpers text', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     const err = await rejectionOf(executeTeamShutdownRequest(
       { teamRunId, targetMemberName: 'nobody' },
       { agent: makeAgent(LEAD), signal: abortSignal },
@@ -188,7 +188,7 @@ describe('P5-T7 executeTeamShutdownRequest — 询问路（lead-only）', () => 
   })
 
   it('an outstanding request short-circuits: no second inquiry, no second row (idempotent)', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     const second = await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     expect(second.alreadyPending).toBe(true)
@@ -200,7 +200,7 @@ describe('P5-T7 executeTeamShutdownRequest — 询问路（lead-only）', () => 
   })
 
   it('a RESOLVED request never blocks a fresh one (senpi 倒序语义)', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     await executeTeamRejectShutdown(
       { teamRunId, memberName: 'analyst', reason: 'still mid-analysis' },
@@ -214,7 +214,7 @@ describe('P5-T7 executeTeamShutdownRequest — 询问路（lead-only）', () => 
   })
 
   it('delivery failure releases the ledger row so a retry can re-send', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     ;(deps.subagents as MockSendChannel).failOn.add(ANALYST_SESSION)
     const err = await rejectionOf(executeTeamShutdownRequest(
       { teamRunId, targetMemberName: 'analyst' },
@@ -231,15 +231,15 @@ describe('P5-T7 executeTeamShutdownRequest — 询问路（lead-only）', () => 
   })
 
   it('deleting/deleted teams refuse the handshake by name (assertTeamAcceptsMessages family)', async () => {
-    const { deps, teamRunId, store } = makeFixture()
-    store.transition(teamRunId, 'deleting')
+    const { deps, teamRunId, store } = await makeFixture()
+    await store.transition(teamRunId, 'deleting')
     const deleting = await rejectionOf(executeTeamShutdownRequest(
       { teamRunId, targetMemberName: 'analyst' },
       { agent: makeAgent(LEAD), signal: abortSignal },
       deps,
     ))
     expect(deleting.message).toBe('team is deleting')
-    store.transition(teamRunId, 'deleted')
+    await store.transition(teamRunId, 'deleted')
     const deleted = await rejectionOf(executeTeamShutdownRequest(
       { teamRunId, targetMemberName: 'analyst' },
       { agent: makeAgent(LEAD), signal: abortSignal },
@@ -252,9 +252,9 @@ describe('P5-T7 executeTeamShutdownRequest — 询问路（lead-only）', () => 
 
 // ── ② team_approve_shutdown ──────────────────────────────────────────────────
 
-describe('P5-T7 executeTeamApproveShutdown — 批准路（本人 + lead 代批第四路）', () => {
+describe('P5-T7 executeTeamApproveShutdown — 批准路（本人 + lead 代批第四路）', async () => {
   it('the target member self-approves: phase flips, result frame rides to the lead', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     ;(deps.subagents as MockSendChannel).sends.length = 0
     const result = await executeTeamApproveShutdown(
@@ -286,7 +286,7 @@ describe('P5-T7 executeTeamApproveShutdown — 批准路（本人 + lead 代批�
     // 上游 addendum refactor-sections/team-mode-addendum.ts:123 的同一动作：
     // 成员不自批，lead 亲调 team_approve_shutdown——权限天然覆盖，自指结果
     // 帧跳过原生投递（无 lead→lead 边），note 承载「lead 已知」。
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'builder' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     ;(deps.subagents as MockSendChannel).sends.length = 0
     const result = await executeTeamApproveShutdown(
@@ -303,7 +303,7 @@ describe('P5-T7 executeTeamApproveShutdown — 批准路（本人 + lead 代批�
   })
 
   it('no request at all is refused verbatim: shutdown request missing', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     const err = await rejectionOf(executeTeamApproveShutdown(
       { teamRunId, memberName: 'analyst' },
       { agent: makeAgent(ANALYST_SESSION), signal: abortSignal },
@@ -314,7 +314,7 @@ describe('P5-T7 executeTeamApproveShutdown — 批准路（本人 + lead 代批�
   })
 
   it('a second approval is idempotent: no re-send, no double stamp (幂等向二)', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     const first = await executeTeamApproveShutdown({ teamRunId, memberName: 'analyst' }, { agent: makeAgent(ANALYST_SESSION), signal: abortSignal }, deps)
     ;(deps.subagents as MockSendChannel).sends.length = 0
@@ -325,8 +325,8 @@ describe('P5-T7 executeTeamApproveShutdown — 批准路（本人 + lead 代批�
   })
 
   it('completed/errored members KEEP their terminal phase even when approved', async () => {
-    const { deps, teamRunId, store } = makeFixture()
-    store.setMemberPhase(teamRunId, 'analyst', 'completed')
+    const { deps, teamRunId, store } = await makeFixture()
+    await store.setMemberPhase(teamRunId, 'analyst', 'completed')
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     const result = await executeTeamApproveShutdown({ teamRunId, memberName: 'analyst' }, { agent: makeAgent(ANALYST_SESSION), signal: abortSignal }, deps)
     expect(result.memberPhaseFlipped).toBe(false)
@@ -338,7 +338,7 @@ describe('P5-T7 executeTeamApproveShutdown — 批准路（本人 + lead 代批�
   })
 
   it('a foreign caller is refused by the upstream verbatim permission text', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     const err = await rejectionOf(executeTeamApproveShutdown(
       { teamRunId, memberName: 'analyst' },
@@ -352,9 +352,9 @@ describe('P5-T7 executeTeamApproveShutdown — 批准路（本人 + lead 代批�
 
 // ── ③ team_reject_shutdown ───────────────────────────────────────────────────
 
-describe('P5-T7 executeTeamRejectShutdown — 拒绝路（reason 必填，team 存活）', () => {
+describe('P5-T7 executeTeamRejectShutdown — 拒绝路（reason 必填，team 存活）', async () => {
   it('the target member rejects with a reason: request resolved, phase untouched, frame carries reason', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     ;(deps.subagents as MockSendChannel).sends.length = 0
     const result = await executeTeamRejectShutdown(
@@ -383,7 +383,7 @@ describe('P5-T7 executeTeamRejectShutdown — 拒绝路（reason 必填，team �
   })
 
   it('a missing reason is refused (上游 zod min(1) 的运行时对应)', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     const err = await rejectionOf(executeTeamRejectShutdown(
       { teamRunId, memberName: 'analyst' },
@@ -395,7 +395,7 @@ describe('P5-T7 executeTeamRejectShutdown — 拒绝路（reason 必填，team �
   })
 
   it('the SAME reason twice is idempotent: no re-send (幂等向三)', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     await executeTeamRejectShutdown({ teamRunId, memberName: 'analyst', reason: 'mid-work' }, { agent: makeAgent(ANALYST_SESSION), signal: abortSignal }, deps)
     ;(deps.subagents as MockSendChannel).sends.length = 0
@@ -410,7 +410,7 @@ describe('P5-T7 executeTeamRejectShutdown — 拒绝路（reason 必填，team �
     // === reason`——换 reason = 上游放行的重拒：账落新 reason，工具层**再投
     // 一帧**结果帧（mailbox 同判据的 (B) 承载）。与同 reason 幂等例对偶：
     // 那一例钉「同 reason 不发」，这一例钉「异 reason 必发」。
-    const { deps, teamRunId, store } = makeFixture()
+    const { deps, teamRunId, store } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
     ;(deps.subagents as MockSendChannel).sends.length = 0 // 只数结果帧
     await executeTeamRejectShutdown({ teamRunId, memberName: 'analyst', reason: 'mid-work' }, { agent: makeAgent(ANALYST_SESSION), signal: abortSignal }, deps)
@@ -434,7 +434,7 @@ describe('P5-T7 executeTeamRejectShutdown — 拒绝路（reason 必填，team �
   })
 
   it('no request at all is refused verbatim (approve/reject 同一具名)', async () => {
-    const { deps, teamRunId } = makeFixture()
+    const { deps, teamRunId } = await makeFixture()
     const err = await rejectionOf(executeTeamRejectShutdown(
       { teamRunId, memberName: 'builder', reason: 'whatever' },
       { agent: makeAgent(LEAD), signal: abortSignal },
@@ -446,10 +446,10 @@ describe('P5-T7 executeTeamRejectShutdown — 拒绝路（reason 必填，team �
 
 // ── 权限分层序（评审 T7-NIT）：权限闸先于运行态闸 ──────────────────────────
 
-describe('P5-T7 permission layering — 越权具名拒先于运行态拒（gating 分层序）', () => {
+describe('P5-T7 permission layering — 越权具名拒先于运行态拒（gating 分层序）', async () => {
   it('request: a non-lead hitting a deleting/deleted team gets the lead-only family FIRST', async () => {
-    const { deps, teamRunId, store } = makeFixture()
-    store.transition(teamRunId, 'deleting')
+    const { deps, teamRunId, store } = await makeFixture()
+    await store.transition(teamRunId, 'deleting')
     const deleting = await rejectionOf(executeTeamShutdownRequest(
       { teamRunId, targetMemberName: 'analyst' },
       { agent: makeAgent(ANALYST_SESSION), signal: abortSignal },
@@ -458,7 +458,7 @@ describe('P5-T7 permission layering — 越权具名拒先于运行态拒（gati
     // 「你不能做这件事」先于「这件事现在不能做」：LEAD_ONLY，不是 team is deleting。
     expect(deleting.code).toBe('LEAD_ONLY')
     expect(deleting.message).toBe(`${TEAM_SHUTDOWN_REQUEST_TOOL_NAME} is lead-only`)
-    store.transition(teamRunId, 'deleted')
+    await store.transition(teamRunId, 'deleted')
     const deleted = await rejectionOf(executeTeamShutdownRequest(
       { teamRunId, targetMemberName: 'analyst' },
       { agent: makeAgent(BUILDER_SESSION), signal: abortSignal },
@@ -476,10 +476,10 @@ describe('P5-T7 permission layering — 越权具名拒先于运行态拒（gati
   })
 
   it('approve/reject: a foreign caller on a deleted team gets the permission family, not the tombstone', async () => {
-    const { deps, teamRunId, store } = makeFixture()
+    const { deps, teamRunId, store } = await makeFixture()
     await executeTeamShutdownRequest({ teamRunId, targetMemberName: 'analyst' }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
-    store.transition(teamRunId, 'deleting')
-    store.transition(teamRunId, 'deleted')
+    await store.transition(teamRunId, 'deleting')
+    await store.transition(teamRunId, 'deleted')
     const approveErr = await rejectionOf(executeTeamApproveShutdown(
       { teamRunId, memberName: 'analyst' },
       { agent: makeAgent(BUILDER_SESSION), signal: abortSignal },
@@ -506,8 +506,8 @@ describe('P5-T7 permission layering — 越权具名拒先于运行态拒（gati
 
 // ── 帧构造与 kind 席位 ───────────────────────────────────────────────────────
 
-describe('P5-T7 shutdown frames & the reserved omo-team-shutdown kind', () => {
-  it('frame builders carry the id/name/reason vocabulary in the two-block native shape', () => {
+describe('P5-T7 shutdown frames & the reserved omo-team-shutdown kind', async () => {
+  it('frame builders carry the id/name/reason vocabulary in the two-block native shape', async () => {
     const inquiry = buildTeamShutdownRequestContent('req-1', 'analyst', 'run-9')
     expect(inquiry[0]!.text).toBe('Team shutdown request req-1 from lead:')
     expect(frameText(inquiry)).toContain('"teamRunId":"run-9"')
@@ -519,7 +519,7 @@ describe('P5-T7 shutdown frames & the reserved omo-team-shutdown kind', () => {
     expect(frameText(rejected)).toContain('not yet')
   })
 
-  it('the Q-8 A3 kind seat is declared and v1 injects NO local frame', () => {
+  it('the Q-8 A3 kind seat is declared and v1 injects NO local frame', async () => {
     // kind 常量在册（Q-8 §3.A3 的席位）；本 suite 的每一次通道触碰都是
     // 原生 sendMessage（sends 记录里没有 inject 面）——本地纪律帧 v1 不产，
     // 差异在 team-shutdown.ts 文件头成文。
@@ -529,7 +529,7 @@ describe('P5-T7 shutdown frames & the reserved omo-team-shutdown kind', () => {
 
 // ── 按角色分发（面收窄）─────────────────────────────────────────────────────
 
-describe('P5-T7 shutdown surfaces — lead 全装，成员面只有 approve/reject', () => {
+describe('P5-T7 shutdown surfaces — lead 全装，成员面只有 approve/reject', async () => {
   interface Registered { toolNames: string[] }
   function trackingAgent(sessionId: string, isChild: boolean): { agent: TeamAgent; log: Registered } {
     const log: Registered = { toolNames: [] }
@@ -547,8 +547,8 @@ describe('P5-T7 shutdown surfaces — lead 全装，成员面只有 approve/reje
     return (agent: TeamAgent) => captured!({ agent })
   }
 
-  it('root session: request + approve + reject all land on the lead face', () => {
-    const { deps, teamRunId } = makeFixture()
+  it('root session: request + approve + reject all land on the lead face', async () => {
+    const { deps, teamRunId } = await makeFixture()
     void teamRunId
     const lead = trackingAgent(LEAD, false)
     listenerFor(registerTeamShutdownRequestSurface, deps)(lead.agent)
@@ -561,8 +561,8 @@ describe('P5-T7 shutdown surfaces — lead 全装，成员面只有 approve/reje
     ])
   })
 
-  it('team-member child: approve + reject YES, request STRUCTURALLY ABSENT', () => {
-    const { deps, teamRunId } = makeFixture()
+  it('team-member child: approve + reject YES, request STRUCTURALLY ABSENT', async () => {
+    const { deps, teamRunId } = await makeFixture()
     void teamRunId
     const member = trackingAgent(ANALYST_SESSION, true)
     listenerFor(registerTeamShutdownRequestSurface, deps)(member.agent)
@@ -571,8 +571,8 @@ describe('P5-T7 shutdown surfaces — lead 全装，成员面只有 approve/reje
     expect(member.log.toolNames).toEqual([TEAM_APPROVE_SHUTDOWN_TOOL_NAME, TEAM_REJECT_SHUTDOWN_TOOL_NAME])
   })
 
-  it('a foreign child gets NOTHING from any of the three registrars', () => {
-    const { deps, teamRunId } = makeFixture()
+  it('a foreign child gets NOTHING from any of the three registrars', async () => {
+    const { deps, teamRunId } = await makeFixture()
     void teamRunId
     const foreign = trackingAgent('foreign-child', true)
     listenerFor(registerTeamShutdownRequestSurface, deps)(foreign.agent)
@@ -581,8 +581,8 @@ describe('P5-T7 shutdown surfaces — lead 全装，成员面只有 approve/reje
     expect(foreign.log.toolNames).toEqual([])
   })
 
-  it('the tool definitions keep the upstream first sentences verbatim', () => {
-    const { deps, teamRunId } = makeFixture()
+  it('the tool definitions keep the upstream first sentences verbatim', async () => {
+    const { deps, teamRunId } = await makeFixture()
     void teamRunId
     const req = createTeamShutdownRequestDefinition(deps) as { name: string; description: string }
     expect(req.name).toBe(TEAM_SHUTDOWN_REQUEST_TOOL_NAME)

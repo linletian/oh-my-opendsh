@@ -2,15 +2,15 @@ import { readFile } from "node:fs/promises"
 
 import { ZodError } from "zod"
 
-import type { TeamModeConfig } from "../config"
-import { log } from "../logger"
-import type { NormalizeTeamSpecInputOptions } from "./team-spec-input-normalizer"
-import { TeamSpecSchema } from "../types"
+import type { TeamModeConfig } from "../config.ts"
+import { log } from "../logger.ts"
+import type { NormalizeTeamSpecInputOptions } from "./team-spec-input-normalizer.ts"
+import { TeamSpecSchema } from "../types.ts"
 
-import type { TeamSpec } from "../types"
-import { normalizeTeamSpecInput } from "./team-spec-input-normalizer"
-import { discoverTeamSpecs, getTeamSpecPath, resolveBaseDir } from "./paths"
-import { TeamSpecValidationError, validateSpec } from "./validator"
+import type { TeamSpec } from "../types.ts"
+import { normalizeTeamSpecInput } from "./team-spec-input-normalizer.ts"
+import { discoverTeamSpecs, getTeamSpecPath, resolveBaseDir } from "./paths.ts"
+import { TeamSpecValidationError, validateSpec } from "./validator.ts"
 
 type DiscoveredTeamSpec = Awaited<ReturnType<typeof discoverTeamSpecs>>[number]
 type JsonRecord = Record<string, unknown>
@@ -135,8 +135,8 @@ async function loadTeamSpecFromEntry(
   return parsedSpec.data
 }
 
-export { TeamSpecValidationError } from "./validator"
-export { normalizeTeamSpecInput } from "./team-spec-input-normalizer"
+export { TeamSpecValidationError } from "./validator.ts"
+export { normalizeTeamSpecInput } from "./team-spec-input-normalizer.ts"
 
 export async function loadTeamSpec(
   teamName: string,

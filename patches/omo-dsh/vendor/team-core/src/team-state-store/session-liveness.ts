@@ -1,6 +1,6 @@
-import type { TeamSessionContext } from "../session-client"
-import type { RuntimeState } from "../types"
-import { isSessionNotFoundError, toError } from "./error-normalization"
+import type { TeamSessionContext } from "../session-client.ts"
+import type { RuntimeState } from "../types.ts"
+import { isSessionNotFoundError, toError } from "./error-normalization.ts"
 
 export interface WorkerLiveness {
   readonly name: string

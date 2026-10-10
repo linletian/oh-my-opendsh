@@ -4,11 +4,11 @@ import { expect, test } from "bun:test"
 import { writeFile } from "node:fs/promises"
 import path from "node:path"
 
-import { getTasksDir, resolveBaseDir } from "../team-registry"
-import { createTask } from "./store"
-import { createTaskInput, createTasklistFixture } from "./test-support"
-import { updateTaskStatus } from "./update"
-import { listTasks } from "./list"
+import { getTasksDir, resolveBaseDir } from "../team-registry/index.ts"
+import { createTask } from "./store.ts"
+import { createTaskInput, createTasklistFixture } from "./test-support.ts"
+import { updateTaskStatus } from "./update.ts"
+import { listTasks } from "./list.ts"
 
 test("listTasks returns tasks sorted ascending and honors filters", async () => {
   // given

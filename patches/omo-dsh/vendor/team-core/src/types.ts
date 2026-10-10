@@ -1,5 +1,5 @@
 import * as z from "zod"
-import { createParseMember } from "./member-parser"
+import { createParseMember } from "./member-parser.ts"
 
 export const MESSAGE_KINDS = [
   "message",

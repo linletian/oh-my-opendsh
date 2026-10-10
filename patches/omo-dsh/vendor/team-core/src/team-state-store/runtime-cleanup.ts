@@ -1,8 +1,8 @@
 import { rm, stat } from "node:fs/promises"
 
-import type { TeamModeConfig } from "../config"
-import { getRuntimeStateDir, resolveBaseDir } from "../team-registry/paths"
-import type { RuntimeState } from "../types"
+import type { TeamModeConfig } from "../config.ts"
+import { getRuntimeStateDir, resolveBaseDir } from "../team-registry/paths.ts"
+import type { RuntimeState } from "../types.ts"
 
 function isEnoentError(error: unknown): boolean {
   return typeof error === "object"

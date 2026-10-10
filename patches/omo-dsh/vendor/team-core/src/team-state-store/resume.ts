@@ -1,14 +1,14 @@
-import type { TeamModeConfig } from "../config"
-import { log } from "../logger"
-import type { TeamSessionContext } from "../session-client"
-import { resumeActiveTeam } from "./active-resume"
-import { isCreatingStateStuck, markStuckCreatingTeamFailed } from "./creating-resume"
-import { cleanTerminalTeam, finishDeletingTeam } from "./deleting-resume"
-import { toError } from "./error-normalization"
-import type { ResumeReport } from "./resume-report"
-import { listActiveTeams, loadRuntimeState } from "./store"
+import type { TeamModeConfig } from "../config.ts"
+import { log } from "../logger.ts"
+import type { TeamSessionContext } from "../session-client.ts"
+import { resumeActiveTeam } from "./active-resume.ts"
+import { isCreatingStateStuck, markStuckCreatingTeamFailed } from "./creating-resume.ts"
+import { cleanTerminalTeam, finishDeletingTeam } from "./deleting-resume.ts"
+import { toError } from "./error-normalization.ts"
+import type { ResumeReport } from "./resume-report.ts"
+import { listActiveTeams, loadRuntimeState } from "./store.ts"
 
-export type { ResumeReport } from "./resume-report"
+export type { ResumeReport } from "./resume-report.ts"
 
 const CREATING_TIMEOUT_MS = 30 * 60 * 1000
 const STALE_RESERVATION_TTL_MS = 10 * 60 * 1000

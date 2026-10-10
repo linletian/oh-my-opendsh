@@ -6,9 +6,9 @@ import { mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/p
 import { tmpdir } from "node:os"
 import path from "node:path"
 
-import { TeamModeConfigSchema } from "../config"
-import type { TeamModeConfig } from "../config"
-import type { ActiveTeamSummary, RuntimeState, TeamSpec } from "../types"
+import { TeamModeConfigSchema } from "../config.ts"
+import type { TeamModeConfig } from "../config.ts"
+import type { ActiveTeamSummary, RuntimeState, TeamSpec } from "../types.ts"
 import {
   InvalidTransitionError,
   RuntimeStateError,
@@ -18,7 +18,7 @@ import {
   loadRuntimeState,
   saveRuntimeState,
   transitionRuntimeState,
-} from "./store"
+} from "./store.ts"
 
 async function createTemporaryBaseDir(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), "team-mode-store-"))

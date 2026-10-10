@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { access, open, readFile, rename, rm, unlink } from "node:fs/promises"
 import { dirname } from "node:path"
 
-import { tolerantFsync } from "../tolerant-fsync"
+import { tolerantFsync } from "../tolerant-fsync.ts"
 
 type LockOptions = {
   staleAfterMs?: number
