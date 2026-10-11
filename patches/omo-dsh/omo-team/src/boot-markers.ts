@@ -142,3 +142,36 @@ export function formatTeamSurfaceFailedLine(id: string, err: unknown): string {
 export function formatManifestValidationFailedLine(err: unknown): string {
   return `[omo-team] manifest validation FAILED: ${describeError(err)}`
 }
+
+/**
+ * The counter fields of the boot persistence pass — the shape the vendored
+ * `ResumeReport` (team-core team-state-store/resume) is read through. Declared
+ * STRUCTURALLY here on purpose: boot-markers.ts must stay import-pure (no
+ * vendored type import for a five-number contract; index.ts passes the real
+ * report and the compiler checks the fields at the call site).
+ */
+export interface TeamBootResumeCounters {
+  readonly resumed: number
+  readonly marked_failed: number
+  readonly marked_orphaned: number
+  readonly cleaned: number
+  readonly errors: readonly unknown[]
+}
+
+/**
+ * `[omo-team] boot resume: resumed=<n>, failed=<n>, orphaned=<n>, cleaned=<n>,
+ * errors=<n>` — the STATE MACHINE'S OWN BOOT ANSWER (P5-T10; index.ts logs it
+ * exactly once per boot, and ONLY after `rebuildIndexes()` and the vendored
+ * `resumeAllTeams()` have RESOLVED — so the line existing IS the answerability
+ * evidence: a store that never initialized, or whose rebuild threw, cannot print
+ * it; the throw path prints `[omo-team] boot resume FAILED …` instead, the
+ * loud-but-non-fatal form). The five counters are the upstream ResumeReport
+ * tally — a probe or gate reads the SHAPE (every field present, in order) and
+ * must not restate the numbers: scripts/concerto-mode-probe.sh derives its
+ * expectation from THIS formatter (the assert-concerto-read-face.mjs single-
+ * source discipline), so a format change here moves the probe without an edit
+ * and a silent format change anywhere else turns that derivation red.
+ */
+export function formatTeamBootResumeLine(report: TeamBootResumeCounters): string {
+  return `[omo-team] boot resume: resumed=${report.resumed}, failed=${report.marked_failed}, orphaned=${report.marked_orphaned}, cleaned=${report.cleaned}, errors=${report.errors.length}`
+}

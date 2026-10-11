@@ -146,15 +146,17 @@
 
 ## WP-5 可视化（计划书 §4.6，D4）
 
-### [ ] P5-T10 — 原生面板采用 + L1 断言
+### [x] P5-T10 — 原生面板采用 + L1 断言
 
 - **产出**：**(B) 形态（T1 更正）= 通用面板承载断言**：drive.mjs 的目录/事件断言（成员 = continuable 子女入 `subagent/catalog` 即 subagentchat 可达——Q-7 实证 `establishCatalogChild` 路径；lead 会话 `'agent-message'` 帧事件序列；成员会话内消息帧）+ probe 的 team 面探测 marker（**omo-team 状态机/工具面在场性具名 marker**——状态机未初始化必须响亮，金丝雀纪律，probe 负断言锚点）。
 - **做法**：`subagentchat` 面板达成员会话的断言（L1 可断言 catalog/descriptor 资源，肉眼核验归 T16）；**不挂 ui-agent-team**（fork (B)，D18）；T11 触发条件按 (B) 形态复核（仅当通用面板对「team 消息交换」不满足退出标准 a 时触发）。
 - **判定**：✅ 门 3/8 绿；probe 含 team marker 双向断言（在场形态 / 缺席具名）。
-- **证据**：⬜
+- **证据**：✅ 2026-10-11——drive.mjs 目录/事件断言扩面（team-create-and-message +9：catalog 恰两枚 continuable 行逐字 label + descriptor mode 衔接 + 唤醒轮帧 seq 边界锚 + lead ack 帧；team-shutdown-handshake +4：握手四路径帧渲染面）+ probe 双向 marker（`scripts/assert-team-probe-face.mjs`：在场 = trio 注册行 + 状态机 boot resume 行（插件派生形状）+ `errors=0` 锚定；缺席 = noteam profile 宿主具名降级对 + 零 marker catch-all）+ `--self-test` 17 defect 腿 + drive 13 枚新检查 fabricated 腿（只红自己 named check 逐腿红证）+ T11 复核证据档 `.omo/evidence/p5t10/`（**L1 证据不支持触发 T11**，终裁见 T11 条仲裁注）。实测：门 3 40/40（766 checks）；vitest 83f/1961t；root typecheck exit 0；probe exit 0；门 4/5/6/7/8 不回归；cold-start 绿。**双评审通过**：轮 1 A REJECT（证据档漂移 MAJOR——旧版脚本产物不可再生）+ B APPROVE → 修复轮 8 项（log 重刷/defect 腿/catch-all/锚定/转义/措辞）；delta：B APPROVE（2 MINOR+1 NIT 再修：errors=05 腿真实化/ONLY-own-check 声明化/计数注释）+ A 端点三次中断后 30 分钟周期重试成功 **APPROVE**（余 1 证据档措辞 nit 已修）。
 - **依赖**：P5-T5。**量级**：4 小时。
 
-### [ ] P5-T11 —（条件任务）自定义 ChatNode 兜底
+### ~~P5-T11 —（条件任务）自定义 ChatNode 兜底~~
+
+> **仲裁终裁（2026-10-11）：不触发，整条取消，不算未完成。** 证据 = T10 L1 复核档 `.omo/evidence/p5t10/T11-review-input.md`：通用面板可见性三件套各有 durable 事件锚（① 成员入 subagentchat 目录——lead `subagent/catalog` 恰两枚 continuable 行逐字 label 实测；② 唤醒轮投递帧 = 'agent-message' 帧落首个 completed turn 之后（chat messageDefinition 认领面，non-'user' 判别式——渲染分类的肉眼终证归 T16 L2）；③ 成员/lead 会话消息帧双向可读）。缺口台账三项均为已登记差异（无 mailbox 集中视图 / 中途 steer 'context' kind 隐藏 / member↔member 直通（B) 结构性不存在），不动摇退出标准 a 的 L1 半边。故不建自定义 ChatNode。
 
 - **触发条件**：仅当 T10 复核裁定通用面板（subagentchat + lead 会话 `'agent-message'` 帧）对「team 消息交换」不满足退出标准 a。**不触发即整条取消（删除线 + 理由成文），不算未完成**。（T1 Q-7 初步裁定：唤醒轮 turn-trigger 卡 + subagentchat 达成员会话 = 可见性成立，倾向不触发；缺口台账 = 无 mailbox 集中视图（记差异）/ 中途 steer 'context' kind 隐藏（记差异）/ **member↔member 直通 = (B) 形态结构性不存在**（lead 中转语义固化，评审登记——非可见性缺陷，不作触发条件）；T10 复核终定。）
 - **产出**：omo-team client face（`ConversationNodeDefinition` 实现 + `ConversationEventRegistry.register` + disposer 纪律）。

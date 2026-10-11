@@ -31,6 +31,7 @@ import {
   describeError,
   formatLoadedSummaryLine,
   formatManifestValidationFailedLine,
+  formatTeamBootResumeLine,
   formatTeamSurfaceFailedLine,
   formatTeamSurfaceRegisteredLine,
 } from '../../patches/omo-dsh/omo-team/src/boot-markers.ts'
@@ -432,5 +433,52 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
       '[omo-team] team surface team_create registered',
       '[omo-team] loaded: manifest 24 entries (pending=23, ported=1, recorded=0) — 1/24 team surfaces registered',
     ])
+  })
+})
+
+// ── P5-T10 — formatTeamBootResumeLine: the state machine's own boot answer ────
+// The line is the probe's state-machine answerability anchor
+// (scripts/concerto-mode-probe.sh → scripts/assert-team-probe-face.mjs present
+// face): the validator derives its expected SHAPE from THIS formatter, so the
+// transcription BELOW is the friction — it must move with the formatter in the
+// same commit, and the probe never restates the format. index.ts logs this line
+// exactly once per boot, ONLY after rebuildIndexes() + the vendored resume()
+// resolve (the loud throw path is `boot resume FAILED` instead — the pair is
+// what makes the probe's presence/absence faces honest).
+describe('P5-T10 formatTeamBootResumeLine — the state-machine boot answer', () => {
+  it('renders the hand-transcribed five-counter line, in order', () => {
+    expect(formatTeamBootResumeLine({
+      resumed: 0,
+      marked_failed: 0,
+      marked_orphaned: 0,
+      cleaned: 0,
+      errors: [],
+    })).toBe('[omo-team] boot resume: resumed=0, failed=0, orphaned=0, cleaned=0, errors=0')
+  })
+
+  it('counts errors from the array length, never from a restated tally', () => {
+    // The `errors=<n>` half is report.errors.length at render time — a caller
+    // that dropped one error from the array lowers the printed count WITH it;
+    // that is the upstream ResumeReport contract, and this pins the rendering
+    // half of it (10 vs 2 use DISTINCT digit counts so a single-digit
+    // hard-code cannot survive).
+    expect(formatTeamBootResumeLine({
+      resumed: 1,
+      marked_failed: 2,
+      marked_orphaned: 3,
+      cleaned: 4,
+      errors: [new Error('a'), new Error('b'), new Error('c'), new Error('d'),
+        new Error('e'), new Error('f'), new Error('g'), new Error('h'),
+        new Error('i'), new Error('j')],
+    })).toBe('[omo-team] boot resume: resumed=1, failed=2, orphaned=3, cleaned=4, errors=10')
+  })
+
+  it('keeps the `[omo-team] boot resume` prefix the probe and drive grep by', () => {
+    // team-task-claim greps the prefix (drive.mjs bootResumeLine); the probe's
+    // presence face derives the WHOLE shape from this formatter — both anchors
+    // start at this prefix, so a format change moves them together or goes red.
+    const line = formatTeamBootResumeLine({ resumed: 0, marked_failed: 0, marked_orphaned: 0, cleaned: 0, errors: [] })
+    expect(line).toMatch(/^\[omo-team\] boot resume: /)
+    expect(line).not.toContain('FAILED')
   })
 })

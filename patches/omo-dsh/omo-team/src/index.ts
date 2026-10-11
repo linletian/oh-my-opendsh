@@ -80,6 +80,7 @@ import {
 import {
   formatLoadedSummaryLine,
   formatManifestValidationFailedLine,
+  formatTeamBootResumeLine,
   formatTeamSurfaceFailedLine,
   formatTeamSurfaceRegisteredLine,
 } from './boot-markers.ts'
@@ -432,9 +433,10 @@ export function apply(ctx: TeamRegistrationContext): void {
     .rebuildIndexes()
     .then(() => teamStateStore.resume(buildTeamSessionContext(ctx.agents)))
     .then((report) => {
-      log(
-        `[omo-team] boot resume: resumed=${report.resumed}, failed=${report.marked_failed}, orphaned=${report.marked_orphaned}, cleaned=${report.cleaned}, errors=${report.errors.length}`,
-      )
+      // The state machine's own boot answer (boot-markers.ts carries the
+      // format contract; the probe derives its expectation from the shipped
+      // formatter — never restates it here or there).
+      log(formatTeamBootResumeLine(report))
       for (const issue of report.errors) {
         console.warn(`[omo-team] boot resume error: ${issue.message}`)
       }
