@@ -40,6 +40,8 @@ importers:
         specifier: ^9.0.0
         version: 9.0.0
 
+  patches/omo-dsh/vendor/prompts-team: {}
+
   patches/omo-dsh/vendor/shared-skills: {}
 
   patches/omo-dsh/vendor/team-core:

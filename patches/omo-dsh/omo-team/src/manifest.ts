@@ -456,7 +456,11 @@ const MANIFEST_ROWS = [
     nativeFace: 'omo-hooks keyword-detector 的 TEAM_PATTERN team 槽接线 → pre-step 注入（kind omo-team-keyword）；team 工具面在场是注入语义前提',
     disposition: 'ported',
     e2eScenario: 'team-keyword-mode',
-    status: 'pending',
+    // P5-T12 翻行：team 槽已接线（constants.ts 的 TEAM_KEYWORD_INJECTION_KIND +
+    // messages.ts 的 buildTeamMessage/表行 + keyword-detector.ts 的双面注入），
+    // 注入 kind `omo-team-keyword`，成员侧不放行（SUBAGENT_ALLOWED_TYPES 不含
+    // team + ⑥a/⑥' 整跳）；e2e 场景 team-keyword-mode 已在 drive.mjs。
+    status: 'ported',
     summary:
       'team 关键词子模式：TEAM_PATTERN 命中 → 注入（H-33 模块内演进，不新增 hook 条目，EXPECTED_HOOK_COUNT 不变）；上游 team/default.ts 的 TEAM_MESSAGE=TEAM_MODE_PROMPT 载体随 vendor 行',
   },
@@ -645,7 +649,12 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendor 两项文本（team.md 615B 关键词命中单段指令 + teamModeSkill.template 204 行真·lead 运行协议）→ T12 注入正文消费',
     disposition: 'content-vendor',
     e2eScenario: 'team-keyword-mode',
-    status: 'pending',
+    // P5-T12 翻行：两项已落 `vendor/prompts-team/`（package.json SUL-1.0 +
+    // NOTICE.md + VENDOR-MANIFEST.json 逐文件 sha256；team.md 615 B sha
+    // 5e7ab939…、team-mode.ts 9450 B sha cc0607a9…，均 v4.19.4 blob 逐字）；
+    // team.md 正文由 keyword-detector team 槽消费（注入面），team-mode 模板
+    // 由 omo-team 的 vendor registrar 把门 + T13 升级面读取。
+    status: 'ported',
     summary:
       'vendor：team.md + team-mode skill 模板两项（T1 Q1b N5 实证扩清单——真协议在 team-mode.ts 不在 team.md）；已知矛盾登记 N1（status:"failed" 空头指令）/ N9（delegate_task 名称漂移），正文保真、deviations 注记',
   },

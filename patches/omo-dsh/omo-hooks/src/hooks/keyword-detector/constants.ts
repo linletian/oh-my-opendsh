@@ -8,8 +8,11 @@
 // This file is a SEMANTIC PORT (语义移植), not a byte copy: the pattern values
 // are carried over **verbatim** (they are the hook's whole discrimination
 // surface), while the message factories point at the vendored skill content
-// (P4-T4) instead of `@oh-my-opencode/prompts-core`, and the `team` entry is
-// registered as a reserved slot but not wired.
+// (P4-T4) instead of `@oh-my-opencode/prompts-core`. The `team` entry was
+// a reserved slot through Phase 4 and is WIRED at P5-T12: its carrier is the
+// vendored `vendor/prompts-team/prompts/mode/team.md` (T1 ruling Q1b N5
+// widened the vendor list to this pair), and its injection stamps the
+// distinct source kind `omo-team-keyword` (Q-8 A1).
 //
 // VERBATIM FROM UPSTREAM (constants.ts:1-2, detector.ts:18; hyperplan/default.ts:20;
 // team/default.ts:10; constants.ts:14-15):
@@ -27,7 +30,7 @@
 // The `.ts` extension is load-bearing: Node 24 type-stripping (P-8.6) does no
 // specifier resolution, and there is no bundler to rewrite it.
 
-/** Keyword kinds the detector can fire. `team` is a reserved, unwired slot. */
+/** Keyword kinds the detector can fire. `team` was reserved through Phase 4 and is wired at P5-T12. */
 export type KeywordType = 'ultrawork' | 'team' | 'hyperplan' | 'hyperplan-ultrawork'
 
 /** 剥壳：code fence + inline code（上游 constants.ts:1-2 逐字）。 */
@@ -53,15 +56,28 @@ export const ULTRAWORK_PATTERN = /\b(ultrawork|ulw)\b/i
 export const HYPERPLAN_PATTERN = /\bhyperplan\b|(?<![\w.])hpp\b/i
 
 /**
- * team（上游 team/default.ts:10 逐字）——**枚举位预留，本阶段不接线**。
- * 上游的 `TEAM_MESSAGE` 指向 `prompts-core/prompts/mode/team.md`，其语义是
- * `team_create` 团队的运行协议，而 DSH 无等价面（C 组证据 §「载体」：team
- * 工具族 = 无等价面，subagent 是最近邻但缺 teamRunId/广播/关闭协议）。
- * 处置：模式与消息槽位都留着（Phase 5 接 Team Mode 时只需接上消息工厂），
- * 但 {@link WIRED_KEYWORD_DETECTORS} 不含它——一个没有等价载体的关键词
- * 命中后只会产出死指令。
+ * team（上游 team/default.ts:10 逐字）——**P5-T12 接线**（此前 Phase 4 为
+ * 枚举位预留）。载体已就位：上游 `TEAM_MESSAGE` 指向
+ * `prompts-core/prompts/mode/team.md`，该正文由 P5-T12 vendor 进
+ * `vendor/prompts-team/prompts/mode/team.md`（T1 裁定 Q1b N5：lead 指令
+ * team.md + lead 运行协议 team-mode 模板两项一起进清单），由 messages.ts 的
+ * {@link buildTeamMessage} 逐字装载注入。kind = `omo-team-keyword`（Q-8 A1，
+ * 与 `omo-keyword-detector` 分面）。**成员侧不放行**（Q-8）：team 不在
+ * {@link SUBAGENT_ALLOWED_TYPES}，且成员（continuable）在 ⑥a 整跳——成员语境
+ * 由 omo-team-briefing 帧承担（T5/T6 裁定）。
  */
 export const TEAM_PATTERN = /\bteam[\s_-]?mode\b/i
+
+/**
+ * team 槽注入的 source kind（Q-8 A1 裁定 `omo-team-keyword`）。
+ * 与 ultrawork/hyperplan/combo 共用的 `omo-keyword-detector` **分面**：
+ * 两种 kind 同由本 producer 铸造，但 team 注入的是 vendored team.md 正文
+ * （lead 编排指令），消费侧（e2e/投影）要能按 kind 分流核对。
+ * 跨包对账：omo-team 的 `team-keyword-injection` registrar 发布同名字面量，
+ *  equality 由 tests/omo-team/team-keyword-slot.test.ts 钉死（provider/consumer
+ * 各自声明本地常量，禁止 import——index.ts 头部纪律）。
+ */
+export const TEAM_KEYWORD_INJECTION_KIND = 'omo-team-keyword'
 
 /** 组合模式：严格相邻 + 双词序（上游 constants.ts:14-15 逐字）。 */
 export const HYPERPLAN_ULTRAWORK_PATTERN =
@@ -159,17 +175,30 @@ export interface KeywordMessageDeps {
 /** 组合模式依赖的两个基词（交集禁用规则的输入，见 detector.ts）。 */
 export const COMBO_BASE_TYPES: readonly KeywordType[] = ['ultrawork', 'hyperplan']
 
-/** 非主会话（子会话）只保留的类型：上游 hook.ts 的过滤谓词逐字。 */
+/**
+ * 非主会话（子会话）只保留的类型：上游 hook.ts 的过滤谓词逐字。
+ * ⚠️ P5-T12 接线 team 槽后此表**刻意不含 `team`**（Q-8 成员侧不放行）：
+ * team 命中只武装主会话；成员/子会话的 team 语境由 omo-team-briefing 帧
+ * 承担（T5/T6），不经关键词面。
+ */
 export const SUBAGENT_ALLOWED_TYPES: readonly KeywordType[] = [
   'ultrawork',
   'hyperplan-ultrawork',
 ]
 
-/** vendor 文案载体（messages.ts 从 vendored SKILL.md 读盘后构造）。 */
+/** vendor 文案载体（messages.ts 从 vendored SKILL.md / team.md 读盘后构造）。 */
 export interface InstructionTexts {
   readonly ultrawork: string
   readonly hyperplan: string
+  /**
+   * vendored `vendor/prompts-team/prompts/mode/team.md` 正文（P5-T12）——
+   * team 槽的注入正文，逐字（无 frontmatter 可剥，仅剥尾部换行，与上游
+   * `TEAM_MESSAGE = stripFinalLineFeed(TEAM_MODE_PROMPT)` 同形）。
+   */
+  readonly team: string
   /** 两个正文各自的来源路径（仓库相对），用于日志与单测断言。 */
   readonly ultraworkPath: string
   readonly hyperplanPath: string
+  /** team.md 的仓库相对来源路径（同上，P5-T12）。 */
+  readonly teamPath: string
 }

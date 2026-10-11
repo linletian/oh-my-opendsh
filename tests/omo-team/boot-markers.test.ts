@@ -54,7 +54,7 @@ import {
  * derivation it stands in for never needs an edit.
  */
 const EXPECTED_SUMMARY_LINE =
-  '[omo-team] loaded: manifest 24 entries (pending=10, ported=12, recorded=2) — 12/24 team surfaces registered'
+  '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2) — 14/24 team surfaces registered'
 
 /**
  * P5-T5 landed the FIRST registrar (`team_create`); P5-T6 added the second
@@ -65,7 +65,13 @@ const EXPECTED_SUMMARY_LINE =
  * query surface the omo-hooks stop-continuation guard consumes; the row's
  * nativeFace — the guard's team branch — lives in omo-hooks and registers
  * nothing HERE, which is exactly why the row's omo-team-visible half IS this
- * registrar) — so the honest `<r>` is 12 and the pinned line above carries
+ * registrar); **P5-T12 adds rows ⑭/㉔** — `team-keyword-injection` (the slot's
+ * boot-time integrity gate + machine-readable registration contract face over the
+ * vendored team.md; the injection itself is omo-hooks' nativeFace, registered
+ * nowhere else — the row's omo-team-visible half IS this registrar, the same
+ * split as row ⑰) and `vendor-team-prompts` (the vendor integrity gate over both
+ * prompts-team files + the lead run-protocol archive face) — so the honest `<r>`
+ * is 14 and the pinned line above carries
  * it, in MANIFEST ROSTER ORDER (the loop iterates the roster, not this list;
  * the list mirrors it so a reorder turns the boot-line test red). The flip of
  * this list and of the pinned line is the SAME-commit friction the T3 comment
@@ -87,7 +93,9 @@ const REAL_REGISTERED_IDS: readonly string[] = [
   'team_task_update',
   'team_task_get',
   'team_status',
+  'team-keyword-injection',
   'stop-continuation-team',
+  'vendor-team-prompts',
 ]
 
 function registeredRows(ids: readonly string[]): TeamManifestEntry[] {
@@ -190,10 +198,10 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', a
     // reads `1/24`.
     const portedStandIn = registeredRows([]).concat(row({ id: 'team_send_message', status: 'ported' }))
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, [])).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=10, ported=12, recorded=2) — 0/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2) — 0/24 team surfaces registered',
     )
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, portedStandIn)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=10, ported=12, recorded=2) — 1/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2) — 1/24 team surfaces registered',
     )
   })
 
@@ -312,7 +320,9 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
       '[omo-team] team surface team_task_update registered',
       '[omo-team] team surface team_task_get registered',
       '[omo-team] team surface team_status registered',
+      '[omo-team] team surface team-keyword-injection registered',
       '[omo-team] team surface stop-continuation-team registered',
+      '[omo-team] team surface vendor-team-prompts registered',
       EXPECTED_SUMMARY_LINE,
     ])
   })
@@ -320,8 +330,9 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
   it('the registry table is exactly the landed rows (T8+ must flip this red)', async () => {
     // Hand-placed pin, same intended friction as the summary line above: T5
     // landed `team_create`, T6 the message surface, T7 the delete + shutdown
-    // trio + status; when T8 lands the task rows, this goes red in the same
-    // commit and the flip is reviewed, not discovered.
+    // trio + status, T8 the task rows, T9 the query surface; **P5-T12 lands
+    // rows ⑭/㉔** (`team-keyword-injection` + `vendor-team-prompts`) and this
+    // list flips red in the same commit — reviewed, not discovered.
     expect(Object.keys(TEAM_REGISTRARS)).toEqual([
       'team_create',
       'team_delete',
@@ -334,7 +345,9 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
       'team_task_update',
       'team_task_get',
       'team_status',
+      'team-keyword-injection',
       'stop-continuation-team',
+      'vendor-team-prompts',
     ])
   })
 

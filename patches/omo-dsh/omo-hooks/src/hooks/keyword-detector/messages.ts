@@ -59,6 +59,7 @@ import {
   HYPERPLAN_PATTERN,
   HYPERPLAN_ULTRAWORK_PATTERN,
   ROSTER_REVIEWER_IDS,
+  TEAM_PATTERN,
   ULTRAWORK_PATTERN,
   UNMAPPED_REVIEWER_LITERALS,
   type InstructionTexts,
@@ -67,17 +68,28 @@ import {
   type KeywordType,
 } from './constants.ts'
 
-/** 两个 vendor 指令正文相对本模块的路径（P4-T4 的 shared-skills 包）。 */
+/** vendor 指令正文相对本模块的路径（P4-T4 的 shared-skills 包）。 */
 export const ULTRAWORK_SKILL_RELATIVE_PATH =
   '../../../../vendor/shared-skills/skills/ultrawork/SKILL.md'
 export const HYPERPLAN_SKILL_RELATIVE_PATH =
   '../../../../vendor/shared-skills/skills/hyperplan/SKILL.md'
+/**
+ * team 槽正文相对本模块的路径（P5-T12 的 prompts-team 包）。上游载体是
+ * `packages/prompts-core/prompts/mode/team.md`（经 `team/default.ts` 的
+ * `TEAM_MESSAGE` 引用），P5-T12 逐字 vendor 进 prompts-team 包后由这里
+ * 以同一读盘形态装载（同一 loader、同一 fail-loud 纪律）。
+ */
+export const TEAM_MD_RELATIVE_PATH =
+  '../../../../vendor/prompts-team/prompts/mode/team.md'
 
 /** 仓库相对路径（用于日志 + 单测断言；读盘走模块目录，不走仓库根）。 */
 export const ULTRAWORK_SKILL_REPO_PATH =
   'patches/omo-dsh/vendor/shared-skills/skills/ultrawork/SKILL.md'
 export const HYPERPLAN_SKILL_REPO_PATH =
   'patches/omo-dsh/vendor/shared-skills/skills/hyperplan/SKILL.md'
+/** team.md 的仓库相对路径（P5-T12；同一日志/断言用途）。 */
+export const TEAM_MD_REPO_PATH =
+  'patches/omo-dsh/vendor/prompts-team/prompts/mode/team.md'
 
 /** 本模块所在目录（`src/hooks/keyword-detector/`），由 import.meta.url 解析。 */
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
@@ -106,20 +118,29 @@ export function stripFrontmatter(text: string): string {
 }
 
 /**
- * Loads both vendored instruction bodies, once, at apply time.
+ * 加载三份 vendored 指令正文（ultrawork / hyperplan / team），一次性，apply 期。
  *
  * FAIL LOUD, NEVER IMPROVISE. A missing/unreadable vendor file returns a
  * failure result, and the listener then injects NOTHING and logs a named
  * NOTE. It never falls back to a hand-written substitute body: a silently
  * different instruction would be worse than no instruction, because the mode
  * would appear to arm while carrying text nobody reviewed.
+ *
+ * P5-T12：team.md 进同一 loader = **all-or-nothing 覆盖到第三份正文**——
+ * 半在场的 vendor 包是坏安装，诚实的启动姿态是「一个都不注入 + 具名 NOTE」，
+ * 不是 team 缺席时 ultrawork 照常武装。
  */
 export function loadInstructionTexts(read: ReadTextFile = defaultRead): LoadResult {
   const failures: LoadFailure[] = []
-  const bodies: Record<'ultrawork' | 'hyperplan', string> = { ultrawork: '', hyperplan: '' }
+  const bodies: Record<'ultrawork' | 'hyperplan' | 'team', string> = {
+    ultrawork: '',
+    hyperplan: '',
+    team: '',
+  }
   for (const [name, relativePath, repoPath] of [
     ['ultrawork', ULTRAWORK_SKILL_RELATIVE_PATH, ULTRAWORK_SKILL_REPO_PATH],
     ['hyperplan', HYPERPLAN_SKILL_RELATIVE_PATH, HYPERPLAN_SKILL_REPO_PATH],
+    ['team', TEAM_MD_RELATIVE_PATH, TEAM_MD_REPO_PATH],
   ] as const) {
     const absolute = resolve(MODULE_DIR, relativePath)
     if (!existsSync(absolute)) {
@@ -154,8 +175,10 @@ export function loadInstructionTexts(read: ReadTextFile = defaultRead): LoadResu
     texts: {
       ultrawork: bodies.ultrawork,
       hyperplan: bodies.hyperplan,
+      team: bodies.team,
       ultraworkPath: ULTRAWORK_SKILL_REPO_PATH,
       hyperplanPath: HYPERPLAN_SKILL_REPO_PATH,
+      teamPath: TEAM_MD_REPO_PATH,
     },
   }
 }
@@ -375,10 +398,34 @@ export function buildHyperplanUltraworkMessage(deps: KeywordMessageDeps): string
 }
 
 /**
- * 实际接线的关键词表。`team` 不在其中（枚举位预留，见 constants.ts 的
- * TEAM_PATTERN 处置注释）：type/pattern 常量在，消息工厂不在，于是它既不会
- * 命中也不会产出死指令。表放在本模块而非 constants.ts，是因为每个条目都要
- * 引用这里的 vendor 文案工厂，而 constants.ts 必须保持零 import。
+ * team 槽正文（P5-T12）= vendored `team.md` **逐字**，零附加。
+ *
+ * 上游形状：`team/default.ts` 的 `TEAM_MESSAGE` 就是 `TEAM_MODE_PROMPT`
+ * （`prompts-core/prompts/mode/team.md` 全文，仅 `stripFinalLineFeed`），
+ * 没有 banner 包装、没有载体注记——与 ultrawork 侧同族（正文自带
+ * `[team-mode]` 标记行，本移植不再包第二层）。名册尾注同样**不挂**：
+ * team.md 不点名任何 reviewer 字面量（`momus`/`metis` 零出现），
+ * {@link needsRosterNote} 的收窄对它没有作用对象；它点名的 `delegate_task`
+ * 是**工具名漂移**（N9），登记在 vendor VENDOR-MANIFEST.json 的
+ * deviations[]，由运行期工具面自证——注记改写正文的每一条冲动都交给
+ * deviations 登记，不进正文。
+ *
+ * 正文的 `team.md` 无 YAML frontmatter（实测首行即 `[team-mode]`），
+ * loader 的 stripFrontmatter 对它是 no-op；`.trim()` 剥尾部换行 = 上游
+ * `stripFinalLineFeed` 同形。
+ */
+export function buildTeamMessage(deps: KeywordMessageDeps): string {
+  return deps.texts.team
+}
+
+/**
+ * 实际接线的关键词表（P5-T12 起四条目）。`team` 于 P5-T12 接线（此前是
+ * 枚举位预留，见 constants.ts 的 TEAM_PATTERN 注释）：type/pattern/消息
+ * 工厂三者齐备，正文 = vendored team.md 逐字。注入的 source kind 走
+ * `omo-team-keyword`（Q-8 A1），与其余三类共用的 `omo-keyword-detector`
+ * 分面（组装在 ../keyword-detector.ts）。表放在本模块而非 constants.ts，
+ * 是因为每个条目都要引用这里的 vendor 文案工厂，而 constants.ts 必须保持
+ * 零 import。
  */
 export const KEYWORD_DETECTORS: readonly KeywordDetectorSpec[] = [
   { type: 'ultrawork', pattern: ULTRAWORK_PATTERN, buildMessage: buildUltraworkMessage },
@@ -388,6 +435,7 @@ export const KEYWORD_DETECTORS: readonly KeywordDetectorSpec[] = [
     pattern: HYPERPLAN_ULTRAWORK_PATTERN,
     buildMessage: buildHyperplanUltraworkMessage,
   },
+  { type: 'team', pattern: TEAM_PATTERN, buildMessage: buildTeamMessage },
 ]
 
 /** 表里的类型集合（listener 的过滤谓词按它判定「合法类型」）。 */
@@ -396,5 +444,6 @@ export const WIRED_KEYWORD_TYPES: readonly KeywordType[] = KEYWORD_DETECTORS.map
 /** 仅供诊断：本次 load 读到的正文来源与体量。 */
 export function describeInstructionTexts(texts: InstructionTexts): string {
   return `ultrawork=${texts.ultraworkPath} (${texts.ultrawork.length} chars) + `
-    + `hyperplan=${texts.hyperplanPath} (${texts.hyperplan.length} chars)`
+    + `hyperplan=${texts.hyperplanPath} (${texts.hyperplan.length} chars) + `
+    + `team=${texts.teamPath} (${texts.team.length} chars)`
 }

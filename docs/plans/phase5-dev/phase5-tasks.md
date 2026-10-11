@@ -168,18 +168,19 @@
 
 ## WP-6 关键词与 Phase 4 接盘（计划书 §4.7/§4.8）
 
-### [ ] P5-T12 — team 关键词模式接线 + team.md vendor
+### [x] P5-T12 — team 关键词模式接线 + team.md vendor
 
 - **产出**：keyword-detector 的 `team` 槽接线（`TEAM_PATTERN` 命中 → pre-step 注入，source kind `omo-team-keyword`）；**vendor 两项**（T1 Q1b N5 实证扩清单）：`prompts-core/prompts/mode/team.md`（615B 关键词命中单段指令）**+ `skills-loader-core/src/features/builtin-skills/skills/team-mode.ts` 的 `teamModeSkill.template`**（204 行真·lead 运行协议——Closure Contract/工具分权/bounds 全在其中）——playbook 全套（NOTICES/manifest/deviations）；e2e `team-keyword-mode`（注入 + 对照不注入）。
 - **做法**：H-33 模块内演进（不新增 hook 条目，`EXPECTED_HOOK_COUNT` 不变——若裁定新增条目则触发 R-8 同步网全网，任务书成文）；注入幂等沿用既有语义；上游载体引用段（worktree/`~/.omo`/tmux）正文保真、适配由工具层文案承担；**成员侧不放行 team 关键词注入**（T1 Q-8 裁定：keyword-detector 子会话过滤链 `keyword-detector.ts:570-621` 六具名 skip 逐字复核后钉死——成员语境由 `omo-team-briefing` 承担，重复注入是噪声）；**vendor 文本已知矛盾登记**（Q1b N1：模板/引导里 `status:"failed"` 是空头指令——core schema 无 `failed`；N9：`delegate_task` vs `delegate-task` 名称漂移——正文保真、deviations 注记，DSH 侧适配文案以 vendored tasklist schema 为准）；**Q-4 NOTES-6 联动**：`vendor/shared-skills/` 的 debugging/refactor 技能文本教 `team_send_message`/`team_task_create` OMO 参数——omo-team 工具面定型后同 commit 加注记或改写（防模型被引向参数必错的调用）。
 - **判定**：✅ 门 2/3 绿；vendor 漂移检测绿；`verify-licenses` 计数变化有对应条目。
-- **证据**：⬜
+- **证据**：✅ 2026-10-12——`patches/omo-dsh/vendor/prompts-team/`（新 vendor 包：team.md 615B + team-mode skill 模板 204 行，双向 sha256 对账 IDENTICAL；deviations 登记 N1 failed 空头指令 + N9 delegate_task 名漂移，正文保真）+ keyword-detector team 槽接线（TEAM_PATTERN 命中 → pre-step 注入 vendored team.md 正文逐字，kind `omo-team-keyword`；成员侧结构性不放行 = `SUBAGENT_ALLOWED_TYPES` 无 team + `memberSideAllowed: false` 机读化；幂等沿用；H-33 模块内演进 EXPECTED_HOOK_COUNT 不变）+ 单测 8 腿 + e2e `team-keyword-mode`（18 检查 + 7 defect 腿各红各的）+ Q-4 NOTES-6 联动核实成文（shared-skills 文本与本仓工具面一致，无需改写——双评审独立复核成立）。实测：门 3 41/41；vitest 85f/1993t；root typecheck exit 0；licenses 60→61（prompts-team 入册有对应）；vendor 漂移 372；门 4/6/7/8 不回归；cold-start 14/24。**双评审 APPROVE**（B 直过含 vendor 字节双向对账；A 2 NIT——patternFlags 机读面补齐 + promptText 载体措辞；mcode 1 NIT 尾换行——修复轮落毕仲裁独立确认）；**staged COPY 带 vendor 字节修复**（cpSync vendor/prompts-team——T5 staging 教训面）；T13 仲裁增补成文（N1 处置 + team.md opencode 载体句适配评估）。
+- **依赖**：P5-T5（team 工具面在场是注入语义的前提）。**量级**：4 小时。
 - **依赖**：P5-T5（team 工具面在场是注入语义的前提）。**量级**：4 小时。
 
 ### [ ] P5-T13 — hyperplan / remove-ai-slops 完整形态升级
 
 - **产出**：omo-commands 两模板的 team 段升级（降级文案 → 完整对抗评审环 / team-mode addendum）；**切换判据 = team 工具在场探测**（运行时可判，不硬编码）；e2e 升级。
-- **做法**：模板两处状态的探测函数单测；升级后语义对齐上游模板（v4.19.4 源路径署名头更新）；omo-commands manifest 条目状态与覆盖基线（phase4-commands.md）同 commit 回填。
+- **做法**：模板两处状态的探测函数单测；升级后语义对齐上游模板（v4.19.4 源路径署名头更新）；omo-commands manifest 条目状态与覆盖基线（phase4-commands.md）同 commit 回填。**【仲裁增补（T12 评审登记，2026-10-12）**：**N1 处置随本任务**——vendored team-mode skill 模板的 `status:"failed"` 是空头指令（vendored tasklist schema 无 failed 态）；vendor 正文保真不动，但**若本任务把 team-mode 模板注册进技能目录或引用其文本**，消费侧文案/加注须说明「failed 无对应 schema 态，终态词表 = pending/claimed/in_progress/completed/deleted」——空头指令不许原样进模型可见面。② **team.md 的 opencode 载体句**（"set team_mode.enabled=true and restart opencode" 兜底句）在 DSH 无对应面——本任务若消费 team.md 正文，须评估该句的适配注记位置（deviations[] 登记优先于 NOTICE-only，opencode 评审登记）。】
 - **判定**：✅ 门 2/3 绿；team 缺席时降级语义**保持绿**（反向场景——降级路径不许因升级死掉）。
 - **证据**：⬜
 - **依赖**：P5-T6。**量级**：4 小时。

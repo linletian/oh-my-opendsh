@@ -1,0 +1,120 @@
+{
+  "upstream": {
+    "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+    "tag": "v4.19.4",
+    "commit": "b072d279110bdda2c6ac2525d0d24dc54d16148a",
+    "paths": [
+      "packages/prompts-core/prompts/mode/team.md",
+      "packages/skills-loader-core/src/features/builtin-skills/skills/team-mode.ts"
+    ],
+    "pathMapping": "prompts/mode/team.md -> packages/prompts-core/prompts/mode/team.md (identity under the prompts-core root); src/features/builtin-skills/skills/team-mode.ts -> packages/skills-loader-core/src/features/builtin-skills/skills/team-mode.ts (identity under the skills-loader-core root). The package spans TWO upstream packages — the T1 arbitration (Q1b N5) vendored both carriers together because the keyword-hit lead instruction (team.md) and the real lead run protocol (the teamModeSkill.template) are one semantic surface split across two upstream roots.",
+    "license": "SUL-1.0 (repository root LICENSE.md; neither upstream package manifest carries a license field)"
+  },
+  "vendoredAt": "2026-10-12",
+  "package": {
+    "name": "@oh-my-opencode/prompts-team",
+    "version": "0.1.0",
+    "upstreamManifest": null,
+    "note": "PROJECT-NEW package identity (no single upstream manifest exists for a two-root pair; naming after the vendored content, the shared-skills/hashline-core SUL scope precedent kept). Kept outside the shared-skills vendor because the shared-skills VENDOR-MANIFEST pathMapping is anchored to packages/shared-skills + packages/omo-senpi and this pair comes from packages/prompts-core + packages/skills-loader-core; mixing roots there would break that manifest's two-way path agreement (c19). Upstream bytes were taken read-only via `git -C <omo-repo> show v4.19.4:<path>`."
+  },
+  "subset": {
+    "excludedUpstreamPaths": [
+      "packages/prompts-core/** (everything except prompts/mode/team.md: the other mode/atlas/prometheus prompts are not part of this pair)",
+      "packages/skills-loader-core/** (everything except src/features/builtin-skills/skills/team-mode.ts, including src/features/builtin-skills/types.ts — the BuiltinSkill type the vendored team-mode.ts imports; recorded dangling, playbook M-3, not rewritten)",
+      "packages/omo-opencode/src/features/builtin-skills/skills/team-mode.ts (upstream 1-line re-export shim of the vendored file — re-export shims are not vendored)"
+    ],
+    "testFramework": "no upstream tests are carried (the pair is content, not code); the drift seed for both files is this manifest, consumed by scripts/vendor-manifest.mjs via tests/vendor/prompts-team-manifest.test.ts"
+  },
+  "counts": {
+    "total": 5,
+    "verbatim": 2,
+    "modified": 0,
+    "projectNew": 3,
+    "contentFiles": 2,
+    "deviations": 4,
+    "deviationsByClass": {
+      "modification": 0,
+      "addition": 0,
+      "note": 4
+    }
+  },
+  "files": [
+    {
+      "path": "package.json",
+      "sha256": "fca38ac9b33c44f4ef03aac634264f9027eb35fafb8b49db53255a1fd3d82dd5",
+      "origin": "project-new"
+    },
+    {
+      "path": "NOTICE.md",
+      "sha256": "a741f3473e85aac5e8a7a22b22e7651e9105decade91fc8d6d3ecd9a23805f1f",
+      "origin": "project-new"
+    },
+    {
+      "path": "VENDOR-MANIFEST.json",
+      "sha256": null,
+      "note": "self-referential; hash omitted",
+      "origin": "project-new"
+    },
+    {
+      "path": "prompts/mode/team.md",
+      "sha256": "5e7ab9391fcd43ebf9471de3de7babff6af228f17bbffa47685f47877f380a87",
+      "origin": "verbatim",
+      "upstreamPath": "packages/prompts-core/prompts/mode/team.md",
+      "upstreamSha256": "5e7ab9391fcd43ebf9471de3de7babff6af228f17bbffa47685f47877f380a87",
+      "note": "615 bytes / 2 lines; cross-pinned by .omo/evidence/p5t1/Q1b-teamcore-teammd.md §5 (same sha, measured `git show v4.19.4 | wc -lc` 2/615). Live injection body of the keyword-detector team slot."
+    },
+    {
+      "path": "src/features/builtin-skills/skills/team-mode.ts",
+      "sha256": "cc0607a9a883b8b22de3b4de83b4aba4ac473978e4229a8fc150ef55bf793e4d",
+      "origin": "verbatim",
+      "upstreamPath": "packages/skills-loader-core/src/features/builtin-skills/skills/team-mode.ts",
+      "upstreamSha256": "cc0607a9a883b8b22de3b4de83b4aba4ac473978e4229a8fc150ef55bf793e4d",
+      "note": "204 bytes-lines / 9450 bytes; the teamModeSkill.template (the lead run protocol: Closure Contract / tool gating / bounds) lives at :7-202 of this verbatim file."
+    }
+  ],
+  "deviations": [
+    {
+      "kind": "note",
+      "id": "N1-terminal-status-hollow",
+      "authority": "P5-T1 Q1b N1 ruling (docs/plans/phase5-dev/phase5-tasks.md P5-T12 条 仲裁增补)",
+      "files": [
+        "prompts/mode/team.md",
+        "src/features/builtin-skills/skills/team-mode.ts"
+      ],
+      "statement": "The vendored texts teach a `failed` terminal task state (team-mode.ts:108 \"Every task is in a terminal state: `completed` or `failed`\"; team.md:2 the re-check-after-completes-or-fails clause) that the vendored team-core tasklist schema does NOT contain — TEAM_TASK_STATUSES here is ['pending','claimed','in_progress','completed','deleted'] (omo-team/src/tools/team-task.ts:76, anchored to the vendored team-core tasklist). `status:\"failed\"` is therefore a HOLLOW instruction on this execution surface: a model following the text verbatim would get `unknown task status 'failed'` from the tool. Bodies kept byte-verbatim (vendor 正文逐字不动); the adaptation authority is the vendored tasklist schema, and the tool's refusal message names the legal enum.",
+      "resolution": "registered, not rewritten"
+    },
+    {
+      "kind": "note",
+      "id": "N9-delegation-name-drift",
+      "authority": "P5-T1 Q1b N9 ruling (same task-book entry)",
+      "files": [
+        "prompts/mode/team.md",
+        "src/features/builtin-skills/skills/team-mode.ts"
+      ],
+      "statement": "Name drift across the two vendored texts AND away from DSH: team.md:2 names `delegate_task` (underscore), team-mode.ts:90 and :160 name `delegate-task` (hyphen) — NEITHER name exists on the DSH tool surface, where delegation is the roster's ten delegation toolNames (omo-agents/src/roster.ts; the same drift already recorded for the vendored shared-skills in the Phase 4 notices). The team.md prohibition ('NEVER substitute with delegate_task — it is not equivalent') still holds its semantics: it forbids substituting ordinary delegation for team orchestration, whichever name the local surface uses.",
+      "resolution": "registered, not rewritten"
+    },
+    {
+      "kind": "note",
+      "id": "dangling-import-M-3",
+      "authority": "vendoring playbook M-3 (dangling exports/specifiers are recorded, not rewritten)",
+      "files": [
+        "src/features/builtin-skills/skills/team-mode.ts"
+      ],
+      "statement": "team-mode.ts:1 `import type { BuiltinSkill } from \"../types\"` — packages/skills-loader-core/src/features/builtin-skills/types.ts is outside the vendored subset, so the specifier is dangling in this copy. Nothing in this repo imports the file (it is archive content: the drift detector hashes it, the T13 upgrade surface reads it by path); the dangling import therefore cannot break any build. Recorded, not rewritten.",
+      "resolution": "recorded, not rewritten"
+    },
+    {
+      "kind": "note",
+      "id": "Q4-NOTES-6-parameter-face-consistency",
+      "authority": "P5-T12 任务书 交付物 4（Q-4 NOTES-6 联动）",
+      "files": [
+        "vendor/shared-skills/skills/refactor/SKILL.md",
+        "vendor/shared-skills/skills/debugging/references/methodology/02-investigate.md"
+      ],
+      "statement": "CONSISTENCY VERIFIED — the OMO-family team_* calls the vendored shared-skills teach match this repo's vendored+ported tool face, so NO rewrite is needed on those skill texts. Measured: refactor/SKILL.md teaches `team_send_message(teamRunId=<id>, to=\"lead\", summary=…, body=…)` (L672, L703, L729), `team_send_message(to=\"*\")` broadcast, `team_task_create(teamRunId, subject, description, blockedBy)` (L709) and `team_task_update(status=completed|pending)` (L672, L678, L729); debugging/02-investigate.md teaches `team_send_message` / `team_task_create` by name (L58, L79). This repo's surface: team_send_message accepts teamRunId(min 1)/to(min 1)/body(string)/kind/correlationId/summary?/references? with to='*' = lead broadcast ('broadcast requires lead role' verbatim refusal, omo-team/src/tools/team-message.ts:100,338-340); team_task_create takes teamRunId/subject/description/blockedBy? (team-task.ts:167-190); team_task_update takes the five-value status incl. completed and pending (team-task.ts:76,265-277). NO vendored shared-skill teaches `team_task_update(status=failed)` (the only `status: \"failed\"` hit under vendor/shared-skills is 08-qa.md:54, about READING a response sub-field, not a tool parameter). The remaining texts-vs-surface contradictions stay the two already-registered notes above (N1 terminal-status, N9 delegation-name drift); neither occurs in the shared-skills team_* call sites.",
+      "resolution": "verified consistent; no rewrite"
+    }
+  ]
+}

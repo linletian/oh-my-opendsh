@@ -26,13 +26,13 @@
 //
 // 本目录（keyword-detector/）承载 4 个模块 + 本文件承载 listener 与 registrar：
 //   keyword-detector/constants.ts  — 模式表 / 剥壳模式 / banner 锚点 / 名册快照
-//   keyword-detector/messages.ts   — vendor 正文加载 + 3 个文案工厂 + 关键词表
+//   keyword-detector/messages.ts   — vendor 正文加载 + 4 个文案工厂 + 关键词表
 //   keyword-detector/detector.ts   — 剥壳 / slash 判定 / 配置规则 / 组合抑制 / 幂等
 //   keyword-detector/filters.ts    — 六级输入过滤（payload 与会话身份面）
 //
 //   IMPLEMENTATION (16 目录内 + 1 目录外)
 //   config/schema/keyword-detector.ts (9) — PORTED 逐字（KeywordType 四元枚举
-//                                     含 team 预留位 + 两个 optional 字段 →
+//                                     含 team 槽（P5-T12 接线）+ 两个 optional 字段 →
 //                                     constants.ts 的 KeywordType /
 //                                     detector.ts 的 KeywordDetectorConfig；
 //                                     zod 校验器本身不移植——本插件的配置读面
@@ -55,8 +55,9 @@
 //   hyperplan/index.ts (2)          — PORTED（barrel，合并进关键词表）
 //   hyperplan/default.ts (33)       — PORTED（模式逐字 → constants.ts；8 步工作流
 //                                     → messages.ts 的 hyperplan 文案 + S-7 载体声明）
-//   team/index.ts (2)               — PORTED 逐字（枚举位；不接线，见 S-3）
-//   team/default.ts (26)            — 跳过段（S-3：team_* 工具族 DSH 无等价面）
+//   team/index.ts (2)               — PORTED 逐字（枚举位；P5-T12 接线，见 S-3）
+//   team/default.ts (26)            — PORTED（P5-T12：TEAM_MESSAGE 转发 → vendored
+//                                     team.md 逐字 + kind omo-team-keyword；成员侧不放行见 S-3）
 //   ultrawork/index.ts (2)          — PORTED（barrel，合并进关键词表）
 //   ultrawork/default.ts (9)        — PORTED（转发 → vendor 正文，见 S-2）
 //   ultrawork/gpt.ts (9)            — 跳过段（S-2：按模型分流，DSH 无模型族路由）
@@ -105,12 +106,19 @@
 //     （`UNMAPPED_REVIEWER_LITERALS` 与 `ROSTER_TAIL_NOTE` 的注释里不再另起
 //     一套计数——本行是 S-2 计数的唯一定义处。）
 //
-// S-3 **team 跳过段（枚举位预留）**。`team/default.ts` 的 26 行是
+// S-3 **team 槽：P4 跳过段 → P5-T12 接线段**。`team/default.ts` 的 26 行是
 //     `TEAM_MESSAGE = TEAM_MODE_PROMPT` 的一次转发，正文以 `team_create` 团队
-//     工具族为骨架。C 组证据「载体」已判定该工具族 DSH **无等价面**（最近邻是
-//     subagent，但缺 teamRunId / 广播 / 关闭协议）。处置：`team` 的 type 与
-//     pattern 常量**保留**（枚举位，Phase 5 接 Team Mode 时只需补一个消息工厂），
-//     但不接线——一个没有等价载体的关键词命中后只会产出死指令。
+//     工具族为骨架。Phase 4 判定该工具族 DSH 无等价面（C 组证据「载体」），
+//     故只留 type/pattern 枚举位。**P5-T12 接线**（T1 裁定 Q1b N5 + Q-8 A1）：
+//     等价面已由本仓 Phase 5 建成（omo-team 的 team_* 工具族 + briefing 帧），
+//     载体逐字 vendor 进 `vendor/prompts-team/prompts/mode/team.md`，
+//     `buildTeamMessage` 零附加交付正文，命中注入的 source kind =
+//     `omo-team-keyword`（与 `omo-keyword-detector` 分面）。**成员侧不放行**
+//     （Q-8）：team 不在 SUBAGENT_ALLOWED_TYPES，continuable 成员在 ⑥a 整跳、
+//     one-shot 在 ⑥' 整跳——成员的 team 语境由 omo-team-briefing 帧承担。
+//     正文里的 `delegate_task`（N9 名称漂移）与 `status:"failed"`（N1 空头
+//     指令）两条已知矛盾**逐字保留**，登记于 vendor VENDOR-MANIFEST.json
+//     deviations[]。
 //
 // S-4 **non-OMO agent 闸的可达形态**。上游 `isNonOmoAgent` 判的是"这个会话被
 //     用户切到了 opencode 内置的 builder/plan"。DSH **没有"会话切 agent"这个
@@ -293,6 +301,7 @@
 
 import {
   SUBAGENT_ALLOWED_TYPES,
+  TEAM_KEYWORD_INJECTION_KIND,
   type KeywordType,
 } from './keyword-detector/constants.ts'
 import {
@@ -381,9 +390,10 @@ export interface InjectedTextBlock {
 }
 
 /**
- * 注入消息的 **producer 归属**：`kind` 是 `omo-keyword-detector`，**不再是
- * `plugin`**。0.2.x 的 v4 native admission 在每个持久消息槽位上都拒绝
- * `kind === 'plugin'`（一手读自已安装的 npm 包
+ * 注入消息的 **producer 归属**：`kind` 是 `omo-keyword-detector`（ultrawork /
+ * hyperplan / combo 三类正文）或 `omo-team-keyword`（P5-T12 的 team 槽正文，
+ * Q-8 A1 裁定分面），**不再是 `plugin`**。0.2.x 的 v4 native admission 在每个
+ * 持久消息槽位上都拒绝 `kind === 'plugin'`（一手读自已安装的 npm 包
  * `@deepseek-ai/dsh-session-format-v3-to-v4@0.2.0-rc.2`：`lib/index.js:124-127`，
  * 写侧经 `encodeEvent` `:1092-1099` → `assertV4RowAdmission` `:1107` →
  * `assertV4SourceRowAdmission` `:142-152`）。全部规则只有三条：`source` 必须是
@@ -391,9 +401,16 @@ export interface InjectedTextBlock {
  * `plugin` 与 `form` 原样保留。`omo-` 前缀是取舍不是规定（v4 对前缀既不要求也
  * 不禁止；上游自有生产者无前缀）。完整理由见 hard-blocks-injection.ts 的
  * `InjectedPluginSource`。
+ *
+ * ⚠️ 两个 kind 同属**一个 producer**（本 hook），但正文来源不同：
+ * `omo-keyword-detector` 注入 shared-skills 的 ultrawork/hyperplan 正文，
+ * `omo-team-keyword` 注入 prompts-team 的 team.md 正文。消费侧（e2e 投影、
+ * T11 渲染）按 kind 分流核对；`buildInjectionMessage` 只铸前者（tripwire
+ * tests/e2e/drive.mjs 钉 `buildInjectionMessage('probe').source.kind ===
+ * 'omo-keyword-detector'`），team 走 {@link buildTeamInjectionMessage}。
  */
 export interface InjectedPluginSource {
-  readonly kind: 'omo-keyword-detector'
+  readonly kind: 'omo-keyword-detector' | 'omo-team-keyword'
   readonly plugin: string
   readonly form: 'instructions'
 }
@@ -412,6 +429,27 @@ export function buildInjectionMessage(text: string): InjectedUserMessage {
     role: 'user',
     content: [{ type: 'text', text }],
     source: { kind: 'omo-keyword-detector', plugin: KEYWORD_DETECTOR_PLUGIN, form: 'instructions' },
+  }
+}
+
+/**
+ * 铸一条 **team 槽**注入消息（P5-T12，Q-8 A1）。
+ *
+ * 与 {@link buildInjectionMessage} 同构（同插件、同 form、每调新铸 id），
+ * 唯一的差异是 `source.kind = TEAM_KEYWORD_INJECTION_KIND`（`omo-team-keyword`）：
+ * team 注入的正文是 vendored team.md（lead 编排指令），消费侧按 kind 与
+ * ultrawork/hyperplan/combo 的 `omo-keyword-detector` 分流核对。**不要**
+ * 把它并进 `buildInjectionMessage`——drive.mjs 的 producer-kind tripwire
+ * （tests/e2e/drive.mjs 的 `OMO_KEYWORD_DETECTOR_KIND` 段）钉死
+ * `buildInjectionMessage('probe').source.kind === 'omo-keyword-detector'`，
+ * 合并会让 tripwire 失去对「team 正文冒充 detector 正文」的判别力。
+ */
+export function buildTeamInjectionMessage(text: string): InjectedUserMessage {
+  return {
+    id: crypto.randomUUID(),
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: { kind: TEAM_KEYWORD_INJECTION_KIND, plugin: KEYWORD_DETECTOR_PLUGIN, form: 'instructions' },
   }
 }
 
@@ -474,7 +512,20 @@ export type KeywordDecision =
   | {
     readonly kind: 'inject'
     readonly types: readonly KeywordType[]
+    /**
+     * ultrawork/hyperplan/combo 三类命中的组装正文（`kind:
+     * 'omo-keyword-detector'` 消息的正文）。**P5-T12 起不再包含 team 命中**
+     * ——team 正文走下面的 `teamText`。纯 team 批次时它是空串（listener 据
+     * 空串不铸 detector 消息）。
+     */
     readonly text: string
+    /**
+     * team 命中的组装正文（P5-T12，`kind: 'omo-team-keyword'` 消息的正文 =
+     * vendored team.md 逐字 + 同一 `INJECTION_SEPARATOR` 尾装置）。
+     * 无 team 命中时为 `undefined`——空串与 undefined 分面：空串会铸出一条
+     * 只有分隔符的消息，undefined 结构性地不铸。
+     */
+    readonly teamText?: string
     readonly agentName: string | undefined
   }
 
@@ -651,10 +702,26 @@ export function decideKeywordInjection(facts: KeywordStepFacts): KeywordDecision
   )
   if (hits.length === 0) return { kind: 'skip', reason: 'already-injected-message' }
 
+  // P5-T12：命中按 kind 分面。team 命中组装 `omo-team-keyword` 消息正文，
+  // ultrawork/hyperplan/combo 命中组装 `omo-keyword-detector` 消息正文；
+  // 两段各自带同一个 `INJECTION_SEPARATOR` 尾装置（上游尾装置同形，一消息一尾）。
+  // `types` 保持命中全序（审计行按它，注入顺序 = 它）。纯 team 批次 `text` 为
+  // 空串、纯非 team 批次 `teamText` 为 undefined——listener 据这两个空值各自
+  // 不铸消息（见 runKeywordDetectorStep 的两道长度闸）。
+  const teamHits = hits.filter((hit) => hit.type === 'team')
+  const modeHits = hits.filter((hit) => hit.type !== 'team')
   return {
     kind: 'inject',
     types: hits.map((hit) => hit.type),
-    text: `${hits.map((hit) => hit.message).join('\n\n')}\n\n${INJECTION_SEPARATOR}\n`,
+    text: modeHits.length === 0
+      ? ''
+      : `${modeHits.map((hit) => hit.message).join('\n\n')}\n\n${INJECTION_SEPARATOR}\n`,
+    ...(teamHits.length === 0
+      ? {}
+      : {
+        teamText:
+          `${teamHits.map((hit) => hit.message).join('\n\n')}\n\n${INJECTION_SEPARATOR}\n`,
+      }),
     agentName,
   }
 }
@@ -772,13 +839,20 @@ function runKeywordDetectorStep(
   // 这里会静默吞掉一次注入（最坏的组合：日志也不打），届时单测 `an agent
   // without an inject surface skips with a named reason` 里的两条无-inject
   // 载荷必须重新审视（它们今天都走 no-inject-surface）。
-  agent.inject?.(buildInjectionMessage(decision.text))
+  // P5-T12 两道长度闸：detector 面正文非空才铸 detector 消息，team 面正文
+  // 在场才铸 team 消息（`teamText` 的 undefined/'' 分面见 KeywordDecision）。
+  // 一批最多两条消息、两个 kind；顺序固定 detector→team（`decision.types` 的
+  // 全序由判定面保，日志的 char 数是两面之和）。
+  if (decision.text.length > 0) agent.inject?.(buildInjectionMessage(decision.text))
+  if (decision.teamText !== undefined) {
+    agent.inject?.(buildTeamInjectionMessage(decision.teamText))
+  }
   logSafely(
     deps,
     formatKeywordDetectorLine(
       `injected [${decision.types.join(', ')}] into `
       + `${sanitizeDiagnosticLabel(descriptor.label) ?? 'main session'} `
-      + `(${decision.text.length} chars)`,
+      + `(${decision.text.length + (decision.teamText?.length ?? 0)} chars)`,
     ),
   )
 }

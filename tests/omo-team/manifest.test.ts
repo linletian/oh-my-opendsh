@@ -201,7 +201,7 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
     expect([...teamStatusSet].sort()).toEqual(['pending', 'ported', 'recorded'])
   })
 
-  it('splits the roster by status as of P5-T9 (10 pending, TWELVE ported, 2 recorded)', async () => {
+  it('splits the roster by status as of P5-T12 (8 pending, FOURTEEN ported, 2 recorded)', async () => {
     // The hard-coded facts, not lengths. ZERO ported was the load-bearing half
     // at P5-T2; P5-T5 flips team_create to 'ported' (the delivery surface —
     // src/tools/team-create.ts + team-state.ts + roster-seats.ts — landed);
@@ -211,16 +211,20 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
     // / team_reject_shutdown / team_status (src/tools/{team-shutdown,
     // team-delete,team-status}.ts + the team-state.ts handshake ledger + the
     // handshake unit suites + the `team-shutdown-handshake` e2e scenario);
-    // P5-T8b flips the task quartet; **P5-T9 flips `stop-continuation-team`**
+    // P5-T8b flips the task quartet; P5-T9 flips `stop-continuation-team`
     // (the guard's team branch in omo-hooks + the read-only member query
     // surface here + the `stop-continuation-team` / `team-teardown-no-orphans`
-    // e2e pair). A
+    // e2e pair); **P5-T12 flips two** — `team-keyword-injection` (the wired
+    // team slot in omo-hooks: kind `omo-team-keyword`, member-side non-release
+    // per Q-8, + the boot-time integrity/contract face here + the
+    // `team-keyword-mode` e2e scenario) and `vendor-team-prompts` (the two
+    // verbatim files under vendor/prompts-team/ + the integrity gate registrar
+    // + the same e2e scenario). A
     // row silently flipping to 'ported' without a delivery surface would claim
     // a port that does not exist (T8 owns the next flip). The two recorded
     // rows are the honest terminal for recorded-difference rows — their
     // deliverable IS the recorded difference (§1 行 11/12).
     expect(teamsByStatus(TEAM_MANIFEST, 'pending').map((row) => row.id)).toEqual([
-      'team-keyword-injection',
       'hyperplan-upgrade',
       'remove-ai-slops-team-addendum',
       'vendor-team-core-types',
@@ -229,7 +233,6 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
       'vendor-team-core-team-tasklist',
       'vendor-team-core-team-state-store',
       'vendor-team-core-closure',
-      'vendor-team-prompts',
     ])
     expect(teamsByStatus(TEAM_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'team_create',
@@ -243,7 +246,9 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
       'team_task_update',
       'team_task_get',
       'team_status',
+      'team-keyword-injection',
       'stop-continuation-team',
+      'vendor-team-prompts',
     ])
     expect(teamsByStatus(TEAM_MANIFEST, 'recorded').map((row) => row.id)).toEqual([
       'team_list',
@@ -464,7 +469,8 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     ])
     expect(entry?.disposition).toBe('content-vendor')
     expect(entry?.e2eScenario).toBe('team-keyword-mode')
-    expect(entry?.status).toBe('pending')
+    // P5-T12 翻行：两项已落 vendor/prompts-team/（sha 见其 VENDOR-MANIFEST）。
+    expect(entry?.status).toBe('ported')
   })
 
   it('④ team-keyword-injection is the §3 handoff row on the H-33 slot', async () => {
@@ -479,7 +485,8 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.nativeFace).toContain('omo-team-keyword')
     expect(entry?.disposition).toBe('ported')
     expect(entry?.e2eScenario).toBe('team-keyword-mode')
-    expect(entry?.status).toBe('pending')
+    // P5-T12 翻行：team 槽已接线（kind omo-team-keyword，成员侧不放行）。
+    expect(entry?.status).toBe('ported')
   })
 
   it('④ no row cites AGENTS.md and every cited path is tag-relative', async () => {
@@ -713,10 +720,11 @@ describe('P5-T2 derived helpers', async () => {
     // P5-T5 flipped team_create to ported: 21/1/2 (was 22/0/2 at P5-T2);
     // P5-T6 flipped team_send_message: 20/2/2; P5-T7 five more: 15/7/2;
     // P5-T8b flipped the task quartet: 11/11/2; P5-T9 flipped
-    // stop-continuation-team: 10/12/2.
+    // stop-continuation-team: 10/12/2; T12 adds team-keyword-injection +
+    // vendor-team-prompts to the ported side: 8/14/2.
     const counts = countsByStatus(TEAM_MANIFEST)
-    expect(counts.get('pending')).toBe(10)
-    expect(counts.get('ported')).toBe(12)
+    expect(counts.get('pending')).toBe(8)
+    expect(counts.get('ported')).toBe(14)
     expect(counts.get('recorded')).toBe(2)
     // Every vocabulary key exists even at 0, so two boots stay line-comparable.
     expect([...counts.keys()]).toEqual([...TEAM_MANIFEST_STATUSES])
@@ -763,10 +771,11 @@ describe('P5-T2 derived helpers', async () => {
   it('formatLoadedSummaryLine renders the exact P5-T2 census line from the real roster', async () => {
     // 手打的整行——与上面 countsByStatus 的手打数字（22/0/2）互为对账；
     // T3 的 boot marker 若并入注册计数，格式扩展归 probe 侧（manifest.ts 注）。
-    // P5-T9 census: pending=10, ported=12 (T7's seven + the task quartet +
-    // the stop-continuation-team query surface flipped at T9), recorded=2。
+    // P5-T12 census: pending=8, ported=14 (T7's seven + the task quartet +
+    // the stop-continuation-team query surface flipped at T9 + the team-keyword
+    // slot and the prompts-team vendor pair flipped at T12), recorded=2。
     expect(formatLoadedSummaryLine(TEAM_MANIFEST)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=10, ported=12, recorded=2)',
+      '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2)',
     )
   })
 

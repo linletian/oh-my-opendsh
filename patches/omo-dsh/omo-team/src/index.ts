@@ -130,6 +130,10 @@ import { buildTeamSessionContext } from './team/session-context-adapter.ts'
 // 取消动作本身住在 omo-hooks 的 guard，见 tools 侧注册行注与
 // team/team-stop-continuation.ts 头注）。
 import { registerTeamStopContinuationQuerySurface } from './team/team-stop-continuation.ts'
+// P5-T12 · 行 ⑭/㉔ 的两个 registrar（team-keyword-slot.ts 与
+// team-prompts-vendor.ts 头注：跨包零 import，消费侧本地字面量 + 单测交叉钉）。
+import { registerTeamKeywordInjectionFace } from './team/team-keyword-slot.ts'
+import { registerTeamPromptsVendorSurface } from './team/team-prompts-vendor.ts'
 
 export const name = 'omo-team'
 
@@ -317,11 +321,22 @@ export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
   // task_get 合一行，表格口径此行为第 10 行，manifest.ts 行注保持表格口径，
   // 两套锚各按各的序，逐枚可对（评审 T7-MINOR 的裁决面）。
   team_status: (ctx) => registerTeamStatusSurface(ctx, { store: teamStateStore }),
+  // P5-T12 · ⑭ §3 行 1：team 关键词槽的 omo-team 可见半 = 启动期把门面
+  // （vendored team.md 对 VENDOR-MANIFEST sha pin 核验 + 槽位机读契约
+  // patternSource/injectionKind/memberSideAllowed=false 发布；注入动作的
+  // nativeFace 在 omo-hooks 的 keyword-detector，跨包零 import，字面量
+  // 交叉等值由单测钉死）。行号按名册行序（manifest.ts 第 14 条）。
+  'team-keyword-injection': (ctx) => registerTeamKeywordInjectionFace(ctx),
   // P5-T9 · ⑰ §行 17：stop-continuation 的 team 分支——本行在 omo-team 侧的
   // 可见半 = guard 消费的只读成员查询面（ctx.provide 上线，fiber 收编）；
   // 取消动作的 nativeFace 在 omo-hooks 的 guard（跨包纪律：两侧零 import，
   // 服务名交叉等值由单测钉死）。行号按名册行序（manifest.ts 第 17 条）。
   'stop-continuation-team': (ctx) => registerTeamStopContinuationQuerySurface(ctx, { store: teamStateStore }),
+  // P5-T12 · ㉔ §3.3 vendor 行：prompts-team 两项文本的完整性把门（manifest
+  // 在册文件逐枚 sha 核验，漂移 = 抛具名错 = 该行 FAILED）+ lead 运行协议
+  // 档案面（teamModeTsText，T13 升级面的读取锚）。注入正文的盘读在 omo-hooks
+  // ——一行一处置：这里把门与档案，不在这里路由正文。行号按名册行序（第 24 条）。
+  'vendor-team-prompts': (ctx) => registerTeamPromptsVendorSurface(ctx),
 }
 
 /**
@@ -398,15 +413,17 @@ export function runTeamRegistrations(
  * unit-tested functions, so this stays assembly-only and the markers cannot
  * drift from their tests.
  *
- * A correct P5-T9 boot logs TWELVE `registered` lines from this plugin — the
+ * A correct P5-T12 boot logs FOURTEEN `registered` lines from this plugin — the
  * loop's landed rows in roster order (`team_create`, `team_delete`, the
  * shutdown trio, `team_send_message`, the task-board quartet added at T8b,
- * `team_status`, and the `stop-continuation-team` query surface added at T9) —
- * then the summary line carrying the honest `12/24`, then AT
+ * `team_status`, `team-keyword-injection` and the `stop-continuation-team`
+ * query surface added at T9, `vendor-team-prompts` last) — then the summary
+ * line carrying the honest `14/24`, then AT
  * MOST the resume lines of the persistence boot (below): no FAILED line, no
  * validation line. (At P5-T3 it logged exactly ONE line, the summary with the
  * loop's honest zero, because the registry was empty; T5/T6 grew it to two;
- * T7 grew it to seven; T8b grew it to eleven; T9 grew it to twelve; the flips
+ * T7 grew it to seven; T8b grew it to eleven; T9 grew it to twelve; T12 grew
+ * it to fourteen; the flips
  * are the markers the probe re-derives without an edit.)
  *
  * PERSISTENCE BOOT (T8b换装): after the registration loop, the store rebuilds

@@ -5661,6 +5661,20 @@ function installPlugin(sandbox, env, def) {
     rmSync(stagedTeamDir, { recursive: true, force: true })
     mkdirSync(stagedTeamDir, { recursive: true })
     cpSync(TEAM_PLUGIN_DIR, stagedTeamDir, { recursive: true })
+    // P5-T12: the staged copy now owns TWO boot-time disk consumers —
+    // team-keyword-slot.ts and team-prompts-vendor.ts resolve the vendored
+    // pair at `<copy>/../../../vendor/prompts-team/…`, which for the staged
+    // layout is `<sandbox>/plugins/vendor/prompts-team`. WITHOUT staging the
+    // bytes too, both rows log FAILED at boot and the census reads 12/24 —
+    // measured on the first full T12 run (team-create-and-message boot.log:
+    // `vendor manifest absent at …/plugins/vendor/prompts-team/…`). The pair
+    // is copied VERBATIM (the boot gate re-hashes it against the manifest and
+    // a mutated copy would fail the row, which is the point).
+    cpSync(
+      join(REPO_ROOT, 'patches', 'omo-dsh', 'vendor', 'prompts-team'),
+      join(sandbox.root, 'plugins', 'vendor', 'prompts-team'),
+      { recursive: true },
+    )
   }
   for (const pluginDir of PLUGIN_DIRS) {
     const operand = pluginDir === PLUGIN_DIR
@@ -5750,7 +5764,7 @@ function installPlugin(sandbox, env, def) {
   // P5-T9 双评审修复轮：探针插件的第五行安装（仅 def.teamProbePlugin 的两枚
   // T9 场景）。装法与证据链同 q5b 先例（`dsh plugin add` + overlay `insert:`
   // 行 + profile 入口 realpath 钉）——差别只在常驻：q5b 是一次性取证脚本，
-  // 这枚跟着 drive 的每次 40/40 跑。装不上就响亮 abort（缺行的失败形状见
+  // 这枚跟着 drive 的每次 41/41 跑。装不上就响亮 abort（缺行的失败形状见
   // 本函数头注：`plugin tree failed to load … ERR_MODULE_NOT_FOUND`）。
   if (def?.teamProbePlugin === true) {
     const addProbe = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', TEAM_PROBE_PLUGIN_DIR], {
@@ -13406,6 +13420,66 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P5-T12 team-keyword-mode self-test: GOOD passes, then seven named defects
+  // each red on their own axis — the team slot's five new failure shapes (member
+  // leak / first-request arrival / reworded body / kind collapse / vacuous child
+  // negative) plus the two inherited structural axes (missing claim, short turns).
+  {
+    const goodTeam = analyzeTeamKeywordMode(fabricatedTeamKeywordGoodInput(routes), routes)
+    if (goodTeam.result !== 'PASS') {
+      problems.push(`fabricated GOOD team-keyword-mode must PASS, got FAIL on: ${goodTeam.failed.join(', ')}`)
+    }
+    // Mutate BOTH lead projections of the one injection (same discipline as
+    // mutateComboCarrierText — the model may read either copy).
+    const mutateTeamCarrierText = (input, rewrite) => {
+      for (const message of [input.log.events[3].data.inserted[0], input.log.events[6].data]) {
+        if (message?.content?.[0]?.text !== undefined) {
+          message.content[0].text = rewrite(message.content[0].text)
+        }
+      }
+    }
+    const teamDefectCases = [
+      ['member-side leak: the child log carries the team injection', (input) => {
+        const hijacked = fabricatedTeamKeywordInjection(input.log.events[3].data.inserted[0].content[0].text)
+        input.childLog.events.push({ seq: 6, type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [hijacked] } })
+        input.childLog.events.push({ ...fabricatedKeywordInjectedEvent(hijacked.content[0].text, hijacked.source, hijacked.id), seq: 7 })
+      }, 'childSessionNotReleasedForTeam'],
+      ['the team body reached the model on the FIRST request (no step boundary)', (input) => {
+        input.requests[0].body.messages.push(fabricatedTeamKeywordInjection(buildExpectedInjectedText('team')))
+      }, 'teamBodyAbsentFromFirstRequest'],
+      ['the injected body was reworded (not the verbatim vendor bytes)', (input) => {
+        mutateTeamCarrierText(input, (text) => text.replace('[team-mode]', '[team-mode-rewritten]'))
+      }, 'injectionTextIsVerbatimVendorText'],
+      ['the team face collapsed onto the detector kind', (input) => {
+        for (const message of [input.log.events[3].data.inserted[0], input.log.events[6].data]) {
+          message.source = { ...message.source, kind: OMO_KEYWORD_DETECTOR_KIND }
+        }
+      }, 'injectionIsFullTeamUserMessage'],
+      ['the child never received the keyword text (vacuous member negative)', (input) => {
+        const first = input.childLog.events.find((e) => e.type === 'user/message')
+        first.data.content[0].text = first.data.content[0].text.replace('team mode', 'plain prose')
+      }, 'childSessionRanWithTeamText'],
+      ['the history claim never materialised', (input) => {
+        input.log.events = input.log.events.filter((e) => e.seq !== 7)
+      }, 'singleTeamHistoryClaim'],
+      ['a lead turn never completed', (input) => {
+        input.log.events = input.log.events.filter((e) => !(e.type === 'turn/end' && e.seq === 14))
+      }, 'leadTurnsCompleted'],
+    ]
+    if (teamDefectCases.length !== 7) {
+      problems.push(`P5-T12 team-keyword-mode: the defect list must hold exactly 7 legs, got ${teamDefectCases.length}`)
+    }
+    for (const [label, mutate, expectedCheck] of teamDefectCases) {
+      TEAM_KEYWORD_SELF_TEST_ATTESTATION.push(['team-keyword-mode', label])
+      const input = fabricatedTeamKeywordGoodInput(routes)
+      mutate(input)
+      const verdict = analyzeTeamKeywordMode(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated team-keyword-mode defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+    }
+  }
+
   // ── P4-T9 stop-continuation self-test: the good input must PASS, then every
   // named defect must FAIL on its own named check.
   {
@@ -13665,6 +13739,9 @@ async function runAnalysisSelfTest(routes) {
  * and the banner renders from this list, so the two cannot disagree.
  */
 const KEYWORD_SELF_TEST_ATTESTATION = []
+/** P5-T12's own accumulator: the team slot's legs are rendered under their own
+ * phase label in the banner, not folded into the P4-T13 clause. */
+const TEAM_KEYWORD_SELF_TEST_ATTESTATION = []
 // P4-T9's own attestation, same shape: filled by the self-test loop, read by the banner.
 const STOP_SELF_TEST_ATTESTATION = []
 // P4-T11's, same shape: the banner is rendered FROM what ran, never hand-typed.
@@ -15999,6 +16076,208 @@ export function analyzeComboKeywordInjected(input, routes) {
   }
 }
 
+// ══ P5-T12 `team-keyword-mode`：team 槽的 e2e 半（manifest 行 ⑭/㉔ 的场景）══
+//
+// The fifth keyword scenario, and structurally NOT a sixth ultrawork: the team
+// slot injects the vendored `team.md` VERBATIM (no banner wrapper — the file
+// opens with its own `[team-mode]` marker line), stamps its OWN producer kind
+// (`omo-team-keyword`, Q-8 A1), and must NEVER arm on the member side. So the
+// scenario is one lead session PLUS one delegated child whose task text carries
+// the keyword: the lead's log must show exactly one team injection with the new
+// kind, and the child's log must show zero — the same-negative shape the
+// delegation-demo proves for tool surfaces, aimed at a hook slot this time.
+//
+// Turn map (all lead, one session):
+//   turn 1 — arm: delegate a child whose task text says `team mode` (member-side
+//     probe), echo the step marker (S-11's step boundary for the claim), summarize.
+//   turn 2 — idempotence: paste the FULL injected body back (keyword included);
+//     the message-level gate must swallow it, no second splice.
+//   turn 3 — control: plain prose, no keyword at all.
+
+const OMO_TEAM_KEYWORD_KIND = 'omo-team-keyword'
+// The producer-kind tripwire rides the existing loop's discipline: pin the
+// shipped builder's stamp, so a kind rename fails HERE loudly, not in a
+// silently-unreadable log.
+if (keywordDetectorModule.buildTeamInjectionMessage('probe').source.kind !== OMO_TEAM_KEYWORD_KIND) {
+  throw new Error(`P5-T12 kind pin: buildTeamInjectionMessage now stamps '${keywordDetectorModule.buildTeamInjectionMessage('probe').source.kind}' but this file pins '${OMO_TEAM_KEYWORD_KIND}' — rename both sides or neither`)
+}
+if (keywordDetectorModule.buildInjectionMessage('probe').source.kind !== OMO_KEYWORD_DETECTOR_KIND) {
+  throw new Error('P5-T12 kind pin: the DETECTOR face must still stamp omo-keyword-detector — the team slot must not have swallowed it')
+}
+
+/** The lead prompt: keyword in running prose + the member-side delegation. */
+const TEAM_KEYWORD_PROMPT =
+  'e2e team-keyword-mode: enter team mode for this, first delegate the member probe to explore, then echo the step marker and summarize'
+/** The member probe's task text — carries the keyword; the child must NOT arm. */
+const TEAM_CHILD_TASK_TEXT =
+  'e2e team-keyword-mode member probe: this delegated task text mentions team mode, first echo the child marker then report'
+const TEAM_CHILD_MARKER = 'team-keyword-child-marker-9c3f5e'
+// Turn 2 pastes the FULL vendored body back — derived from the loader's own
+// text, never a restated copy, so the idempotence gate is tested against the
+// exact bytes the hook compares.
+const TEAM_KEYWORD_PASTE_PROMPT =
+  `e2e team-keyword-mode idempotence control: the previous turn injected exactly this — ${KEYWORD_TEXTS.team} — say the marker, add nothing`
+const TEAM_KEYWORD_CONTROL_PROMPT =
+  'e2e team-keyword-mode negative control: a plain prose turn naming no keyword at all, echo the step marker then summarize'
+const TEAM_KEYWORD_SUMMARY =
+  'MOCK-TEAM-KEYWORD-6d1b8a: team-mode lead instruction reached me and the member probe returned'
+const TEAM_KEYWORD_PASTE_SUMMARY = 'MOCK-TEAM-KEYWORD-PASTE-4e7c2d: paste turn ran, no second injection'
+const TEAM_KEYWORD_CONTROL_SUMMARY = 'MOCK-TEAM-KEYWORD-CONTROL-3a9f6b: control turn ran without arming'
+const TEAM_CHILD_FINDINGS = 'MOCK-TEAM-KEYWORD-CHILD-7b5d1c: member probe ran; no team-mode instruction ever arrived here'
+/** Derived body anchor: only the vendored team.md can put this on the wire. */
+const TEAM_BODY_ANCHOR = KEYWORD_TEXTS.team.slice(0, 120)
+
+/** Lead script: 3 turns (arm w/ delegation / paste / control); child: 2 steps. */
+function teamKeywordModeScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'explore',
+        arguments: {
+          description: 'Member-side team-mode probe',
+          prompt: TEAM_CHILD_TASK_TEXT,
+          run_in_background: false,
+        },
+      },
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: KEYWORD_STEP_COMMAND,
+          description: 'Echo the scenario step marker so the injection claims at the next boundary',
+        },
+      },
+      { type: 'text', text: TEAM_KEYWORD_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: KEYWORD_STEP_COMMAND,
+          description: 'Echo the step marker again so the paste turn really ran',
+        },
+      },
+      { type: 'text', text: TEAM_KEYWORD_PASTE_SUMMARY },
+      { type: 'text', text: TEAM_KEYWORD_CONTROL_SUMMARY },
+    ],
+    explore: [
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: `echo ${TEAM_CHILD_MARKER}`,
+          description: 'Prove the member-side child session really ran',
+        },
+      },
+      { type: 'text', text: TEAM_CHILD_FINDINGS },
+    ],
+  }
+}
+
+/** True when a stored message carries the TEAM slot's producer triple — the new
+ * kind, same plugin, same form. This is the whole Q-8 A1 contract in five lines:
+ * team traffic must be distinguishable from detector traffic in the log. */
+function isTeamInjectionSource(message) {
+  return message?.source?.kind === OMO_TEAM_KEYWORD_KIND
+    && message.source.plugin === keywordDetectorModule.KEYWORD_DETECTOR_PLUGIN
+    && message.source.form === 'instructions'
+}
+
+export function analyzeTeamKeywordMode({ log, childLog, requests, providersJson, bootLog }, routes) {
+  const events = log?.events ?? []
+  const childEvents = childLog?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const expectedText = buildExpectedInjectedText('team')
+  // Text-scoped carriers first (the shared reader keys on text), THEN split by
+  // producer triple: the turn-2 paste prompt carries the same bytes as a plain
+  // `user` message, and counting it would turn the idempotence control into a
+  // false double-injection. Kind-scoping is the producer, not the text.
+  const raw = keywordInjectedCarriers(events, expectedText.slice(0, 240))
+  const carriers = raw.filter((entry) => isTeamInjectionSource(entry.message))
+  const splices = carriers.filter((entry) => entry.projection === 'inbox-splice')
+  const claims = carriers.filter((entry) => entry.projection === 'history-claim')
+  const injected = carriers[0]?.message
+  const anchorRequestIndex = sisyphusRequests.findIndex((request) =>
+    requestMessagesContain(request, TEAM_BODY_ANCHOR))
+
+  // The child log, read for the negative: its task text really arrived
+  // (non-vacuity), and NO team-kind carrier exists anywhere in it.
+  const childTexts = childEvents
+    .filter((event) => event.type === 'user/message')
+    .map((event) => messageContentText(event.data))
+  const childCarriers = keywordInjectedCarriers(childEvents, expectedText.slice(0, 240))
+    .filter((entry) => isTeamInjectionSource(entry.message))
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+    // The two faces stay distinct — asserted off the SHIPPED builders, so a
+    // rename on one side fails the self-test before any real run burns a sandbox.
+    teamKindTripwired:
+      keywordDetectorModule.buildTeamInjectionMessage('probe').source.kind === OMO_TEAM_KEYWORD_KIND
+      && keywordDetectorModule.buildInjectionMessage('probe').source.kind === OMO_KEYWORD_DETECTOR_KIND,
+    singleTeamInboxSplice: splices.length === 1,
+    singleTeamHistoryClaim: claims.length === 1,
+    injectionIsFullTeamUserMessage: carriers.length > 0
+      && carriers.every(({ message }) => message !== undefined
+        && message.role === 'user'
+        && isTeamInjectionSource(message)
+        && Array.isArray(message.content)
+        && message.content.length === 1
+        && message.content[0]?.type === 'text'
+        && typeof message.content[0]?.text === 'string'),
+    injectionIdIsUuid: carriers.length > 0
+      && carriers.every(({ message }) => typeof message?.id === 'string'
+        && UUID_PATTERN.test(message.id)),
+    bothProjectionsShareOneId: perInjectionIdShape(carriers, 1),
+    // VERBATIM is the row ㉔ claim replayed at the injection face: the bytes the
+    // lead sees are the loader's bytes are the vendor's bytes, one census.
+    injectionTextIsVerbatimVendorText: carriers.length > 0
+      && carriers.every(({ message }) => message?.content?.[0]?.text === expectedText),
+    teamBodyReachesModelOnWire: anchorRequestIndex >= 0,
+    // S-11 parity: the injecting step's own request predates the claim.
+    teamBodyAbsentFromFirstRequest: anchorRequestIndex > 0,
+    stepToolCallExecuted: events.some((event) =>
+      event.type === 'tool/result' && eventTextFlat(event).includes(KEYWORD_STEP_MARKER)),
+    leadTurnsCompleted: events.filter((event) =>
+      event.type === 'turn/end' && (event.data?.reason?.kind ?? event.data?.reason) === 'completed').length === 3,
+    // Non-vacuity of the idempotence control: the paste really carried the body.
+    pasteTurnCarriedTheInjectedBody: events.some((event) => event.type === 'user/message'
+        && event.data?.source?.kind === 'user'
+        && messageContentText(event.data).includes(expectedText.slice(0, 240))),
+    controlTurnRan: events.some((event) =>
+      event.type === 'assistant/message' && eventText(event).includes(TEAM_KEYWORD_CONTROL_SUMMARY)),
+    // Q-8's member side, both projections read: the child ran the keyword text…
+    childSessionRanWithTeamText: childLog !== undefined
+      && childLog.header?.origin === 'subagent'
+      && childTexts.some((text) => text.includes('team mode')),
+    // …and the slot never armed there.
+    childSessionNotReleasedForTeam: childCarriers.length === 0,
+  }
+  const failed = Object.entries(checks)
+    .filter(([, value]) => value !== true)
+    .map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    detail: {
+      sisyphusRequestCount: sisyphusRequests.length,
+      spliceCount: splices.length,
+      claimCount: claims.length,
+      injectionId: injected?.id,
+      injectionSource: injected?.source,
+      injectedTextLength: injected?.content?.[0]?.text?.length,
+      expectedTextLength: expectedText.length,
+      anchorRequestIndex,
+      childCarrierCount: childCarriers.length,
+    },
+  }
+}
+
 /**
  * Controls ①②③ in three turns of ONE session.
  *
@@ -16408,6 +16687,93 @@ function fabricatedKeywordInjectedEvent(text, source, id) {
 /** The `InjectedUserMessage` the real hook builds, from the real module. */
 function fabricatedKeywordInjection(text) {
   return keywordDetectorModule.buildInjectionMessage(text)
+}
+
+/** The TEAM face's `InjectedUserMessage`, from the real shipped builder. */
+function fabricatedTeamKeywordInjection(text) {
+  return keywordDetectorModule.buildTeamInjectionMessage(text)
+}
+
+/**
+ * The fabricated GOOD input for `team-keyword-mode`: ONE lead injection (turn 1,
+ * splice at seq 4, claim at seq 7 — the claim sits after the step-boundary bash
+ * pair because the scenario's own script arms at pre-step and the injected batch
+ * is claimed at the NEXT boundary), a paste turn whose user message carries the
+ * SAME bytes as a plain `user` source (the idempotence premise), a keyword-free
+ * control turn, and a member child that ran the keyword text and never armed.
+ *
+ * The child log exists with `origin: 'subagent'` and its task text really
+ * contains `team mode` — the negative (`childSessionNotReleasedForTeam`) is
+ * non-vacuous only if the positive side of the child is in the fixture.
+ */
+function fabricatedTeamKeywordGoodInput(routes) {
+  const expectedText = buildExpectedInjectedText('team')
+  const injected = fabricatedTeamKeywordInjection(expectedText)
+  const leadEvents = [
+    { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PROMPT }], source: { kind: 'user' } } },
+    { seq: 2, type: 'tool/call', data: { name: 'explore', arguments: JSON.stringify({ prompt: TEAM_CHILD_TASK_TEXT, run_in_background: false }) } },
+    { seq: 3, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-e1', content: [{ type: 'text', text: TEAM_CHILD_FINDINGS }] }] } } },
+    { seq: 4, type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [injected] } },
+    { seq: 5, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: KEYWORD_STEP_COMMAND }) } },
+    { seq: 6, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-1', content: [{ type: 'text', text: KEYWORD_STEP_MARKER }] }] } } },
+    { ...fabricatedKeywordInjectedEvent(expectedText, injected.source, injected.id), seq: 7 },
+    { seq: 8, type: 'assistant/message', data: { text: TEAM_KEYWORD_SUMMARY } },
+    { seq: 9, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+    { seq: 10, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PASTE_PROMPT }], source: { kind: 'user' } } },
+    { seq: 11, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: KEYWORD_STEP_COMMAND }) } },
+    { seq: 12, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-2', content: [{ type: 'text', text: KEYWORD_STEP_MARKER }] }] } } },
+    { seq: 13, type: 'assistant/message', data: { text: TEAM_KEYWORD_PASTE_SUMMARY } },
+    { seq: 14, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+    { seq: 15, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_CONTROL_PROMPT }], source: { kind: 'user' } } },
+    { seq: 16, type: 'assistant/message', data: { text: TEAM_KEYWORD_CONTROL_SUMMARY } },
+    { seq: 17, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+  ]
+  return {
+    log: { header: { id: 'fabricated-team-keyword-mode' }, events: leadEvents },
+    childLog: {
+      header: { id: 'fabricated-team-keyword-child', origin: 'subagent', parentSession: 'fabricated-team-keyword-mode' },
+      events: [
+        { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: TEAM_CHILD_TASK_TEXT }], source: { kind: 'user' } } },
+        { seq: 2, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: `echo ${TEAM_CHILD_MARKER}` }) } },
+        { seq: 3, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-c1', content: [{ type: 'text', text: TEAM_CHILD_MARKER }] }] } } },
+        { seq: 4, type: 'assistant/message', data: { text: TEAM_CHILD_FINDINGS } },
+        { seq: 5, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      ],
+    },
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PROMPT }] }] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [
+        { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PROMPT }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'delegating the member probe' }] },
+        fabricatedTeamKeywordInjection(expectedText),
+      ] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [
+        { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PROMPT }] },
+        fabricatedTeamKeywordInjection(expectedText),
+        { role: 'assistant', content: [{ type: 'text', text: 'marker echoed' }] },
+      ] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PASTE_PROMPT }] }] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [
+        { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PASTE_PROMPT }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'marker echoed' }] },
+      ] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_CONTROL_PROMPT }] }] } },
+      { role: 'explore', body: { model: routes.explore.model, messages: [{ role: 'user', content: [{ type: 'text', text: TEAM_CHILD_TASK_TEXT }] }] } },
+      { role: 'explore', body: { model: routes.explore.model, messages: [
+        { role: 'user', content: [{ type: 'text', text: TEAM_CHILD_TASK_TEXT }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'marker echoed' }] },
+      ] } },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      omoHooksMarkers.formatHookRegisteredLine(
+        keywordDetectorModule.KEYWORD_DETECTOR_ID, 'agent/pre-step',
+      ),
+      '[omo-team] team surface team-keyword-injection registered',
+      '[omo-team] team surface vendor-team-prompts registered',
+    ].join('\n'),
+  }
 }
 
 /**
@@ -19563,10 +19929,10 @@ export function analyzeTeamTeardownNoOrphans(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // 行 ⑰ 的注册行在场（T9 census 12/24 的可见半之一）。
+    // 行 ⑰ 的注册行在场（T12 census 14/24 的可见半之一）。
     stopContinuationTeamSurfaceRegistered:
       (bootLog ?? '').includes('[omo-team] team surface stop-continuation-team registered')
-      && (bootLog ?? '').includes('— 12/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 14/24 team surfaces registered'),
     teamCreated: teamRunId !== undefined,
     twoMemberSessionsRan:
       analystLog !== undefined && builderLog !== undefined && analystId !== builderId,
@@ -19796,7 +20162,7 @@ export function analyzeStopContinuationTeam(
     pluginLoaded: pluginsLoaded(bootLog),
     stopContinuationTeamSurfaceRegistered:
       (bootLog ?? '').includes('[omo-team] team surface stop-continuation-team registered')
-      && (bootLog ?? '').includes('— 12/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 14/24 team surfaces registered'),
     teamCreated: teamRunId !== undefined,
     twoMemberSessionsRan: analystLog !== undefined && builderLog !== undefined && analystId !== builderId,
     // 成员在命令前真实跑活（前台 bash 撑开的 turn）。
@@ -20110,7 +20476,7 @@ export function fabricatedTeamTeardownNoOrphansInput(routes) {
     ],
     bootLog: [
       FABRICATED_BOOT_LOG,
-      '[omo-team] team surface stop-continuation-team registered — 12/24 team surfaces registered',
+      '[omo-team] team surface stop-continuation-team registered — 14/24 team surfaces registered',
     ].join('\n'),
     settleReached: true,
     actionObservations: [{ reached: true }, { reached: true }],
@@ -20203,7 +20569,7 @@ export function fabricatedStopContinuationTeamInput(routes) {
     ],
     bootLog: [
       FABRICATED_BOOT_LOG,
-      '[omo-team] team surface stop-continuation-team registered — 12/24 team surfaces registered',
+      '[omo-team] team surface stop-continuation-team registered — 14/24 team surfaces registered',
       jobsGuardLine,
       `${GUARD_TEAM_PREFIX} interrupted 2 member session(s) of team ${FABRICATED_T9_TEAM_RUN_ID} rooted at session ${FABRICATED_T9_LEAD_ID} (drain initiated)`,
       `${GUARD_TEAM_PREFIX} drain settled — resident member activation(s) of team ${FABRICATED_T9_TEAM_RUN_ID} released`,
@@ -20626,7 +20992,7 @@ export function analyzeTeamTaskClaim(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    bootCensusTwelveOfTwentyFour: (bootLog ?? '').includes('— 12/24 team surfaces registered'),
+    bootCensusFourteenOfTwentyFour: (bootLog ?? '').includes('— 14/24 team surfaces registered'),
     bootResumeLine: (bootLog ?? '').includes('[omo-team] boot resume'),
     taskQuartetRegisteredPreReboot: (() => {
       const pre = rebootObservation?.preBootLog ?? ''
@@ -20655,7 +21021,7 @@ export function analyzeTeamTaskClaim(
     rebootAdoptedSameLead: rebootObservation?.adopted === true,
     rebootBootCarriesLoadedAndResume: (() => {
       const b = rebootObservation?.rebootBootLog ?? ''
-      return b.includes('[omo-team] loaded') && b.includes('— 12/24 team surfaces registered') && b.includes('[omo-team] boot resume')
+      return b.includes('[omo-team] loaded') && b.includes('— 14/24 team surfaces registered') && b.includes('[omo-team] boot resume')
     })(),
     boardIntactAfterRebootReadBack: postAudit.ok === true
       && postAudit.t1?.status === 'completed'
@@ -20835,7 +21201,9 @@ export function fabricatedTeamCreateAndMessageInput(routes) {
       FABRICATED_BOOT_LOG,
       '[omo-team] team surface team_create registered',
       '[omo-team] team surface team_send_message registered',
-      '[omo-team] loaded: manifest 24 entries (pending=10, ported=12, recorded=2) — 12/24 team surfaces registered',
+      '[omo-team] team surface team-keyword-injection registered',
+      '[omo-team] team surface vendor-team-prompts registered',
+      '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2) — 14/24 team surfaces registered',
     ].join('\n'),
     settleReached: true,
     actionObservations: [{ reached: true, note: 'cold-wake precondition: both members settled AND offline before the send turn' }],
@@ -21043,7 +21411,9 @@ export function fabricatedTeamShutdownHandshakeInput(routes) {
       '[omo-team] team surface team_task_list registered',
       '[omo-team] team surface team_task_update registered',
       '[omo-team] team surface team_task_get registered',
-      '[omo-team] loaded: manifest 24 entries (pending=10, ported=12, recorded=2) — 12/24 team surfaces registered',
+      '[omo-team] team surface team-keyword-injection registered',
+      '[omo-team] team surface vendor-team-prompts registered',
+      '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2) — 14/24 team surfaces registered',
     ].join('\n'),
     settleReached: true,
     actionObservations: [
@@ -22000,7 +22370,7 @@ export function analyzeTeamCreateAndMessage(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // The boot census is 12/24 as of P5-T9 (T7's seven rows + the task-board
+    // The boot census is 14/24 as of P5-T12 (T7's seven rows + the task-board
     // quartet create/list/update/get + the stop-continuation-team query surface
     // flipped at T9; the registration loop prints one line per registered row).
     // The T5/T6 pair stays pinned; the T7 rows are pinned in
@@ -22008,7 +22378,7 @@ export function analyzeTeamCreateAndMessage(
     teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
     teamMessageSurfaceRegisteredAtBoot:
       (bootLog ?? '').includes('[omo-team] team surface team_send_message registered'),
-    bootCensusTwelveOfTwentyFour: (bootLog ?? '').includes('— 12/24 team surfaces registered'),
+    bootCensusFourteenOfTwentyFour: (bootLog ?? '').includes('— 14/24 team surfaces registered'),
     leadCalledTeamCreate: createCall !== undefined,
     teamCreateResultCarriesTeamRunId: createResult !== undefined,
     teamCreateResultNotAnError: createResult !== undefined && createResult.isError !== true,
@@ -22327,7 +22697,8 @@ export function analyzeTeamShutdownHandshake(
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
     // The boot census P5-T7 flipped to 7/24, P5-T8b grew it to 11/24 and
-    // P5-T9 grew it to 12/24 — the shutdown rows plus the task quartet plus
+    // P5-T12 grew it to 14/24 — T9's twelve plus the team-keyword slot and the
+    // prompts-team vendor pair —
     // the T5/T6 pair plus the `stop-continuation-team` query surface printed
     // their registered lines.
     bootSevenSurfaces:
@@ -22336,7 +22707,7 @@ export function analyzeTeamShutdownHandshake(
       && (bootLog ?? '').includes('[omo-team] team surface team_reject_shutdown registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_delete registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_status registered')
-      && (bootLog ?? '').includes('— 12/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 14/24 team surfaces registered'),
     bootTaskQuartetRegistered:
       (bootLog ?? '').includes('[omo-team] team surface team_task_create registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_task_list registered')
@@ -23152,6 +23523,18 @@ const SCENARIOS = [
     roles: ['sisyphus'],
     script: () => keywordTwoStepScript(COMBO_KEYWORD_SUMMARY),
     analyze: analyzeComboKeywordInjected,
+  },
+  {
+    // P5-T12 (manifest rows ⑭/㉔): the team slot's own scenario — verbatim
+    // team.md at the lead with kind `omo-team-keyword`, the member side never
+    // released, idempotence on the pasted body, and a keyword-free control.
+    // See the analyzer's header for the turn map.
+    name: 'team-keyword-mode',
+    prompt: TEAM_KEYWORD_PROMPT,
+    followupPrompts: [TEAM_KEYWORD_PASTE_PROMPT, TEAM_KEYWORD_CONTROL_PROMPT],
+    roles: ['sisyphus', 'explore'],
+    script: teamKeywordModeScript,
+    analyze: analyzeTeamKeywordMode,
   },
   {
     // P4-T7 — the COMMAND CHANNEL pilot (see the command-channel block above
@@ -26073,6 +26456,11 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     if (KEYWORD_SELF_TEST_ATTESTATION.length === 0) {
       problems.push('the self-test banner is EMPTY: no P4-T13 keyword case pushed a label, so the attestation below would claim nothing')
     }
+    // P5-T12's own anti-vacuity guard: the team slot's legs pushed into their
+    // own accumulator, or the clause below would claim a scenario that never ran.
+    if (TEAM_KEYWORD_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('the self-test banner is EMPTY: no P5-T12 team-keyword-mode case pushed a label, so its clause would claim nothing')
+    }
     // P4.5-T8″ — the tool/result SHAPE legs, named in the banner with the counts
     // the LIVE census produced. Computed (and its guards pushed) BEFORE the
     // `problems.length` exit below, so a leg that stops being read turns the
@@ -26105,6 +26493,13 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
         return byScenario
       }, new Map())]
       .map(([scenario, labels]) => `P4-T13 ${scenario}: ${labels.join(', ')}`)
+      .join('; ')
+    const TEAM_KEYWORD_SELF_TEST_BANNER = [...TEAM_KEYWORD_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [scenario, label]) => {
+        byScenario.set(scenario, [...(byScenario.get(scenario) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([scenario, labels]) => `P5-T12 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
     // P4-T7's own banner, built from the SAME defect-case list that ran — so the
     // summary can never name fewer defects than were actually asserted.
@@ -26173,7 +26568,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P5-T10 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 9 on team-create-and-message, 4 on team-shutdown-handshake, each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 9 on team-create-and-message, 4 on team-shutdown-handshake, each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing) FAILs on its own named check; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
