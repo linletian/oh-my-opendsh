@@ -134,6 +134,13 @@ import { registerTeamStopContinuationQuerySurface } from './team/team-stop-conti
 // team-prompts-vendor.ts 头注：跨包零 import，消费侧本地字面量 + 单测交叉钉）。
 import { registerTeamKeywordInjectionFace } from './team/team-keyword-slot.ts'
 import { registerTeamPromptsVendorSurface } from './team/team-prompts-vendor.ts'
+// P5-T13 · 行 ⑮/⑯ 的两个 registrar（team-tool-presence.ts 头注：完整对抗评审环
+// 与 team-mode addendum 的模板正文住在 omo-commands，本包只发**在场探测脸**——
+// 跨包零 import，消费侧本地字面量 + 单测交叉钉，`omoTeamMemberQuery` 同族）。
+import {
+  registerHyperplanUpgradePresenceFace,
+  registerRemoveAiSlopsAddendumPresenceFace,
+} from './team/team-tool-presence.ts'
 
 export const name = 'omo-team'
 
@@ -327,6 +334,17 @@ export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
   // nativeFace 在 omo-hooks 的 keyword-detector，跨包零 import，字面量
   // 交叉等值由单测钉死）。行号按名册行序（manifest.ts 第 14 条）。
   'team-keyword-injection': (ctx) => registerTeamKeywordInjectionFace(ctx),
+  // P5-T13 · ⑮ §3 行 2：hyperplan 完整对抗评审环升级——本行在 omo-team 侧的
+  // 可见半 = /hyperplan 消费的**在场探测脸**（ctx.provide 上线，fiber 收编；
+  // 完整环模板正文与切换判断住在 omo-commands，跨包零 import，服务名交叉等值
+  // 由单测钉死——`omoTeamMemberQuery` 的 R-5 同族）。在场判据从 TEAM_MANIFEST
+  // 派生，不硬编码（team-tool-presence.ts 头注）。行号按名册行序（第 15 条）。
+  'hyperplan-upgrade': (ctx) => registerHyperplanUpgradePresenceFace(ctx),
+  // P5-T13 · ⑯ §3 行 3：remove-ai-slops 的 team-mode addendum 升级——本行在
+  // omo-team 侧的可见半 = 同一枚在场快照的**另一张脸**（一行一处置：消费半
+  // 各走各的服务名，快照同源）；addendum 正文住在 omo-commands。行号按名册
+  // 行序（第 16 条）。
+  'remove-ai-slops-team-addendum': (ctx) => registerRemoveAiSlopsAddendumPresenceFace(ctx),
   // P5-T9 · ⑰ §行 17：stop-continuation 的 team 分支——本行在 omo-team 侧的
   // 可见半 = guard 消费的只读成员查询面（ctx.provide 上线，fiber 收编）；
   // 取消动作的 nativeFace 在 omo-hooks 的 guard（跨包纪律：两侧零 import，
@@ -413,17 +431,19 @@ export function runTeamRegistrations(
  * unit-tested functions, so this stays assembly-only and the markers cannot
  * drift from their tests.
  *
- * A correct P5-T12 boot logs FOURTEEN `registered` lines from this plugin — the
+ * A correct P5-T13 boot logs SIXTEEN `registered` lines from this plugin — the
  * loop's landed rows in roster order (`team_create`, `team_delete`, the
  * shutdown trio, `team_send_message`, the task-board quartet added at T8b,
- * `team_status`, `team-keyword-injection` and the `stop-continuation-team`
+ * `team_status`, `team-keyword-injection`, the two command-upgrade presence
+ * faces added at T13 (`hyperplan-upgrade`, `remove-ai-slops-team-addendum`),
+ * the `stop-continuation-team`
  * query surface added at T9, `vendor-team-prompts` last) — then the summary
- * line carrying the honest `14/24`, then AT
+ * line carrying the honest `16/24`, then AT
  * MOST the resume lines of the persistence boot (below): no FAILED line, no
  * validation line. (At P5-T3 it logged exactly ONE line, the summary with the
  * loop's honest zero, because the registry was empty; T5/T6 grew it to two;
  * T7 grew it to seven; T8b grew it to eleven; T9 grew it to twelve; T12 grew
- * it to fourteen; the flips
+ * it to fourteen; T13 grew it to sixteen; the flips
  * are the markers the probe re-derives without an edit.)
  *
  * PERSISTENCE BOOT (T8b换装): after the registration loop, the store rebuilds

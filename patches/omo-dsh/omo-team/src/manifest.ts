@@ -467,6 +467,13 @@ const MANIFEST_ROWS = [
   // ⑮ §3 行 2。降级形态已在位（P4 先例，hyperplan.ts DEGRADED 段）；完整
   // 对抗评审环在 team 工具在场时启用——**切换判据 = 运行时探测，不硬编码**
   // （T13 原文）。降级路径的反向场景不许因升级死掉（T13 判定）。
+  // **P5-T13 翻 'ported'（refined 规则，任务书授权翻行）**：消费半 = omo-commands
+  // hyperplan 模板双形态（完整环正文 + 降级正文，调用时刻按在场脸切换，惰性
+  // ctx.get 不缓存）；提供半 = 本包 team/team-tool-presence.ts 的在场探测脸
+  // （`omoTeamHyperplanTeamFace`，跨包零 import，服务名交叉等值由单测钉死）。
+  // 在场判据从 TEAM_MANIFEST 派生（①–⑪ 全 ported 才在场），不硬编码。
+  // 降级反向覆盖 = 单测探测缺席腿（沙箱 team 恒在场，e2e 判不了缺席——选一
+  // 说明见 T13 交卷 NOTES）。
   {
     id: 'hyperplan-upgrade',
     upstreamSources: [
@@ -476,19 +483,23 @@ const MANIFEST_ROWS = [
     nativeFace: 'omo-commands hyperplan 模板 team 段升级（team 工具在场探测切换，不硬编码）',
     disposition: 'ported',
     e2eScenario: 'team-create-and-message',
-    status: 'pending',
+    status: 'ported',
     summary:
       '/hyperplan 完整对抗评审环升级：降级文案 → 完整环（team 在场探测）；主场景取 team-create-and-message（team 在场前提），降级反向场景由 T13 自钉',
   },
   // ⑯ §3 行 3。上游 addendum 段 = REMOVE_AI_SLOPS_TEAM_MODE_ADDENDUM
   // （remove-ai-slops.ts:116，实测行号）；Phase 4 不移植段 D-03 的接续行。
+  // **P5-T13 翻 'ported'（refined 规则）**：addendum 按 DSH 工具面移植
+  // （inline_spec / quick+deep / 只读席 team 外委派 / 五值任务态含 N1 注记），
+  // 在场探测走 `omoTeamSlopAddendumTeamFace`（与 ⑮ 同一枚快照的另一张脸，
+  // 一行一处置）；缺席 = 保持 Phase 1-4 主段流程（降级路径不死）。
   {
     id: 'remove-ai-slops-team-addendum',
     upstreamSources: ['packages/omo-opencode/src/features/builtin-commands/templates/remove-ai-slops.ts'],
     nativeFace: 'omo-commands remove-ai-slops 模板 team-mode addendum 升级（同 team 在场探测）',
     disposition: 'ported',
     e2eScenario: 'team-create-and-message',
-    status: 'pending',
+    status: 'ported',
     summary:
       'remove-ai-slops 的 team-mode addendum 段升级（Phase 4 D-03 不移植段的接续）：slop-squad 编排语义按 DSH 工具面重写，上游载体引用段（~/.omo/tmux）适配由工具层文案承担',
   },

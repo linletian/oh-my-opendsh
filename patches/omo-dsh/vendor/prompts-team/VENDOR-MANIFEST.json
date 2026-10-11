@@ -31,11 +31,11 @@
     "modified": 0,
     "projectNew": 3,
     "contentFiles": 2,
-    "deviations": 4,
+    "deviations": 5,
     "deviationsByClass": {
       "modification": 0,
       "addition": 0,
-      "note": 4
+      "note": 5
     }
   },
   "files": [
@@ -115,6 +115,16 @@
       ],
       "statement": "CONSISTENCY VERIFIED — the OMO-family team_* calls the vendored shared-skills teach match this repo's vendored+ported tool face, so NO rewrite is needed on those skill texts. Measured: refactor/SKILL.md teaches `team_send_message(teamRunId=<id>, to=\"lead\", summary=…, body=…)` (L672, L703, L729), `team_send_message(to=\"*\")` broadcast, `team_task_create(teamRunId, subject, description, blockedBy)` (L709) and `team_task_update(status=completed|pending)` (L672, L678, L729); debugging/02-investigate.md teaches `team_send_message` / `team_task_create` by name (L58, L79). This repo's surface: team_send_message accepts teamRunId(min 1)/to(min 1)/body(string)/kind/correlationId/summary?/references? with to='*' = lead broadcast ('broadcast requires lead role' verbatim refusal, omo-team/src/tools/team-message.ts:100,338-340); team_task_create takes teamRunId/subject/description/blockedBy? (team-task.ts:167-190); team_task_update takes the five-value status incl. completed and pending (team-task.ts:76,265-277). NO vendored shared-skill teaches `team_task_update(status=failed)` (the only `status: \"failed\"` hit under vendor/shared-skills is 08-qa.md:54, about READING a response sub-field, not a tool parameter). The remaining texts-vs-surface contradictions stay the two already-registered notes above (N1 terminal-status, N9 delegation-name drift); neither occurs in the shared-skills team_* call sites.",
       "resolution": "verified consistent; no rewrite"
+    },
+    {
+      "kind": "note",
+      "id": "T13-opencode-carrier-fallback-sentence",
+      "authority": "P5-T13 仲裁增补（T12 评审登记 2026-10-12：deviations[] 登记优先于 NOTICE-only，opencode 评审登记）",
+      "files": [
+        "prompts/mode/team.md"
+      ],
+      "statement": "ADAPTATION REGISTERED at the consuming side — the team.md:2 fallback sentence 'If the team_* tools are absent, team_mode is disabled — tell the user to set team_mode.enabled=true and restart opencode' is an opencode-carrier instruction: DSH has NO team_mode.enabled configuration key, no such config file and no restart ritual behind it, so following the sentence literally sends the user at a dead switch (worse than silence: it implies the fix exists). The vendored body stays VERBATIM (byte-faithful, sha-pinned above). The adaptation lives in the consuming texts: (a) the keyword-injected team.md arrives verbatim in sessions where the upgraded commands instruct team-mode, and BOTH upgraded bodies answer the sentence in place — the hyperplan full-guidance item 7 and the remove-ai-slops addendum MUST-NOT last line each state 'there is no configuration switch in this deployment; the live team_* tool surface IS the switch' — neither body names the flag; (b) the degraded hyperplan guidance already refuses every config path, and the degraded remove-ai-slops flow needs no switch at all. The sentence's SEMANTICS survive adapted (absent tools = the degraded flow runs, said out loud); only the dead instruction target is replaced.",
+      "resolution": "registered in deviations[] + consumer-side adaptation notes; body verbatim"
     }
   ]
 }

@@ -330,7 +330,8 @@ describe('P4-T2 COMMAND_MANIFEST — spot checks (hard-coded against phase4-comm
     // 上游 commands.ts 该条目无 argumentHint → null。
     expect(entry?.argumentHint).toBeNull()
     expect(entry?.agentBinding).toBeNull()
-    // D-03：team-mode addendum 段不移植（Phase 5）——摘要须保留这条边界。
+    // D-03 的终态：team-mode addendum 段 P4 不移植、P5-T13 在场时拼接——
+    // 摘要须始终点名这段 addendum（边界事实换形态，不许消失）。
     expect(entry?.effectSummary).toContain('team-mode addendum')
     expect(entry?.e2eScenario).toBe('remove-ai-slops-driven')
   })

@@ -11,7 +11,8 @@
 // 逐字锚点的来源（v4.19.4, commit b072d279110bdda2c6ac2525d0d24dc54d16148a）：
 //   handoff:            builtin-commands/templates/handoff.ts
 //   remove-ai-slops:    builtin-commands/templates/remove-ai-slops.ts
-//   命令条目:            builtin-commands/commands.ts:85-92（remove-ai-slops）
+//   命令条目:            builtin-commands/commands.ts:83-92（remove-ai-slops；T13
+//                                 评审 NIT 修复轮改准，原引 85-92 行首偏 2 @b072d279）
 //                                 :100-107（handoff）
 //   渲染语义:            hooks/auto-slash-command/executor.ts:18-24, 92-108
 //
@@ -299,7 +300,7 @@ describe('P4-T6 the /remove-ai-slops template carries the critical self-review v
   }
 
   it('does NOT port the team-mode addendum (D-03: its lines 116-216 stay in Phase 5)', () => {
-    // The addendum is a separate upstream export that `commands.ts:85-92` never
+    // The addendum is a separate upstream export that `commands.ts:83-92` never
     // concatenates; not porting it here means neither exporting nor referencing it.
     expect(REMOVE_AI_SLOPS_TEMPLATE).not.toContain('slop-squad')
     expect(REMOVE_AI_SLOPS_TEMPLATE).not.toContain('team_create')
@@ -317,7 +318,7 @@ describe('P4-T6 the /remove-ai-slops template carries the critical self-review v
     expect(REMOVE_AI_SLOPS_CARRIER_NOTE).toContain('NOT ported')
   })
 
-  it('wraps the template exactly as upstream commands.ts:85-92 does (no session-context)', () => {
+  it('wraps the template exactly as upstream commands.ts:83-92 does (no session-context)', () => {
     // 该条目只有一个 `<user-request>` 段 —— 因此没有 $SESSION_ID / $TIMESTAMP，
     // 也就没有 MissingCommandSessionIDError 可触发（下方 handler 侧再钉一次）。
     expect(REMOVE_AI_SLOPS_COMMAND_TEMPLATE).toContain('</command-instruction>\n\n<user-request>\n$ARGUMENTS\n</user-request>')
@@ -325,7 +326,7 @@ describe('P4-T6 the /remove-ai-slops template carries the critical self-review v
     expect(REMOVE_AI_SLOPS_COMMAND_TEMPLATE).not.toContain('$TIMESTAMP')
   })
 
-  it('carries upstream\'s description verbatim and declares no argumentHint (commands.ts:85-92)', () => {
+  it('carries upstream\'s description verbatim and declares no argumentHint (commands.ts:83-92)', () => {
     expect(REMOVE_AI_SLOPS_DESCRIPTION).toBe('(builtin) Remove AI-generated code smells from branch changes and critically review the results')
   })
 })
@@ -531,9 +532,15 @@ describe('P4-T6 the semantic-port table registers both commands and both narrowi
     const handoffRow = NOTICES.split('\n').find((line) => line.startsWith('| handoff '))!
     expect(handoffRow).toContain('按能力改写为散文指引')
     expect(handoffRow).toContain('PHASE 4 第 1 步补 DSH 会话面')
-    // And the row that was right about its own narrowing stays honest too.
+    // The row that was right about its own narrowing stays honest about its ARC:
+    // T13 后该行必须两段式——「P4 不移植 → P5-T13 接盘移植」同现。只钉旧的
+    // 「**不移植**」会把 T13 已落地的在场拼接说成假话；只写接盘又会抹掉 P4
+    // 判断这个降级路径仍成立的事实来源。两段同现 + 旧的「整段不移植」不得残留。
     const slopsRow = NOTICES.split('\n').find((line) => line.startsWith('| remove-ai-slops '))!
-    expect(slopsRow).toContain('**不移植**')
+    expect(slopsRow).toContain('P4 不移植')
+    expect(slopsRow).toContain('P5-T13 接盘移植')
+    expect(slopsRow).toContain('在场拼接形态')
+    expect(slopsRow).not.toContain('整段不移植')
   })
 
   it('does not name a ported command among the pending rows (the id list tracks the count)', () => {

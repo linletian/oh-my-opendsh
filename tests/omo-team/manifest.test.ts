@@ -219,14 +219,16 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
     // per Q-8, + the boot-time integrity/contract face here + the
     // `team-keyword-mode` e2e scenario) and `vendor-team-prompts` (the two
     // verbatim files under vendor/prompts-team/ + the integrity gate registrar
-    // + the same e2e scenario). A
+    // + the same e2e scenario); **P5-T13 flips the last two command-side rows
+    // — `hyperplan-upgrade` + `remove-ai-slops-team-addendum`** (the two
+    // presence-face registrars over the eleven tool rows, consumed lazily per
+    // invocation by the upgraded omo-commands handlers; the degraded branch
+    // stays green because the faces report absence, never guess). A
     // row silently flipping to 'ported' without a delivery surface would claim
     // a port that does not exist (T8 owns the next flip). The two recorded
     // rows are the honest terminal for recorded-difference rows — their
     // deliverable IS the recorded difference (§1 行 11/12).
     expect(teamsByStatus(TEAM_MANIFEST, 'pending').map((row) => row.id)).toEqual([
-      'hyperplan-upgrade',
-      'remove-ai-slops-team-addendum',
       'vendor-team-core-types',
       'vendor-team-core-member-parser',
       'vendor-team-core-team-registry',
@@ -247,6 +249,8 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
       'team_task_get',
       'team_status',
       'team-keyword-injection',
+      'hyperplan-upgrade',
+      'remove-ai-slops-team-addendum',
       'stop-continuation-team',
       'vendor-team-prompts',
     ])
@@ -721,10 +725,11 @@ describe('P5-T2 derived helpers', async () => {
     // P5-T6 flipped team_send_message: 20/2/2; P5-T7 five more: 15/7/2;
     // P5-T8b flipped the task quartet: 11/11/2; P5-T9 flipped
     // stop-continuation-team: 10/12/2; T12 adds team-keyword-injection +
-    // vendor-team-prompts to the ported side: 8/14/2.
+    // vendor-team-prompts to the ported side: 8/14/2; **T13 flips
+    // hyperplan-upgrade + remove-ai-slops-team-addendum: 6/16/2.**
     const counts = countsByStatus(TEAM_MANIFEST)
-    expect(counts.get('pending')).toBe(8)
-    expect(counts.get('ported')).toBe(14)
+    expect(counts.get('pending')).toBe(6)
+    expect(counts.get('ported')).toBe(16)
     expect(counts.get('recorded')).toBe(2)
     // Every vocabulary key exists even at 0, so two boots stay line-comparable.
     expect([...counts.keys()]).toEqual([...TEAM_MANIFEST_STATUSES])
@@ -771,11 +776,12 @@ describe('P5-T2 derived helpers', async () => {
   it('formatLoadedSummaryLine renders the exact P5-T2 census line from the real roster', async () => {
     // 手打的整行——与上面 countsByStatus 的手打数字（22/0/2）互为对账；
     // T3 的 boot marker 若并入注册计数，格式扩展归 probe 侧（manifest.ts 注）。
-    // P5-T12 census: pending=8, ported=14 (T7's seven + the task quartet +
+    // P5-T13 census: pending=6, ported=16 (T7's seven + the task quartet +
     // the stop-continuation-team query surface flipped at T9 + the team-keyword
-    // slot and the prompts-team vendor pair flipped at T12), recorded=2。
+    // slot and the prompts-team vendor pair flipped at T12 + the two presence
+    // faces flipped at T13), recorded=2。
     expect(formatLoadedSummaryLine(TEAM_MANIFEST)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2)',
+      '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2)',
     )
   })
 

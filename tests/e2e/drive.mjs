@@ -13527,8 +13527,9 @@ async function runAnalysisSelfTest(routes) {
   // ── P4-T15 hyperplan-degraded-noted self-test: the good input must PASS, then
   // every named defect must FAIL on its own named check.
   //
-  // Defect counts, so a reader does not have to count: 17 for
-  // hyperplan-degraded-noted, 14 for ulw-plan-loads-prometheus-skill, 31 in total.
+  // Defect counts, so a reader does not have to count: 18 for
+  // hyperplan-degraded-noted (T13 grew it from 17 by adding the five-value
+  // status-vocabulary leg), 14 for ulw-plan-loads-prometheus-skill, 32 in total.
   // The empty-list guard below is the real check on these numbers — if a case is
   // deleted, the banner is generated from the live list, so the SELF-TEST OK line
   // would silently shrink rather than fail. That is why the guard exists per
@@ -17249,7 +17250,7 @@ const COMMAND_CHANNEL_SPECS = {
     commandId: 'remove-ai-slops',
     bootRegistrationLine: '[omo-commands] command remove-ai-slops registered',
     // The NO-ARGUMENT variant: this row carries no argumentHint upstream
-    // (commands.ts:85-92), so its frame omits the `**User Arguments**` line
+    // (commands.ts:83-92), so its frame omits the `**User Arguments**` line
     // entirely (upstream:117 `if (args)`).
     line: '/remove-ai-slops',
     args: '',
@@ -17266,6 +17267,12 @@ const COMMAND_CHANNEL_SPECS = {
       '[oh-my-opendsh] Remove AI slops carrier note',
       '# Remove AI Slops Command',
       '## Output Format',
+      // P5-T13: the team-mode addendum rides this frame LIVE (the sandbox mounts
+      // omo-team since T3, the presence face says present, the handler attaches
+      // the addendum per invocation). These two landmarks are the addendum's own
+      // headings — a frame that lost the addendum fails here, not silently.
+      '# Team Mode Protocol (active when team_* tools are present)',
+      '## MUST NOT (team mode)',
       '</command-instruction>',
       '<user-request>',
       '</user-request>',
@@ -17275,7 +17282,9 @@ const COMMAND_CHANNEL_SPECS = {
     sessionContextExpected: false,
     outputAnchors: SLOPS_OUTPUT_ANCHORS,
     summaryText: SLOPS_SUMMARY_TEXT,
-    doneTextPattern: /^Remove-AI-slops instruction queued \((\d+) chars\); it takes effect in the next turn\.$/,
+    // T13 polarity: the addendum-attached done text (the degraded form's pattern —
+    // no addendum clause — lives in the unit suite's absent-probe leg).
+    doneTextPattern: /^Remove-AI-slops instruction queued \((\d+) chars, team-mode addendum attached\); it takes effect in the next turn\.$/,
   },
 }
 
@@ -17515,7 +17524,7 @@ function commandBody(text) {
  *
  * The '' fallback is deliberate and is NOT a silent pass: every caller turns a ''
  * into a named check failing on content, so "the reply never arrived" reads as
- * `modelDeclaredDegradedModeOutLoud: false` rather than a crash or a vacuous true.
+ * `modelDeclaredFullRingOutLoud: false` rather than a crash or a vacuous true.
  */
 function findAssistantText(events, marker) {
   const hit = events.find(
@@ -17533,27 +17542,46 @@ const ULW_PLAN_REQUEST = '给我们的报表系统做个改造方案'
  *  really is this skill" check cannot be satisfied by a description-only match. */
 const ULW_PLAN_BODY_SENTINEL = '## INTENT ROUTING - pick ONE intent reference'
 
-// ── P4-T15: hyperplan-degraded-noted — the DEGRADED GUIDANCE really reaches the model
+// ── P4-T15 / P5-T13: hyperplan-degraded-noted — the ring instruction really reaches
+// the model, IN THE FORM THE RUNTIME CHOSE.
+//
+// P5-T13 升级说明（场景名保留、断言换形态——任务书判定）：沙箱自 T3 起 cordis.yml
+// 第四行恒挂 omo-team，`omoTeamHyperplanTeamFace` 在场脸恒 publish，所以本场景
+// 真实跑出的 frame 是**完整环形态**（HYPERPLAN_COMMAND_TEMPLATE_FULL）。断言随之
+// 升级为完整形态断言；`degraded` 留在场景名里是覆盖基线/manifest 行的引用锚
+// （翻名 = 动基线，超出 T13 授权）。**降级反向覆盖 = 单测探测缺席腿**
+// （tests/omo-commands/hyperplan-team-upgrade.test.ts 的三态归一 + 中途挂载腿；
+// 选一说明记在 omo-team manifest 行 ⑮ 注释与交卷 NOTES）——e2e 沙箱不造 noteam
+// 宿主，降级路径的 e2e 证据由 probe 的 noteam face 承担（concerto-mode-probe.sh）。
+//
 // ONE session, TWO turns, ONE command. The transport is the P4-T7 command channel
 // (admission → `command/run` → `command/done` → the injected frame as a follow-up
-// user message), and this scenario adds the claims T14's rewrite exists for:
+// user message), and this scenario adds the claims T14's rewrite and T13's upgrade
+// exist for:
 //
 //   1. REGISTRATION — `/hyperplan` is a REAL command here, so the lifecycle pair
 //      exists at all. That is the same fact the `ulw-plan` scenario below pins from
 //      the OTHER side (no command → no lifecycle pair), and the pair of scenarios is
 //      what makes "a gesture is not a command" a checked contrast rather than a
 //      claim about one deployment's registry.
-//   2. THE DEGRADED GUIDANCE IS WHAT THE MODEL RECEIVES — asserted against the
-//      SHIPPED constants (`HYPERPLAN_DEGRADED_GUIDANCE`, `HYPERPLAN_ROSTER_CONTRACT`),
-//      imported below, never restated. A restated copy would let the e2e pass on a
-//      template that no longer says any of it.
-//   3. ZERO EXECUTABLE DEAD LINKS — T14's guard, spot-checked at the e2e layer: the
-//      model-facing body carries no filesystem path of any shape, and every mention of
-//      an absent team tool sits in a DENYING sentence. Reuse of the T14 rule, not a
-//      weaker second opinion: `deadLinkFree()` below is the same sentence-splitting
-//      predicate, so a T14 fix and this e2e cannot drift apart silently.
-//   4. THE DEGRADED SUFFIX IS IN THE FRAME'S DESCRIPTION LINE — the MAJOR-1
-//      commitment, checked where the model actually reads it.
+//   2. THE FULL-RING GUIDANCE IS WHAT THE MODEL RECEIVES — asserted against the
+//      SHIPPED constants (`HYPERPLAN_TEAM_MODE_GUIDANCE`,
+//      `HYPERPLAN_TEAM_MODE_ROSTER_CONTRACT`), imported below, never restated. A
+//      restated copy would let the e2e pass on a template that no longer says any
+//      of it. Since the T13 fix round (review A MAJOR-1) this includes the
+//      carrier-spelling split sentence (`HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_
+//      SPLIT`) — the defusal that keeps SKILL.md:38's `task_send` precondition
+//      from STOPping the ring — pinned by its own named check.
+//   3. ZERO EXECUTABLE DEAD LINKS — T14's guard, POLARITY-FLIPPED at T13: the
+//      team_* imperatives are now LEGAL (the tools are live), but the upstream
+//      config carrier (`~/.omo/omo.jsonc`, `team_mode.enabled`) and the four dead
+//      upstream categories (unspecified-low / unspecified-high / ultrabrain /
+//      artistry) stay forbidden in the model-facing body — in DSH they resolve to
+//      nothing in either form. `deadLinkFree()` below is the e2e's independent
+//      witness of that rule.
+//   4. THE FULL-RING SUFFIX IS IN THE FRAME'S DESCRIPTION LINE — the frame states
+//      the form that actually ran (`HYPERPLAN_FRAME_DESCRIPTION_FULL`), upstream's
+//      sentence verbatim ahead of it.
 //   5. 对照 — the same command with NO argument. Upstream gives hyperplan an
 //      `argumentHint` (`[planning-request]`), so the argument-bearing turn's frame
 //      MUST carry a `**User Arguments**` line and the bare turn's frame MUST NOT.
@@ -17579,50 +17607,58 @@ const HYPERPLAN_MEASURED_ARGS = ` ${HYPERPLAN_REQUEST}`
 // submits the line verbatim, and a bare `/hyperplan` is a legal admission.
 const HYPERPLAN_BARE_COMMAND_LINE = '/hyperplan'
 const HYPERPLAN_BOOT_REGISTRATION_LINE = '[omo-commands] command hyperplan registered'
-// The model's reply to the degraded instruction. It must SAY the mode out loud,
-// which is the one thing the guidance asks the model to do unconditionally
-// (item 6: "Say plainly, in your reply, that this ran in DEGRADED mode").
-const HYPERPLAN_DEGRADED_SUMMARY =
-  'MOCK-HYPERPLAN-DEGRADED-8e51c3: DEGRADED mode — no team-mode surface, so the adversarial roles ran as roster delegations.'
+// The model's reply to the ring instruction. It must SAY the form out loud, which
+// is the one thing the guidance asks the model to do unconditionally (full-form
+// item 8: "Say plainly in your reply which form ran"). The sandbox mounts omo-team,
+// so the honest reply declares the FULL ring (T13 polarity flip; the P4 mock said
+// DEGRADED because the P4 template was the degraded one).
+const HYPERPLAN_RING_SUMMARY =
+  'MOCK-HYPERPLAN-FULL-8e51c3: FULL ring — the adversarial roles ran as live team members (deep + quick x3) and the lead synthesized.'
 const HYPERPLAN_BARE_SUMMARY =
-  'MOCK-HYPERPLAN-BARE-3d70a9: DEGRADED mode — no team-mode surface, so the adversarial roles ran as roster delegations.'
+  'MOCK-HYPERPLAN-BARE-3d70a9: FULL ring — the adversarial roles ran as live team members (deep + quick x3) and the lead synthesized.'
 
 /**
- * T14's dead-link rule, in its e2e form. The unit suite keeps the identical rule as
- * a `describe`-LOCAL function (tests/omo-commands/hyperplan.test.ts) — it is NOT
- * exported, and this copy is not derived from it at runtime. That is the point: the
- * e2e layer is an independent witness, so the two can disagree and the disagreement
- * is visible. If they ever need to be unified, do it by moving the unit's rule into a
- * shared module — NOT by importing it, which would leave one verdict behind both.
+ * T14's dead-link rule, T13 POLARITY. The P4 copy forbade the team_* tool names in
+ * non-denying sentences because the tools did not exist; since T13 the tools are
+ * live (the presence face says so), so the imperatives are legal and the FORBIDDEN
+ * set is what stayed dead in BOTH forms: the upstream config carrier and the four
+ * dead upstream categories. The unit suite keeps its own copy of the rule
+ * (tests/omo-commands/hyperplan.test.ts + hyperplan-team-upgrade.test.ts) — this
+ * copy is NOT derived from it at runtime. That is the point: the e2e layer is an
+ * independent witness, so the two can disagree and the disagreement is visible.
  *
  * Returns every violation found.
  */
 function deadLinkFree(body) {
   const found = []
-  for (const dead of ['team_create', 'task_send', 'team_delete']) {
-    for (const sentence of body.split(/(?<=[.;])|\n/).filter((part) => part.includes(dead))) {
-      if (!/\b(no|not|never|without|skip|absent|does not|do not|don'?t|cannot)\b/i.test(sentence)) {
-        found.push(`${dead} sits in a non-denying sentence: ${JSON.stringify(sentence.trim())}`)
-      }
-    }
-  }
   const pathish = /omo\.jsonc|oh-my-opencode|~[/.]/.exec(body)
   if (pathish !== null) found.push(`a filesystem path reached the model: ${pathish[0]}`)
-  for (const category of ['unspecified-low', 'unspecified-high', 'ultrabrain', 'artistry', 'deep']) {
+  if (body.includes('team_mode.enabled')) found.push('the upstream config flag reached the model')
+  // T13 fix round (review A MAJOR-1): the senpi restart flag is the dead carrier
+  // of SKILL.md:38's HARD PRECONDITIONS — the guidance may DECLARE it dead, but
+  // the flag itself must never reach the model, or the STOP-and-recite instruction
+  // is back in the execution path.
+  if (body.includes('--no-omo-task')) found.push('the upstream senpi restart flag reached the model')
+  for (const category of ['unspecified-low', 'unspecified-high', 'ultrabrain', 'artistry']) {
     if (body.includes(category)) found.push(`upstream category ${category} reached the model`)
   }
   return found
 }
 
 /**
- * MINOR-7: the e2e copy of T14's rule is DISCRIMINATING, checked on this side too.
- * T14's unit suite already falsifies its own copy against a cross-sentence
- * laundering ("…no team_create exists. Then call team_create…"); a second,
- * independent implementation of the same rule can easily be the laxer one, and the
- * e2e is where a real regression would land. So the same attack is run here — if
- * this copy would wave it through, the e2e layer is the weaker witness and the
- * check below says so.
+ * MINOR-7: the e2e copy of the rule is DISCRIMINATING, checked on this side too —
+ * re-aimed at T13's polarity. A laundering sentence that NEGATES the dead carrier
+ * first and then NAMES it must still be caught: the dead set is caught STRUCTURALLY
+ * (any path, any dead category, any flag mention), so no amount of denying launders
+ * it through. If this copy ever waves such a sentence through, the check below says
+ * so instead of the e2e silently becoming the weaker witness.
  */
+function e2eRuleCatchesDeadCarrierLaundering() {
+  return deadLinkFree(
+    'There is no ~/.omo/omo.jsonc here. Then edit ~/.omo/omo.jsonc and set team_mode.enabled=true. Restart senpi without --no-omo-task, then retry.',
+  ).length >= 3
+}
+
 /**
  * `commandBody` REJECTS a frame whose closing tag precedes its opening tag.
  *
@@ -17630,7 +17666,7 @@ function deadLinkFree(body) {
  * removing it changed nothing, because no case fed `commandBody` an inverted frame,
  * and a fixture that did would THROW through the analyzer and abort the whole
  * self-test rather than report one failed check. Exercised directly instead — the
- * same shape as `e2eRuleCatchesCrossSentenceLaundering` — a regression here is a
+ * same shape as `e2eRuleCatchesDeadCarrierLaundering` — a regression here is a
  * clean named failure instead of a crash.
  */
 function commandBodyRejectsInvertedFrameTags() {
@@ -17648,17 +17684,11 @@ function commandBodyRejectsInvertedFrameTags() {
   }
 }
 
-function e2eRuleCatchesCrossSentenceLaundering() {
-  return deadLinkFree(
-    'There is no team_create here. Then call team_create with the roster members.',
-  ).some((finding) => finding.includes('non-denying sentence'))
-}
-
 /** hyperplan-degraded-noted script: the command turn, then the bare 对照 turn. */
 function hyperplanDegradedScript() {
   return {
     sisyphus: [
-      { type: 'text', text: HYPERPLAN_DEGRADED_SUMMARY },
+      { type: 'text', text: HYPERPLAN_RING_SUMMARY },
       { type: 'text', text: HYPERPLAN_BARE_SUMMARY },
     ],
   }
@@ -17713,7 +17743,7 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
 
   // The model must have SURRENDERED the request verbatim: the guidance's own item 6
   // is a statement about what the reply must contain, so the reply is the evidence.
-  const firstSummary = findAssistantText(events, HYPERPLAN_DEGRADED_SUMMARY)
+  const firstSummary = findAssistantText(events, HYPERPLAN_RING_SUMMARY)
   const secondSummary = findAssistantText(events, HYPERPLAN_BARE_SUMMARY)
   const turnEnds = events.filter((event) => event.type === 'turn/end')
   // Which model request each turn's frame rode in, located by the request's OWN
@@ -17771,27 +17801,42 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
     // pair of admissions differs, so reading the wrong one is detectable.
     firstLineCarriedTheRequestAsArgs: hyperplanRuns[0]?.data?.args === HYPERPLAN_MEASURED_ARGS,
     secondLineCarriedNoArgs: hyperplanRuns[1]?.data?.args === '',
-    // ── the DEGRADED claims ──────────────────────────────────────────────────
-    degradedGuidanceReachedTheModel: first !== undefined
-      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE),
-    rosterContractReachedTheModel: first !== undefined
-      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_ROSTER_CONTRACT),
-    // The roster mapping T14 promised, read off the SHIPPED contract's own seats.
-    rosterSeatsNamedInTheModelText: ['plan-consultant', 'plan-reviewer', 'prometheus']
+    // ── the FULL-RING claims (T13: the sandbox mounts omo-team, so the honest
+    // frame is the full one; the degraded reverse lives in the unit suite) ────
+    fullRingGuidanceReachedTheModel: first !== undefined
+      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE),
+    // T13 fix round (review A MAJOR-1): the carrier-spelling split sentence — the
+    // defusal that stops SKILL.md:38's HARD PRECONDITIONS from sending the model
+    // into a STOP-and-recite on the never-present `task_send` — must be IN the
+    // frame the model actually receives, asserted against the shipped constant.
+    carrierSpellingSplitReachedTheModel: first !== undefined
+      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_SPLIT)
+      && first.text.includes('never STOP on that check'),
+    fullRosterContractReachedTheModel: first !== undefined
+      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_ROSTER_CONTRACT),
+    // The roster mapping T13 ships, read off the SHIPPED contract's own seats:
+    // worker seats INSIDE the ring, hostile review seats OUTSIDE it.
+    rosterSeatsNamedInTheModelText: ['hephaestus', 'sisyphus-junior', 'plan-reviewer', 'plan-consultant', 'prometheus']
       .every((seat) => first?.text.includes(seat) ?? false),
+    // N1 (T13 arbitration): the five-value status vocabulary rides the model-facing
+    // body, and `failed` sits ONLY inside its defusing sentence.
+    fiveValueStatusVocabularyReachedTheModel: ['pending', 'claimed', 'in_progress', 'completed', 'deleted']
+      .every((status) => first?.text.includes('`' + status + '`') ?? false)
+      && (first?.text.includes('there is NO `failed` state') ?? false),
     // The T14 fix, checked where it matters: the model may not be handed a path it
     // could act on. The carrier note may quote the upstream paths (it must — the
     // two-source inconsistency is required), so the scan is on the BODY only.
     modelFacingBodyIsDeadLinkFree: first !== undefined && deadLinkFree(firstBody).length === 0,
     // …and the copy of the rule doing that work is itself discriminating (MINOR-7).
-    deadLinkRuleIsDiscriminating: e2eRuleCatchesCrossSentenceLaundering(),
+    deadLinkRuleIsDiscriminating: e2eRuleCatchesDeadCarrierLaundering(),
     commandBodyRejectsInvertedFrameTags: commandBodyRejectsInvertedFrameTags(),
-    degradedModeAnnouncedInTheFrame: first !== undefined
-      && first.text.includes('DEGRADED MODE — this deployment has no team-mode surface'),
-    // MAJOR-1: the degraded suffix rides the frame's Description line, which is the
-    // text the model reads about the command it is executing.
-    degradedSuffixOnTheFrameDescriptionLine: first !== undefined
-      && first.text.includes(`**Description**: ${omoCommandsHyperplanCommand.HYPERPLAN_DESCRIPTION}`),
+    fullRingAnnouncedInTheFrame: first !== undefined
+      && first.text.includes('TEAM-MODE RING ACTIVE — the full adversarial loop is live in this session'),
+    // T13: the FORM SUFFIX rides the frame's Description line, which is the text the
+    // model reads about the command it is executing — and it states the form that
+    // actually ran (full), not a stale degraded promise.
+    fullRingSuffixOnTheFrameDescriptionLine: first !== undefined
+      && first.text.includes(`**Description**: ${omoCommandsHyperplanCommand.HYPERPLAN_FRAME_DESCRIPTION_FULL}`),
     upstreamSentenceKeptVerbatimAheadOfTheSuffix: first !== undefined
       && first.text.includes(`**Description**: ${omoCommandsHyperplanCommand.UPSTREAM_HYPERPLAN_DESCRIPTION} `),
     // The skill is loaded BY NAME with the DSH call form — the rewritten link, and
@@ -17811,13 +17856,13 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
       && !second.text.includes('**User Arguments**'),
     firstFrameCarriesUserArgumentsLine: first !== undefined
       && first.text.includes(`**User Arguments**: ${HYPERPLAN_MEASURED_ARGS}`),
-    // The bare turn still gets the FULL degraded guidance — degradation is a
-    // property of the command, not of whether the user supplied an argument.
-    bareTurnAlsoCarriesTheDegradedGuidance: second !== undefined
-      && second.text.includes(omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE),
+    // The bare turn still gets the FULL ring guidance — the form is a property of
+    // the deployment, not of whether the user supplied an argument.
+    bareTurnAlsoCarriesTheFullRingGuidance: second !== undefined
+      && second.text.includes(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE),
     // ── the model obeyed ────────────────────────────────────────────────────
-    modelDeclaredDegradedModeOutLoud: firstSummary.includes('DEGRADED'),
-    controlTurnAlsoDeclaredDegradedMode: secondSummary.includes('DEGRADED'),
+    modelDeclaredFullRingOutLoud: firstSummary.includes('FULL ring'),
+    controlTurnAlsoDeclaredFullRing: secondSummary.includes('FULL ring'),
     bothTurnsCompleted: turnEnds.length === 2
       && turnEndReasonKind(turnEnds[0]) === 'completed'
       && turnEndReasonKind(turnEnds[1]) === 'completed',
@@ -19929,10 +19974,10 @@ export function analyzeTeamTeardownNoOrphans(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // 行 ⑰ 的注册行在场（T12 census 14/24 的可见半之一）。
+    // 行 ⑰ 的注册行在场（T13 census 16/24 的可见半之一）。
     stopContinuationTeamSurfaceRegistered:
       (bootLog ?? '').includes('[omo-team] team surface stop-continuation-team registered')
-      && (bootLog ?? '').includes('— 14/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 16/24 team surfaces registered'),
     teamCreated: teamRunId !== undefined,
     twoMemberSessionsRan:
       analystLog !== undefined && builderLog !== undefined && analystId !== builderId,
@@ -20162,7 +20207,7 @@ export function analyzeStopContinuationTeam(
     pluginLoaded: pluginsLoaded(bootLog),
     stopContinuationTeamSurfaceRegistered:
       (bootLog ?? '').includes('[omo-team] team surface stop-continuation-team registered')
-      && (bootLog ?? '').includes('— 14/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 16/24 team surfaces registered'),
     teamCreated: teamRunId !== undefined,
     twoMemberSessionsRan: analystLog !== undefined && builderLog !== undefined && analystId !== builderId,
     // 成员在命令前真实跑活（前台 bash 撑开的 turn）。
@@ -20476,7 +20521,7 @@ export function fabricatedTeamTeardownNoOrphansInput(routes) {
     ],
     bootLog: [
       FABRICATED_BOOT_LOG,
-      '[omo-team] team surface stop-continuation-team registered — 14/24 team surfaces registered',
+      '[omo-team] team surface stop-continuation-team registered — 16/24 team surfaces registered',
     ].join('\n'),
     settleReached: true,
     actionObservations: [{ reached: true }, { reached: true }],
@@ -20569,7 +20614,7 @@ export function fabricatedStopContinuationTeamInput(routes) {
     ],
     bootLog: [
       FABRICATED_BOOT_LOG,
-      '[omo-team] team surface stop-continuation-team registered — 14/24 team surfaces registered',
+      '[omo-team] team surface stop-continuation-team registered — 16/24 team surfaces registered',
       jobsGuardLine,
       `${GUARD_TEAM_PREFIX} interrupted 2 member session(s) of team ${FABRICATED_T9_TEAM_RUN_ID} rooted at session ${FABRICATED_T9_LEAD_ID} (drain initiated)`,
       `${GUARD_TEAM_PREFIX} drain settled — resident member activation(s) of team ${FABRICATED_T9_TEAM_RUN_ID} released`,
@@ -20992,7 +21037,7 @@ export function analyzeTeamTaskClaim(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    bootCensusFourteenOfTwentyFour: (bootLog ?? '').includes('— 14/24 team surfaces registered'),
+    bootCensusSixteenOfTwentyFour: (bootLog ?? '').includes('— 16/24 team surfaces registered'),
     bootResumeLine: (bootLog ?? '').includes('[omo-team] boot resume'),
     taskQuartetRegisteredPreReboot: (() => {
       const pre = rebootObservation?.preBootLog ?? ''
@@ -21021,7 +21066,7 @@ export function analyzeTeamTaskClaim(
     rebootAdoptedSameLead: rebootObservation?.adopted === true,
     rebootBootCarriesLoadedAndResume: (() => {
       const b = rebootObservation?.rebootBootLog ?? ''
-      return b.includes('[omo-team] loaded') && b.includes('— 14/24 team surfaces registered') && b.includes('[omo-team] boot resume')
+      return b.includes('[omo-team] loaded') && b.includes('— 16/24 team surfaces registered') && b.includes('[omo-team] boot resume')
     })(),
     boardIntactAfterRebootReadBack: postAudit.ok === true
       && postAudit.t1?.status === 'completed'
@@ -21203,7 +21248,7 @@ export function fabricatedTeamCreateAndMessageInput(routes) {
       '[omo-team] team surface team_send_message registered',
       '[omo-team] team surface team-keyword-injection registered',
       '[omo-team] team surface vendor-team-prompts registered',
-      '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2) — 14/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2) — 16/24 team surfaces registered',
     ].join('\n'),
     settleReached: true,
     actionObservations: [{ reached: true, note: 'cold-wake precondition: both members settled AND offline before the send turn' }],
@@ -21413,7 +21458,7 @@ export function fabricatedTeamShutdownHandshakeInput(routes) {
       '[omo-team] team surface team_task_get registered',
       '[omo-team] team surface team-keyword-injection registered',
       '[omo-team] team surface vendor-team-prompts registered',
-      '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2) — 14/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2) — 16/24 team surfaces registered',
     ].join('\n'),
     settleReached: true,
     actionObservations: [
@@ -22370,15 +22415,17 @@ export function analyzeTeamCreateAndMessage(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // The boot census is 14/24 as of P5-T12 (T7's seven rows + the task-board
+    // The boot census is 16/24 as of P5-T13 (T7's seven rows + the task-board
     // quartet create/list/update/get + the stop-continuation-team query surface
-    // flipped at T9; the registration loop prints one line per registered row).
+    // flipped at T9 + the team-keyword slot and prompts-team pair at T12 + the
+    // two presence faces at T13; the registration loop prints one line per
+    // registered row).
     // The T5/T6 pair stays pinned; the T7 rows are pinned in
     // full by the `team-shutdown-handshake` scenario's bootSevenSurfaces.
     teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
     teamMessageSurfaceRegisteredAtBoot:
       (bootLog ?? '').includes('[omo-team] team surface team_send_message registered'),
-    bootCensusFourteenOfTwentyFour: (bootLog ?? '').includes('— 14/24 team surfaces registered'),
+    bootCensusSixteenOfTwentyFour: (bootLog ?? '').includes('— 16/24 team surfaces registered'),
     leadCalledTeamCreate: createCall !== undefined,
     teamCreateResultCarriesTeamRunId: createResult !== undefined,
     teamCreateResultNotAnError: createResult !== undefined && createResult.isError !== true,
@@ -22696,9 +22743,10 @@ export function analyzeTeamShutdownHandshake(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // The boot census P5-T7 flipped to 7/24, P5-T8b grew it to 11/24 and
-    // P5-T12 grew it to 14/24 — T9's twelve plus the team-keyword slot and the
-    // prompts-team vendor pair —
+    // The boot census P5-T7 flipped to 7/24, P5-T8b grew it to 11/24,
+    // P5-T12 grew it to 14/24 and P5-T13 grew it to 16/24 — the T9 twelve plus
+    // the team-keyword slot, the prompts-team vendor pair and the two
+    // presence faces (hyperplan-upgrade + remove-ai-slops-team-addendum) —
     // the T5/T6 pair plus the `stop-continuation-team` query surface printed
     // their registered lines.
     bootSevenSurfaces:
@@ -22707,7 +22755,7 @@ export function analyzeTeamShutdownHandshake(
       && (bootLog ?? '').includes('[omo-team] team surface team_reject_shutdown registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_delete registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_status registered')
-      && (bootLog ?? '').includes('— 14/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 16/24 team surfaces registered'),
     bootTaskQuartetRegistered:
       (bootLog ?? '').includes('[omo-team] team surface team_task_create registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_task_list registered')
@@ -25811,7 +25859,9 @@ function fabricatedCommandInstruction(spec, sessionId) {
 function fabricatedCommandDoneText(spec, chars) {
   return spec.sessionContextExpected
     ? `Handoff instruction queued (${chars} chars, session ${FABRICATED_COMMAND_SESSION_ID}); it takes effect in the next turn.`
-    : `Remove-AI-slops instruction queued (${chars} chars); it takes effect in the next turn.`
+    // T13: the sandbox's remove-ai-slops ran with the addendum attached — the
+    // fabricated done text must claim the same form the live handler emits.
+    : `Remove-AI-slops instruction queued (${chars} chars, team-mode addendum attached); it takes effect in the next turn.`
 }
 
 // Only the load markers plus THIS scenario's registration line. A hand-typed
@@ -25894,18 +25944,18 @@ function fabricatedCommandChannelInput(spec, routes) {
 
 function fabricatedHyperplanInstruction(args) {
   // The SAME two shipped functions the command's own handler uses, in the same
-  // order: `renderCommandTemplate` substitutes the placeholders and produces the
-  // instruction body, `formatCommandTemplate` wraps it in the 外框. `sessionId` is
-  // `undefined` on purpose — hyperplan's template has no `$SESSION_ID` (T14), so
-  // passing one here would have the fixture render a frame the deployment never
-  // produces.
+  // order, AND the same FULL-form pair the T13 handler selects when the presence
+  // face reports the team_* tools live — which is exactly what the sandbox does
+  // (omo-team has been mounted since T3). A fixture built on the DEGRADED template
+  // would let the analyzer pass on a frame the deployment no longer produces.
+  // `sessionId` stays `undefined` — hyperplan's template has no `$SESSION_ID`.
   return omoCommandsRender.formatCommandTemplate({
     name: 'hyperplan',
-    description: omoCommandsHyperplanCommand.HYPERPLAN_DESCRIPTION,
+    description: omoCommandsHyperplanCommand.HYPERPLAN_FRAME_DESCRIPTION_FULL,
     scope: 'builtin',
     arguments: args,
-    template: omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE,
-    content: renderCommandTemplate(omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE, {
+    template: omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE_FULL,
+    content: renderCommandTemplate(omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE_FULL, {
       arguments: args,
       sessionId: undefined,
       now: () => FABRICATED_COMMAND_TIMESTAMP,
@@ -25930,7 +25980,7 @@ function fabricatedHyperplanLog() {
       fabricatedUserMessage(3, { id: 'fabricated-hyperplan-1', role: 'user', content: [{ type: 'text', text: first }], source: { kind: 'user' } }),
       { seq: 4, type: 'turn/start', data: { turn: 1 } },
       { seq: 5, type: 'step/start', data: { turn: 1, step: 1 } },
-      assistant(6, 1, 1, HYPERPLAN_DEGRADED_SUMMARY),
+      assistant(6, 1, 1, HYPERPLAN_RING_SUMMARY),
       { seq: 7, type: 'step/end', data: { turn: 1, step: 1 } },
       { seq: 8, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
       // (turn 1 is modelled as ONE step here; the real run opens a SECOND step,
@@ -26025,31 +26075,40 @@ function hyperplanDegradedDefectCases() {
       input.log.events = input.log.events.filter(
         (event) => !(event.type === 'user/message' && event.data?.id === 'fabricated-hyperplan-1'))
     }, 'exactlyTwoFramesArrived'],
-    ['the DEGRADED guidance was replaced by upstream\'s team-mode instruction', (input) => {
-      // The T14 regression this scenario exists for: the body goes back to telling
-      // the model to enable team-mode in a config file.
+    ['the guidance was replaced by upstream\'s config-flag fallback', (input) => {
+      // The regression this scenario has existed for since T14, re-aimed at T13's
+      // polarity: the body goes back to pointing the model at a config carrier.
       mutateHyperplanCarrierText(input, (text) => text.replace(
-        omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE,
+        omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE,
         'If team-mode is unavailable, instruct the user to set team_mode.enabled: true in ~/.omo/omo.jsonc and restart opencode.',
       ))
     }, 'modelFacingBodyIsDeadLinkFree'],
-    ['the DEGRADED guidance was dropped from the model-facing body', (input) => {
+    ['the full-ring guidance was dropped from the model-facing body', (input) => {
       mutateHyperplanCarrierText(input, (text) => text.replace(
-        omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE, ''))
-    }, 'degradedGuidanceReachedTheModel'],
-    ['the roster contract was dropped', (input) => {
+        omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE, ''))
+    }, 'fullRingGuidanceReachedTheModel'],
+    ['the full roster contract was dropped', (input) => {
       mutateHyperplanCarrierText(input, (text) => text.replace(
-        omoCommandsHyperplan.HYPERPLAN_ROSTER_CONTRACT, ''))
-    }, 'rosterContractReachedTheModel'],
+        omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_ROSTER_CONTRACT, ''))
+    }, 'fullRosterContractReachedTheModel'],
+    ['the N1 five-value status vocabulary was hollowed out', (input) => {
+      // T13 arbitration: a body that teaches `completed or failed` WITHOUT the
+      // five-value vocabulary and its defusing sentence is the hollow instruction
+      // this scenario must refuse to bless.
+      mutateHyperplanCarrierText(input, (text) => text.replace(
+        omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE,
+        'Every task ends in a terminal state: completed or failed. Report failures as failed.',
+      ))
+    }, 'fiveValueStatusVocabularyReachedTheModel'],
     ['a roster seat was renamed to something the deployment does not have', (input) => {
       mutateHyperplanCarrierText(input, (text) => text.replaceAll('plan-reviewer', 'skeptic'))
     }, 'rosterSeatsNamedInTheModelText'],
-    ['the description line lost the degraded suffix', (input) => {
+    ['the description line lost the full-ring form suffix', (input) => {
       mutateHyperplanCarrierText(input, (text) => text.replace(
-        omoCommandsHyperplanCommand.HYPERPLAN_DESCRIPTION,
+        omoCommandsHyperplanCommand.HYPERPLAN_FRAME_DESCRIPTION_FULL,
         omoCommandsHyperplanCommand.UPSTREAM_HYPERPLAN_DESCRIPTION,
       ))
-    }, 'degradedSuffixOnTheFrameDescriptionLine'],
+    }, 'fullRingSuffixOnTheFrameDescriptionLine'],
     ['the upstream 7-phase wording was silently "corrected" to 8', (input) => {
       // MAJOR-2's rule is attribution-first: the wording is kept verbatim and the
       // discrepancy is recorded. A silent correction is the regression.
@@ -26072,20 +26131,20 @@ function hyperplanDegradedDefectCases() {
         text: messageContentText(carrier.data).replace('**Scope**: builtin', '**User Arguments**: invented\n\n**Scope**: builtin'),
       }]
     }, 'bareFrameOmitsUserArgumentsLine'],
-    ['the bare turn lost the degraded guidance too', (input) => {
+    ['the bare turn lost the full-ring guidance too', (input) => {
       const carrier = input.log.events.find(
         (event) => event.type === 'user/message' && event.data?.id === 'fabricated-hyperplan-2')
       carrier.data.content = [{
         type: 'text',
-        text: messageContentText(carrier.data).replace(omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE, ''),
+        text: messageContentText(carrier.data).replace(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE, ''),
       }]
-    }, 'bareTurnAlsoCarriesTheDegradedGuidance'],
-    ['the model did not say the run was DEGRADED', (input) => {
+    }, 'bareTurnAlsoCarriesTheFullRingGuidance'],
+    ['the model did not say the run was the FULL ring', (input) => {
       input.log.events = input.log.events.map((event) =>
         event.type === 'assistant/message' && event.data?.turn === 1
           ? { ...event, data: { ...event.data, message: { role: 'assistant', content: [{ type: 'text', text: 'Here is the plan you asked for.' }] } } }
           : event)
-    }, 'modelDeclaredDegradedModeOutLoud'],
+    }, 'modelDeclaredFullRingOutLoud'],
     ['a turn ended with an error', (input) => {
       input.log.events = input.log.events.map((event) =>
         event.type === 'turn/end' && event.data?.turn === 1

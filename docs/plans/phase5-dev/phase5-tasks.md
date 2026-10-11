@@ -177,12 +177,12 @@
 - **依赖**：P5-T5（team 工具面在场是注入语义的前提）。**量级**：4 小时。
 - **依赖**：P5-T5（team 工具面在场是注入语义的前提）。**量级**：4 小时。
 
-### [ ] P5-T13 — hyperplan / remove-ai-slops 完整形态升级
+### [x] P5-T13 — hyperplan / remove-ai-slops 完整形态升级
 
 - **产出**：omo-commands 两模板的 team 段升级（降级文案 → 完整对抗评审环 / team-mode addendum）；**切换判据 = team 工具在场探测**（运行时可判，不硬编码）；e2e 升级。
 - **做法**：模板两处状态的探测函数单测；升级后语义对齐上游模板（v4.19.4 源路径署名头更新）；omo-commands manifest 条目状态与覆盖基线（phase4-commands.md）同 commit 回填。**【仲裁增补（T12 评审登记，2026-10-12）**：**N1 处置随本任务**——vendored team-mode skill 模板的 `status:"failed"` 是空头指令（vendored tasklist schema 无 failed 态）；vendor 正文保真不动，但**若本任务把 team-mode 模板注册进技能目录或引用其文本**，消费侧文案/加注须说明「failed 无对应 schema 态，终态词表 = pending/claimed/in_progress/completed/deleted」——空头指令不许原样进模型可见面。② **team.md 的 opencode 载体句**（"set team_mode.enabled=true and restart opencode" 兜底句）在 DSH 无对应面——本任务若消费 team.md 正文，须评估该句的适配注记位置（deviations[] 登记优先于 NOTICE-only，opencode 评审登记）。】
 - **判定**：✅ 门 2/3 绿；team 缺席时降级语义**保持绿**（反向场景——降级路径不许因升级死掉）。
-- **证据**：⬜
+- **证据**：✅ 2026-10-12——`omo-team/src/team/team-tool-presence.ts`（在场探测面：TEAM_TOOL_ROW_IDS ①–⑪ 派生快照 + ctx.provide 双服务，provide 缺席具名抛不发假脸；声明层在场 × 运行时服务在场的双层边界头注成文）+ omo-commands 两模板升级（hyperplan 完整对抗评审环 + remove-ai-slops team-mode addendum，**运行时可判切换**：handler 每次调用现读 ctx.get（apply 期不缓存），三态归一保守判——服务缺席/形状不合/非 true ⇒ 降级逐字节 = P4）；N1 拆弹进模型可见面（五值词表 + NO failed state）；team.md opencode 载体句进 deviations[]（第 5 条 note）。单测 25 it（探测矩阵/双形态渲染/中途挂载点亮）；e2e 两场景完整形态断言。**评审修复轮**：① MAJOR 死载体指令拆弹（SKILL.md task_send 词汇 + senpi 重启句→拆解句 + never STOP 钉 + dead-link 第 4 规则）；② MAJOR 静默删去补登（team-mode skill 加载前置 + 32KB 知识）+ 32KB 拆分句进两模型可见面（钉活常量）；③ MINOR carrier note 重复段去重（P4 遗留）+ 守卫 3 腿；④ NIT 行号改准/恢复（109-115 双基线实测一致）；⑤ delta 残留（remove-ai-slops 登记一致性两段式 + NOTICES:596 矛盾行 + 陈旧计数/行号清扫）。实测：门 3 **41/41**（终审后全量复跑 EXIT 0）；vitest 88f/2036t；root typecheck exit 0；门 4/5/6/7/8 不回归；probe PASS；cold-start 16/24。**双评审通过**（轮 1 A REJECT 2 MAJOR + B APPROVE → 修复轮；delta 双 APPROVE → 微修两轮）。**phase4-commands.md 四行回填**（C-04/C-07/S5-02/C组⑤）+ THIRD_PARTY_NOTICES.md 同步 + omo-commands manifest 两行翻动同 commit；manifest omo-team 侧两行翻 ported（16/24）。**误开 GitHub issue 4 件已关闭**（check-compat-probes 本地误跑的副作用清理）。
 - **依赖**：P5-T6。**量级**：4 小时。
 
 ---

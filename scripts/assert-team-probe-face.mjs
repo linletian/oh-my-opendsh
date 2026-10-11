@@ -181,7 +181,7 @@ async function fabricatedPresentLog(answerRe) {
     pathToFileURL(join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-team', 'src', 'boot-markers.ts')).href
   )).formatTeamBootResumeLine({ resumed: 0, marked_failed: 0, marked_orphaned: 0, cleaned: 0, errors: [] })
   return [
-    '[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2) — 14/24 team surfaces registered',
+    '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2) — 16/24 team surfaces registered',
     '[omo-team] team surface team_create registered',
     '[omo-team] team surface team_send_message registered',
     '[omo-team] team surface team_status registered',
@@ -276,7 +276,7 @@ export async function runSelfTest() {
   const absentDefects = [
     ['host-did-not-name-the-inactive-row', (log) => log.replace('dsh: warning: 1 entry did not activate', '[dropped]'), ['hostWarnsInactiveRow']],
     ['host-did-not-name-omo-team', (log) => log.replace('omo-team (@oh-my-opendsh/omo-team): failed to import', 'some-other (@some/other): failed to import'), ['hostNamesOmoTeam']],
-    ['loaded-marker-leaked-into-absent-boot', (log) => `${log}\n[omo-team] loaded: manifest 24 entries (pending=8, ported=14, recorded=2) — 14/24 team surfaces registered`, ['noLoadedMarker', 'noOmoTeamMarkerAtAll']],
+    ['loaded-marker-leaked-into-absent-boot', (log) => `${log}\n[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2) — 16/24 team surfaces registered`, ['noLoadedMarker', 'noOmoTeamMarkerAtAll']],
     ['registered-line-leaked-into-absent-boot', (log) => `${log}\n[omo-team] team surface team_create registered`, ['noRegisteredLines', 'noOmoTeamMarkerAtAll']],
     ['state-machine-answer-leaked-into-absent-boot', (log) => `${log}\n[omo-team] boot resume: resumed=0, failed=0, orphaned=0, cleaned=0, errors=0`, ['noStateMachineBootAnswer', 'noOmoTeamMarkerAtAll']],
     // Leg 17 (P5-T10 review MINOR, mcode): a `[omo-team]` marker of a shape

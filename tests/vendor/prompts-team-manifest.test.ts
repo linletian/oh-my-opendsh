@@ -87,14 +87,15 @@ describe('P5-T12 prompts-team: 账目与 NOTICES', () => {
   })
 })
 
-describe('P5-T12 prompts-team: deviations 登记（N1/N9/M-3/Q-4）', () => {
+describe('P5-T12 prompts-team: deviations 登记（N1/N9/M-3/Q-4）+ P5-T13 载体句适配', () => {
   const deviations: Array<{ kind: string; id: string; files?: string[] }> = manifest.deviations
 
-  it('deviations 恰四条，全是 note 类（零字节改动的包不许长出 modification 类）', () => {
+  it('deviations 恰五条，全是 note 类（零字节改动的包不许长出 modification 类）', () => {
     expect(deviations.map((d) => d.id).sort()).toEqual([
       'N1-terminal-status-hollow',
       'N9-delegation-name-drift',
       'Q4-NOTES-6-parameter-face-consistency',
+      'T13-opencode-carrier-fallback-sentence',
       'dangling-import-M-3',
     ])
     expect(deviations.every((d) => d.kind === 'note')).toBe(true)
@@ -135,6 +136,28 @@ describe('P5-T12 prompts-team: deviations 登记（N1/N9/M-3/Q-4）', () => {
     expect(m3.files).toEqual(['src/features/builtin-skills/skills/team-mode.ts'])
     const teamMode = readFileSync(join(PKG, 'src/features/builtin-skills/skills/team-mode.ts'), 'utf8')
     expect(teamMode.startsWith('import type { BuiltinSkill } from "../types"')).toBe(true)
+  })
+
+  it('P5-T13 载体句适配：team.md 的 opencode 兜底句在 deviations[] 登记且消费侧已适配', () => {
+    // 仲裁增补（T13）：deviations[] 登记**优先于 NOTICE-only**——这条必须在
+    // manifest 的 deviations[] 里，且正文逐字保真（兜底句还在 team.md 里）。
+    const t13 = deviations.find((d) => d.id === 'T13-opencode-carrier-fallback-sentence')!
+    expect(t13.kind).toBe('note')
+    expect(t13.files).toEqual(['prompts/mode/team.md'])
+    const teamMd = readFileSync(join(PKG, 'prompts/mode/team.md'), 'utf8')
+    // 正文保真：兜底句逐字仍在（被"顺手删改"= 红）。
+    expect(teamMd).toContain('tell the user to set team_mode.enabled=true and restart opencode')
+    // DSH 无此配置键：全仓（除 vendor 正文、注记与测试的引用性提及）不得有
+    // 把该键当**可写配置面**的实现——此处钉两条消费侧适配句都在位。
+    const slopTemplate = readFileSync(join(REPO, 'patches/omo-dsh/omo-commands/src/templates/remove-ai-slops.ts'), 'utf8')
+    expect(slopTemplate).toContain('this deployment has no such switch; the live team_* tool surface IS the switch')
+    const hyperplanTemplate = readFileSync(join(REPO, 'patches/omo-dsh/omo-commands/src/templates/hyperplan.ts'), 'utf8')
+    expect(hyperplanTemplate).toContain('no configuration switch in this deployment that turns team-mode on or off')
+    // 消费侧**模型可见正文**不点名该键（两形态的 guidance 都以「工具在场就是
+    // 开关」替代；键名只活在注记里）。
+    const commandsHyperplan = readFileSync(join(REPO, 'patches/omo-dsh/omo-commands/src/commands/hyperplan.ts'), 'utf8')
+    expect(commandsHyperplan).not.toContain('team_mode.enabled')
+    expect(slopTemplate.match(/team_mode\.enabled/g) ?? []).toHaveLength(0)
   })
 })
 
