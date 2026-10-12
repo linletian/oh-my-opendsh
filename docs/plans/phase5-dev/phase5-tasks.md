@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每条 team 面的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：🚧 **T1 完成、T2 待开工**（2026-10-09：PRE 全绿；Q-1…Q-8 闭环；**fork = (B)**（`.omo/evidence/p5t1/FORK.md`）；T4–T16 已按 (B) 形态仲裁更正）。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **16/16 全部收口**（2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **编号**：`P5-T<n>`（Phase 5 - Task n）。工作包归属见计划书 §7。
 >
@@ -89,7 +89,7 @@
 
 ## WP-3 协调语义（计划书 §4.4）
 
-### [ ] P5-T6 — mailbox 采用接线 + 消息工具层 ⚖️
+### [x] P5-T6 — mailbox 采用接线 + 消息工具层 ⚖️
 
 - **产出**：`src/tools/team-message.ts`（`team_send` 语义 → **(B) 已定：原生 `ctx.subagents.sendMessage` 相邻投递——lead↔member 直通；member↔member 非相邻，经 lead 中转并记差异**）+ 广播「仅 lead」工具层纪律（Q-5 已成文）；重投去重 e2e 断言（R-6）。
 - **做法**：消息帧格式对齐上游（`Team message <id> from <name>:` 帧语义——**经原生投递的载体承原生 kind `'agent-message'`，omo 自有帧才用 `omo-team-*`**，T1 Q-8 裁定）；离线成员投递 → 醒来的金丝雀断言（fallback-wake 原生覆盖的承重场景，Q-5 终态：原生投递统一经 inbox 准入、无 live-fallback 岔路——Q-5b 实证 warm 唤醒，cold 恢复本任务 e2e 断言）；不移植 `.delivering-` 预约语义，差异成文。
