@@ -82,6 +82,21 @@
 //       A-3/B-MAJOR-2 的 19 行 `📋 待 vendor（P4-T4）` 就是这样漏过去的。判据是
 //       负向的（不钉死终态措辞），作用域是**表格状态格**——§4 的「deferred → Phase 6」
 //       是终态判定、§5 标题里的「待核清单」是历史散文，两者都刻意排除
+//   c25 every omo-team src/**/*.ts file carries the signature header — either an
+//       upstream `packages/…` path + @ v4.19.4 + a port declaration, or an explicit
+//       「无上游对应物 / DSH 原生」declaration (c16's rule for the team package;
+//       the native population is an explicit named list, cross-checked against the
+//       manifest's upstreamSources so a real port cannot disguise itself as native)
+//   c26 the omo-team manifest's 24 rows and the src/{tools,team} + vendor file set
+//       (c17's rule for this package): forward, every row's declared target exists;
+//       reverse, every .ts under src/tools and src/team is owned by a row or named
+//       on the helper/infra list — an unexplained new file is a FAIL, not a skip
+//   c27 the team vendors EXIST and their VENDOR-MANIFESTs are self-consistent:
+//       vendor/team-core + vendor/prompts-team each carry NOTICE.md and
+//       VENDOR-MANIFEST.json, every listed file is on disk, every excluded path is
+//       NOT on disk, and the team-core subset's two terminal pins hold by name
+//       (session-client.ts present, reservation-reconciliation.ts absent — the T8b
+//       subset ruling's terminal face)
 //
 // The record COUNT appears nowhere in this file or in ci-local.sh / ci.yml: the
 // script derives its own total and prints `N/N PASS`, so there is no copy to go
@@ -881,6 +896,28 @@ async function run() {
     // 归一化为 id——去掉尾部 `.ts` / `/` / `-*`，再过 BASELINE_ID_RENAMES 的 v5
     // 改名表（仅 H-32）。两份文档的 §1 表格都是 6 列（`| # | 模块 | … | 状态 |`），
     // 故状态格下标一致。
+    //
+    // ══ P5-T14 仲裁成文：c14 **不**扩入 phase5-dev/phase5-team.md ══
+    // 评审问过「Phase 5 的覆盖基线文档为什么不在并集里」。裁定：**不扩展**，
+    // 理由是解析契约本身——c14 的行抽取只认 §1 表格里以 `| H-数字 |` 开头的行，
+    // 而 phase5-team.md 通篇没有 H 号段（它按 T-号任务书与 ①-㉔ manifest 行
+    // 对账，H 号是 hooks/commands 基线的编号词汇）。把一份 0 可解析行的文档
+    // 塞进并集，只会让「两侧都非空才允许通过」的防真空条款当场红——那不是
+    // 覆盖，是格式事故。Phase 5 的 manifest↔文档对账由 c22 与
+    // tests/omo-team/manifest.test.ts 承担，各守各的编号词汇。
+    // **活体针（裁决的可证伪面）**：下面紧邻的 try 块顺手读 phase5-team.md 并
+    // 钉它的 `| H-\d+ |` 行数恒为 0——若哪天有人给它写上 H 号行，本记录当场红，
+    // 逼一次重裁（并集是否该扩，那时才是活问题）。
+    const arbitrationProblems = []
+    try {
+      const PHASE5_TEAM_MD = join(REPO_ROOT, 'docs', 'plans', 'phase5-dev', 'phase5-team.md')
+      const phase5HRows = readFileSync(PHASE5_TEAM_MD, 'utf8').split('\n').filter((line) => /^\| H-\d+ \|/.test(line)).length
+      if (phase5HRows > 0) {
+        arbitrationProblems.push(`phase5-team.md now carries ${phase5HRows} '| H-NN |' row(s) — the P5-T14 ruling (c14 does NOT extend COVERAGE_BASELINE_MDS to it) is stale; re-arbitrate the union, do not just delete this pin`)
+      }
+    } catch (e) {
+      arbitrationProblems.push(`phase5-team.md could not be read for the P5-T14 arbitration pin: ${String(e.message ?? e)}`)
+    }
     try {
       const portedRows = []
       const nonPortedRows = []
@@ -915,6 +952,9 @@ async function run() {
         perDocument.push({ label, ported: found, total })
       }
       const problems = []
+      // The arbitration pin above feeds THIS record (c14): a ruling about what
+      // c14 must not read is c14's own falsifiable face, not a new check id.
+      problems.push(...arbitrationProblems)
       if (portedRows.length === 0) {
         problems.push(`no 已移植 row parsed from ${COVERAGE_BASELINE_MDS.map((f) => relative(REPO_ROOT, f)).join(' + ')} §1 — the assertion would be vacuous (table format changed?)`)
       }
@@ -2485,6 +2525,419 @@ async function run() {
   } catch (e) {
     results.push(check('c24', 'sandboxEdits declaration contract holds across validator, drive and probe', false,
       `the sandboxEdits contract check could not run: ${String(e.message ?? e)}`))
+  }
+
+  // ══ P5-T14 — the omo-team half of the static gate (c25–c27) ═════════════════
+  //
+  // c12/c13/c14 are the omo-hooks triangle, c16–c20 the omo-commands half. The
+  // team package (mounted since P5-T3) had **no static anchor of its own** — its
+  // files, manifest↔file ownership and vendored vendors were covered only by unit
+  // tests and e2e. These three records close that, mirroring c16/c17/c19 one-for-
+  // one so the third package reads the same way as the other two.
+
+  const TEAM_SRC = join(OMO_PATCH_DIR, 'omo-team', 'src')
+  const TEAM_TOOLS_DIR = join(TEAM_SRC, 'tools')
+  const TEAM_TEAM_DIR = join(TEAM_SRC, 'team')
+  const VENDOR_TEAM_CORE = join(OMO_PATCH_DIR, 'vendor', 'team-core')
+  const VENDOR_PROMPTS_TEAM = join(OMO_PATCH_DIR, 'vendor', 'prompts-team')
+
+  // c25 — omo-team src signature headers (c16's rule, third package).
+  // Classification is by EXPLICIT named lists, never by regex inference: the same
+  // discipline that made c16 survive its MAJOR-2 review (a real port dressed as
+  // native must have an external fact that catches it — here, a native-list file
+  // may not cite a manifest-declared upstream port, and a non-native file's cited
+  // upstream paths must be covered by the manifest's upstreamSources union).
+  //
+  // The native population is every DSH-native module of the package (assembly,
+  // boot markers, the presence/query/keyword service faces, the row Config, the
+  // vendored-config constructor, the seat table, the session adapter). manifest.ts
+  // is the RECORDING face — its attribution is per-row `upstreamSources`, owned by
+  // c26 and tests/omo-team/manifest.test.ts; naming it INFRA here is the honest
+  // classification, not a dodge (it was not edited in P5-T14, by task 铁律).
+  const TEAM_NATIVE_FILES = new Set([
+    'index.ts',
+    'boot-markers.ts',
+    'team/roster-seats.ts',
+    'team/session-context-adapter.ts',
+    'team/team-config.ts',
+    'team/team-keyword-slot.ts',
+    'team/team-prompts-vendor.ts',
+    'team/team-row-config.ts',
+    'team/team-stop-continuation.ts',
+    'team/team-tool-presence.ts',
+  ])
+  const TEAM_INFRA_FILES = new Set(['manifest.ts'])
+  let teamManifest = null
+  let teamManifestFailed = ''
+  try {
+    teamManifest = await import(pathToFileURL(join(TEAM_SRC, 'manifest.ts')).href)
+  } catch (e) {
+    teamManifestFailed = String(e.message ?? e)
+  }
+  try {
+    const teamFiles = collectTsFiles(TEAM_SRC).sort()
+    const c25Problems = []
+    let portedCount = 0
+    let nativeCount = 0
+    for (const rel of teamFiles) {
+      if (TEAM_INFRA_FILES.has(rel)) continue
+      const header = signatureHeader(readFileSync(join(TEAM_SRC, rel), 'utf8'))
+      if (TEAM_NATIVE_FILES.has(rel)) {
+        if (!NATIVE_DECLARATIONS.some((d) => header.includes(d))) {
+          c25Problems.push(`${rel} is on TEAM_NATIVE_FILES but its header carries no "无上游对应物 / DSH 原生" declaration`)
+        }
+        nativeCount += 1
+        continue
+      }
+      // Tag pattern follows the c12/c16 precedent (`/v4\.19\.4/`, no `@ ` prefix
+      // required — headers spell it as `OMO tag v4.19.4`, and the earlier
+      // `@ v4.19.4` form of this very record was the gate lying about its own
+      // house rule, not the files lying about theirs).
+      const citesUpstream = /packages\/[A-Za-z0-9._\/-]+/.test(header)
+      const carriesTag = /v4\.19\.4/.test(header)
+      const carriesPort = PORT_DECLARATIONS.some((d) => header.includes(d))
+      if (!citesUpstream || !carriesTag || !carriesPort) {
+        c25Problems.push(`${rel} is neither on the native list nor carries "upstream packages/… path + @ v4.19.4 + port declaration" in its signature header`)
+      } else {
+        portedCount += 1
+      }
+    }
+    // List integrity: no orphans on the named lists (a renamed file leaves the
+    // list claiming a file that is gone — the census then silently shrinks).
+    const teamFileSet = new Set(teamFiles)
+    for (const rel of [...TEAM_NATIVE_FILES, ...TEAM_INFRA_FILES]) {
+      if (!teamFileSet.has(rel)) c25Problems.push(`c25 lists ${rel}, which is not a file under omo-team/src/`)
+    }
+    if (teamFiles.length === 0) c25Problems.push('no .ts files under omo-team/src/ — the assertion would be vacuous')
+    if (portedCount === 0) c25Problems.push('no ported file classified — the ported population is vacuous')
+    if (nativeCount === 0) c25Problems.push('no native file classified — the native population is vacuous')
+    // Reverse cross-check (c16 direction ②): a non-native file's cited upstream
+    // paths must sit inside the manifest's upstreamSources universe — at least
+    // ONE citation covered (the row tables are not exhaustive by design, the
+    // same ruling c16 records). None covered = the file belongs to no attribution
+    // system = the port-disguised-as-native shape, caught from the other side.
+    if (teamManifest !== null) {
+      const allSources = teamManifest.TEAM_MANIFEST.flatMap((row) => row.upstreamSources ?? [])
+      const covered = (p) => allSources.some((s) => p === s || p.startsWith(`${s}/`) || s.startsWith(`${p}`))
+      for (const rel of teamFiles) {
+        if (TEAM_NATIVE_FILES.has(rel) || TEAM_INFRA_FILES.has(rel)) continue
+        const header = signatureHeader(readFileSync(join(TEAM_SRC, rel), 'utf8'))
+        const cited = [...new Set([...header.matchAll(/packages\/[A-Za-z0-9._\/-]+/g)]
+          .map((m) => m[0].replace(/:\d+/g, '')).filter((p) => !p.endsWith('/')))]
+        if (cited.length > 0 && !cited.some(covered)) {
+          c25Problems.push(`${rel} cites upstream path(s) no manifest row declares: ${cited.slice(0, 3).join(', ')}`)
+        }
+      }
+    }
+    results.push(check('c25', 'omo-team src signature headers', c25Problems.length === 0,
+      c25Problems.length > 0
+        ? c25Problems.join('; ')
+        : `${portedCount} ported .ts files carry "upstream packages/… + v4.19.4 + port declaration", ${nativeCount} DSH-native ones carry an explicit "无上游对应物" declaration (named list), manifest.ts is the recording face (INFRA, row-attributed by c26) — over ${teamFiles.length} files. RESIDUAL BOUNDARY, not claimed closed: native-list membership is pinned by name + declaration, but no per-file upstream pin exists (manifest rows attribute semantics, not files) — c26's ownership map is what keeps the file set itself honest`))
+  } catch (e) {
+    results.push(check('c25', 'omo-team src signature headers', false,
+      `omo-team/src/**/*.ts could not be scanned: ${String(e.message ?? e)}`))
+  }
+
+  // c26 — the omo-team manifest ↔ src/vendor file set (c17's rule, third
+  // package). Forward: every row's declared target exists; reverse: every .ts
+  // under src/tools and src/team and every vendor path is owned. Many-to-one is
+  // legal HERE and spelled out (team-shutdown.ts owns three rows, team-task.ts
+  // four) — c17's one-id-one-file does not transfer blindly; the ownership map
+  // is the single place that states it.
+  const TEAM_ROW_OWNERS = new Map([
+    ['team_create', ['tools/team-create.ts']],
+    ['team_delete', ['tools/team-delete.ts']],
+    ['team_shutdown_request', ['tools/team-shutdown.ts']],
+    ['team_approve_shutdown', ['tools/team-shutdown.ts']],
+    ['team_reject_shutdown', ['tools/team-shutdown.ts']],
+    ['team_send_message', ['tools/team-message.ts']],
+    ['team_task_create', ['tools/team-task.ts']],
+    ['team_task_list', ['tools/team-task.ts']],
+    ['team_task_update', ['tools/team-task.ts']],
+    ['team_task_get', ['tools/team-task.ts']],
+    ['team_status', ['tools/team-status.ts']],
+    ['team-keyword-injection', ['team/team-keyword-slot.ts']],
+    ['hyperplan-upgrade', ['team/team-tool-presence.ts']],
+    ['remove-ai-slops-team-addendum', ['team/team-tool-presence.ts']],
+    ['stop-continuation-team', ['team/team-stop-continuation.ts']],
+    ['vendor-team-prompts', ['__vendor_prompts_team__']],
+    ['vendor-team-core-types', ['__vendor_core__/src/types.ts']],
+    ['vendor-team-core-member-parser', ['__vendor_core__/src/member-parser.ts']],
+    ['vendor-team-core-team-registry', ['__vendor_core__/src/team-registry']],
+    ['vendor-team-core-team-tasklist', ['__vendor_core__/src/team-tasklist']],
+    ['vendor-team-core-team-state-store', ['__vendor_core__/src/team-state-store']],
+    ['vendor-team-core-closure', ['__vendor_core__/src']],
+  ])
+  // Helper modules with no manifest row of their own — named, not pattern-matched
+  // (an unexplained new file stays a FAIL). Each pointer names the row(s) served.
+  const TEAM_HELPER_FILES = new Set([
+    'team/team-spec.ts', // team_create 的解析器（行 ① 交付面的一部分）
+    'team/member-validator.ts', // 行 ① 的资格校验
+    'team/team-state.ts', // 状态机骨架（多行共享：①③④⑤⑥⑦…）
+    'team/team-config.ts', // vendored config 构造点（T8b）
+    'team/roster-seats.ts', // 行 ① 的席值表
+    'team/session-context-adapter.ts', // resume 适配器（closure 行的宿主臂）
+    'team/team-row-config.ts', // 门 4 row Config（apply 消费，注册循环的门槛参数）
+    'team/team-prompts-vendor.ts', // 行 ㉔ 的启动守门人（字节的家在 vendor/prompts-team）
+  ])
+  const TEAM_INFRA_ROOT_FILES = new Set(['index.ts', 'manifest.ts', 'boot-markers.ts'])
+  if (teamManifest !== null) {
+    try {
+      const rows = teamManifest.TEAM_MANIFEST
+      const c26Problems = []
+      if (rows.length !== teamManifest.EXPECTED_TEAM_MANIFEST_COUNT) {
+        c26Problems.push(`TEAM_MANIFEST has ${rows.length} rows, EXPECTED_TEAM_MANIFEST_COUNT says ${teamManifest.EXPECTED_TEAM_MANIFEST_COUNT}`)
+      }
+      const resolveTarget = (t) => t === '__vendor_prompts_team__'
+        ? VENDOR_PROMPTS_TEAM
+        : t.startsWith('__vendor_core__/')
+          ? join(VENDOR_TEAM_CORE, t.slice('__vendor_core__/'.length))
+          : join(TEAM_SRC, t)
+      const owned = new Set()
+      for (const row of rows) {
+        const targets = TEAM_ROW_OWNERS.get(row.id)
+        if (targets === undefined) {
+          if (row.status === 'recorded') {
+            // recorded 行 = 记差异、零代码（team_list/team_wait）——反向针在下面
+            // 钉它们不得长出 tools 文件；正向无目标可查是语义，不是漏。
+            continue
+          }
+          c26Problems.push(`manifest row '${row.id}' has no entry in TEAM_ROW_OWNERS and is not 'recorded'`)
+          continue
+        }
+        for (const t of targets) {
+          if (!existsSync(resolveTarget(t))) c26Problems.push(`manifest row '${row.id}' targets ${t}, which does not exist`)
+          if (!t.startsWith('__vendor')) owned.add(t)
+        }
+      }
+      // Reverse: every tools/ file must be owned by a row.
+      for (const name of readdirSync(TEAM_TOOLS_DIR).filter((n) => n.endsWith('.ts'))) {
+        const rel = `tools/${name}`
+        if (!owned.has(rel)) c26Problems.push(`${rel} has no owning manifest row`)
+      }
+      // Reverse: every team/ file is row-owned, a named helper, or FAIL.
+      for (const name of readdirSync(TEAM_TEAM_DIR).filter((n) => n.endsWith('.ts'))) {
+        const rel = `team/${name}`
+        const isOwned = [...TEAM_ROW_OWNERS.values()].some((ts) => ts.includes(rel))
+        if (!isOwned && !TEAM_HELPER_FILES.has(rel)) c26Problems.push(`${rel} is owned by no manifest row and named on no helper list`)
+      }
+      for (const name of readdirSync(TEAM_SRC).filter((n) => n.endsWith('.ts'))) {
+        if (!TEAM_INFRA_ROOT_FILES.has(name)) c26Problems.push(`src/${name} is not a recognized infrastructure root file`)
+      }
+      // The recorded rows' negative pin: no code for the recorded face.
+      for (const ghost of ['tools/team-list.ts', 'tools/team-wait.ts']) {
+        if (existsSync(join(TEAM_SRC, ghost))) c26Problems.push(`${ghost} exists, but team_list/team_wait are 'recorded' rows — recorded means zero code`)
+      }
+      results.push(check('c26', 'omo-team manifest ↔ src/vendor file set', c26Problems.length === 0,
+        c26Problems.length > 0
+          ? c26Problems.join('; ')
+          : `${rows.length} manifest rows (== EXPECTED_TEAM_MANIFEST_COUNT); forward, every row's target exists (${owned.size} src files + 7 vendor targets resolved); reverse, every src/tools and src/team .ts is row-owned or a named helper, the two 'recorded' rows carry zero code`))
+    } catch (e) {
+      results.push(check('c26', 'omo-team manifest ↔ src/vendor file set', false,
+        `omo-team manifest/file set could not be scanned: ${String(e.message ?? e)}`))
+    }
+  } else {
+    results.push(check('c26', 'omo-team manifest ↔ src/vendor file set', false,
+      `omo-team/src/manifest.ts could not be imported: ${teamManifestFailed}`))
+  }
+
+  // c27 — the team vendors exist and their manifests are self-consistent.
+  // This is c19's rule for the team-side vendors: NOTICE + VENDOR-MANIFEST on
+  // disk, every listed file present, every excluded path ABSENT, and the two
+  // terminal pins of the team-core subset ruling held BY NAME — the T8b wall
+  // ruling's boundary is only real if a file crossing it turns the gate red.
+  //
+  // P5-T14 review round (mcode MAJOR-1): the excluded-face ran existsSync on
+  // the RAW token, so the three `dir/**` glob entries resolved to literal paths
+  // ending in `/**` — absent by CONSTRUCTION, an always-green arm inside a
+  // banner that claimed all 8 checked. Glob entries now resolve to their PREFIX
+  // DIRECTORY (`split('/**')[0]`; the directory existing at all = the excluded
+  // face was crossed), and the banner reports declared / really-checked /
+  // vacuous as three separate numbers with vacuous FORCED to 0 — "reported but
+  // never checked" is a MAJOR-class lie in this repo, so it fails the gate.
+  //
+  // P5-T14 review round (mcode MAJOR-2): the reverse pins stopped at omo-team's
+  // src/tools + src/team + src root — the vendor trees had ZERO reverse
+  // coverage, so a file creeping back onto disk under vendor/** with no files[]
+  // row stayed green forever (exactly the 'carved-out file creeping back' class
+  // the subset ruling exists to police). Now every file on disk under
+  // vendor/team-core/src and vendor/prompts-team must be registered in its
+  // manifest's files[]; exemptions are explicit named lists, nothing inferred.
+  //
+  // P5-T14 DELTA round (both channels APPROVE; minors upheld in arbitration):
+  //   ① the team-core reverse scan root was `src/` while prompts-team was
+  //     already whole-tree — an unregistered stray at the vendor ROOT (a
+  //     README.md, an .npmrc, any carrier file) stayed invisible. Both scan
+  //     roots are now the WHOLE vendor tree, symmetric; package.json and
+  //     tsconfig.json were already files[] rows, so the wider scan adds no
+  //     new exemption (measured: 45 whole-tree reverse-pinned files, zero
+  //     unregistered).
+  //   ② the excluded-face arm is fail-closed on its prefix: a non-
+  //     'packages/team-core/' entry counts VACUOUS (red at > 0) instead of
+  //     silently continuing, and declared is pinned to a named CONSTANT —
+  //     adding or dropping an excluded path is a ruling change that must
+  //     re-pin the constant. prompts-team's excluded entries are upstream-
+  //     root-shaped paths with no single on-disk target in this repo — the
+  //     asymmetry is NAMED in the green banner, not silently skipped
+  //     (opencode NIT-2).
+  //   ③ the exempt-dir check runs BEFORE the isDirectory()/isFile() branch,
+  //     so a symlinked node_modules is pruned by name, not counted as a
+  //     stray file (mcode MINOR-1). Exemption set stays minimal BY RULING:
+  //     no .DS_Store/.gitkeep entries — the discipline is 'build artifacts
+  //     and OS metadata do not land under vendor/**'; anything that must
+  //     live there gains a files[] row, not an exemption.
+  try {
+    const c27Problems = []
+    for (const dir of [VENDOR_TEAM_CORE, VENDOR_PROMPTS_TEAM]) {
+      for (const required of ['NOTICE.md', 'VENDOR-MANIFEST.json']) {
+        if (!existsSync(join(dir, required))) c27Problems.push(`${relative(REPO_ROOT, dir)}/${required} is missing`)
+      }
+    }
+    if (c27Problems.length === 0) {
+      const coreVm = JSON.parse(readFileSync(join(VENDOR_TEAM_CORE, 'VENDOR-MANIFEST.json'), 'utf8'))
+      const listed = Array.isArray(coreVm.files) ? coreVm.files : []
+      if (listed.length === 0) c27Problems.push('team-core VENDOR-MANIFEST lists no files — the assertion would be vacuous')
+      if (typeof coreVm.counts?.total === 'number' && coreVm.counts.total !== listed.length) {
+        c27Problems.push(`team-core VENDOR-MANIFEST counts.total=${coreVm.counts.total} disagrees with files[] length ${listed.length}`)
+      }
+      for (const f of listed) {
+        if (typeof f?.path === 'string' && !existsSync(join(VENDOR_TEAM_CORE, f.path))) {
+          c27Problems.push(`team-core VENDOR-MANIFEST lists ${f.path}, which is not on disk`)
+        }
+      }
+      // Excluded-face arm, glob-aware (MAJOR-1 fix). Each entry resolves to
+      // exactly ONE honest path target: file form → the file; `dir/**` form →
+      // the prefix DIRECTORY (dir existing at all crosses the ruling). Any
+      // other glob shape (residual `*` after the prefix, or an empty prefix)
+      // has no single-path check — it is counted VACUOUS, and vacuous > 0 is
+      // red: a count in a green banner must name only arms that really checked.
+      // DELTA round (upheld): a non-'packages/team-core/' prefix ALSO lands in
+      // exVacuous — the old silent `continue` deleted typo'd/misrooted entries
+      // from every count, shrinking the declared face with a green banner; and
+      // exDeclared is pinned to a CONSTANT, so adding or dropping an excluded
+      // path is a ruling change that must re-pin this number (c26's
+      // EXPECTED_TEAM_MANIFEST_COUNT precedent).
+      const EXPECTED_TEAM_CORE_EXCLUDED_DECLARED = 8
+      const TEAM_CORE_UPSTREAM_PREFIX = 'packages/team-core/'
+      let exDeclared = 0
+      let exChecked = 0
+      const exVacuous = []
+      for (const ex of coreVm.subset?.excludedUpstreamPaths ?? []) {
+        exDeclared += 1
+        const firstToken = String(ex).split(' ')[0]
+        if (!firstToken.startsWith(TEAM_CORE_UPSTREAM_PREFIX)) {
+          exVacuous.push(`${firstToken} (prefix is not '${TEAM_CORE_UPSTREAM_PREFIX}' — no honest target resolves under vendor/team-core)`)
+          continue
+        }
+        const localRel = firstToken.slice(TEAM_CORE_UPSTREAM_PREFIX.length)
+        const globMark = localRel.indexOf('/**')
+        let target = null
+        if (globMark >= 0) {
+          const prefix = localRel.slice(0, globMark)
+          const rest = localRel.slice(globMark + 3)
+          if (prefix !== '' && !rest.includes('*')) target = join(VENDOR_TEAM_CORE, prefix)
+        } else if (!localRel.includes('*')) {
+          target = join(VENDOR_TEAM_CORE, localRel)
+        }
+        if (target === null) {
+          exVacuous.push(firstToken)
+          continue
+        }
+        exChecked += 1
+        if (existsSync(target)) c27Problems.push(`excluded path ${firstToken} EXISTS at ${relative(REPO_ROOT, target)} — the subset ruling was crossed`)
+      }
+      if (exDeclared !== EXPECTED_TEAM_CORE_EXCLUDED_DECLARED) {
+        c27Problems.push(`team-core excludedUpstreamPaths declares ${exDeclared} entries, the pinned constant EXPECTED_TEAM_CORE_EXCLUDED_DECLARED says ${EXPECTED_TEAM_CORE_EXCLUDED_DECLARED} — the declared face is pinned; adding or dropping an excluded path is a ruling change and must re-pin the constant (was: silent drift of the excluded face behind a green banner)`)
+      }
+      if (exVacuous.length > 0) c27Problems.push(`${exVacuous.length} excluded path(s) reported but NOT checked (no honest single-path resolves from the entry): ${exVacuous.join(', ')} — vacuous arms are a MAJOR-class lie; fix the entry form or the arm`)
+      // Terminal pins by NAME (independent of the excluded-list parse above).
+      if (!existsSync(join(VENDOR_TEAM_CORE, 'src', 'session-client.ts'))) {
+        c27Problems.push('terminal pin broken: src/session-client.ts is ABSENT — the T8b subset keeps it')
+      }
+      if (existsSync(join(VENDOR_TEAM_CORE, 'src', 'team-state-store', 'reservation-reconciliation.ts'))) {
+        c27Problems.push('terminal pin broken: src/team-state-store/reservation-reconciliation.ts EXISTS — the T8b ruling excluded it (mailbox dependency, T1 ruling)')
+      }
+      const promptsVm = JSON.parse(readFileSync(join(VENDOR_PROMPTS_TEAM, 'VENDOR-MANIFEST.json'), 'utf8'))
+      const promptsListed = Array.isArray(promptsVm.files) ? promptsVm.files : []
+      if (promptsListed.length === 0) c27Problems.push('prompts-team VENDOR-MANIFEST lists no files — the assertion would be vacuous')
+      for (const f of promptsListed) {
+        if (typeof f?.path === 'string' && !existsSync(join(VENDOR_PROMPTS_TEAM, f.path))) {
+          c27Problems.push(`prompts-team VENDOR-MANIFEST lists ${f.path}, which is not on disk`)
+        }
+      }
+      // prompts-team excluded face (opencode NIT-2, delta round): these entries
+      // are UPSTREAM-ROOT-shaped paths (packages/prompts-core/**, …) — the
+      // vendor tree mirrors two carried files, not the upstream roots, so no
+      // honest single-path disk target resolves from them (and the third, the
+      // omo-opencode re-export shim, would FALSE-RED if naively prefix-mapped:
+      // its tail path is the vendored team-mode.ts itself). They are therefore
+      // NOT run through the checked arm above — the asymmetry is NAMED in the
+      // green banner, which is the honest shape: declared, not checked, said.
+      const promptsExTokens = (Array.isArray(promptsVm.subset?.excludedUpstreamPaths) ? promptsVm.subset.excludedUpstreamPaths : []).map((ex) => String(ex).split(' ')[0])
+      // Reverse pins over the vendor trees (MAJOR-2 fix): disk → files[], the
+      // direction c26 already holds for omo-team's src and c19 holds for the
+      // other vendors. Exemptions are EXPLICIT named lists — nothing inferred:
+      //   VENDOR_REVERSE_EXEMPT_DIRS — pruned ANYWHERE in the scan, checked
+      //     BEFORE the isDirectory()/isFile() branch (delta round, mcode
+      //     MINOR-1): 'node_modules' is the pnpm-workspace install face
+      //     (measured: vendor/team-core/node_modules/zod is a workspace
+      //     symlink); install artifacts are not carriage bytes. The order is
+      //     load-bearing: readdirSync({withFileTypes}) reports a SYMLINKED
+      //     node_modules as a symlink, not a directory — an after-the-branch
+      //     check would count it as a stray file, so the name check precedes
+      //     every type branch and prunes every shape. The set stays MINIMAL
+      //     BY RULING (delta round, either/or → discipline chosen): NO
+      //     .DS_Store/.gitkeep entries — build artifacts and OS metadata do
+      //     not land under vendor/**; anything that must live there gains a
+      //     files[] row, not an exemption.
+      //   VENDOR_REVERSE_EXEMPT_ROOT_FILES — the recorded-files face at a scan
+      //     root: the gate's own records, presence pinned by the required loop
+      //     above (the manifest's own hash is self-referential — omitted).
+      // Everything else on disk must carry a files[] row or FAIL.
+      const VENDOR_REVERSE_EXEMPT_DIRS = new Set(['node_modules'])
+      const VENDOR_REVERSE_EXEMPT_ROOT_FILES = new Set(['NOTICE.md', 'VENDOR-MANIFEST.json'])
+      const walkVendorFiles = (scanRoot, relRoot) => {
+        const found = []
+        const walk = (dir) => {
+          for (const ent of readdirSync(dir, { withFileTypes: true })) {
+            if (VENDOR_REVERSE_EXEMPT_DIRS.has(ent.name)) continue
+            if (ent.isDirectory()) {
+              walk(join(dir, ent.name))
+            } else if (ent.isFile() || ent.isSymbolicLink()) {
+              const rel = relative(relRoot, join(dir, ent.name))
+              if (!VENDOR_REVERSE_EXEMPT_ROOT_FILES.has(rel)) found.push(rel)
+            }
+          }
+        }
+        walk(scanRoot)
+        return found.sort()
+      }
+      const coreListedPaths = new Set(listed.filter((f) => typeof f?.path === 'string').map((f) => f.path))
+      const promptsListedPaths = new Set(promptsListed.filter((f) => typeof f?.path === 'string').map((f) => f.path))
+      // Delta round ①: BOTH scan roots are the whole vendor tree — symmetric.
+      // The team-core root files (package.json, tsconfig.json) were already
+      // files[] rows, so widening src → whole tree adds coverage, not
+      // exemptions; the recorded-face exemption still applies at the root.
+      const coreRevFiles = walkVendorFiles(VENDOR_TEAM_CORE, VENDOR_TEAM_CORE)
+      const promptsRevFiles = walkVendorFiles(VENDOR_PROMPTS_TEAM, VENDOR_PROMPTS_TEAM)
+      if (coreRevFiles.length === 0) c27Problems.push('reverse pin scanned 0 files under vendor/team-core (whole tree) — the pin would be vacuous')
+      if (promptsRevFiles.length === 0) c27Problems.push('reverse pin scanned 0 files under vendor/prompts-team (whole tree) — the pin would be vacuous')
+      for (const rel of coreRevFiles) {
+        if (!coreListedPaths.has(rel)) c27Problems.push(`vendor/team-core/${rel} is on disk but carries no team-core VENDOR-MANIFEST files[] row — a carved-out or creeping-back file`)
+      }
+      for (const rel of promptsRevFiles) {
+        if (!promptsListedPaths.has(rel)) c27Problems.push(`vendor/prompts-team/${rel} is on disk but carries no prompts-team VENDOR-MANIFEST files[] row — a carved-out or creeping-back file`)
+      }
+      results.push(check('c27', 'team vendors exist, manifests self-consistent, subset terminal pins hold', c27Problems.length === 0,
+        c27Problems.length > 0
+          ? c27Problems.join('; ')
+          : `vendor/team-core + vendor/prompts-team each carry NOTICE.md + VENDOR-MANIFEST.json; ${listed.length} team-core files and ${promptsListed.length} prompts-team files all on disk; excluded face: ${exDeclared} declared (== pinned constant EXPECTED_TEAM_CORE_EXCLUDED_DECLARED) / ${exChecked} really checked / ${exVacuous.length} vacuous (glob arms checked by prefix directory — a literal \`/**\` token is absent by construction; a non-'packages/team-core/' prefix counts vacuous, never silently skipped); prompts-team excluded face: ${promptsExTokens.length} declared upstream-root paths (${promptsExTokens.join(', ')}) — no single on-disk target in this repo, asymmetry NAMED not skipped (opencode NIT-2); reverse pins (whole tree, both scan roots symmetric): ${coreRevFiles.length} files on disk under vendor/team-core + ${promptsRevFiles.length} under vendor/prompts-team all registered in files[] (exemptions named: node_modules pruned by name before any type branch, recorded-face [${[...VENDOR_REVERSE_EXEMPT_ROOT_FILES].join(', ')}]); terminal pins: session-client.ts present, reservation-reconciliation.ts absent`))
+    } else {
+      results.push(check('c27', 'team vendors exist, manifests self-consistent, subset terminal pins hold', false, c27Problems.join('; ')))
+    }
+  } catch (e) {
+    results.push(check('c27', 'team vendors exist, manifests self-consistent, subset terminal pins hold', false,
+      `the team vendor check could not run: ${String(e.message ?? e)}`))
   }
 
   // Report.

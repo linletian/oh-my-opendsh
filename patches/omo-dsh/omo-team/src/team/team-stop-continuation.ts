@@ -1,5 +1,7 @@
 // team-stop-continuation.ts — P5-T9 · manifest 行 ⑰ `stop-continuation-team`
 // 的 omo-team 侧交付面：guard 消费的**只读成员查询服务**（cordis service）。
+// 署名（c25）：**无上游对应物——DSH 原生面**。行 ⑰ 的上游语义住在 omo-hooks 的
+// stop-continuation guard（那边自有署名）；本文件是 DSH 服务面的原生查询臂。
 //
 // ── 为什么这里只有一张「查询面」，取消动作却住在 omo-hooks ──────────────────
 // 行 ⑰ 的 nativeFace 写的是 omo-hooks 的 stop-continuation guard 的 team 分支

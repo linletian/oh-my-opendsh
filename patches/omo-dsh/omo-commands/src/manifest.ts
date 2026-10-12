@@ -242,7 +242,7 @@ const MANIFEST_ROWS = [
     agentBinding: null,
     effectSummary:
       '对抗式多 agent 规划（P5-T13 双形态：team_* 工具面在场跑完整对抗评审环、team_create 等缺席时跑降级 roster 委派，运行时探测切换不硬编码）',
-    e2eScenario: 'hyperplan-degraded-noted',
+    e2eScenario: 'hyperplan-team-mode-full-ring',
     // T14 翻转：handler + 模板 + 单测已落地（src/commands/hyperplan.ts、
     // src/templates/hyperplan.ts、tests/omo-commands/hyperplan.test.ts），e2e
     // 场景属 T15 —— 与另外四条已移植行**同款有意的例外**，理由逐字沿用。
@@ -255,9 +255,12 @@ const MANIFEST_ROWS = [
     // （`HYPERPLAN_DESCRIPTION_REGISTERED`，命令列表在 boot 时写死一次、不许
     // 单向许诺）；**降级后缀原串**（`HYPERPLAN_DESCRIPTION`）逐字保留、降级
     // 时刻进 frame Description 行；完整时刻进 `HYPERPLAN_FRAME_DESCRIPTION_FULL`。
-    // e2e 场景名沿用 `hyperplan-degraded-noted`（P4 定名，覆盖基线同名的行
-    // 不随形态翻名——场景断言已在 drive.mjs 升级为完整形态断言，沙箱里
-    // omo-team 自 T3 起恒在场）。
+    // **P5-T14 翻名**：e2e 场景名 `hyperplan-degraded-noted` →
+    // `hyperplan-team-mode-full-ring`（诚实命名：沙箱里 omo-team 自 T3 起恒
+    // 在场，跑的是完整环，旧名与事实相反；T13 明写翻名超其授权，T14 任务书
+    // 取回）。覆盖基线 COVERAGE_BASELINE_MDS 按 H-号段行锚收录、不按场景名，
+    // 翻名不动基线（c14 仲裁注，verify-concerto-static.mjs）；场景断言已在
+    // drive.mjs 升级为完整形态断言。
     status: 'ported',
   },
   // C-05 → `/stop-continuation`（phase4-commands.md §1.1 C-05 行；H-34 接盘，原

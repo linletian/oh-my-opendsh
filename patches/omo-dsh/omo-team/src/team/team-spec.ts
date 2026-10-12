@@ -226,8 +226,13 @@ function unsupportedFieldReason(scope: 'team spec' | 'team member', field: strin
  * inline spec 解析主入口。raw = object 臂或其 JSON string（union 两臂，
  * 上游 lifecycle-inline-spec.ts:33-44 的 v1 收窄镜像）。校验序与全部对齐
  * 锚在文件头；这里只有序和文案，知识在头部——一文件一处成文纪律。
+ *
+ * P5-T14（门 4 消费链的终点）：第二参数 `maxMembers` = 挂载行的 row Config
+ * （team-row-config.ts，缺省 = MAX_TEAM_MEMBERS = vendored 硬顶 = 默认路径
+ * 文案逐字节不变）。旋钮只许收紧：row 给 3，则 4 成员 spec 具名拒
+ * `exceeds max 3 members.`；越过 8 的放宽不归本参数管（Config 合法域已拒）。
  */
-export function parseTeamSpec(raw: unknown): TeamSpecParseResult {
+export function parseTeamSpec(raw: unknown, maxMembers: number = MAX_TEAM_MEMBERS): TeamSpecParseResult {
   // 1. string 臂（上游 union 的 JSON string 臂；文案形随 lifecycle-inline-spec.ts:77）。
   let value: unknown = raw
   if (typeof value === 'string') {
@@ -265,7 +270,8 @@ export function parseTeamSpec(raw: unknown): TeamSpecParseResult {
     return fail('TEAM_NAME_REQUIRED', "team spec field 'name' must not be empty", 'name')
   }
 
-  // 5. members 数组与 1..8 上限（MAX_TEAM_MEMBERS 上游同名同值，见常量注）。
+  // 5. members 数组与 1..8 上限（MAX_TEAM_MEMBERS 上游同名同值，见常量注；
+  //    P5-T14：上限改读 row Config 指针，缺省即该常量——默认路径逐字节不变）。
   const members = value.members
   if (!Array.isArray(members)) {
     return fail('MEMBERS_REQUIRED', `team spec field 'members' must be a flat array; got ${members === undefined ? 'missing' : typeof members}`, 'members')
@@ -273,8 +279,8 @@ export function parseTeamSpec(raw: unknown): TeamSpecParseResult {
   if (members.length < MIN_TEAM_MEMBERS) {
     return fail('MEMBERS_EMPTY', `team spec 'members' must contain at least ${MIN_TEAM_MEMBERS} member`, 'members')
   }
-  if (members.length > MAX_TEAM_MEMBERS) {
-    return fail('TEAM_MEMBER_LIMIT_EXCEEDED', `team '${name}' exceeds max ${MAX_TEAM_MEMBERS} members.`, 'members')
+  if (members.length > maxMembers) {
+    return fail('TEAM_MEMBER_LIMIT_EXCEEDED', `team '${name}' exceeds max ${maxMembers} members.`, 'members')
   }
 
   const parsedMembers: ParsedTeamMember[] = []

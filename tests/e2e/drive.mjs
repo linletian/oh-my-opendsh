@@ -13524,34 +13524,34 @@ async function runAnalysisSelfTest(routes) {
     ULW_COMMAND_SELF_TEST_ATTESTATION.push(...commandCases.map(([label]) => ['ulw-execute-command-activates-atlas', label]))
   }
 
-  // ── P4-T15 hyperplan-degraded-noted self-test: the good input must PASS, then
+  // ── P4-T15 hyperplan-team-mode-full-ring self-test: the good input must PASS, then
   // every named defect must FAIL on its own named check.
   //
   // Defect counts, so a reader does not have to count: 18 for
-  // hyperplan-degraded-noted (T13 grew it from 17 by adding the five-value
+  // hyperplan-team-mode-full-ring (T13 grew it from 17 by adding the five-value
   // status-vocabulary leg), 14 for ulw-plan-loads-prometheus-skill, 32 in total.
   // The empty-list guard below is the real check on these numbers — if a case is
   // deleted, the banner is generated from the live list, so the SELF-TEST OK line
   // would silently shrink rather than fail. That is why the guard exists per
   // scenario and not once for the pair.
   {
-    const goodHyperplan = analyzeHyperplanDegradedNoted(fabricatedHyperplanInput(routes), routes)
+    const goodHyperplan = analyzeHyperplanTeamModeFullRing(fabricatedHyperplanInput(routes), routes)
     if (goodHyperplan.result !== 'PASS') {
-      problems.push(`fabricated GOOD hyperplan-degraded-noted must PASS, got FAIL on: ${goodHyperplan.failed.join(', ')}`)
+      problems.push(`fabricated GOOD hyperplan-team-mode-full-ring must PASS, got FAIL on: ${goodHyperplan.failed.join(', ')}`)
     }
-    const hyperplanCases = hyperplanDegradedDefectCases()
+    const hyperplanCases = hyperplanTeamModeFullRingDefectCases()
     if (hyperplanCases.length === 0) {
-      problems.push('fabricated hyperplan-degraded-noted: the defect list is EMPTY — the banner would attest to nothing')
+      problems.push('fabricated hyperplan-team-mode-full-ring: the defect list is EMPTY — the banner would attest to nothing')
     }
     for (const [label, mutate, expectedCheck] of hyperplanCases) {
       const input = fabricatedHyperplanInput(routes)
       mutate(input)
-      const verdict = analyzeHyperplanDegradedNoted(input, routes)
+      const verdict = analyzeHyperplanTeamModeFullRing(input, routes)
       if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
-        problems.push(`fabricated hyperplan-degraded-noted defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+        problems.push(`fabricated hyperplan-team-mode-full-ring defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
       }
     }
-    HYPERPLAN_SELF_TEST_ATTESTATION.push(...hyperplanCases.map(([label]) => ['hyperplan-degraded-noted', label]))
+    HYPERPLAN_SELF_TEST_ATTESTATION.push(...hyperplanCases.map(([label]) => ['hyperplan-team-mode-full-ring', label]))
   }
 
   // ── P4-T15 ulw-plan-loads-prometheus-skill self-test. The good input must PASS,
@@ -13710,6 +13710,35 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P5-T14 relay/broadcast self-test（仲裁补强 §1 的 fabricated 半）：
+  // team-create-and-message 的 11 枚 relay/broadcast 新检查每枚一枚具名
+  // defect 腿，GOOD 必 PASS、各腿【只】红在自己的 named check（失败轴：
+  // 中转结果翻面 / 中转帧缺失 / 中转注剥除 / 正文剥除 / durable source 伪造
+  // / 中转帧落 lead / 广播扇出缺一 / 广播注伪造 / 广播落 lead 自己 /
+  // 拒文缺失 / 拒后落帧——与 e2e 真面一一对应，清单长度由显式钉死）。
+  {
+    const goodT14 = analyzeTeamCreateAndMessage(fabricatedTeamCreateAndMessageInput(routes), routes)
+    if (goodT14.result !== 'PASS') {
+      problems.push(`fabricated GOOD team-create-and-message (T14 relay/broadcast) must PASS, got FAIL on: ${goodT14.failed.join(', ')}`)
+    }
+    const t14Cases = teamCreateRelayBroadcastDefectCases()
+    if (t14Cases.length !== 11) {
+      problems.push(`fabricated team-create-and-message: the T14 relay/broadcast defect list must hold exactly 11 legs, got ${t14Cases.length} — one per T14 new check in this scenario`)
+    }
+    for (const [label, mutate, expectedCheck] of t14Cases) {
+      const input = fabricatedTeamCreateAndMessageInput(routes)
+      mutate(input)
+      const verdict = analyzeTeamCreateAndMessage(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated team-create-and-message T14 defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+      if (verdict.result === 'FAIL' && verdict.failed.join(',') !== expectedCheck) {
+        problems.push(`fabricated team-create-and-message T14 defect "${label}" must fail ONLY on ${expectedCheck}, got: ${verdict.failed.join(', ')}`)
+      }
+      TEAM_T14_SELF_TEST_ATTESTATION.push([label, expectedCheck])
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   // ── P4.5-T8b the 0.2.x delivery half (hermetic): the plugin-copy stamp and
@@ -13753,6 +13782,9 @@ const ULW_PLAN_SELF_TEST_ATTESTATION = []
 // self-test loop, read by the banner — rendered FROM what ran.
 const TEAM_T9_SELF_TEST_ATTESTATION = []
 const TEAM_T10_SELF_TEST_ATTESTATION = []
+// P5-T14's own accumulator (relay/broadcast legs of team-create-and-message):
+// the banner renders FROM what ran, never hand-typed (P4-T13 discipline).
+const TEAM_T14_SELF_TEST_ATTESTATION = []
 
 // ══ P3-T17 ulw-execute: the A-mode activation scenarios (TWO) ════════════════
 //
@@ -17542,17 +17574,27 @@ const ULW_PLAN_REQUEST = '给我们的报表系统做个改造方案'
  *  really is this skill" check cannot be satisfied by a description-only match. */
 const ULW_PLAN_BODY_SENTINEL = '## INTENT ROUTING - pick ONE intent reference'
 
-// ── P4-T15 / P5-T13: hyperplan-degraded-noted — the ring instruction really reaches
+// ── P4-T15 / P5-T13 / P5-T14: hyperplan-team-mode-full-ring — the ring instruction really reaches
 // the model, IN THE FORM THE RUNTIME CHOSE.
 //
-// P5-T13 升级说明（场景名保留、断言换形态——任务书判定）：沙箱自 T3 起 cordis.yml
+// P5-T13 升级说明（断言换形态——任务书判定）：沙箱自 T3 起 cordis.yml
 // 第四行恒挂 omo-team，`omoTeamHyperplanTeamFace` 在场脸恒 publish，所以本场景
 // 真实跑出的 frame 是**完整环形态**（HYPERPLAN_COMMAND_TEMPLATE_FULL）。断言随之
-// 升级为完整形态断言；`degraded` 留在场景名里是覆盖基线/manifest 行的引用锚
-// （翻名 = 动基线，超出 T13 授权）。**降级反向覆盖 = 单测探测缺席腿**
+// 升级为完整形态断言。
+// P5-T14 翻名（仲裁补强 §1）：旧名 `hyperplan-degraded-noted` →
+// `hyperplan-team-mode-full-ring`——T13 之后名字与事实相反（跑的是完整环，名字
+// 说降级），诚实命名优先；T13 当时明写翻名超基线授权，T14 任务书正是取回这笔
+// 授权。全库引用同步：omo-commands manifest 行 e2eScenario + 行注、
+// tests/omo-commands/manifest.test.ts 钉、THIRD_PARTY_NOTICES.md 映射行、本文件
+// （场景名/函数名/自检 label/大 banner）。覆盖基线不动：COVERAGE_BASELINE_MDS 按
+// H-号段行锚收录、不按场景名（c14 仲裁注，verify-concerto-static.mjs）；
+// docs/plans/phase4-dev/phase4-tasks.md 的旧名是历史任务书原文（铁律区，不改），
+// CHANGELOG 旧名条目是历史归档（新行另记翻名事实）。
+// **降级反向覆盖 = 单测探测缺席腿**
 // （tests/omo-commands/hyperplan-team-upgrade.test.ts 的三态归一 + 中途挂载腿；
-// 选一说明记在 omo-team manifest 行 ⑮ 注释与交卷 NOTES）——e2e 沙箱不造 noteam
-// 宿主，降级路径的 e2e 证据由 probe 的 noteam face 承担（concerto-mode-probe.sh）。
+// 沙箱恒挂载 omo-team，降级腿无 e2e 可证——降级路径的 e2e 证据边界由 probe 的
+// noteam face 承担（concerto-mode-probe.sh + assert-team-probe-face.mjs），
+// 此即本场景证据边界的成文面）。
 //
 // ONE session, TWO turns, ONE command. The transport is the P4-T7 command channel
 // (admission → `command/run` → `command/done` → the injected frame as a follow-up
@@ -17684,8 +17726,8 @@ function commandBodyRejectsInvertedFrameTags() {
   }
 }
 
-/** hyperplan-degraded-noted script: the command turn, then the bare 对照 turn. */
-function hyperplanDegradedScript() {
+/** hyperplan-team-mode-full-ring script: the command turn, then the bare 对照 turn. */
+function hyperplanTeamModeFullRingScript() {
   return {
     sisyphus: [
       { type: 'text', text: HYPERPLAN_RING_SUMMARY },
@@ -17700,7 +17742,7 @@ function hyperplanDegradedScript() {
  * than "whichever came first" — the two turns carry the same `# /hyperplan Command`
  * header, and a `find` would read turn 1's body for turn 2's assertions.
  */
-export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandResults }, routes) {
+export function analyzeHyperplanTeamModeFullRing({ log, requests, bootLog, commandResults }, routes) {
   const events = log?.events ?? []
   const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
   const sessionId = String(log?.header?.id ?? '')
@@ -19414,6 +19456,38 @@ const TEAM_MEMBER_ANALYST_WAKE_SUMMARY =
 const TEAM_MEMBER_BUILDER_WAKE_SUMMARY =
   'MOCK-TEAM-BUILDER-WAKE-9d4b: announcement received and acked back to the lead.'
 
+// ── P5-T14 relay + broadcast segment: member↔member via the live lead, lead-only 广播 ──
+// 仲裁补强（任务书 T14 §1）：relay（成员→成员经活体 lead 中转，帧注
+// `(relayed via lead)`、durable source 仍是 lead 的 'agent-message' kind）与
+// broadcast（lead `to:'*'` 扇出、成员广播具名拒 `broadcast requires lead role`）
+// 两条边自 T6 起只有单测面——这里给它们 e2e 面，骑在 team-create-and-message
+// 的既有机械上（同场景扩展，不新增场景名：manifest 行 team_send_message 的
+// e2eScenario 因此直接长出新证据，不动 manifest）。correlation id 依旧静态：
+// dedup 账保证每条边恰一次落帧，消费轮次漂移（turn-blind cursor）洗不掉 durable
+// 事实。denial 腿无 correlationId——工具在分配 id 之前就拒（reserve-first 之
+// 前，team-message.ts 步骤 4 先于步骤 5 的成文），所以「拒而不落帧」的
+// canary 面用自造 id `TEAM_CORRID_MEMBER_BC` 搜全日志：零命中 = 拒得干净。
+const TEAM_CORRID_RELAY = 'e5e5e5e5-5555-4555-8555-eeeeeeeeeeee' // analyst → builder, relayed via lead
+const TEAM_CORRID_BROADCAST = 'f6f6f6f6-6666-4666-8666-ffffffffffff' // lead → '*'（两成员各一枚）
+const TEAM_CORRID_MEMBER_BC = 'a7a7a7a7-7777-4777-8777-abababababab' // 成员广播尝试——只许出现在拒文里，不许出现在任何帧里
+
+const TEAM_MSG_RELAY_BODY =
+  'MOCK-T14-RELAY-8b3f: builder, the changelog needs the structure section — hand it to me in your next reply.'
+const TEAM_MSG_BROADCAST_BODY =
+  'MOCK-T14-BROADCAST-1d7e: all members, status round now — reply to the lead with your one-line state.'
+const TEAM_MSG_MEMBER_BC_BODY =
+  'MOCK-T14-MEMBER-BC-4f2a: (member-side broadcast attempt — must be refused by name before any delivery)'
+
+const TEAM_BROADCAST_PROMPT =
+  'Now broadcast one status-round message to every member at once with the wildcard recipient.'
+
+const TEAM_LEAD_BROADCAST_SUMMARY =
+  'MOCK-TEAM-BC-SENT-5c8e: broadcast fan-out done — both members got the status round.'
+const TEAM_ANALYST_RELAY_SUMMARY =
+  'MOCK-TEAM-ANALYST-RELAY-3a6d: message relayed to the builder via the live lead.'
+const TEAM_ANALYST_BC_DENIED_SUMMARY =
+  'MOCK-TEAM-ANALYST-BC-DENIED-9f0c: my broadcast attempt was refused — only the lead may broadcast.'
+
 // ── P5-T7 shutdown handshake full segment: prompts, replies, survive corridor ─
 // The inquiry/result frame ids are RUNTIME-BORN (randomUUID inside the tool —
 // unlike team_send_message's author-time correlationId, the shutdown frames
@@ -20966,6 +21040,12 @@ async function restartAdoptAndAudit(boot, sandbox, sessionId, patchPath, env, ro
     postAudit,
     adoptedAt,
     boot: rebooted,
+    // P5-T14 (arbitration supplement §2): the ledger rides the return as a
+    // STRUCTURED value, not only stringified into `detail` — the analyzer's
+    // dualLedger check reads fields, so a ledger whose arrays are empty or
+    // whose member names drifted reddens structurally instead of surviving a
+    // substring match on the serialization.
+    ledger: ledger ?? null,
     detail: `${adoptionDetail} at=${adoptedAt}; preBoard=${JSON.stringify(preBoardFiles)}; ledger=${JSON.stringify(ledger ?? null)}; postAudit=${JSON.stringify(postAudit)}`,
     rebootBootLog,
     boardDir,
@@ -21072,11 +21152,20 @@ export function analyzeTeamTaskClaim(
       && postAudit.t1?.status === 'completed'
       && postAudit.t2?.status === 'claimed'
       && postAudit.t2?.owner === TEAM_MEMBER_ANALYST,
+    // P5-T14 强化（仲裁补强 §2：弱字符串匹配 → 结构化读盘账）：旧形态只对
+    // `detail` 做 `includes('"processedMessageIds":[')` + 成员名包含——空账
+    // `"processedMessageIds":[]` 也能绿。现在直接读 restartAdoptAndAudit 带回
+    // 的结构化 ledger（重启后从盘上解析的同一对象）：账在场、processedMessageIds
+    // 非空（本场景 lead 至少发了三条无 correlationId 的消息，id 全入账）、
+    // briefingInjectedMembers 同时含 analyst 与 builder（briefing 账按成员名记，
+    // team-state.ts claimBriefingInjection 的键面）。缺任一字段 = 红，不宽容。
     dualLedgerDurableAcrossReboot: (() => {
-      const detail = rebootObservation?.detail ?? ''
-      return detail.includes('"processedMessageIds":[')
-        && detail.includes(TEAM_MEMBER_ANALYST)
-        && detail.includes(TEAM_MEMBER_BUILDER)
+      const ledger = rebootObservation?.ledger
+      if (ledger === undefined || ledger === null || typeof ledger !== 'object') return false
+      if (!Array.isArray(ledger.processedMessageIds) || ledger.processedMessageIds.length === 0) return false
+      if (!Array.isArray(ledger.briefingInjectedMembers)) return false
+      return ledger.briefingInjectedMembers.includes(TEAM_MEMBER_ANALYST)
+        && ledger.briefingInjectedMembers.includes(TEAM_MEMBER_BUILDER)
     })(),
     boardFilesOnDiskPreReboot: (() => {
       const detail = rebootObservation?.detail ?? ''
@@ -21126,9 +21215,9 @@ export function fabricatedTeamCreateAndMessageInput(routes) {
   const prompt = (text) => ({ type: 'user/message', data: { id: `fabricated-t10-prompt-${seq + 1}`, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'fabricated-rpc-t10' } } })
   const step = (turn, text) => ({ type: 'assistant/message', data: { turn, step: 1, message: { role: 'assistant', content: [{ type: 'text', text }] } } })
   const toolCall = (turn, callId, name, args) => ({ type: 'tool/call', data: { turn, step: 1, callId, name, arguments: JSON.stringify(args) } })
-  const toolResult = (turn, callId, text) => ({
+  const toolResult = (turn, callId, text, isError = false) => ({
     type: 'tool/result',
-    data: { turn, step: 1, message: { role: 'tool', toolCallId: callId, isError: false, content: [{ type: 'text', text }] } },
+    data: { turn, step: 1, message: { role: 'tool', toolCallId: callId, isError, content: [{ type: 'text', text }] } },
   })
   const splice = (senderSessionId, text) => ({
     type: 'agent/inbox/spliced',
@@ -21161,11 +21250,23 @@ export function fabricatedTeamCreateAndMessageInput(routes) {
   push({ type: 'turn/start', data: { turn: 3 } })
   push(toolCall(3, 'mock-t10-resend-a', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: TEAM_MEMBER_ANALYST, body: TEAM_MSG_TO_ANALYST_BODY, correlationId: TEAM_CORRID_A }))
   // The dedup answer names the duplicate id and is itself delivered:true —
-  // leadSendResultsAllDeliveredOrDedup counts all three send rows, none an
+  // leadSendResultsAllDeliveredOrDedup counts all four send rows, none an
   // error, and the named dedup note is the second extraction's needle.
   push(toolResult(3, 'mock-t10-resend-a', `{"delivered":true,"deduplicated":true,"note":"duplicate message id ${TEAM_CORRID_A} — the analyst already has that message"}`))
   push(step(3, TEAM_LEAD_RESEND_SUMMARY))
   push({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+
+  // P5-T14 lead turn 4: the wildcard broadcast. ONE messageId, fan-out over
+  // the deliverable members (the tool's own result shape: deliveries[] + the
+  // `broadcast <id> delivered to N member(s)` note) — the lead's log carries
+  // the CALL and the RESULT, never a self-addressed frame (the lead does not
+  // receive its own broadcast; the frames below land at the MEMBERS only).
+  push(prompt(TEAM_BROADCAST_PROMPT))
+  push({ type: 'turn/start', data: { turn: 4 } })
+  push(toolCall(4, 'mock-t14-broadcast', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: '*', body: TEAM_MSG_BROADCAST_BODY, correlationId: TEAM_CORRID_BROADCAST }))
+  push(toolResult(4, 'mock-t14-broadcast', `{"delivered":true,"deduplicated":false,"messageId":"${TEAM_CORRID_BROADCAST}","deliveries":[{"to":"analyst","delivered":true,"relayed":false},{"to":"builder","delivered":true,"relayed":false}],"note":"broadcast ${TEAM_CORRID_BROADCAST} delivered to 2 member(s)"}`))
+  push(step(4, TEAM_LEAD_BROADCAST_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
 
   // member→lead acks at the lead: splice carrier + its user/message claim.
   push(splice(FABRICATED_T10_ANALYST_ID, `Team message ${TEAM_CORRID_ACK_A} from analyst: ${TEAM_ACK_ANALYST_BODY}`))
@@ -21173,7 +21274,7 @@ export function fabricatedTeamCreateAndMessageInput(routes) {
   push(splice(FABRICATED_T10_BUILDER_ID, `Team message ${TEAM_CORRID_ACK_B} from builder: ${TEAM_ACK_BUILDER_BODY}`))
   push(claim(FABRICATED_T10_BUILDER_ID, `Team message ${TEAM_CORRID_ACK_B} from builder: ${TEAM_ACK_BUILDER_BODY}`))
 
-  const member = (seat, memberId, wakeCorrid, wakeBody, ackCorrid, ackBody, wakeSummary, replyText) => {
+  const member = (seat, memberId, wakeCorrid, wakeBody, ackCorrid, ackBody, wakeSummary, replyText, tail) => {
     const mEvents = []
     let mSeq = 0
     const mPush = (event) => {
@@ -21219,12 +21320,48 @@ export function fabricatedTeamCreateAndMessageInput(routes) {
     mPush(toolResult(2, `mock-t10-ack-${seat}`, `{"delivered":true,"correlationId":"${ackCorrid}"}`))
     mPush(step(2, wakeSummary))
     mPush({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+    // P5-T14: the member-lane tail (relay / denial legs for the analyst, the
+    // received relay/broadcast frames for the builder) — same seq discipline,
+    // same clock, built by the caller so each lane's tail says its own thing.
+    if (tail !== undefined) tail(mPush)
     return { path: `/fabricated/t10/${seat}/session.jsonl`, header: { type: 'session', id: memberId, origin: 'subagent', parentSession: FABRICATED_T10_LEAD_ID, delegationDepth: 1 }, events: mEvents }
   }
 
   const log = { path: '/fabricated/t10-create/session.jsonl', header: { type: 'session', id: FABRICATED_T10_LEAD_ID }, events }
-  const analystLog = member(TEAM_SEAT_ANALYST, FABRICATED_T10_ANALYST_ID, TEAM_CORRID_A, TEAM_MSG_TO_ANALYST_BODY, TEAM_CORRID_ACK_A, TEAM_ACK_ANALYST_BODY, TEAM_MEMBER_ANALYST_WAKE_SUMMARY, TEAM_MEMBER_ANALYST_REPLY)
-  const builderLog = member(TEAM_SEAT_BUILDER, FABRICATED_T10_BUILDER_ID, TEAM_CORRID_B, TEAM_MSG_TO_BUILDER_BODY, TEAM_CORRID_ACK_B, TEAM_ACK_BUILDER_BODY, TEAM_MEMBER_BUILDER_WAKE_SUMMARY, TEAM_MEMBER_BUILDER_REPLY)
+  const analystLog = member(TEAM_SEAT_ANALYST, FABRICATED_T10_ANALYST_ID, TEAM_CORRID_A, TEAM_MSG_TO_ANALYST_BODY, TEAM_CORRID_ACK_A, TEAM_ACK_ANALYST_BODY, TEAM_MEMBER_ANALYST_WAKE_SUMMARY, TEAM_MEMBER_ANALYST_REPLY, (mPush) => {
+    // P5-T14 analyst tail · RELAY leg: member→member rides the LIVE lead —
+    // the analyst's own tool/result says relayed:true, and the frame that
+    // lands at the builder carries the annotation + the lead's durable
+    // source (built on the builder lane below).
+    mPush({ type: 'turn/start', data: { turn: 3 } })
+    mPush(toolCall(3, 'mock-t14-relay-analyst', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: TEAM_MEMBER_BUILDER, body: TEAM_MSG_RELAY_BODY, correlationId: TEAM_CORRID_RELAY }))
+    mPush(toolResult(3, 'mock-t14-relay-analyst', `{"delivered":true,"deduplicated":false,"messageId":"${TEAM_CORRID_RELAY}","deliveries":[{"to":"builder","delivered":true,"relayed":true}],"note":"message ${TEAM_CORRID_RELAY} delivered to 'builder'"}`))
+    mPush(step(3, TEAM_ANALYST_RELAY_SUMMARY))
+    mPush({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+    // The lead's broadcast lands at the analyst too (fan-out), and the
+    // analyst's OWN wildcard attempt is refused BY NAME, isError, before any
+    // id is allocated — no frame under TEAM_CORRID_MEMBER_BC exists anywhere.
+    mPush(splice(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}`))
+    mPush(claim(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}`))
+    mPush({ type: 'turn/start', data: { turn: 4 } })
+    mPush(toolCall(4, 'mock-t14-bc-denied-analyst', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: '*', body: TEAM_MSG_MEMBER_BC_BODY, correlationId: TEAM_CORRID_MEMBER_BC }))
+    mPush(toolResult(4, 'mock-t14-bc-denied-analyst', 'Error: broadcast requires lead role', true))
+    mPush(step(4, TEAM_ANALYST_BC_DENIED_SUMMARY))
+    mPush({ type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
+  })
+  const builderLog = member(TEAM_SEAT_BUILDER, FABRICATED_T10_BUILDER_ID, TEAM_CORRID_B, TEAM_MSG_TO_BUILDER_BODY, TEAM_CORRID_ACK_B, TEAM_ACK_BUILDER_BODY, TEAM_MEMBER_BUILDER_WAKE_SUMMARY, TEAM_MEMBER_BUILDER_REPLY, (mPush) => {
+    // P5-T14 builder tail · RECEIVED legs: the relayed frame (durable source
+    // = the LEAD, annotation names the analyst as originator) then the lead's
+    // direct broadcast frame (no annotation — lead-originated), each exactly
+    // once, then the clamped-tail text that closes the wake turn.
+    mPush(splice(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_RELAY} from analyst (relayed via lead): ${TEAM_MSG_RELAY_BODY}`))
+    mPush(claim(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_RELAY} from analyst (relayed via lead): ${TEAM_MSG_RELAY_BODY}`))
+    mPush(splice(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}`))
+    mPush(claim(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}`))
+    mPush({ type: 'turn/start', data: { turn: 3 } })
+    mPush(step(3, TEAM_MEMBER_BUILDER_WAKE_SUMMARY))
+    mPush({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+  })
   return {
     log,
     allLogs: [log, analystLog, builderLog],
@@ -21235,12 +21372,18 @@ export function fabricatedTeamCreateAndMessageInput(routes) {
       { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 13 },
       { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 14 },
       { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 15 },
+      // P5-T14: the broadcast turn (lead) and the relay/denial turns (analyst)
+      // really round-tripped the mock — the request ledger says so.
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 16 },
       { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 20 },
       { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 21 },
       { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 22 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 23 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 24 },
       { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 30 },
       { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 31 },
       { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 32 },
+      { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 33 },
     ],
     bootLog: [
       FABRICATED_BOOT_LOG,
@@ -21527,6 +21670,89 @@ export function teamCreateSurfaceDefectCases() {
 }
 
 /**
+ * The 11 P5-T14 relay/broadcast defect legs of team-create-and-message — one
+ * per T14 new check, each mutated so it reddens ONLY its own named check
+ * (the T10 single-named-failure discipline carried forward). Axes covered:
+ * relay-result-flipped / relay-frame-dropped / annotation-stripped /
+ * body-stripped / durable-source-forged / relay-at-lead /
+ * broadcast-dropped-at-one-member / broadcast-annotation-forged /
+ * broadcast-at-lead-self / denial-dropped / denial-forged-frames. The
+ * exactly-once axis deliberately has ONE leg (dropped): doubling the relay
+ * frame would ride the same check name and blur the 1:1 label↔check map this
+ * list exists to keep auditable.
+ */
+export function teamCreateRelayBroadcastDefectCases() {
+  const memberOf = (input, memberId) => input.allLogs.find((l) => l.header?.id === memberId)
+  const dropIf = (events, pred) => {
+    const i = events.findIndex(pred)
+    if (i >= 0) events.splice(i, 1)
+  }
+  const spliceCarries = (event, text) =>
+    event?.type === 'agent/inbox/spliced' && splicedFrameText(event).includes(text)
+  const rewriteSpliceText = (event, from, to) => {
+    for (const inserted of event?.data?.inserted ?? []) {
+      for (const block of inserted?.content ?? []) {
+        if (typeof block?.text === 'string' && block.text.includes(from)) block.text = block.text.split(from).join(to)
+      }
+    }
+  }
+  return [
+    ['relay-result-not-relayed', (input) => {
+      const part = memberOf(input, FABRICATED_T10_ANALYST_ID).events.find(
+        (e) => e.type === 'tool/result' && (e.data?.message?.content ?? []).some((c) => (c.text ?? '').includes(TEAM_CORRID_RELAY)),
+      )
+      for (const block of part.data.message.content) block.text = block.text.split('"relayed":true').join('"relayed":false')
+    }, 'analystRelayDeliveredTrue'],
+    ['relay-frame-dropped-at-builder', (input) => {
+      dropIf(memberOf(input, FABRICATED_T10_BUILDER_ID).events, (e) => spliceCarries(e, `Team message ${TEAM_CORRID_RELAY}`))
+    }, 'relayFrameAtBuilderExactlyOnce'],
+    ['relay-frame-annotation-stripped', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => spliceCarries(e, `Team message ${TEAM_CORRID_RELAY}`))
+      rewriteSpliceText(frame, ' (relayed via lead)', '')
+    }, 'relayFrameCarriesRelayAnnotation'],
+    ['relay-frame-body-stripped', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => spliceCarries(e, `Team message ${TEAM_CORRID_RELAY}`))
+      rewriteSpliceText(frame, TEAM_MSG_RELAY_BODY, '')
+    }, 'relayFrameCarriesBody'],
+    ['relay-frame-durable-source-forged-to-analyst', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => spliceCarries(e, `Team message ${TEAM_CORRID_RELAY}`))
+      frame.data.inserted[0].source.senderSessionId = FABRICATED_T10_ANALYST_ID
+    }, 'relayFrameDurableSourceLead'],
+    ['relay-frame-spliced-at-lead', (input) => {
+      input.log.events.push({
+        type: 'agent/inbox/spliced',
+        data: { target: 'next-step', inserted: [{ source: { kind: 'agent-message', senderSessionId: FABRICATED_T10_LEAD_ID }, content: [{ type: 'text', text: `Team message ${TEAM_CORRID_RELAY} from analyst (relayed via lead): ${TEAM_MSG_RELAY_BODY}` }] }] },
+      })
+    }, 'relayFrameNotSplicedAtLead'],
+    ['broadcast-frame-dropped-at-analyst', (input) => {
+      dropIf(memberOf(input, FABRICATED_T10_ANALYST_ID).events, (e) => spliceCarries(e, `Team message ${TEAM_CORRID_BROADCAST} from lead:`))
+    }, 'broadcastDeliveredAtBothMembersExactlyOnce'],
+    ['broadcast-frame-relayed-annotation-forged', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => spliceCarries(e, `Team message ${TEAM_CORRID_BROADCAST} from lead:`))
+      frame.data.inserted[0].content[0].text += ' (relayed via lead)'
+    }, 'broadcastFramesDirectNotRelayed'],
+    ['broadcast-frame-spliced-at-lead-self', (input) => {
+      input.log.events.push({
+        type: 'agent/inbox/spliced',
+        data: { target: 'next-step', inserted: [{ source: { kind: 'agent-message', senderSessionId: FABRICATED_T10_LEAD_ID }, content: [{ type: 'text', text: `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}` }] }] },
+      })
+    }, 'broadcastNotSplicedAtLeadSelf'],
+    ['member-broadcast-denial-dropped', (input) => {
+      dropIf(
+        memberOf(input, FABRICATED_T10_ANALYST_ID).events,
+        (e) => e.type === 'tool/result' && (e.data?.message?.content ?? []).some((c) => (c.text ?? '').includes('broadcast requires lead role')),
+      )
+    }, 'analystBroadcastDeniedByName'],
+    ['member-broadcast-denial-forged-frames', (input) => {
+      memberOf(input, FABRICATED_T10_ANALYST_ID).events.push({
+        type: 'agent/inbox/spliced',
+        data: { target: 'next-step', inserted: [{ source: { kind: 'agent-message', senderSessionId: FABRICATED_T10_LEAD_ID }, content: [{ type: 'text', text: `Team message ${TEAM_CORRID_MEMBER_BC} from analyst (relayed via lead): ${TEAM_MSG_MEMBER_BC_BODY}` }] }] },
+      })
+    }, 'memberBroadcastDenialLandedNoFrames'],
+  ]
+}
+
+/**
  * The 4 T10 surface defect legs of team-shutdown-handshake — one per T10
  * new check: dropped rejected claim / doubled approved claim / inquiry claim
  * re-kinded to the hidden steer 'context' kind (the Q-7 registered blind
@@ -21576,9 +21802,24 @@ export function teamShutdownSurfaceDefectCases() {
  *    the copy a real model reads off the team_create result);
  *   lead turn 3: re-send to the analyst with the SAME id A → the tool's
  *    dedup note must be the answer, not a second delivery;
+ *   lead turn 4 (P5-T14): team_send_message to '*' — the lead-only wildcard
+ *    broadcast; the fan-out lands at BOTH members under the ONE static id
+ *    TEAM_CORRID_BROADCAST (the lead itself never receives its own broadcast
+ *    — self-delivery is not an edge, team-message.ts step 5);
  *   member lanes: reply (turn 1), then on the WAKE turn ack to 'lead'
  *    (member→lead is the native sendToParent edge — adjacency, not relay),
- *    then a wake summary text; the tail replays so every lane closes.
+ *    then a wake summary text; the tail replays so every lane closes;
+ *   analyst lane tail (P5-T14): the RELAY leg — team_send_message to the
+ *    BUILDER (member→member is not an adjacent edge, so the tool routes it
+ *    through the live lead; the frame at the builder carries `(relayed via
+ *    lead)` with the durable source still the LEAD's 'agent-message' kind,
+ *    Q-8 unpolluted), then a relay summary, then the BROADCAST DENIAL leg —
+ *    team_send_message to '*' from a MEMBER, refused BY NAME (`broadcast
+ *    requires lead role`, isError) BEFORE any id is allocated or ledger
+ *    entry is reserved, so no frame may exist anywhere under its canary id.
+ *    Where the turn-blind cursor consumes these steps is irrelevant (the
+ *    convergent-lane precedent): every step is harmless to replay and the
+ *    dedup ledger guarantees each static id lands exactly once.
  */
 function teamCreateAndMessageScript() {
   return {
@@ -21621,6 +21862,18 @@ function teamCreateAndMessageScript() {
         },
       },
       { type: 'text', text: TEAM_LEAD_RESEND_SUMMARY },
+      // P5-T14 lead turn 4: the lead-only wildcard broadcast.
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: '*',
+          body: TEAM_MSG_BROADCAST_BODY,
+          correlationId: TEAM_CORRID_BROADCAST,
+        },
+      },
+      { type: 'text', text: TEAM_LEAD_BROADCAST_SUMMARY },
     ],
     [TEAM_SEAT_ANALYST]: [
       { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
@@ -21635,6 +21888,32 @@ function teamCreateAndMessageScript() {
         },
       },
       { type: 'text', text: TEAM_MEMBER_ANALYST_WAKE_SUMMARY },
+      // P5-T14 relay leg: member→member rides the live lead (relayed frame
+      // at the builder, durable source = the lead's 'agent-message').
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: TEAM_MEMBER_BUILDER,
+          body: TEAM_MSG_RELAY_BODY,
+          correlationId: TEAM_CORRID_RELAY,
+        },
+      },
+      { type: 'text', text: TEAM_ANALYST_RELAY_SUMMARY },
+      // P5-T14 denial leg: a member's wildcard broadcast is refused BY NAME
+      // before id allocation / ledger reservation — zero frames anywhere.
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: '*',
+          body: TEAM_MSG_MEMBER_BC_BODY,
+          correlationId: TEAM_CORRID_MEMBER_BC,
+        },
+      },
+      { type: 'text', text: TEAM_ANALYST_BC_DENIED_SUMMARY },
     ],
     [TEAM_SEAT_BUILDER]: [
       { type: 'text', text: TEAM_MEMBER_BUILDER_REPLY },
@@ -21887,9 +22166,17 @@ async function awaitTeamMembersIdle(
  *     frames naming each member's senderSessionId;
  *   * BOTH members received the lead's frame as a native 'agent-message'
  *     splice AFTER their completed turn (the wake) and completed a second turn.
+ * P5-T14 extends the durable set to the relay/broadcast edges:
+ *   * the analyst's relay tool/result is durable (TEAM_CORRID_RELAY with
+ *     `"relayed":true`) AND the relayed frame landed at the BUILDER exactly
+ *     once (source = the lead's 'agent-message' — the Q-8 carrier);
+ *   * the lead's broadcast tool/result is durable AND the broadcast frame
+ *     landed at BOTH members exactly once;
+ *   * the analyst's member-side broadcast attempt is durable as an isError
+ *     result naming `broadcast requires lead role`.
  * A false return means the observation window expired — reported, not hidden.
  */
-async function awaitTeamMessagingSettled(_boot, sandbox, sessionId, timeoutMs = 45_000) {
+async function awaitTeamMessagingSettled(_boot, sandbox, sessionId, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
@@ -21918,7 +22205,56 @@ async function awaitTeamMessagingSettled(_boot, sandbox, sessionId, timeoutMs = 
         return after.some((event) => event.type === 'turn/start')
           && after.some((event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed')
       })
-      if (dedupDurable && ackedBack && membersAwake) return true
+      // P5-T14 durable edges. Child identification is by ROLE, not by session
+      // id: the analyst is the child whose log carries the relay result (only
+      // it scripts the relay), the builder the other member — reading the
+      // relay/broadcast facts off any-child existentials would let a
+      // mis-wired lane pass. The broadcast fan-out is the one fact asserted
+      // member-by-member.
+      // Extractor discipline (the trap the first T14 run stepped on, measured
+      // red on the real host while every fabricated leg stayed green): the
+      // await gate reads durable-JSON-IN-text needles, and eventText's
+      // JSON.stringify ESCAPES the inner quotes — `"relayed":true` can never
+      // match it. toolResultTextOf (drive's own RAW extractor, :6512) is the
+      // house rule for these needles; the fabricated channel cannot catch this
+      // class because fabricated logs feed `analyze`, never `await`.
+      const analyst = children.find((child) =>
+        (child.events ?? []).some(
+          (event) => event.type === 'tool/result' && toolResultTextOf(event).includes(TEAM_CORRID_RELAY),
+        ),
+      )
+      const relayResultDurable = analyst !== undefined
+        && (analyst.events ?? []).some(
+          (event) => event.type === 'tool/result'
+            && toolResultTextOf(event).includes(TEAM_CORRID_RELAY)
+            && toolResultTextOf(event).includes('"relayed":true'),
+        )
+      const relayFrameAtBuilder = children.filter((child) => child !== analyst).every((builder) =>
+        (builder.events ?? []).filter(
+          (event) => event.type === 'agent/inbox/spliced'
+            && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_RELAY} from analyst (relayed via lead):`),
+        ).length === 1,
+      )
+      const broadcastResultDurable = leadEvents.some(
+        (event) => event.type === 'tool/result'
+          && toolResultTextOf(event).includes(TEAM_CORRID_BROADCAST)
+          && toolResultTextOf(event).includes('"delivered":true'),
+      )
+      const broadcastAtBothMembers = children.every((child) =>
+        (child.events ?? []).filter(
+          (event) => event.type === 'agent/inbox/spliced'
+            && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_BROADCAST} from lead:`),
+        ).length === 1,
+      )
+      const denialDurable = analyst !== undefined
+        && (analyst.events ?? []).some(
+          (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('broadcast requires lead role'),
+        )
+      if (
+        dedupDurable && ackedBack && membersAwake
+        && relayResultDurable && relayFrameAtBuilder
+        && broadcastResultDurable && broadcastAtBothMembers && denialDurable
+      ) return true
     }
     await sleep(400)
   }
@@ -22381,6 +22717,43 @@ export function analyzeTeamCreateAndMessage(
     (part) => part.text.includes('duplicate message id') && part.text.includes(TEAM_CORRID_A),
   )
 
+  // ── P5-T14 relay/broadcast extractions (durable-log facts only) ─────────────
+  // The relay edge is located by its STATIC correlation id in the frame text,
+  // NOT by the sender in the splice source — the durable source of a relayed
+  // frame is the LEAD (Q-8: omo never rewrites the kind/sender), and the
+  // sender-side identity (`from analyst`) lives in the frame text. Splitting
+  // the two axes is what lets a forged sender-sessionId redden ONLY the
+  // durable-source check while the exactly-once count stays green.
+  const relayFramesAt = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        event.type === 'agent/inbox/spliced'
+        && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_RELAY}`),
+    )
+  // Every spliced frame anywhere in the scenario carrying `text` — the
+  // denial canary's search surface (a refused broadcast must produce ZERO of
+  // these; a lead self-broadcast frame at the lead would be one).
+  const splicesCarryingAnywhere = (text) =>
+    (allLogs ?? []).filter((candidate) =>
+      (candidate.events ?? []).some(
+        (event) => event.type === 'agent/inbox/spliced' && splicedFrameText(event).includes(text),
+      ),
+    )
+  const broadcastFramesAt = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        event.type === 'agent/inbox/spliced'
+        && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_BROADCAST} from lead:`),
+    )
+  // The analyst's own relay / denial tool decisions, read off its tool/result
+  // texts (the analyst lane is the only lane scripting either call).
+  const analystRelayResult = toolResultParts(analystLog?.events ?? []).find(
+    (part) => part.text.includes(TEAM_CORRID_RELAY),
+  )
+  const analystBroadcastDenial = toolResultParts(analystLog?.events ?? []).find(
+    (part) => part.text.includes('broadcast requires lead role'),
+  )
+
   // P5-T10 extractions — catalog rows at the LEAD (see catalogRowsFor's
   // header) and the wake-round frame helper (see firstCompletedTurnEndSeq).
   const leadCatalogRows = catalogRowsFor(events)
@@ -22499,12 +22872,13 @@ export function analyzeTeamCreateAndMessage(
       && briefingFrames(analystLog).some(
         (event) => messageContentText(event.data).includes(`"teamRunId":"${teamRunIdFromResult}"`),
       ),
-    // lead turn 2 called team_send_message TWICE in one parallel batch and
-    // turn 3 once more (the resend): three calls total, all three results
-    // durable, none an error.
-    leadCalledTeamSendMessageThreeTimes: leadSendCalls.length === 3,
+    // lead turn 2 called team_send_message TWICE in one parallel batch,
+    // turn 3 once more (the resend), and — since P5-T14 — turn 4 once more
+    // (the wildcard broadcast): FOUR calls total, all four results durable,
+    // none an error (the denial runs on the ANALYST's lane, never the lead's).
+    leadCalledTeamSendMessageFourTimes: leadSendCalls.length === 4,
     leadSendResultsAllDeliveredOrDedup:
-      leadSendResults.length === 3 && leadSendResults.every((part) => part.isError !== true),
+      leadSendResults.length === 4 && leadSendResults.every((part) => part.isError !== true),
     // DELIVERY at the members: native 'agent-message' splices, target
     // 'next-step', frame text verbatim — analyst got A once, builder got B once.
     analystReceivedLeadFrame:
@@ -22533,6 +22907,45 @@ export function analyzeTeamCreateAndMessage(
     // analyst's log carries the A-frame EXACTLY once (no second delivery).
     sameIdResendDeduplicated: dedupResult !== undefined,
     analystFrameDeliveredExactlyOnce: leadFramesAt(analystLog, TEAM_CORRID_A).length === 1,
+
+    // ── P5-T14 relay + broadcast edges（仲裁补强：e2e 面，非单测复读）──────────
+    // RELAY（成员→成员经活体 lead）：analyst 的 own tool/result 说
+    // relayed:true；帧落 builder 恰一枚；帧注逐字 `(relayed via lead)`；
+    // durable source 仍是 lead 的 'agent-message'（Q-8 kind 不被改写——
+    // senderSessionId = lead，origin 身份在帧文本 `from analyst`，两轴分离
+    // 钉死）；lead 自己的日志里没有这枚帧（投递面只朝收件人）。
+    analystRelayDeliveredTrue:
+      analystRelayResult !== undefined
+      && analystRelayResult.text.includes('"relayed":true')
+      && analystRelayResult.text.includes('"delivered":true'),
+    relayFrameAtBuilderExactlyOnce: relayFramesAt(builderLog).length === 1,
+    relayFrameCarriesRelayAnnotation: relayFramesAt(builderLog).every(
+      (event) => splicedFrameText(event).includes('(relayed via lead)'),
+    ),
+    relayFrameCarriesBody: relayFramesAt(builderLog).every(
+      (event) => splicedFrameText(event).includes(TEAM_MSG_RELAY_BODY),
+    ),
+    relayFrameDurableSourceLead: relayFramesAt(builderLog).every(
+      (event) => agentMessageSplice(event, leadId) !== undefined,
+    ),
+    relayFrameNotSplicedAtLead: relayFramesAt(log).length === 0,
+    // BROADCAST（lead `to:'*'`）：两成员各恰一枚 lead 署名帧；lead 不收自己
+    // 的广播（self-delivery 非边）；直投帧无中转注。
+    broadcastDeliveredAtBothMembersExactlyOnce:
+      broadcastFramesAt(analystLog).length === 1
+      && broadcastFramesAt(builderLog).length === 1,
+    broadcastFramesDirectNotRelayed:
+      broadcastFramesAt(analystLog).every((event) => !splicedFrameText(event).includes('(relayed via'))
+      && broadcastFramesAt(builderLog).every((event) => !splicedFrameText(event).includes('(relayed via')),
+    broadcastNotSplicedAtLeadSelf: splicesCarryingAnywhere(`Team message ${TEAM_CORRID_BROADCAST} from lead:`).every(
+      (candidate) => String(candidate.header?.id) !== String(leadId),
+    ),
+    // 成员广播拒止：isError + 具名 `broadcast requires lead role`（上游
+    // send.ts:19 逐字），且拒发生在 id 分配之前——拒文 canary id 在全量日志
+    // 的任何 spliced 帧里零命中（拒而不落的反金丝雀）。
+    analystBroadcastDeniedByName:
+      analystBroadcastDenial !== undefined && analystBroadcastDenial.isError === true,
+    memberBroadcastDenialLandedNoFrames: splicesCarryingAnywhere(TEAM_CORRID_MEMBER_BC).length === 0,
 
     // ── P5-T10 可视化 L1 断言 · 目录可达半 + 认领帧半 ──────────────────────
     // Q-7 静态链的机器可证半边（Q7-visualization.md §2.4/§3）：成员经
@@ -22628,6 +23041,11 @@ export function analyzeTeamCreateAndMessage(
       analystLeadFrame: splicedFrameText(leadFramesAt(analystLog, TEAM_CORRID_A)[0]) ?? null,
       builderLeadFrame: splicedFrameText(leadFramesAt(builderLog, TEAM_CORRID_B)[0]) ?? null,
       analystAckFrame: splicedFrameText(memberAcksAtLead(analystLog?.header?.id, TEAM_MEMBER_ANALYST, TEAM_CORRID_ACK_A)[0]) ?? null,
+      // P5-T14: the two new edges verbatim — the relayed frame the builder
+      // received and the denial text the analyst got back.
+      builderRelayFrame: splicedFrameText(relayFramesAt(builderLog)[0]) ?? null,
+      analystBroadcastFrame: splicedFrameText(broadcastFramesAt(analystLog)[0]) ?? null,
+      analystBroadcastDenialText: analystBroadcastDenial?.text ?? null,
       leadSendResultTexts: leadSendResults.map((part) => part.text),
       actionObservations: actionObservations ?? null,
       // P5-T10: the durable catalog rows (verbatim childId/mode/label) and the
@@ -23651,10 +24069,14 @@ const SCENARIOS = [
     analyze: analyzeStopContinuationHaltsTodo,
   },
   {
-    // P4-T15 — `/hyperplan` over the P4-T7 command channel, asserting the DEGRADED
-    // rewrite the model actually receives (the guidance段, the roster mapping, the
-    // Description-line suffix, and zero executable dead links).
-    name: 'hyperplan-degraded-noted',
+    // P4-T15 — `/hyperplan` over the P4-T7 command channel; P5-T13 flipped the
+    // asserted form to FULL-RING (the sandbox mounts omo-team, so the guidance
+    // the model receives IS the full ring); P5-T14 renamed the scenario to
+    // match the fact (`hyperplan-team-mode-full-ring`). Asserts: the ring
+    // guidance段, the roster mapping, the Description-line suffix, and zero
+    // executable dead links. 降级腿的反向覆盖 = 单测缺席腿 + probe noteam face
+    // （证据边界见本文件 hyperplan 段头注）。
+    name: 'hyperplan-team-mode-full-ring',
     roles: ['sisyphus'],
     commands: [
       { line: HYPERPLAN_COMMAND_LINE },
@@ -23663,8 +24085,8 @@ const SCENARIOS = [
       // `**User Arguments**` line while the argument-bearing turn's must not.
       { line: HYPERPLAN_BARE_COMMAND_LINE },
     ],
-    script: hyperplanDegradedScript,
-    analyze: analyzeHyperplanDegradedNoted,
+    script: hyperplanTeamModeFullRingScript,
+    analyze: analyzeHyperplanTeamModeFullRing,
   },
   {
     // P4-T15 — `/ulw-plan` as a GESTURE, which is the opposite end of the same
@@ -23694,6 +24116,10 @@ const SCENARIOS = [
     // half): three lead turns with a PARK between them — create, then WAIT
     // until both members are settled AND offline (the cold-wake precondition),
     // then the send batch, then the same-id resend that must deduplicate.
+    // P5-T14 grew the fourth lead turn (the lead-only wildcard broadcast) and
+    // the analyst lane's relay leg (member→builder via the live lead) plus
+    // the member-broadcast denial leg — the two edges whose durable proof the
+    // arbitration supplement demanded.
     // `actions` is the only shape that expresses the park BETWEEN turns.
     actions: [
       { kind: 'prompt', text: TEAM_CREATE_PROMPT },
@@ -23704,6 +24130,7 @@ const SCENARIOS = [
       },
       { kind: 'prompt', text: TEAM_MSG_PROMPT },
       { kind: 'prompt', text: TEAM_RESEND_PROMPT },
+      { kind: 'prompt', text: TEAM_BROADCAST_PROMPT },
     ],
     // The lead lane is the conductor (stamped into the omo-agents copy as usual);
     // the two MEMBER lanes are omo-team seats, stamped into a STAGED omo-team copy.
@@ -24452,6 +24879,11 @@ async function runScenario(def, baseRoutes) {
             reached: observation.reached === true,
             adopted: observation.adopted === true,
             postAudit: observation.postAudit,
+            // P5-T14: the STRUCTURED ledger rides through the record too —
+            // the analyzer's dualLedger check reads fields off THIS object,
+            // and a record that dropped the field would make the check read
+            // nothing but null while `detail` still printed the ledger.
+            ledger: observation.ledger ?? null,
             detail: observation.detail,
             preBootLog: bootPreRebootSnapshot,
             rebootBootLog: observation.rebootBootLog,
@@ -26035,7 +26467,7 @@ function mutateHyperplanCarrierText(input, rewrite) {
   carrier.data.content = [{ type: 'text', text: rewrite(messageContentText(carrier.data)) }]
 }
 
-function hyperplanDegradedDefectCases() {
+function hyperplanTeamModeFullRingDefectCases() {
   return [
     ['the command never registered (no boot-log registration line)', (input) => {
       input.bootLog = input.bootLog.split('\n').filter((line) => line !== HYPERPLAN_BOOT_REGISTRATION_LINE).join('\n')
@@ -26591,7 +27023,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       .map(([label]) => label)
       .join(', ')
     if (HYPERPLAN_SELF_TEST_ATTESTATION.length === 0) {
-      problems.push('P4-T15: the hyperplan-degraded-noted self-test banner is EMPTY — it would attest to nothing')
+      problems.push('P4-T15: the hyperplan-team-mode-full-ring self-test banner is EMPTY — it would attest to nothing')
     }
     const HYPERPLAN_SELF_TEST_BANNER = [...HYPERPLAN_SELF_TEST_ATTESTATION
       .reduce((byScenario, [scenario, label]) => {
@@ -26627,7 +27059,13 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P5-T10 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 9 on team-create-and-message, 4 on team-shutdown-handshake, each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing) FAILs on its own named check; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
+    if (TEAM_T14_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('P5-T14: the relay/broadcast self-test banner is EMPTY — it would attest to nothing')
+    }
+    const TEAM_T14_SELF_TEST_BANNER = [...TEAM_T14_SELF_TEST_ATTESTATION]
+      .map(([label, expectedCheck]) => `${label}→${expectedCheck}`)
+      .join(', ')
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 9 on team-create-and-message, 4 on team-shutdown-handshake, each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

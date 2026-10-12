@@ -1,6 +1,8 @@
 // roster-seats.ts — P5-T5 · 名册席三件套声明表（hephaestus / sisyphus-junior 两席；
 // 纯声明 + 纯函数，零 ctx / 零副作用 / 运行时零 io——persona 文本内嵌，boot/组建
 // 期不读盘）。
+// 署名（c25）：**无上游对应物——DSH 原生面**。上游没有「名册席」概念（席值的
+// 事实源在 omo-agents 名册，另一棵 DSH 树）；本表是声明式复制，不是移植。
 //
 // ── 声明式复制（禁止 import omo-agents；测试期逐字段对账）───────────────────
 // omo-team 不 import 其他 omo 包（index.ts 边界纪律成文；member-validator.ts 的

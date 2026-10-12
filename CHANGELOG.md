@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Phase 5 gate hardening (P5-T14, 2026-10) — relay/broadcast e2e + honest scenario rename + gates 4/6/8 extensions
+
+- rename(e2e): scenario `hyperplan-degraded-noted` → `hyperplan-team-mode-full-ring` — the sandbox
+  has mounted omo-team since T3, so the form that runs is the FULL adversarial ring; the old name
+  contradicted the fact and honest naming wins. Full-repo reference sync (omo-commands manifest row
+  + comment, `tests/omo-commands/manifest.test.ts` pin, THIRD_PARTY_NOTICES.md mapping, drive.mjs
+  scenario/script/analyze/self-test labels/banner); the coverage baseline is anchored by H-numbers,
+  not scenario names, so the baseline does NOT move (c14 arbitration note). The old name stays in
+  historical entries (this file's Phase 4 entry, phase4 task books — read-only archives).
+- test(e2e): `team-create-and-message` grew its relay/broadcast half — member→member delivery
+  relayed through the live lead (frame annotated `(relayed via lead)`, durable source still the
+  lead's `agent-message` kind) and lead-only wildcard broadcast (fan-out to both members under one
+  id, lead never receives its own), plus the member-side broadcast denial (`broadcast requires lead
+  role`, refused by name before any id is allocated — zero frames under its canary id); 11 new
+  named checks + 11 fabricated defect legs, each red ONLY on its own check; `dualLedgerDurable-
+  AcrossReboot` strengthened from substring-matching the serialized detail to reading the ledger
+  structurally (`processedMessageIds.length > 0` + both member names in `briefingInjectedMembers`).
+- feat(gate): omo-team now exports a plugin `Config` (`{ maxMembers?: number }`, default 8 = the
+  vendored `MAX_TEAM_MEMBERS`), consumed at team_create spec validation; doctor-lite check 4 gained
+  the repo's own `cordis.yml` plugin rows as a validated face (omo-team checked; the three sibling
+  packages declared no-schema BY DECLARATION with their refusal tested).
+- feat(gate): `verify-concerto-static.mjs` c25–c27 — omo-team source signature/coverage census,
+  manifest↔file-set pin, vendor existence + team-core subset terminal pin; the c14 arbitration
+  (phase5-team.md does not join COVERAGE_BASELINE_MDS) is codified as a live re-check + comment.
+- feat(gate): `run-proofs.sh` proof 8 — vendored team-core host-Node loadability (the T8b wall
+  ruling's regression net) + manifest integrity + state-machine resume shape.
+
 ### Phase 4.5 code landing (2026-10-06 … 2026-10-08) — declaration-face installer + D17 cutover + four review-fix rounds
 
 - feat(installer): `scripts/install-concerto.sh` rewritten to the declaration face — renders the preset

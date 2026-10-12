@@ -62,6 +62,7 @@ PROOF_NAMES=(
   "P3-T19 guardrail C/E mode mechanisms"
   "bump-dsh --self-test (D7 two-token pin: safe-point cutoff + write atomicity)"
   "P4-T16 command registry in a real composition + handler-throw settle shape"
+  "P5-T14 team runtime: vendored team-core host-Node loadability + manifest integrity + resume zero-shape + row Config"
 )
 
 if ! command -v dsh >/dev/null 2>&1; then
@@ -105,6 +106,7 @@ PROOF_COMMANDS=(
   "node scripts/prove-guardrail-modes.mjs $NM"
   "bash scripts/bump-dsh.sh --self-test"
   "node scripts/prove-command-registry.mjs $NM"
+  "node scripts/prove-team-runtime.mjs"
 )
 TOTAL_PROOFS=${#PROOF_NAMES[@]}
 if [[ "$TOTAL_PROOFS" != "${#PROOF_COMMANDS[@]}" ]]; then
@@ -150,6 +152,18 @@ run_proof() {
 # the proof set above rotted before. It is hermetic (no network, no repo writes)
 # and fast, so it belongs in this zero-cost chain. `--online` (the real
 # resolution smoke) is NOT run here: ci-local gates stay hermetic.
+#
+# P5-T14: the team runtime joins the chain as the eighth proof. The T8b wall
+# ruling (fork (B), FORK.md §3.3) decided the team state machine runs on the
+# BYTE-FROZEN vendored team-core subset loaded by host Node through the `.ts`
+# shim — and until this proof, NO gate executed those vendored bytes: unit
+# tests and e2e reach them through package specifiers and the installed copy,
+# so a drift back to bun-only extensionless imports, or a subset crossing (a
+# carved-out file creeping back), would ride green through every other gate.
+# The proof imports the vendor copy BY PATH, runs resumeAllTeams over a tmpdir
+# teams face (terminal zero-report pinned field by field), re-checks manifest
+# integrity in-process, and pins the gate-4 row Config's default/knob/refusal.
+# Hermetic: no network, no boot, no repo writes (tmpdir only).
 #
 # P4-T16: the invocation list is now DERIVED from the two parallel arrays, one
 # `run_proof` line per INDEX. It used to be six hand-written

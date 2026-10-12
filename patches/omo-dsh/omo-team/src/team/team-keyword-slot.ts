@@ -1,5 +1,7 @@
 // team-keyword-slot.ts — P5-T12 · manifest 行 ⑭ `team-keyword-injection`
 // 的 omo-team 侧交付面：team 关键词槽的**启动期把门面**（cordis service）。
+// 署名（c25）：**无上游对应物——DSH 原生面**。行 ⑭ 的上游语义住在 omo-hooks 的
+// keyword-detector（那边自有逐字署名）；本文件是 DSH 服务面的原生把门代码。
 //
 // ── 为什么这一行的 nativeFace 住在 omo-hooks，这里却有一张面 ────────────────
 // 行 ⑭ 的 nativeFace 写的是 omo-hooks keyword-detector 的 team 槽接线

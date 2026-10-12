@@ -282,7 +282,7 @@ describe('P4-T2 COMMAND_MANIFEST — spot checks (hard-coded against phase4-comm
     // 完整对抗评审环误当成本阶段的承诺。
     expect(entry?.effectSummary).toContain('team_create')
     expect(entry?.effectSummary).toContain('降级')
-    expect(entry?.e2eScenario).toBe('hyperplan-degraded-noted')
+    expect(entry?.e2eScenario).toBe('hyperplan-team-mode-full-ring')
   })
 
   it('④ stop-continuation is the C-05 row: template + the 3-file guard tree, no args', () => {

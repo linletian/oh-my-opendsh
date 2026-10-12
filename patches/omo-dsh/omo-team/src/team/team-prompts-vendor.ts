@@ -1,6 +1,9 @@
 // team-prompts-vendor.ts — P5-T12 · manifest 行 ㉔ `vendor-team-prompts`
 // 的 omo-team 侧交付面：prompts-team vendor 包的**启动完整性把门 + 模板档案面**
 // （cordis service）。
+// 署名（c25）：**无上游对应物——DSH 原生面**。行 ㉔ 的上游字节住在
+// vendor/prompts-team/（逐字 v4.19.4，sha pin 在 VENDOR-MANIFEST）；本模块是
+// DSH 侧的守门人代码，零上游字节。
 //
 // ── 这一行交付的是什么 ────────────────────────────────────────────────────────
 // 行 ㉔ 的 nativeFace 是 `vendor 两项文本（team.md + teamModeSkill.template）`。

@@ -189,12 +189,12 @@
 
 ## WP-7 门与 e2e 扩展（计划书 §4.9）
 
-### [ ] P5-T14 — team 场景群补全 + 门扩展
+### [x] P5-T14 — team 场景群补全 + 门扩展
 
 - **产出**：drive.mjs 场景群终态（**canonical 七名**——T1 仲裁定名并已在 T7/T8/T12 同注册：`team-create-and-message` / `team-nested-create-denied` / `team-teardown-no-orphans` / `team-shutdown-handshake`（T7）/ `team-task-claim`（T8）/ `team-keyword-mode` / `stop-continuation-team`）；门 4（第四插行 + team Config schema 校验）；门 6（c 组延续编号：四插行 / omo-team 署名覆盖 / manifest↔文件集合 / vendor 存在性 / **c14 并集扩展裁定**——phase5-team.md 含 H-号段条目时入 `COVERAGE_BASELINE_MDS`，同 commit）；门 8（probe/proofs 扩展）。
 - **做法**：每场景含对照断言与反向金丝雀（计划书 §2 纪律）；门扩展只加严；变异反跑自证（门 6 新断言至少一条删行/改行变异实证）。**【仲裁增补（双评审收敛，2026-10-10）**：T6 的 relay（member↔member lead 中转）与 broadcast（仅 lead）两面当前只有单测、无 e2e——本任务给 team-create-and-message 或新场景补**至少一条真实中转断言 + 一条广播断言**（帧注 `(relayed via lead)` + durable source = lead 的 'agent-message'），否则该路径回归网只有结构 mock（mcode NOTES-3 / opencode NOTES 双登记）。】**【仲裁增补 2（T8b 评审遗留，2026-10-10）**：drive.mjs `dualLedgerDurableAcrossReboot` 的弱匹配断言（空数组可过）在本任务加固为结构化读账 + 非空成员集判定（mcode 建议落点 T9/T14，归此）。】
 - **判定**：✅ 8 门全绿；场景 verdict JSON 含明细断言；变异实证记录。
-- **证据**：⬜
+- **证据**：✅ 2026-10-12——场景群终态（canonical 七名全绿 + relay 真断言（中转帧 `(relayed via lead)` + durable source=lead 'agent-message'）+ broadcast 真断言（扇出双成员恰一次 + lead 不自收 + 成员广播具名拒）+ dualLedger 结构化加固（非空成员集判定）+ hyperplan 正名 `hyperplan-team-mode-full-ring` 全仓同步 + 降级腿证据边界成文）；门 4（omo-team Config schema `{maxMembers?:number}` 默认 8 = MAX_TEAM_MEMBERS 指针 + doctor-lite repo 行扫描臂 `validated=omo-team(maxMembers=8)` + `REPO_ROWS_WITH_SCHEMA` 针）；门 6（c25 署名覆盖 / c26 manifest↔文件集合双向钉 / c27 vendor 存在性 + 排除面 + 终态钉 + c14「不扩展」裁定成文 + 活体针 phase5-team.md `| H-N |` 行数恒 0）；门 8（第 8 证 prove-team-runtime.mjs：vendored team-core 宿主 Node 直载回归网 + manifest 完整性 + resume 零形态 + row Config）。实测：**ci-local 8/8 全绿**（归档 `.omo/evidence/p5t14/ci-local.log`）；vitest 89f/2044t；root typecheck exit 0；probe PASS；cold-start 绿。**双评审通过**：轮 1 B REJECT（2 MAJOR——c27 glob 真空臂 + vendor 反向钉缺失）+ A APPROVE → 修复轮（glob 臂前缀目录化 + declared/really-checked/vacuous 三数绿幅 + vendor 反向钉 + 变异腿 C/D/E/F）；delta 双 APPROVE → 微修轮（反向钉整树化 + fail-closed 前缀计数（declared 钉常数 8）+ 剪枝顺序 + 豁免纪律成文 + 变异腿 G/H/I）仲裁独立确认。**首轮红诚实账**：settleReachedChildren 误用 eventText（JSON 转义陷阱→toolResultTextOf 原文提取器）+ dualLedger 漏带结构化字段——修复为收紧非放水（评审核实）。
 - **依赖**：P5-T5…P5-T13 全部。**量级**：1.5 天。
 
 ---
@@ -202,6 +202,8 @@
 ## WP-8 收口
 
 ### [ ] P5-T15 — 合规复核 + 文档双语 + 覆盖基线终态
+
+> **仲裁增补（T14 评审遗留登记，2026-10-12）**：① `drive.mjs` 的 `settleReachedChildren` 弱形（`settleReached !== false` 恒过——非 T14 引入的存量弱断言）在本任务评估是否加固为具名 settle 证据钉（加固则同 commit 成文，不加则记差异理由）；② 门 6 的 c26/c27 与门 4 新臂的变异实证缺口（T14 只有 c25 两腿真破真红）——本任务补 c26/c27/doctor-lite 新臂各至少一条变异腿。
 
 - **产出**：`THIRD_PARTY_NOTICES.md` Phase 5 小节终态（**(B) 形态 = 语义移植表 + team-core vendor 子集表**）；vendor manifest 漂移复跑；README 双语状态行（team 面 ≠ DAG ≠ 编辑面的措辞纪律沿用 Phase 2/3/4 先例）；CHANGELOG；**D18（fork 已裁 (B)：不采用 experimental team 面登记——依据 = Q-3 三重封死链 + FORK.md）与 ROADMAP Phase 5 措辞修订双语同 commit**；dsh-0.2.0-rc.2 复核报告补「实施期订正」节（Q-2/Q-3/Q-7 的契约事实，双语）；覆盖基线全条目终态。
 - **判定**：✅ 门 7 绿（d01–d10 现行断言集）；`verify-licenses` 绿且计数全对应；双语文档行数/结构一致。

@@ -141,8 +141,33 @@ import {
   registerHyperplanUpgradePresenceFace,
   registerRemoveAiSlopsAddendumPresenceFace,
 } from './team/team-tool-presence.ts'
+// P5-T14 · 门 4：插件 row Config（dsh Config 契约形态，team-row-config.ts 头注
+// 两臂——cordis 宿主 `~standard.validate` + doctor-lite `new Schema(config)`）。
+// 消费链在 apply 的第二参数（cordis 把校验后的 config 递进来，
+// @deepseek-ai/cordis lib/index.js:1071）→ row-config 单例 → team_create 的
+// spec 成员上限。缺省 = MAX_TEAM_MEMBERS（vendored 硬顶，行为零漂移）。
+import {
+  Config as TeamRowConfigSchema,
+  currentTeamRowConfig,
+  setTeamRowConfig,
+  type TeamRowConfig,
+} from './team/team-row-config.ts'
 
 export const name = 'omo-team'
+
+/**
+ * P5-T14（门 4）：the plugin's row Config — re-exported from
+ * team-row-config.ts so the cordis loader picks it up (`plugin.Config`,
+ * @deepseek-ai/cordis lib/index.js:1631) and doctor-lite check 4's sweep of
+ * the repo's own cordis.yml rows VALIDATES against it (checked face, no
+ * longer unchecked). `{ maxMembers?: number }`, default 8 = the vendored
+ * hard cap (team-spec.ts's MAX_TEAM_MEMBERS pointer, upstream validator.ts:5
+ * 同名同值) — the knob tightens, never loosens past the vendored byte-frozen
+ * ceiling. Consumed for real: apply(ctx, config) below feeds the row-config
+ * singleton, and the `team_create` registrar reads it into its spec cap.
+ */
+export const Config = TeamRowConfigSchema
+export type { TeamRowConfig }
 
 /**
  * P5-T5 SERVICE INJECTION (the P4-T3 promotion pair, verbatim discipline): a
@@ -300,7 +325,7 @@ export type TeamRegistrar = (
  */
 export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
   // P5-T5 · ① §1 行 1（manifest.ts 行序 = 本表读序，boot-markers.test.ts 钉）。
-  team_create: (ctx) => registerTeamCreateSurface(ctx, { subagents: ctx.subagents, store: teamStateStore }),
+  team_create: (ctx) => registerTeamCreateSurface(ctx, { subagents: ctx.subagents, store: teamStateStore, maxMembers: currentTeamRowConfig().maxMembers }),
   // P5-T7 · ② §1 行 2：拆除面——interrupt（保 inbox）+ drain 走 subagents
   // 的 T5 臂，lead 活体经 agents 注册表取，状态迁移/清账走同一骨架。
   team_delete: (ctx) => registerTeamDeleteSurface(ctx, { subagents: ctx.subagents, agents: ctx.agents, store: teamStateStore }),
@@ -457,8 +482,21 @@ export function runTeamRegistrations(
  * dead disk must not mean a dead plugin; the mirror simply stays boot-empty).
  * Consumers grep by prefix (`[omo-team]`), never by position, so the extra
  * lines cannot break the loaded-marker contract.
+ *
+ * P5-T14 (门 4): the SECOND parameter is the cordis-resolved row config — the
+ * host validates it against the exported `Config` (`~standard.validate`,
+ * @deepseek-ai/cordis lib/index.js:957-961) and passes the result in
+ * (lib/index.js:1071 `runtime.callback(this.ctx, this.config)`). It lands in
+ * the row-config singleton (`setTeamRowConfig`, the write-point-unique
+ * discipline) and from there reaches the `team_create` spec cap. A caller
+ * that passes nothing (the unit-fake ctxs, any direct apply(ctx) call) gets
+ * the defaults — maxMembers = MAX_TEAM_MEMBERS, the vendored hard cap, i.e.
+ * today's behavior byte-for-byte.
  */
-export function apply(ctx: TeamRegistrationContext): void {
+export function apply(ctx: TeamRegistrationContext, config?: unknown): void {
+  // Row config first: the registration loop must not register a surface that
+  // would read a stale config (there is exactly one write, right here).
+  setTeamRowConfig(config)
   const log = (line: string): void => {
     console.log(line)
   }

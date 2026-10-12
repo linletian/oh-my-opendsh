@@ -2,12 +2,12 @@
 //
 // ── 语义移植声明（SEMANTIC PORT, NOT A COPY）────────────────────────────────
 // 上游源路径（署名，OMO tag v4.19.4 = commit b072d279110bdda2c6ac2525d0d24dc54d16148a）：
-//   - packages/omo-opencode/src/features/team-mode/lifecycle-create-tool.ts
+//   - packages/omo-opencode/src/features/team-mode/tools/lifecycle-create-tool.ts
 //     —— team_create 的工具骨架（参数 union、执行序「解析→校验→嵌套闸→
 //     spawn→active」、错误冒泡形态）；逐字段语义在 Q1a-tools-lifecycle.md
 //     §2/§3 对账（v1 收窄：inline_spec 单臂，teamName 命名 spec = 记差异，
 //     manifest.ts team_create 行成文）。
-//   - packages/omo-opencode/src/features/team-mode/team-tool-gating/hook.ts
+//   - packages/omo-opencode/src/hooks/team-tool-gating/hook.ts
 //     :102-108 —— 嵌套闸文案的真实出处：lead 与 member 都计入 participant，
 //     `team_create denied: session is already a participant of team <id>` 的
 //     语义逐字承载于本文件的 gate（Q1a §2.0 引文在档）。
@@ -145,6 +145,12 @@ interface TeamToolExec {
 export interface TeamCreateDeps {
   readonly subagents: TeamContinuableChannel
   readonly store: TeamStateStore
+  /**
+   * P5-T14（门 4）：挂载行 row Config 的成员上限（team-row-config.ts 校验后
+   * 值）。缺省 = MAX_TEAM_MEMBERS（vendored 硬顶，默认路径逐字节不变）；给了
+   * 就生效——本字段是 Config 从 apply 到 spec 校验的唯一通路。
+   */
+  readonly maxMembers?: number
 }
 
 const describeError = (err: unknown): string =>
@@ -205,8 +211,10 @@ export async function executeTeamCreate(
   status: 'active'
   members: readonly { name: string; seat: string; sessionId: string }[]
 }> {
-  // 1) parse（T4 解析器直吃 object | JSON string；失败原因原文冒泡）。
-  const parsed = parseTeamSpec(args.inline_spec)
+  // 1) parse（T4 解析器直吃 object | JSON string；失败原因原文冒泡。
+  //    P5-T14：成员上限随 row Config 走——deps.maxMembers 缺省时解析器回落
+  //    MAX_TEAM_MEMBERS，默认路径逐字节不变）。
+  const parsed = parseTeamSpec(args.inline_spec, deps.maxMembers)
   if (!parsed.ok) {
     throw new Error(`team_create: ${parsed.message}`)
   }

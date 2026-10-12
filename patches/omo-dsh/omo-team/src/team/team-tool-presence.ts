@@ -1,6 +1,8 @@
 // team-tool-presence.ts — P5-T13 · manifest 行 ⑮ `hyperplan-upgrade` 与行 ⑯
 // `remove-ai-slops-team-addendum` 的 omo-team 侧交付面：**team 工具在场探测面**
 // （cordis service，两张脸一行一枚）。
+// 署名（c25）：**无上游对应物——DSH 原生面**。行 ⑮/⑯ 的模板正文移植住在
+// omo-commands 的 templates（那边自有逐字署名）；本文件只发在场探测，零上游字节。
 //
 // ── 为什么探测面住在 omo-team ─────────────────────────────────────────────────
 // T13 的切换判据是「team 工具在场」——而**谁知道** team_* 工具在场？只有

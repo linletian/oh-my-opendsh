@@ -615,7 +615,9 @@ deliberate zero-injection shape, not a used path.
 > `handoff` → `handoff-summary-driven`,
 > `remove-ai-slops` → `remove-ai-slops-driven`,
 > `stop-continuation` → `stop-continuation-halts-todo`,
-> `hyperplan` → `hyperplan-degraded-noted`. The one remaining `pending` row is
+> `hyperplan` → `hyperplan-team-mode-full-ring`（P5-T14 翻名，旧名
+> `hyperplan-degraded-noted`——T13 完整环在场形态下旧名与事实相反，诚实命名
+> 优先；覆盖基线按 H-号段行锚收录，不随场景名翻动）。The one remaining `pending` row is
 > `ulw-plan`, and its pendingness is a **permanent ruling, not unfinished work**
 > (Q-3: registering a command of that name would shadow DSH's own skill gesture
 > bridge). Its declared scenario `ulw-plan-loads-prometheus-skill` names the
