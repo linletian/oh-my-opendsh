@@ -210,12 +210,12 @@
 - **证据**：✅ 2026-10-12——**合规面**：THIRD_PARTY_NOTICES.md 终态（team-core 表漂移修复 verbatim 7/modified 37/deviations 17 与 manifest 逐行零分歧——漂移系 T8b 扩展名补全翻 30 行 modified 未跟进，T15 抓出；+ **Phase 5 omo-team semantic ports 语义移植表 9 行**（Phase 4 逐命令表先例）+ 分隔符修正）+ vendor 漂移复跑 `checked=372 violations=0` + `verify-licenses checked=61 violations=0` 计数全对应（57→59→60→61 逐次有对应）；**文档双语**：dsh-0.2.0-rc.2 复核报告补 §9「实施期订正」（Q-2/Q-3/Q-7 契约事实，双语同 commit，结构对应）+ README 双语 hyperplan 行改完成时；**覆盖基线终态**：manifest vendor 六行翻 ported（pending=0/ported=22/recorded=2，同步网全点位 + team-core-vendor.ts 守门面 + c28 NOTICES-mirror 派生臂——防 T8a→T8b 型漂移再存活）；**T14 遗留**：settleReachedChildren 弱形→具名 settle 证据钉 ×3 场景 + handshake 追加（四枚具名钉）+ fabricated settle 腿；doctor-lite 门 4 新臂变异腿 A–D；**评审修复轮**：c26/c27 增补②前提订正（已于 p5t14 闭环）+ NOTICES 三行分隔符 + RUN-SUMMARY/CHANGELOG 诚实账同步 + **settle ④钉竞态修复**（opencode 实测 4 跑 1 红——插桩实测裁两案取①：settle 钩子增三 lane 静默轮询 + 快照静默 2s，④钉满贯零豁免；6 连跑 PASS + 4 独立连跑复核）+ 证据指针校正。实测：**ci-local 8/8 全绿**（归档 p5t15/ci-local.log）；vitest 90f/2056t；root typecheck exit 0；verify-concerto-static 37/37；cold-start 22/24；probe PASS。**双评审通过**（轮 1 双 REJECT（B 的 MAJOR 经 p5t14 日志证据驳回 + A 的 NOTICES 缺表 MAJOR 成立）→ 修复轮；delta B APPROVE 零 findings + A REJECT（settle 竞态 MAJOR）→ 竞态修复轮；race-delta 双 APPROVE → nit 微修仲裁独立确认）。
 - **依赖**：P5-T14。**量级**：4 小时。
 
-### [ ] P5-T16 — 退出标准核对 + L2 真机
+### [x] P5-T16 — 退出标准核对 + L2 真机
 
 - **产出**：退出标准核对表（下节）全 ✅；L2 证据 `.omo/evidence/p5-l2-*.md`（真实 web boot + 浏览器核验 **subagentchat 面板达成员会话 + lead 会话 `'agent-message'` 帧消息可见**（(B) 形态——无 TeamAction/projection，fork 裁定见 T1）+ 一次真实 3 成员协作 + 拆除核验）。
 - **做法**：逐条对照计划书 §5 取证；L2 按 manual-testing 惯例；**「web UI 可见」以浏览器核验为准**，L1 事件/目录断言只作回归网（R-5 纪律）。
 - **判定**：✅ 核对表 a/b/c + DoD c/d/e 全 ✅。
-- **证据**：⬜
+- **证据**：✅ 2026-10-12——**L2 真机半段**（`.omo/evidence/p5-l2/`）：真实 LLM 3 成员协作（l2-drive.mjs，沙箱真 boot + 真实 ~/.dsh digest 不动；凭据卫生：API 凭据全树零泄漏；launch token 初版误落明文 3 处——评审 BLOCKER 修复轮已杀进程失效 + 脱敏 + 全树复扫零命中，见 p5-l2/ui/token-hygiene-grep.txt）：21 次真实模型调用（lead 9 / analyst 8 / builder 4），路由逐席（lead deepseek-official/v4-pro、analyst deepseek/deepseek-flash、builder deepseek-official/v4-pro）；协作内容真实（成员各自读 README/CHANGELOG 并回报，lead 汇总）；消息双向 10 帧；拆除核验（team_delete forced + interruptedSessionIds 恰两枚 + boot drain 行 + state.json 墓碑 deleted + 探针 rows 全 inactive + no revival + no grandchildren）。**verdict-final.json 28/28 PASS**（首跑 2 项 check 模式误报——arguments JSON string 未 parse + 墓碑取错条——l2-reanalyze.mjs 冻结日志零付费重判修正，模式差异成文）。**浏览器核验**（`.omo/evidence/p5-l2/ui/`：headless Chrome 154 + CDP 驱动 + 8 截图 + ui-evidence.md **10 PASS + 1 RECORDED**）：lead 会话轨迹 tab Team message 唤醒卡双向可见（from analyst/builder 全文可展开）+ subagentchat 列出两成员会话（可继续标记）+ 点开成员会话 lead→成员帧可见 + (B) 形态无 team 专属面板；native picker 旁路（zenity 宿主不可驱动）用 UI 客户端同款网关 API 注册的诚实记录。**退出标准核对表 a/b/c + DoD c/d/e 全 ✅（见下节）**。
 - **依赖**：P5-T15。**量级**：4 小时。
 
 ---
@@ -224,9 +224,9 @@
 
 | # | 标准（计划书 §5） | 证据 | 状态 |
 |---|---|---|---|
-| a | 3 成员脚本化协作 + web UI 可见消息交换 | L1 场景 + L2 证据文件 | ⬜ |
-| b | 嵌套 `team_create` 被拒（具名拒绝 + 零子会话金丝雀） | 场景 + 单测 | ⬜ |
-| c | 拆除无孤儿会话（含孙代） | 场景断言 | ⬜ |
-| DoD-c | 8 门全绿，只加严 | ci-local 日志 | ⬜ |
-| DoD-d | 文档与实测无冲突；fork 裁定回填计划书与 ROADMAP | 修订记录 | ⬜ |
-| DoD-e | 署名零移除；计数变化全对应 | verify-licenses 输出 | ⬜ |
+| a | 3 成员脚本化协作 + web UI 可见消息交换 | L1：`team-create-and-message` 场景（65 检查：组队+双向消息+descriptor 路由+投递事件对+离线唤醒）；**L2 真机**（2026-10-12，`.omo/evidence/p5-l2/`）：真实 LLM 3 成员协作 21 次模型调用（lead v4-pro / analyst deepseek-flash / builder v4-pro 逐席路由），`verdict-final.json` **28/28 PASS**（组队+任务板+双向消息帧+汇总+拆除核验）；**浏览器核验**（headless Chrome + CDP，`ui-evidence.md` **10 PASS + 1 RECORDED** + 8 张截图）：lead 会话轨迹 tab 的 Team message 唤醒卡双向可见（from analyst/builder 逐字帧全文可展开）、subagentchat 面板列出两成员会话并可点开、成员会话内 lead→成员帧可见、(B) 形态无 team 专属面板（fork 印证） | ✅ |
+| b | 嵌套 `team_create` 被拒（具名拒绝 + 零子会话金丝雀） | `team-nested-create-denied` 场景（13 断言：lead 二次组建 = `session is already a participant of team <id>` 具名拒 / 成员试组建 = unknown tool 结构性缺席 / **零子会话金丝雀 = `noSessionParentedUnderMembers`（会话头 `parentSession` 扫描无任何 parent=成员的会话）+ `leadHasExactlyTwoChildren`（lead 恰两枚子女）**——评审订正 2026-10-12：本场景无 listDescendants 探针读，金丝雀机制以此两轴为准）+ 单测嵌套闸成员臂直达（拒绝文案冒泡 + `starts` 零新增） | ✅ |
+| c | 拆除无孤儿会话（含孙代） | `team-teardown-no-orphans` 场景（26 检查：roster 闭合 tombstone + 成员 turn 关账 aborted(parent) + **探针真读 listDescendants 无活体成员行无 depth≥2** + jobs 面探针无成员行 + inbox 保留可证伪新锚）+ **L2 真机**：`interruptedSessionIds` 恰两枚 + boot drain 行 + 探针 rows 全 inactive + **no revival / no grandchildren（3 会话日志扫描）** | ✅ |
+| DoD-c | 8 门全绿，只加严 | `.omo/evidence/p5t15/ci-local.log`：8/8 门绿（门 2 = 90f/2056t、门 3 = 41/41、门 4 doctor 含 omo-team(maxMembers=8)、门 5 licenses checked=61、门 6 concerto-static **33→37 只加严**、门 7 docs 10/10、门 8 proofs **7→8**） | ✅ |
+| DoD-d | 文档与实测无冲突；fork 裁定回填计划书与 ROADMAP | 计划书第 3 轮修订记录（fork=(B) 全量更正，T1）；**ROADMAP Phase 5 设计依据双语锚点**（roadmap.md/roadmap_zh-CN.md，T3 commit `7039cb1`）；**D18 双语登记**（decisions.md/decisions_zh-CN.md：不采用 experimental team 面，三重封死链依据，同 commit）；dsh-0.2.0-rc.2 复核报告 §9「实施期订正」双语（T15 commit `7f7ae34`）；`FORK.md` 裁定书 + `ARBITRATION.md` 亲核记录 | ✅ |
+| DoD-e | 署名零移除；计数变化全对应 | `verify-licenses`：`checked=56 → 57（omo-team 包）→ 59（team-core + zod）→ 60（e2e 探针包）→ 61（prompts-team）`逐次有对应条目，violations=0 全链；署名零移除 = 门 6 c25（omo-team 全文件署名覆盖断言）+ c28（NOTICES ↔ VENDOR-MANIFEST 逐行 mirror）+ THIRD_PARTY_NOTICES Phase 5 小节终态审计（T15 漂移修复 + 9 行语义移植表） | ✅ |
