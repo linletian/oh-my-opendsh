@@ -658,7 +658,10 @@ and are referenced, not restated, by the template's carrier note.
 > [`NOTICE.md`](patches/omo-dsh/vendor/team-core/NOTICE.md) and itemized,
 > with per-file sha256 and reasons, in
 > [`VENDOR-MANIFEST.json`](patches/omo-dsh/vendor/team-core/VENDOR-MANIFEST.json)
-> (`deviations[]`, 13 entries: 9 modifications, 3 project additions, 1 explanatory note).
+> (`deviations[]`, 17 entries: 9 modifications, 4 ESM-extension completions added at the
+> T8b import-wall ruling, 3 project additions, 1 explanatory note — count re-read off
+> the manifest at the T15 close-up; this line said 13 until then, a pre-T8b shape that
+> the T8b completion wave never re-stated here).
 > Copyright in the upstream work remains with the original author (code-yeongyu);
 > this project claims only its modifications. No commercial use or distribution
 > is authorized.
@@ -729,11 +732,23 @@ per-class evidence is registered in the corresponding `deviations[]` entries.
 
 Every file in the vendored package is listed below (decision D15 ¶2; rows are numbered
 `P5-n` to keep the numbering space disjoint from the phase 1/4 tables). The
-`Disposition` column mirrors the manifest's per-file `origin`: `verbatim` (**37**),
-`已修改` → `modified` (**7**), `本项目新增` → `project-new` (**3**) — **47 files**
-total, aligned one-to-one with `VENDOR-MANIFEST.json` `files[]` (47 entries). Per-file
-sha256 values live in the manifest and are not duplicated here; every `modified` entry
-also carries its pre-change upstream blob sha256 (R-8 two-way anchor). Drift detection
+`Disposition` column mirrors the manifest's per-file `origin`: `verbatim` (**7**),
+`已修改` → `modified` (**37**), `本项目新增` → `project-new` (**3**) — **47 files**
+total, aligned one-to-one with `VENDOR-MANIFEST.json` `files[]` (47 entries). The
+`modified` tally split, stated exactly: **7** rows are substantive (5 implementation
+files — `member-parser.ts` / `team-registry/validator.ts` / `team-state-store/active-resume.ts` /
+`team-state-store/store.ts` / `team-tasklist/claim.ts`, the T5/T8a strip-only + removal
+rewrites — plus `package.json` + `tsconfig.json`); **30** rows carry ONLY the mechanical
+`esm-extension-completion` of the T8b import-wall ruling (every extensionless relative
+specifier gained its `.ts` / `/index.ts` so the host's Node 24 type-stripping resolves
+it — semantically zero-change, machine-proven by `prove-zero-semantic-change.mjs`,
+registered as the 4 `esm-extension-completion` entries of `deviations[]`; 4 of the
+substantive rows sit inside those groups too — hence 34 completion files over 37
+modified). This column once said verbatim **37** / modified **7** — the pre-T8b shape;
+the manifest flipped honestly at T8b (`git log -S esm-extension-completion`) while this
+table stayed stale until the T15 close-up re-read. Per-file sha256 values live in the
+manifest and are not duplicated here; every `modified` entry also carries its pre-change
+upstream blob sha256 (R-8 two-way anchor — verified across all 37). Drift detection
 is mechanical and auto-discovers this package: `node scripts/vendor-manifest.mjs`.
 
 | # | File (relative to package root) | Disposition | Notes |
@@ -746,49 +761,51 @@ is mechanical and auto-discovers this package: `node scripts/vendor-manifest.mjs
 | P5-6 | `src/plain-record.ts` | `本项目新增` | **Not upstream-package content:** the `isPlainRecord` function, upstream expression byte-for-byte from `packages/utils/src/record-type-guard.ts`, with attribution header (the only project-written `.ts` in this copy) |
 | P5-7 | `src/session-client.ts` | `verbatim` | — |
 | P5-8 | `src/team-registry/caller-team-lead.ts` | `verbatim` | — |
-| P5-9 | `src/team-registry/index.ts` | `verbatim` | — |
-| P5-10 | `src/team-registry/loader.test.ts` | `verbatim` | — |
-| P5-11 | `src/team-registry/loader.ts` | `verbatim` | — |
-| P5-12 | `src/team-registry/paths.ts` | `verbatim` | — |
-| P5-13 | `src/team-registry/team-spec-input-normalizer.ts` | `verbatim` | — |
-| P5-14 | `src/team-registry/validator.test.ts` | `verbatim` | — |
-| P5-15 | `src/team-registry/validator.ts` | `已修改` | **Strip-only rewrite:** `TeamSpecValidationError` parameter properties → declared fields + post-`super()` assignments (T5 NOTES-6); pinned by validator.test.ts (class + messages) and loader.test.ts `toMatchObject` (`code` / `field` / `memberName` on the thrown instance) |
-| P5-16 | `src/team-state-store/active-resume.ts` | `已修改` | **Removals (T1 ruling):** upstream L2 orphaned `log` import, L5 `reservation-reconciliation` import, L12-36 `reconcileMemberReservations` helper, L56 its call — `.delivering-` reservation reclaim not ported |
-| P5-17 | `src/team-state-store/creating-resume.ts` | `verbatim` | — |
-| P5-18 | `src/team-state-store/deleting-resume.ts` | `verbatim` | — |
+| P5-9 | `src/team-registry/index.ts` | `已修改` | **ESM extension completion (T8b):** 3 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-10 | `src/team-registry/loader.test.ts` | `已修改` | **ESM extension completion (T8b):** 2 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-11 | `src/team-registry/loader.ts` | `已修改` | **ESM extension completion (T8b):** 10 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-12 | `src/team-registry/paths.ts` | `已修改` | **ESM extension completion (T8b):** 2 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-13 | `src/team-registry/team-spec-input-normalizer.ts` | `已修改` | **ESM extension completion (T8b):** 1 extensionless relative specifier completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-14 | `src/team-registry/validator.test.ts` | `已修改` | **ESM extension completion (T8b):** 3 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-15 | `src/team-registry/validator.ts` | `已修改` | **Strip-only rewrite:** `TeamSpecValidationError` parameter properties → declared fields + post-`super()` assignments (T5 NOTES-6); pinned by validator.test.ts (class + messages) and loader.test.ts `toMatchObject` (`code` / `field` / `memberName` on the thrown instance); **T8b ESM completion rode along:** 2 specifiers in its directory group (same ruling, same proof) |
+| P5-16 | `src/team-state-store/active-resume.ts` | `已修改` | **Removals (T1 ruling):** upstream L2 orphaned `log` import, L5 `reservation-reconciliation` import, L12-36 `reconcileMemberReservations` helper, L56 its call — `.delivering-` reservation reclaim not ported; **T8b ESM completion rode along:** 6 specifiers in its directory group (same ruling, same proof) |
+| P5-17 | `src/team-state-store/creating-resume.ts` | `已修改` | **ESM extension completion (T8b):** 4 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-18 | `src/team-state-store/deleting-resume.ts` | `已修改` | **ESM extension completion (T8b):** 4 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
 | P5-19 | `src/team-state-store/error-normalization.ts` | `verbatim` | — |
-| P5-20 | `src/team-state-store/index.ts` | `verbatim` | Barrel exports only `./store` — verified clean of excluded modules |
-| P5-21 | `src/team-state-store/locks.test.ts` | `verbatim` | — |
-| P5-22 | `src/team-state-store/locks.ts` | `verbatim` | — |
+| P5-20 | `src/team-state-store/index.ts` | `已修改` | Barrel exports only `./store` — verified clean of excluded modules; **ESM extension completion (T8b):** 1 extensionless relative specifier completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-21 | `src/team-state-store/locks.test.ts` | `已修改` | **ESM extension completion (T8b):** 10 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-22 | `src/team-state-store/locks.ts` | `已修改` | **ESM extension completion (T8b):** 1 extensionless relative specifier completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
 | P5-23 | `src/team-state-store/resume-report.ts` | `verbatim` | — |
-| P5-24 | `src/team-state-store/resume.ts` | `verbatim` | — |
-| P5-25 | `src/team-state-store/runtime-cleanup.ts` | `verbatim` | — |
-| P5-26 | `src/team-state-store/session-liveness.ts` | `verbatim` | — |
-| P5-27 | `src/team-state-store/store.test.ts` | `verbatim` | — |
-| P5-28 | `src/team-state-store/store.ts` | `已修改` | **Import rewrite + strip-only rewrite:** `isPlainRecord` now resolves to `../plain-record` (semantic port); `RuntimeStateError.code` parameter property → declared field + post-`super()` assignment (T5 NOTES-6); pinned by store.test.ts (`toBeInstanceOf`; the test does not read `RuntimeStateError.code` — the only `.code` read in that file, L81, is on a Node `ErrnoException` (`nodeError.code === "ENOENT"`), not on this class — construction-time preservation confirmed by the instrumented probe, 2026-10-10) |
-| P5-29 | `src/team-state-store/worker-resume-status.ts` | `verbatim` | — |
-| P5-30 | `src/team-tasklist/claim.test.ts` | `verbatim` | — |
-| P5-31 | `src/team-tasklist/claim.ts` | `已修改` | **Strip-only rewrite:** `BlockedByError.blockers` parameter property → declared field + post-`super()` assignment (T5 NOTES-6); claim.test.ts pins `toBeInstanceOf(BlockedByError)` only (no test reads `err.blockers`) — instrumented probe measured `new BlockedByError(['1'])` → `blockers=['1']` preserved (2026-10-10) |
-| P5-32 | `src/team-tasklist/dependencies.test.ts` | `verbatim` | — |
-| P5-33 | `src/team-tasklist/dependencies.ts` | `verbatim` | — |
-| P5-34 | `src/team-tasklist/get.test.ts` | `verbatim` | — |
-| P5-35 | `src/team-tasklist/get.ts` | `verbatim` | — |
-| P5-36 | `src/team-tasklist/index.ts` | `verbatim` | Barrel re-exports only vendored files — verified |
-| P5-37 | `src/team-tasklist/list.test.ts` | `verbatim` | — |
-| P5-38 | `src/team-tasklist/list.ts` | `verbatim` | — |
-| P5-39 | `src/team-tasklist/store.test.ts` | `verbatim` | — |
-| P5-40 | `src/team-tasklist/store.ts` | `verbatim` | — |
-| P5-41 | `src/team-tasklist/test-support.ts` | `verbatim` | Test helper imported by the five tasklist tests — carried as test support, not implementation |
-| P5-42 | `src/team-tasklist/update.test.ts` | `verbatim` | — |
-| P5-43 | `src/team-tasklist/update.ts` | `verbatim` | — |
+| P5-24 | `src/team-state-store/resume.ts` | `已修改` | **ESM extension completion (T8b):** 10 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-25 | `src/team-state-store/runtime-cleanup.ts` | `已修改` | **ESM extension completion (T8b):** 3 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-26 | `src/team-state-store/session-liveness.ts` | `已修改` | **ESM extension completion (T8b):** 3 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-27 | `src/team-state-store/store.test.ts` | `已修改` | **ESM extension completion (T8b):** 4 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-28 | `src/team-state-store/store.ts` | `已修改` | **Import rewrite + strip-only rewrite:** `isPlainRecord` now resolves to `../plain-record` (semantic port); `RuntimeStateError.code` parameter property → declared field + post-`super()` assignment (T5 NOTES-6); pinned by store.test.ts (`toBeInstanceOf`; the test does not read `RuntimeStateError.code` — the only `.code` read in that file, L81, is on a Node `ErrnoException` (`nodeError.code === "ENOENT"`), not on this class — construction-time preservation confirmed by the instrumented probe, 2026-10-10); **T8b ESM completion rode along:** 6 specifiers in its directory group (same ruling, same proof) |
+| P5-29 | `src/team-state-store/worker-resume-status.ts` | `已修改` | **ESM extension completion (T8b):** 2 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-30 | `src/team-tasklist/claim.test.ts` | `已修改` | **ESM extension completion (T8b):** 5 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-31 | `src/team-tasklist/claim.ts` | `已修改` | **Strip-only rewrite:** `BlockedByError.blockers` parameter property → declared field + post-`super()` assignment (T5 NOTES-6); claim.test.ts pins `toBeInstanceOf(BlockedByError)` only (no test reads `err.blockers`) — instrumented probe measured `new BlockedByError(['1'])` → `blockers=['1']` preserved (2026-10-10); **T8b ESM completion rode along:** 8 specifiers in its directory group (same ruling, same proof) |
+| P5-32 | `src/team-tasklist/dependencies.test.ts` | `已修改` | **ESM extension completion (T8b):** 2 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-33 | `src/team-tasklist/dependencies.ts` | `已修改` | **ESM extension completion (T8b):** 1 extensionless relative specifier completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-34 | `src/team-tasklist/get.test.ts` | `已修改` | **ESM extension completion (T8b):** 3 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-35 | `src/team-tasklist/get.ts` | `已修改` | **ESM extension completion (T8b):** 4 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-36 | `src/team-tasklist/index.ts` | `已修改` | Barrel re-exports only vendored files — verified; **ESM extension completion (T8b):** 6 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-37 | `src/team-tasklist/list.test.ts` | `已修改` | **ESM extension completion (T8b):** 5 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-38 | `src/team-tasklist/list.ts` | `已修改` | **ESM extension completion (T8b):** 5 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-39 | `src/team-tasklist/store.test.ts` | `已修改` | **ESM extension completion (T8b):** 3 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-40 | `src/team-tasklist/store.ts` | `已修改` | **ESM extension completion (T8b):** 5 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-41 | `src/team-tasklist/test-support.ts` | `已修改` | Test helper imported by the five tasklist tests — carried as test support, not implementation; **ESM extension completion (T8b):** 4 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-42 | `src/team-tasklist/update.test.ts` | `已修改` | **ESM extension completion (T8b):** 5 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
+| P5-43 | `src/team-tasklist/update.ts` | `已修改` | **ESM extension completion (T8b):** 7 extensionless relative specifiers completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
 | P5-44 | `src/tolerant-fsync.ts` | `verbatim` | — |
-| P5-45 | `src/types.ts` | `verbatim` | — |
+| P5-45 | `src/types.ts` | `已修改` | **ESM extension completion (T8b):** 1 extensionless relative specifier completed to `.ts`/`/index.ts` — semantically zero-change, machine-proven (deviations kind=`esm-extension-completion`); upstream blob anchored (R-8) |
 | P5-46 | `NOTICE.md` | `本项目新增` | **Not upstream content:** the prominent "modified" notice required by SUL-1.0 (D15 ¶3, N-1) |
 | P5-47 | `VENDOR-MANIFEST.json` | `本项目新增` | **Not upstream content:** source tag/commit + per-file sha256 + `deviations[]` |
 
-**Totals:** 37 `verbatim` + 7 `已修改` + 3 `本项目新增` = **47 files**
-= 31 upstream implementation files of the T2-arbitrated subset (5 of them modified)
-+ 10 carried upstream tests + `src/team-tasklist/test-support.ts` (test helper)
+**Totals:** 7 `verbatim` + 37 `已修改` + 3 `本项目新增` = **47 files**
+= 31 upstream implementation files of the T2-arbitrated subset (5 substantively
+modified at T5/T8a + 19 carrying only the T8b `esm-extension-completion` + 7 verbatim)
++ 10 carried upstream tests + `src/team-tasklist/test-support.ts` (test helper) — all
+11 `.ts` test faces carry the T8b completion too (one grammar, no split shape)
 + `src/plain-record.ts` (semantic port) + 4 package-root files
 (`package.json`, `tsconfig.json`, `NOTICE.md`, `VENDOR-MANIFEST.json`).
 
@@ -882,6 +899,47 @@ protocol: its bytes are gated at boot by the `vendor-team-prompts` registrar
 ([`omo-team/src/team/team-prompts-vendor.ts`](patches/omo-dsh/omo-team/src/team/team-prompts-vendor.ts),
 sha-vs-manifest, drift = the row logs FAILED) and its template is the T13
 upgrade surface's read anchor.
+
+### Phase 5 omo-team semantic ports (the 9 ported files — c25's ported population)
+
+The `omo-team` plugin's own implementation files are **not vendored code and not a
+copy**: each of the 9 files below is an independent DSH **semantic port** of an OMO
+team-mode surface — the upstream semantics (judgement rules, permission vocabulary,
+error families, state-machine transitions) are re-expressed in DSH-native code with
+zero upstream code bytes, no zod, no upstream imports — the same discipline as the
+Phase 3 `omo-hooks` listeners and the Phase 4 `omo-commands` templates above. Every
+upstream path below is pinned to OMO tag `v4.19.4` (commit
+`b072d279110bdda2c6ac2525d0d24dc54d16148a`); each ported file carries its own
+attribution header naming the same sources, `patches/omo-dsh/omo-team/src/manifest.ts`
+(`upstreamSources[]`, machine-readable per row) and the verbatim upstream excerpts in
+`.omo/evidence/p5t1/` (Q1a/Q1b) are the per-file authority — **this table is the
+index, not the authority** (Phase 4 commands precedent). The 9-file population is
+exactly what c25 counts (`9 ported .ts files … over 21 files`); the other 12 are
+11 DSH-native files + `manifest.ts` as INFRA (native list below the table).
+
+| DSH file (under `patches/omo-dsh/omo-team/`) | Upstream source file(s) at `v4.19.4` | Disposition |
+|---|---|---|
+| src/team/member-validator.ts (P5-T4) | packages/senpi-task/src/team/member-validator.ts, packages/team-core/src/team-registry/validator.ts, packages/team-core/src/types.ts | semantic port only（11 席资格终态矩阵为全新纯函数：零 ctx / 零副作用 / 零 io / 无 zod；不可解析即具名 + 附排序可用清单 = 对齐 senpi `UNRESOLVABLE_CATEGORY` 惯例（:27-38）的**语义**而非措辞，curated 只读拒入骨架同源自 :41-47；`TeamSpecValidationError` 的 code/field/memberName 三件套形状取自 team-core validator.ts :15-25；与上游 `AGENT_ELIGIBILITY_REGISTRY`（types.ts :190-237）三值 verdict 的**全部偏差**逐条行注释点名——atlas 上游 eligible 而本仓拒 / multimodal-looker 随 v4 hard-reject 收紧 / oracle+prometheus 上游未列而本仓按 class 收紧，裁定依据 = 覆盖基线 §4（T1 终态）；roster 知识以手抄声明式表 + 测试期对账通行（`tests/omo-team/member-validator.test.ts` 对 `omo-agents/src/roster.ts` 断集合相等 + 逐位置行序相等），跨包 import 为边界纪律所禁） |
+| src/team/team-spec.ts (P5-T4) | packages/omo-opencode/src/features/team-mode/tools/lifecycle-inline-spec.ts, packages/omo-opencode/src/features/team-mode/tools/lifecycle-create-tool.ts | semantic port only（inline spec 解析：string 臂 JSON.parse + normalize → safeParse → validateSpec 三段序语义对齐（:67-89）；v1 收窄为 `{name, members:[{name, category\|seat, prompt?}]}`，`seat` 为本仓新增臂、取代上游 kind+subagent_type 的指名席；上游 member/spec 级形状之外的每一枚字段（kind / subagent_type / systemPrompt / loadSkills / role / description / leadAgentId / lead / teamAllowedPaths / sessionPermission，Q1a §2.1 全集）= `V1_UNSUPPORTED_FIELD` 具名错误不静默，subagent_type 另有专属 code；个别**错误文案**逐字复用（max-8 句 validator.ts:28-34）——工具错误文本 = 契约面，纪律下有意为之，代码零抄） |
+| src/team/team-state.ts (P5-T5 骨架 · P5-T8b 持久化换装) | packages/team-core/src/types.ts, packages/team-core/src/team-state-store/store.ts, packages/team-core/src/team-state-store/resume.ts | semantic port only（RuntimeState 形状以 TypeScript interface 逐字段镜像 types.ts（:121-188 + RUNTIME_STATUSES :16-24）——**不 import zod、不抄 schema 代码**，落盘字节由 vendored `validateRuntimeState` 校验（store.ts :106-116，T5 的「无 zod」差异注随换装翻正）；迁移合法性表 ALLOWED_RUNTIME_TRANSITIONS（store.ts :15-23 逐字，同态放行 + 任意态→orphaned 放行）**只留一份、执法在 vendored `transitionRuntimeState`**（:185-204），本文件同名表退为读侧词表镜像 + 工具层预检——同一张上游表的两个指针，值不手抄；resume 语义（creating 超 30min→failed / 活性全灭→orphaned / 终态目录清扫）由 vendored `resumeAllTeams`（resume.ts :16-86）承载） |
+| src/tools/team-create.ts (P5-T5) | packages/omo-opencode/src/features/team-mode/tools/lifecycle-create-tool.ts, packages/omo-opencode/src/hooks/team-tool-gating/hook.ts, packages/senpi-task/src/team/spawn-members.ts, packages/senpi-task/src/team/normalize.ts, packages/team-core/src/team-registry/team-spec-input-normalizer.ts | semantic port only（工具骨架对齐：参数 union、执行序「解析→校验→嵌套闸→spawn→active」、错误冒泡形态；嵌套闸文案真实出处 = hook.ts :102-108，lead 与 member 都计 participant，`team_create denied: session is already a participant of team <id>` 逐字承载于本文件 gate；v1 收窄 inline_spec 单臂、teamName 命名 spec = 记差异（manifest team_create 行成文）；成员 briefing = senpi 5 行版（spawn-members.ts:146-157）的**语义移植**——DSH 载体措辞（注入消息 = `agent.inject` 的 durable UserMessage），非逐字，omo-opencode 的 member-guidance 版为对照面；成员 label 惯例 `team:<teamRunId>:<memberName>` 逐字承载（normalize.ts:40-42）；成员无 prompt 兜底 = normalizer :127 的固定英文句语义，不 import 上游件） |
+| src/tools/team-delete.ts (P5-T7) | packages/omo-opencode/src/features/team-mode/tools/lifecycle-shutdown-tools.ts, packages/omo-opencode/src/features/team-mode/team-runtime/delete-team.ts, packages/senpi-task/src/team/runtime.ts | semantic port only（门禁词汇逐字承载：描述句 :53-58、`members still active`（:74-76）、`team cannot be deleted from '<status>'`（:81-83）——failed 连 force 都不收 = 上游事实随行；DELETABLE_MEMBER_STATUSES 三值 = 本仓 TEAM_DELETABLE_MEMBER_PHASES 同一三值（shutdown-helpers.ts:7-11 对照）；force 旁路 + 状态白名单 + 绕表直存语义 = team-state.ts forceTransitionToDeleting；**tmux/worktree 两臂 D4 不采**——fork (B) 形态执行面 = 原生 interrupt（保 inbox）+ drain；`unregisterTeamSessionsByTeam`（:190）= retireRunIndexes——tombstone 留行、参与索引撤账；senpi 侧「缺账 = 已删 no-op」幂等双删语义**不采**（runtime.ts:48-51，两套面并存的事实 Q1a NOTES 在档）——本仓对无账团队具名拒 TEAM_NOT_FOUND，差异记此） |
+| src/tools/team-message.ts (P5-T6) | packages/omo-opencode/src/features/team-mode/tools/messaging.ts, packages/team-core/src/team-mailbox/send.ts | semantic port only（参数 zod 形状 :28-36 → dsh-tools raw register 面的 JSON Schema 方言逐字段对齐 + 运行时逐字段具名校验补齐 schema 表达不了的部分（correlationId uuid 形、空串→undefined preprocess）；错误族承载：`broadcast requires lead role`（send.ts :19 逐字）/ `payload exceeds 32 KB`（:26）/ `unknown or inactive team recipient: <r>`（:46-51）/ `team is deleting`（:53-58）；`duplicate message id` = **语义对齐非逐字**——上游 mailbox 抛拒，fork (B) 无 mailbox 本体（FORK.md §3.3），本仓落成正常返回的去重说明（任务书 P5-T6 钉死「不重复投递，返回去重说明」），词根保留；**mailbox 本体（预约/ack/背压/poll）不移植**——原生 inbox 替代，`.delivering-` 预约/TTL 记差异（manifest 行注）；帧 `Team message <id> from <name>:` + 经原生投递承原生 kind 'agent-message'（Q-8 B1/B3）） |
+| src/tools/team-shutdown.ts (P5-T7) | packages/omo-opencode/src/features/team-mode/team-runtime/shutdown.ts, packages/omo-opencode/src/features/team-mode/tools/lifecycle-shutdown-tools.ts, packages/senpi-task/src/team/shutdown.ts | semantic port only（握手三段状态机语义对齐 shutdown.ts：request 幂等早退（:24-28）/ approve 无请求具名抛 `shutdown request missing for '<name>'` 逐字（:63-65）/ 已批幂等（:68-70）/ 成员翻 shutdown_approved 且 completed-errored 保终态（:79-86）/ reject reason 必填（上游 zod min(1) 的运行时对应）+ 同 reason 已拒幂等（:122-124）+ 成员不 interrupt = team 存活语义；权限词汇逐字（`team_shutdown_request is lead-only` :74-76、`${toolName}: caller must be target member or team lead` :101/:121，与 gating hook.ts:110-116 同一裁决的二级面）；账本三段住 team-state.ts 关停握手账，本文件是**调用方**：权限、状态闸、消息联动、返回形状；senpi 并存第二套握手面的 requester sentinel `TEAM_LEAD_SENTINEL`（:72-101 语义）沿用——lead 恒创建者会话、询问帧 from 词恒 'lead'；「resolved 旧请求永不挡新请求」由 team-state 账法承载） |
+| src/tools/team-status.ts (P5-T7 · 仲裁补位 2026-10-10) | packages/omo-opencode/src/features/team-mode/tools/query.ts, packages/omo-opencode/src/hooks/team-tool-gating/hook.ts, packages/team-core/src/team-state-store/store.ts | semantic port only（描述 `"Return full status for a team run."` 逐字承载（query.ts :36-45）；参数 teamRunId 同形（min(1) 运行时补齐 = (B) 工具层同族纪律）；聚合源 = 本仓状态骨架 team-state.ts，T8b vendored store 换持久化后聚合**零改动**——聚合读的是方法面，接缝纪律同 family；UNIVERSAL 双面可用 = hook.ts:12-19 名单事实，非参与者具名拒文案逐字 `team-mode tool team_status denied: not a participant of team <id>`（:102-108 participant 臂）；deleted tombstone **可读** = store.ts loadRuntimeState 对 deleted 照样返回（deleted 是状态不是缺账——(B) 形态 tombstone 留行，「查询面不因终态失明」同一裁决；写面对 deleted 具名拒，见 team-message.ts / team-shutdown.ts 状态闸）；成员行附握手态投影，lead 不入 members 名单——lead 身份由 leadSessionId 承载，形状差异注在 team-state.ts 成员行注） |
+| src/tools/team-task.ts (P5-T8b) | packages/omo-opencode/src/features/team-mode/tools/tasks.ts, packages/team-core/src/team-tasklist/store.ts, packages/team-core/src/team-tasklist/claim.ts, packages/team-core/src/team-tasklist/update.ts, packages/team-core/src/team-tasklist/dependencies.ts | semantic port only（四工具薄壳 = vendored team-tasklist 的**接线面**——上游实现是铁律，本文件只做参数校验、身份裁决与错误族冒泡，任务板语义零重写；create 落盘写死 `status:"pending"`/`blocks:[]` 随 tasks.ts:84-90 逐字；list 过滤仅 status/owner（:104-105）——**无 ready 过滤、无 ready 字段返回**（任务书钉死，上游事实）；update 的 status 枚举逐字（:122）+ `status === "claimed"` 走 claimTask 否则 updateTaskStatus（:128-130 同一岔口，本文件同一形状）；`resolveSenderName` 的 `team member not found for session <id>` 逐字承载（:61-70）；UNIVERSAL 四枚双面 + 非参与者具名拒 = 与 team_status/team_send_message 同族裁决（hook.ts:12-19/:129-146）；高水位/锁/TaskSchema.parse 全在 vendored store，薄壳不重述） |
+
+**Deliberately NOT in this table:** the 11 DSH-native files (`index.ts`,
+`boot-markers.ts`, `team/roster-seats.ts`, `team/session-context-adapter.ts`,
+`team/team-config.ts`, `team/team-core-vendor.ts`, `team/team-keyword-slot.ts`,
+`team/team-prompts-vendor.ts`, `team/team-row-config.ts`, `team/team-stop-continuation.ts`,
+`team/team-tool-presence.ts`) carry an explicit 「无上游对应物 / DSH 原生」 declaration in
+their own headers (c25's named native list — a false upstream attribution in a NOTICE is
+exactly what this file exists to prevent), and `manifest.ts` is the recording face (INFRA,
+row-attributed by c26). The vendored byte-side of the same feature area lives in the two
+package sections above (`team-core`, `prompts-team`): a thin shell that consumes vendored
+bytes (e.g. `team-task.ts`) ports the **tool layer's** semantics only and never restates
+the vendored implementation.
 
 ## oh-my-pi
 

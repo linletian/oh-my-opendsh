@@ -5675,6 +5675,21 @@ function installPlugin(sandbox, env, def) {
       join(sandbox.root, 'plugins', 'vendor', 'prompts-team'),
       { recursive: true },
     )
+    // P5-T15: the same staged copy now owns SIX MORE boot-time disk consumers —
+    // team-core-vendor.ts resolves each flipped row's bytes at
+    // `<copy>/../../../vendor/team-core/…`, i.e. `<sandbox>/plugins/vendor/team-core`.
+    // Measured on the first full T15 run (team-create-and-message boot.log):
+    // SIX `vendor-team-core-* FAILED: Error: vendor-team-core: manifest absent
+    // at …/plugins/vendor/team-core/VENDOR-MANIFEST.json` lines and a census of
+    // `16/24` under a `ported=22` summary — the rows flipped, the bytes did not
+    // travel. The tree is copied VERBATIM (the per-row gate re-hashes every
+    // derived file against the copied VENDOR-MANIFEST.json, so a mutated copy
+    // fails that row by name, which is the point of the gate).
+    cpSync(
+      join(REPO_ROOT, 'patches', 'omo-dsh', 'vendor', 'team-core'),
+      join(sandbox.root, 'plugins', 'vendor', 'team-core'),
+      { recursive: true },
+    )
   }
   for (const pluginDir of PLUGIN_DIRS) {
     const operand = pluginDir === PLUGIN_DIR
@@ -13682,9 +13697,14 @@ async function runAnalysisSelfTest(routes) {
   // 13 枚具名 defect 各红且【只】红在自己的 named check（失败轴：缺帧 / 双帧 /
   // 错 kind / 错序 / 目录缺成员，与新检查一一对应，teamCreateSurfaceDefectCases /
   // teamShutdownSurfaceDefectCases 的清单长度由下方显式钉死）。
+  // T15 评审 A MINOR 修复轮：team-create-and-message 清单 9→10——第 10 腿是
+  // T15 settle 钉（settleReachedChildren）的反向腿（hook 布尔 undefined），
+  // 不是第 14 枚 T10 检查；钉数随动，轴清单补 settle-hook-vanished。
+  // T15 收尾轮：team-shutdown-handshake 清单 4→5——第 5 腿同名 settle 反向腿
+  // （本场景的 named check 就叫 settleReached），同纪律、同随动。
   for (const [scenarioName, analyzeT10, inputFactory, t10Cases, expectedLegs] of [
-    ['team-create-and-message', analyzeTeamCreateAndMessage, fabricatedTeamCreateAndMessageInput, teamCreateSurfaceDefectCases, 9],
-    ['team-shutdown-handshake', analyzeTeamShutdownHandshake, fabricatedTeamShutdownHandshakeInput, teamShutdownSurfaceDefectCases, 4],
+    ['team-create-and-message', analyzeTeamCreateAndMessage, fabricatedTeamCreateAndMessageInput, teamCreateSurfaceDefectCases, 10],
+    ['team-shutdown-handshake', analyzeTeamShutdownHandshake, fabricatedTeamShutdownHandshakeInput, teamShutdownSurfaceDefectCases, 5],
   ]) {
     const goodT10 = analyzeT10(inputFactory(routes), routes)
     if (goodT10.result !== 'PASS') {
@@ -13694,7 +13714,7 @@ async function runAnalysisSelfTest(routes) {
     // function scope — the T10 lists are named, not shadowed, on purpose.
     const cases = t10Cases()
     if (cases.length !== expectedLegs) {
-      problems.push(`fabricated ${scenarioName}: the T10 surface defect list must hold exactly ${expectedLegs} legs, got ${cases.length} — one per T10 new check in this scenario`)
+      problems.push(`fabricated ${scenarioName}: the T10 surface defect list must hold exactly ${expectedLegs} legs, got ${cases.length} — one per T10 new check in this scenario (the FINAL leg of each list is the T15 settle-pin leg)`)
     }
     for (const [label, mutate, expectedCheck] of cases) {
       const input = inputFactory(routes)
@@ -13707,6 +13727,35 @@ async function runAnalysisSelfTest(routes) {
         problems.push(`fabricated ${scenarioName} defect "${label}" must fail ONLY on ${expectedCheck}, got: ${verdict.failed.join(', ')}`)
       }
       TEAM_T10_SELF_TEST_ATTESTATION.push([scenarioName, label])
+    }
+  }
+
+  // ── P5-T15 评审 A MINOR 修复轮：team-nested-create-denied 的 settle 反向腿。
+  // 本场景此前没有 fabricated self-test（反向证据 = 真跑咬合 + 首轮 5 RED 的
+  // 诚实账）；现在 GOOD 必 PASS + 一枚具名 settle 腿：钩子布尔 undefined
+  // （「钩子被删/改名/从未触发」的伪造形态，旧弱形放行的洞）只红
+  // settleReachedChildren——与 team-create-and-message 第 10 腿同纪律，
+  // 清单长度显式钉死 1（每枚新钉一枚腿）。
+  {
+    const goodNested = analyzeTeamNestedCreateDenied(fabricatedTeamNestedCreateDeniedInput(routes), routes)
+    if (goodNested.result !== 'PASS') {
+      problems.push(`fabricated GOOD team-nested-create-denied must PASS, got FAIL on: ${goodNested.failed.join(', ')}`)
+    }
+    const nestedCases = teamNestedCreateDeniedSettleDefectCases()
+    if (nestedCases.length !== 1) {
+      problems.push(`fabricated team-nested-create-denied: the settle defect list must hold exactly 1 leg, got ${nestedCases.length} — one per new settle pin in this scenario`)
+    }
+    for (const [label, mutate, expectedCheck] of nestedCases) {
+      const input = fabricatedTeamNestedCreateDeniedInput(routes)
+      mutate(input)
+      const verdict = analyzeTeamNestedCreateDenied(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated team-nested-create-denied defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+      if (verdict.result === 'FAIL' && verdict.failed.join(',') !== expectedCheck) {
+        problems.push(`fabricated team-nested-create-denied defect "${label}" must fail ONLY on ${expectedCheck}, got: ${verdict.failed.join(', ')}`)
+      }
+      TEAM_T15_SETTLE_SELF_TEST_ATTESTATION.push(['team-nested-create-denied', label])
     }
   }
 
@@ -13785,6 +13834,9 @@ const TEAM_T10_SELF_TEST_ATTESTATION = []
 // P5-T14's own accumulator (relay/broadcast legs of team-create-and-message):
 // the banner renders FROM what ran, never hand-typed (P4-T13 discipline).
 const TEAM_T14_SELF_TEST_ATTESTATION = []
+// P5-T15 评审 A MINOR 修复轮的 settle 反向腿账（nested 场景一枚）——
+// 同款 rendered-FROM-what-ran 纪律。
+const TEAM_T15_SETTLE_SELF_TEST_ATTESTATION = []
 
 // ══ P3-T17 ulw-execute: the A-mode activation scenarios (TWO) ════════════════
 //
@@ -16804,6 +16856,12 @@ function fabricatedTeamKeywordGoodInput(routes) {
         keywordDetectorModule.KEYWORD_DETECTOR_ID, 'agent/pre-step',
       ),
       '[omo-team] team surface team-keyword-injection registered',
+      '[omo-team] team surface vendor-team-core-types registered',
+      '[omo-team] team surface vendor-team-core-member-parser registered',
+      '[omo-team] team surface vendor-team-core-team-registry registered',
+      '[omo-team] team surface vendor-team-core-team-tasklist registered',
+      '[omo-team] team surface vendor-team-core-team-state-store registered',
+      '[omo-team] team surface vendor-team-core-closure registered',
       '[omo-team] team surface vendor-team-prompts registered',
     ].join('\n'),
   }
@@ -20045,13 +20103,30 @@ export function analyzeTeamTeardownNoOrphans(
   // tool/result 文本流。缺席如实 present:false，checks 判红。
   const probe = probeEvidence(leadResults)
   const memberIds = new Set([analystId, builderId].filter((id) => id !== ''))
+  // 停摆的 durable 签名（与 park 同一把尺）：aborted + reason parent 的
+  // turn/end，且最后一次关账之后再无 turn/start（无复活、无孤儿续烧）。
+  // T15 评审 A MINOR 修复轮：本尺从 memberTurnsClosedByParentInterrupt 的
+  // 内联闭包上提为具名 helper——成员关账钉与 settle 钉共用同一把尺，
+  // 钩子活体窗（awaitTeamTeardownDormant）与冻结 final log 的复钉互证。
+  const closedByParentInterrupt = (childLog) => {
+    const evs = childLog?.events ?? []
+    const aborted = evs.some(
+      (event) =>
+        event.type === 'turn/end'
+        && turnEndReasonKind(event) === 'aborted'
+        && event.data?.reason?.reason?.kind === 'parent',
+    )
+    if (!aborted) return false
+    const lastEnd = Math.max(...evs.filter((event) => event.type === 'turn/end').map((event) => Number(event.time ?? 0)))
+    return !evs.some((event) => event.type === 'turn/start' && Number(event.time ?? 0) > lastEnd)
+  }
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // 行 ⑰ 的注册行在场（T13 census 16/24 的可见半之一）。
+    // 行 ⑰ 的注册行在场（T15 census 22/24 的可见半之一）。
     stopContinuationTeamSurfaceRegistered:
       (bootLog ?? '').includes('[omo-team] team surface stop-continuation-team registered')
-      && (bootLog ?? '').includes('— 16/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 22/24 team surfaces registered'),
     teamCreated: teamRunId !== undefined,
     twoMemberSessionsRan:
       analystLog !== undefined && builderLog !== undefined && analystId !== builderId,
@@ -20148,21 +20223,7 @@ export function analyzeTeamTeardownNoOrphans(
     // 停摆的 durable 签名（与 park 同一把尺，双读互证）：aborted + reason
     // parent 的 turn/end，且最后一次关账之后再无 turn/start（无复活、无孤儿
     // 续烧）。deleteResult 在场由 teamDeletedWithForce 独立钉死。
-    memberTurnsClosedByParentInterrupt: (() => {
-      const closed = (childLog) => {
-        const evs = childLog?.events ?? []
-        const aborted = evs.some(
-          (event) =>
-            event.type === 'turn/end'
-            && turnEndReasonKind(event) === 'aborted'
-            && event.data?.reason?.reason?.kind === 'parent',
-        )
-        if (!aborted) return false
-        const lastEnd = Math.max(...evs.filter((event) => event.type === 'turn/end').map((event) => Number(event.time ?? 0)))
-        return !evs.some((event) => event.type === 'turn/start' && Number(event.time ?? 0) > lastEnd)
-      }
-      return closed(analystLog) && closed(builderLog)
-    })(),
+    memberTurnsClosedByParentInterrupt: closedByParentInterrupt(analystLog) && closedByParentInterrupt(builderLog),
 
     // C. 孙代负向金丝雀（全程）：没有任何会话 parent 是成员会话；成员
     //    advertised tools 逐名无委派工具（席位 toolFilter 的钉）。
@@ -20188,7 +20249,24 @@ export function analyzeTeamTeardownNoOrphans(
       && (profileMount?.dumpSections ?? []).includes('@deepseek-ai/dsh-base'),
 
     parksReached: (actionObservations ?? []).filter((row) => row.reached === true).length === 2,
-    settleReached: settleReached !== false,
+    // T15 评审 A MINOR 修复轮：弱形加固（与 22900+/23530+ 两处
+    // settleReachedChildren 同纪律，本枚是 teardown 形态）。旧形
+    // `settleReached !== false` 恒过——undefined（settle 钩子被删/改名/
+    // 从未触发）同样放行，true 也只是复读钩子的布尔。现在两枚具名钉：
+    // ① 严格相等——awaitTeamTeardownSettled 必须真的运行且返回 true，
+    //    钩子消失即红；② dormant 签名从冻结后的 final log 复钉——两名
+    //    成员会话各自带 turn/end reason {kind:'aborted', reason:{kind:
+    //    'parent'}} 且最后关账后无 turn/start（closedByParentInterrupt
+    //    与 memberTurnsClosedByParentInterrupt 同一把尺：钩子活体窗的
+    //    判定与冻结面的复钉互为见证；state.json tombstone 半边由
+    //    stateJsonTombstoneOnDisk 独立钉死，不在本枚重复计账）。
+    //    不覆盖面：判定二值——settle 观察窗的时长/余量不进 verdict，
+    //    这里钉不了。
+    settleReached:
+      settleReached === true
+      && memberLogs.length >= 2
+      && closedByParentInterrupt(analystLog)
+      && closedByParentInterrupt(builderLog),
   }
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
   return {
@@ -20276,12 +20354,29 @@ export function analyzeStopContinuationTeam(
     const evs = childLog?.events ?? []
     return evs.some((event) => event.type === 'turn/end' && turnEndReasonKind(event) !== 'completed')
   }
+  // 静默的 durable 形状（awaitStopContinuationTeamQuiet 的同款尺）：一条
+  // lane 上 turn/start 计数 == turn/end 计数且 ends≥1。钩子活体窗等的
+  // 就是这个形状——T15 评审 A MINOR 修复轮把它在 SIGTERM 冻结后的
+  // final log 上复钉（settleReached 钉的第②轴），live 窗与冻结面互证。
+  // T15 评审 A MAJOR 修复轮同法审计（握手场景竞态的同形审视）：本场景
+  // 钩子早已内建「三 lane 全闭 + 快照静默 4s」的 live 闸（:20028 closed
+  // + :20040 settledAt 窗），冻结只落在静默点；且 stop 语义声明命令后
+  // 无任何合法尾活（成员复活由 noMemberRevivalAfterCommand 钉红是设计
+  // 而非豁免），钩子返回到 SIGTERM flush 的残余窗无事件源——结构同险、
+  // 修法已在，无需追加，真跑连跑为账（≥3 连 PASS，
+  // .omo/evidence/p5t15/race-fix-stop-continuation-3runs.log）。
+  const laneQuiescent = (lane) => {
+    const evs = lane?.events ?? []
+    const starts = evs.filter((event) => event.type === 'turn/start').length
+    const ends = evs.filter((event) => event.type === 'turn/end').length
+    return starts === ends && ends >= 1
+  }
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
     stopContinuationTeamSurfaceRegistered:
       (bootLog ?? '').includes('[omo-team] team surface stop-continuation-team registered')
-      && (bootLog ?? '').includes('— 16/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 22/24 team surfaces registered'),
     teamCreated: teamRunId !== undefined,
     twoMemberSessionsRan: analystLog !== undefined && builderLog !== undefined && analystId !== builderId,
     // 成员在命令前真实跑活（前台 bash 撑开的 turn）。
@@ -20362,7 +20457,24 @@ export function analyzeStopContinuationTeam(
         && String(candidate.header?.parentSession ?? '') !== builderId,
     ),
     parksReached: (actionObservations ?? []).filter((row) => row.reached === true).length === 2,
-    settleReached: settleReached !== false,
+    // T15 评审 A MINOR 修复轮：弱形加固（teardown 场景同名钉的同款）。旧形
+    // `settleReached !== false` 恒过——undefined 放行、true 只是复读钩子布尔。
+    // 现在三枚具名钉：① 严格相等——awaitStopContinuationTeamSettled 必须
+    // 真的运行且返回 true，钩子消失即红；② 静默形状从冻结后的 final log
+    // 复钉——lead + 两成员三 lane 各自 turn/start 计数 == turn/end 计数且
+    // ends≥1（laneQuiescent 与钩子活体判定同一把尺，互为见证）；③ 两成员
+    // 各自带非 completed 关账行（memberStopped 与 analystReallyStopped/
+    // builderReallyStopped 同尺——停摆语义钉的是非 completed 关账，不是
+    // completed，与 teardown 场景的 aborted(parent) 钉各钉各的终态族）。
+    // 不覆盖面：判定二值——4s 静默窗的时长/余量不进 verdict，这里钉不了。
+    settleReached:
+      settleReached === true
+      && memberLogs.length >= 2
+      && laneQuiescent(log)
+      && laneQuiescent(analystLog)
+      && laneQuiescent(builderLog)
+      && memberStopped(analystLog)
+      && memberStopped(builderLog),
     mockSawBothSeatLanes:
       requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 1
       && requests.filter((r) => r.role === TEAM_SEAT_BUILDER).length >= 1,
@@ -20595,7 +20707,7 @@ export function fabricatedTeamTeardownNoOrphansInput(routes) {
     ],
     bootLog: [
       FABRICATED_BOOT_LOG,
-      '[omo-team] team surface stop-continuation-team registered — 16/24 team surfaces registered',
+      '[omo-team] team surface stop-continuation-team registered — 22/24 team surfaces registered',
     ].join('\n'),
     settleReached: true,
     actionObservations: [{ reached: true }, { reached: true }],
@@ -20688,7 +20800,7 @@ export function fabricatedStopContinuationTeamInput(routes) {
     ],
     bootLog: [
       FABRICATED_BOOT_LOG,
-      '[omo-team] team surface stop-continuation-team registered — 16/24 team surfaces registered',
+      '[omo-team] team surface stop-continuation-team registered — 22/24 team surfaces registered',
       jobsGuardLine,
       `${GUARD_TEAM_PREFIX} interrupted 2 member session(s) of team ${FABRICATED_T9_TEAM_RUN_ID} rooted at session ${FABRICATED_T9_LEAD_ID} (drain initiated)`,
       `${GUARD_TEAM_PREFIX} drain settled — resident member activation(s) of team ${FABRICATED_T9_TEAM_RUN_ID} released`,
@@ -21117,7 +21229,7 @@ export function analyzeTeamTaskClaim(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    bootCensusSixteenOfTwentyFour: (bootLog ?? '').includes('— 16/24 team surfaces registered'),
+    bootCensusTwentyTwoOfTwentyFour: (bootLog ?? '').includes('— 22/24 team surfaces registered'),
     bootResumeLine: (bootLog ?? '').includes('[omo-team] boot resume'),
     taskQuartetRegisteredPreReboot: (() => {
       const pre = rebootObservation?.preBootLog ?? ''
@@ -21146,7 +21258,7 @@ export function analyzeTeamTaskClaim(
     rebootAdoptedSameLead: rebootObservation?.adopted === true,
     rebootBootCarriesLoadedAndResume: (() => {
       const b = rebootObservation?.rebootBootLog ?? ''
-      return b.includes('[omo-team] loaded') && b.includes('— 16/24 team surfaces registered') && b.includes('[omo-team] boot resume')
+      return b.includes('[omo-team] loaded') && b.includes('— 22/24 team surfaces registered') && b.includes('[omo-team] boot resume')
     })(),
     boardIntactAfterRebootReadBack: postAudit.ok === true
       && postAudit.t1?.status === 'completed'
@@ -21390,8 +21502,14 @@ export function fabricatedTeamCreateAndMessageInput(routes) {
       '[omo-team] team surface team_create registered',
       '[omo-team] team surface team_send_message registered',
       '[omo-team] team surface team-keyword-injection registered',
+      '[omo-team] team surface vendor-team-core-types registered',
+      '[omo-team] team surface vendor-team-core-member-parser registered',
+      '[omo-team] team surface vendor-team-core-team-registry registered',
+      '[omo-team] team surface vendor-team-core-team-tasklist registered',
+      '[omo-team] team surface vendor-team-core-team-state-store registered',
+      '[omo-team] team surface vendor-team-core-closure registered',
       '[omo-team] team surface vendor-team-prompts registered',
-      '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2) — 16/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=0, ported=22, recorded=2) — 22/24 team surfaces registered',
     ].join('\n'),
     settleReached: true,
     actionObservations: [{ reached: true, note: 'cold-wake precondition: both members settled AND offline before the send turn' }],
@@ -21600,8 +21718,14 @@ export function fabricatedTeamShutdownHandshakeInput(routes) {
       '[omo-team] team surface team_task_update registered',
       '[omo-team] team surface team_task_get registered',
       '[omo-team] team surface team-keyword-injection registered',
+      '[omo-team] team surface vendor-team-core-types registered',
+      '[omo-team] team surface vendor-team-core-member-parser registered',
+      '[omo-team] team surface vendor-team-core-team-registry registered',
+      '[omo-team] team surface vendor-team-core-team-tasklist registered',
+      '[omo-team] team surface vendor-team-core-team-state-store registered',
+      '[omo-team] team surface vendor-team-core-closure registered',
       '[omo-team] team surface vendor-team-prompts registered',
-      '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2) — 16/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=0, ported=22, recorded=2) — 22/24 team surfaces registered',
     ].join('\n'),
     settleReached: true,
     actionObservations: [
@@ -21666,6 +21790,14 @@ export function teamCreateSurfaceDefectCases() {
     ['builder-ack-claim-frame-dropped', (input) => {
       dropIf(input.log.events, (e) => isClaimOf(e, FABRICATED_T10_BUILDER_ID, `Team message ${TEAM_CORRID_ACK_B} from builder:`))
     }, 'builderAckOnLeadChatSurface'],
+    // T15 评审 A MINOR 修复轮第 10 腿：settle 钉（settleReachedChildren）
+    // 的反向腿。钩子布尔置 undefined——「钩子被删/改名/从未触发」的伪造
+    // 形态，正是旧弱形 `settleReached !== false` 放行的那个洞；新钉
+    // `settleReached === true` 独红在自己的 named check（本 analyzer 除
+    // settleReachedChildren 外无任何检查读 settleReached，单红纪律成立）。
+    ['settle-hook-never-ran-undefined', (input) => {
+      input.settleReached = undefined
+    }, 'settleReachedChildren'],
   ]
 }
 
@@ -21753,10 +21885,13 @@ export function teamCreateRelayBroadcastDefectCases() {
 }
 
 /**
- * The 4 T10 surface defect legs of team-shutdown-handshake — one per T10
- * new check: dropped rejected claim / doubled approved claim / inquiry claim
- * re-kinded to the hidden steer 'context' kind (the Q-7 registered blind
- * shape — the surface claim is gone) / out-of-order builder inquiry claim.
+ * The 5 defect legs of team-shutdown-handshake — the 4 T10 surface legs, one
+ * per T10 new check: dropped rejected claim / doubled approved claim / inquiry
+ * claim re-kinded to the hidden steer 'context' kind (the Q-7 registered blind
+ * shape — the surface claim is gone) / out-of-order builder inquiry claim;
+ * plus the T15 settle-pin leg (the hook boolean vanished — not a 5th T10
+ * check, the same leg family as team-create-and-message's 10th and the
+ * nested scenario's 1st).
  */
 export function teamShutdownSurfaceDefectCases() {
   const memberOf = (input, memberId) => input.allLogs.find((l) => l.header?.id === memberId)
@@ -21787,6 +21922,18 @@ export function teamShutdownSurfaceDefectCases() {
       const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => isClaimOf(e, FABRICATED_T10_LEAD_ID, 'Team shutdown request'))
       frame.seq = 2
     }, 'builderInquiryFrameOnChatSurface'],
+    // T15 评审 A MINOR 修复轮第 5 腿：settle 钉（握手形态的 settleReached）
+    // 的反向腿——钩子布尔置 undefined，「钩子被删/改名/从未触发」的伪造
+    // 形态，正是旧弱形 `settleReached !== false` 放行的那个洞；新钉的 ①
+    // （严格相等）独红在自己的 named check（本 analyzer 除 settleReached 外
+    // 无任何检查读 settleReached，单红纪律成立）。②③④ 轴（墓碑行/具名拒
+    // 行/三 lane 静默）无 fabricated 腿——drop 任一字节必同时红更强同族钉
+    // （teamDeletedNonForce / deletedTeamRefusedByName /
+    // postDeleteNativeDeliveryLandedAtAnalyst），单红纪律下造不出来；
+    // 这三轴的反向证据 = 真跑咬合（钉的断言注释同文）。
+    ['settle-hook-never-ran-undefined', (input) => {
+      input.settleReached = undefined
+    }, 'settleReached'],
   ]
 }
 
@@ -22336,10 +22483,34 @@ async function awaitTeamAnalystApproved(_boot, sandbox, sessionId, timeoutMs = 6
  * anchor is the `nativeFollowupAfterDelete` action below (a NEW native
  * delivery landing AT the stopped member after the delete); the surviving
  * pre-delete frames are auxiliary evidence only.
+ *
+ * P5-T15 评审 A MAJOR 修复轮 — 墓碑对 durable ≠ turn 闭合，钉红竞态与修法：
+ * 旧闸只等墓碑对，而场景声明的尾活（native post-delete follow-up 冷醒
+ * analyst → analyst 回执 splice 到 lead → lead 处理轮）在墓碑 durable 之后
+ * 仍合法开 turn；钩子一返回 driver 即 SIGTERM 冻结，尾 turn 在飞时冻结面
+ * 抓到 turn/start>turn/end，analyzer 的 ④ 三 lane 静默复钉间歇钉红真跑
+ * （opencode 实测 4 跑 1 红：lead turn 11 于 SIGTERM 前 76ms 开在飞）。
+ * 裁决给了两案——②截止界定见证 / ①冻结前有界静默轮询，实测择诚实者：本轮
+ * 插桩真跑（.omo/evidence/p5t15/race-probe-instrumented-run.log）抓到 lead
+ * 尾 turn 11 开于 ...092222、闭于 ...092418，而钩子返回在 ...092546——尾
+ * turn 开在钩子返回【之前】（park 400ms 轮询粒度 + 回执投递在 analyst
+ * turn/end 同刻），故 ② 的「钩子返回墙钟截止」把这条合法尾 turn 划进
+ * 截止前、冻结时未闭仍红——② 修不掉本竞态，且它把冻结面见证永久削窄。
+ * 取①：墓碑对 durable 之后，钩子继续等三 lane（lead + analyst + builder）
+ * 各自 turn/start 计数 == turn/end 计数且 ends≥1（与 analyzer 的
+ * laneQuiescent 同一把尺，live 窗与冻结面互为见证）且快照静默 2s（防
+ * 「帧已 splice 未醒轮」的亚轮间隙，awaitStopContinuationTeamQuiet /
+ * awaitTeamMembersIdle 的同款静默纪律）才返回 true——冻结落在静默点，④
+ * 保持满贯强度不打折。尾活 mock turn 会真闭合（mock server 尾步 clamp
+ * 重放 text → completed），窗有界；等不到静默 = 真孤儿在烧，false 如实
+ * 红。真跑实测 6 连 PASS（race-fix-handshake-6runs.log），同法审视
+ * stop-continuation-team 见其钩子注释（同款静默闸早已内建，审计过账）。
  */
 async function awaitTeamShutdownSettled(_boot, sandbox, sessionId, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
+  let settledAt = 0
+  let snapshot = ''
+  while (Date.now() <= deadline) {
     const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
     const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
     if (leadLog !== undefined) {
@@ -22350,7 +22521,35 @@ async function awaitTeamShutdownSettled(_boot, sandbox, sessionId, timeoutMs = 6
       const refused = events.some(
         (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('is deleted'),
       )
-      if (deleted && refused) return true
+      if (deleted && refused) {
+        const lanes = [
+          leadLog,
+          ...logs.filter(
+            (candidate) =>
+              candidate.header?.origin === 'subagent'
+              && String(candidate.header?.parentSession) === String(sessionId),
+          ),
+        ]
+        // 同一把尺 laneQuiescent（turn/start==turn/end 且 ends≥1）三 lane 全闭。
+        const closed = lanes.length >= 3 && lanes.every((lane) => {
+          const starts = (lane.events ?? []).filter((event) => event.type === 'turn/start').length
+          const ends = (lane.events ?? []).filter((event) => event.type === 'turn/end').length
+          return starts === ends && ends >= 1
+        })
+        const nowSnapshot = lanes
+          .map((lane) => `${String(lane.header?.id ?? '?').slice(0, 8)}:${(lane.events ?? []).length}`)
+          .sort()
+          .join('|')
+        if (!closed) {
+          settledAt = 0
+          snapshot = ''
+        } else if (settledAt === 0 || nowSnapshot !== snapshot) {
+          settledAt = Date.now()
+          snapshot = nowSnapshot
+        } else if (Date.now() - settledAt >= 2_000) {
+          return true
+        }
+      }
     }
     await sleep(400)
   }
@@ -22788,17 +22987,17 @@ export function analyzeTeamCreateAndMessage(
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
-    // The boot census is 16/24 as of P5-T13 (T7's seven rows + the task-board
+    // The boot census is 22/24 as of P5-T15 (T7's seven rows + the task-board
     // quartet create/list/update/get + the stop-continuation-team query surface
     // flipped at T9 + the team-keyword slot and prompts-team pair at T12 + the
-    // two presence faces at T13; the registration loop prints one line per
-    // registered row).
+    // two presence faces at T13 + the SIX vendor-team-core-* integrity gates
+    // flipped at T15; the registration loop prints one line per registered row).
     // The T5/T6 pair stays pinned; the T7 rows are pinned in
     // full by the `team-shutdown-handshake` scenario's bootSevenSurfaces.
     teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
     teamMessageSurfaceRegisteredAtBoot:
       (bootLog ?? '').includes('[omo-team] team surface team_send_message registered'),
-    bootCensusSixteenOfTwentyFour: (bootLog ?? '').includes('— 16/24 team surfaces registered'),
+    bootCensusTwentyTwoOfTwentyFour: (bootLog ?? '').includes('— 22/24 team surfaces registered'),
     leadCalledTeamCreate: createCall !== undefined,
     teamCreateResultCarriesTeamRunId: createResult !== undefined,
     teamCreateResultNotAnError: createResult !== undefined && createResult.isError !== true,
@@ -22852,7 +23051,23 @@ export function analyzeTeamCreateAndMessage(
         String(candidate.header?.parentSession) !== String(analystLog?.header?.id)
         && String(candidate.header?.parentSession) !== String(builderLog?.header?.id),
     ),
-    settleReachedChildren: settleReached !== false,
+    // T15（T14 遗留①）：弱形加固。旧形 `settleReached !== false` 恒过——
+    // `undefined`（settle 钩子被删/改名/从未触发）同样放行，`true` 也只是
+    // 复读钩子的布尔。现在两枚具名钉：① 严格相等——awaitTeamMessagingSettled
+    // 必须真的运行且返回 true，钩子消失即红；② durable settle 行从冻结后的
+    // final log 复读——每个成员会话都带 turn/end reason.kind='completed'
+    // 的 settle 行（settle 行真实存在于日志且语义明确；钩子窗的 live 判定与
+    // final log 的复钉互为见证）。唤醒轮的第二枚 completed turn 的证据由
+    // offlineWakeCanaryAnalyst/Builder 具名承载。不覆盖面：判定是二值的——
+    // 观察窗的时长/余量（第 1 秒到 vs 第 59 秒到）不进 verdict，这里钉不了。
+    settleReachedChildren:
+      settleReached === true
+      && memberLogs.length >= 2
+      && memberLogs.every((child) =>
+        (child.events ?? []).some(
+          (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+        ),
+      ),
 
     // ── P5-T6 messaging full segment ────────────────────────────────────────────
     // The park happened: both members were settled AND quiescent before the
@@ -23158,13 +23373,29 @@ export function analyzeTeamShutdownHandshake(
     (childLog?.events ?? []).filter((event) => event.type === 'tool/call' && event.data?.name === name)
   const leadCalls = (name) => events.filter((event) => event.type === 'tool/call' && event.data?.name === name)
   const resultWith = (needle) => leadResults.filter((part) => part.text.includes(needle))
+  // 静默的 durable 形状（与 stop-continuation 场景的 laneQuiescent 同名同尺）：
+  // 一条 lane 上 turn/start 计数 == turn/end 计数且 ends≥1。本场景 settle 的
+  // 冻结面复钉用这把尺——握手闭合的 durable 含义就是没有 turn 悬着（真跑
+  // 实测 lead 11/11、analyst 4/4、builder 3/3；T15 评审 A MINOR 修复轮把它
+  // 从 SIGTERM 冻结后的 final log 复钉，live 窗与冻结面互为见证；T15 评审 A
+  // MAJOR 修复轮起这把尺同时是 awaitTeamShutdownSettled 的 live 闸——尾活
+  // （native follow-up 冷醒 analyst → 回执唤醒 lead 处理轮）真闭合且快照静默
+  // 2s 才冻结，冻结面静默由 live 窗背书，竞态自此消除而非豁免）。
+  const laneQuiescent = (lane) => {
+    const evs = lane?.events ?? []
+    const starts = evs.filter((event) => event.type === 'turn/start').length
+    const ends = evs.filter((event) => event.type === 'turn/end').length
+    return starts === ends && ends >= 1
+  }
 
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
     // The boot census P5-T7 flipped to 7/24, P5-T8b grew it to 11/24,
-    // P5-T12 grew it to 14/24 and P5-T13 grew it to 16/24 — the T9 twelve plus
-    // the team-keyword slot, the prompts-team vendor pair and the two
-    // presence faces (hyperplan-upgrade + remove-ai-slops-team-addendum) —
+    // P5-T12 grew it to 14/24, P5-T13 grew it to 16/24 and P5-T15 grew it to
+    // 22/24 — the T9 twelve plus the team-keyword slot, the prompts-team vendor
+    // pair, the two presence faces (hyperplan-upgrade +
+    // remove-ai-slops-team-addendum) and the six `vendor-team-core-*` gates
+    // (rows ⑱–㉓, whose state-store half is THIS scenario's durable ledger) —
     // the T5/T6 pair plus the `stop-continuation-team` query surface printed
     // their registered lines.
     bootSevenSurfaces:
@@ -23173,7 +23404,7 @@ export function analyzeTeamShutdownHandshake(
       && (bootLog ?? '').includes('[omo-team] team surface team_reject_shutdown registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_delete registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_status registered')
-      && (bootLog ?? '').includes('— 16/24 team surfaces registered'),
+      && (bootLog ?? '').includes('— 22/24 team surfaces registered'),
     bootTaskQuartetRegistered:
       (bootLog ?? '').includes('[omo-team] team surface team_task_create registered')
       && (bootLog ?? '').includes('[omo-team] team surface team_task_list registered')
@@ -23338,7 +23569,59 @@ export function analyzeTeamShutdownHandshake(
     // MAJOR fix: idle / rejected / approved / the post-delete native landing.
     parksReached:
       (actionObservations ?? []).filter((row) => row.reached === true).length === 4,
-    settleReached: settleReached !== false,
+    // T15 评审 A MINOR 修复轮：弱形加固（与 teardown 20263+/stop-continuation
+    // 20461+/team-create 22987+/nested 23612+ 各枚 settle 钉同纪律，本枚是
+    // 握手形态）。旧形 `settleReached !== false` 恒过——undefined（settle 钩子
+    // 被删/改名/从未触发）同样放行，true 也只是复读钩子的布尔。本场景的
+    // settle 语义与那几处**不同**，如实写清：awaitTeamShutdownSettled 的闸
+    // 不是成员 dormant（teardown 形）、也不是命令后静默窗（stop 形），而是
+    // lead lane 的**墓碑对**（`"status":"deleted"` 行与 `is deleted` 具名拒
+    // 行双双 durable）**加上三 lane 静默**——T15 评审 A MAJOR 修复轮把静默
+    // 加进 live 闸（原因见钩子头注：墓碑 durable 时场景声明的尾活——native
+    // follow-up 冷醒 analyst、回执唤醒 lead 处理轮——还在合法开 turn，旧形
+    // 钩子秒回 true 即冻结会把在飞的合法尾 turn 钉红，实测 4 跑 1 红；裁决
+    // 两案实测后取①冻结前有界静默轮询：②的墙钟截止取不到——尾 turn 开在
+    // 钩子返回【之前】（真跑插桩：lead 尾 turn 开 ...092222，钩子返回
+    // ...092546），事件游标截止会把拒行之后开启的全部 turn（6–11）豁免、把钉掏空）。
+    // 且握手有 reject/approve 两相（拒→通道仍活→再请→自批+lead 代批→非
+    // force 拆除）。teardown 的 aborted(parent) dormant 尺依旧不可借来钉本
+    // 场景（真跑实测：拆除时刻两名成员已 idle，成员 lane 的 turn/end 全是
+    // completed——借尺会把真跑钉红；成员被 interrupt 的账面半边由
+    // deleteInterruptedBothMembers 的 interruptedSessionIds 独立钉死，不在
+    // 本枚重复计账）。现在四枚具名钉：① 严格相等——
+    // awaitTeamShutdownSettled 必须真的运行且返回 true，钩子消失即红；
+    // ②③ 钩子闸的墓碑两半从 SIGTERM 冻结后的 final log 各自复钉——lead lane 的
+    // tool/result 带墓碑行 `"status":"deleted"`、带 `is deleted` 具名拒行
+    // （与钩子 live 窗同一把尺，live 与冻结面互为见证；teamDeletedNonForce /
+    // deletedTeamRefusedByName 是带 forced:false / seq 绑定的更强同族钉，
+    // 各钉各的轴不互替）；④ 冻结时刻三 lane 静默复钉——lead + analyst +
+    // builder 各自 turn/start 计数 == turn/end 计数且 ends≥1（laneQuiescent
+    // 与 stop-continuation 同名 helper 同一把尺；MAJOR 修复轮起冻结由钩子的
+    // live 静默窗背书——冻结面静默=live 窗静默的顺延，无孤儿续烧且合法尾活
+    // 已全部真闭合）。不覆盖面：判定二值——60s 观察窗的时长/余量不进 verdict，
+    // 这里钉不了；reject/approve 两相由本 analyzer 的 ①–④ 组既有具名钉
+    // （shutdownRequest*/analystRejected*/analystSelfApproved*/
+    // leadApprovedBuilder*）独立钉死，不在本枚重复计账；settle 的 native
+    // 锚由 postDeleteNativeDeliveryLandedAtAnalyst /
+    // postDeleteFollowupParkReached 承载（follow-up 在 actions 里、settle
+    // 之前发出，静默等的是它的下游尾活闭合，不是它的缺席）；成员关账的
+    // reason.kind 族不钉（钉 completed 会把未来合法的 aborted 关账钉红，
+    // 故 ④ 只钉计数闭合）。
+    // fabricated 反向证据：第 5 腿 `settle-hook-never-ran-undefined` 咬 ①；
+    // ②③④ 轴无 fabricated 腿（drop 墓碑/拒行或开 turn 计数必同时红更强同族
+    // 钉，单红纪律下造不出来）——这三轴的反向证据 = 真跑咬合（6 连 PASS +
+    // 修复前 4 跑 1 红的对照账在 .omo/evidence/p5t15/pre-fix-red-run-excerpt-review-t15-A2.log
+    // ——该档系从评审实录 .omo/evidence/p5t1/review-t15-A2-opencode.out 逐字摘录归档）。
+    settleReached:
+      settleReached === true
+      && memberLogs.length >= 2
+      && events.some((event) =>
+        event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'))
+      && events.some((event) =>
+        event.type === 'tool/result' && toolResultTextOf(event).includes('is deleted'))
+      && laneQuiescent(log)
+      && laneQuiescent(analystLog)
+      && laneQuiescent(builderLog),
 
     // Reverse canaries: no forged native kind, no grandchildren, all lanes live.
     noForgedNativeMessageKind: (allLogs ?? []).every(
@@ -23459,7 +23742,24 @@ export function analyzeTeamNestedCreateDenied(
     mockSawNestedAttempts:
       requests.filter((r) => r.role === 'sisyphus').length >= 3
       && requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 2,
-    settleReachedChildren: settleReached !== false,
+    // T15（T14 遗留①）：弱形加固（与 team-create-and-message 同纪律）。旧形
+    // `settleReached !== false` 恒过——undefined 放行、true 只是复读钩子布尔。
+    // 现在三枚具名钉：① 严格相等——awaitTeamMembersSettled 必须真的运行且
+    // 返回 true；② 两枚子会话日志各带 turn/end reason.kind='completed' 的
+    // settle 行；③ lead 的 durable team_create tool/result 带 teamRunId 行
+    // （成功创建行——denied 行文本不含 'teamRunId'，两轴不混）。②③ 正是
+    // 钩子等待形（completed≥2 + leadCreated）在 SIGTERM 冻结后 final log 上
+    // 的复钉，live 窗与冻结面互为见证。不覆盖面：判定二值——30s 观察窗的
+    // 时长/余量不进 verdict，这里钉不了。
+    settleReachedChildren:
+      settleReached === true
+      && memberLogs.length >= 2
+      && memberLogs.every((child) =>
+        (child.events ?? []).some(
+          (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+        ),
+      )
+      && createResults.some((part) => part.text.includes('teamRunId')),
   }
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
   return {
@@ -23474,6 +23774,124 @@ export function analyzeTeamNestedCreateDenied(
       memberChildCount: memberLogs.length,
     },
   }
+}
+
+// ── P5-T15 评审 A MINOR 修复轮：team-nested-create-denied 的 fabricated 面 ────
+// 本场景此前没有 fabricated self-test（反向证据 = 真跑咬合，首轮 5 RED 的
+// 诚实账在 RUN-SUMMARY）；现在补最小全形：GOOD 必 PASS + 一枚具名 settle
+// 反向腿（与 team-create-and-message 第 10 腿同纪律）。字节形状全部复用
+// analyzer 自己的提取面（toolResultParts / findToolCall / toolResultForCall
+// / advertisedToolNames / teamRunIdFromLeadLog），伪造的字节就是断言吃的字节。
+const FABRICATED_NESTED_LEAD_ID = 'ses-fabricated-t15-nested-lead'
+const FABRICATED_NESTED_ANALYST_ID = 'ses-fabricated-t15-nested-analyst'
+const FABRICATED_NESTED_BUILDER_ID = 'ses-fabricated-t15-nested-builder'
+const FABRICATED_NESTED_TEAM_RUN_ID = '1f2e3d4c-5b6a-4978-8654-3210fedcba98'
+
+export function fabricatedTeamNestedCreateDeniedInput(routes) {
+  const events = []
+  let seq = 0
+  const push = (event) => {
+    seq += 1
+    events.push({ time: 1000 + seq * 100, ...event, seq })
+    return seq
+  }
+  const prompt = (text) => ({ type: 'user/message', data: { id: `fabricated-nested-prompt-${seq + 1}`, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'fabricated-rpc-nested' } } })
+  const step = (turn, text) => ({ type: 'assistant/message', data: { turn, step: 1, message: { role: 'assistant', content: [{ type: 'text', text }] } } })
+  const toolCall = (turn, callId, name, args) => ({ type: 'tool/call', data: { turn, step: 1, callId, name, arguments: JSON.stringify(args) } })
+  const toolResult = (turn, callId, text, isError = false) => ({
+    type: 'tool/result',
+    data: { turn, step: 1, message: { role: 'tool', toolCallId: callId, isError, content: [{ type: 'text', text }] } },
+  })
+
+  // lead turn 1：成功创建——teamRunId 行 = settleReachedChildren 的第③轴。
+  push(prompt(TEAM_CREATE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 1 } })
+  push(toolCall(1, 'mock-nested-team-create-1', 'team_create', { inline_spec: teamInlineSpec() }))
+  push(toolResult(1, 'mock-nested-team-create-1', `{"status":"created","teamRunId":"${FABRICATED_NESTED_TEAM_RUN_ID}","members":["analyst","builder"]}`))
+  push(step(1, TEAM_LEAD_CREATED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+
+  // lead turn 2：嵌套再创建 → participant 闸具名拒。拒文不含 'teamRunId'
+  // 子串——②（成功创建行）③（具名拒行）两轴不混（analyzer 头注同款尺）。
+  push(prompt(TEAM_NESTED_FOLLOWUP_PROMPT))
+  push({ type: 'turn/start', data: { turn: 2 } })
+  push(toolCall(2, 'mock-nested-team-create-2', 'team_create', { inline_spec: teamInlineSpec() }))
+  push(toolResult(2, 'mock-nested-team-create-2', `team_create denied: session is already a participant of team ${FABRICATED_NESTED_TEAM_RUN_ID}`, true))
+  push(step(2, TEAM_LEAD_DENIED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+
+  const log = { path: '/fabricated/t15-nested/session.jsonl', header: { type: 'session', id: FABRICATED_NESTED_LEAD_ID }, events }
+  const member = (seat, memberId, tail) => {
+    const mEvents = []
+    let mSeq = 0
+    const mPush = (event) => {
+      mSeq += 1
+      mEvents.push({ time: 4000 + mSeq * 50, ...event, seq: mSeq })
+      return mSeq
+    }
+    mPush({
+      type: 'subagent/descriptor',
+      data: {
+        version: 3,
+        mode: 'continuable',
+        provider: 'team',
+        label: `team member ${seat}`,
+        agentProvider: routes[seat].provider,
+        agentModel: routes[seat].model,
+        toolFilter: { deny: [...DELEGATION_TOOL_NAMES] },
+      },
+    })
+    mPush({
+      type: 'request/header',
+      data: {
+        header: {
+          config: { provider: routes[seat].provider, model: routes[seat].model },
+          // 席位 advertised 工具面逐名无 team_create（交付面 4 的结构性缺席）
+          // ——analyst 的尝试因此落 UNKNOWN_TOOL，两面同形。
+          tools: [{ function: { name: 'bash' } }, { function: { name: 'read' } }, { function: { name: 'team_send_message' } }],
+        },
+        reason: 'initial',
+      },
+    })
+    mPush({ type: 'turn/start', data: { turn: 1 } })
+    if (tail !== undefined) tail(mPush)
+    mPush(step(1, seat === TEAM_SEAT_ANALYST ? TEAM_MEMBER_ANALYST_REPLY : TEAM_MEMBER_BUILDER_REPLY))
+    mPush({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+    return { path: `/fabricated/t15-nested/${seat}/session.jsonl`, header: { type: 'session', id: memberId, origin: 'subagent', parentSession: FABRICATED_NESTED_LEAD_ID, delegationDepth: 1 }, events: mEvents }
+  }
+  const analystLog = member(TEAM_SEAT_ANALYST, FABRICATED_NESTED_ANALYST_ID, (mPush) => {
+    mPush(toolCall(1, 'mock-nested-analyst-create-denied', 'team_create', { inline_spec: teamInlineSpec() }))
+    mPush(toolResult(1, 'mock-nested-analyst-create-denied', 'Error: unknown tool "team_create"', true))
+  })
+  const builderLog = member(TEAM_SEAT_BUILDER, FABRICATED_NESTED_BUILDER_ID)
+  return {
+    log,
+    allLogs: [log, analystLog, builderLog],
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 11 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 12 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 20 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 21 },
+      { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 30 },
+    ],
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      '[omo-team] team surface team_create registered',
+    ].join('\n'),
+    settleReached: true,
+  }
+}
+
+/** P5-T15 评审 A MINOR 修复轮：nested 场景 settle 钉的反向腿（同法补腿）。
+ *  清单长度显式钉死 1——每枚新钉一枚腿；undefined（钩子从未触发的伪造
+ *  形态）只红 settleReachedChildren（本 analyzer 无第二枚检查读它）。 */
+export function teamNestedCreateDeniedSettleDefectCases() {
+  return [
+    ['settle-hook-never-ran-undefined', (input) => {
+      input.settleReached = undefined
+    }, 'settleReachedChildren'],
+  ]
 }
 
 const SCENARIOS = [
@@ -27065,7 +27483,13 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     const TEAM_T14_SELF_TEST_BANNER = [...TEAM_T14_SELF_TEST_ATTESTATION]
       .map(([label, expectedCheck]) => `${label}→${expectedCheck}`)
       .join(', ')
-    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 9 on team-create-and-message, 4 on team-shutdown-handshake, each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
+    if (TEAM_T15_SETTLE_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('P5-T15: the nested settle self-test banner is EMPTY — it would attest to nothing')
+    }
+    const TEAM_T15_SETTLE_SELF_TEST_BANNER = [...TEAM_T15_SETTLE_SELF_TEST_ATTESTATION]
+      .map(([scenario, label]) => `${scenario}: ${label}`)
+      .join(', ')
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 10 on team-create-and-message (9 T10 checks + the T15 settle-pin leg), 5 on team-shutdown-handshake (4 T10 checks + the T15 settle-pin leg), each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing / settle-hook-vanished) FAILs on its own named check; ${TEAM_T15_SETTLE_SELF_TEST_BANNER} (the P5-T15 nested settle leg — settleReached undefined, the weak form's hole, red ONLY on settleReachedChildren) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

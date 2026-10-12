@@ -585,7 +585,16 @@ describe('P4-T6 the semantic-port table registers both commands and both narrowi
     // wrongly. Both are needed: the hand-typed string pins the exact rendered
     // count line, the derivation pins that it is consistent with the table.
     const section = NOTICES.indexOf('| Command (manifest id) |')
-    const rows = NOTICES.slice(section).split('\n').filter((line) => line.startsWith('| ') && !line.startsWith('|---') && line.includes('semantic port only'))
+    // BOUNDED section read (c28's team-core discipline, adopted here): the table
+    // ends at the next `###` heading — an unbounded slice to EOF silently counts
+    // ANY later table that shares the disposition vocabulary. The P5-T15 review
+    // round added exactly such a table (the omo-team semantic-port table), which
+    // reddened this test by riding the OLD unbounded slice; the fix is to bound
+    // the read, never to strip the honest phrase from the new rows.
+    const rest = NOTICES.slice(section)
+    const nextHeading = rest.search(/^#{2,3} /m)
+    const tableFace = nextHeading < 0 ? rest : rest.slice(0, nextHeading)
+    const rows = tableFace.split('\n').filter((line) => line.startsWith('| ') && !line.startsWith('|---') && line.includes('semantic port only'))
     // One row per ported command; `ulw-execute` is the fourth (P4-T10).
     expect(rows).toHaveLength(5)
     for (const id of ['ulw-execute', 'hyperplan', 'stop-continuation', 'handoff', 'remove-ai-slops']) {

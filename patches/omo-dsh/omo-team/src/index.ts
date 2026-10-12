@@ -134,6 +134,12 @@ import { registerTeamStopContinuationQuerySurface } from './team/team-stop-conti
 // team-prompts-vendor.ts 头注：跨包零 import，消费侧本地字面量 + 单测交叉钉）。
 import { registerTeamKeywordInjectionFace } from './team/team-keyword-slot.ts'
 import { registerTeamPromptsVendorSurface } from './team/team-prompts-vendor.ts'
+// P5-T15 · 行 ⑱–㉓ 六枚 `vendor-team-core-*` 的 registrar（team-core-vendor.ts
+// 头注：字节的家在 vendor/team-core/（T8a），消费在 T8b 的薄壳与持久化换装；
+// 本包这一侧的可见半 = **逐行启动完整性把门 + 档案脸**，一行一张脸六个服务名。
+// 翻行的同 commit 义务就在这张脸上——注册循环只挂 'ported' 且有 registrar 的行，
+// 探针的派生面对「ported 而无 registrar」响亮判红，六枚 registrar 因此随行落地。
+import { registerTeamCoreVendorRowSurface } from './team/team-core-vendor.ts'
 // P5-T13 · 行 ⑮/⑯ 的两个 registrar（team-tool-presence.ts 头注：完整对抗评审环
 // 与 team-mode addendum 的模板正文住在 omo-commands，本包只发**在场探测脸**——
 // 跨包零 import，消费侧本地字面量 + 单测交叉钉，`omoTeamMemberQuery` 同族）。
@@ -375,6 +381,19 @@ export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
   // 取消动作的 nativeFace 在 omo-hooks 的 guard（跨包纪律：两侧零 import，
   // 服务名交叉等值由单测钉死）。行号按名册行序（manifest.ts 第 17 条）。
   'stop-continuation-team': (ctx) => registerTeamStopContinuationQuerySurface(ctx, { store: teamStateStore }),
+  // P5-T15 · ⑱–㉓ §3.3 vendor 子集六行：team-core 字节的**逐行启动完整性把门**
+  // （VENDOR-MANIFEST pin 逐枚 sha 对账，漂移 = 抛具名错 = 该行 FAILED）+ 逐行
+  // 只读档案脸（六个服务名，team-core-vendor.ts 头注：一 registrar 一行、一行一
+  // 张脸，census 因此诚实计六）。字节的家在 vendor/team-core/（T8a 落地），消费
+  // 在 T8b（任务板薄壳 + 持久化换装）——本包这一侧不重打文件清单：核验集从
+  // 行自身的 upstreamSources 剥前缀派生（manifest 少一行/多一行直接改变核验集）。
+  // 行号按名册行序（manifest.ts 第 18/19/20/21/22/23 条）。
+  'vendor-team-core-types': (ctx, entry) => registerTeamCoreVendorRowSurface(ctx, entry),
+  'vendor-team-core-member-parser': (ctx, entry) => registerTeamCoreVendorRowSurface(ctx, entry),
+  'vendor-team-core-team-registry': (ctx, entry) => registerTeamCoreVendorRowSurface(ctx, entry),
+  'vendor-team-core-team-tasklist': (ctx, entry) => registerTeamCoreVendorRowSurface(ctx, entry),
+  'vendor-team-core-team-state-store': (ctx, entry) => registerTeamCoreVendorRowSurface(ctx, entry),
+  'vendor-team-core-closure': (ctx, entry) => registerTeamCoreVendorRowSurface(ctx, entry),
   // P5-T12 · ㉔ §3.3 vendor 行：prompts-team 两项文本的完整性把门（manifest
   // 在册文件逐枚 sha 核验，漂移 = 抛具名错 = 该行 FAILED）+ lead 运行协议
   // 档案面（teamModeTsText，T13 升级面的读取锚）。注入正文的盘读在 omo-hooks
@@ -456,19 +475,22 @@ export function runTeamRegistrations(
  * unit-tested functions, so this stays assembly-only and the markers cannot
  * drift from their tests.
  *
- * A correct P5-T13 boot logs SIXTEEN `registered` lines from this plugin — the
+ * A correct P5-T15 boot logs TWENTY-TWO `registered` lines from this plugin — the
  * loop's landed rows in roster order (`team_create`, `team_delete`, the
  * shutdown trio, `team_send_message`, the task-board quartet added at T8b,
  * `team_status`, `team-keyword-injection`, the two command-upgrade presence
  * faces added at T13 (`hyperplan-upgrade`, `remove-ai-slops-team-addendum`),
  * the `stop-continuation-team`
- * query surface added at T9, `vendor-team-prompts` last) — then the summary
- * line carrying the honest `16/24`, then AT
+ * query surface added at T9, the six `vendor-team-core-*` vendor integrity gates
+ * added at T15 (rows ⑱–㉓ — bytes landed at T8a, consumed at T8b; the rows'
+ * omo-team-visible half is the per-row vendor integrity gate, the same split as
+ * row ㉔), `vendor-team-prompts` last) — then the summary
+ * line carrying the honest `22/24`, then AT
  * MOST the resume lines of the persistence boot (below): no FAILED line, no
  * validation line. (At P5-T3 it logged exactly ONE line, the summary with the
  * loop's honest zero, because the registry was empty; T5/T6 grew it to two;
  * T7 grew it to seven; T8b grew it to eleven; T9 grew it to twelve; T12 grew
- * it to fourteen; T13 grew it to sixteen; the flips
+ * it to fourteen; T13 grew it to sixteen; T15 grew it to twenty-two; the flips
  * are the markers the probe re-derives without an edit.)
  *
  * PERSISTENCE BOOT (T8b换装): after the registration loop, the store rebuilds

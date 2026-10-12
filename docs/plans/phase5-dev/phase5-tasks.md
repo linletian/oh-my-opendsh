@@ -201,13 +201,13 @@
 
 ## WP-8 收口
 
-### [ ] P5-T15 — 合规复核 + 文档双语 + 覆盖基线终态
+### [x] P5-T15 — 合规复核 + 文档双语 + 覆盖基线终态
 
-> **仲裁增补（T14 评审遗留登记，2026-10-12）**：① `drive.mjs` 的 `settleReachedChildren` 弱形（`settleReached !== false` 恒过——非 T14 引入的存量弱断言）在本任务评估是否加固为具名 settle 证据钉（加固则同 commit 成文，不加则记差异理由）；② 门 6 的 c26/c27 与门 4 新臂的变异实证缺口（T14 只有 c25 两腿真破真红）——本任务补 c26/c27/doctor-lite 新臂各至少一条变异腿。
+> **仲裁增补（T14 评审遗留登记，2026-10-12；前提订正 2026-10-12 晚）**：① `drive.mjs` 的 `settleReachedChildren` 弱形（`settleReached !== false` 恒过——非 T14 引入的存量弱断言）在本任务评估是否加固为具名 settle 证据钉（加固则同 commit 成文，不加则记差异理由）；② ~~门 6 的 c26/c27 与门 4 新臂的变异实证缺口（T14 只有 c25 两腿真破真红）——本任务补 c26/c27/doctor-lite 新臂各至少一条变异腿~~ **②订正**：c26/c27 变异腿已于 T14 终审后的 `p5t14/mutation-gate6.log`（c26=腿 F；c27=腿 C/D/E/G/H/I，均真破真红真还原）闭环，本增补写下时该终态未发生——真实缺口仅门 4 新臂，由 T15 的腿 A–D（`p5t15/mutation-gate4-doctor-lite.log`）补上；② 全项闭环。
 
 - **产出**：`THIRD_PARTY_NOTICES.md` Phase 5 小节终态（**(B) 形态 = 语义移植表 + team-core vendor 子集表**）；vendor manifest 漂移复跑；README 双语状态行（team 面 ≠ DAG ≠ 编辑面的措辞纪律沿用 Phase 2/3/4 先例）；CHANGELOG；**D18（fork 已裁 (B)：不采用 experimental team 面登记——依据 = Q-3 三重封死链 + FORK.md）与 ROADMAP Phase 5 措辞修订双语同 commit**；dsh-0.2.0-rc.2 复核报告补「实施期订正」节（Q-2/Q-3/Q-7 的契约事实，双语）；覆盖基线全条目终态。
 - **判定**：✅ 门 7 绿（d01–d10 现行断言集）；`verify-licenses` 绿且计数全对应；双语文档行数/结构一致。
-- **证据**：⬜
+- **证据**：✅ 2026-10-12——**合规面**：THIRD_PARTY_NOTICES.md 终态（team-core 表漂移修复 verbatim 7/modified 37/deviations 17 与 manifest 逐行零分歧——漂移系 T8b 扩展名补全翻 30 行 modified 未跟进，T15 抓出；+ **Phase 5 omo-team semantic ports 语义移植表 9 行**（Phase 4 逐命令表先例）+ 分隔符修正）+ vendor 漂移复跑 `checked=372 violations=0` + `verify-licenses checked=61 violations=0` 计数全对应（57→59→60→61 逐次有对应）；**文档双语**：dsh-0.2.0-rc.2 复核报告补 §9「实施期订正」（Q-2/Q-3/Q-7 契约事实，双语同 commit，结构对应）+ README 双语 hyperplan 行改完成时；**覆盖基线终态**：manifest vendor 六行翻 ported（pending=0/ported=22/recorded=2，同步网全点位 + team-core-vendor.ts 守门面 + c28 NOTICES-mirror 派生臂——防 T8a→T8b 型漂移再存活）；**T14 遗留**：settleReachedChildren 弱形→具名 settle 证据钉 ×3 场景 + handshake 追加（四枚具名钉）+ fabricated settle 腿；doctor-lite 门 4 新臂变异腿 A–D；**评审修复轮**：c26/c27 增补②前提订正（已于 p5t14 闭环）+ NOTICES 三行分隔符 + RUN-SUMMARY/CHANGELOG 诚实账同步 + **settle ④钉竞态修复**（opencode 实测 4 跑 1 红——插桩实测裁两案取①：settle 钩子增三 lane 静默轮询 + 快照静默 2s，④钉满贯零豁免；6 连跑 PASS + 4 独立连跑复核）+ 证据指针校正。实测：**ci-local 8/8 全绿**（归档 p5t15/ci-local.log）；vitest 90f/2056t；root typecheck exit 0；verify-concerto-static 37/37；cold-start 22/24；probe PASS。**双评审通过**（轮 1 双 REJECT（B 的 MAJOR 经 p5t14 日志证据驳回 + A 的 NOTICES 缺表 MAJOR 成立）→ 修复轮；delta B APPROVE 零 findings + A REJECT（settle 竞态 MAJOR）→ 竞态修复轮；race-delta 双 APPROVE → nit 微修仲裁独立确认）。
 - **依赖**：P5-T14。**量级**：4 小时。
 
 ### [ ] P5-T16 — 退出标准核对 + L2 真机

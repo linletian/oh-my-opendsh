@@ -14,10 +14,12 @@
 // 'recorded'**——recorded 是 team_list / team_wait 两条 recorded-difference
 // 行的诚实终态（差异本身就是交付面，已成文于覆盖基线 §1 行 11/12）；其余行
 // 的任何实现、单测或 e2e 场景都属 T3+。P5-T5 落了第一行 ported（team_create，
-// 交付面见 manifest.ts 该行行注），现状 census 是 **21 pending / 1 ported /
-// 2 recorded**（下方逐行 split 测试逐字钉死）。这些断言是硬编码的事实而非
+// 交付面见 manifest.ts 该行行注）；**P5-T15 把最后六枚 `vendor-team-core-*`
+// 行按 refined 规则翻完，现状 census 是 **0 pending / 22 ported / 2 recorded**
+// （下方逐行 split 测试逐字钉死）**。这些断言是硬编码的事实而非
 // 长度，所以「行偷偷翻转」无法蒙混过关——翻转须与交付面同 commit 落地
-// （manifest.ts 头部的 STATUS 段）。
+// （manifest.ts 头部的 STATUS 段）。pending 的空集是**事实**不是词表退役：
+// 三值词表在下面的词表测试里逐字钉着，未来的新行仍从 pending 起步。
 //
 // The `.ts` extension in the import path is load-bearing: Node 24
 // type-stripping does no specifier resolution and this workspace has no
@@ -201,7 +203,7 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
     expect([...teamStatusSet].sort()).toEqual(['pending', 'ported', 'recorded'])
   })
 
-  it('splits the roster by status as of P5-T12 (8 pending, FOURTEEN ported, 2 recorded)', async () => {
+  it('splits the roster by status as of P5-T15 (ZERO pending, TWENTY-TWO ported, 2 recorded)', async () => {
     // The hard-coded facts, not lengths. ZERO ported was the load-bearing half
     // at P5-T2; P5-T5 flips team_create to 'ported' (the delivery surface —
     // src/tools/team-create.ts + team-state.ts + roster-seats.ts — landed);
@@ -223,19 +225,19 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
     // — `hyperplan-upgrade` + `remove-ai-slops-team-addendum`** (the two
     // presence-face registrars over the eleven tool rows, consumed lazily per
     // invocation by the upgraded omo-commands handlers; the degraded branch
-    // stays green because the faces report absence, never guess). A
-    // row silently flipping to 'ported' without a delivery surface would claim
-    // a port that does not exist (T8 owns the next flip). The two recorded
-    // rows are the honest terminal for recorded-difference rows — their
-    // deliverable IS the recorded difference (§1 行 11/12).
-    expect(teamsByStatus(TEAM_MANIFEST, 'pending').map((row) => row.id)).toEqual([
-      'vendor-team-core-types',
-      'vendor-team-core-member-parser',
-      'vendor-team-core-team-registry',
-      'vendor-team-core-team-tasklist',
-      'vendor-team-core-team-state-store',
-      'vendor-team-core-closure',
-    ])
+    // stays green because the faces report absence, never guess);
+    // **P5-T15 flips rows ⑱–㉓ — the six `vendor-team-core-*` rows** (the
+    // refined 翻动规则的终态读法，仲裁裁定：字节 vendored at T8a、消费接线 at
+    // T8b、行点名的 e2e 场景绿；逐行理由在 manifest.ts 的行注里，这里只钉
+    // census，而行的可注册半 = src/team/team-core-vendor.ts 的逐行守门
+    // registrar，同 commit 落 TEAM_REGISTRARS)。**pending 至此是空集**——空
+    // 列表本身就是断言：任何一行悄悄翻回 'pending' 都让它红，任何一行在没有
+    // 交付面的情况下翻成 'ported' 也一样（T8 owns the flips that landed; the
+    // empty set is the fact of T15, not a word-list retirement — the three-value
+    // vocabulary stays pinned above). The two recorded rows are the honest
+    // terminal for recorded-difference rows — their deliverable IS the recorded
+    // difference (§1 行 11/12).
+    expect(teamsByStatus(TEAM_MANIFEST, 'pending').map((row) => row.id)).toEqual([])
     expect(teamsByStatus(TEAM_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'team_create',
       'team_delete',
@@ -252,6 +254,12 @@ describe('P5-T2 TEAM_MANIFEST — shape and content', async () => {
       'hyperplan-upgrade',
       'remove-ai-slops-team-addendum',
       'stop-continuation-team',
+      'vendor-team-core-types',
+      'vendor-team-core-member-parser',
+      'vendor-team-core-team-registry',
+      'vendor-team-core-team-tasklist',
+      'vendor-team-core-team-state-store',
+      'vendor-team-core-closure',
       'vendor-team-prompts',
     ])
     expect(teamsByStatus(TEAM_MANIFEST, 'recorded').map((row) => row.id)).toEqual([
@@ -425,7 +433,11 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.nativeFace).toContain('session-client')
     expect(entry?.disposition).toBe('content-vendor')
     expect(entry?.e2eScenario).toBe('team-task-claim')
-    expect(entry?.status).toBe('pending')
+    // P5-T15 翻行：status 'pending'→'ported'（闭包四件 vendored at T8a、两枚
+    // 外部依赖在册——zod 随 vendor package.json、isPlainRecord 语义移植落
+    // vendor/team-core/src/plain-record.ts——consumed at T8b，场景
+    // `team-task-claim` 绿；交付面逐字见 manifest.ts 该行行注）。
+    expect(entry?.status).toBe('ported')
   })
 
   it('④ vendor-team-core-team-state-store is 12 files + 1 deviation + 1 excluded (T2 双评审终态)', async () => {
@@ -461,7 +473,10 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
     expect(entry?.nativeFace).toContain('reservation-reconciliation.ts')
     expect(entry?.disposition).toBe('content-vendor')
     expect(entry?.e2eScenario).toBe('team-shutdown-handshake')
-    expect(entry?.status).toBe('pending')
+    // P5-T15 翻行：status 'pending'→'ported'（12 文件 vendored at T8a、
+    // deviation/excluded 两枚终态事实在册且被 c27 逐枚钉、持久化换装
+    // consumed at T8b、场景 `team-shutdown-handshake` 绿）。
+    expect(entry?.status).toBe('ported')
   })
 
   it('④ vendor-team-prompts is the two-item prompt vendor row (Q1b N5 扩清单)', async () => {
@@ -549,6 +564,34 @@ describe('P5-T2 TEAM_MANIFEST — spot checks (hard-coded against phase5-team.md
       'vendor-team-core-closure',
       'vendor-team-prompts',
     ])
+  })
+  it('⑱–㉓ the six vendor-team-core rows are ALL ported at P5-T15, each on its own named face', async () => {
+    // P5-T15 翻行的**逐行**钉：六行不是「一批」——每行有自己的 vendored 落点、
+    // 自己的消费接线、自己点名的 e2e 场景。这里逐枚钉 status + disposition +
+    // 场景 + 核验集规模（upstreamSources 长度 = T15 守门 registrar 的派生核验集
+    // 大小，见 src/team/team-core-vendor.ts：`packages/team-core/` 前缀剥掉即
+    // vendor 树内路径）。任何一行退回 pending、任何一行场景改名、任何一行文件集
+    // 增减，都在这一条里红，而不是在汇总的 22 里被平均掉。
+    const expectations: ReadonlyArray<readonly [string, string, number]> = [
+      // [id, e2eScenario, upstreamSources.length]
+      ['vendor-team-core-types', 'team-create-and-message', 1],
+      ['vendor-team-core-member-parser', 'team-create-and-message', 1],
+      ['vendor-team-core-team-registry', 'team-create-and-message', 6],
+      ['vendor-team-core-team-tasklist', 'team-task-claim', 7],
+      ['vendor-team-core-team-state-store', 'team-shutdown-handshake', 12],
+      ['vendor-team-core-closure', 'team-task-claim', 4],
+    ]
+    expect(expectations).toHaveLength(6)
+    for (const [id, scenario, sources] of expectations) {
+      const entry = TEAM_MANIFEST.find((row) => row.id === id)
+      expect(entry, `row ${id} must exist`).toBeDefined()
+      expect(entry?.status, `${id} flipped at P5-T15`).toBe('ported')
+      expect(entry?.disposition, `${id} is a content-vendor row`).toBe('content-vendor')
+      expect(entry?.e2eScenario, `${id} scenario`).toBe(scenario)
+      expect(entry?.upstreamSources, `${id} carriage set`).toHaveLength(sources)
+      // 每行的字节家必须在 nativeFace 里点名 vendor/team-core（守门面的派生锚）。
+      expect(entry?.nativeFace, `${id} names its vendor home`).toContain('team-core')
+    }
   })
 })
 
@@ -718,18 +761,22 @@ describe('P5-T2 derived helpers', async () => {
     expect(total).toBe(TEAM_MANIFEST.length)
   })
 
-  it('countsByStatus derives the summary counts (20/2/2) with every key present at all times', async () => {
+  it('countsByStatus derives the summary counts (0/22/2) with every key present at all times', async () => {
     // The T3 summary line's fields come from here, never from a hard-coded
     // string — so this test pins the DERIVATION against hand-typed numbers.
     // P5-T5 flipped team_create to ported: 21/1/2 (was 22/0/2 at P5-T2);
     // P5-T6 flipped team_send_message: 20/2/2; P5-T7 five more: 15/7/2;
     // P5-T8b flipped the task quartet: 11/11/2; P5-T9 flipped
     // stop-continuation-team: 10/12/2; T12 adds team-keyword-injection +
-    // vendor-team-prompts to the ported side: 8/14/2; **T13 flips
-    // hyperplan-upgrade + remove-ai-slops-team-addendum: 6/16/2.**
+    // vendor-team-prompts to the ported side: 8/14/2; T13 flips
+    // hyperplan-upgrade + remove-ai-slops-team-addendum: 6/16/2;
+    // **T15 flips the six vendor-team-core-* rows: 0/22/2** — the pending
+    // bucket is EMPTY, and the empty bucket is the assertion: any row drifting
+    // back to 'pending' (or any new row landing without its delivery surface)
+    // reddens this line while the vocabulary above stays three-wide.
     const counts = countsByStatus(TEAM_MANIFEST)
-    expect(counts.get('pending')).toBe(6)
-    expect(counts.get('ported')).toBe(16)
+    expect(counts.get('pending')).toBe(0)
+    expect(counts.get('ported')).toBe(22)
     expect(counts.get('recorded')).toBe(2)
     // Every vocabulary key exists even at 0, so two boots stay line-comparable.
     expect([...counts.keys()]).toEqual([...TEAM_MANIFEST_STATUSES])
@@ -776,12 +823,14 @@ describe('P5-T2 derived helpers', async () => {
   it('formatLoadedSummaryLine renders the exact P5-T2 census line from the real roster', async () => {
     // 手打的整行——与上面 countsByStatus 的手打数字（22/0/2）互为对账；
     // T3 的 boot marker 若并入注册计数，格式扩展归 probe 侧（manifest.ts 注）。
-    // P5-T13 census: pending=6, ported=16 (T7's seven + the task quartet +
+    // P5-T15 census: pending=0, ported=22 (T7's seven + the task quartet +
     // the stop-continuation-team query surface flipped at T9 + the team-keyword
     // slot and the prompts-team vendor pair flipped at T12 + the two presence
-    // faces flipped at T13), recorded=2。
+    // faces flipped at T13 + the SIX `vendor-team-core-*` rows flipped at T15
+    // under the refined 翻动规则——vendored at T8a / consumed at T8b / 场景绿),
+    // recorded=2。pending 的空集是本行的承重半：任何一行退回 pending 即红。
     expect(formatLoadedSummaryLine(TEAM_MANIFEST)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2)',
+      '[omo-team] loaded: manifest 24 entries (pending=0, ported=22, recorded=2)',
     )
   })
 

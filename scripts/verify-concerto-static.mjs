@@ -97,6 +97,16 @@
 //       NOT on disk, and the team-core subset's two terminal pins hold by name
 //       (session-client.ts present, reservation-reconciliation.ts absent — the T8b
 //       subset ruling's terminal face)
+//   c28 the NOTICES MIRROR (P5-T15): THIRD_PARTY_NOTICES.md's team-core table is a
+//       row-for-row mirror of the vendor manifest's `origin` face — same paths in
+//       both directions, same origin per path (via the closed named disposition
+//       table verbatim/已修改/本项目新增 → verbatim/modified/project-new), the row
+//       numbering contiguous, and every count the prose prints re-read against the
+//       tally this arm just counted (6 prose anchors + the Totals line + the
+//       manifest's own counts block). The reason it exists is measured: the table
+//       said verbatim 37 / 已修改 7 while the manifest had honestly flipped to
+//       verbatim 7 / modified 37 at T8b, and no gate in this file could see it —
+//       c27 checks the vendor tree against ITSELF, never against the notices.
 //
 // The record COUNT appears nowhere in this file or in ci-local.sh / ci.yml: the
 // script derives its own total and prints `N/N PASS`, so there is no copy to go
@@ -2560,6 +2570,7 @@ async function run() {
     'team/roster-seats.ts',
     'team/session-context-adapter.ts',
     'team/team-config.ts',
+    'team/team-core-vendor.ts',
     'team/team-keyword-slot.ts',
     'team/team-prompts-vendor.ts',
     'team/team-row-config.ts',
@@ -2679,6 +2690,7 @@ async function run() {
     'team/session-context-adapter.ts', // resume 适配器（closure 行的宿主臂）
     'team/team-row-config.ts', // 门 4 row Config（apply 消费，注册循环的门槛参数）
     'team/team-prompts-vendor.ts', // 行 ㉔ 的启动守门人（字节的家在 vendor/prompts-team）
+    'team/team-core-vendor.ts', // 行 ⑱–㉓ 六枚 vendor 行的启动守门人（字节的家在 vendor/team-core；P5-T15）
   ])
   const TEAM_INFRA_ROOT_FILES = new Set(['index.ts', 'manifest.ts', 'boot-markers.ts'])
   if (teamManifest !== null) {
@@ -2938,6 +2950,135 @@ async function run() {
   } catch (e) {
     results.push(check('c27', 'team vendors exist, manifests self-consistent, subset terminal pins hold', false,
       `the team vendor check could not run: ${String(e.message ?? e)}`))
+  }
+
+  // ══ P5-T15 — the NOTICES mirror (c28) ═══════════════════════════════════════
+  //
+  // c27 proves the vendor tree and its VENDOR-MANIFEST agree with EACH OTHER. The
+  // human-readable face of the same fact — THIRD_PARTY_NOTICES.md's team-core
+  // table — had no reader at all, and the T15 close-up found exactly what that
+  // costs: the table said verbatim **37** / 已修改 **7** while the manifest had
+  // honestly flipped to verbatim 7 / modified 37 at T8b (the import-wall ESM
+  // completion). Four commits lived with a NOTICE that misdescribed its own
+  // vendor tree, and every gate in this file stayed green. c28 is the arm that
+  // cannot be green over that again: it reads BOTH faces and compares them
+  // row-for-row, path-for-path, origin-for-origin.
+  //
+  // ONLY-TIGHTENING (the phase's standing rule): nothing here was relaxed to make
+  // the current text pass — the notices table was re-read and corrected in the
+  // same phase (CHANGELOG, `docs(notices)`), and this arm is what keeps it honest
+  // from here on. The vocabulary mapping is a CLOSED named table: an unmapped
+  // disposition token is a FAIL, never a silent skip (the c27 vacuous-arm ruling —
+  // "reported but never checked" is a MAJOR-class lie).
+  const TEAM_CORE_NOTICES_HEADING = '### Phase 5 vendored package: `@oh-my-opencode/team-core`'
+  const NOTICES_ORIGIN_TOKENS = new Map([
+    ['verbatim', 'verbatim'],
+    ['已修改', 'modified'],
+    ['本项目新增', 'project-new'],
+  ])
+  try {
+    const noticesRaw = readFileSync(join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), 'utf8')
+    const c28Problems = []
+    const headingAt = noticesRaw.indexOf(TEAM_CORE_NOTICES_HEADING)
+    if (headingAt < 0) {
+      c28Problems.push(`THIRD_PARTY_NOTICES.md carries no team-core section (${TEAM_CORE_NOTICES_HEADING}) — the mirror would have no table to read`)
+    }
+    const section = headingAt < 0 ? '' : (() => {
+      const rest = noticesRaw.slice(headingAt + TEAM_CORE_NOTICES_HEADING.length)
+      const next = rest.search(/^###? /m)
+      return next < 0 ? rest : rest.slice(0, next)
+    })()
+    const sectionFlat = section.replace(/\s+/g, ' ')
+    // Row parse over the table body only (the header row and the `|---|` separator
+    // carry no `P5-n` marker, so they cannot enter the set).
+    const rows = [...section.matchAll(/^\| P5-(\d+) \| `([^`]+)` \| `([^`]+)` \|/gm)]
+      .map((m) => ({ n: Number(m[1]), path: m[2], token: m[3] }))
+    if (rows.length === 0) c28Problems.push('the team-core notices table parsed 0 rows — the mirror would be vacuous')
+    // Row-numbering integrity: contiguous 1..N in document order.
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].n !== i + 1) {
+        c28Problems.push(`the notices table's row numbering breaks at position ${i + 1}: expected P5-${i + 1}, found P5-${rows[i].n} (${rows[i].path}) — a deleted or renumbered row silently shrinks the mirror`)
+      }
+    }
+    let coreVmForMirror = null
+    try {
+      coreVmForMirror = JSON.parse(readFileSync(join(VENDOR_TEAM_CORE, 'VENDOR-MANIFEST.json'), 'utf8'))
+    } catch (e) {
+      c28Problems.push(`team-core VENDOR-MANIFEST.json could not be parsed for the mirror: ${String(e.message ?? e)}`)
+    }
+    const manifestFiles = coreVmForMirror !== null && Array.isArray(coreVmForMirror.files) ? coreVmForMirror.files : []
+    const originByPath = new Map()
+    for (const f of manifestFiles) {
+      if (typeof f?.path !== 'string') continue
+      originByPath.set(f.path, typeof f.origin === 'string' ? f.origin : '')
+    }
+    // Forward, row for row: every notices row has a manifest row, same origin.
+    const seenPaths = new Set()
+    const noticesTally = { verbatim: 0, modified: 0, 'project-new': 0 }
+    for (const row of rows) {
+      if (seenPaths.has(row.path)) c28Problems.push(`the notices table lists ${row.path} twice (P5-${row.n}) — two rows for one file is a table that can disagree with itself`)
+      seenPaths.add(row.path)
+      const mapped = NOTICES_ORIGIN_TOKENS.get(row.token)
+      if (mapped === undefined) {
+        c28Problems.push(`P5-${row.n} (${row.path}) declares disposition ${JSON.stringify(row.token)}, which is outside the closed vocabulary [${[...NOTICES_ORIGIN_TOKENS.keys()].join(', ')}] — an unmapped token is a FAIL, never a skip`)
+        continue
+      }
+      noticesTally[mapped] += 1
+      if (!originByPath.has(row.path)) {
+        c28Problems.push(`P5-${row.n} lists ${row.path}, which carries no team-core VENDOR-MANIFEST files[] row — the notices describe a file the manifest does not register`)
+        continue
+      }
+      if (originByPath.get(row.path) !== mapped) {
+        c28Problems.push(`origin mismatch on ${row.path}: THIRD_PARTY_NOTICES.md P5-${row.n} says ${JSON.stringify(row.token)} (= ${mapped}), VENDOR-MANIFEST.json says ${JSON.stringify(originByPath.get(row.path))} — the human-readable face and the machine-readable face disagree about the same bytes`)
+      }
+    }
+    // Reverse: every manifest file has a notices row (the table may not silently
+    // shrink below the manifest it claims to mirror "one-to-one").
+    for (const p of originByPath.keys()) {
+      if (!seenPaths.has(p)) c28Problems.push(`team-core VENDOR-MANIFEST registers ${p}, which no THIRD_PARTY_NOTICES.md row names — the notices table is no longer a full mirror (it claims "one-to-one")`)
+    }
+    // The prose count anchors, derived and re-read (c21's rule for this table):
+    // every number the prose prints must equal the tally this arm just counted.
+    const proseAnchors = [
+      ['`verbatim` (**N**)', /`verbatim` \(\*\*(\d+)\*\*\)/, noticesTally.verbatim],
+      ['`已修改` → `modified` (**N**)', /`已修改` → `modified` \(\*\*(\d+)\*\*\)/, noticesTally.modified],
+      ['`本项目新增` → `project-new` (**N**)', /`本项目新增` → `project-new` \(\*\*(\d+)\*\*\)/, noticesTally['project-new']],
+      ['**N files** total', /\*\*(\d+) files\*\* total/, rows.length],
+      ['files[] (N entries)', /`files\[\]` \((\d+) entries\)/, manifestFiles.length],
+      ['deviations[], N entries', /`deviations\[\]`, (\d+) entries/, Array.isArray(coreVmForMirror?.deviations) ? coreVmForMirror.deviations.length : -1],
+    ]
+    for (const [label, re, derived] of proseAnchors) {
+      const hit = sectionFlat.match(re)
+      if (hit === null) c28Problems.push(`the team-core prose anchor ${label} is gone from THIRD_PARTY_NOTICES.md — the count nobody can re-read is a count nobody checks`)
+      else if (Number(hit[1]) !== derived) c28Problems.push(`the team-core prose prints ${label} = ${hit[1]}, but the mirror derives ${derived} — prose and table disagree`)
+    }
+    const totalsHit = sectionFlat.match(/\*\*Totals:\*\* (\d+) `verbatim` \+ (\d+) `已修改` \+ (\d+) `本项目新增` = \*\*(\d+) files\*\*/)
+    if (totalsHit === null) c28Problems.push('the team-core "**Totals:** …" line is gone from THIRD_PARTY_NOTICES.md — the mirror has no total to re-read')
+    else {
+      const totals = [Number(totalsHit[1]), Number(totalsHit[2]), Number(totalsHit[3]), Number(totalsHit[4])]
+      const derivedTotals = [noticesTally.verbatim, noticesTally.modified, noticesTally['project-new'], rows.length]
+      for (let i = 0; i < 4; i++) {
+        if (totals[i] !== derivedTotals[i]) c28Problems.push(`the Totals line prints ${totals[i]} at position ${i + 1}, the mirror derives ${derivedTotals[i]} (verbatim/modified/project-new/total) — prose drifted off the table`)
+      }
+    }
+    // The manifest's OWN declared class counts (its `counts.*` block) against the
+    // same derived tally — the third copy of the number, third chance to drift.
+    if (coreVmForMirror !== null) {
+      const vmCounts = coreVmForMirror.counts ?? {}
+      const countPairs = [['verbatim', noticesTally.verbatim], ['modified', noticesTally.modified], ['projectNew', noticesTally['project-new']], ['total', rows.length]]
+      for (const [key, derived] of countPairs) {
+        if (typeof vmCounts[key] === 'number' && vmCounts[key] !== derived) {
+          c28Problems.push(`VENDOR-MANIFEST counts.${key}=${vmCounts[key]} disagrees with the mirror's tally ${derived} — the manifest's own census and the notices table cannot both be right`)
+        }
+      }
+    }
+    results.push(check('c28', 'THIRD_PARTY_NOTICES team-core table mirrors VENDOR-MANIFEST origin, row for row', c28Problems.length === 0,
+      c28Problems.length > 0
+        ? c28Problems.join('; ')
+        : `${rows.length} notices rows (P5-1..P5-${rows.at(-1)?.n}, contiguous) ↔ ${manifestFiles.length} VENDOR-MANIFEST files[] rows, both directions, origin-for-origin; vocabulary = the closed named table [${[...NOTICES_ORIGIN_TOKENS.entries()].map(([t, o]) => `${t}→${o}`).join(', ')}] (an unmapped token FAILs, never skips); prose re-read against the derived tally at 6 anchors + the Totals line + the manifest's own counts.{verbatim,modified,projectNew,total} (tally verbatim=${noticesTally.verbatim} / modified=${noticesTally.modified} / project-new=${noticesTally['project-new']}). RESIDUAL BOUNDARY, not claimed closed: c28 reads TEXT — it proves the two faces AGREE, not that either matches the frozen upstream blob (that stays the tag-side operation of scripts/vendor-manifest.mjs --upstream and the R-8 anchors)`))
+  } catch (e) {
+    results.push(check('c28', 'THIRD_PARTY_NOTICES team-core table mirrors VENDOR-MANIFEST origin, row for row', false,
+      `the NOTICES mirror could not run: ${String(e.message ?? e)}`))
   }
 
   // Report.

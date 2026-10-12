@@ -147,3 +147,30 @@ Zstandard 压缩**不是** 0.2.0 的变化：`DEFAULT_COMPRESSION = 'zstd'` 在 
 | 会话日志 v4 信封 | 中 | 测试 profile 维持 `compression: none`；驱动伪造条目与解析器迁到 v4 `tool/result` 形状 |
 | `kind:'plugin'` → 专属 source kind | 小（可延后） | 插件源码内 13 处（10 处代码、3 处注释），其中没有运行时过滤器；已废弃惯用法，非活断裂 |
 | pin 机器（ci.yml `DSH_VERSION`、`bump-dsh.sh` 的 0.1.x 假设、doctor-lite 的 D7 semver 断言、兼容矩阵行） | 小 | 刻意**最后**做——在 0.2.0 上证据链全绿之后 |
+
+## 9. 实施期订正（2026-10-12，Phase 5 P5-T1 钉测证据）
+
+> 本节为 Phase 5 实施期对 0.2.0-rc.2 的**新契约事实**登记（计划书 `docs/plans/phase5-dev/phase5-plan.md` §9 的回馈义务）。experimental team 四包不在本报告原复核范围内（当时与本项目无触点）；以下全部结论出自 P5-T1 的真实沙箱 boot 钉测（mock-LLM 驱动、会话 v4 日志取证），证据档 `.omo/evidence/p5t1/`（Q2/Q3/Q5b/Q7 各卷）。**0.2.0-rc.2 的 pin 不变（D7）；Phase 5 的 fork 裁定（D18 = 不采用该面）依据即此节 §9.2。**
+
+### 9.1 experimental team 面可激活（Q-2，5/5 PASS）
+
+0.2.0-rc.2 安装件自带的 experimental team 四包（`dsh-experimental-agent-team` / `-tool-` / `-client-ui-` / `-agent-team-profile`）以 profile bundle 形态发布、默认不挂载。实测：沙箱 profile 挂载 bundle 三行（`agent-team` / `tool-agent-team` / `ui-agent-team`）后真实 boot 成功——`ctx.agentTeams` 在场、`spawn_teammate` 组队成功（成员 = lead 的 continuable 直接子会话）、`team/message/queued → delivered` 事件对落 lead 会话 v4 日志（同 messageId、12ms 闭环）、jsonl 持久化前提成立（`dsh-base/cordis.patch.yml:130-131`）。另实测：profile 层 `disabled: true` **不穿透** preset 嵌套组合（只触达顶层树行）；9 个 scoped 工具 lead/teammate **同面**（lead-only 全靠执行期 `TEAM_LEAD_REQUIRED` 具名错误）；无 descriptor 的主会话根在 `tryMembership` 恒判 `lead`。
+
+### 9.2 `spawnTeammate` 通道不携带名册路由三件套（Q-3，三重封死链）
+
+- 工具 schema 仅 `{name, description, prompt, context}`——**无 provider 参数**（`dsh-experimental-tool-agent-team/lib/index.js:245-266`）；execute 覆写 `provider: context==='fork' ? config.forkProvider : config.freshProvider`（`:290`）——模型逐字传的 provider 被静默丢弃（实测 tool/call 参数在日志、boot 零拦截）。
+- `SpawnTeammateRequest = {name, description, prompt, context, provider, signal}`（`dsh-experimental-agent-team/lib/types/types.d.ts:139-146`）——**无 `persona`/`agentOptions`/`toolFilter` 字段**；provider 仅 `requiredText(≤200)` 字符串（`lib/index.js:557`）。
+- `spawnAdmitted` 调 `startContinuable({…, request: {prompt, parent}, …})`（`lib/index.js:573-582`）硬编码——continuation manager 的三件套落点全读 `spec.request`（`dsh-subagent/lib/index.js:1680/:1691-1692/:1731-1733`），team 通道下成员 descriptor 的 `agentProvider`/`agentModel` 只能派生自父，`persona`/`toolFilter` 整体缺席（实测逐字）。
+- `agentTeams` 公开 API 全枚举（`types/index.d.ts:29-105`：membership/listMembers/spawnTeammate/sendMessage/createTask/getTask/listTasks/updateTask/waitForChange/interrupt/tryMembership）**无外部子女 admission 接口**；包装 provider 在 continuable 通道唯一参与点 `prepareContinuable({sessionId,parent,signal}) → {seed?}`（seed = 父日志事件前缀，非注入点）。
+- **对照组（同 manager 同通道）**：raw `ctx.subagents.startContinuable` 携三件套 → descriptor **逐字承载** `agentProvider/agentModel/persona/toolFilter` + mock 请求体实证模型/persona/工具面三验实效——通道本身能承载，缺的是 team service 的传参。修复面在 dsh-experimental-agent-team（最小 3 点：types 增字段 / spawnAdmitted 透传 / 工具 schema 增参），属上游/pin 领域。
+
+### 9.3 可视化面（Q-7）
+
+`dsh-experimental-client-ui-agent-team` 的 TeamAction 面板挂会话头、读 lead 的 `agentTeam` projection（`TeamProjection{members, tasks, failure?}`——**无 mailbox 时间线**，README 自认）。`team/message/*` 事件全量进会话 event 流；投递落地的 `user/message`（source kind `'team-message'`）经 chat 的 messageDefinition 认领渲染「收到团队消息」turn-trigger 卡；**中途 steer 落 `'context'` kind 被 `isVisibleChatNode` 隐藏**（`dsh-client-ui-chat/lib/client.js:7718-7722`——原生面一处结构性盲区）；成员会话经 `subagent/catalog`（`establishCatalogChild`）天然出现在 subagentchat 资源面板。
+
+### 9.4 其余契约事实（Q-4/Q-6/Q-8/Q-5b 顺带登记）
+
+- **v4 准入只拒 `kind:'plugin'`/非对象/空串**（`dsh-session-format-v3-to-v4/lib/index.js:118-126`）——未知 kind 原样保留（「Native source admission preserves unknown attribution」）；对未登记 kind 抛错的是 **v2→v3 迁移**白名单（另一扇门，别混）。
+- **continuable 子女不进 jobs 面**：`JobKindMap = {bash, subagent}` 且只有 one-shot 后台 run 进 jobs（`dsh-subagent/lib/types/run-settlement.d.ts:2-4` 逐字「Only the one-shot background path uses Jobs; continuable children have no Task」）。
+- **深度闸只在显式传 maxDepth 时通电**：`resolveChildDepth` 仅在 `maxDepth !== void 0` 时闸（`dsh-subagent/lib/index.js:403`）；`spawnTeammate` 不传 maxDepth——「成员不能再派生」在 team 面的真实来源是**工具面无委派工具**，不是深度闸。
+- **离线唤醒/cold resume 实打实**：`submitAdmitted` 的 `try { inbox.deliver } finally { wake }`（`:994-1003`）结构上排除「投了不叫」；实测 warm steer / 进程内冷 / 跨进程 reboot 冷恢复三形态全醒（spliced→turn/start +1~2ms）。#5317 型「live 失败落 fallback」岔路在原生投递面结构性不存在（投递主干单一 inbox 准入路）。

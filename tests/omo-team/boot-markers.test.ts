@@ -54,7 +54,7 @@ import {
  * derivation it stands in for never needs an edit.
  */
 const EXPECTED_SUMMARY_LINE =
-  '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2) — 16/24 team surfaces registered'
+  '[omo-team] loaded: manifest 24 entries (pending=0, ported=22, recorded=2) — 22/24 team surfaces registered'
 
 /**
  * P5-T5 landed the FIRST registrar (`team_create`); P5-T6 added the second
@@ -75,8 +75,13 @@ const EXPECTED_SUMMARY_LINE =
  * presence faces over the eleven tool rows that the omo-commands hyperplan /
  * remove-ai-slops handlers read lazily per invocation; the consumer text lives
  * in omo-commands and consumes nothing HERE — the rows' omo-team-visible half
- * IS these two registrars, the same split as rows ⑭/⑰) — so the honest `<r>`
- * is 16 and the pinned line above carries
+ * IS these two registrars, the same split as rows ⑭/⑰); **P5-T15 adds rows
+ * ⑱–㉓** — the six `vendor-team-core-*` vendor integrity gates (the rows whose
+ * bytes landed at T8a and were consumed at T8b; their omo-team-visible half is
+ * the per-row sha gate over `vendor/team-core/`, one face per row under six
+ * distinct service names — the same split as row ㉔, one registrar per row so
+ * the `<r>` half counts six and not one) — so the honest `<r>`
+ * is 22 and the pinned line above carries
  * it, in MANIFEST ROSTER ORDER (the loop iterates the roster, not this list;
  * the list mirrors it so a reorder turns the boot-line test red). The flip of
  * this list and of the pinned line is the SAME-commit friction the T3 comment
@@ -102,6 +107,12 @@ const REAL_REGISTERED_IDS: readonly string[] = [
   'hyperplan-upgrade',
   'remove-ai-slops-team-addendum',
   'stop-continuation-team',
+  'vendor-team-core-types',
+  'vendor-team-core-member-parser',
+  'vendor-team-core-team-registry',
+  'vendor-team-core-team-tasklist',
+  'vendor-team-core-team-state-store',
+  'vendor-team-core-closure',
   'vendor-team-prompts',
 ]
 
@@ -200,15 +211,15 @@ describe('P5-T3 formatLoadedSummaryLine — the ONE summary line a boot logs', a
   it('reports the loop outcome, never a rounding of the manifest statuses', async () => {
     // The `registered` half of the line comes from the loop's real output, not
     // from the manifest's statuses — so the REAL roster with NOTHING registered
-    // reads `0/24` even though sixteen rows are ported (the state between the
+    // reads `0/24` even though twenty-two rows are ported (the state between the
     // manifest flip and the loop's run is exactly this), and one registered row
     // reads `1/24`.
     const portedStandIn = registeredRows([]).concat(row({ id: 'team_send_message', status: 'ported' }))
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, [])).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2) — 0/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=0, ported=22, recorded=2) — 0/24 team surfaces registered',
     )
     expect(formatLoadedSummaryLine(TEAM_MANIFEST, portedStandIn)).toBe(
-      '[omo-team] loaded: manifest 24 entries (pending=6, ported=16, recorded=2) — 1/24 team surfaces registered',
+      '[omo-team] loaded: manifest 24 entries (pending=0, ported=22, recorded=2) — 1/24 team surfaces registered',
     )
   })
 
@@ -306,13 +317,19 @@ describe('P5-T3 per-surface and failure lines', async () => {
 })
 
 describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal', async () => {
-  it('P5-T7: the real manifest + the real registry log the registered lines THEN the summary', async () => {
+  it('P5-T15: the real manifest + the real registry log the registered lines THEN the summary', async () => {
     // The mount-state proof cold-start.sh and the probe grep for: at P5-T3 the
     // registry was empty and the summary stood alone; with `team_create` landed
-    // the honest boot was TWO lines at T6; P5-T7 lands five rows (delete +
-    // the shutdown trio + status), so the honest boot is exactly SEVEN lines —
-    // seven per-surface registered lines in roster order and the summary
-    // carrying `7/24` — still no FAILED / validation line.
+    // the honest boot was TWO lines at T6; P5-T7 landed five rows, P5-T8b the
+    // task quartet, P5-T9 the query surface, P5-T12 rows ⑭/㉔, P5-T13 rows
+    // ⑮/⑯; **P5-T15 lands rows ⑱–㉓** — the six `vendor-team-core-*` vendor
+    // integrity gates (each one really hashes its derived file set against
+    // VENDOR-MANIFEST.json right here, through the fake ctx's `provide`, so
+    // this line list is the honest shape of a healthy boot: a drifted vendored
+    // byte turns the row's line into a FAILED and the summary's `<r>` stops
+    // short of 22). The honest boot is therefore exactly TWENTY-TWO per-surface
+    // registered lines in roster order and the summary carrying `22/24` — still
+    // no FAILED / validation line.
     const lines: string[] = []
     runTeamRegistrations(ctx(), TEAM_MANIFEST, TEAM_REGISTRARS, (line) => lines.push(line))
     expect(lines).toEqual([
@@ -331,9 +348,47 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
       '[omo-team] team surface hyperplan-upgrade registered',
       '[omo-team] team surface remove-ai-slops-team-addendum registered',
       '[omo-team] team surface stop-continuation-team registered',
+      '[omo-team] team surface vendor-team-core-types registered',
+      '[omo-team] team surface vendor-team-core-member-parser registered',
+      '[omo-team] team surface vendor-team-core-team-registry registered',
+      '[omo-team] team surface vendor-team-core-team-tasklist registered',
+      '[omo-team] team surface vendor-team-core-team-state-store registered',
+      '[omo-team] team surface vendor-team-core-closure registered',
       '[omo-team] team surface vendor-team-prompts registered',
       EXPECTED_SUMMARY_LINE,
     ])
+    // 六枚守门面真的发布了（不是「跑过就算」）：每行一张脸、六个服务名、
+    // 逐枚核验过的文件数与在册数相等——名字撞车、某行没发布、核验集缩水
+    // 都在这三行里红。键序 = 名册行序（注册循环的迭代序，服务不覆盖）。
+    expect([...provided.keys()]).toEqual([
+      'omoTeamKeywordFace',
+      'omoTeamHyperplanTeamFace',
+      'omoTeamSlopAddendumTeamFace',
+      'omoTeamMemberQuery',
+      'omoTeamCoreVendorTypesFace',
+      'omoTeamCoreVendorMemberParserFace',
+      'omoTeamCoreVendorTeamRegistryFace',
+      'omoTeamCoreVendorTeamTasklistFace',
+      'omoTeamCoreVendorStateStoreFace',
+      'omoTeamCoreVendorClosureFace',
+      'omoTeamPromptsFace',
+    ])
+    const vendorFaces: ReadonlyArray<readonly [string, string, number]> = [
+      ['vendor-team-core-types', 'omoTeamCoreVendorTypesFace', 1],
+      ['vendor-team-core-member-parser', 'omoTeamCoreVendorMemberParserFace', 1],
+      ['vendor-team-core-team-registry', 'omoTeamCoreVendorTeamRegistryFace', 6],
+      ['vendor-team-core-team-tasklist', 'omoTeamCoreVendorTeamTasklistFace', 7],
+      ['vendor-team-core-team-state-store', 'omoTeamCoreVendorStateStoreFace', 12],
+      // 闭包行 = 派生四件 + 具名 EXTRA 的 plain-record.ts（第五枚）。
+      ['vendor-team-core-closure', 'omoTeamCoreVendorClosureFace', 5],
+    ]
+    for (const [rowId, service, fileCount] of vendorFaces) {
+      const face = provided.get(service) as { rowId?: string; verifiedCount?: number; fileCount?: number } | undefined
+      expect(face, `${service} must be published by row ${rowId}`).toBeDefined()
+      expect(face?.rowId, `${service} names its row`).toBe(rowId)
+      expect(face?.fileCount, `${service} fileCount`).toBe(fileCount)
+      expect(face?.verifiedCount, `${service} verifiedCount == fileCount (an unverified file does not enter the face)`).toBe(fileCount)
+    }
   })
 
   it('the registry table is exactly the landed rows (T8+ must flip this red)', async () => {
@@ -343,8 +398,11 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
     // rows ⑭/㉔** (`team-keyword-injection` + `vendor-team-prompts`);
     // **P5-T13 lands rows ⑮/⑯** (`hyperplan-upgrade` +
     // `remove-ai-slops-team-addendum` — the two presence faces the upgraded
-    // omo-commands handlers read per invocation) — and this list flips red in
-    // the same commit — reviewed, not discovered.
+    // omo-commands handlers read per invocation); **P5-T15 lands rows ⑱–㉓**
+    // (the six `vendor-team-core-*` vendor integrity gates — the flip's
+    // same-commit half: a row that flips to 'ported' without its registrar is
+    // the exact shape the probe reddens, so the six keys below ARE the flip) —
+    // and this list flips red in the same commit — reviewed, not discovered.
     expect(Object.keys(TEAM_REGISTRARS)).toEqual([
       'team_create',
       'team_delete',
@@ -361,6 +419,12 @@ describe('P5-T3 runTeamRegistrations — the loop skeleton, loud-but-non-fatal',
       'hyperplan-upgrade',
       'remove-ai-slops-team-addendum',
       'stop-continuation-team',
+      'vendor-team-core-types',
+      'vendor-team-core-member-parser',
+      'vendor-team-core-team-registry',
+      'vendor-team-core-team-tasklist',
+      'vendor-team-core-team-state-store',
+      'vendor-team-core-closure',
       'vendor-team-prompts',
     ])
   })

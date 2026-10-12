@@ -68,6 +68,15 @@
 // 与 omo-hooks 的开放字符串 status 不同是有意的（omo-hooks 的词汇嵌场景名，
 // 闭合联合拼不出；本表词汇恰好三枚，同 omo-commands 情形）。
 //
+// P5-T15：`pending` 集合自本 commit 起为**空集**——六枚 `vendor-team-core-*`
+// 行按 T5 refined 翻动规则翻 ported（字节 vendored at T8a、消费接线 at T8b、
+// 行点名的 e2e 场景绿；仲裁裁定的终态读法），逐行理由在各行的行注里、不在这里
+// 重述。空集**不是**词汇退役：`pending` 留在 TEAM_MANIFEST_STATUSES 里，因为
+// 未来任何新增行仍从这里起步——一张没有起步态的名册会把「还没做」这件事变得
+// 无法声明。新旧 census 不写进本注释（这里不是 census 的落点，boot-markers.ts
+// 头部同款纪律）；机读落点是 tests/omo-team/manifest.test.ts 的逐行 split 与
+// tests/omo-team/boot-markers.test.ts 的钉行。
+//
 // upstreamSources 的非空检查对 recorded-difference 行**显式豁免**（见
 // validateManifest 检查 5 的注释）：team_wait 在 v4.19.4 的 12 工具名单中根本
 // 不存在（Q-1 复核；v5 已删），一行「记差异」没有上游文件可指是事实，不是偷懒。
@@ -554,7 +563,18 @@ const MANIFEST_ROWS = [
     nativeFace: 'patches/omo-dsh/vendor/team-core/src/types.ts（逐字 vendor）',
     disposition: 'content-vendor',
     e2eScenario: 'team-create-and-message',
-    status: 'pending',
+    // P5-T15 翻行（仲裁裁定：refined 翻动规则的终态读法——行自身语义落地 +
+    // 其 e2e 场景绿即翻；六行的交付面在 T8a/T8b 已齐，pending 至此归零）：
+    // **vendored at T8a** = `vendor/team-core/src/types.ts` 在册（VENDOR-MANIFEST
+    // files[] 一枚，origin=modified——唯一的改动是 T8b import-wall 的 ESM 后缀
+    // 补全，语义零改动、机器证）；**consumed at T8b** = team-tasklist /
+    // team-state-store / team-registry 全树 `import … from './types.ts'` 直载它
+    // （子集闭包的地基，Q1b N6），宿主 Node 24 直载由 run-proofs.sh 证 8 网住；
+    // **scenario 绿** = 本行 e2eScenario `team-create-and-message`（T6 全段起、
+    // T14 relay/broadcast 加固后仍绿，drive.mjs 实跑）——组建路径的每个成员载荷
+    // 形状都是这张类型表的原生产物。行的可见半 = T15 的逐行守门 registrar
+    // （src/team/team-core-vendor.ts：派生核验集 + sha 对账 + 档案脸）。
+    status: 'ported',
     summary: 'vendor：team-core 域类型（成员/任务/状态形状）——子集闭包的地基，team-tasklist 全树 import 它（Q1b N6）',
   },
   {
@@ -563,7 +583,19 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendor/team-core/src/member-parser.ts（v1 消费面 = vendored team-registry/loader 闭包承重，命名 spec 加载 = 记差异未落地；team_create 工具面的 inline spec 解析 = src/team/team-spec.ts 手写收窄，非 vendor 消费）',
     disposition: 'content-vendor',
     e2eScenario: 'team-create-and-message',
-    status: 'pending',
+    // P5-T15 翻行（仲裁裁定，与 ⑱ 同一批；逐行成文）：
+    // **vendored at T8a** = `vendor/team-core/src/member-parser.ts` 在册
+    // （origin=modified——T5 NOTES-6 的 strip-only 重写：`MemberValidationError`
+    // 参数属性 → 声明字段 + post-`super()` 赋值，Node 24 type-stripping 的硬
+    // 约束；deviation 已登记，构造探针实测 `memberName`/`issue` 保真）；
+    // **consumed at T8b** = vendored `team-registry/loader.ts` 的成员归一闭包
+    // 直载它（v1 消费面的承重边）。命名 spec 加载本身仍**记差异未落地**——那是
+    // 本行 nativeFace 早已成文的诚实分层，不是翻行的缺口：行的交付面 = vendor
+    // 字节 + 它在子集闭包里的真实消费；`team_create` 工具面的 inline spec 解析
+    // 另有其人（src/team/team-spec.ts 手写收窄，T4；资格判定 = T4 移植面）；
+    // **scenario 绿** = `team-create-and-message`（T6 全段 + T14 relay/broadcast）。
+    // 行的可见半 = T15 逐行守门 registrar（src/team/team-core-vendor.ts）。
+    status: 'ported',
     summary: 'vendor：成员 spec 解析（inline members[] 归一）——诚实分层：v1 消费面 = vendored team-registry/loader 闭包承重（命名 spec 加载 = 记差异未落地）；team_create 工具面的 inline spec 解析 = src/team/team-spec.ts 手写收窄（T4，上游语义对齐非 vendor 消费）；资格判定是移植面（T4 member-validator）',
   },
   {
@@ -579,7 +611,19 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendor/team-core/src/team-registry/（team 记录与路径/归一/校验；DSH 侧仅 ephemeral-per-lead-session 语义）',
     disposition: 'content-vendor',
     e2eScenario: 'team-create-and-message',
-    status: 'pending',
+    // P5-T15 翻行（仲裁裁定，六行同批）：**vendored at T8a** = 目录 6 实现文件
+    // 全在册（index/caller-team-lead/loader/paths/team-spec-input-normalizer/
+    // validator；VENDOR-MANIFEST files[] 逐枚 sha + 上游 blob 双向锚 R-8）；
+    // **consumed at T8b** = 这六枚是**闭包的中间层**——loader 载 types/member-
+    // parser/validator，index 是目录的在册 barrel，被 state-store/tasklist 的
+    // import 链真实穿过（T8a 评审的 32 文件 import 全分析在档），宿主 Node 直载
+    // 由 run-proofs.sh 证 8 网住；**声明式命名团队面不激活** = 本行与 team_list
+    // 记差异的**同一事实**（team 恒 ephemeral-per-lead-session），差异早已成文
+    // 于 §1 行 11，不是本行的未竟项——行的交付面是**字节 + 闭包消费**，不是
+    // 把注册表接成 DSH 的公开面（那是另一桩裁定）；**scenario 绿** =
+    // `team-create-and-message`。行的可见半 = T15 逐行守门 registrar
+    // （src/team/team-core-vendor.ts，6 文件逐枚 sha 对账）。
+    status: 'ported',
     summary: 'vendor：team-registry 目录模块 6 实现文件（index/caller-team-lead/loader/paths/team-spec-input-normalizer/validator）——声明式命名团队面不激活（team_list 记差异的同一事实）',
   },
   {
@@ -596,7 +640,19 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendor/team-core/src/team-tasklist/（T8 任务板消费层基座）',
     disposition: 'content-vendor',
     e2eScenario: 'team-task-claim',
-    status: 'pending',
+    // P5-T15 翻行（仲裁裁定，六行同批；这行是六行里消费面最硬的一枚）：
+    // **vendored at T8a** = 7 实现文件在册（claim/dependencies/get/index/list/
+    // store/update，另 5 枚在册测试夹具随 test-support 边）；
+    // **consumed at T8b** = `src/tools/team-task.ts` 四枚薄壳**直通**这七枚
+    // （createTask/listTasks/getTask/claimTask/updateTaskStatus——T8b 的
+    // import-wall 裁定就是为了让这条直通在宿主 Node 24 type-stripping 下真的
+    // 解析得开，34 文件 / 141 specifier 补全、语义零改动机器证）；
+    // **scenario 绿** = `team-task-claim`（T8 起全绿：lead 建任务 → 成员 claim
+    // → owner/claimedAt 断言 + BlockedByError 按 vendored 语义钉 + 重启换装）；
+    // 上游弱语义原样（锁 + 锁内重读、缺依赖可领、无 ready/无 failed，Q1b N1/N2）
+    // 是**显式决策**不是缺口（§1 末段三条理由）。行的可见半 = T15 逐行守门
+    // registrar（src/team/team-core-vendor.ts，7 文件逐枚 sha 对账）。
+    status: 'ported',
     summary:
       'vendor：team-tasklist 7 实现文件——上游弱语义原样（锁+锁内重读、缺依赖可领、无 ready/无 failed，Q1b N1/N2；显式决策行：不照抄原生 CAS/DAG，§1 末段三条理由）',
   },
@@ -626,7 +682,22 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendor/team-core/src/team-state-store/ 12 文件（team_status 状态面 + shutdownRequests 持久化 + orphaned/deleting 旁路承接；active-resume.ts = vendor with deviation，reservation-reconciliation.ts = excluded 不落）',
     disposition: 'content-vendor',
     e2eScenario: 'team-shutdown-handshake',
-    status: 'pending',
+    // P5-T15 翻行（仲裁裁定，六行同批；**deviation 与 excluded 两枚终态事实
+    // 就是这行的交付面的一部分，早已成文并在册**）：
+    // **vendored at T8a** = 12 实现文件在册（reservation-reconciliation.ts 按
+    // T2 双评审终态**不落盘**——c27 的终态针逐枚钉：present 的 session-client、
+    // absent 的 reservation-reconciliation）；deviation = active-resume.ts（删
+    // `reconcileStaleReservationsForMember` 导入与 `reconcileMemberReservations`
+    // 调用/helper + 随之成孤儿的 `log` 导入，T8 落法随 NOTICES/deviations 登记）；
+    // **consumed at T8b** = `src/team/team-state.ts` 的持久化换装直通本目录
+    // （store/locks/resume 族——重启恢复 durable 团队账/任务板/双账的断言面就是
+    // `dualLedgerDurableAcrossReboot`，T14 已加固为结构化读账 + 非空成员集）；
+    // **scenario 绿** = `team-shutdown-handshake`（T7 全链：request→reject→存活
+    // →再 request→approve/delete，握手账的持久化即本目录）；resume 族的
+    // TeamSessionContext harness 耦合面 = T8b 复核点（session-context-adapter.ts
+    // 头注成文）。行的可见半 = T15 逐行守门 registrar（team-core-vendor.ts，
+    // 12 文件逐枚 sha 对账；excluded 那枚不在核验集——它按裁定就不该存在）。
+    status: 'ported',
     summary:
       'vendor：team-state-store 12 实现文件 + 1 deviation + 1 excluded（T2 双评审 32 文件 import 全分析终态）——deviation = active-resume.ts（删 reconcileStaleReservationsForMember 导入与 reconcileMemberReservations 调用/helper，T8 执行时落法；resume 族 TeamSessionContext harness 耦合面标 T8 复核点）；excluded = reservation-reconciliation.ts（唯一带 team-mailbox 运行时依赖 ../team-mailbox/{ack,reservation}，语义 = .delivering- 预约回收 = T1 已裁不移植，原生 inbox 无预约族）——(B) 状态机骨架的持久化基座；其余收窄处（如 session-liveness 对 (B) 的适配）进 deviations',
   },
@@ -647,7 +718,23 @@ const MANIFEST_ROWS = [
     nativeFace: 'vendor/team-core/src/{config,logger,session-client,tolerant-fsync}.ts + 外部依赖 zod（^4.4.3，T8 作 npm 依赖引入）与 @oh-my-opencode/utils 一件（isPlainRecord，store.ts:1 唯一消费点；isRecord 原消费点随 reservation-reconciliation 排除件出局；T8 二选一 vendor/语义移植，deviations 登记）',
     disposition: 'content-vendor',
     e2eScenario: 'team-task-claim',
-    status: 'pending',
+    // P5-T15 翻行（仲裁裁定，六行同批；这行的终态事实 = **闭包完整 + 两枚外部
+    // 依赖都在册**，两者都已成立）：
+    // **vendored at T8a** = 补四件全在册（config/logger/session-client/
+    // tolerant-fsync；session-client 是 T2 双评审补进来的那枚——state-store 族
+    // 3 文件 type-only import 它，缺它闭包 typecheck 断链）；
+    // **外部依赖两件登记齐** = `zod ^4.4.3` 随 vendor 包 package.json 走
+    // （锁解析 4.6.5，**不是移植 zod 校验器**，S-10 边界同 Phase 4）+
+    // `@oh-my-opencode/utils` 的 `isPlainRecord` 以**一枚语义移植**落在
+    // `vendor/team-core/src/plain-record.ts`（T8b import-wall 的执行面，署名头
+    // 指 packages/utils/src/record-type-guard.ts，deviations 登记）；
+    // **consumed at T8b** = 实测 import 链全通（tasklist → ../config/../logger/
+    // ../types/../team-registry/../team-state-store/locks；state-store/locks →
+    // ../tolerant-fsync；state-store/store → plain-record）；
+    // **scenario 绿** = `team-task-claim`。行的可见半 = T15 逐行守门 registrar
+    // （team-core-vendor.ts：四件 + **EXTRA 具名 plain-record.ts** 逐枚 sha 对账
+    // ——闭包能不能在本仓跑，就看这枚 project-new 的移植件在不在册）。
+    status: 'ported',
     summary:
       'vendor：子集闭包补四件（T2 双评审 32 文件 import 全分析更正，原 Q1b N6 三件闭包不完整）——config/logger/tolerant-fsync + session-client.ts（纯类型 15 行零 import，state-store 族 **3 文件** type-only import 它——active-resume.ts:3 / resume.ts:3 / session-liveness.ts:1，第 4 个消费者 reservation-reconciliation.ts:4 随排除件出局）；实测 import 链：team-tasklist import ../config/../logger/../types/../team-registry/../team-state-store/locks；state-store/locks import ../tolerant-fsync；state-store/store import @oh-my-opencode/utils 的 isPlainRecord。外部依赖登记两件：zod ^4.4.3（types.ts:1/config.ts:1 `import * as z`、loader.ts:3 `import { ZodError }` 三处运行时依赖；T8 作 npm 依赖引入——**非「移植 zod 校验器」**，S-10 先例管自家配置面新造校验器）与 @oh-my-opencode/utils **一件**（isPlainRecord，store.ts:1 唯一消费点；isRecord 原消费点随 reservation-reconciliation 排除件出局；T8 二选一 vendor/语义移植，deviations 登记）——两件外部依赖都不进 upstreamSources（非 packages/ 路径），但必须登记 NOTICES/VENDOR-MANIFEST，否则编译期断链',
   },
