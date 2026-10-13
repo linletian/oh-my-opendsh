@@ -159,12 +159,15 @@ const { DELEGATION_TOOL_NAMES, ROSTER } = await import(
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents')
-// P3-T3/P4-T3/P5-T3: the root cordis.yml inserts one row per package (omo-agents +
+// P3-T3/P4-T3/P5-T3: the root cordis.yml inserts one row per @oh-my-opendsh
+// package (omo-agents +
 // omo-hooks + omo-commands since P4-T3, plus omo-team since P5-T3), and a boot
 // whose overlay names a
 // package the profile does not carry fails with `plugin tree failed to load …
-// ERR_MODULE_NOT_FOUND` — so ALL FOUR are installed before this smoke boots
-// `--patch ./cordis.yml`.
+// ERR_MODULE_NOT_FOUND` — so ALL FOUR @oh-my-opendsh packages are installed
+// before this smoke boots
+// `--patch ./cordis.yml`. (P6-T4's fifth row, omo-lsp, mounts the dsh-bundled
+// @deepseek-ai/dsh-mcp-client — no profile install, so PLUGIN_DIRS stays at four.)
 const HOOKS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks')
 const COMMANDS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-commands')
 const TEAM_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-team')
@@ -172,7 +175,9 @@ const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR, COMMANDS_PLUGIN_DIR, TEAM_PLU
 const PROFILE = 'web'
 const CONCERTO_PRESET_ID = 'concerto'
 
-/** All four mounted plugins' boot markers (see PLUGIN_DIRS above). */
+/** All four @oh-my-opendsh mounted plugins' boot markers (see PLUGIN_DIRS above;
+ *  the P6-T4 omo-lsp row mounts the dsh-bundled dsh-mcp-client, which logs no
+ *  `[omo-*] loaded` marker — the four @oh-my-opendsh markers are the contract). */
 const LOADED_MARKERS = [
   '[omo-agents] loaded',
   '[omo-hooks] loaded',
@@ -533,7 +538,9 @@ function seedSandbox(sandbox, routes, agentId) {
 }
 
 function installPlugin(sandbox, childEnv) {
-  // One `plugin add` per cordis.yml insert row (four rows since P5-T3): the
+  // One `plugin add` per @oh-my-opendsh cordis.yml insert row (four such rows
+  // since P5-T3; the P6-T4 omo-lsp row mounts the dsh-bundled dsh-mcp-client
+  // and needs no install): the
   // overlay names all four packages, and missing any one aborts the whole boot.
   let addLog = ''
   for (const pluginDir of PLUGIN_DIRS) {

@@ -583,7 +583,10 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // renders for its own composition checks below.
 const PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents')
 // P3-T3/P4-T3/P5-T3: the root cordis.yml inserts one row per package, so a sandbox
-// profile must carry ALL FOUR before it can boot the overlay at all.
+// profile must carry ALL FOUR @oh-my-opendsh packages before it can boot the
+// overlay at all. (P6-T4 added a FIFTH row, omo-lsp, but it mounts the
+// dsh-bundled @deepseek-ai/dsh-mcp-client — no profile install, so PLUGIN_DIRS
+// stays at four by design.)
 const HOOKS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks')
 const COMMANDS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-commands')
 const TEAM_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-team')
@@ -600,7 +603,8 @@ const PROFILE = 'web'
 const CONCERTO_PRESET_ID = 'concerto'
 
 /**
- * The load markers ALL FOUR mounted plugins log at boot (P3-T3; third row by
+ * The load markers ALL FOUR @oh-my-opendsh mounted plugins log at boot (P3-T3;
+ * third row by
  * P4-T3, fourth by P5-T3): omo-agents' plain `loaded` line, omo-hooks' summary
  * marker (`[omo-hooks] loaded: manifest <N> entries (…)`), and the two
  * manifest-summary siblings — omo-commands'
@@ -623,6 +627,11 @@ const LOADED_MARKERS = [
 function pluginsLoaded(bootLog) {
   return LOADED_MARKERS.every((marker) => bootLog.includes(marker))
 }
+
+// TODO(P6-T5): absent-canary — when the omo-lsp stdio child is absent, an
+// lsp-* scenario must fail loudly (mcp__lsp__* markers absent = red); today
+// only cold-start.sh greps the [lsp-mcp] marker and face-probe
+// (.omo/evidence/p6t4/) asserts the face.
 
 /**
  * The boot-log text the `--self-test` fixtures feed the analyses that assert
@@ -5608,7 +5617,9 @@ function pluginTemplateCompositionPath(sandbox) {
 }
 
 function installPlugin(sandbox, env, def) {
-  // One `plugin add` per cordis.yml insert row (four rows since P5-T3): a
+  // One `plugin add` per @oh-my-opendsh cordis.yml insert row (four such rows
+  // since P5-T3; the P6-T4 omo-lsp row mounts the dsh-bundled dsh-mcp-client
+  // and is NOT installed here): a
   // profile missing ANY one of them aborts the whole boot naming that row
   // (`plugin tree failed to load … ERR_MODULE_NOT_FOUND`) — not just a hooks
   // profile.

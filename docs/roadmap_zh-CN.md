@@ -94,7 +94,7 @@
 
 ### Phase 6 —— MCP 与编辑
 
-- **目标**：LSP（走 `dsh-lsp`）、ast-grep（上游的活方向）、web 搜索/抓取（DSH 内建），以及编辑模型决策：hashline（`hashline-core`，Phase 1 已 vendor）vs DSH `str-replace-editor`——按原则一以 A/B 证据记录裁定。
+- **目标**：LSP（**经 dsh 自带 `@deepseek-ai/dsh-mcp-client` 挂载 vendored `lsp-core` 引擎**——`dsh-lsp` 经 P6-T1/T4 实测在安装树不存在，原生优先检查留痕；fork L = (L-B)，D20）、ast-grep（上游的活方向）、web 搜索/抓取（DSH 内建），以及编辑模型决策：hashline（`hashline-core`，Phase 1 已 vendor）vs DSH 编辑面——按原则一以 A/B 证据记录裁定（**已裁 = (E-A) 原生面，D19**；`str-replace-editor` 经 P6-T1 实测在树未挂载，比对基线 = 实际挂载的 `dsh-tool-fs` edit）。
 - **明确排除**：codegraph（上游已删，§16.2）。
 - **退出标准**：每个入选能力在脚本化场景中被 agent 真实使用。
 

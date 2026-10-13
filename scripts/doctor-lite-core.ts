@@ -35,17 +35,34 @@ export const LLM_ADAPTER_ROWS = [
 
 /**
  * The plugin rows the repo-root cordis.yml must insert, in mount order (P3-T3;
- * third row added by P4-T3; fourth row omo-team added by P5-T3). Named and
+ * third row added by P4-T3; fourth row omo-team added by P5-T3; fifth row
+ * omo-lsp added by P6-T4 — the vendored LSP engine mounted through the
+ * dsh-bundled @deepseek-ai/dsh-mcp-client, the first row whose plugin needs
+ * NO profile install, so the boot sites' `dsh plugin add` lists stay at the
+ * four omo-* rows). Named and
  * exported so the expectation is stated
  * ONCE: every sandbox boot site (scripts/cold-start.sh, tests/e2e/drive.mjs,
  * scripts/concerto-mode-probe.sh, scripts/smoke-real.mjs) installs one package
- * per row, and doctor-lite's `cordis-plugins` check compares the parsed patch
+ * per omo-* row, and doctor-lite's `cordis-plugins` check compares the parsed patch
  * file against this list (a row dropped from the overlay — or one added without
  * its install site — fails the gate instead of surfacing as a plugin that never
  * mounted). scripts/verify-concerto-static.mjs's c11 reads the SAME constant, so
  * the count lives in exactly one place.
  */
-export const EXPECTED_INSERT_ROW_IDS = ['omo-agents', 'omo-hooks', 'omo-commands', 'omo-team'] as const
+export const EXPECTED_INSERT_ROW_IDS = ['omo-agents', 'omo-hooks', 'omo-commands', 'omo-team', 'omo-lsp'] as const
+
+/**
+ * The id ↔ name coupling exception (P6-T4): the `@oh-my-opendsh/<id>` rule
+ * holds for every row EXCEPT the ones declared here, which mount a plugin
+ * BUNDLED with the installed dsh instead of a package this repo publishes
+ * (omo-lsp → @deepseek-ai/dsh-mcp-client, the vendored LSP engine's mount).
+ * Declared as data, not as a relaxed rule: an undeclared row naming a
+ * non-@oh-my-opendsh package still fails c11/c15 — the map is the auditable
+ * face of "why does this row not follow the convention".
+ */
+export const DSH_BUNDLED_INSERT_ROW_NAMES: Readonly<Record<string, string>> = {
+  'omo-lsp': '@deepseek-ai/dsh-mcp-client',
+}
 
 /**
  * Parses a `dsh --version` line. Accepts optional leading whitespace and a

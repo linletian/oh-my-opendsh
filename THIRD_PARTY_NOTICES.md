@@ -941,6 +941,209 @@ package sections above (`team-core`, `prompts-team`): a thin shell that consumes
 bytes (e.g. `team-task.ts`) ports the **tool layer's** semantics only and never restates
 the vendored implementation.
 
+### Phase 6 vendored package: `@oh-my-opencode/lsp-core` (OMO v4.19.4)
+
+- **Source repository:** https://github.com/code-yeongyu/oh-my-openagent
+- **Tag:** `v4.19.4`
+- **Commit:** `b072d279110bdda2c6ac2525d0d24dc54d16148a`
+- **Upstream path:** `packages/lsp-core`
+- **License:** SUL-1.0 ([LICENSES/oh-my-openagent.LICENSE.md](LICENSES/oh-my-openagent.LICENSE.md)).
+  The upstream package manifest carries no `license` field (all 19 OMO core packages
+  are alike); the license is the OMO repository-root `LICENSE.md`, vendored here
+  byte-for-byte (sha256 `b61ac928f152d13517328263e6bee9175b928f9ab696a2d2ca2b6cfd961ddc32`).
+- **Vendored into this repository at:** [`patches/omo-dsh/vendor/lsp-core`](patches/omo-dsh/vendor/lsp-core)
+  (a pnpm workspace package; the upstream package name `@oh-my-opencode/lsp-core@0.1.0` is
+  kept unchanged as the provenance anchor, so the D16 name gate releases its `SUL-1.0` field).
+
+> ⚠️ **MODIFIED COPY — prominent notice required by SUL-1.0 "Notices".**
+> This project has **modified** the vendored copy of `lsp-core`. The
+> modifications are declared in the package-root
+> [`NOTICE.md`](patches/omo-dsh/vendor/lsp-core/NOTICE.md) and itemized,
+> with per-file sha256 and reasons, in
+> [`VENDOR-MANIFEST.json`](patches/omo-dsh/vendor/lsp-core/VENDOR-MANIFEST.json)
+> (`deviations[]`: 1 fields-added, 1 tsconfig rewrite, 1 modern-era deviation,
+> 1 wire-log seam, 1 extension-wall entry (227 specifiers across 55 files +
+> 1 package-name — lsp-core's own face; the sibling `mcp-stdio-core` carries
+> its own 12 across 4; 239 across 59 is the two-package total),
+> 9 strip-only param-property rewrites, 3 additions, 1 tests-excluded note).
+> Copyright in the upstream work remains with the original author (code-yeongyu);
+> this project claims only its modifications. No commercial use or distribution
+> is authorized.
+
+**Carried surface (the (L-B) narrowed engine, FORKS.md §0-4):** all 65 upstream
+non-test `.ts` sources + the single `.mjs` fixture. All 21 upstream `.test.ts`
+suites are **not carried** — they are `bun:test` and this repo's runner is vitest
+(the ruled exclusion, §2.6); `AGENTS.md` is not carried (package documentation).
+The thin MCP server face is the project-written `src/cli.ts` (see its row), which
+references the semantics of the MIT `@code-yeongyu/lsp-tools-mcp` `src/cli.ts`
+(~30 lines; that package is **not vendored** — attribution only, per the ruling).
+
+**Modern-era wire face (the ruled deviation, §2.6 ⑤):** `src/mcp.ts` answers
+`server/discover` and stamps the 2026-07-28 result fields (`resultType`,
++`ttlMs`/`cacheScope` on cacheable lists) so the dsh-mcp-client SDK keeps the
+MODERN era on this connection instead of silently downgrading to legacy
+(`.omo/evidence/p6t1/mcp-client-probe/RESULTS.md` §1 codec evidence; live proof
+`.omo/evidence/p6t4/face-probe/`).
+
+Every file in the vendored package is listed below (decision D15 ¶2; rows are numbered
+`P6-n` to keep the numbering space disjoint from the phase 1/4/5 tables). The
+`Disposition` column mirrors the manifest's per-file `origin`: `verbatim` (**9**),
+`已修改` → `modified` (**59**), `本项目新增` → `project-new` (**3**) —
+**71 files** total, aligned one-to-one with `VENDOR-MANIFEST.json` `files[]`
+(71 entries). Per-file sha256 values live in the manifest and are not
+duplicated here; every `modified` entry also carries its pre-change upstream blob sha256
+(R-8 two-way anchor). Drift detection is mechanical and auto-discovers this package:
+`node scripts/vendor-manifest.mjs`. The mirror is pinned row-for-row by
+`tests/vendor/lsp-stdio-manifest.test.ts` (gate 2).
+
+| # | File (relative to package root) | Disposition | Notes |
+|---|---|---|---|
+| P6-1 | `NOTICE.md` | `本项目新增` | **Not upstream content:** the prominent "modified" notice required by SUL-1.0 (D15 ¶3, N-1) |
+| P6-2 | `VENDOR-MANIFEST.json` | `本项目新增` | **Not upstream content:** source tag/commit + per-file sha256 + `deviations[]` |
+| P6-3 | `package.json` | `已修改` | Added `license: "SUL-1.0"` (D15 ¶1) + `test:vitest` script (vendor-test wiring precedent); `exports` map kept **verbatim** (all seven subpaths point at existing `src/*.ts`); `dependencies` kept **verbatim** — `@oh-my-opencode/mcp-stdio-core` `workspace:*` resolves to the sibling vendored package in this workspace (unlike team-core's unresolvable edges, no narrowing needed); `scripts.typecheck` kept upstream-shape (`tsgo`) as drift reference — no `tsgo` in this repo, package not in the typecheck:libs chain (root `tsc --noEmit` compiles it via the `patches` include) |
+| P6-4 | `src/cli.ts` | `本项目新增` | **Not upstream content:** the project-written thin stdio entry (P6-T4) — runs the vendored `runMcpStdioServer`, disposes the default LSP manager on exit; semantics reference the MIT `@code-yeongyu/lsp-tools-mcp` `src/cli.ts` (~30 lines; that package is NOT vendored per the (L-B) ruling — attribution-only entry, see the MIT note below) |
+| P6-5 | `src/index.ts` | `已修改` | **ESM extension completion (T8b grammar):** 29 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-6 | `src/lsp/cleanup-errors.ts` | `verbatim` | — |
+| P6-7 | `src/lsp/client-wrapper.ts` | `已修改` | **ESM extension completion (T8b grammar):** 8 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-8 | `src/lsp/client.ts` | `已修改` | **ESM extension completion (T8b grammar):** 7 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-9 | `src/lsp/config-loader.ts` | `已修改` | **ESM extension completion (T8b grammar):** 3 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-10 | `src/lsp/connection.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-11 | `src/lsp/constants.ts` | `verbatim` | — |
+| P6-12 | `src/lsp/directory-diagnostics.ts` | `已修改` | **ESM extension completion (T8b grammar):** 9 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-13 | `src/lsp/effective-extension.ts` | `verbatim` | — |
+| P6-14 | `src/lsp/errors.ts` | `已修改` | **Strip-only rewrite (T5 NOTES-6):** constructor parameter properties → declared fields + assignment at the tsc-emit position (Node 24 strip-only rejects parameter properties; measured at first load smoke); **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-15 | `src/lsp/fixtures/diagnostics-freshness-contract-probe.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-16 | `src/lsp/fixtures/workspace-edit-contract-probe.ts` | `已修改` | **ESM extension completion (T8b grammar):** 2 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-17 | `src/lsp/fixtures/workspace-edit-server.mjs` | `verbatim` | — |
+| P6-18 | `src/lsp/formatters.ts` | `已修改` | **ESM extension completion (T8b grammar):** 3 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-19 | `src/lsp/infer-extension.ts` | `已修改` | **ESM extension completion (T8b grammar):** 2 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-20 | `src/lsp/json-rpc-connection.ts` | `已修改` | **Strip-only rewrite (T5 NOTES-6):** constructor parameter properties → declared fields + assignment at the tsc-emit position (Node 24 strip-only rejects parameter properties; measured at first load smoke) |
+| P6-21 | `src/lsp/language-mappings.ts` | `verbatim` | — |
+| P6-22 | `src/lsp/manager.ts` | `已修改` | **ESM extension completion (T8b grammar):** 5 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-23 | `src/lsp/process-signal-cleanup.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-24 | `src/lsp/process.ts` | `已修改` | **ESM extension completion (T8b grammar):** 2 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-25 | `src/lsp/server-definitions.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-26 | `src/lsp/server-install-state.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-27 | `src/lsp/server-installation.ts` | `verbatim` | — |
+| P6-28 | `src/lsp/server-resolution.ts` | `已修改` | **ESM extension completion (T8b grammar):** 4 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-29 | `src/lsp/startup-failure.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-30 | `src/lsp/transport-protocol.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-31 | `src/lsp/transport.ts` | `已修改` | **Strip-only rewrite (T5 NOTES-6):** constructor parameter properties → declared fields + assignment at the tsc-emit position (Node 24 strip-only rejects parameter properties; measured at first load smoke); **ESM extension completion (T8b grammar):** 9 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-32 | `src/lsp/types.ts` | `verbatim` | — |
+| P6-33 | `src/lsp/utils.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-34 | `src/lsp/workspace-apply-edit-failure.ts` | `verbatim` | — |
+| P6-35 | `src/lsp/workspace-apply-edit-test-support.ts` | `已修改` | **ESM extension completion (T8b grammar):** 5 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-36 | `src/lsp/workspace-document-state.ts` | `已修改` | **Strip-only rewrite (T5 NOTES-6):** constructor parameter properties → declared fields + assignment at the tsc-emit position (Node 24 strip-only rejects parameter properties; measured at first load smoke); **ESM extension completion (T8b grammar):** 4 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-37 | `src/lsp/workspace-edit-commit.ts` | `已修改` | **ESM extension completion (T8b grammar):** 2 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-38 | `src/lsp/workspace-edit-contract-evidence.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-39 | `src/lsp/workspace-edit-fingerprint.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-40 | `src/lsp/workspace-edit-parse-helpers.ts` | `已修改` | **ESM extension completion (T8b grammar):** 2 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-41 | `src/lsp/workspace-edit-parser.ts` | `已修改` | **ESM extension completion (T8b grammar):** 6 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-42 | `src/lsp/workspace-edit-path.ts` | `已修改` | **Strip-only rewrite (T5 NOTES-6):** constructor parameter properties → declared fields + assignment at the tsc-emit position (Node 24 strip-only rejects parameter properties; measured at first load smoke); **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-43 | `src/lsp/workspace-edit-plan-types.ts` | `已修改` | **ESM extension completion (T8b grammar):** 2 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-44 | `src/lsp/workspace-edit-plan.ts` | `已修改` | **ESM extension completion (T8b grammar):** 8 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-45 | `src/lsp/workspace-edit-resource-parser.ts` | `已修改` | **ESM extension completion (T8b grammar):** 4 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-46 | `src/lsp/workspace-edit-simulation.ts` | `已修改` | **ESM extension completion (T8b grammar):** 4 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-47 | `src/lsp/workspace-edit-snapshot.ts` | `已修改` | **Strip-only rewrite (T5 NOTES-6):** constructor parameter properties → declared fields + assignment at the tsc-emit position (Node 24 strip-only rejects parameter properties; measured at first load smoke); **ESM extension completion (T8b grammar):** 3 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-48 | `src/lsp/workspace-edit-text.ts` | `已修改` | **ESM extension completion (T8b grammar):** 2 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-49 | `src/lsp/workspace-edit-types.ts` | `已修改` | **Strip-only rewrite (T5 NOTES-6):** constructor parameter properties → declared fields + assignment at the tsc-emit position (Node 24 strip-only rejects parameter properties; measured at first load smoke); **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-50 | `src/lsp/workspace-edit.ts` | `已修改` | **ESM extension completion (T8b grammar):** 8 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-51 | `src/lsp/workspace-mutation-controller.ts` | `已修改` | **Strip-only rewrite (T5 NOTES-6):** constructor parameter properties → declared fields + assignment at the tsc-emit position (Node 24 strip-only rejects parameter properties; measured at first load smoke); **ESM extension completion (T8b grammar):** 6 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-52 | `src/mcp.ts` | `已修改` | **Modern-era deviation (P6-T4, FORKS.md §2.6 ⑤):** answers `server/discover` with the 2026-07-28 advertisement, tracks the negotiated era per process (sibling saw `server/discover`; session infers from the per-request `_meta` envelope), stamps `resultType` (+`ttlMs: 0` + `cacheScope: "private"` — the honest no-cache values, the SDK's own defaults) on cacheable results; `initialize` echo semantics kept upstream-verbatim; env-gated `LSP_MCP_WIRE_LOG` diagnostic seam (unset = zero behaviour change); **extension wall rode along:** 2 specifiers + the 1 package-name rewrite |
+| P6-53 | `src/missing-dependency-result.ts` | `已修改` | **ESM extension completion (T8b grammar):** 4 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-54 | `src/post-edit/index.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-55 | `src/post-edit/orchestration.ts` | `verbatim` | — |
+| P6-56 | `src/request-context.ts` | `已修改` | **Strip-only rewrite (T5 NOTES-6):** constructor parameter properties → declared fields + assignment at the tsc-emit position (Node 24 strip-only rejects parameter properties; measured at first load smoke) |
+| P6-57 | `src/tools.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-58 | `src/tools/definitions.ts` | `已修改` | **ESM extension completion (T8b grammar):** 8 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-59 | `src/tools/diagnostics.ts` | `已修改` | **ESM extension completion (T8b grammar):** 10 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-60 | `src/tools/index.ts` | `已修改` | **ESM extension completion (T8b grammar):** 10 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-61 | `src/tools/install-decision.ts` | `已修改` | **ESM extension completion (T8b grammar):** 5 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-62 | `src/tools/navigation.ts` | `已修改` | **ESM extension completion (T8b grammar):** 7 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-63 | `src/tools/parameters.ts` | `已修改` | **ESM extension completion (T8b grammar):** 2 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-64 | `src/tools/rename.ts` | `已修改` | **ESM extension completion (T8b grammar):** 6 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-65 | `src/tools/result.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-66 | `src/tools/runtime.ts` | `已修改` | **ESM extension completion (T8b grammar):** 3 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-67 | `src/tools/schema.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-68 | `src/tools/status.ts` | `已修改` | **ESM extension completion (T8b grammar):** 4 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-69 | `src/tools/symbols.ts` | `已修改` | **ESM extension completion (T8b grammar):** 8 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-70 | `src/tools/types.ts` | `已修改` | **ESM extension completion (T8b grammar):** 2 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6-71 | `tsconfig.json` | `已修改` | Rewritten to the `ES2022` + `node` shape extending the repo root tsconfig (upstream is bun-shaped: `bun-types` + DOM + the strictest flags; M-2 precedent, hashline-core/team-core) |
+
+**Totals:** 9 `verbatim` + 59 `已修改` + 3 `本项目新增` = **71 files**
+= 65 upstream implementation `.ts` files + 1 `.mjs` fixture + `src/cli.ts` (project-new stdio face)
++ 3 package-root files (`package.json`, `tsconfig.json`, `NOTICE.md`) + `VENDOR-MANIFEST.json`;
+zero carried tests (the 21 upstream `bun:test` suites are excluded per §2.6).
+
+### Phase 6 vendored package: `@oh-my-opencode/mcp-stdio-core` (OMO v4.19.4)
+
+- **Source repository:** https://github.com/code-yeongyu/oh-my-openagent
+- **Tag:** `v4.19.4`
+- **Commit:** `b072d279110bdda2c6ac2525d0d24dc54d16148a`
+- **Upstream path:** `packages/mcp-stdio-core`
+- **License:** SUL-1.0 ([LICENSES/oh-my-openagent.LICENSE.md](LICENSES/oh-my-openagent.LICENSE.md)).
+  The upstream package manifest carries no `license` field; the license is the OMO
+  repository-root `LICENSE.md` (same byte-verified copy as above).
+- **Vendored into this repository at:** [`patches/omo-dsh/vendor/mcp-stdio-core`](patches/omo-dsh/vendor/mcp-stdio-core)
+  (a pnpm workspace package; the upstream package name `@oh-my-opencode/mcp-stdio-core@0.1.0`
+  is kept unchanged as the provenance anchor, so the D16 name gate releases its `SUL-1.0`
+  field — and the vendored `lsp-core`'s verbatim `workspace:*` edge resolves to it).
+
+> ⚠️ **MODIFIED COPY — prominent notice required by SUL-1.0 "Notices".**
+> This project has **modified** the vendored copy of `mcp-stdio-core`. The
+> modifications are declared in the package-root
+> [`NOTICE.md`](patches/omo-dsh/vendor/mcp-stdio-core/NOTICE.md) and itemized,
+> with per-file sha256 and reasons, in
+> [`VENDOR-MANIFEST.json`](patches/omo-dsh/vendor/mcp-stdio-core/VENDOR-MANIFEST.json)
+> (`deviations[]`: 1 fields-added, 1 tsconfig rewrite, 1 extension-wall entry
+> (12 specifiers), 2 additions, 1 test-excluded note).
+> Copyright in the upstream work remains with the original author (code-yeongyu);
+> this project claims only its modifications. No commercial use or distribution
+> is authorized.
+
+**Tests — carried vs not (measured 2026-10-13):** `src/transport.test.ts` is
+**carried** with semantics unmodified (bun:test surface `describe/expect/test` only, green 4/4
+through the shim S-1 alias; the file bytes carry only the extension-wall completion);
+`src/server.test.ts` is **not carried** — it imports
+`jest` from `bun:test` and drives fake timers (`jest.useFakeTimers()` etc.,
+upstream L107–L258); vitest exports no `jest`, so shim S-1 cannot carry it — the
+same measured rationale that excluded team-core's `resume.test.ts` (`mock`).
+`AGENTS.md` is not carried (package documentation).
+
+Every file in the vendored package is listed below (decision D15 ¶2; rows are
+numbered `P6S-n` — the `S` keeps the two Phase 6 tables' numbering spaces disjoint).
+The `Disposition` column mirrors the manifest's per-file `origin`: `verbatim`
+(**3**), `已修改` → `modified` (**6**),
+`本项目新增` → `project-new` (**2**) — **11 files** total, aligned
+one-to-one with `VENDOR-MANIFEST.json` `files[]` (11 entries). Drift detection:
+`node scripts/vendor-manifest.mjs`. The mirror is pinned row-for-row by
+`tests/vendor/lsp-stdio-manifest.test.ts` (gate 2).
+
+| # | File (relative to package root) | Disposition | Notes |
+|---|---|---|---|
+| P6S-1 | `NOTICE.md` | `本项目新增` | **Not upstream content:** the prominent "modified" notice required by SUL-1.0 (D15 ¶3, N-1) |
+| P6S-2 | `VENDOR-MANIFEST.json` | `本项目新增` | **Not upstream content:** source tag/commit + per-file sha256 + `deviations[]` |
+| P6S-3 | `package.json` | `已修改` | Added `license: "SUL-1.0"` (D15 ¶1) + `test:vitest` script; `exports` map kept verbatim; `devDependencies.bun-types` kept upstream-verbatim (unused by the vendored node-shaped tsconfig — registered in the tsconfig deviation) |
+| P6S-4 | `src/index.ts` | `已修改` | **ESM extension completion (T8b grammar):** 5 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6S-5 | `src/record.ts` | `verbatim` | — |
+| P6S-6 | `src/responses.ts` | `已修改` | **ESM extension completion (T8b grammar):** 1 relative `.js` specifier completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6S-7 | `src/server.ts` | `已修改` | **ESM extension completion (T8b grammar):** 5 relative `.js` specifiers completed to `.ts` — semantically zero-change, machine-proven (`.omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs`) |
+| P6S-8 | `src/transport.test.ts` | `已修改` | **Carried test (semantics unmodified):** bun:test surface `describe/expect/test` only — unchanged through the shim S-1 alias, measured green 4/4 under vitest (2026-10-13); **extension wall rode along:** 1 specifier (so the origin is `modified`, not `verbatim`) |
+| P6S-9 | `src/transport.ts` | `verbatim` | — |
+| P6S-10 | `src/types.ts` | `verbatim` | — |
+| P6S-11 | `tsconfig.json` | `已修改` | Rewritten to the `ES2022` + `node` shape extending the repo root tsconfig (upstream bun-shaped `bun-types` + DOM; M-2 precedent) |
+
+**Totals:** 3 `verbatim` + 6 `已修改` + 2 `本项目新增` = **11 files**
+= 6 upstream implementation `.ts` files + 1 carried upstream test + 3 package-root files
+(`package.json`, `tsconfig.json`, `NOTICE.md`) + `VENDOR-MANIFEST.json`.
+
+**MIT reference — `@code-yeongyu/lsp-tools-mcp` (no files vendored):** the
+project-written `patches/omo-dsh/vendor/lsp-core/src/cli.ts` references the
+semantics of that MIT package's `src/cli.ts` (~30 lines: run the MCP stdio server,
+dispose the default LSP manager on exit). Per the (L-B) ruling (FORKS.md §0-6) the
+package is NOT vendored — no license file is copied; this paragraph is the
+attribution. Copyright of the referenced semantics remains with code-yeongyu (MIT).
+
 ## oh-my-pi
 
 - **Author:** can1357

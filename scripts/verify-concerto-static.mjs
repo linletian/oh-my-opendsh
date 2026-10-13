@@ -37,7 +37,8 @@
 //       from roster.ts + the renderer's sentinel naming, never restated.)
 //   c11 root cordis.yml mounts EXACTLY the plugin insert rows (P3-T19; two at
 //       P3-T3 — omo-agents + omo-hooks; three since P4-T3 — plus omo-commands;
-//       four since P5-T3 — plus omo-team, mount order). The list is read from
+//       four since P5-T3 — plus omo-team; five since P6-T4 — plus omo-lsp,
+//       mount order). The list is read from
 //       doctor-lite-core's shared constant, never restated here.
 //   c12 every src/hooks/**/*.ts implementation file carries the plan §4.9
 //       signature header (upstream tag-relative path + @ v4.19.4 + the
@@ -45,10 +46,12 @@
 //   c13 the manifest id set and the src/hooks/ file set agree in BOTH
 //       directions; the ulw-execute/ submodule directory belongs to the
 //       `ulw-execute` id and is never a separate entry
-//   c15 every cordis.yml insert row RESOLVES to a real, distinct published
-//       package (c11 pins the ids/order/names; c15 adds that each row's `name`
+//   c15 every cordis.yml insert row RESOLVES to a real, distinct package
+//       (c11 pins the ids/order/names; c15 adds that each row's `name`
 //       really resolves — via the package.json `name` of some package under
-//       patches/omo-dsh/ — and that no two rows land on one package. There is NO
+//       patches/omo-dsh/ for @oh-my-opendsh/* rows, or from the INSTALLED
+//       dsh's node_modules for the dsh-bundled @deepseek-ai/* rows (omo-lsp,
+//       P6-T4) — and that no two rows land on one package. There is NO
 //       `path` key: dsh resolves an insert row by `name` as a Node module
 //       specifier from the profile directory)
 //   c16 every omo-commands src/**/*.ts file carries the signature header
@@ -123,10 +126,10 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, relative, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { REPO_ROOT, loadYamlDialect } from './doctor-lite.mjs'
+import { REPO_ROOT, loadYamlDialect, resolveDshNodeModules } from './doctor-lite.mjs'
 // c11 复用 doctor-lite-core 自己的挂载序期望，而不是在本文件重抄插件清单
 // （理由见 c11 块：引用同一事实源，另加 doctor-lite 2b 未覆盖的顶层 insert 行数断言）。
-import { EXPECTED_INSERT_ROW_IDS, collectInsertRowIds } from './doctor-lite-core.ts'
+import { EXPECTED_INSERT_ROW_IDS, DSH_BUNDLED_INSERT_ROW_NAMES, collectInsertRowIds } from './doctor-lite-core.ts'
 
 const PATCH_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents-current')
 const AGENT_YML = join(PATCH_DIR, 'preset', 'agent.cordis.yml')
@@ -723,7 +726,7 @@ async function run() {
     for (const [id] of C10_ASSERTIONS) results.push(check(id, C10_NAMES.get(id), false, reason))
   }
 
-  // ── c11 — the root overlay mounts exactly the plugin insert rows (3 → 4) ───
+  // ── c11 — the root overlay mounts exactly the plugin insert rows (3 → 4 → 5) ───
   //
   // 与 doctor-lite check 2b（gate 4）的关系：那是本事实的既有断言，本记录**引用**
   // 它而不是平行重抄插件清单——期望值直接取自 doctor-lite-core 的
@@ -758,7 +761,9 @@ async function run() {
       // 模块的——把任意两行的 name 对调（或改成别的包）会让「omo-hooks」这个标签
       // 挂上别的代码，且现有门全部照绿。本记录把 `@oh-my-opendsh/<id>` 这一约定
       // 钉死（四个包的 package.json name 实测与之一致，P5-T3 新增的 omo-team
-      // 同受此断言约束）。
+      // 同受此断言约束）。P6-T4 起有唯一的声明式例外：DSH_BUNDLED_INSERT_ROW_NAMES
+      // （omo-lsp 挂 dsh 自带插件，不走本仓发布名）——例外是数据不是放松的规则，
+      // 未登记的行名非 @oh-my-opendsh/* 依旧 FAIL。
       const nameProblems = []
       for (const row of cordisRows) {
         if (!row || !Array.isArray(row.insert)) continue
@@ -766,13 +771,14 @@ async function run() {
           if (!inserted || typeof inserted !== 'object') continue
           const id = inserted.id
           if (typeof id !== 'string' || id.length === 0) continue
-          if (inserted.name !== `@oh-my-opendsh/${id}`) {
-            nameProblems.push(`${id}: name=${JSON.stringify(inserted.name)} (want @oh-my-opendsh/${id})`)
+          const want = DSH_BUNDLED_INSERT_ROW_NAMES[id] ?? `@oh-my-opendsh/${id}`
+          if (inserted.name !== want) {
+            nameProblems.push(`${id}: name=${JSON.stringify(inserted.name)} (want ${want})`)
           }
         }
       }
       if (nameProblems.length > 0) problems.push(`insert row id/name mismatch: ${nameProblems.join('; ')}`)
-      passDetail = `${insertEntries.length} insert rows [${observedIds.join(', ')}], mount order, each id ↔ @oh-my-opendsh/<id> — `
+      passDetail = `${insertEntries.length} insert rows [${observedIds.join(', ')}], mount order, each id ↔ @oh-my-opendsh/<id> (declared dsh-bundled exceptions honoured) — `
         + 'expectation from doctor-lite-core.EXPECTED_INSERT_ROW_IDS (not restated), plus the top-level entry count and insert-form shape'
     }
     // The NAME is count-derived too: restating "2" here would be a fourth copy
@@ -1059,22 +1065,37 @@ async function run() {
   // manifest row loses its baseline. These records close that, mirroring c12/c13/
   // c14 one-for-one so the two packages read the same way.
 
-  // c15 — the four insert rows resolve to REAL, DISTINCT workspace packages.
+  // c15 — every insert row resolves to a REAL, DISTINCT package, by ONE of two
+  // resolution faces (P6-T4 widened it from the single repo-published face).
   //
   // c11 pins the ids, the mount order, and the `name` ↔ id coupling. What it
-  // cannot see is whether the package that `name` refers to EXISTS in this repo.
-  // dsh resolves an insert row's `name` as a Node module specifier from the
-  // PROFILE directory, so a row naming a package nobody publishes fails at
-  // `dsh plugin add` — visible in e2e (which installs every scenario) but
-  // invisible to a zero-cost static gate, and the failure message is a module
-  // resolution error three files away from the cause.
+  // cannot see is whether the package that `name` refers to EXISTS. dsh resolves
+  // an insert row's `name` as a Node module specifier from the PROFILE directory,
+  // so a row naming a package nobody publishes fails at `dsh plugin add` —
+  // visible in e2e (which installs every scenario) but invisible to a zero-cost
+  // static gate, and the failure message is a module resolution error three files
+  // away from the cause.
+  //
+  // TWO resolution faces, because the rows are different in kind since P6-T4:
+  //   • `@oh-my-opendsh/<id>` rows are published BY THIS REPO — the name must be
+  //     declared by a package.json under patches/omo-dsh/ (the original chain:
+  //     `name` → a directory whose package.json declares that exact name).
+  //   • `@deepseek-ai/*` rows mount a plugin BUNDLED with the installed dsh
+  //     (omo-lsp → @deepseek-ai/dsh-mcp-client) — NO profile install, so there is
+  //     nothing to find under patches/omo-dsh/; instead the name must resolve from
+  //     the INSTALLED dsh's node_modules (resolveDshNodeModules, the same face
+  //     doctor-lite's preset sweep uses). dsh unavailable → the row is reported
+  //     unresolved (honest FAIL, not a silent pass — this repo's gate never
+  //     upgrades a can't-check into a pass).
+  // Uniqueness is checked across BOTH faces (two rows resolving to one package
+  // is a conflict no matter which face each came from).
   //
   // NOTE the premise correction: the first draft of this record asserted an
   // `insert[].path` key. There is no such key — dsh resolves by `name` alone,
   // which is why the record went red on all three rows ("insert row has no
-  // path") rather than passing vacuously. The real chain is
-  // `name` → a directory under patches/omo-dsh/ whose package.json declares that
-  // exact name.
+  // path") rather than passing vacuously. For the four repo-published plugin
+  // rows the real chain remains `name` → a directory under patches/omo-dsh/
+  // whose package.json declares that exact name.
   try {
     const cordisRows = await loadYamlDialect(join(REPO_ROOT, 'cordis.yml'))
     if (!Array.isArray(cordisRows)) throw new Error('cordis.yml is not a top-level array of patch entries')
@@ -1094,7 +1115,11 @@ async function run() {
       }
     }
     if (published.size === 0) problems.push('no published package found under patches/omo-dsh/ — the assertion would be vacuous')
-    const seenDirs = new Map()
+    // The dsh-bundled face: resolve the installed dsh's node_modules ONCE; a
+    // bundled row's name must carry a package.json there.
+    const dshNm = await resolveDshNodeModules()
+    const seenResolutions = new Map()
+    let bundledCount = 0
     for (const row of flatten(cordisRows)) {
       if (!row || !Array.isArray(row.insert)) continue
       for (const inserted of row.insert) {
@@ -1104,32 +1129,60 @@ async function run() {
           problems.push(`${id}: insert row has no name to resolve`)
           continue
         }
-        const dir = published.get(name)
-        if (dir === undefined) {
-          problems.push(`${id}: '${name}' is not published by any package under patches/omo-dsh/ (dsh would fail to resolve it)`)
-          continue
-        }
-        if (seenDirs.has(dir)) {
-          problems.push(`insert rows ${seenDirs.get(dir)} and ${id} both resolve to the package directory '${dir}/'`)
+        let resolution
+        if (DSH_BUNDLED_INSERT_ROW_NAMES[id] !== undefined) {
+          // dsh-bundled face (declared exception, P6-T4): the name must be the
+          // declared one and must resolve from the installed dsh.
+          bundledCount += 1
+          if (name !== DSH_BUNDLED_INSERT_ROW_NAMES[id]) {
+            problems.push(`${id}: declared dsh-bundled as '${DSH_BUNDLED_INSERT_ROW_NAMES[id]}', the row names '${name}'`)
+            continue
+          }
+          if (dshNm === null) {
+            problems.push(`${id}: '${name}' names a dsh-bundled plugin but the installed dsh node_modules is unresolvable — cannot confirm it exists`)
+            continue
+          }
+          const pkgName = name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0]
+          if (!existsSync(join(dshNm, pkgName, 'package.json'))) {
+            problems.push(`${id}: '${name}' is not installed in the dsh node_modules (${dshNm}) — dsh would fail to resolve it`)
+            continue
+          }
+          resolution = `${dshNm}/${pkgName}/`
         } else {
-          seenDirs.set(dir, id)
+          const dir = published.get(name)
+          if (dir === undefined) {
+            problems.push(`${id}: '${name}' is not published by any package under patches/omo-dsh/ and is not a declared dsh-bundled row (dsh would fail to resolve it)`)
+            continue
+          }
+          resolution = `${dir}/`
+        }
+        if (seenResolutions.has(resolution)) {
+          problems.push(`insert rows ${seenResolutions.get(resolution)} and ${id} both resolve to '${resolution}'`)
+        } else {
+          seenResolutions.set(resolution, id)
         }
       }
     }
+    // EXPECTED_INSERT_ROW_IDS: omo-* ids map to @oh-my-opendsh/<id>; any other
+    // expected id must be a mounted row that resolved on the dsh-bundled face
+    // (omo-lsp is mounted, not published — see cordis.yml header).
     for (const id of EXPECTED_INSERT_ROW_IDS) {
-      if (!published.has(`@oh-my-opendsh/${id}`)) {
-        problems.push(`EXPECTED_INSERT_ROW_IDS names ${id}, but no package publishes @oh-my-opendsh/${id}`)
+      const omoName = `@oh-my-opendsh/${id}`
+      if (published.has(omoName)) continue
+      const rowResolved = [...seenResolutions.values()].includes(id)
+      if (!rowResolved) {
+        problems.push(`EXPECTED_INSERT_ROW_IDS names ${id}: no package publishes ${omoName} and no insert row with id ${id} resolved on either face`)
       }
     }
-    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct published package',
+    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct package (repo-published or dsh-bundled face)',
       problems.length === 0,
       problems.length > 0
         ? problems.join('; ')
-        : `${seenDirs.size} insert rows each resolve to their own published package `
-          + `(${[...seenDirs].map(([dir, id]) => `${id}→${dir}/`).join(', ')}); `
-          + `${published.size} packages indexed by their package.json name`))
+        : `${seenResolutions.size} insert rows each resolve to their own package `
+          + `(${[...seenResolutions].map(([res, id]) => `${id}→${res.includes('node_modules') ? '<dsh-bundled>' : res}`).join(', ')}); `
+          + `${published.size} repo-published packages indexed by package.json name; ${bundledCount} dsh-bundled row(s) confirmed against the installed dsh`))
   } catch (e) {
-    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct published package', false,
+    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct package (repo-published or dsh-bundled face)', false,
       `cordis.yml could not be read/parsed: ${String(e.message ?? e)}`))
   }
 

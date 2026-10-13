@@ -263,10 +263,12 @@ echo "concerto-probe: sandbox: $SANDBOX"
 echo "concerto-probe: dsh binary: $(command -v dsh)"
 dsh --version || fail "dsh --version failed"
 
-# Stage 0: fresh profile + install ALL FOUR plugins into it (one per cordis.yml
+# Stage 0: fresh profile + install the FOUR @oh-my-opendsh plugins into it (one
+# per @oh-my-opendsh cordis.yml
 # insert row — P3-T3 mounted omo-hooks as the second row, P4-T3 mounts
 # omo-commands as the third, P5-T3 mounts omo-team as the fourth, so a profile
-# carrying fewer could not compose the overlay).
+# carrying fewer could not compose the overlay; the P6-T4 fifth row omo-lsp
+# mounts the dsh-bundled @deepseek-ai/dsh-mcp-client and needs no install).
 echo "concerto-probe: installing @oh-my-opendsh/omo-agents into sandbox profile '$PROFILE'"
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-agents" >"$ADD_LOG" 2>&1 \
