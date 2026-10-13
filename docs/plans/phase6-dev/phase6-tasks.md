@@ -24,7 +24,7 @@
 
 ## WP-0 调研钉测（计划书 §4.1/§6，Q-1…Q-8）
 
-### [~] P6-T1 — 四面全对账 + 原生钉测 + 三 fork 裁定 ⚖️
+### [x] P6-T1 — 四面全对账 + 原生钉测 + 三 fork 裁定 ⚖️
 
 - **产出**：回填后的 [覆盖基线](./phase6-mcp-editing.md)（§1–§7 全部转实测）；**三 fork 裁定书**（E/L/G 各自选项 + 依据，进 `.omo/evidence/p6t1/FORKS.md`——**含 c14 并集扩展的显式仲裁**（评审 MAJOR-5：与 P5-T14 裁决并列记载，(a) 重排基线 §1 入并集 / (b) 不扩 + c22 式作用域或独立检查 + 活体针措辞同步，默认 (b) 条件式）与 **H 编号预分**（评审 F-12））；计划书 §4 按实测更正（DoD-d）；fork 触发决策登记时起草本阶段 D 条目与 ROADMAP Phase 6 措辞修订（随首个落地 commit 同发，T3/T4 先例 = Phase 5 D18）。
 - **做法**（逐 Q 独立交付，哪个先闭环先写证据；Q-2/Q-4 为阻断项）：
@@ -37,7 +37,7 @@
   7. **Q-7 e2e 断言面与 hermetic fixture 族**：四腿场景的 mock-LLM 可断言形态；外部进程类（语言服务器/`sg`）的 CI fixture 设计（预置二进制/替身 server）；缺席响亮的负断言锚点。
   8. **Q-8 source kind 与署名清单**：本阶段全部注入点的 kind 命名表（v4 准入只拒 `kind:'plugin'` 已证——P5 Q-8）；vendor 候选清单与 licenses 计数预测（基线 checked=61）；**新钩子 H 编号预分**（评审 F-12 增补：现最高 H-34，(E-B)+(G-A) 全落地上限 = H-35/H-36/H-37——FORKS.md 预分，免 T3/T6 现场抢号；manifest 用语义 id，H 编号只活在基线文档）。
 - **判定**：✅ Q-1…Q-8 各有逐字引用结论；三 fork 裁定书含双向证据；覆盖基线全条目终态；计划书修订记录成文。
-- **证据**：⬜
+- **证据**：✅ 2026-10-13 收口。PRE-1…5 全 ✅（门 2 = 90f/2056t、门 3 = 41/41、门 5 checked=61、门 6 = 37/37、门 8 = 8/8，日志 `.omo/evidence/p6t1/pre2-baseline.log`，`CI_LOCAL_EXIT=0`）。逐 Q 终态：Q-1 四面全对账（hashline 24 件 15+9 复核 / LSP 三包精确账 87=65+21+1·mjs + **tools-mcp 29/30 = 1 行 re-export shim「引擎拷贝」叙事推翻** / ast-grep 钩壳+utils 层 6 实现 491 行逐件 / web 三 provider 逐字 / S-30 双向零残余 + anthropic-only）；Q-2 原生钉测（web dump 五条目 `.omo/evidence/p6t1/dump-config-p6t1.yml`、dsh-tool-fs edit 错误文案逐字枚举、str_replace_editor 在场性四证、**mcp-client 行为钉测 9 场景全 PASS** `.omo/evidence/p6t1/mcp-client-probe/`——N server = N 插行共存 / 同名冲突逐字 / 退避契约逐字 / SDK modern 时代 + 静默降级 legacy 实证，仲裁员抽核原始日志 + 台架诚实性核查通过）；Q-3 失败模式六类终态 + 度量三机读点核验（`FORKS.md` §1.5）；Q-4 闭包窄化 ≈72 件 + daemon 记差异候选 + bun:test 排除方向 + 本机语言服务器全缺席（hermetic 替身路线）；Q-5 v5.0.0 stable 在场亲验（`eb5c55c6`）+ (G-B) 以 provisioning 为前提的叠加关系重构 + 双来源裁定；Q-6 席位差集逐类成文（read-only 六席/worker 两席/atlas/allowlist 席/team 成员席）；Q-7 fixture 族设计（MCP fixture 已在档可复用 / LSP 替身优先 / sg 假二进制 + 反向金丝雀）；Q-8 kind 表 + licenses 计数预测（`FORKS.md` §5.2）。三 fork 裁定书 = `.omo/evidence/p6t1/FORKS.md`（含 c14 不扩裁定 §0-1、H-35/36/37 预分 §0-2、臂 (A) 组成 §0-3、SUL-1.0 许可姿态 §0-6）；覆盖基线 §1–§7 全转实测（N-1…N-10 逐条闭环）；计划书修订记录 T1 条目成文。仲裁员实测全档 = `.omo/evidence/p6t1/notes-arbiter.md`。门 6（37/37）/ 门 7（10/10）改后复验绿。
 - **依赖**：PRE-1…PRE-5。**量级**：1.5 天。
 
 ---
