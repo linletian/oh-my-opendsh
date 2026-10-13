@@ -44,28 +44,28 @@
 
 ## WP-1 编辑模型（计划书 §4.3）
 
-### [ ] P6-T2 — A/B 证据台架 + 脚本化编辑任务族
+### [x] P6-T2 — A/B 证据台架 + 脚本化编辑任务族
 
-- **产出**：A/B 台架（双臂驱动：同一任务族分别走**臂 (A) = 组合内已挂载的 `dsh-tool-fs` edit 面**（评审 MAJOR-1 更正：`str_replace_editor` 未挂载——是否为本阶段挂载它入臂由 T1 Q-2 裁定后在此成文）与 hashline 工具面形态的**实验性接线**——台架件可一次性，但断言纪律与门 3 同级）；失败模式清单的逐类数据档（`.omo/evidence/p6t2/`，**台架脚本同档存档并附复跑命令**——评审 F-11 增补：一次性台架的证据不可复核 = 不收，P5 L2 l2-drive.mjs 先例）。
+- **产出**：A/B 台架（双臂驱动：同一任务族分别走**臂 (A) = 组合内已挂载的 `dsh-tool-fs` edit 面**（评审 MAJOR-1 更正：`str_replace_editor` 未挂载——T1 Q-2 已裁不入臂，`FORKS.md` §0-3 成文）与 hashline 工具面形态的**实验性接线**——台架件可一次性，但断言纪律与门 3 同级）；失败模式清单的逐类数据档（`.omo/evidence/p6t2/`，**台架脚本同档存档并附复跑命令**——评审 F-11 增补：一次性台架的证据不可复核 = 不收，P5 L2 l2-drive.mjs 先例）。
 - **做法**：mock-LLM 驱动固定任务脚本；每臂每失败模式类至少一例；度量三件套（失败可判性/重试轮数/静默错写率——静默错写的断言面 = 文件最终字节比对）；双臂变异自证（故意位移/篡改夹具 → 对应断言红）。**臂 B 载体形态本任务定死**（评审 F-11）：三候选 = ① 临时薄工具插件（最接近最终 (E-B) 落地形态，首选评估）② fs provider 包装 ③ 独立进程直调 core API（**禁止单独使用**——与臂 (A) 的真实 DSH 工具面不对等，正中 R-3）；选定后声明与最终落地形态的差距折扣，成文进数据档。
 - **判定**：✅ 台架双臂跑绿且变异自证红证俱全；数据档含每类失败模式的原始记录；「无差异」若成立则以数据成文（合法结局）。
-- **证据**：⬜
+- **证据**：✅ 2026-10-13 收口（编码 sub-agent 一次成功；档 `.omo/evidence/p6t2/`——DATA.md + rig/ + runs/20261013-174311/；复跑 = `bash .omo/evidence/p6t2/rig/run.sh`）。**臂 B 载体 = 候选 ① 临时薄工具插件**（hashline-face 插件注册 `hashline_edit` + read 输出锚点增强钩，经 vendored core shadow 副本——中立性 diff 仅 .ts 扩展名，`shadow-diff.txt`/`shadow-checks.txt` 双档）；差距折扣六项声明（独立命名/formatter 未移植/delete·rename 未移植/抛出 vs 返回/zod 手移植/脚本不"学"工具描述——DATA.md §1 逐项）。**驱动接缝偏差声明**：driver 插件固定脚本化政策经 `ctx.tools.execute` 全管道（mock-LLM 字面偏差——drive.mjs 为 tracked 文件，扩它 = 违一次性台架纪律；沙箱无 key 无活模型——DATA.md §1 成文）。**七类全执行零 UNTESTABLE**：F-a（A `FS_AMBIGUOUS_EDIT` 2 轮 / B 1 轮）、F-b（同 CAS 双 2 轮）、F-c（parity 实证同码同文案）、F-d（双终态）、**F-e（A 静默 1 轮字节正确 / B `HASH_MISMATCH` 具名 2 轮）+ F-e2（B 终态拒、文件不变——陈旧锚结构性不可静默错写）**、F-f（双校验类）、F-g（未分化如实记录）。**度量**：可判性 A 6/6、B 8/8；平均轮数 A 1.50 / B 1.67；**静默错写率双臂 0**。**突变自证 M1/M2/M3 全红按预期**（腐锚终拒/篡改预期件字节比对红/去重复行歧义断言落空——原始档逐条在案）。**仲裁员抽核**：F-e 双臂 wire 级 JSONL 逐行复核；hash 与 vendored core 一致性亲算（`inserted B/C` 真实碰撞 YV 复现、`TARGET` BH 跨行稳定）；M2 红行定点复核；shadow 中立性 diff 复核；git status 零 tracked 改动（该台架期）。
 - **依赖**：P6-T1（Q-3 终态）。**量级**：1 天。
 
-### [ ] P6-T3 — 编辑模型决策落地 ⚖️
+### [x] P6-T3 — 编辑模型决策落地 ⚖️（fork E 终裁 = **(E-A)**，2026-10-13）
 
 - **产出**（双臂二选一，以 T1/T2 证据裁定）：
   - **(E-A)**：覆盖基线记差异条目（hashline-core 维持 vendored-unconsumed 的**理由** = A/B 数据）；S-14/S-15 以「原生覆盖」闭环（理由引用 A/B 数据，不许空手闭环）；决策登记候选草稿。
   - **(E-B)**：**薄工具面 + enhancer 双钩**（评审 F-1/B-3 重定义 + R2-1 再更正 2026-10-13：上游工具层 24 件 = **15 薄 re-export shim（语义已在 vendored core 内，直接 import 即上游忠实路径，`package.json:22` workspace 依赖逐字）+ 9 自留件（5 非测试实现 + AGENTS.md + 3 测试——R3-1 订正：`formatter-trigger-cache.ts` 实现件不存在，cache 是 `formatter-trigger.ts` 内导出）**——移植单元 = 5 实现件（`tools.ts` 注册/`tool-description.ts`/`hashline-edit-executor.ts`/`formatter-trigger.ts`/`index.ts`）+ 配置门（E-5）；锚点校验/diff 生成经 shim 即在 vendored core——只搬双钩产不出裁定标准要求的 stale-anchor 拒绝证据——原「双钩即 (E-B)」定义与「内联副本」叙事双双作废）——**落点拓扑随本任务裁定成文（评审 R2-7②③ 增补）**：① 落点候选 = omo-hooks 内非钩模块或独立包——注意 c13 只扫 `omo-hooks/src/hooks/`（工具模块落 `src/tools/` 则不受 c13 文件集断言覆盖），**须给落点指定静态门家**（c26 式 manifest↔文件集合断言或独立包四件套）；② 工具注册先例 = **omo-team**（`agent/created` listener 内 `agent.ctx.tools.register(...)`，`team-create.ts:423`/`team-delete.ts:318`——工具面先例），H-34 fork (ii) 是纯服务先例（不同族，勿误引）+ omo-hooks 两个 enhancer 条目移植（H 编号以 T1 预分为准；**`EXPECTED_HOOK_COUNT` 同步网五点位同 commit**（评审 F-5 列点）：① manifest.ts:184 计数常量 ② `tests/omo-hooks/registration.test.ts`（EXPECTED_SUMMARY_LINE + legalRows 族）③ `tests/omo-hooks/manifest-coverage-consistency.test.ts` ④ `scripts/verify-concerto-static.mjs`（c13/c14 + 计数守卫）⑤ `scripts/concerto-mode-probe.sh`（boot 注册行派生计数）——Phase 4 R-11 漏列教训）+ 单测 + e2e 编辑场景（锚点防住的失败模式类逐类断言）+ S-14/S-15 闭环为「已移植」。
 - **判定**：✅ 裁定书进 `FORKS.md`（双臂证据齐全）；落地形态**门 1/2/3/6/8 绿**（评审 F-4 更正：移植钩子代码漏门 1 typecheck 是新文件进根编译程序的破门位，漏门 6 触发 c13/c14 + EXPECTED_HOOK_COUNT 守卫，漏门 8 probe marker——T4 的门列法为参照）；(E-B) 时 enhancer 的反向金丝雀（未生效 vs 生效可区分）在位。**两臂共通附带件（评审 NIT-2 登记）**：`bash-file-read-guard.ts:28-29` 注释把 hashline-edit 决策指向「plan §4.4」，实际裁定节 = 计划书 §4.3——随本任务 commit 订正该注释引用（编码件，交编码 Sub-agent）。
-- **证据**：⬜
+- **证据**：✅ 2026-10-13 收口。**fork E 终裁 = (E-A)**（裁定书 `FORKS.md` §1.7，七条证据对账 + 三复审触发条件成文）：① 七类零正确性差异（静默错写率双臂 0）；② 原生面六类可判失败全覆盖且 CAS parity；③ 唯一结构性差异（F-e 检测保证）未转化为正确性差异；④ 效率反向（A 1.50 < B 1.67）；⑤ 模型层优势未测量（台架声明缺口 vi——裁定纪律不认未测推测）；⑥ 成本面违反原生优先（5 实现件 + 门 + 钩 + 同步网 vs 上游默认 OFF 实验件）；⑦ 上游自身姿态（默认 OFF + diff-enhancer 孤儿）。落地件：覆盖基线 E-1…E-7 全转 recorded-difference/native-adopt 终态（E-6 = A/B 胜方）；**S-14 记差异**（孤儿 + 原生等价双依据）、**S-15 原生覆盖闭环**（A/B 数据引用非空手）；H-35/H-36 预分号回收；**D19 决策登记双语成文**（docs/decisions_zh-CN.md + docs/decisions.md，含复审触发条件与 str_replace_editor 落差注记）；NIT-2 附带注释订正（编码 sub-agent，`bash-file-read-guard.ts` §4.4→§4.3 + D19/(E-A) 终态注）。(E-A) 下无代码落地——门列无需新增断言，门 6/7 改后复验绿。
 - **依赖**：P6-T2。**量级**：(E-A) 2 小时 / (E-B) **2 天**（评审 F-1 重定义后含薄工具面，与 §7 WP-1 分支矩阵对齐）。
 
 ---
 
 ## WP-2 LSP（计划书 §4.4）
 
-### [ ] P6-T4 — LSP fork 落地 ⚖️
+### [~] P6-T4 — LSP fork 落地 ⚖️
 
 - **产出**（三向一，以 T1 Q-4 证据裁定）：
   - **(L-A)**：vendor `lsp-core`（playbook 全套：manifest/NOTICE/deviations/扩展名补全机械证明——T8a/T8b 纪律）+ `patches/omo-dsh/omo-lsp/` 新包（薄工具面：lsp-core 工具族的模型面对账 + 语言服务器生命周期 + `post-edit` 接线）+ **第五插行 + COUNT COUPLING NET 4→5 同 commit 全点位** + **新包接线三点位（评审 R2-7① 增补，P5-T2 先例）**：根 `package.json`（**`typecheck:lsp`** 脚本 + 接入 `typecheck:libs` 链——R3-2 命名更正：与 `typecheck:team` 同构的包名后缀惯例（实测惯例 = host/client/hooks/commands/team），漏了则门 1 覆盖不到新包）、`pnpm-lock.yaml` workspace 机械登记、`tsconfig.host.json`（Node 24 strip-only 约束注）。
