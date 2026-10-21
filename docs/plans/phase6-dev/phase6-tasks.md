@@ -107,11 +107,11 @@
 
 ## WP-4 web（计划书 §4.6，无 fork——验证腿）
 
-### [ ] P6-T8 — web 面三层验证 + e2e + 席位整合
+### [x] P6-T8 — web 面三层验证 + e2e + 席位整合
 
 - **产出**：e2e `web-search-fetch-*` 场景（canonical 名 T1 定名）：① 工具面在场断言（真实组合 boot 后 `web_search`/`web_fetch` 在模型工具面——probe 真面断言先例）；② 调用真实发生（mock 场景 agent 发起调用——注意 dsh-tool-web 的 provider 接线在 mock 环境的形态，T1 Q-2 钉测）；③ **诚实性断言**（无 key/无后端时结构化错误具名形状，**不许断言搜索成功**）；名册席位差集成文（librarian/explore 席 web 可达性，Q-6）；H-24 护栏联动复核（web_fetch SSRF 守卫不回退的断言）；OMO 三 provider 记差异条目（覆盖基线 §5）。
 - **判定**：✅ 门 3/8 绿；三层断言各自独立可红；三 provider 处置成文。
-- **证据**：⬜
+- **证据**：✅ 2026-10-21 收口。**双评审五轮**（评审 A = opencode-go/muse-spark-1.3-contributor，评审 B = minimax-cn/MiniMax-M3.1-Flash）：R1 双 APPROVE（A 2 MAJOR+1 MINOR / B 1 MAJOR+3 MINOR，两 MAJOR 收敛同源：banner 缺段 + INERT 机制失真）→ `ARBITRATION-r1.md`（6 采纳/4 驳回）→ FIX-T8 6 项；R2 A APPROVE（2 NIT）/ B REJECT（**MAJOR：EMPTY 守卫空转**——位 --self-test 分支闸门后 + CI flagless 路径永不评估，牵连 LSP/AST_GREP 同形缺陷）→ `ARBITRATION-r2.md`（6 采纳/2 驳回）→ FIX-T8-R2 6 项（**十一族守卫统一迁入 runAnalysisSelfTest**——迁移前编码方先亲验十一族 push 站点 inside==total）；R3 双 APPROVE（A 1 MINOR+1 NIT / B 2 MINOR+3 NIT——STOP/TEAM_T10 两族无守卫 + 第二份手写名单 + 自证腿不在 CI 路径）→ `ARBITRATION-r3.md`（6 采纳）→ FIX-T8-R3 6 项（13 族单源 registry + 自源码普查双向 + 自证腿迁 CI 路径）；R4 双 APPROVE（A 1 MINOR+3 NIT / B 2 MINOR+4 NIT——普查「registry 行无声明」方向不可达 + 正则两向误判 + double 三未读字段）→ `ARBITRATION-r4.md`（10 采纳/2 不动）→ FIX-T8-R4 8 项（registry 只存字符串 + name→array 映射具名红可达 + 正则锚行首 + lazy 缓存 + 删计数检查改成员存在性 + 互异性断言）；R5 **双 APPROVE 残留全 NIT**（A 2 / B 6）→ `ARBITRATION-r5.md`（8 采纳，纪律句「双 APPROVE 且仅剩 nit 级」适用）→ FIX-T8-R5 8 项 NIT + **仲裁员独立确认提交**。**落地件**：三场景——`web-search-fetch-roundtrip`（替身搜索后端 `web-search-double.mjs`（零依赖 HTTP，罐装 Anthropic Messages 应答含 web_search_tool_result 块 + citations；记录 method/path/toolTypes/maxUses/userText/query 六字段各带具名读者；非 /v1/messages 具名 404）经 config 层 patch 行挂 `web-search-deepseek.baseURL`（解析序首位）；agent web_search → 罐装 sources 经 provider 回会话日志**逐行字节相等**（line-anchored）；agent web_fetch(127.0.0.1) → **原生 SSRF 守卫整句** `Error: URL hostname "127.0.0.1" resolves to a non-public IP address` 在场且无页面字节（H-24 联动断言））；`web-search-credential-missing`（apiKeyEnv 指不存在变量 → `Error: DeepSeek search has no API key for "<env>"` + remedies + 非成功）；`web-search-endpoint-unreachable`（baseURL 死口 → 端点指引长文 + 非成功）。**三层各自独立可红**：CONFIG=dump `searchProvider: deepseek-official`/`fetchProvider: http`；SURFACE=live chat body `tools[]` 载 web_search+web_fetch；BEHAVIOUR=罐装 sources 回传——缺陷腿三对分离 + 真面变异（替身 title 改一字节 → 恰 searchSourcesRenderedByteEqualPinned 红）。**机制更正两处**（编码方以证据推翻仲裁员简报，仲裁员复核在册 `notes-arbiter.md`）：① boot 期确实安装代理（`dsh/lib/profile-boot-BZ2ZjNWi.js:225`，本机有活代理）——救 loopback 拒绝的是 `isNonPublicIpLiteral` 在代理路由之前 consult，非「恒 DIRECT」，三场景显式钉 no_proxy；② `WebError.code` 不达模型面——断言全部按模型可见散文。**自测腿与 banner**：27+ 腿入 banner（WEB_SELF_TEST_ATTESTATION + 反空转守卫 + 派生渲染插值）；**守卫体系重构**（R2-R4 连轮）：13 族单源 registry（`selfTestAttestationFamilies`）+ 声明普查（`selfTestAttestationDeclarations` 自源码锚行首正则、lazy 缓存、防御性拷贝）+ 自证腿在 runAnalysisSelfTest 尾部（CI 路径，逐族身份比对 + 互异性断言 + 空态白名单）——仲裁员亲做变异：行注释一族 pushes → flagless exit 1 具名 EMPTY；ghost registry 行 → `FIX-T8-R4-1` 具名红（非 ReferenceError）；`export const`/`[ ]` 写法不红、`let` 变体具名红。**诚实场景摘要双锁**（自属失败话术在场 + 成功话术缺席 + 专属变异腿——修掉复用成功摘要的 B-MINOR-2）。**门**：ci-local **8/8**（`.omo/evidence/p6t8/ci-local-t8-commit.log`）：门 3 = **48/48**（45+3）、门 5 licenses checked=66 violations=0、门 6 = 38/38、门 2 = 100f/2125t、余门全绿。名册席位差集 = T1 Q-6 已闭环（W-7 行）；OMO 三 provider 记差异条目 = T1 已闭环（W-3/W-4/W-5 行，本任务复核无新动作）；覆盖基线 W-1/W-2 行三层终态回填同 commit。
 - **依赖**：P6-T1（Q-2/Q-6）。**量级**：0.5 天。
 
 ---
@@ -124,6 +124,7 @@
 - **判定**：✅ 全 8 门绿；静态门新断言各自变异自证；同步网零漏点（**grep 全点位复核 + 门 6 实跑**——评审 MAJOR-5 升级：只 grep 不足证）。
 - **证据**：⬜
 - **依赖**：P6-T3/**T4**/T6/T8 的落地件 + **T5 的落地件（(L-C) 裁定时以 T4 的记差异文档替代——评审 B-4 增补：(L-C) 下 T5 取消，本行不得悬空）**（可分批，同 commit 原则不变；R2-5 更正：补 T4 本体——(L-A)/(L-B) 下插行/新包由 T4 落地，本任务的同步网复核与新包四件套以 T4 为前置）。**量级**：0.5 天。
+- **T9 门候选更正（P6-T8 R1 双评审实测登记 2026-10-21）**：e2e 对挂载插件面做真面 patch 变异时，寻址目标 = **preset 的 `config.plugins` 键下的行 / 或挂载行自身 honour 的插件级开关**——**不是** group-scoped patching（实测机制：`cordis-plugin-include/lib/index.js:60-66` 的 id 索引仅在 `entry.group && Array.isArray(entry.config)` 时递归；preset 的 `config` 是持 `plugins` 的 map 而非 group 数组，其子项从不入索引；顶层 `tool-web` id 解析到的是 dsh-base 顶层 disabled 占位行，patch 生效但无关模型面——T8 场景注与 `ARBITRATION-r1.md`（A-MAJOR-2≈B-MAJOR-1）在册）。
 
 ---
 
