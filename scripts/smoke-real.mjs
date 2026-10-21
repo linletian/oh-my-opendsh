@@ -455,6 +455,20 @@ function createSandbox() {
  * sandbox; the resolved key injected (when it came from the credentials file
  * it is not otherwise visible to the child); DEEPSEEK_BASE_URL stripped unless
  * the user opted out — the smoke's contract is production endpoints.
+ *
+ * P6-T6 MAJOR-1's SAME SEAL, on the manual face (ARBITRATION-r2 B-R2-MINOR-1).
+ * This script creates a REAL session (sessionCreate :789-792, the RPC calls at
+ * :790-791 → the same
+ * `session/created` emit the ast-grep listener subscribes to), so with all three
+ * resolver gates empty it schedules the real 8.1 MB download of the pinned release
+ * — the identical defect drive.mjs:4626 closes for the e2e, arriving here by the
+ * manual path. Scope, stated honestly: this is NOT a CI gate (it needs a real key
+ * and costs money) and HOME is already redirected into a sandbox, so the download
+ * would land in a throwaway dir rather than the developer's real ~/.omo — that is
+ * why it stayed invisible, not why it is fine. Sealed with the same floor and the
+ * same shape: `??=`, so an operator who deliberately wants the REAL binary (to
+ * smoke the provisioning path itself) exports their own path first and this line
+ * leaves it standing.
  */
 function scenarioEnv(sandbox, apiKey) {
   const env = { ...process.env }
@@ -469,6 +483,9 @@ function scenarioEnv(sandbox, apiKey) {
   env.DSH_HOME = sandbox.dshHome
   env.DSH_AGENTS_HOME = sandbox.agentsHome
   env.DEEPSEEK_API_KEY = apiKey
+  // Hermetic floor — the committed fake sg, REPO_ROOT-anchored; `??=` keeps the
+  // operator's explicit override authoritative (see the doc above).
+  env.OMO_AST_GREP_SG_PATH ??= join(REPO_ROOT, 'tests', 'e2e', 'fixtures', 'fake-sg.sh')
   return { env, baseUrlNote }
 }
 

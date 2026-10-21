@@ -110,6 +110,13 @@
 //       said verbatim 37 / 已修改 7 while the manifest had honestly flipped to
 //       verbatim 7 / modified 37 at T8b, and no gate in this file could see it —
 //       c27 checks the vendor tree against ITSELF, never against the notices.
+//   c29 the ast-grep provisioning layer (P6-T6): src/ast-grep/ is the roster's
+//       first NON-hook module directory — c12/c13 scan src/hooks/ only, so
+//       without this record the whole provisioning side of the ast-grep-sg-
+//       provision port unit (file set, signature headers, the barrel seam, the
+//       manifest row's file arithmetic, and the NOTICES 供给层 count mirror)
+//       would drift unwatched. Same exclusion discipline as src/services/: it
+//       never joins the c13 numbers; it gets its own counter instead.
 //
 // The record COUNT appears nowhere in this file or in ci-local.sh / ci.yml: the
 // script derives its own total and prints `N/N PASS`, so there is no copy to go
@@ -143,6 +150,10 @@ const COMPAT_YML = join(REPO_ROOT, '.omo', 'compat.yaml')
 const HOOKS_SRC = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks', 'src')
 const HOOKS_DIR = join(HOOKS_SRC, 'hooks')
 const HOOKS_MANIFEST_TS = join(HOOKS_SRC, 'manifest.ts')
+// P6-T6 c29：ast-grep 供给层——roster 第一个挂在 listener 旁边的**非 hook 模块目录**。
+// 它与 src/services/ 同一口径：不在 src/hooks/，因此 c12/c13 的任何臂都看不见它；
+// c29 是它唯一的漂移探测器（文件集、署名头、接线、NOTICES 计数镜像）。
+const AST_GREP_DIR = join(HOOKS_SRC, 'ast-grep')
 
 /**
  * c14 的覆盖基线 —— **两文档并集**（P4-T12 演进，见 c14 的实现处注释）。
@@ -1738,6 +1749,223 @@ async function run() {
   } catch (e) {
     results.push(check('c21', 'NOTICES / c13 counts are derived from manifest + filesystem, not transcribed', false,
       `the count cross-check could not run: ${String(e.message ?? e)}`))
+  }
+
+  // ── c29 — the ast-grep provisioning layer: file set ↔ headers ↔ seam ↔ NOTICES ──
+  //
+  // WHY THIS RECORD EXISTS (P6-T6, fork G (G-A) 裁定对象的静态门之家，FORKS.md §2.7).
+  // `ast-grep-sg-provision` 是 roster 第一个带**非 hook 供给层**的条目：供给层住在
+  // src/ast-grep/，不在 src/hooks/——c12 的署名头扫描、c13 的文件集双向核对、c21 的
+  // NOTICES 计数全部只覆盖 src/hooks/，于是整个移植单元的供给半边（6 个实现文件 +
+  // 它们的上游归属 + hook↔barrel 的唯一接线 + manifest 行的文件算术）原本没有任何
+  // 门能看见。src/services/ 的先例（P4-T8）立的是「不入 c13 计数」的规矩，但没有给
+  // 它配计数器；这里补上，且把规矩本身也钉住：计数镜像漂移 = 本记录红。
+  //
+  // 九臂，全部独立于被检对象自身的自述：
+  //   ① 文件集双向：磁盘 6 文件 ↔ 显式名册（增删改名都红）；
+  //   ①b barrel 多重集臂：barrel 的**全部** `export * from '…'` 说明符（不限 `./`
+  //      前缀）规范化后的**多重集** ↔ **显式名册去掉 index.ts 自身**（名册与磁盘的
+  //      相等由 ① 单独钉；ARBITRATION-r1 B-MINOR-1 补——原 ① 只把磁盘与名册对齐，
+  //      看不见「文件在、barrel 漏 re-export」的半存活；ARBITRATION-r3 B-MINOR-3a
+  //      强化——原臂是单向**包含**而非多重集：重复 re-export 绿且 PASS 行自打
+  //      「6 of 5」，而限 `./` 的正则对 `export * from '../hooks/…'` 整条失明）。
+  //      现在：排序逐项 + 长度对账 + 重复项具名 + 越界说明符具名原文；成员集为空
+  //      亦红，空集等于空集不是证明。
+  //      RESIDUAL BOUNDARY, not claimed closed：**文本正则看不见注释形态**——
+  //      `// export * from './x.ts'` 未锚行首的正则照中，本臂会打「5 of 5」而
+  //      接线已死（ARBITRATION-r2 B-R2-MAJOR-1 亲验复现，钩子运行时
+  //      `deps.findSgBinary is not a function`）。本臂保留，因为它是唯一能**具名
+  //      缺谁**的臂。兜底是 ①c 的运行时臂——但**兜的是钩子实际经 barrel 消费的
+  //      四个缝符号**（findSgBinarySync / provisionSgBinary / astGrepRuntimeDir /
+  //      SG_PINNED_VERSION，与 hook 的 import 面逐字一致：ast-grep-sg-provision.ts
+  //      :97-101 的四件运行时值；同一 import 块 :102-103 的 `type SgProvisionOptions`
+  //      / `type SgResolverOptions` 是纯类型，Node strip-only 擦除后运行时根本不存在，
+  //      ①c 结构上看不见它们）。**成员导出缺失方向，⊆ 不覆盖**：⊆ 是单向语义，少
+  //      一个成员只会让 barrel 命名空间变小，永远不违反子集。本轮实测把两种形态
+  //      分别钉死：把 `export * from './types.ts'` **整行删除** → 本臂红并具名
+  //      types.ts（4 ≠ 5，长度对账）；**注释掉**同一行 → c29 仍 38/38 PASS（未锚
+  //      行首的正则照收注释行，①b 亦绿，①c 的四符号与 ⊆ 均不受影响）。后者的门
+  //      是**门 1 typecheck**，本轮实测红于 ast-grep-sg-provision.ts(102,8) 与
+  //      (103,8)：TS2305 `has no exported member 'SgProvisionOptions' /
+  //      'SgResolverOptions'`。属已知边界，不是这段散文（c23/c24/c25/c28 同款体例）。
+  //   ①c barrel 运行时臂：真的 `await import()` 一次 barrel，断言钩子经 barrel
+  //      消费的四个符号在运行时存在且 typeof 正确，缺员逐条具名；import 抛错
+  //      也红，绝不回落到文本臂。派生断言（r3 B-MINOR-3b）：barrel 运行时命名空间
+  //      ⊆ 五成员模块运行时导出之并——并集由代码 import 五成员算出，不手抄名字。
+  //      RESIDUAL BOUNDARY：只证**接线在位**，不证语义；语义 stub（typeof 对、
+  //      行为空）由单测的行为断言兜底（c23/c24/c25/c28 同款声明）。
+  //   ② 署名头：每个供给层文件的上游 span `packages/utils/src/ast-grep/`、冻结版本
+  //      `v4.19.4`、移植声明（PORT_DECLARATIONS，房屋体例中文）三件齐；
+  //   ③ 接线：src/hooks/ast-grep-sg-provision.ts 必须 import barrel
+  //      `../ast-grep/index.ts`（唯一入口），且不得更深挖单模块（半存活防线）；
+  //   ④ manifest 行：id/event 钉死，行内 upstreamFiles/upstreamTestFiles 的文件
+  //      算术（9 = hook 2 + 供给层 6 + which.ts 1；5 = hook 1 + 供给层 4）与磁盘、
+  //      barrel 成员集三方对账；
+  //   ④b upstreamFiles 全集臂：与一份显式 9 项常量做**多重集**比较（排序逐项 +
+  //      长度对账，ARBITRATION-r1 B-MINOR-1 补——④ 钉的是数量，把第 9 项换成
+  //      任意别的路径它仍绿；这里钉的是每一项的名字）。
+  //   ④c upstreamTestFiles 全集臂：同法，显式 5 项常量多重集（hook 1 + 供给层
+  //      4；ARBITRATION-r2 A-R2-NIT-2 补——④ 的 5 只是数量）。
+  //   ⑤ NOTICES 镜像：THIRD_PARTY_NOTICES.md 的 `src/ast-grep/ 供给层 = N files`
+  //      必须等于磁盘实测——手改散文不动文件，在这里不可能（c21 的同一药方）。
+  if (hooksManifest === null) {
+    results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', false,
+      'manifest.ts could not be imported — the provisioning-layer cross-check would be vacuous'))
+  } else try {
+    const problems = []
+    const layerFiles = collectTsFiles(AST_GREP_DIR)
+    const wantLayer = ['index.ts', 'install-script.ts', 'sg-manifest.ts', 'sg-provisioner.ts', 'sg-resolver.ts', 'types.ts']
+    const missingLayer = wantLayer.filter((rel) => !layerFiles.includes(rel))
+    const extraLayer = layerFiles.filter((rel) => !wantLayer.includes(rel))
+    if (missingLayer.length > 0) problems.push(`provisioning layer files missing: ${missingLayer.join(', ')}`)
+    if (extraLayer.length > 0) problems.push(`provisioning layer files not in the ported-unit roster: ${extraLayer.join(', ')}`)
+    for (const rel of layerFiles) {
+      const header = signatureHeader(readFileSync(join(AST_GREP_DIR, rel), 'utf8'))
+      if (!header.includes('packages/utils/src/ast-grep/')) problems.push(`${rel}: signature header names no upstream packages/utils/src/ast-grep/ span`)
+      if (!header.includes('v4.19.4')) problems.push(`${rel}: signature header omits the frozen baseline tag v4.19.4`)
+      if (!PORT_DECLARATIONS.some((word) => header.includes(word))) problems.push(`${rel}: signature header carries no port declaration`)
+    }
+    const hookSrc = readFileSync(join(HOOKS_DIR, 'ast-grep-sg-provision.ts'), 'utf8')
+    if (!hookSrc.includes("from '../ast-grep/index.ts'")) problems.push('the hook does not import the provisioning barrel ../ast-grep/index.ts — the single-import seam is broken')
+    for (const deeper of ['../ast-grep/sg-manifest.ts', '../ast-grep/sg-resolver.ts', '../ast-grep/sg-provisioner.ts', '../ast-grep/install-script.ts', '../ast-grep/types.ts']) {
+      if (hookSrc.includes(`from '${deeper}'`)) problems.push(`the hook reaches deeper than the barrel (${deeper}) — half-survival through a renamed module becomes possible`)
+    }
+    // ①b **barrel 多重集臂**（ARBITRATION-r1 B-MINOR-1，r3 B-MINOR-3 强化）：barrel
+    // 的 re-export 说明符**多重集**必须恰等于显式名册去掉 index.ts 自身（名册与磁盘
+    // 的相等由 ① 单独钉）。原 ① 只把**磁盘**与名册对齐——删掉一条
+    // `export * from './sg-resolver.ts'`，磁盘仍是 6 文件、① 仍绿，而 hook 经
+    // barrel 再也拿不到 resolver：这正是本记录要防的「文件在、接线断」半存活，
+    // 此前只有 NOTICES 的一句话守着。成员名一个也不手抄进比较式以外的地方——
+    // wantBarrel 从 wantLayer 派生，成员多重集从 barrel 正则读出，两边都是读出来的。
+    // r3 补的两道（均亲验复现于修前）：
+    //   * 重复 re-export 曾绿——missing/extra 是单向**包含**过滤，重复项既不在
+    //     missing 也不在 extra，门还自打「barrel members (6 of 5)」把矛盾印在
+    //     PASS 行上；这里 length 对账 + 重复项具名，两者都拦。
+    //   * 非 `./` 前缀曾不可见——旧正则 `'\.\/([^']+\.ts)'` 只认相对本目录，
+    //     `export * from '../hooks/ast-grep-sg-provision.ts'`（把 hook 本体拉进
+    //     供给层，层级倒挂）整条消失；这里解析**全部** re-export 说明符，
+    //     规范化后非层成员即具名红（报原文说明符，让读者看见越界的那一边）。
+    const barrelSrc = readFileSync(join(AST_GREP_DIR, 'index.ts'), 'utf8')
+    const barrelSpecifiers = [...barrelSrc.matchAll(/export\s+\*\s+from\s+['"]([^'"]+)['"]/g)].map((match) => match[1] ?? '')
+    const barrelMembers = barrelSpecifiers.map((specifier) => specifier.replace(/^\.\//, ''))
+    const wantBarrel = wantLayer.filter((rel) => rel !== 'index.ts')
+    const wantBarrelSorted = [...wantBarrel].sort()
+    const barrelSorted = [...barrelMembers].sort()
+    const missingBarrel = wantBarrelSorted.filter((rel) => !barrelMembers.includes(rel))
+    const extraBarrel = barrelSpecifiers.filter((specifier) => !wantBarrelSorted.includes(specifier.replace(/^\.\//, '')))
+    const duplicateBarrel = barrelMembers.filter((rel, index) => barrelMembers.indexOf(rel) !== index)
+    if (missingBarrel.length > 0) problems.push(`the provisioning barrel re-exports none of: ${missingBarrel.join(', ')} — the layer is on disk but invisible through the single import seam`)
+    if (extraBarrel.length > 0) problems.push(`the provisioning barrel re-exports specifiers the layer does not hold: ${extraBarrel.join(', ')}${extraBarrel.some((spec) => spec.startsWith('../')) ? ' — a specifier escaping the provisioning directory turns the layer inside out (the hook re-entering the layer it consumes)' : ''}`)
+    if (duplicateBarrel.length > 0) problems.push(`the provisioning barrel re-exports the SAME module more than once: ${[...new Set(duplicateBarrel)].join(', ')} — a one-way containment check cannot see a duplicate, and the seam would carry two bindings for one name`)
+    if (barrelSorted.length !== wantBarrelSorted.length) problems.push(`the provisioning barrel re-exports ${barrelSorted.length} specifiers against the roster's ${wantBarrelSorted.length} — the multiset lengths differ, so no containment result can be trusted`)
+    // 成员集自身也须非空：0 成员的 barrel 会让上面几条同时沉默（空集 == 空集）。
+    if (barrelMembers.length === 0) problems.push('the provisioning barrel re-exports NOTHING — the barrel arm would be vacuous')
+    // ①c **运行时臂**（ARBITRATION-r2 B-R2-MAJOR-1，阻断级）：文本臂读的是字节，
+    // 而字节不是接线。仲裁员亲验、本轮复现：`// export * from './sg-resolver.ts'`
+    // 一行注释掉，正则 `/export \* from '\.\/([^']+\.ts)'/` 未锚行首 → 注释行照中
+    // → ①b 仍打「barrel members (5 of 5)」PASS，而 hook 经 barrel 拿到的
+    // findSgBinarySync 已是 undefined，钩子在运行时静默死掉
+    // （`deps.findSgBinary is not a function`），单测 8/8 照绿、belt 照绿、探针照绿。
+    // 所以这里**真的 import 一次**（本脚本 hooksManifest / commandsManifest / teamManifest
+    // 三处 `await import(pathToFileURL(…))` 的同一先例——按**构造**点名而非行号：本记录
+    // 每往自己头上加一行，同文件内的数字锚就集体漂移一次，本轮已有两个当场失效并更正），断言四个
+    // 钩子实际消费的导出在**运行时**存在——注释、改名、条件导出、循环依赖，任何
+    // 让字节看着对而模块面缺员，都只能在这里红。缺员逐条具名。
+    // RESIDUAL BOUNDARY, not claimed closed：**本臂只证明接线在位**——四符号非
+    // undefined 且 typeof 正确，即「hook 拿得到东西、形状对」；它**不证明语义**：
+    // 一个 `export function findSgBinarySync(){return null}` 的语义 stub，typeof 仍
+    // 是 function，本臂照绿。语义由 tests/omo-hooks/ast-grep-sg-provision.test.ts
+    // 的行为断言兜底（同一 seam 的第二个读者，门 2），不是由这段注释兜底
+    // （c23/c24/c25/c28 同款声明）。
+    try {
+      const barrelRuntime = await import(pathToFileURL(join(AST_GREP_DIR, 'index.ts')).href)
+      // 名字与期望的 typeof 都是手写的——但它们是**契约**而非被测对象的自述：
+      // 这四个符号是 src/hooks/ast-grep-sg-provision.ts 经 barrel 唯一要用的面。
+      for (const [symbolName, wantKind] of [['findSgBinarySync', 'function'], ['provisionSgBinary', 'function'], ['astGrepRuntimeDir', 'function'], ['SG_PINNED_VERSION', 'string']]) {
+        const got = barrelRuntime[symbolName]
+        if (got === undefined) problems.push(`the provisioning barrel exports NO '${symbolName}' at RUNTIME — the hook reaches it through this barrel and would die at boot with "is not a function"; a commented-out re-export passes every textual arm and is caught only here`)
+        else if (typeof got !== wantKind) problems.push(`the provisioning barrel's '${symbolName}' is a ${typeof got} at runtime, the seam wants ${wantKind}`)
+      }
+      // ①c 派生断言（ARBITRATION-r3 B-MINOR-3b）：**barrel 运行时命名空间 ⊆ 五个
+      // 层成员模块运行时导出的并集**。并集是**代码 import 五个成员算出来的**，不是
+      // 手抄的名字——成员名册来自 wantBarrel（① 的派生），所以这条断言没有第三个
+      // 事实源可漂移。并集外的符号只有一个来源：barrel 自己加了层外的出口（手写的
+      // 具名 export，或 ①b 抓到的那种越界 re-export 在运行时真的把外面拉了进来）。
+      // `export *` 不转发 default，故两侧同剔。
+      const memberExports = new Set()
+      for (const rel of wantBarrel) {
+        const memberRuntime = await import(pathToFileURL(join(AST_GREP_DIR, rel)).href)
+        for (const key of Object.keys(memberRuntime)) if (key !== 'default') memberExports.add(key)
+      }
+      const strayExports = Object.keys(barrelRuntime).filter((key) => key !== 'default' && !memberExports.has(key))
+      if (strayExports.length > 0) problems.push(`the provisioning barrel's runtime namespace carries symbols NO layer member exports: ${strayExports.join(', ')} — the barrel is adding an exit the provisioning layer does not own`)
+    } catch (importError) {
+      problems.push(`the provisioning barrel could not be imported for the runtime arm: ${String(importError.message ?? importError)} — the seam cannot be proven live, so this FAILs rather than falls back to the textual arms`)
+    }
+    const row = hooksManifest.HOOK_MANIFEST.find((entry) => entry.id === 'ast-grep-sg-provision')
+    if (row === undefined) problems.push("manifest carries no row with id 'ast-grep-sg-provision' — the provisioning layer lost its owner")
+    else {
+      if (row.event !== 'session/created') problems.push(`the ast-grep-sg-provision row fires on '${row.event}', not the nailed seam event 'session/created'`)
+      if (row.upstreamFiles.length !== 9) problems.push(`row upstreamFiles is ${row.upstreamFiles.length}, the ported unit is 9 (hook 2 + provisioning 6 + runtime/which 1)`)
+      if (row.upstreamTestFiles.length !== 5) problems.push(`row upstreamTestFiles is ${row.upstreamTestFiles.length}, the ported unit is 5 (hook 1 + provisioning 4)`)
+      // ④b **upstreamFiles 全集臂**（ARBITRATION-r1 B-MINOR-1）：上面的算术只钉住**数量**——把
+      // 第 9 项换成任意一条别的路径（`packages/utils/src/runtime/which.ts` →
+      // `packages/utils/src/runtime/anything.ts`），9 仍是 9、④ 仍绿，而行从此
+      // 为一个本移植单元从未碰过的上游文件背书。这里把 9 项写成显式常量并做
+      // **多重集**比较（排序后逐项），所以换名、增删、重复都红。这份名单的第二
+      // 个读者是 manifest.ts 的行本体；两处必须同 commit 动，正是本臂的目的。
+      const wantUpstream = [
+        'packages/omo-opencode/src/hooks/ast-grep-sg-provision/hook.ts',
+        'packages/omo-opencode/src/hooks/ast-grep-sg-provision/index.ts',
+        'packages/utils/src/ast-grep/index.ts',
+        'packages/utils/src/ast-grep/types.ts',
+        'packages/utils/src/ast-grep/sg-manifest.ts',
+        'packages/utils/src/ast-grep/sg-resolver.ts',
+        'packages/utils/src/ast-grep/sg-provisioner.ts',
+        'packages/utils/src/ast-grep/install-script.ts',
+        'packages/utils/src/runtime/which.ts',
+      ]
+      const gotUpstream = [...row.upstreamFiles].sort()
+      const wantUpstreamSorted = [...wantUpstream].sort()
+      const upstreamDiff = wantUpstreamSorted.filter((file) => !gotUpstream.includes(file))
+      const upstreamExtra = gotUpstream.filter((file) => !wantUpstreamSorted.includes(file))
+      if (upstreamDiff.length > 0) problems.push(`the manifest row's upstreamFiles no longer names: ${upstreamDiff.join(', ')}`)
+      if (upstreamExtra.length > 0) problems.push(`the manifest row's upstreamFiles names files outside this ported unit: ${upstreamExtra.join(', ')}`)
+      if (gotUpstream.length !== wantUpstreamSorted.length) problems.push(`the manifest row's upstreamFiles holds ${gotUpstream.length} entries against the ported unit's ${wantUpstreamSorted.length} — a duplicated path cannot hide behind the set comparison`)
+      // ④c **upstreamTestFiles 全集臂**（ARBITRATION-r2 A-R2-NIT-2）：④ 那句
+      // `!== 5` 只是数量；测试文件是移植的**种子**，把其中一项换成任意别的 5 项
+      // 之一，计数仍绿而行替一个从未当过种子的文件背书。同一药方：显式 5 项常量
+      // （hook 1 + 供给层 4，与上面的 9 项同一来源结构）+ 多重集 + 长度对账。
+      const wantUpstreamTests = [
+        'packages/omo-opencode/src/hooks/ast-grep-sg-provision/ast-grep-sg-provision.test.ts',
+        'packages/utils/src/ast-grep/install-script.test.ts',
+        'packages/utils/src/ast-grep/sg-manifest.test.ts',
+        'packages/utils/src/ast-grep/sg-provisioner.test.ts',
+        'packages/utils/src/ast-grep/sg-resolver.test.ts',
+      ]
+      const gotUpstreamTests = [...row.upstreamTestFiles].sort()
+      const wantUpstreamTestsSorted = [...wantUpstreamTests].sort()
+      const testsDiff = wantUpstreamTestsSorted.filter((file) => !gotUpstreamTests.includes(file))
+      const testsExtra = gotUpstreamTests.filter((file) => !wantUpstreamTestsSorted.includes(file))
+      if (testsDiff.length > 0) problems.push(`the manifest row's upstreamTestFiles no longer names the port seed: ${testsDiff.join(', ')}`)
+      if (testsExtra.length > 0) problems.push(`the manifest row's upstreamTestFiles names seeds outside this ported unit: ${testsExtra.join(', ')}`)
+      if (gotUpstreamTests.length !== wantUpstreamTestsSorted.length) problems.push(`the manifest row's upstreamTestFiles holds ${gotUpstreamTests.length} entries against the ported unit's ${wantUpstreamTestsSorted.length} — a duplicated seed cannot hide behind the set comparison`)
+      for (const rel of layerFiles) {
+        if (!row.upstreamFiles.some((file) => file.endsWith(`/ast-grep/${rel}`))) problems.push(`provisioning file ${rel} is not named by the manifest row's upstreamFiles`)
+      }
+    }
+    const notices = readFileSync(join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), 'utf8')
+    const mirror = notices.match(/src\/ast-grep\/ 供给层 = (\d+) files/)
+    if (mirror === null) problems.push('THIRD_PARTY_NOTICES.md lost the `src/ast-grep/ 供给层 = N files` count mirror')
+    else if (Number(mirror[1]) !== layerFiles.length) problems.push(`NOTICES says the provisioning layer is ${mirror[1]} files, the filesystem says ${layerFiles.length}`)
+    if (layerFiles.length === 0) problems.push('empty provisioning layer — assertion would be vacuous')
+    results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', problems.length === 0,
+      problems.length > 0
+        ? problems.join('; ')
+        : `${layerFiles.length} provisioning files ↔ explicit roster ↔ barrel re-export MULTISET equal to the ${wantBarrel.length} roster members (no duplicate, no escaping specifier) ↔ row arithmetic (9+5) ↔ upstreamFiles multiset-equal to the 9 named paths ↔ upstreamTestFiles multiset-equal to the 5 named seeds ↔ barrel-only hook import ↔ barrel IMPORTED LIVE, 4 seam symbols present ↔ barrel namespace ⊆ union of the ${wantBarrel.length} member modules' exports ↔ NOTICES mirror`))
+  } catch (e) {
+    results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', false,
+      `the provisioning-layer cross-check could not run: ${String(e.message ?? e)}`))
   }
 
   // c22 — the coverage baseline's STATUS CELLS are terminal.

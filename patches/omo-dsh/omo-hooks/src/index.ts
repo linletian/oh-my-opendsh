@@ -28,13 +28,17 @@
 // **B-mode pair**; P3-T17 landed H-32
 // **'ulw-execute'** (the start-work hook semantics: activation detection, plan
 // discovery, work-context construction and the notepad/jobs scaffold);
-// **P4-T12 (this revision) lands the FIRST Phase 4 row, H-33
+// **P4-T12 lands the FIRST Phase 4 row, H-33
 // **'keyword-detector'** (the ultrawork / hyperplan keyword modes: shell
 // stripping, six input gates, dual idempotency and the vendored instruction
-// bodies). apply()
+// bodies); **P6-T6 (this revision) lands the FIRST Phase 6 row,
+// 'ast-grep-sg-provision'** (S-16 under the fork-G (G-A) ruling, FORKS.md
+// §2.7 — the sg binary provisioning guarantee: the `session/created` seam, the
+// once-per-process memory, the resolver short-circuit and the async
+// sha256-verified provisioner under src/ast-grep/). apply()
 // validates the manifest, logs the summary boot marker, and runs the per-hook
 // registration loop; the loop's implementation registry (HOOK_REGISTRARS) now
-// carries **FIFTEEN** entries — 'bash-file-read-guard' (the C-mode pilot),
+// carries **SIXTEEN** entries — 'bash-file-read-guard' (the C-mode pilot),
 // 'todo-continuation-enforcer' (E mode), 'empty-task-response-detector' (D
 // mode), 'session-notification' (F mode, the completion/error observer + the
 // platform backend abstraction), 'background-notification' (F mode, the
@@ -43,24 +47,28 @@
 // 'json-error-recovery' / 'tool-output-truncator', the P3-T15 批 B trio
 // 'directory-readme-injector' / 'agent-usage-reminder' / 'task-resume-info', the
 // P3-T16 批 C B+D pair 'webfetch-redirect-guard' / 'prometheus-md-only', the
-// P3-T17 A-mode row 'ulw-execute', and the P4-T12 A-mode row
-// 'keyword-detector' — so exactly fifteen `registered` lines are logged after
+// P3-T17 A-mode row 'ulw-execute', the P4-T12 A-mode row
+// 'keyword-detector', and the P6-T6 F-mode row
+// 'ast-grep-sg-provision' — so exactly sixteen `registered` lines are logged after
 // the summary.
 //
 // Two count notes, both historical. The roster was 14 rows until P4-T12: P3-T5's
 // other half is the WP-2 arbitration that REMOVED H-01 (write-existing-file-guard)
 // from the port group — dsh-fs-observation-policy already covers "overwrite an
 // unread file" natively and strictly more (manifest.ts header; plan revision
-// 2026-09-19). And `keyword-detector` is the one row whose `status` is **'pending'**
-// rather than 'ported': its listener + unit tests landed with P4-T12, its e2e
-// scenario (`ultrawork-keyword-injected`) is P4-T13. The row is registered and live
+// 2026-09-19). And the roster's `pending` rows are 'keyword-detector' (its e2e
+// `ultrawork-keyword-injected` was P4-T13's) and — since P6-T6 —
+// 'ast-grep-sg-provision' (its e2e `ast-grep-sg-via-bash` is P6-T7's, and its
+// doc-side flip anchor is phase6-mcp-editing.md per FORKS.md §0-1, the c14
+// union NOT extended). The rows are registered and live
 // either way — `status` records the port ledger, not whether a listener exists.
 //
 // BOOT-MARKER CONTRACT (probe / cold-start assertion anchors; the pure
 // formatters live in boot-markers.ts, whose header carries the full grammar —
 // KEEP THESE FORMATS STABLE and extend the probe, never the format):
-//   * `[omo-hooks] loaded: manifest 15 entries (pre-step=<n>, pre-execute=<n>,
-//      post-execute=<n>, turn-stopping=<n>, session/event=<n>, status=<n>)`
+//   * `[omo-hooks] loaded: manifest 16 entries (pre-step=<n>, pre-execute=<n>,
+//      post-execute=<n>, turn-stopping=<n>, session/event=<n>, status=<n>,
+//      session-created=<n>)`
 //     — ONE line per boot, AFTER validateManifest accepted the roster. Every
 //       count is DERIVED from HOOK_MANIFEST (boot-markers.ts), never hard-coded.
 //       cold-start.sh and scripts/concerto-mode-probe.sh grep the
@@ -68,18 +76,19 @@
 //       from the plugin's own modules, so it cannot drift).
 //   * `[omo-hooks] hook <id> registered on <event>`
 //     — one line per hook whose registrar is implemented AND returned cleanly.
-//       FOURTEEN such lines today ('bash-file-read-guard',
+//       SIXTEEN such lines today ('bash-file-read-guard',
 //       'todo-continuation-enforcer', 'empty-task-response-detector',
 //       'session-notification', 'background-notification',
 //       'edit-error-recovery', 'json-error-recovery',
 //       'tool-output-truncator', 'directory-readme-injector',
 //       'agent-usage-reminder', 'task-resume-info',
-//       'webfetch-redirect-guard', 'prometheus-md-only', 'ulw-execute').
+//       'webfetch-redirect-guard', 'prometheus-md-only', 'ulw-execute',
+//       'keyword-detector', 'ast-grep-sg-provision').
 //       NOTE (P3-T12): the event in this line is the manifest's PRIMARY event,
 //       which for 'background-notification' is `session/event` — and that row's
 //       registrar DOES register it (its push half additionally subscribes to
-//       `ctx.jobs.onJobDone`, which is a service subscription, not one of the six
-//       manifest events; see that file's header). The marker therefore stays a
+//       `ctx.jobs.onJobDone`, which is a service subscription, not one of the
+//       seven manifest events; see that file's header). The marker therefore stays a
 //       true statement about the row's primary surface.
 //   * `[omo-hooks] hook <id> FAILED: <describeError>`
 //     — loud-but-non-fatal: the failing hook is named and the loop continues
@@ -152,6 +161,7 @@ import { registerWebfetchRedirectGuard } from './hooks/webfetch-redirect-guard.t
 import { registerPrometheusMdOnly } from './hooks/prometheus-md-only.ts'
 import { registerUlwExecute } from './hooks/ulw-execute.ts'
 import { registerKeywordDetector } from './hooks/keyword-detector.ts'
+import { registerAstGrepSgProvision } from './hooks/ast-grep-sg-provision.ts'
 
 export const name = 'omo-hooks'
 
@@ -197,6 +207,8 @@ export interface HooksRegistrationContext {
    * {@link provideStopContinuationGuard} reports loudly on `console.warn` and then
    * degrades to — it never throws, because a boot failure here would take down
    * fifteen listeners that have nothing to do with the guard.
+   * (P6-T6 note: the roster now carries SIXTEEN listeners — the count moved
+   * with the ast-grep-sg-provision row; the sentence's point is unchanged.)
    */
   provide?(name: string, value: unknown): unknown
   /**
@@ -297,7 +309,7 @@ export type HookRegistrar = (
  *   'background-notification': registerBackgroundNotification
  *     (hooks/background-notification.ts) — registers on its primary manifest
  *     event unconditionally, and additionally subscribes to the `ctx.jobs`
- *     service (`onJobDone`, a service subscription rather than one of the six
+ *     service (`onJobDone`, a service subscription rather than one of the seven
  *     manifest events). Since P3-T13 that subscription is acquired through
  *     `ctx.inject(['jobs'], …)` (the {@link HooksRegistrationContext.inject}
  *     deferred form) rather than a synchronous `ctx.get` sample: the loader
@@ -516,6 +528,26 @@ export type HookRegistrar = (
  *     for the rest of the process lifetime — it never substitutes hand-written
  *     instruction text (hooks/keyword-detector.ts header; keyword-detector/
  *     messages.ts).
+ *
+ * P6-T6 added the SIXTEENTH entry — `ast-grep-sg-provision` (S-16, fork-G (G-A)
+ * ruling, FORKS.md §2.7), the roster's FIRST `session/created` row and its
+ * second F-mode observer:
+ *   'ast-grep-sg-provision': registerAstGrepSgProvision
+ *     (hooks/ast-grep-sg-provision.ts) — ONE `session/created` listener through
+ *     `ctx.on` (the preferred channel, returns nothing) that guarantees the `sg`
+ *     binary the vendored ast-grep skill teaches: once-per-process memory,
+ *     resolver short-circuit (`OMO_AST_GREP_SG_PATH` env → runtimeDir → PATH —
+ *     the env override is ALSO the hermetic e2e/CI control, FORKS.md §5.1), and
+ *     an async sha256-verified provision from the pinned 0.43.0 release through
+ *     the NON-hook provisioning module `src/ast-grep/` (the R2-7②③ static-gate
+ *     home: c13 reconciles listeners, new record c29 reconciles this module).
+ *     Failures log the LOUD named marker
+ *     `[omo-hooks] ast-grep-sg-provision PROVISION FAILED (<code>)` plus the
+ *     structured guidance line and never break the session or the boot
+ *     (upstream's best-effort semantics, hook.ts:33-41). COMPOSITION NOTE: the
+ *     roster's ONLY `session/created` listener — it never touches the `tools/*`
+ *     waterfalls, never injects, denies or rewrites, so it has no ordered pair
+ *     with any row on the six other surfaces.
  */
 export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'bash-file-read-guard': registerBashFileReadGuard,
@@ -533,6 +565,7 @@ export const HOOK_REGISTRARS: Record<string, HookRegistrar> = {
   'prometheus-md-only': registerPrometheusMdOnly,
   'ulw-execute': registerUlwExecute,
   'keyword-detector': registerKeywordDetector,
+  'ast-grep-sg-provision': registerAstGrepSgProvision,
 }
 
 /**

@@ -137,7 +137,7 @@ tag `v4.19.4` (commit `b072d279110bdda2c6ac2525d0d24dc54d16148a`, under
 naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/manifest.ts`
 (per-file machine-readable lists), not this table, are the per-file authority.
 
-#### Phase 3 additions (15 ported hook listeners — the 15th, `keyword-detector`, landed in Phase 4)
+#### Phase 3 additions (16 hook ids — 15 ported + 1 pending, `ast-grep-sg-provision`, whose e2e scenario belongs to P6-T7; the 15th, `keyword-detector`, landed in Phase 4; the 16th, `ast-grep-sg-provision`, landed in Phase 6)
 
 | Hook (manifest id) | Derived file(s) under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
 |---|---|---|---|
@@ -156,14 +156,15 @@ naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/man
 | prometheus-md-only | src/hooks/prometheus-md-only.ts | prometheus-md-only/agent-matcher.ts, agent-resolution.ts, constants.ts, hook.ts, index.ts, path-policy.ts（+ 1 上游测试文件作移植种子） | semantic port only |
 | ulw-execute（上游名 start-work，按 v5 命名锚点） | src/hooks/ulw-execute.ts + src/hooks/ulw-execute/（constants.ts, context-builder.ts, identity.ts, live-state.ts, parse-request.ts, plan-discovery.ts, worktree.ts） | start-work/context-info-builder.ts, context-info-formatters.ts, explicit-plan-context.ts, index.ts, notepad-scaffold.ts, parse-user-request.ts, plan-discovery-context.ts, plan-selection.ts, session-plan-affinity.ts, start-work-hook.ts, work-initializer.ts, worktree-block.ts, worktree-detector.ts（+ 7 上游测试文件作移植种子；命令面在 hooks/ 之外，属 Phase 4；boulder-state 依赖段跳过，逐条注记） | semantic port only |
 | keyword-detector | src/hooks/keyword-detector.ts + src/hooks/keyword-detector/（constants.ts, detector.ts, filters.ts, messages.ts） | config/schema/keyword-detector.ts, hooks/keyword-detector/constants.ts, detector.ts, hook.ts, index.ts, types.ts, hyperplan/default.ts, hyperplan/index.ts, team/default.ts, team/index.ts, ultrawork/default.ts, ultrawork/gemini.ts, ultrawork/glm.ts, ultrawork/gpt.ts, ultrawork/planner.ts, ultrawork/source-detector.ts, ultrawork/index.ts（+ 7 上游测试文件作移植种子） | semantic port only（**Phase 4 落地，Phase 3 的 S-06 顺延项**：上游在 `chat.message` 上判别 ultrawork / ulw / hyperplan / hpp 与 `hyperplan ulw` 组合词后注入整份模式指令，本移植形态 = 一个 `agent/pre-step` waterfall listener（模式 A），命中即 `agent.inject()` 并永远 `next()`；**注入正文改为引用本仓 vendor 的 ultrawork / hyperplan SKILL.md**（P4-T4），5+1 个上游模型变体收窄为单一名册感知文案，`team` 枚举位**预留不接线**（Phase 5 面），toast 收窄为审计行。逐文件处置注记于 `src/hooks/keyword-detector.ts` 文件头，上游目录 **24 条目 = 16 实现 + 7 测试 + 1 `AGENTS.md`**（`AGENTS.md` 按 N-03 不计入移植面；再加目录外的 `config/schema/keyword-detector.ts` → manifest 两列之和 `upstreamFiles` 17 + `upstreamTestFiles` 7 = 24，与覆盖文档 §1.2 的「25 文件」差 1 即此 `AGENTS.md` 口径）） |
+| ast-grep-sg-provision | src/hooks/ast-grep-sg-provision.ts + src/ast-grep/（types.ts, sg-manifest.ts, sg-resolver.ts, sg-provisioner.ts, install-script.ts, index.ts——供给层，见下方 P6-T6 节） | ast-grep-sg-provision/hook.ts, index.ts（+ 1 上游测试文件作移植种子）；供给层语义源 `packages/utils/src/ast-grep/` 6 文件（types.ts, sg-manifest.ts, sg-resolver.ts, sg-provisioner.ts, install-script.ts, index.ts，+ 4 上游测试文件作移植种子）+ `packages/utils/src/runtime/which.ts`（`whichOnPath` 语义源，内联进 sg-resolver.ts，不建文件） | semantic port only（**Phase 6 落地（P6-T6，fork G (G-A) 裁定）**：上游 `session.created` 事件 → 本移植 seam = `session/created` emit（seam 证据链注记于 listener 文件头）；**Windows 面按 D9 整族丢弃**——win32 slug / sg.exe / win32 assets 两行 / install.ps1 / pwsh / powershell.exe 分支逐条注记于 manifest 行 note ⑤ 与供给层文件头；provision 失败 = 具名 marker 响亮日志 + 结构化指引，**永不**打断 session/boot；hermetic：真实下载只在 resolver 三闸（`OMO_AST_GREP_SG_PATH` → runtimeDir → PATH）全空时才可达，e2e/CI 以 env 预置 fake sg 短路（FORKS.md §5.1）） |
 
 > Deliberately **not** listed as ported: the 47 hook modules with a terminal
 > skip/defer/excluded disposition (DSH-native coverage, no DSH seam, platform coupling,
 > later-phase ownership, upstream-dead) — the per-module reasons are the coverage
 > authority: `docs/plans/phase3-dev/phase3-hooks.md` §2.
 
-**Counts:** Phase 3 derived listener files listed = **15 hook ids / 26 derived files**
-(15 top-level `src/hooks/*.ts` + 11 files in the `keyword-detector/` and
+**Counts:** Phase 3 derived listener files listed = **16 hook ids / 27 derived files**
+(16 top-level `src/hooks/*.ts` + 11 files in the `keyword-detector/` and
 `ulw-execute/` submodule directories). P4-T16: these two numbers were `14 / 21`
 and had been stale since P4-T12 added `keyword-detector/` (P4-T8 added the
 `stop-continuation-guard` service, which is NOT in this count — it lives in
@@ -172,15 +173,87 @@ twice (P4-T10's ulw-execute submodules, P4-T12's keyword-detector) and the prose
 did not. A hand-written count in a notices file is a count nobody re-reads, so
 they are now **derived**: `scripts/verify-concerto-static.mjs` record c21
 recomputes both from `manifest.ts` and the filesystem and fails if this paragraph
-disagrees. Editing the number without moving a file is now impossible.
+disagrees. Editing the number without moving a file is now impossible. P6-T6:
+the numbers moved again `15 / 26` → `16 / 27` when `ast-grep-sg-provision`
+landed — the +1 id and the +1 top-level listener file are the same row; the
+hook's `src/ast-grep/` provisioning layer (6 files) is **not** in these two
+numbers either (same exclusion discipline as `src/services/` above), and is
+disclosed as its own section below with record c29 as its re-counter.
 
 No existing entry above this section was modified (additions only).
 
-**P4-T8 addition (add-only, and deliberately NOT one of the 15 manifest rows):**
+**P4-T8 addition (add-only, and deliberately NOT one of the 16 manifest rows):**
 
 | Derived file under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
 |---|---|---|
-| `src/services/stop-continuation-guard.ts`（**无 manifest 条目** —— 它是 cordis **服务提供方**，发布 `omoStopContinuation` 供 `omo-commands` 的 `/stop-continuation` 消费，H-03 在同一插件内经 `ctx.get` 读取） | hooks/stop-continuation-guard/hook.ts, index.ts, index.test.ts（12 its 作移植种子）, plugin/stop-continuation.ts（命令侧四机制调用序列） | semantic port only（continuation marker 文件不移植：本仓无该读写面；后台级联改为 `ctx.jobs.list(caller)` + 同步 `kill(id, caller, reason)`—— **caller 必须传**：`list` 对无 caller 只回无主 job，而真实生产者一律带 owner（实测 dsh-jobs-local:178-180、dsh-tool-bash:416-417），不传会真机静默空转；再按 `ownerSession === sessionId` 收窄到本会话，对齐上游 `getAllDescendantTasks`；状态词表 `running｜stopping` —— DSH 无上游的 `pending`；`session.deleted` → `session/disposed`；**不入 c13 文件集核对**（`src/services/` 不在 `src/hooks/`），故 15 ids / 26 files 的计数不含它） |
+| `src/services/stop-continuation-guard.ts`（**无 manifest 条目** —— 它是 cordis **服务提供方**，发布 `omoStopContinuation` 供 `omo-commands` 的 `/stop-continuation` 消费，H-03 在同一插件内经 `ctx.get` 读取） | hooks/stop-continuation-guard/hook.ts, index.ts, index.test.ts（12 its 作移植种子）, plugin/stop-continuation.ts（命令侧四机制调用序列） | semantic port only（continuation marker 文件不移植：本仓无该读写面；后台级联改为 `ctx.jobs.list(caller)` + 同步 `kill(id, caller, reason)`—— **caller 必须传**：`list` 对无 caller 只回无主 job，而真实生产者一律带 owner（实测 dsh-jobs-local:178-180、dsh-tool-bash:416-417），不传会真机静默空转；再按 `ownerSession === sessionId` 收窄到本会话，对齐上游 `getAllDescendantTasks`；状态词表 `running｜stopping` —— DSH 无上游的 `pending`；`session.deleted` → `session/disposed`；**不入 c13 文件集核对**（`src/services/` 不在 `src/hooks/`），故 16 ids / 27 files 的计数不含它） |
+
+### Phase 6 provisioning layer: `src/ast-grep/` (P6-T6, ast-grep-sg-provision)
+
+The `ast-grep-sg-provision` listener is the roster's first hook with a **non-hook
+provisioning layer** beside it: `patches/omo-dsh/omo-hooks/src/ast-grep/` 6 files
+(`types.ts`, `sg-manifest.ts`, `sg-resolver.ts`, `sg-provisioner.ts`,
+`install-script.ts`, `index.ts`), the 语义移植 of upstream
+`packages/utils/src/ast-grep/` @ `v4.19.4` (plus the `whichOnPath` semantics of
+`packages/utils/src/runtime/which.ts`, inlined into `sg-resolver.ts` — no file of
+its own). 4 upstream test files served as port seeds (all five upstream tests of
+this port unit were runner-ruled bun:test-import + runner-neutral bodies and were
+carried, adapted — the adaptations are itemised in each test file's header). The
+provisioning path is **sha256-verified against pinned 0.43.0 release hashes** and
+fires, if ever, off the `session/created` seam only after the resolver's three
+gates are all empty. Which faces can reach that seam is a **measured list, not a
+category**, and reaching the seam takes TWO things at once — mounting `omo-hooks`
+AND creating a session. Faces, enumerated:
+* **Mounts omo-hooks AND creates a session — exactly two, both sealed by the same
+  floor:** `tests/e2e/drive.mjs` (RPC `session.create`/`session/create`; the floor
+  export sits at :4626), the e2e face that runs in CI, exports `OMO_AST_GREP_SG_PATH`
+  **globally** from its `scenarioEnv`; and `scripts/smoke-real.mjs` — the MANUAL
+  real-model face, needs a real key, never runs in CI — whose two anchors are split so
+  neither is asked to carry a fact it does not sit on: RPC session-creating call sites
+  at :790-791, floor export at :488 (`??=`), so an operator who deliberately wants the
+  real binary to smoke provisioning itself can override it.
+* **Boot without creating a session — no floor needed:** `scripts/concerto-mode-probe.sh`
+  and `scripts/cold-start.sh` create no session at all (grep for session-CREATING calls
+  over both: zero hits),
+  so they never reach the seam.
+* **Creates a session but does NOT mount omo-hooks — cannot reach the seam:**
+  `scripts/prove-route-logging.mjs`, run by `scripts/run-proofs.sh:104` in CI gate 8,
+  creates sessions IN-PROCESS via dsh's own AgentLoop — `ctx.agentLoop.create(SessionId(
+  't15-parent'), …)` at :310, plus a continuable child — `ctx.subagents.startContinuable`
+  at :332-341, which passes that parent at :337 — but its plugin face
+  (:287-299: LlmRuntime, SessionStore, SystemPrompt, ToolRuntime, AgentRegistry,
+  SessionProjections, JsonlSessionPersistence, AgentLoop, SubagentRuntime, SpawnProvider)
+  carries **no omo-hooks**, so the listener is never registered and the seam is never
+  touched. It is on the list because a claim about session-creating faces that omits it
+  is simply false, even though the sealed-network conclusion is unchanged.
+* **Unit suites** never reach it either — the hook is deps-injected and the hermetic
+  drive in its test pre-seeds gate ① explicitly.
+The RPC session-creating call sites in the tree are the two sealed faces above (this
+replaces a stronger claim this file used to make — "the only `session.create` hits" —
+which failed as a grep proposition the moment prose and comments were counted,
+ARBITRATION-r3 B-MINOR-1). The pre-seed both floors point at is the
+committed `tests/e2e/fixtures/fake-sg.sh` (executable; `--version` →
+`ast-grep 0.43.0`, the same version as `SG_PINNED_VERSION`; any other argv → a
+named stderr line + exit 2, never silent). A scenario may still re-point or empty
+that key through its own env overrides (the shape T7's reverse canary needs), and
+`drive.mjs --self-test` refuses a pre-seed that is missing, relative, empty,
+non-executable or pinned to a different version — before any spawn (hermetic rule:
+`OMO_AST_GREP_SG_PATH` pre-seed short-circuits it; the pre-seed itself is pinned by
+the self-test and by the scenario belts, not by this prose). The vendored skill's own
+`install.sh` stays the documented, **non-duplicated** fallback (dual-source
+ruling: the hook layer is authoritative; the shared `OMO_AST_GREP_BIN_DIR` →
+`astGrepRuntimeDir` targetDir convention is pinned by tests, not by prose).
+
+**不入 c13 文件集核对**（`src/ast-grep/` 不在 `src/hooks/`，非 listener），故 16 ids / 27 files 的计数不含它；此供给层由 `scripts/verify-concerto-static.mjs` record **c29** 逐文件核对（文件集双向、署名头、barrel 接线、manifest 行、以及本段的 `src/ast-grep/ 供给层 = 6 files` 计数镜像）。
+
+| Derived file under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
+|---|---|---|
+| `src/ast-grep/types.ts` | `packages/utils/src/ast-grep/types.ts` | semantic port only（win32 平台位按 D9 从 union 中丢弃，注记于文件头） |
+| `src/ast-grep/sg-manifest.ts` | `packages/utils/src/ast-grep/sg-manifest.ts` | semantic port only（win32-x64 / win32-arm64 两行 assets 与 `.exe` 名分支丢弃；保留四 slug 的 pinned sha256 逐字） |
+| `src/ast-grep/sg-resolver.ts` | `packages/utils/src/ast-grep/sg-resolver.ts`（+ `packages/utils/src/runtime/which.ts` 的 `whichOnPath` 语义，内联） | semantic port only（`Bun.which` 快径与 win32 `PATHEXT` 候选丢弃；三闸顺序 env → runtimeDir → PATH 逐字） |
+| `src/ast-grep/sg-provisioner.ts` | `packages/utils/src/ast-grep/sg-provisioner.ts` | semantic port only（手写 zip 解包 stored+deflate、`.partial` 原子改名、`chmod 755` 逐字；win32 `.exe` preferredNames 丢弃） |
+| `src/ast-grep/install-script.ts` | `packages/utils/src/ast-grep/install-script.ts` | semantic port only（`install.ps1` / `pwsh` / `powershell.exe` 选择分支整段丢弃，仅存 bash 面） |
+| `src/ast-grep/index.ts` | `packages/utils/src/ast-grep/index.ts` | semantic port only（barrel 五 re-export 成员集不变） |
 
 ### Phase 4 skills vendoring
 

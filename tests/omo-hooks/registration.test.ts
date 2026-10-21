@@ -46,19 +46,21 @@ import {
 
 /**
  * The exact summary line a real boot logs, transcribed from the manifest by
- * hand (15 rows: 2 pre-step, 2 pre-execute, 8 post-execute, 1 turn-stopping,
- * 2 session/event, 0 status, in SUMMARY_EVENT_FIELDS order).
+ * hand (16 rows: 2 pre-step, 2 pre-execute, 8 post-execute, 1 turn-stopping,
+ * 2 session/event, 0 status, 1 session-created, in SUMMARY_EVENT_FIELDS order).
  *
- * Two arithmetic notes, both historical. Phase 3 landed 14 rows: P3-T5 removed
+ * Three arithmetic notes, all historical. Phase 3 landed 14 rows: P3-T5 removed
  * the H-01 write-existing-file-guard row (WP-2 arbitration: dsh-fs-observation-
  * policy covers it natively), which is also why pre-execute moved 3 → 2. P4-T12
  * added H-33 `keyword-detector`, the roster's SECOND `agent/pre-step` row
- * (pre-step 1 → 2) — the counts here are DERIVED by the formatter, so this
+ * (pre-step 1 → 2). P6-T6 added `ast-grep-sg-provision`, the roster's FIRST
+ * `session/created` row (new SUMMARY_EVENT_FIELDS field `session-created=1`,
+ * total 15 → 16) — the counts here are DERIVED by the formatter, so this
  * string is transcribed to pin them.
  */
 const EXPECTED_SUMMARY_LINE =
-  '[omo-hooks] loaded: manifest 15 entries (pre-step=2, pre-execute=2, '
-  + 'post-execute=8, turn-stopping=1, session/event=2, status=0)'
+  '[omo-hooks] loaded: manifest 16 entries (pre-step=2, pre-execute=2, '
+  + 'post-execute=8, turn-stopping=1, session/event=2, status=0, session-created=1)'
 
 /** One recorded `ctx.on` call — the loop-wiring observable. */
 interface OnCall {
@@ -162,13 +164,15 @@ describe('P3-T3 boot markers — format contract', () => {
     ]
     expect(formatLoadedSummaryLine(synthetic)).toBe(
       '[omo-hooks] loaded: manifest 4 entries (pre-step=1, pre-execute=0, '
-      + 'post-execute=2, turn-stopping=0, session/event=0, status=1)',
+      + 'post-execute=2, turn-stopping=0, session/event=0, status=1, session-created=0)',
     )
   })
 
-  it('③ covers all six DSH events exactly once, in the documented order', () => {
+  it('③ covers all seven DSH events exactly once, in the documented order', () => {
     // The summary can only be total if its field list is exactly MANIFEST_EVENTS;
-    // a missing event would silently drop rows from the line.
+    // a missing event would silently drop rows from the line. P6-T6 appended the
+    // seventh pair when the roster gained its first `session/created` row —
+    // this list is the test-side half of that vocabulary.
     expect(SUMMARY_EVENT_FIELDS.map((field) => field.event)).toEqual([
       'agent/pre-step',
       'tools/pre-execute',
@@ -176,6 +180,7 @@ describe('P3-T3 boot markers — format contract', () => {
       'agent/turn-stopping',
       'session/event',
       'agent/status',
+      'session/created',
     ])
     expect(SUMMARY_EVENT_FIELDS.map((field) => field.label)).toEqual([
       'pre-step',
@@ -184,14 +189,15 @@ describe('P3-T3 boot markers — format contract', () => {
       'turn-stopping',
       'session/event',
       'status',
+      'session-created',
     ])
   })
 
-  it('④ reports a row outside the six fields instead of dropping it (total function)', () => {
+  it('④ reports a row outside the seven fields instead of dropping it (total function)', () => {
     const synthetic = [rowFixture('agent/session-idle', 1)]
     expect(formatLoadedSummaryLine(synthetic)).toBe(
       '[omo-hooks] loaded: manifest 1 entries (pre-step=0, pre-execute=0, '
-      + 'post-execute=0, turn-stopping=0, session/event=0, status=0, other=1)',
+      + 'post-execute=0, turn-stopping=0, session/event=0, status=0, session-created=0, other=1)',
     )
   })
 
@@ -313,7 +319,7 @@ describe('P3-T3 registration loop — loud-but-non-fatal', () => {
     })
     expect(lines).toHaveLength(1)
     expect(lines[0]).toContain('[omo-hooks] manifest validation FAILED: ')
-    expect(lines[0]).toContain('expected 15 hook entries, got 1')
+    expect(lines[0]).toContain('expected 16 hook entries, got 1')
     // No summary line: a count from an untrusted roster must not read as a mount.
     expect(lines.some((line) => line.startsWith('[omo-hooks] loaded'))).toBe(false)
     expect(onCalls).toEqual([])
@@ -325,12 +331,14 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     vi.restoreAllMocks()
   })
 
-  it('① mounts with the real registry: summary + the fifteen registered listeners', () => {
+  it('① mounts with the real registry: summary + the sixteen registered listeners', () => {
     // P3-T12 filled the registry with the F-mode notification pair, P3-T14 with
     // the 批 A D-mode trio, P3-T15 with the 批 B trio, P3-T16 with the 批 C
-    // B+D pair, P3-T17 with H-32 `ulw-execute`, and P4-T12 with the FIRST Phase
+    // B+D pair, P3-T17 with H-32 `ulw-execute`, P4-T12 with the FIRST Phase
     // 4 row (H-33 `keyword-detector`, the roster's second A-mode pre-step
-    // listener), so a real boot logs the summary line AND **fifteen**
+    // listener), and P6-T6 with the FIRST Phase 6 row (`ast-grep-sg-provision`,
+    // the roster's first `session/created` F-mode row), so a real boot logs the
+    // summary line AND **sixteen**
     // `registered` lines, and wires the listeners in roster order — every
     // manifest row now has an implementation.
     // 'session-notification' registers TWO surfaces (its primary manifest event
@@ -375,6 +383,10 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
         + 'ultrawork=patches/omo-dsh/vendor/shared-skills/skills/ultrawork/SKILL.md (',
       ),
       '[omo-hooks] hook keyword-detector registered on agent/pre-step',
+      // P6-T6: the roster's FIRST session/created row — its registrar registers
+      // through ctx.on and logs NOTHING at apply time (no NOTE: the provisioning
+      // gate reads the resolver only inside the event, never at registration).
+      '[omo-hooks] hook ast-grep-sg-provision registered on session/created',
     ])
     expect(onCalls.map((call) => call.event)).toEqual([
       'tools/post-execute',
@@ -415,6 +427,11 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       // exactly ONE surface (its session-level one-shot guard is a WeakSet in
       // the listener closure, so there is no dispose hook to register).
       'agent/pre-step',
+      // P6-T6: 'ast-grep-sg-provision' — ONE `session/created` listener, no
+      // lifecycle registration (its once-per-process memory is a module Set and
+      // holds nothing that needs disposal — the scheduled task either landed or
+      // logged its own loud failure).
+      'session/created',
     ])
   })
 
@@ -422,15 +439,15 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
     // apply() has no injection seam on purpose (it is the one-argument cordis
     // entry point), so this test saves/restores a real registry entry around the
     // call instead of leaking a permanent fake into sibling tests. The other
-    // fourteen real entries stay in place, so the expected log carries all
-    // fifteen registered lines in roster order (bash-file-read-guard is row 1,
+    // fifteen real entries stay in place, so the expected log carries all
+    // sixteen registered lines in roster order (bash-file-read-guard is row 1,
     // todo-continuation-enforcer row 2, empty-task-response-detector row 3,
     // session-notification row 4, background-notification row 5,
     // edit-error-recovery row 6, json-error-recovery row 7,
     // tool-output-truncator row 8, directory-readme-injector row 9,
     // agent-usage-reminder row 10, task-resume-info row 11,
     // webfetch-redirect-guard row 12, prometheus-md-only row 13,
-    // ulw-execute row 14, keyword-detector row 15).
+    // ulw-execute row 14, keyword-detector row 15, ast-grep-sg-provision row 16).
     const id = 'todo-continuation-enforcer'
     expect(HOOK_IDS).toContain(id)
     const previous = HOOK_REGISTRARS[id]
@@ -474,6 +491,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
       // lifecycle registration (its session-level one-shot guard is a WeakSet
       // in the listener closure, so there is nothing to clean up).
       'agent/pre-step',
+      // P6-T6: 'ast-grep-sg-provision' — ONE `session/created` listener, no
+      // lifecycle registration (the once-per-process memory is a module Set).
+      'session/created',
     ])
     expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
       EXPECTED_SUMMARY_LINE,
@@ -506,6 +526,9 @@ describe('P3-T3 apply() — wiring to the real manifest and registry', () => {
         + 'ultrawork=patches/omo-dsh/vendor/shared-skills/skills/ultrawork/SKILL.md (',
       ),
       '[omo-hooks] hook keyword-detector registered on agent/pre-step',
+      // P6-T6: the new row's registered line, same as in test ① — transcribed
+      // by hand for the same reason.
+      '[omo-hooks] hook ast-grep-sg-provision registered on session/created',
     ])
   })
 

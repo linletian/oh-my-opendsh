@@ -1,4 +1,7 @@
-// manifest.ts — Phase 3 SINGLE source of truth for the 14-hook port roster
+// manifest.ts — Phase 3 SINGLE source of truth for the 16-hook port roster
+// (16 = 14 through Phase 3 + `keyword-detector` at P4-T12 + `ast-grep-sg-provision`
+// at P6-T6; the count's full lineage is on MANIFEST_ROWS below and is the authority
+// for every other count comment in this file — ARBITRATION-r2 B-R2-MINOR-4)
 // (docs/plans/phase3-dev/phase3-plan.md §4.1; task P3-T2; data table
 // docs/plans/phase3-dev/phase3-hooks.md §1 移植组).
 //
@@ -32,15 +35,30 @@
 // (baseline anchor commit b072d279110bdda2c6ac2525d0d24dc54d16148a; PRE-1).
 // `*.test.ts` files go to `upstreamTestFiles` — they are the R-3 unit-test
 // seeds — and `AGENTS.md` is excluded from both lists (N-03: that file
-// disagrees with the code in several places). Among the 14 port modules exactly
-// ONE upstream directory ships an `AGENTS.md`: H-03's
+// disagrees with the code in several places). Among the port group's 16 rows
+// (15 'ported' + 1 'pending' — the authority paragraph on MANIFEST_ROWS' count
+// lineage), TWO upstream directories ship an `AGENTS.md` — H-03's
 // `todo-continuation-enforcer/` (34 ls-tree entries = 17 实现 + 16 测试 +
-// 1 AGENTS.md, so its "33 文件" count already excludes the doc); H-32 (20 files)
-// contains none, so no row count in this table needs an AGENTS.md correction.
+// 1 AGENTS.md, so its "33 文件" count already excludes the doc) AND H-33's
+// `keyword-detector/` (its own row below counts it: 目录 24 = 16 实现 + 7 测试
+// + 1 `AGENTS.md`, N-03 excluded from both columns). This paragraph used to
+// claim "exactly ONE" and named only H-03 (ARBITRATION-r2 B-R2-MINOR-4: the
+// arbitrator re-ran `git ls-tree b072d279… -- …/hooks/keyword-detector/` and
+// the blob be615cf5 is there; the contradiction was visible inside THIS file all
+// along — H-33's row has counted that AGENTS.md since P4-T12). Both are
+// excluded per N-03, exactly as this file's self-account already says (the H-33
+// row's own arithmetic — cited BY ITS TEXT (`upstreamFiles 17 + upstreamTestFiles 7
+// = 24 = 25 − 1 AGENTS.md`, and the 展开 line `上游**目录** = 24 条目 = 16 实现 +
+// 7 测试 + 1 个 `AGENTS.md`）rather than by line number, because a self-anchor in a
+// file that this very round keeps lengthening goes stale the moment it is written —
+// two of them did, twice, and that is the failure this round's meta-discipline exists
+// to kill),
+// so no row COUNT moves; what moves is the factual claim about how many
+// directories carry one.
 // Reproduce the audit with
 //   git -C <omo> ls-tree -r --name-only v4.19.4 packages/omo-opencode/src/hooks/ \
 //     | grep -E 'hooks/[^/]+/AGENTS\.md$'
-// → 12 hits repo-wide, H-03 the only one inside the port group.
+// → 12 hits repo-wide; inside the port group TWO of them, H-03 and H-33.
 //
 // H-01 REMOVED (P3-T5 / WP-2 开工仲裁, plan revision 2026-09-19). The
 // `write-existing-file-guard/` row (H-01, formerly the first P0 row and the
@@ -49,12 +67,14 @@
 // "refuse to overwrite an unread file" plus version CAS staleness detection
 // (`FS_STALE_VERSION`, which OMO has no equivalent of — strictly stronger).
 // OMO's residue (one-shot tickets, `.omo` exemption, overwrite stripping) has
-// no port value. The port group is therefore 14, not 15, and the plan's B-mode
+// no port value. The port group was therefore 14 at that revision (16 as of
+// P6-T6 — see the lineage on MANIFEST_ROWS), not 15, and the plan's B-mode
 // pilot moved to T16.
 //
 // ONE-WAY SYNC DISCIPLINE. phase3-hooks.md §1 is the human-readable coverage
 // baseline and this file is the machine-readable one; they carry the SAME
-// facts. The 14 rows are 1:1 with the coverage baseline's H-02…H-32 port group
+// facts. The 14 Phase-3 rows (16 rows now: 15 'ported' + 1 'pending') are 1:1
+// with the coverage baseline's H-02…H-32 port group
 // (each row's comment names its baseline line), and the consistency test
 // (P3-T20, phase3-plan.md §4.7 L1(③)) asserts the two agree. When a port
 // lands, the EDIT ORDER IS: phase3-hooks.md (the doc is the auditable record)
@@ -67,7 +87,10 @@
 // `event` is the DSH registration surface. They are one authored pair, not two
 // independent facts: A → agent/pre-step, B → tools/pre-execute, C/D →
 // tools/post-execute, E → agent/turn-stopping, F → session/event or
-// agent/status. A row's `event` is its PRIMARY decision surface, NOT its
+// agent/status — and, since P6-T6's ast-grep-sg-provision row, F also covers
+// the seventh event `session/created` (a session lifecycle observer with an
+// async provisioning side effect). A row's `event` is its PRIMARY decision
+// surface, NOT its
 // complete one: the B+D rows (H-24/H-26) additionally own a `tools/post-execute`
 // half, H-21 `directory-readme-injector` owns `session/event` + `session/disposed`
 // as well, H-22 `agent-usage-reminder` owns `session/disposed`, H-10
@@ -97,7 +120,17 @@
 // `manifest-types.ts` would either re-spell the unions (two lists that can
 // drift) or create an import cycle.
 
-/** The six-event DSH face of Phase 3 (plan §4.2 event column, P3-T1 verified). */
+/**
+ * The six-event DSH face of Phase 3 (plan §4.2 event column, P3-T1 verified),
+ * PLUS the seventh row of Phase 6: `session/created` — the native session
+ * creation announcement the S-16 provisioning row registers on (P6-T6; seam
+ * evidence in hooks/ast-grep-sg-provision.ts's header: emitted exactly once per
+ * session at publication, early, async-safe — dsh-session/lib/index.js:1775,
+ * :1789-1798; api-catalog dsh-tool-cordis/lib/types/api-catalog.js:4116-4120).
+ * The vocabulary grows by rows, never silently: boot-markers.ts SUMMARY_EVENT_FIELDS
+ * carries the matching summary field, registration.test.ts ③ pins the full list,
+ * and validateManifest below keeps rejecting anything outside it.
+ */
 export const MANIFEST_EVENTS = [
   'agent/pre-step',
   'tools/pre-execute',
@@ -105,6 +138,7 @@ export const MANIFEST_EVENTS = [
   'agent/turn-stopping',
   'session/event',
   'agent/status',
+  'session/created',
 ] as const
 
 /** The plan §4.2 A–F listener patterns. */
@@ -132,7 +166,7 @@ export const manifestModeSet: ReadonlySet<string> = new Set<string>(MANIFEST_MOD
  * have ALL landed (its e2e scenario is `bash-read-guard-warned`); after P3-T14
  * (the D-mode trio H-14/H-15/H-16), P3-T15 (the 批 B trio H-21/H-22/H-23),
  * P3-T16 (the B-mode pair H-24/H-26) and P3-T17 (H-32 `ulw-execute`) **ALL 14
- * rows read 'ported'** — the roster is complete (H-03/H-10/H-11 flipped at the
+ * Phase-3 rows read 'ported'** — that roster was complete (H-03/H-10/H-11 flipped at the
  * same time as their listeners, see their rows). The edit order is doc-first —
  * phase3-hooks.md reads ✅ 已移植 for a row before this row moves — with docs/
  * out of scope for the port tasks. A closed union could not spell the coverage
@@ -169,7 +203,10 @@ export interface HookManifestEntry {
 /**
  * The port count (phase3-hooks.md §5 移植组 = 14 — the P3-T1 "15" minus H-01,
  * which the WP-2 arbitration moved to DSH-native skip; plus **P4-T12's H-33
- * `keyword-detector`**, the first Phase 4 row = 15). Named and exported so the
+ * `keyword-detector`**, the first Phase 4 row = 15; plus **P6-T6's
+ * `ast-grep-sg-provision`** (H-37 预分号在册、代码不写号——the manifest speaks
+ * semantic ids, the H number lives in the arbitration record), the first Phase 6
+ * row = 16). Named and exported so the
  * expectation is stated ONCE and `validateManifest` can reject a dropped or
  * duplicated row without a magic number in the middle of the checks — the
  * "N rows really exist" guard is this constant (check 5) plus the uniqueness
@@ -180,15 +217,36 @@ export interface HookManifestEntry {
  * registration.test.ts 的 `EXPECTED_SUMMARY_LINE`（pre-step 计数 1→2）、
  * registration.test.ts 的 onCalls / registered 断言各加一行、门 6 的 c13 自动
  * 跟随、c14 的基线扩为两文档并集且 manifest 侧按 `status === 'ported'` 过滤。
+ * ⚠️ **P6-T6 加行的同一张网（15→16 + 事件表扩一员）**：本常量、
+ * MANIFEST_EVENTS（+'session/created'）、boot-markers.ts SUMMARY_EVENT_FIELDS
+ * （+'session-created' 字段）、manifest.test.ts 的 id 列表 / 计数 / 事件表、
+ * registration.test.ts 的 EXPECTED_SUMMARY_LINE / ③ 事件表 / ⑦ 计数文案 /
+ * apply() 的 registered 行与 onCalls、manifest-coverage-consistency.test.ts 的
+ * pending 侧钉（pendingIds 从此不再为空——翻转锚点在 phase6-mcp-editing.md，
+ * c14 并集按 FORKS.md §0-1 不扩，翻转时由文档侧同行）、THIRD_PARTY_NOTICES 的
+ * c21 计数行与排除注记、门 6 新增 c29（src/ast-grep/ 供给层）。
+ * concerto-mode-probe.sh **不在网内**——它 readdir src/hooks 派生全部计数与
+ * registered 行（:493-527），派生自动跟随，手写数字反而是事故（R-11 在册）。
  */
-export const EXPECTED_HOOK_COUNT = 15
+export const EXPECTED_HOOK_COUNT = 16
 
 /**
- * The 15-row port roster, in ROADMAP priority order (P0 文件护栏 → P1 todo/goal
- * 执行器 → P3 会话通知 → P4 其余 → P5 ulw-execute → **P4 keyword-detector**) —
- * the same order as
+ * The 16-row port roster, in ROADMAP priority order (P0 文件护栏 → P1 todo/goal
+ * 执行器 → P3 会话通知 → P4 其余 → P5 ulw-execute → **P4 keyword-detector** →
+ * **P6 ast-grep-sg-provision**) — the same order as
  * phase3-hooks.md §1, so the T3 boot-marker log is deterministic and the
  * coverage-list diff is a line-by-line read.
+ *
+ * 16, and the count has a history worth keeping (A-MINOR-T6-1: this line said
+ * "15-row" while EXPECTED_HOOK_COUNT above said 16 — a stale hand-count, the same
+ * failure NOTICES' counts had): 14 through Phase 3 → 15 at P4-T12
+ * (`keyword-detector`) → 16 at P6-T6 (`ast-grep-sg-provision`, 'pending', its e2e
+ * scenario is P6-T7's). 15 rows are 'ported', one is 'pending'.
+ * **This paragraph is the authority**: every other count comment in this file
+ * (header line 1, the AGENTS.md audit, the H-01 removal note, the one-way-sync
+ * note, the status note, validateManifest's step 5) belongs to the same lineage
+ * and reads against it — a stale one there is a bug of the same class, not a
+ * second opinion (ARBITRATION-r2 B-R2-MINOR-4).
  *
  * WIDENED, NOT `as const`, ON PURPOSE. roster.ts exports the narrowed literal
  * tuple because its consumers branch on optional keys; here every row declares
@@ -931,10 +989,122 @@ const MANIFEST_ROWS = [
     // FIRST request, which is upstream's timing and not this deployment's.
     status: 'ported',
   },
+  // ── ast-grep-sg-provision / S-16（P6-T6 落地；H-37 预分号在册、代码不写号） ──
+  //
+  // fork G 终裁 (G-A) 单落地（FORKS.md §2.7）：(G-A) 之后 vendored ast-grep 技能
+  // （已在服务，G-3/F-4）指导 agent 经 bash 真实调用 `sg`，「脚本化场景中被 agent
+  // 真实使用」由 T7 e2e 证明；(G-B) 记「未来考虑」差异条目，不在本行。
+  // ① **事件缝（钉死，非即兴）**：上游 `session.created`（hook.ts:63）→ DSH 原生
+  //    `session/created`：每会话恰一次（dsh-session/lib/index.js:1775、派发点
+  //    :1789-1791）、发表期早（api-catalog dsh-tool-cordis/lib/types/
+  //    api-catalog.js:4116-4119；agent 工厂在 first prompt assembly 之前已组合
+  //    dsh-agent/lib/types/index.d.ts:94-95）、异步安全（listener 的 rejected
+  //    promise 被宿主 logger 吞下不可追溯否决——:4119 + dsh-session
+  //    lib/index.js:1793-1798）；14+ 安装树包以完全相同形态注册（如
+  //    dsh-session-projection-cache lib/index.js:313）。监听器本体在上游从不
+  //    检视 payload（只看 event.type），DSH emit 直传 Session（api-catalog
+  //    :4120）——类型门由注册名本身承担，逐字等价。
+  // ② **双来源（T1 §3.2 已裁）**：钩层 provision（sg-provisioner，sha256 校验）
+  //    = 权威来源；vendored 技能自带 install.sh（无校验和）= 已在树的技能文档/
+  //    回退路径，保留不裁、不复制进钩。targetDir 约定 = `astGrepRuntimeDir`
+  //    （install-script.ts 逐字 = 上游 :55-57）与技能 install.sh 经
+  //    `OMO_AST_GREP_BIN_DIR`（上游 :135 注入；vendored install.sh:34 消费）
+  //    honoured 的目录同源——同目录、两来源、校验位在权威侧。
+  // ③ **CI/hermetic**：resolver 顺序 `OMO_AST_GREP_SG_PATH` env → runtimeDir →
+  //    PATH（上游逐字，未发明新门）。密封面是**实测清单而非类别**（ARBITRATION-r2
+  //    B-R2-MINOR-1 收窄，ARBITRATION-r3 B-MINOR-1 按面重列）：触到本缝需**同时**
+  //    满足两件事——挂载 omo-hooks，且建 session。逐面：
+  //    * **挂载 omo-hooks 且建 session：恰两个面，均以同款 floor 密封**——
+  //      `tests/e2e/drive.mjs`（e2e/CI 面）`scenarioEnv` 全局 export（:4626，floor
+  //      形，场景层可覆写/可置空重开门）；`scripts/smoke-real.mjs`（手动真模型面，
+  //      需真 key、不入 CI；RPC 调用点 :790-791）以 `??=` 同款 floor 密封，操作员
+  //      欲验真供给路径时可自带路径覆盖。
+  //    * **boot 而不建 session：无需 floor**——`concerto-mode-probe.sh` 与
+  //      `cold-start.sh` 全仓 grep 零命中建会话调用，从不触缝。
+  //    * **建 session 但不挂 omo-hooks：触不到缝**——`scripts/prove-route-logging.mjs`
+  //      经 `scripts/run-proofs.sh:104` 在 CI 门 8 跑，进程内经 dsh 自带 AgentLoop 建
+  //      会话（`ctx.agentLoop.create(SessionId('t15-parent'), …)` :310；continuable
+  //      child `ctx.subagents.startContinuable` :332-341，:337 传 parent），但其插件面
+  //      :287-299 只挂 dsh 自带十件、**无 omo-hooks**，listener 从未注册故缝从未触。
+  //      它进清单是因为一份关于「建 session 的面」的清单漏掉它就是**假的**，纵使
+  //      封网结论不变。
+  //    * 单测亦不触（deps 注入 + 测试内显式预置闸 ①）。
+  //    两个 floor 指向同一 committed `tests/e2e/fixtures/fake-sg.sh`（FORKS.md §5.1
+  //    sg fixture，T7 预置方式在此成文）。本注记先后两处过宽措辞——r2 前的「GitHub
+  //    下载永不调度」与 r3 前的「只有两个建 session 的面 / 唯一命中」（NOTICES 英文原文
+  //    "the only `session.create` hits"，按原文点名而非行号——NOTICES 本轮亦在改，数字锚会脏）——诚实形态都是上面的按面清单。
+  // ④ **失败形态**：异步 provision 失败 → LOUD 具名 marker
+  //    `[omo-hooks] ast-grep-sg-provision PROVISION FAILED (<code>)` + 结构化
+  //    指引（手动安装 / env override），经 console.warn（stop-continuation-guard
+  //    降级注记先例），永不破会话与 boot（上游 hook.ts:33-41 的 best-effort
+  //    语义等价）；「技能在场而二进制无保障 = 红」的不变量住在本响亮失败路径
+  //    （G-3 空头指令纪律），非 boot 硬失败——单测钉技能前置（SKILL.md 在场 +
+  //    教 `sg` + sgBinaryName("linux") === "sg" 与技能教的二进制名一致）。
+  // ⑤ **D9 Windows 减项（逐条，代码内注记同步）**：types.ts win32 平台成员出
+  //    union；sg-manifest win32 两行资产（sha256 `a519fdd9…`/`a4febbc8…`）与
+  //    win32 normalize 分支出表；sgBinaryName 无 `sg.exe` 分支（恒 `sg`）；
+  //    sg-provisioner 无 `.exe` 后缀分支、preferredNames 无 exe 变体；
+  //    install-script 无 install.ps1 选择、无 pwsh/powershell.exe 回退（技能
+  //    树内 install.ps1 作 payload 原样保留，本 runner 永不点名）。仅保
+  //    darwin/linux 四 slug。install-script 的 `platform?`
+  //    （实型 `AstGrepSkillInstallOptions`，install-script.ts:71；此前写的
+  //    `AstGrepInstallOptions` 是个不存在的名字，A-R2-NIT-1）在此登记为
+  //    **惰性透传数据**：runner 本体零读取
+  //    （runAstGrepSkillInstall 只取 skillDir / targetDir / env / spawnProcess /
+  //    fileExists / timeoutMs，`platform` 一次也不碰），它只随上游选项面保留，
+  //    唯一读者是单测那条 win32-shaped 断言——该断言的注释自述 "inert
+  //    pass-through data" 并指向本注记，而 ⑤ 此前未点名它（A-NIT-T6-2），自此
+  //    自述与登记对上。
+  // ⑥ **bunWhich 减项**：上游 resolver import `../runtime/which`（Bun.which 快
+  //    路径 + 纯 PATH 扫描）；DSH 跑 Node 24 type-stripping，快路径删除、纯扫描
+  //    以 `whichOnPath` 内联（候选序与守卫逐字，win32 PATHEXT 臂随 D9 出）——
+  //    该上游件因此入本行 upstreamFiles 作语义出处（keyword-detector 的
+  //    config/schema 先例：语义出处在目录外，登记在列）。
+  // ⑦ **状态 'pending' 的理由与翻转锚**：listener + 单测随本任务落地；e2e 场景
+  //    （`ast-grep-sg-via-bash`，含 §5.1 反向金丝雀）属 T7（门 3 由 T7 跑）；
+  //    c14 并集按 §0-1 不扩 → 本文档侧翻转锚 = phase6-mcp-editing.md §3 G-1/
+  //    G-2b 行 + §6 S-16 行（并行流/仲裁侧文件，本任务只读）。翻转 = 文档侧行
+  //    改「已移植」与本行改 'ported' 同 commit（T20 pending-配对纪律的 Phase 6
+  //    形态，锚点在此成文）。
+  {
+    id: 'ast-grep-sg-provision',
+    upstreamFiles: [
+      'packages/omo-opencode/src/hooks/ast-grep-sg-provision/hook.ts',
+      'packages/omo-opencode/src/hooks/ast-grep-sg-provision/index.ts',
+      'packages/utils/src/ast-grep/index.ts',
+      'packages/utils/src/ast-grep/types.ts',
+      'packages/utils/src/ast-grep/sg-manifest.ts',
+      'packages/utils/src/ast-grep/sg-resolver.ts',
+      'packages/utils/src/ast-grep/sg-provisioner.ts',
+      'packages/utils/src/ast-grep/install-script.ts',
+      'packages/utils/src/runtime/which.ts',
+    ],
+    upstreamTestFiles: [
+      'packages/omo-opencode/src/hooks/ast-grep-sg-provision/ast-grep-sg-provision.test.ts',
+      'packages/utils/src/ast-grep/install-script.test.ts',
+      'packages/utils/src/ast-grep/sg-manifest.test.ts',
+      'packages/utils/src/ast-grep/sg-provisioner.test.ts',
+      'packages/utils/src/ast-grep/sg-resolver.test.ts',
+    ],
+    event: 'session/created',
+    mode: 'F',
+    summary:
+      '会话发表 → 保障 `sg` 二进制在位：once-per-process 记忆 + resolver(env→runtimeDir→PATH) 短路 + 异步 provision（fetch 60s + sha256 校验 + 手写 zip + chmod 755 + 原子 rename）；失败 = LOUD 具名 marker + 结构化指引，永不破会话；双来源裁定（钩层权威 / 技能 install.sh 回退保留）、D9 Windows 减项逐条在册',
+    e2eScenario: 'ast-grep-sg-via-bash',
+    // 'pending' — listener + adapted unit tests land with P6-T6; the e2e
+    // scenario (`ast-grep-sg-via-bash`, forward promise registered in
+    // manifest-coverage-consistency.test.ts's FORWARD_PROMISE_SCENARIOS) is
+    // P6-T7's, and the doc-side flip anchor is phase6-mcp-editing.md §3/§6
+    // (c14 union NOT extended per FORKS.md §0-1 — the flip is both-sides in
+    // one commit, with the anchor spelled in row note ⑦).
+    status: 'pending',
+  },
 ] as const satisfies readonly HookManifestEntry[]
 
 /**
- * The 14-row port roster as `readonly HookManifestEntry[]`, in priority order.
+ * The 16-row port roster as `readonly HookManifestEntry[]`, in priority order
+ * (16 = 14 through Phase 3 + `keyword-detector` at P4-T12 + `ast-grep-sg-provision`
+ * at P6-T6; the count's full history is on MANIFEST_ROWS above).
  * Widened for the same reason roster.ts widens ROSTER: `as const` is kept on
  * the authored table for literal id inference above, while consumers get the
  * declared shape.
@@ -942,8 +1112,10 @@ const MANIFEST_ROWS = [
 export const HOOK_MANIFEST: readonly HookManifestEntry[] = MANIFEST_ROWS
 
 /**
- * The 14 port ids, in roster order, derived from the rows above (so a typo in
- * an `id` cannot silently widen the list). The T3 boot marker logs exactly
+ * The 16 port ids, in roster order, derived from the rows above (so a typo in
+ * an `id` cannot silently widen the list). 16 = 15 'ported' + 1 'pending'
+ * (`ast-grep-sg-provision`, P6-T6); the count is derived, never transcribed.
+ * The T3 boot marker logs exactly
  * these, in this order.
  */
 export const HOOK_IDS: readonly string[] = MANIFEST_ROWS.map((entry) => entry.id)
@@ -963,7 +1135,7 @@ export const HOOK_IDS: readonly string[] = MANIFEST_ROWS.map((entry) => entry.id
  *      `upstreamTestFiles`, which is the R-3 seed column) and none named
  *      `AGENTS.md` (N-03: not a hook source);
  *   4. `id` unique across the roster;
- *   5. the row count equals EXPECTED_HOOK_COUNT — the "14 rows really exist"
+ *   5. the row count equals EXPECTED_HOOK_COUNT — the "16 rows really exist"
  *      assertion; without it a silently truncated table would validate.
  *
  * The AGENTS.md check matches on the path BASENAME, not a suffix substring, so

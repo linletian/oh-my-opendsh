@@ -568,14 +568,34 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { createServer } from 'node:http'
 import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { startMockLlmServer } from './mock-llm-server.mjs'
+import {
+  LSP_DOUBLE_DIAGNOSTIC_CODE,
+  LSP_DOUBLE_DIAGNOSTIC_MESSAGE,
+  LSP_DOUBLE_DIAGNOSTIC_SOURCE,
+  LSP_DOUBLE_MARKER_CHARACTER,
+  LSP_DOUBLE_MARKER_RELATIVE,
+  LSP_DOUBLE_MARKER_SENTINEL,
+  LSP_DOUBLE_MISSING_COMMAND,
+  LSP_DOUBLE_MISSING_EXTENSION,
+  LSP_DOUBLE_MISSING_PROBE_FILE,
+  LSP_DOUBLE_MISSING_SERVER_ID,
+  LSP_DOUBLE_SERVER_ID,
+  deriveLspMcpStartingMarker,
+} from './fixtures/lsp-double-constants.mjs'
+// P6-T6 MAJOR-1: the hermetic pre-seed's version is checked against the REAL pin,
+// so `fake-sg.sh --version` can never drift from the release the provisioner would
+// download. A `.mjs` importing the plugin's `.ts` is this repo's established seam
+// (scripts/doctor-lite.mjs → doctor-lite-core.ts); the module is pure data.
+import { SG_PINNED_VERSION } from '../../patches/omo-dsh/omo-hooks/src/ast-grep/sg-manifest.ts'
 import { pathToFileURL } from 'node:url'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -628,10 +648,13 @@ function pluginsLoaded(bootLog) {
   return LOADED_MARKERS.every((marker) => bootLog.includes(marker))
 }
 
-// TODO(P6-T5): absent-canary — when the omo-lsp stdio child is absent, an
-// lsp-* scenario must fail loudly (mcp__lsp__* markers absent = red); today
-// only cold-start.sh greps the [lsp-mcp] marker and face-probe
-// (.omo/evidence/p6t4/) asserts the face.
+// P6-T5 LANDED the absent-canary this TODO carried: the pair lives in
+// `lsp-definition-double-roundtrip` (the double's canned bytes on the tool
+// result) and `lsp-missing-server-named-failure` (the engine's NAMED
+// missing-dependency answer, plus `doubleNeverSpawnedNoLog` — the double's own
+// evidence file must NOT exist). Both legs are in this file, so the marker is no
+// longer only grepped by scripts/cold-start.sh:215-223 or asserted by the p6t4
+// face probe; a missing omo-lsp child now reddens gate 3 by check name.
 
 /**
  * The boot-log text the `--self-test` fixtures feed the analyses that assert
@@ -4558,11 +4581,34 @@ function createSandbox() {
   }
 }
 
+/** The COMMITTED hermetic `sg` pre-seed (P6-T6 MAJOR-1). Absolute, REPO_ROOT
+ *  anchored, so it resolves identically whatever the spawned process's cwd ends up
+ *  being — which is the whole point: this path is what makes gate ① hit. */
+const FAKE_SG_PATH = join(REPO_ROOT, 'tests', 'e2e', 'fixtures', 'fake-sg.sh')
+
 /** Spawned-process environment: every dsh/home pointer redirected into the sandbox.
  * `overrides` are the scenario's own env additions (P2-T18's OMO_<AGENT>_* seat
  * distribution). They are merged FIRST so the sandbox pointers and the
  * DEEPSEEK_BASE_URL strip below always win: a scenario can pin a route but can
- * never re-route around the mock or escape the sandbox. */
+ * never re-route around the mock or escape the sandbox.
+ *
+ * P6-T6 MAJOR-1 — `OMO_AST_GREP_SG_PATH` is exported GLOBALLY, and that is the
+ * hermetic seal. Without it the `ast-grep-sg-provision` listener's resolver finds
+ * all three gates empty on every first `session/created` of every scenario (no
+ * env override, no `sg`/`ast-grep` on the host PATH — measured absent, and the
+ * sandbox runtimeDir is empty by construction), so it schedules a REAL GitHub
+ * download of the pinned 8.1 MB release. ARBITRATION-r1.md B-MAJOR-1 reproduced
+ * that twice and left the proof on disk: `<sandbox>/home/.omo/runtime/ast-grep/
+ * linux-x64/.sg-<uuid>.partial`, which sg-provisioner.ts:220-224 can only write
+ * AFTER fetch + sha256 + extract all completed — i.e. the download really
+ * happened, 43 scenarios per gate run. Exporting the committed fake sg here makes
+ * resolver gate ① (sg-resolver.ts:179-180, upstream's own first gate) short-
+ * circuit, so the provisioner is never reached by ANY scenario. The assignment is
+ * a FLOOR, not a cage: a scenario that wants the absent-sg shape (T7's reverse
+ * canary) passes its own value through `overrides` — which merges FIRST — and
+ * this line leaves it standing. `''` is the deliberate absent value: the resolver
+ * trims and treats empty as "no override" (nonEmptyValue, sg-resolver.ts:59-62),
+ * so a scenario can open the gate again without deleting the key. */
 function scenarioEnv(sandbox, overrides = {}) {
   const env = { ...process.env, ...overrides }
   // A host DEEPSEEK_BASE_URL could mask a broken settings override (the
@@ -4575,6 +4621,9 @@ function scenarioEnv(sandbox, overrides = {}) {
   env.DSH_HOME = sandbox.dshHome
   env.DSH_AGENTS_HOME = sandbox.agentsHome
   env.DEEPSEEK_API_KEY = MOCK_KEY
+  // Fill the hermetic floor ONLY when no scenario claimed the key first (see the
+  // doc above). An explicit `''` from `overrides` survives, and opens gate ①.
+  if (env.OMO_AST_GREP_SG_PATH === undefined) env.OMO_AST_GREP_SG_PATH = FAKE_SG_PATH
   return env
 }
 
@@ -13806,6 +13855,80 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P6-T5 the LSP double pair (fabricated, hermetic, spawns nothing) ────────
+  // One leg per new named check, on BOTH scenarios. The first positive case is
+  // the mutation self-proof the task book demands in its fabricated half — the
+  // double's bytes are replaced by a location a REAL typescript-language-server
+  // would plausibly return, and `definitionResultIsExactlyTheDoublesCanned
+  // Location` must be the check that goes red. The REAL half of the proof runs
+  // outside this process (fixture renamed away, scenario re-run, RED by name);
+  // it is recorded in the P6-T5 evidence, not here, because a hermetic self-test
+  // cannot rename a committed fixture without touching the tree.
+  {
+    const goodLsp = analyzeLspDefinitionDouble(fabricatedLspDefinitionDoubleInput(), undefined)
+    if (goodLsp.result !== 'PASS') {
+      problems.push(`fabricated GOOD lsp-definition-double-roundtrip must PASS, got FAIL on: ${goodLsp.failed.join(', ')}`)
+    }
+    LSP_SELF_TEST_ATTESTATION.push(['P6-T5', 'lsp-definition-double-roundtrip', 'GOOD-input-PASS'])
+    const lspCases = lspDefinitionDoubleDefectCases()
+    if (lspCases.length !== 10) {
+      problems.push(`fabricated lsp-definition-double-roundtrip: the defect list must hold exactly 10 legs, got ${lspCases.length} — one per mutation surface of this scenario's checks`)
+    }
+    for (const [label, mutate, expectedChecks] of lspCases) {
+      const input = fabricatedLspDefinitionDoubleInput()
+      mutate(input)
+      const verdict = analyzeLspDefinitionDouble(input, undefined)
+      const failed = [...verdict.failed].sort().join(',')
+      const expected = [...expectedChecks].sort().join(',')
+      if (verdict.result !== 'FAIL' || failed !== expected) {
+        problems.push(`fabricated lsp-definition-double-roundtrip defect "${label}" must FAIL on exactly [${expected}], got ${verdict.result} [${failed}]`)
+      }
+      LSP_SELF_TEST_ATTESTATION.push(['P6-T5', 'lsp-definition-double-roundtrip', label])
+    }
+    const goodMissing = analyzeLspMissingServerNamedFailure(fabricatedLspMissingServerInput(), undefined)
+    if (goodMissing.result !== 'PASS') {
+      problems.push(`fabricated GOOD lsp-missing-server-named-failure must PASS, got FAIL on: ${goodMissing.failed.join(', ')}`)
+    }
+    LSP_SELF_TEST_ATTESTATION.push(['P6-T5', 'lsp-missing-server-named-failure', 'GOOD-input-PASS'])
+    const missingCases = lspMissingServerDefectCases()
+    if (missingCases.length !== 8) {
+      problems.push(`fabricated lsp-missing-server-named-failure: the defect list must hold exactly 8 legs, got ${missingCases.length} — one per mutation surface of the canary's checks`)
+    }
+    for (const [label, mutate, expectedChecks] of missingCases) {
+      const input = fabricatedLspMissingServerInput()
+      mutate(input)
+      const verdict = analyzeLspMissingServerNamedFailure(input, undefined)
+      const failed = [...verdict.failed].sort().join(',')
+      const expected = [...expectedChecks].sort().join(',')
+      if (verdict.result !== 'FAIL' || failed !== expected) {
+        problems.push(`fabricated lsp-missing-server-named-failure defect "${label}" must FAIL on exactly [${expected}], got ${verdict.result} [${failed}]`)
+      }
+      LSP_SELF_TEST_ATTESTATION.push(['P6-T5', 'lsp-missing-server-named-failure', label])
+    }
+    // The derivation itself: a cli.ts whose announcement loses the `[lsp-mcp]`
+    // prefix must THROW, not grep for nothing.
+    let markerThrew = false
+    try {
+      deriveLspMcpStartingMarker(readFileSync(LSP_VENDOR_CLI, 'utf8').replace('[lsp-mcp] stdio server starting', 'server up'))
+    } catch {
+      markerThrew = true
+    }
+    if (!markerThrew) {
+      problems.push('P6-T5: deriveLspMcpStartingMarker accepted a cli.ts with no announcement — the boot-log grep would be silently vacuous')
+    }
+    LSP_SELF_TEST_ATTESTATION.push(['P6-T5', 'lsp-definition-double-roundtrip', 'marker-derivation-throws-without-announcement'])
+    // P6-T6 MAJOR-1 — the hermetic seal's own leg, BEFORE any spawn in main():
+    // the pre-seed must be present, absolute, real, executable and version-agree,
+    // or the gate is downloading 8.1 MB per scenario and calling it green.
+    const sealProblems = lspHermeticSgSealSelfTest()
+    problems.push(...sealProblems)
+    // P6-T6, not P6-T5 (ARBITRATION-r2 B-NIT-1): this leg is the MAJOR-1 fix,
+    // not part of the double's protocol pair — the banner must not bill it to T5.
+    LSP_SELF_TEST_ATTESTATION.push(['P6-T6', 'ALL scenarios (scenarioEnv)', sealProblems.length === 0
+      ? 'hermetic-sg-pre-seed-present-absolute-executable-and-version-agrees-with-pin'
+      : 'HERMETIC-SG-SEAL-BROKEN'])
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   // ── P4.5-T8b the 0.2.x delivery half (hermetic): the plugin-copy stamp and
@@ -13852,6 +13975,14 @@ const TEAM_T10_SELF_TEST_ATTESTATION = []
 // P5-T14's own accumulator (relay/broadcast legs of team-create-and-message):
 // the banner renders FROM what ran, never hand-typed (P4-T13 discipline).
 const TEAM_T14_SELF_TEST_ATTESTATION = []
+// P6-T5/P6-T6's, same shape (KEYWORD_SELF_TEST_ATTESTATION precedent): every LSP
+// fabricated leg of BOTH lsp-* scenarios, the marker-derivation leg and the
+// hermetic-sg-seal leg push [scenario, label] as they run, and the banner renders
+// from this list. Before it existed the LSP defect legs ran and the SELF-TEST
+// banner named none of them — `grep -c lsp` over the banner output returned 0
+// (ARBITRATION-r1 B-MINOR-2, measured) — so CI could not audit that the LSP half
+// ran at all.
+const LSP_SELF_TEST_ATTESTATION = []
 // P5-T15 评审 A MINOR 修复轮的 settle 反向腿账（nested 场景一枚）——
 // 同款 rendered-FROM-what-ran 纪律。
 const TEAM_T15_SETTLE_SELF_TEST_ATTESTATION = []
@@ -24007,6 +24138,733 @@ export function teamNestedCreateDeniedSettleDefectCases() {
   ]
 }
 
+// ── P6-T5 lsp-* scenarios (gate 3: the LSP chain, model → bridge → engine →
+//    double → bytes back) ───────────────────────────────────────────────────────
+// THE CHAIN, link by link, each a separate process or a separate module:
+//
+//   mock-LLM `tool_call mcp__lsp__<tool>`                        (this file, scripted)
+//     → dsh tool registry, public name `mcp__<serverName>__<rawName>`
+//       (@deepseek-ai/dsh-mcp-client/lib/index.js:96-100 publicToolName; the
+//       RAW name `goto_definition` is what goes on the wire, :140-142)
+//     → the vendored lsp-core MCP stdio server — cordis.yml's FIFTH insert row
+//       `omo-lsp`, mounted through the dsh-bundled client (P6-T4, 8db330e),
+//       entry patches/omo-dsh/vendor/lsp-core/src/cli.ts
+//     → the vendored LSP client + transport (lsp/client.ts, lsp/transport.ts)
+//     → tests/e2e/fixtures/lsp-double-server.mjs — THE HERMETIC DOUBLE, a
+//       THIRD process, whose answers are CANNED: nothing upstream can produce
+//       those bytes by accident, which is what makes them proof.
+//
+// THE SERVER-RESOLUTION SEAM (found by reading the working tree, then MEASURED —
+// no vendored file was touched, so no deviation and no arbiter registration is
+// needed for this scenario):
+//   `findServerForExtension` takes the FIRST merged entry whose `extensions`
+//   match AND whose command `isServerInstalled` passes
+//   (patches/omo-dsh/vendor/lsp-core/src/lsp/server-resolution.ts:7-11). The
+//   merge order is project < user < builtin and the sort preserves exactly that
+//   (lsp/config-loader.ts:71-122, builtins pinned to priority -100 at :100-110),
+//   so a USER row outranks every builtin. Only the USER source accepts a custom
+//   id carrying a custom `command` — the PROJECT source refuses any id that is
+//   not a builtin and pins `builtin.command`
+//   (config-loader.ts:126-140 vs :142-152) — so a project config CANNOT point
+//   at a double, and the USER config is the seam. Its PATH is
+//   `lspRequestContext().userConfigPath`, built once at stdio-server startup
+//   from `env['LSP_TOOLS_MCP_USER_CONFIG']` falling back to
+//   `$HOME/.codex/lsp-client.json` (src/mcp.ts:155 → src/request-context.ts:81,
+//   :139-142, `process.env` read at :77). The e2e sandbox already pins HOME
+//   into the sandbox (scenarioEnv, drive.mjs:4612; HOME itself at :4618), so the seed writes the
+//   sandbox's own `$HOME/.codex/lsp-client.json` and NO extra env plumbing is
+//   needed — the row's `env:` block then carries `LSP_DOUBLE_LOG`, which the
+//   transport hands to the spawned server
+//   (config-loader.ts:150 → server-resolution.ts:22-27 → lsp/transport.ts:93-96
+//   `createLspSpawnEnv(root, {...process.env, ...server.env})`, a verbatim
+//   passthrough, lsp/transport-protocol.ts:35-40).
+//
+// MEASURED BEFORE THIS SCENARIO WAS WRITTEN (standalone seam probe, same tree,
+// dsh 0.2.0-rc.2): `status` answered `- lsp-double: installed; source=user;
+// extensions=.ts` and `Installed LSP servers: 1` on a machine where every
+// BUILTIN_SERVERS command is absent; `goto_definition` answered
+// `…/src/fixture-double-marker.ts:23:13`; `diagnostics` answered
+// `error[lsp-double] (9001) at 1:0: OMO-E2E-LSP-DOUBLE canned diagnostic 4b8e2a`;
+// the double's own log recorded initialize → initialized → didOpen →
+// publishDiagnostics → definition under a pid DISTINCT from the MCP server's.
+//
+// WHY THE FILE PATHS ARE ABSOLUTE (measured, not assumed): `LspClient`
+// re-resolves the tool's `filePath` against the workspace ROOT it already
+// computed (lsp/client.ts:97 → :352-354 `resolveWorkspacePath` →
+// `resolve(this.root, filePath)`), so a RELATIVE argument lands at
+// `<root>/<relative>` — the probe caught it producing
+// `…/lsp-double-project/tests/e2e/fixtures/lsp-double-project/src/app.ts`.
+// Absolute paths are also what a real model sends, so the scenario sends those.
+const LSP_FIXTURE_PROJECT = join(REPO_ROOT, 'tests', 'e2e', 'fixtures', 'lsp-double-project')
+const LSP_DOUBLE_SERVER = join(REPO_ROOT, 'tests', 'e2e', 'fixtures', 'lsp-double-server.mjs')
+const LSP_VENDOR_CLI = join(REPO_ROOT, 'patches', 'omo-dsh', 'vendor', 'lsp-core', 'src', 'cli.ts')
+const LSP_MARKER_FILE = join(LSP_FIXTURE_PROJECT, LSP_DOUBLE_MARKER_RELATIVE)
+const LSP_APP_FILE = join(LSP_FIXTURE_PROJECT, 'src', 'app.ts')
+const LSP_MISSING_PROBE_FILE = join(LSP_FIXTURE_PROJECT, LSP_DOUBLE_MISSING_PROBE_FILE)
+
+/** The user-config PATH the engine resolves when the env override is unset —
+ *  `$HOME/.codex/lsp-client.json` (request-context.ts:81) — and `scenarioEnv`
+ *  has already pinned HOME into the sandbox (:4572). */
+function lspUserConfigPath(sandbox) {
+  return join(sandbox.home, '.codex', 'lsp-client.json')
+}
+
+/** The double's own evidence file, pinned through the config row's `env:` block
+ *  so it lands in THIS scenario's sandbox and nowhere else. */
+function lspDoubleLogPath(sandbox) {
+  return join(sandbox.root, 'lsp-double', 'double.log')
+}
+
+/** The stdio child's boot announcement, DERIVED from the vendored entry that
+ *  writes it (cli.ts:29) rather than re-typed here — see
+ *  lsp-double-constants.mjs `deriveLspMcpStartingMarker`. Throws (a loud driver
+ *  error, never a silent miss) if cli.ts stops announcing. */
+function lspMcpStartingMarker() {
+  return deriveLspMcpStartingMarker(readFileSync(LSP_VENDOR_CLI, 'utf8'))
+}
+
+/** The canned definition LINE, derived by THIS driver's own independent read of
+ *  the committed marker file — the double derives the same number inside itself,
+ *  and the two readers must agree. 1-based, because that is how the engine
+ *  prints it (lsp/formatters.ts: `start.line + 1`). */
+function lspDoubleDefinitionLine() {
+  const lines = readFileSync(LSP_MARKER_FILE, 'utf8').split('\n')
+  const index = lines.findIndex((line) => line.includes(LSP_DOUBLE_MARKER_SENTINEL))
+  if (index === -1) {
+    throw new Error(
+      `[lsp-double] sentinel ${LSP_DOUBLE_MARKER_SENTINEL} is absent from ${LSP_MARKER_FILE} — `
+      + 'the canned definition target has no anchor: the double would answer -32603 and this driver could not derive an expectation either',
+    )
+  }
+  return index + 1
+}
+
+/** The engine's own formatted form of the canned location, assembled the way
+ *  lsp/formatters.ts assembles it: path:line:character, nothing else. */
+function lspDoubleExpectedDefinitionText() {
+  return `${LSP_MARKER_FILE}:${String(lspDoubleDefinitionLine())}:${String(LSP_DOUBLE_MARKER_CHARACTER)}`
+}
+
+/** Write the user config that IS the seam. The scenario asserts the ENGINE'S
+ *  ANSWER and never reads this file back, so a config the engine ignored cannot
+ *  make a check pass. */
+function seedLspUserConfig(sandbox, rows) {
+  const path = lspUserConfigPath(sandbox)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `${JSON.stringify({ lsp: rows }, null, 2)}\n`)
+  return path
+}
+
+function lspDoubleUserConfigRows(sandbox) {
+  return {
+    [LSP_DOUBLE_SERVER_ID]: {
+      // An ABSOLUTE interpreter + an ABSOLUTE script path: `isServerInstalled`
+      // accepts a command whose argv[0] carries a separator by `existsSync`
+      // (lsp/server-installation.ts:10-12), and the spawn runs with
+      // cwd = the workspace root, so a RELATIVE script path would resolve
+      // inside the fixture project instead of the repo.
+      command: [process.execPath, LSP_DOUBLE_SERVER],
+      extensions: ['.ts'],
+      env: { LSP_DOUBLE_LOG: lspDoubleLogPath(sandbox) },
+    },
+  }
+}
+
+function lspMissingServerUserConfigRows() {
+  return {
+    [LSP_DOUBLE_MISSING_SERVER_ID]: {
+      command: [LSP_DOUBLE_MISSING_COMMAND],
+      extensions: [LSP_DOUBLE_MISSING_EXTENSION],
+    },
+  }
+}
+
+const LSP_ROUNDTRIP_PROMPT =
+  'e2e lsp-definition-double-roundtrip: ask the LSP server for the status, then the definition and the diagnostics of the fixture app entry, and summarize'
+const LSP_ROUNDTRIP_SUMMARY =
+  'MOCK-LSP-ROUNDTRIP-2a95c7: the double answered definition and diagnostics'
+
+/** Positive leg: status (the config face), goto_definition (the canned
+ *  LocationLink), diagnostics (the canned diagnostic), then the wrap-up — FOUR
+ *  steps, so every result really rode back into the next request. */
+function lspDefinitionDoubleScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'mcp__lsp__status', arguments: {} },
+      {
+        type: 'tool_call',
+        name: 'mcp__lsp__goto_definition',
+        arguments: { filePath: LSP_APP_FILE, line: 12, character: 10 },
+      },
+      { type: 'tool_call', name: 'mcp__lsp__diagnostics', arguments: { filePath: LSP_APP_FILE } },
+      { type: 'text', text: LSP_ROUNDTRIP_SUMMARY },
+    ],
+  }
+}
+
+const LSP_MISSING_PROMPT =
+  'e2e lsp-missing-server-named-failure: ask the LSP server for the definition in the .dbl probe file and report what comes back'
+const LSP_MISSING_SUMMARY =
+  'MOCK-LSP-MISSING-NAMED-FAILURE-8d1b43: the engine named the missing server'
+
+/** Reverse canary: the ONLY row in the user config names a binary that cannot
+ *  exist, and `.dbl` is claimed by no builtin server, so the call has exactly
+ *  one honest way back — the engine's NAMED missing-dependency result. */
+function lspMissingServerScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'mcp__lsp__goto_definition',
+        arguments: { filePath: LSP_MISSING_PROBE_FILE, line: 1, character: 0 },
+      },
+      { type: 'text', text: LSP_MISSING_SUMMARY },
+    ],
+  }
+}
+
+/** The named missing-dependency shape, quoted from the shipped formatters so the
+ *  canary asserts the words the code actually emits: `formatNotInstalled`
+ *  (lsp/client-wrapper.ts:101-106) writes the header and the `Command not
+ *  found:` line, and the SAME function appends the `ACTION REQUIRED — ASK THE
+ *  USER` block at lsp/client-wrapper.ts:122 and :132 — the two decision arms.
+ *  (Measured while applying FIX-R1-14: this line once credited that block to
+ *  src/missing-dependency-result.ts:37-51, which writes NONE of these words —
+ *  it only wraps the already-finished text into the tool result at :32-40 and
+ *  tags it `errorKind: "missing_dependency"`. Naming the path with the right
+ *  prefix while leaving the wrong author on it would have made a false pointer
+ *  look more precise, so the attribution moves with the prefix.) A silent empty
+ *  result — or a rewording — turns these legs red, which is the point. */
+const LSP_MISSING_NAMED_MARKERS = [
+  `LSP server '${LSP_DOUBLE_MISSING_SERVER_ID}' for ${LSP_DOUBLE_MISSING_EXTENSION} is NOT INSTALLED.`,
+  `Command not found: ${LSP_DOUBLE_MISSING_COMMAND}`,
+  'ACTION REQUIRED — ASK THE USER',
+]
+
+/** `tool/call` + `tool/result` pairing — the same shape
+ *  analyzeBashReadGuardWarned uses (:7866-7886). */
+function lspToolCallPairing(events, name) {
+  const calls = events.filter((event) => event.type === 'tool/call' && event.data?.name === name)
+  const results = toolResultParts(events)
+  return calls.map((call) => ({
+    call,
+    arguments: toolCallArguments(call),
+    result: results.find((part) => part.callId === call.data?.callId),
+  }))
+}
+
+/** Read the double's own evidence file. `undefined` when it does not exist —
+ *  which is itself the fact the canary asserts. */
+function lspDoubleLogLines(sandbox) {
+  const path = lspDoubleLogPath(sandbox)
+  if (!existsSync(path)) return undefined
+  return readFileSync(path, 'utf8').split('\n').filter((line) => line.length > 0)
+}
+
+/** Every `pid=` a chunk of text carries, as numbers. */
+function lspPidsIn(text) {
+  return [...String(text).matchAll(/pid=(\d+)/g)].map((match) => Number.parseInt(match[1] ?? '0', 10))
+}
+
+/**
+ * The sandbox's ast-grep provisioning root — the directory the listener's
+ * provisioner would create and download into. P6-T6 MAJOR-1's belt target.
+ *
+ * Deliberately the PARENT of the slug dir, not `<slug>/` itself: the provisioner
+ * computes its target through `astGrepRuntimeDir(join(homeDir(), '.omo'),
+ * platform, arch)` (ast-grep-sg-provision.ts:207 → install-script.ts:95-97), so a
+ * slug the host never expected would still land UNDER this directory. Checking the
+ * parent catches every slug shape, and catches the directory the provisioner mkdirs
+ * before it even fetches — which is the earliest possible signal that the resolver
+ * did NOT short-circuit at gate ①.
+ */
+function lspSgProvisionRoot(sandbox) {
+  return join(sandbox.home, '.omo', 'runtime', 'ast-grep')
+}
+
+/**
+ * P6-T6 MAJOR-1 — the anti-regression leg for the hermetic `sg` pre-seed.
+ *
+ * WHY A LEG AND NOT JUST THE EXPORT. The export in `scenarioEnv` is one line, and
+ * one line is exactly what an edit drops: delete it, or let a scenario's `overrides`
+ * collide with the key, and every gate run silently reopens an 8.1 MB GitHub
+ * download per scenario — silently, because the provisioner runs async off
+ * `session/created` and reports success, not network egress. This leg reads the
+ * env the SHIPPED `scenarioEnv` builds (a sandbox in name only — nothing is
+ * created, nothing is booted) and pins the four facts the seal rests on:
+ *   ① the key is present and non-empty in the environment every spawn gets;
+ *   ② it is ABSOLUTE — a relative path resolves against the spawned child's cwd,
+ *      which is the sandbox project, and would silently miss gate ①;
+ *   ③ the file exists, is a regular file, is NON-EMPTY (the resolver's own gate
+ *      ① predicate: isFile && size > 0, sg-resolver.ts:65-74) and is EXECUTABLE
+ *      (T7 really spawns it; a readable-only blob would seal the download and
+ *      then fail a scenario for the wrong reason);
+ *   ④ a cheap real spawn of `--version` prints what the resolver's version probe
+ *      looks for (`ast-grep`, sg-resolver.ts:92-94), AND that version equals
+ *      SG_PINNED_VERSION — so bumping the pin without touching the fixture is
+ *      RED here rather than a fake claiming to be a different release.
+ *
+ * It SPAWNS the fixture and nothing else: no dsh, no network, no sandbox.
+ */
+function lspHermeticSgSealSelfTest() {
+  const problems = []
+  const env = scenarioEnv({ root: '/self-test', home: '/self-test/home', dshHome: '/self-test/dsh', agentsHome: '/self-test/agents', xdg: '/self-test/xdg' }, {})
+  const seeded = env.OMO_AST_GREP_SG_PATH
+  if (typeof seeded !== 'string' || seeded.trim() === '') {
+    problems.push('P6-T6 MAJOR-1: scenarioEnv exports no OMO_AST_GREP_SG_PATH — every scenario boot would let the ast-grep resolver fall through to a real GitHub download')
+    return problems
+  }
+  if (!isAbsolute(seeded)) {
+    problems.push(`P6-T6 MAJOR-1: the sg pre-seed path is not absolute (${seeded}) — it would resolve against each spawned child's cwd, not the repo`)
+    return problems
+  }
+  if (!existsSync(seeded)) {
+    problems.push(`P6-T6 MAJOR-1: the committed fake sg does not exist at ${seeded} — resolver gate ① would miss it and provision for real`)
+    return problems
+  }
+  const stats = statSync(seeded)
+  if (!stats.isFile()) problems.push(`P6-T6 MAJOR-1: ${seeded} is not a regular file`)
+  if (stats.size === 0) problems.push(`P6-T6 MAJOR-1: ${seeded} is EMPTY — the resolver's own gate ① predicate (isFile && size > 0) would reject it and provision for real`)
+  // The executable bit, checked the same way the resolver will: accessSync(X_OK)
+  // inside isExecutable (sg-resolver.ts:153-164). mode & 0o111 is the same fact.
+  if ((stats.mode & 0o111) === 0) problems.push(`P6-T6 MAJOR-1: ${seeded} is not executable (mode ${stats.mode.toString(8)}) — T7 would spawn a blob, and gate ① would still have passed it`)
+  const probe = spawnSync(seeded, ['--version'], { encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'pipe'] })
+  if (probe.error !== undefined && probe.error !== null) {
+    problems.push(`P6-T6 MAJOR-1: the fake sg could not be spawned for --version: ${String(probe.error.message ?? probe.error)}`)
+    return problems
+  }
+  const versionOut = String(probe.stdout ?? '')
+  if (probe.status !== 0) problems.push(`P6-T6 MAJOR-1: the fake sg exited ${String(probe.status)} on --version (the resolver's PATH probe requires exit 0)`)
+  if (!versionOut.toLowerCase().includes('ast-grep')) problems.push(`P6-T6 MAJOR-1: the fake sg's --version output does not say "ast-grep" ([${versionOut.trim()}]) — isAstGrepVersionOutput would reject it`)
+  if (!versionOut.includes(SG_PINNED_VERSION)) problems.push(`P6-T6 MAJOR-1: the fake sg announces [${versionOut.trim()}] but the provisioner pins ${SG_PINNED_VERSION} — the pre-seed and the release it replaces have drifted; move the fixture with the pin`)
+  return problems
+}
+
+/**
+ * lsp-definition-double-roundtrip analysis. Every check is one link of the
+ * chain, and each is named after the link it breaks on:
+ *   (1) lspRowStartedInBootLog — the vendored stdio child announced itself
+ *       (marker DERIVED from cli.ts, never re-typed);
+ *   (2) statusToolListsDoubleFromUserConfig — the engine read the sandbox's
+ *       user config and reports the row as `source=user`;
+ *   (3) definitionResultIsExactlyTheDoublesCannedLocation — BYTE equality with
+ *       what the double answers, the line derived independently above;
+ *   (4) diagnosticsResultCarriesTheDoublesDiagnostic — message, source, code;
+ *   (5) doubleLogRecordsTheLspWire — the double's OWN file saw initialize →
+ *       initialized → didOpen → definition and ORIGINATED the publishDiagnostics
+ *       the result is built from (measured: the engine's push-first resolution
+ *       takes the publish, lsp/client.ts:190, so no `textDocument/diagnostic`
+ *       pull frame appears — recorded in `bonus`, not asserted, because which
+ *       half answers is the engine's business, not the double's);
+ *   (6) doubleRunsInItsOwnProcess — the double's pid differs from the MCP
+ *       server's, so the answer did not come from the bridge;
+ *   (7) every call answered non-error; (8) the turn closed and the mock saw
+ *       all four steps;
+ *   (9) noSgProvisionArtifactsInSandbox — P6-T6 MAJOR-1's belt. The resolver's
+ *       env override is what keeps this boot off the network; if the sandbox home
+ *       nevertheless carries `.omo/runtime/ast-grep`, the resolver did NOT
+ *       short-circuit at gate ① and a real 8.1 MB GitHub download really ran in
+ *       the gate. The scenario passes the `existsSync` read in, so the check is
+ *       about the DISK, not about the driver's memory of what it exported.
+ */
+export function analyzeLspDefinitionDouble(
+  { log, requests, bootLog, doubleLog, expectedDefinitionText, markerFile, appFilePath, sgProvisionDirExists },
+  _routes,
+) {
+  const events = log?.events ?? []
+  const pairs = {
+    status: lspToolCallPairing(events, 'mcp__lsp__status'),
+    definition: lspToolCallPairing(events, 'mcp__lsp__goto_definition'),
+    diagnostics: lspToolCallPairing(events, 'mcp__lsp__diagnostics'),
+  }
+  const textOf = (list) => (list[0]?.result?.text ?? '')
+  const statusText = textOf(pairs.status)
+  const definitionText = textOf(pairs.definition)
+  const diagnosticsText = textOf(pairs.diagnostics)
+  const logLines = doubleLog ?? []
+  const marker = lspMcpStartingMarker()
+  const doublePids = lspPidsIn(logLines.join('\n'))
+  const enginePids = lspPidsIn(bootLog)
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    lspRowStartedInBootLog: bootLog.includes(marker),
+    sessionLogFound: log !== undefined,
+    statusToolListsDoubleFromUserConfig: statusText.includes(`${LSP_DOUBLE_SERVER_ID}: installed; source=user`),
+    definitionResultIsExactlyTheDoublesCannedLocation:
+      pairs.definition.length === 1
+      && pairs.definition[0]?.result !== undefined
+      && pairs.definition[0]?.result?.isError !== true
+      && definitionText === expectedDefinitionText,
+    diagnosticsResultCarriesTheDoublesDiagnostic:
+      pairs.diagnostics.length === 1
+      && pairs.diagnostics[0]?.result !== undefined
+      && diagnosticsText.includes(LSP_DOUBLE_DIAGNOSTIC_MESSAGE)
+      && diagnosticsText.includes(`[${LSP_DOUBLE_DIAGNOSTIC_SOURCE}]`)
+      && diagnosticsText.includes(`(${String(LSP_DOUBLE_DIAGNOSTIC_CODE)})`),
+    doubleLogRecordsTheLspWire:
+      doubleLog !== undefined
+      && logLines.some((line) => line.includes(' initialize '))
+      && logLines.some((line) => line.includes(' initialized '))
+      && logLines.some((line) => line.includes(' textDocument/didOpen '))
+      && logLines.some((line) => line.includes(' textDocument/definition '))
+      && logLines.some((line) => line.includes(' sent textDocument/publishDiagnostics ')),
+    doubleRunsInItsOwnProcess:
+      doublePids.length > 0 && enginePids.length > 0 && doublePids.some((pid) => !enginePids.includes(pid)),
+    everyCallAnsweredNonError: [pairs.status, pairs.definition, pairs.diagnostics].every(
+      (list) => list.length === 1 && list[0]?.result !== undefined && list[0]?.result?.isError !== true,
+    ),
+    turnCompleted: events.some(
+      (event) =>
+        event.type === 'turn/end'
+        && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+    ),
+    mockSawAllFourSteps: requests.filter((request) => request.role === 'sisyphus').length === 4,
+    noSgProvisionArtifactsInSandbox: sgProvisionDirExists === false,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  const bonus = {
+    marker,
+    markerFile: markerFile ?? null,
+    appFilePath: appFilePath ?? null,
+    sgProvisionDirExists: sgProvisionDirExists ?? null,
+    statusTextHead: statusText.split('\n').slice(0, 4).join(' | '),
+    definitionText,
+    diagnosticsText,
+    doubleLog: doubleLog ?? null,
+    doublePids,
+    enginePids,
+    pullFrameObserved: logLines.some((line) => line.includes(' textDocument/diagnostic ')),
+  }
+  return { result: failed.length === 0 ? 'PASS' : 'FAIL', failed, checks, bonus }
+}
+
+/**
+ * lsp-missing-server-named-failure analysis — the REVERSE canary:
+ *   (1) bootStillSucceeds — `failOnStartupError: false` keeps the harness up
+ *       (cordis.yml's decided value, P6-T4 / S4 semantics);
+ *   (2) lspRowStartedButServerDidNot — the MCP server announced itself while
+ *       the LANGUAGE server left no log: the row is alive, the server it would
+ *       spawn is not;
+ *   (3) canaryAnswerCarriesTheNamedMissingDependencyShape — every marker in
+ *       LSP_MISSING_NAMED_MARKERS;
+ *   (4) canaryAnswerIsNotSilentlyEmpty — the failure mode the task book names
+ *       RED: a call that comes back blank while claiming success;
+ *   (5) canaryAnswerIsLoudTextNotErrorFlag — upstream's shape
+ *       (src/missing-dependency-result.ts:37 returns content with no `isError`, so
+ *       the bridge answers `isError: false` at mcp.ts:181); a flip to an
+ *       errored call is a decision, not an accident;
+ *   (6) doubleNeverSpawnedNoLog — the double's log file does not exist, so not
+ *       one canned byte of ours is in this run;
+ *   (7) the turn closed;
+ *   (8) noSgProvisionArtifactsInSandbox — P6-T6 MAJOR-1's belt, the same disk
+ *       read as the forward scenario: this canary's user config names a binary
+ *       that cannot exist, and the ast-grep listener is a SEPARATE subscriber of
+ *       the same `session/created` seam. A provision dir here would mean the
+ *       canary proved the LSP absence while the gate quietly downloaded 8.1 MB
+ *       for a different hook.
+ */
+export function analyzeLspMissingServerNamedFailure(
+  { log, bootLog, doubleLogExists, namedMarkers, sgProvisionDirExists },
+  _routes,
+) {
+  const events = log?.events ?? []
+  const canary = lspToolCallPairing(events, 'mcp__lsp__goto_definition')[0]
+  const text = canary?.result?.text ?? ''
+  const marker = lspMcpStartingMarker()
+  const markers = namedMarkers ?? LSP_MISSING_NAMED_MARKERS
+  const checks = {
+    bootStillSucceeds: bootLog.includes('dsh web:'),
+    lspRowStartedButServerDidNot: bootLog.includes(marker) && doubleLogExists === false,
+    canaryCallReachedTheEngine: canary !== undefined,
+    canaryAnswerCarriesTheNamedMissingDependencyShape: markers.every((needle) => text.includes(needle)),
+    canaryAnswerIsNotSilentlyEmpty: text.trim().length > 0,
+    canaryAnswerIsLoudTextNotErrorFlag: canary?.result?.isError === false,
+    doubleNeverSpawnedNoLog: doubleLogExists === false,
+    noSgProvisionArtifactsInSandbox: sgProvisionDirExists === false,
+    turnCompleted: events.some(
+      (event) =>
+        event.type === 'turn/end'
+        && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+    ),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      namedMarkers: markers,
+      canaryText: text,
+      canaryIsError: canary?.result?.isError ?? null,
+      marker,
+      doubleLogExists: doubleLogExists ?? null,
+      // The belt's raw disk read, reported so the PASS is auditable rather than
+      // just true (same field the forward scenario reports).
+      sgProvisionDirExists: sgProvisionDirExists ?? null,
+    },
+  }
+}
+
+/** Fabricated GOOD input for the positive scenario: `tool/call` +
+ *  `tool/result` rows in the v3-wrapper shape the other fixtures here use
+ *  (:9601-9613), the double's log in the shape its own `log()` writes, and the
+ *  boot marker DERIVED — no byte of the expectation is hand-typed. */
+export function fabricatedLspDefinitionDoubleInput() {
+  const marker = lspMcpStartingMarker()
+  const enginePid = 41000001
+  const doublePid = 41000002
+  const uri = `file://${LSP_APP_FILE}`
+  // The shape is the double's OWN `log()` output, byte-for-byte in structure:
+  // `<ISO> <kind> pid=<pid>[ uri=…][ line=…][ character=…]` (lsp-double-server.mjs
+  // :143-154 — the ISO stamp is what puts a SPACE before every method name, and
+  // the analysis greps the space-delimited token). A fabricated line without the
+  // stamp is NOT the shape the shipped double writes, and that is exactly the
+  // drift this fixture exists to catch: the first fabricated run here FAILED on
+  // `doubleLogRecordsTheLspWire` for precisely this, which is the leg earning
+  // its keep.
+  const iso = '2026-01-01T00:00:00.000Z'
+  const lines = (kind, pairs = '') => [`${iso} ${kind} pid=${String(doublePid)}${pairs}`]
+  return {
+    log: {
+      path: '/fabricated/session.jsonl',
+      header: { type: 'session', id: 'session-fabricated-lsp' },
+      events: [
+        { seq: 2, type: 'tool/call', data: { turn: 1, step: 1, callId: 'mock-lsp-status', name: 'mcp__lsp__status', arguments: '{}' } },
+        {
+          seq: 3,
+          type: 'tool/result',
+          data: {
+            turn: 1,
+            step: 1,
+            message: {
+              role: 'user',
+              content: [{
+                type: 'tool-result',
+                toolCallId: 'mock-lsp-status',
+                content: [{
+                  type: 'text',
+                  text: `Configured LSP servers: 43\nInstalled LSP servers: 1\n\n- ${LSP_DOUBLE_SERVER_ID}: installed; source=user; extensions=.ts`,
+                }],
+                isError: false,
+              }],
+            },
+          },
+        },
+        {
+          seq: 4,
+          type: 'tool/call',
+          data: {
+            turn: 1,
+            step: 2,
+            callId: 'mock-lsp-def',
+            name: 'mcp__lsp__goto_definition',
+            arguments: JSON.stringify({ filePath: LSP_APP_FILE, line: 12, character: 10 }),
+          },
+        },
+        {
+          seq: 5,
+          type: 'tool/result',
+          data: {
+            turn: 1,
+            step: 2,
+            message: {
+              role: 'user',
+              content: [{
+                type: 'tool-result',
+                toolCallId: 'mock-lsp-def',
+                content: [{ type: 'text', text: lspDoubleExpectedDefinitionText() }],
+                isError: false,
+              }],
+            },
+          },
+        },
+        { seq: 6, type: 'tool/call', data: { turn: 1, step: 3, callId: 'mock-lsp-diag', name: 'mcp__lsp__diagnostics', arguments: JSON.stringify({ filePath: LSP_APP_FILE }) } },
+        {
+          seq: 7,
+          type: 'tool/result',
+          data: {
+            turn: 1,
+            step: 3,
+            message: {
+              role: 'user',
+              content: [{
+                type: 'tool-result',
+                toolCallId: 'mock-lsp-diag',
+                content: [{
+                  type: 'text',
+                  text: `${'error'}[${LSP_DOUBLE_DIAGNOSTIC_SOURCE}] (${String(LSP_DOUBLE_DIAGNOSTIC_CODE)}) at 1:0: ${LSP_DOUBLE_DIAGNOSTIC_MESSAGE}`,
+                }],
+                isError: false,
+              }],
+            },
+          },
+        },
+        { seq: 8, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      ],
+    },
+    requests: [1, 2, 3, 4].map((n) => ({ role: 'sisyphus', body: { model: 'fabricated' }, receivedAt: n })),
+    bootLog: `${FABRICATED_BOOT_LOG}\n${marker}${String(enginePid)}\n`,
+    doubleLog: [
+      ...lines('initialize'),
+      ...lines('initialized'),
+      ...lines('workspace/didChangeConfiguration'),
+      ...lines('textDocument/didOpen', ` uri=${uri} version=1`),
+      ...lines('sent textDocument/publishDiagnostics', ` uri=${uri} version=1`),
+      ...lines('textDocument/definition', ` uri=${uri} line=11 character=10`),
+    ],
+    expectedDefinitionText: lspDoubleExpectedDefinitionText(),
+    markerFile: LSP_MARKER_FILE,
+    appFilePath: LSP_APP_FILE,
+    // The sealed shape: nothing was provisioned, because gate ① answered.
+    sgProvisionDirExists: false,
+  }
+}
+
+/** Each leg names the checks that MUST go red — and only those. `expected` is a
+ *  LIST because one mutation legitimately reaches two checks (an errored answer
+ *  breaks both the byte-equality leg and the non-error leg); a mutation that
+ *  reddens anything else means the check is not independent of the mutation. */
+export function lspDefinitionDoubleDefectCases() {
+  const marker = lspMcpStartingMarker()
+  return [
+    // THE mutation self-proof (fabricated half): with the double out of the
+    // chain the answer is a plausible REAL typescript location, and only the
+    // byte-equality leg can tell.
+    ['double absent — a plausible real typescript location answers', (input) => {
+      const row = input.log.events.find((event) => event.data?.message?.content?.[0]?.toolCallId === 'mock-lsp-def')
+      row.data.message.content[0].content[0].text = '/fabricated/node_modules/typescript/lib/tsc.js:1842:22'
+    }, ['definitionResultIsExactlyTheDoublesCannedLocation']],
+    ['the double never wrote its log — no server-side evidence at all', (input) => {
+      input.doubleLog = undefined
+    }, ['doubleLogRecordsTheLspWire', 'doubleRunsInItsOwnProcess']],
+    ['the stdio child never announced itself in the boot log', (input) => {
+      // The announcement is what this leg mutates — the pid is NOT. Deleting
+      // the whole line would also delete the ONLY engine pid of the fabricated
+      // world and redden `doubleRunsInItsOwnProcess` on a fabrication artifact
+      // instead of on the defect; swapping the derived prefix for a different
+      // server's keeps the mutation surgical: the lsp row's announcement is
+      // gone, nothing else moves.
+      input.bootLog = input.bootLog.replace(marker, `[other-mcp] stdio server starting pid=`)
+    }, ['lspRowStartedInBootLog']],
+    ['status reports the row as builtin — the user config was never read', (input) => {
+      const row = input.log.events.find((event) => event.data?.message?.content?.[0]?.toolCallId === 'mock-lsp-status')
+      row.data.message.content[0].content[0].text = 'Configured LSP servers: 42\nInstalled LSP servers: 0'
+    }, ['statusToolListsDoubleFromUserConfig']],
+    ['the diagnostic message is stripped — the answer came from elsewhere', (input) => {
+      const row = input.log.events.find((event) => event.data?.message?.content?.[0]?.toolCallId === 'mock-lsp-diag')
+      row.data.message.content[0].content[0].text = 'No diagnostics found'
+    }, ['diagnosticsResultCarriesTheDoublesDiagnostic']],
+    ['the definition call answers isError — the chain broke mid-call', (input) => {
+      const row = input.log.events.find((event) => event.data?.message?.content?.[0]?.toolCallId === 'mock-lsp-def')
+      row.data.message.content[0].isError = true
+    }, ['definitionResultIsExactlyTheDoublesCannedLocation', 'everyCallAnsweredNonError']],
+    ['the double logs the ENGINE pid — the answer never left the bridge', (input) => {
+      input.doubleLog = input.doubleLog.map((line) => line.replace('pid=41000002', 'pid=41000001'))
+    }, ['doubleRunsInItsOwnProcess']],
+    ['a step never reached the mock — the round-trip is shorter than scripted', (input) => {
+      input.requests = input.requests.slice(0, 3)
+    }, ['mockSawAllFourSteps']],
+    ['the turn never closed', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'turn/end')
+    }, ['turnCompleted']],
+    // P6-T6 MAJOR-1: the hermetic seal leaked. Everything else still looks
+    // perfect — the double answered and its log is intact — and the ONLY trace
+    // is the directory the provisioner mkdirs on its way to an 8.1 MB download.
+    ['the resolver never short-circuited — a real sg provision ran in the gate', (input) => {
+      input.sgProvisionDirExists = true
+    }, ['noSgProvisionArtifactsInSandbox']],
+  ]
+}
+
+/** Fabricated GOOD input for the reverse canary, carrying the engine's OWN
+ *  named missing-dependency text (LSP_MISSING_NAMED_MARKERS, quoted from
+ *  lsp/client-wrapper.ts / src/missing-dependency-result.ts). */
+export function fabricatedLspMissingServerInput() {
+  const marker = lspMcpStartingMarker()
+  return {
+    log: {
+      path: '/fabricated/session.jsonl',
+      header: { type: 'session', id: 'session-fabricated-lsp-missing' },
+      events: [
+        {
+          seq: 2,
+          type: 'tool/call',
+          data: {
+            turn: 1,
+            step: 1,
+            callId: 'mock-lsp-missing',
+            name: 'mcp__lsp__goto_definition',
+            arguments: JSON.stringify({ filePath: LSP_MISSING_PROBE_FILE, line: 1, character: 0 }),
+          },
+        },
+        {
+          seq: 3,
+          type: 'tool/result',
+          data: {
+            turn: 1,
+            step: 1,
+            message: {
+              role: 'user',
+              content: [{
+                type: 'tool-result',
+                toolCallId: 'mock-lsp-missing',
+                content: [{ type: 'text', text: LSP_MISSING_NAMED_MARKERS.join('\n\n') }],
+                isError: false,
+              }],
+            },
+          },
+        },
+        { seq: 4, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      ],
+    },
+    bootLog: `${FABRICATED_BOOT_LOG}\ndsh web: http://127.0.0.1:1/?token=fabricated\n${marker}41000003\n`,
+    doubleLogExists: false,
+    namedMarkers: LSP_MISSING_NAMED_MARKERS,
+    // Sealed, same as the forward scenario's fabricated world.
+    sgProvisionDirExists: false,
+  }
+}
+
+export function lspMissingServerDefectCases() {
+  const marker = lspMcpStartingMarker()
+  return [
+    ['SILENT EMPTY result — the failure mode the task book names RED', (input) => {
+      const row = input.log.events.find((event) => event.data?.message?.content?.[0]?.toolCallId === 'mock-lsp-missing')
+      row.data.message.content[0].content[0].text = ''
+    }, ['canaryAnswerCarriesTheNamedMissingDependencyShape', 'canaryAnswerIsNotSilentlyEmpty']],
+    ['a reworded answer that keeps NOT INSTALLED but drops the ask-the-user block', (input) => {
+      const row = input.log.events.find((event) => event.data?.message?.content?.[0]?.toolCallId === 'mock-lsp-missing')
+      row.data.message.content[0].content[0].text = `${LSP_DOUBLE_MISSING_SERVER_ID} is NOT INSTALLED.`
+    }, ['canaryAnswerCarriesTheNamedMissingDependencyShape']],
+    ['the double WAS spawned — this is not the absent-server run any more', (input) => {
+      input.doubleLogExists = true
+    }, ['lspRowStartedButServerDidNot', 'doubleNeverSpawnedNoLog']],
+    ['the canary call never reached the engine at all', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'tool/call' && event.data?.message?.content?.[0]?.toolCallId !== 'mock-lsp-missing')
+    }, [
+      'canaryCallReachedTheEngine',
+      'canaryAnswerCarriesTheNamedMissingDependencyShape',
+      'canaryAnswerIsNotSilentlyEmpty',
+      'canaryAnswerIsLoudTextNotErrorFlag',
+    ]],
+    ['the stdio child never announced itself', (input) => {
+      input.bootLog = input.bootLog.replace(`${marker}41000003`, '')
+    }, ['lspRowStartedButServerDidNot']],
+    ['the answer flips to an errored call — a shape change, not a fix', (input) => {
+      const row = input.log.events.find((event) => event.data?.message?.content?.[0]?.toolCallId === 'mock-lsp-missing')
+      row.data.message.content[0].isError = true
+    }, ['canaryAnswerIsLoudTextNotErrorFlag']],
+    ['the turn never closed', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'turn/end')
+    }, ['turnCompleted']],
+    // P6-T6 MAJOR-1's belt on the canary too: proving the LSP server absent is
+    // no reason to download a different binary into the same sandbox.
+    ['a real sg provision ran while the canary proved absence', (input) => {
+      input.sgProvisionDirExists = true
+    }, ['noSgProvisionArtifactsInSandbox']],
+  ]
+}
+
 const SCENARIOS = [
   {
     name: 'hello',
@@ -24914,6 +25772,67 @@ const SCENARIOS = [
     settle: awaitStopContinuationTeamSettled,
     analysisInput: () => ({ catalogObservation: lastStopCatalogObservation }),
     analyze: analyzeStopContinuationTeam,
+  },
+  {
+    // P6-T5 (task book gate 3, the LSP chain): the model's `mcp__lsp__*` call
+    // travels the WHOLE way — bridge → vendored engine → a THIRD process (the
+    // hermetic double) → canned bytes back into the session log — and every
+    // byte the assertions read is one the double authored. See the P6-T5 block
+    // above the registry for the seam, the citations and the pre-measurement.
+    name: 'lsp-definition-double-roundtrip',
+    prompt: LSP_ROUNDTRIP_PROMPT,
+    roles: ['sisyphus'],
+    seed: (sandbox) => {
+      // A moved/renamed fixture is a DRIVER error, said here, now — not a
+      // mystery RED three stages later when the double answers -32603.
+      for (const path of [LSP_DOUBLE_SERVER, LSP_APP_FILE, LSP_MARKER_FILE, LSP_VENDOR_CLI]) {
+        if (!existsSync(path)) throw new Error(`[lsp-definition-double-roundtrip] fixture absent: ${path}`)
+      }
+      mkdirSync(dirname(lspDoubleLogPath(sandbox)), { recursive: true })
+      seedLspUserConfig(sandbox, lspDoubleUserConfigRows(sandbox))
+    },
+    script: lspDefinitionDoubleScript,
+    analysisInput: (sandbox) => ({
+      doubleLog: lspDoubleLogLines(sandbox),
+      expectedDefinitionText: lspDoubleExpectedDefinitionText(),
+      markerFile: LSP_MARKER_FILE,
+      appFilePath: LSP_APP_FILE,
+      userConfigPath: lspUserConfigPath(sandbox),
+      // P6-T6 MAJOR-1's belt, read off the DISK at analysis time.
+      sgProvisionDirExists: existsSync(lspSgProvisionRoot(sandbox)),
+    }),
+    analyze: analyzeLspDefinitionDouble,
+  },
+  {
+    // P6-T5 REVERSE CANARY: the same overlay, the same vendored engine, the
+    // same fixture workspace — and a user config whose only row names a binary
+    // that cannot exist. The chain must come back LOUD and NAMED
+    // (`… is NOT INSTALLED.` / `Command not found: …` / `ACTION REQUIRED — ASK
+    // THE USER`), the boot must still succeed (failOnStartupError:false), and
+    // the double must never have been spawned. A silently empty result here is
+    // the RED the task book names.
+    name: 'lsp-missing-server-named-failure',
+    prompt: LSP_MISSING_PROMPT,
+    roles: ['sisyphus'],
+    seed: (sandbox) => {
+      if (!existsSync(LSP_MISSING_PROBE_FILE)) {
+        throw new Error(`[lsp-missing-server-named-failure] fixture absent: ${LSP_MISSING_PROBE_FILE}`)
+      }
+      // The canary's config deliberately carries NO `env:` block and no
+      // `lsp-double` row: nothing may exist that could answer, and nothing may
+      // write the log whose absence is the evidence.
+      seedLspUserConfig(sandbox, lspMissingServerUserConfigRows())
+    },
+    script: lspMissingServerScript,
+    analysisInput: (sandbox) => ({
+      doubleLogExists: existsSync(lspDoubleLogPath(sandbox)),
+      namedMarkers: LSP_MISSING_NAMED_MARKERS,
+      // P6-T6 MAJOR-1's belt: the canary proves the LSP server is absent; it
+      // must not do so while the ast-grep listener downloads 8.1 MB into the
+      // same sandbox.
+      sgProvisionDirExists: existsSync(lspSgProvisionRoot(sandbox)),
+    }),
+    analyze: analyzeLspMissingServerNamedFailure,
   },
 ]
 
@@ -27623,7 +28542,28 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     const TEAM_T15_SETTLE_SELF_TEST_BANNER = [...TEAM_T15_SETTLE_SELF_TEST_ATTESTATION]
       .map(([scenario, label]) => `${scenario}: ${label}`)
       .join(', ')
-    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 10 on team-create-and-message (9 T10 checks + the T15 settle-pin leg), 5 on team-shutdown-handshake (4 T10 checks + the T15 settle-pin leg), each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing / settle-hook-vanished) FAILs on its own named check; ${TEAM_T15_SETTLE_SELF_TEST_BANNER} (the P5-T15 nested settle leg — settleReached undefined, the weak form's hole, red ONLY on settleReachedChildren) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
+    // P6-T5/P6-T6's clause, rendered from the legs that actually ran (same
+    // discipline as every accumulator above): before it, the LSP legs ran and the
+    // banner named none of them, so CI could not audit the LSP half at all.
+    if (LSP_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('P6-T5: the LSP self-test banner is EMPTY — no lsp-* scenario leg and no hermetic-sg-seal leg pushed a label, so its clause would attest to nothing')
+    }
+    // Entries carry their OWN task tag ([task, scenario, label]) so the seal leg
+    // renders under P6-T6 while the protocol legs stay under P6-T5
+    // (ARBITRATION-r2 B-NIT-1) — a single hardcoded prefix here is what mislabelled
+    // it before, and it is gone.
+    const LSP_SELF_TEST_BANNER = [...LSP_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [task, scenario, label]) => {
+        const key = `${task}\u0000${scenario}`
+        byScenario.set(key, [...(byScenario.get(key) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([key, labels]) => {
+        const [task, scenario] = key.split('\u0000')
+        return `${task} ${scenario}: ${labels.join(', ')}`
+      })
+      .join('; ')
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 10 on team-create-and-message (9 T10 checks + the T15 settle-pin leg), 5 on team-shutdown-handshake (4 T10 checks + the T15 settle-pin leg), each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing / settle-hook-vanished) FAILs on its own named check; ${TEAM_T15_SETTLE_SELF_TEST_BANNER} (the P5-T15 nested settle leg — settleReached undefined, the weak form's hole, red ONLY on settleReachedChildren) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; ${LSP_SELF_TEST_BANNER} (the P6-T5/P6-T6 LSP legs on BOTH lsp-* scenarios — every fabricated defect of the forward round-trip and of the reverse canary, the marker-derivation THROW leg, and P6-T6 MAJOR-1's hermetic sg pre-seal leg, which spawns the committed fixture for real and refuses a pre-seed that is missing, relative, empty, non-executable or pinned to a different version) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

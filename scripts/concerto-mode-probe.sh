@@ -103,6 +103,51 @@
 #                 present, and ZERO `[omo-team]` markers of any shape (loaded /
 #                 registered / boot resume): canary discipline, an absent plugin
 #                 is loud and names itself, never a silent half-mount.
+#   P6-T5 lsp   — the FIFTH cordis.yml insert row's mount observable. omo-lsp
+#                 mounts the dsh-BUNDLED @deepseek-ai/dsh-mcp-client (no install
+#                 step, see the Stage 0 note below), and that row is
+#                 `failOnStartupError: false` — a dead LSP child therefore CANNOT
+#                 fail the boot, so no plugin-side marker and no exit code can
+#                 prove it mounted. The one loud signal on that channel is the
+#                 stdio child's own stderr announcement, which the client
+#                 inherits into $boot_log (@modelcontextprotocol/client/dist/
+#                 stdio.mjs:76 `stderr ?? "inherit"`). The expectation here is
+#                 $EXPECTED_LSP_STARTING_MARKER, DERIVED below with awk straight
+#                 out of the vendored entry that writes it
+#                 (patches/omo-dsh/vendor/lsp-core/src/cli.ts) — the same four
+#                 steps tests/e2e/fixtures/lsp-double-constants.mjs's
+#                 deriveLspMcpStartingMarker performs, run by an independent
+#                 reader over one shipped literal, and printed by the PASS line
+#                 so the cross-check is auditable rather than asserted. A
+#                 reworded announcement moves this expectation with it; a deleted
+#                 one makes the DERIVATION fail the probe before any boot,
+#                 instead of grepping for an empty string and calling that green.
+#                 scripts/cold-start.sh:215-223 greps the same line from a
+#                 hand-copied PREFIX — this probe is the full-value half of that
+#                 pair, which is what makes the constants module's claim of two
+#                 independent readers actually true.
+#                 SCOPE HONESTY: this asserts the row MOUNTED and the child
+#                 SPOKE, not any LSP round-trip — the protocol legs (initialize /
+#                 definition / diagnostics / -32601 / -32700 / die-exit-7) live
+#                 in tests/omo-lsp/lsp-double-protocol.test.ts against the
+#                 hermetic double, and the engine-level round-trip in
+#                 tests/e2e/drive.mjs's two lsp-* scenarios.
+#                 The PRESENCE leg runs in-probe against ALL THREE boots —
+#                 boot_once 'fresh', boot_once 'again', and boot_absent_once
+#                 'noteam' (ARBITRATION-r1 B-MINOR-3: it used to cover two, and
+#                 the third boot is the one that proves the bundled fifth row
+#                 does not ride on a repo-published sibling). Its LOUD ABSENCE
+#                 form is the `fail` text at each site, naming the fifth row,
+#                 the package and the derived marker; the mutation self-proof that
+#                 the grep is not vacuous is an OUT-OF-BAND archive,
+#                 .omo/evidence/p6t5/probe-grep-mutation.log — a marker edited
+#                 out of a COPY of cli.ts makes the awk derivation exit 3 before
+#                 any boot. What is NOT in this task's scope, stated plainly: a
+#                 boot where the LSP child is genuinely absent cannot be produced
+#                 in-probe without modifying the vendored entry or the bundle, so
+#                 this probe has no in-probe NEGATIVE anchor for the lsp row —
+#                 the canary shape lives in the drive.mjs lsp-missing-server
+#                 scenario, on a different channel by necessity.
 #   T8 persona  — the `omo-sisyphus system prompt assembled` boot marker, and
 #                 the MATERIALIZED $DSH_HOME preset's agent.cordis.yml: the
 #                 sentinel is gone and the persona block scalar carries the
@@ -686,6 +731,55 @@ if [[ "$EXPECTED_TEAM_REGISTERED_COUNT" != "0" ]]; then
   printf '%s\n' "$EXPECTED_TEAM_REGISTERED_LINES" | sed 's/^/concerto-probe:   /'
 fi
 
+# P6-T5: the omo-lsp row's mount observable — the stdio LSP child's OWN boot
+# announcement — derived with awk straight out of the vendored entry that writes
+# it (patches/omo-dsh/vendor/lsp-core/src/cli.ts, `stderr.write(\`[lsp-mcp]
+# stdio server starting pid=${…}\n\`)`).
+#
+# WHY A SECOND READER, AND WHY IN AWK. tests/e2e/fixtures/lsp-double-constants.
+# mjs's deriveLspMcpStartingMarker is the JS reader the double and
+# tests/e2e/drive.mjs share. Re-running the same expression here in a different
+# language over the same shipped source is the cross-check: a reader that quietly
+# matched nothing, or matched the wrong stderr.write of the three cli.ts writes,
+# would have to fail in BOTH languages to go unnoticed. The PASS line prints the
+# derived value, so the claim is auditable and not just asserted.
+# scripts/cold-start.sh:215-223 is the third reader, from a hand-copied PREFIX;
+# this is the full-value half of that pair.
+#
+# WHY THIS FAILS LOUDLY AND NEVER GREPS AN EMPTY STRING. The omo-lsp row is
+# `failOnStartupError: false`, so a dead LSP child cannot fail the boot and
+# cannot fail a marker grep it never ran: the derivation is the only gate that
+# can tell "the announcement moved" from "the announcement is gone". No selector
+# match (awk exit 3) or an empty derived value (awk exit 4, the mirror of the JS
+# reader's `marker.length === 0` throw — defensive, the selector anchors on the
+# `[lsp-mcp]` prefix so today it cannot be empty) fails the probe BEFORE any boot
+# is attempted, which is also why the value is derived up here and not inline in
+# the boot block.
+EXPECTED_LSP_CLI_TS="$REPO_ROOT/patches/omo-dsh/vendor/lsp-core/src/cli.ts"
+[[ -f "$EXPECTED_LSP_CLI_TS" ]] \
+  || fail "the vendored lsp-core stdio entry is gone ($EXPECTED_LSP_CLI_TS) — nothing writes the [lsp-mcp] announcement the omo-lsp row is asserted on"
+EXPECTED_LSP_STARTING_MARKER="$(awk '
+{
+  if (match($0, /stderr\.write\(`\[lsp-mcp\][^`]*`\)/)) {
+    found = 1
+    s = substr($0, RSTART, RLENGTH)
+    sub(/^stderr\.write\(`/, "", s)
+    sub(/`\)$/, "", s)
+    sub(/\\n$/, "", s)
+    p = index(s, "${")
+    if (p > 0) s = substr(s, 1, p - 1)
+    gsub(/^[ \t]+/, "", s)
+    gsub(/[ \t]+$/, "", s)
+    if (s != "") { printed = 1; print s; exit }
+  }
+}
+END { if (printed) exit 0; if (found) exit 4; exit 3 }
+' "$EXPECTED_LSP_CLI_TS")" \
+  || fail "could not derive the omo-lsp stdio boot marker from $EXPECTED_LSP_CLI_TS (exit $?): no \`stderr.write(\`[lsp-mcp]…\`)\` announcement there (or it derives to empty) — the omo-lsp boot grep below would silently be grepping nothing"
+[[ -n "$EXPECTED_LSP_STARTING_MARKER" ]] \
+  || fail "the derived omo-lsp stdio boot marker is empty (awk printed nothing for $EXPECTED_LSP_CLI_TS) — refusing to grep the boot log for an empty string"
+echo "concerto-probe: P6-T5 lsp child announcement marker (awk-derived from vendor/lsp-core/src/cli.ts): [$EXPECTED_LSP_STARTING_MARKER]"
+
 # P2-T15 (plan §4.4 deny-sentinel rendering): the explore row's deny is no
 # longer the inline F1 triple. It is the ROSTER-COMPUTED list — write/edit plus
 # all 10 delegation toolNames, in roster order — emitted above from
@@ -1264,6 +1358,22 @@ boot_once() {
   if grep -q '\[omo-team\] team surface .* FAILED' "$boot_log"; then
     fail "[$label] an omo-team registration FAILED at boot — see FAILED line above"
   fi
+  # P6-T5: the FIFTH cordis.yml insert row (omo-lsp) mounted, and its stdio LSP
+  # child SPOKE. Every row above has a plugin-side summary marker to grep; this
+  # one cannot, because the row is `failOnStartupError: false` — a dead LSP child
+  # is deliberately allowed to boot green, so the ONLY loud-absence signal for
+  # "the LSP row degraded silently" is the child's own stderr announcement,
+  # inherited into this boot log (@modelcontextprotocol/client/dist/stdio.mjs:76
+  # `stderr ?? "inherit"`). -F because the derived value carries `[` `]` regex
+  # metacharacters. The expectation is $EXPECTED_LSP_STARTING_MARKER, derived at
+  # probe start by awk out of vendor/lsp-core/src/cli.ts — NOT retyped here, so
+  # a reworded announcement moves this grep with it and a deleted one fails the
+  # derivation before this boot ever runs. scripts/cold-start.sh:215-223 greps
+  # the same line from a hand-copied prefix: the two readers agreeing on one
+  # shipped literal is the cross-check the constants module claims.
+  # Per-label, so it covers BOTH the normal boot and the idempotent re-boot.
+  grep -qF "$EXPECTED_LSP_STARTING_MARKER" "$boot_log" \
+    || fail "[$label] the omo-lsp stdio child (the FIFTH cordis.yml insert row, @deepseek-ai/dsh-mcp-client) never announced itself — the row degraded silently (failOnStartupError:false keeps the boot green); want the awk-derived announcement [$EXPECTED_LSP_STARTING_MARKER] from vendor/lsp-core/src/cli.ts in $boot_log"
   # P5-T10: the team PRESENCE face, run by the shared validator so this live
   # boot and the hermetic defect legs cannot drift apart. It pins (a) the
   # canonical trio BY NAME (team_create / team_send_message / team_status —
@@ -1907,6 +2017,20 @@ boot_absent_once() {
   node "$ASSERT_TEAM_PROBE_FACE_MJS" absent "$boot_log" \
     || fail "[$label] P5-T10 team ABSENCE face failed — an absent omo-team must be LOUD and NAMED (validator output above)"
   echo "concerto-probe: [$label] P5-T10 absence face PASS — host named the inactive row, zero [omo-team] markers"
+  # P6-T5 PRESENCE leg on the THIRD boot too (ARBITRATION-r1 B-MINOR-3). The
+  # noteam profile installs only three plugins, and that is exactly why this leg
+  # belongs here: omo-lsp is the FIFTH cordis.yml insert row and is
+  # **dsh-bundled** (@deepseek-ai/dsh-mcp-client ships inside the installed dsh —
+  # there is NO `dsh plugin add` step for it to skip, unlike omo-team above). So
+  # removing plugins from the profile is not, by itself, a reason for the lsp row
+  # to go quiet: it must still mount and still announce over the same awk-derived
+  # marker. If this fails it is not a flake to be silenced — it would mean the
+  # bundled fifth row's mount depends on a sibling repo-published row being
+  # installed, a real composition fact nobody has measured, and the first place it
+  # would surface is this line.
+  grep -qF "$EXPECTED_LSP_STARTING_MARKER" "$boot_log" \
+    || fail "[$label] the omo-lsp stdio child went silent under the noteam profile — the FIFTH cordis.yml insert row is dsh-bundled (@deepseek-ai/dsh-mcp-client), needs NO install step, and should still mount and announce here even with omo-team deliberately absent; want the awk-derived announcement [$EXPECTED_LSP_STARTING_MARKER] from vendor/lsp-core/src/cli.ts in $boot_log"
+  echo "concerto-probe: [$label] P6-T5 omo-lsp PRESENCE leg PASS — the bundled fifth row announced with no install step of its own"
 }
 
 # P5-T10: hermetic defect legs BEFORE any spawn (drive.mjs runAnalysisSelfTest
@@ -1926,5 +2050,5 @@ boot_once again unchanged
 # fourth row fails LOUD and BY NAME, zero [omo-team] markers (canary).
 boot_absent_once
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (P4.5-T6 row vocabulary: the 0.2.x roster row is isDefault:false with trust/broken ABSENT over the {presets:[…]} roster RPC envelope, the 0.1.5 leg keeps its genuine trust:"user"; name from our preset.yml; the boot roster line prints concerto:broken=absent and NEVER the pre-T6 concerto:? placeholder, with an explicit EMPTY token if the roster read came back empty) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the composition ON THE ASSERTION FACE UNDER TEST — $LAST_COMPOSITION_SOURCE — and no __OMO_ residue on that face); omo-hooks mounted as the second insert row with the FULL $EXPECTED_HOOK_COUNT-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, $EXPECTED_HOOK_COUNT lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines, derived from the manifest's own ported rows — P4-T16 replaced the stale "at P4-T3 = 0 since all six rows are pending", which has been false since T6) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO \`skill … FAILED\` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the row on the assertion face under test, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and BOTH content faces derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row toolName/deny/allow/maxDepth checks generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH — TWO faces written separately with NO fallback between them: FACE A (0.1.5) verbatim line greps of the materialized file including its flow-sequence deny/allow pins, FACE B (0.2.x) the agentPresets/read document PARSED and compared ELEMENT-WISE against src/roster.ts, because content is a yaml.dump() of the parsed entry list where flow sequences expand to block sequences and redundant quotes drop); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS; omo-team mounted as the fourth insert row with its source-derived summary marker ($EXPECTED_TEAM_SUMMARY, $EXPECTED_TEAM_REGISTERED_COUNT registered team-surface lines) and NO FAILED / manifest-validation-FAILED line (both boots); P5-T10 team face TWO-WAY via scripts/assert-team-probe-face.mjs (defect-self-tested with 17 named legs BEFORE any spawn): PRESENCE on both normal boots — team_create/team_send_message/team_status registered lines BY NAME + the state machine's own boot answer line, its shape DERIVED from the shipped formatTeamBootResumeLine (five counters, exactly once, errors=0, no loud form); ABSENCE on the deliberate noteam boot — the host names the inactive fourth row LOUD (dsh: warning: 1 entry did not activate + omo-team (@oh-my-opendsh/omo-team): failed to import, the rc.2 measurement) with ZERO [omo-team] markers of any shape"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (P4.5-T6 row vocabulary: the 0.2.x roster row is isDefault:false with trust/broken ABSENT over the {presets:[…]} roster RPC envelope, the 0.1.5 leg keeps its genuine trust:"user"; name from our preset.yml; the boot roster line prints concerto:broken=absent and NEVER the pre-T6 concerto:? placeholder, with an explicit EMPTY token if the roster read came back empty) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the composition ON THE ASSERTION FACE UNDER TEST — $LAST_COMPOSITION_SOURCE — and no __OMO_ residue on that face); omo-hooks mounted as the second insert row with the FULL $EXPECTED_HOOK_COUNT-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, $EXPECTED_HOOK_COUNT lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines, derived from the manifest's own ported rows — P4-T16 replaced the stale "at P4-T3 = 0 since all six rows are pending", which has been false since T6) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO \`skill … FAILED\` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the row on the assertion face under test, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and BOTH content faces derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row toolName/deny/allow/maxDepth checks generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH — TWO faces written separately with NO fallback between them: FACE A (0.1.5) verbatim line greps of the materialized file including its flow-sequence deny/allow pins, FACE B (0.2.x) the agentPresets/read document PARSED and compared ELEMENT-WISE against src/roster.ts, because content is a yaml.dump() of the parsed entry list where flow sequences expand to block sequences and redundant quotes drop); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS; omo-team mounted as the fourth insert row with its source-derived summary marker ($EXPECTED_TEAM_SUMMARY, $EXPECTED_TEAM_REGISTERED_COUNT registered team-surface lines) and NO FAILED / manifest-validation-FAILED line (both boots); omo-lsp mounted as the FIFTH cordis.yml insert row (the dsh-bundled @deepseek-ai/dsh-mcp-client, no install step, \`failOnStartupError:false\` so a dead LSP child cannot fail this boot) — its mount proof is therefore the stdio child's OWN stderr announcement, grepped as the awk-derived full value $EXPECTED_LSP_STARTING_MARKER read straight out of patches/omo-dsh/vendor/lsp-core/src/cli.ts (P6-T5: the same four steps tests/e2e/fixtures/lsp-double-constants.mjs's deriveLspMcpStartingMarker performs in JS, run here by an INDEPENDENT awk reader over one shipped literal, both values printed above so the cross-check is auditable; scripts/cold-start.sh:215-223 is the third reader, hand-copied prefix), present in ALL THREE boots (normal + re-boot + noteam — the third is the one that proves the dsh-bundled fifth row needs no installed sibling); P5-T10 team face TWO-WAY via scripts/assert-team-probe-face.mjs (defect-self-tested with 17 named legs BEFORE any spawn): PRESENCE on both normal boots — team_create/team_send_message/team_status registered lines BY NAME + the state machine's own boot answer line, its shape DERIVED from the shipped formatTeamBootResumeLine (five counters, exactly once, errors=0, no loud form); ABSENCE on the deliberate noteam boot — the host names the inactive fourth row LOUD (dsh: warning: 1 entry did not activate + omo-team (@oh-my-opendsh/omo-team): failed to import, the rc.2 measurement) with ZERO [omo-team] markers of any shape"
 exit 0
