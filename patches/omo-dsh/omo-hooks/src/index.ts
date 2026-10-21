@@ -56,12 +56,18 @@
 // other half is the WP-2 arbitration that REMOVED H-01 (write-existing-file-guard)
 // from the port group — dsh-fs-observation-policy already covers "overwrite an
 // unread file" natively and strictly more (manifest.ts header; plan revision
-// 2026-09-19). And the roster's `pending` rows are 'keyword-detector' (its e2e
-// `ultrawork-keyword-injected` was P4-T13's) and — since P6-T6 —
-// 'ast-grep-sg-provision' (its e2e `ast-grep-sg-via-bash` is P6-T7's, and its
-// doc-side flip anchor is phase6-mcp-editing.md per FORKS.md §0-1, the c14
-// union NOT extended). The rows are registered and live
-// either way — `status` records the port ledger, not whether a listener exists.
+// 2026-09-19). The roster's `pending` ledger is EMPTY today, and the two rows
+// that ever sat there are closed the same way: 'keyword-detector' waited on its
+// e2e `ultrawork-keyword-injected` (P4-T13 delivered it), and
+// 'ast-grep-sg-provision' — opened 'pending' at P6-T6 — waited on
+// `ast-grep-sg-via-bash` plus its reverse canary
+// `ast-grep-sg-absent-named-failure`, which P6-T7 delivered together with the
+// phase6-mcp-editing.md §3/§6 doc cells in ONE commit (the c14 union is NOT
+// extended per FORKS.md §0-1, so the anchor is PHASE6_ROSTER_ANCHORS in
+// manifest-coverage-consistency.test.ts, which refuses a half-flip). The keyword-
+// detector precedent is the shape: a row is registered and live from the day its
+// listener lands, and `status` records the port LEDGER — that a listener exists is
+// never what the flip asserts, and never what it denies.
 //
 // BOOT-MARKER CONTRACT (probe / cold-start assertion anchors; the pure
 // formatters live in boot-markers.ts, whose header carries the full grammar —

@@ -137,7 +137,7 @@ tag `v4.19.4` (commit `b072d279110bdda2c6ac2525d0d24dc54d16148a`, under
 naming the same sources — those headers and `patches/omo-dsh/omo-hooks/src/manifest.ts`
 (per-file machine-readable lists), not this table, are the per-file authority.
 
-#### Phase 3 additions (16 hook ids — 15 ported + 1 pending, `ast-grep-sg-provision`, whose e2e scenario belongs to P6-T7; the 15th, `keyword-detector`, landed in Phase 4; the 16th, `ast-grep-sg-provision`, landed in Phase 6)
+#### Phase 3 additions (16 hook ids — all 16 ported since P6-T7 flipped `ast-grep-sg-provision`, whose e2e scenarios `ast-grep-sg-via-bash` and `ast-grep-sg-absent-named-failure` landed there; the 15th, `keyword-detector`, landed in Phase 4; the 16th, `ast-grep-sg-provision`, landed in Phase 6 and was flipped to ported in the P6-T7 e2e commit)
 
 | Hook (manifest id) | Derived file(s) under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
 |---|---|---|---|

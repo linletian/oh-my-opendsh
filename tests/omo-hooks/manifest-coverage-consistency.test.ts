@@ -281,29 +281,34 @@ const e2eDriverSource = readFileSync(E2E_DRIVER_PATH, 'utf8')
  * this set the moment the scenario it promises is actually declared. So the set
  * is a TODO list with a self-clearing rule, not a permanent exemption.
  *
- * ⚠️ P6-T6 moved it from EMPTY to ONE entry, and the self-clearing rule is now
- * LIVE (the rule 1 filter has an iteration to lose): H-33's
- * forward promise was `keyword-mode-ultrawork`, and P4-T13 delivered
+ * ⚠️ P6-T6 moved it from EMPTY to ONE entry, and while that entry stood the
+ * self-clearing rule was LIVE (the rule 1 filter had an iteration to lose):
+ * H-33's forward promise was `keyword-mode-ultrawork`, and P4-T13 delivered
  * `ultrawork-keyword-injected` instead, so that promise was discharged by being
- * replaced. `ast-grep-sg-via-bash` is P6-T6's forward promise for the
- * `ast-grep-sg-provision` row (the e2e belongs to P6-T7; the hermetic shape —
+ * replaced. `ast-grep-sg-via-bash` was P6-T6's forward promise for the
+ * `ast-grep-sg-provision` row (the e2e belonged to P6-T7; the hermetic shape —
  * fake sg pre-seeded via OMO_AST_GREP_SG_PATH, reverse canary absent-loud —
- * is FORKS.md §5.1). The moment drive.mjs declares it, rule 1 forces this set
- * back toward empty.
+ * is FORKS.md §5.1). drive.mjs HAS NOW DECLARED it and rule 1 has struck it:
+ * the state recorded below is EMPTY BY DISCHARGE, not by deletion of the
+ * mechanism, which is the only way this registry was ever meant to empty.
  *
  * What the remaining assertions do and do not buy, stated exactly:
- *   * rule 1 (a delivered promise must be struck from the set) runs over the
- *     ONE entry today and will go red the day drive.mjs declares it — that is
- *     the self-clearing half, live and not vacuous.
+ *   * rule 1 (a delivered promise must be struck from the set) had ONE entry to
+ *     lose and lost it — the self-clearing half is not hypothetical, it RAN. It
+ *     bites again the day a new promise is registered and then delivered without
+ *     being struck, which is the shape it was written for.
  *   * rule 2 (the retired name must never reappear) is NOT vacuous: it names
  *     `keyword-mode-ultrawork` literally, so it runs whether or not the set has
  *     entries. That single assertion is what keeps this from being an empty
  *     shell, and it is the one to look at first if the set is ever questioned.
  */
-const FORWARD_PROMISE_SCENARIOS = new Set<string>([
-  // P6-T6's forward promise — struck the day drive.mjs declares it (rule 1).
-  'ast-grep-sg-via-bash',
-])
+// EMPTY: rule 1 fired. `ast-grep-sg-via-bash` was P6-T6's forward promise and
+// P6-T7 DECLARED it in tests/e2e/drive.mjs, so the rule struck it — the set is
+// empty because the promise was discharged, not because the mechanism was removed.
+// The set and both rules stay in place: the next forward promise has to be
+// written down here to exist, and rule 2 (`keyword-mode-ultrawork` must never
+// reappear) runs over the retired name literally, empty set or not.
+const FORWARD_PROMISE_SCENARIOS = new Set<string>([])
 
 /**
  * PHASE 6 ROWS AND THEIR DOC HOME (P6-T6; the human-readable half of the
@@ -457,14 +462,14 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
     // lives outside the union by the §0-1 ruling and is accounted by anchors.
     const unionPortedIds = portedIds.filter((id) => !isPhase6Anchored(id))
     expect(unionPortedIds).toEqual(baselineRows.map((row) => row.id))
-    // The pending side is pinned to the EXACT set since P6-T6 reopened what
-    // P4-T13 had closed: `ast-grep-sg-provision` is the one pending row, its
-    // e2e (`ast-grep-sg-via-bash`) is P6-T7's and its doc-side flip anchor is
-    // the registered phase6 line below. Pinned explicitly (rather than left
-    // unasserted) because an over-broad expectation is the easiest kind to
-    // satisfy by accident: a manifest that had LOST rows, or one where a new
-    // row arrived already 'ported', would both leave a loose form green.
-    expect(pendingIds).toEqual(['ast-grep-sg-provision'])
+    // The pending side is EMPTY and STAYS PINNED to empty: P6-T6 reopened what
+    // P4-T13 had closed, and P6-T7 closed it again — `ast-grep-sg-provision`
+    // flipped to 'ported' together with its `ast-grep-sg-via-bash` scenario, its
+    // reverse canary, and the phase6-mcp-editing.md §3/§6 cells. Pinned to the
+    // exact set rather than left unasserted, because an over-broad expectation is
+    // the easiest kind to satisfy by accident: `toEqual([])` here means a row
+    // arriving 'pending' in future must be written down to pass again.
+    expect(pendingIds).toEqual([])
     // …H-33 specifically is on the ported side, and it is the row whose flip
     // closed the pending era — a typo in the id, or a flip of the wrong row,
     // breaks here rather than passing on a loose pending set.
@@ -508,7 +513,11 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
     // The pairing claim: every pending manifest row must have a non-ported
     // baseline row OR a registered, still-unflipped phase6 anchor, so its flip
     // has a doc cell to change.
-    expect(pendingIds).toEqual(['ast-grep-sg-provision'])
+    // EMPTY since P6-T7's flip. The loop below therefore has no iteration today,
+    // and that is the honest shape of a closed flip anchor — the guard is kept
+    // because the next pending row re-lights it, and because the phase6 flip
+    // guard (the 已移植 direction) is asserted unconditionally further down.
+    expect(pendingIds).toEqual([])
     for (const id of pendingIds) {
       const doc = documentedPending.find((row) => row.id === id)
       if (isPhase6Anchored(id)) {
@@ -598,13 +607,25 @@ describe('P3-T20 consistency — the ported manifest rows ⟺ the baseline union
     // baseline status cell says 已移植.
     const baselineIds = baselineRows.map((row) => row.id)
     const portedIds = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).map((row) => row.id)
+    // The phase6-anchored row is excluded on the UNION side, symmetrically with
+    // the way the pending row used to be excluded here: `ast-grep-sg-provision`
+    // lives outside the c14 union by the FORKS.md §0-1 ruling, so its doc home
+    // is the phase6 anchor line, not a §1 row. Comparing it against the union
+    // would demand a union row the ruling forbids — the §0-1 split has to be
+    // visible HERE, on the comparison, or the split is only a comment.
+    const unionPortedIds = portedIds.filter((id) => !isPhase6Anchored(id))
     expect(new Set(baselineIds).size).toBe(baselineIds.length)
-    expect(baselineIds).toEqual(portedIds)
-    expect(portedIds.filter((id) => !baselineIds.includes(id))).toEqual([])
-    expect(baselineIds.filter((id) => !portedIds.includes(id))).toEqual([])
+    expect(baselineIds).toEqual(unionPortedIds)
+    expect(unionPortedIds.filter((id) => !baselineIds.includes(id))).toEqual([])
+    expect(baselineIds.filter((id) => !unionPortedIds.includes(id))).toEqual([])
     // The two sides together still account for the WHOLE roster: nothing is
-    // unaccounted for, and nothing is double-counted.
-    expect([...baselineIds, ...rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((r) => r.id)].sort())
+    // unaccounted for, and nothing is double-counted. The phase6-anchored rows
+    // join on the doc side as their ANCHOR ids, not as union §1 rows — the same
+    // §0-1 split as above, applied to the arithmetic so the accounting closes
+    // over all three faces (union-ported, union-pending, phase6-anchored)
+    // instead of silently leaving the phase6 row outside the sum.
+    const anchoredIds = PHASE6_ROSTER_ANCHORS.map((entry) => entry.id)
+    expect([...baselineIds, ...anchoredIds, ...rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((r) => r.id)].sort())
       .toEqual([...HOOK_IDS].sort())
   })
 
@@ -658,7 +679,11 @@ describe('P3-T20 consistency — the ported manifest rows ⟺ the baseline union
     // still see every ported row (an empty row set is trivially []), and every
     // row's scenarioNames must be non-empty (a lost scenario column or an
     // over-tight SCENARIO_TOKEN must not shrink the check to nothing).
-    expect(baselineRows.length).toBe(rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).length)
+    // The union's row count equals the UNION-side ported count, with the
+    // phase6-anchored rows subtracted — the §0-1 split again, on the count.
+    expect(baselineRows.length).toBe(
+      rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).filter((row) => !isPhase6Anchored(row.id)).length,
+    )
     for (const row of baselineRows) {
       expect(row.scenarioNames, row.heading).not.toEqual([])
     }

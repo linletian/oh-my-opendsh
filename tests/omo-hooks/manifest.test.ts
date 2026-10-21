@@ -174,15 +174,17 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     // landed with T13 — so P4-T13 flipped it too, as the 双侧同步 commit that
     // also moved the coverage doc's §1.2 status cell.
     //
-    // P6-T6 ends that emptiness, on purpose: `ast-grep-sg-provision` arrives
-    // 'pending' exactly like keyword-detector did at P4-T12 — listener + adapted
-    // unit tests land with the task, the e2e scenario (`ast-grep-sg-via-bash`)
-    // belongs to P6-T7, and the doc-side flip anchor is phase6-mcp-editing.md
-    // §3/§6 (c14's union is NOT extended per FORKS.md §0-1, so the flip's
-    // human-readable half lives in the parallel stream's file, not in the
-    // phase3/phase4 baseline). The hard-coded lists below are the point: a row
-    // silently flipping (or a new row arriving un-named) is caught here, and
-    // manifest-coverage-consistency.test.ts pairs the pending row with its
+    // P6-T6 ENDED that emptiness: `ast-grep-sg-provision` arrived 'pending' just
+    // as keyword-detector had at P4-T12 — listener + adapted unit tests landed
+    // with the task, the e2e scenario (`ast-grep-sg-via-bash`) belonged to P6-T7,
+    // and the doc-side flip anchor was phase6-mcp-editing.md §3/§6 (c14's union
+    // is NOT extended per FORKS.md §0-1, so the flip's human-readable half lives
+    // in the parallel stream's file, not the phase3/phase4 baseline). P6-T7 HAS
+    // SINCE FLIPPED IT — scenario, reverse canary and doc cell in one commit — so
+    // the row is ported now, and that road is the template for the next 'pending'
+    // row rather than history to be edited out. The hard-coded lists below are
+    // still the point: a silent flip, or a new un-named row, is caught here, and
+    // manifest-coverage-consistency.test.ts pairs any pending row with its
     // registered forward promise.
     //
     // The F pair (H-03/H-10/H-11) is now INCLUDED: their listeners, unit tests
@@ -195,11 +197,9 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     // Non-vacuous in the other direction too: the roster must be non-empty, or
     // `toEqual([])` below would be satisfied by a manifest with no rows at all.
     expect(HOOK_MANIFEST.length).toBeGreaterThan(0)
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending').map((row) => row.id)).toEqual([
-      // P6-T6's row — 'pending' until the P6-T7 e2e and the doc-side flip land
-      // in the same commit (anchor: phase6-mcp-editing.md §3 G-1 / §6 S-16).
-      'ast-grep-sg-provision',
-    ])
+    // EMPTY since P6-T7 flipped the last open row. Kept, not deleted: an empty
+    // pending side is now a FACT about the roster and is ASSERTED as one, so a
+    // future row cannot arrive as 'pending' without being written down here.
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
       'todo-continuation-enforcer',
@@ -217,6 +217,9 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
       'ulw-execute',
       // P4-T13's flip — the e2e this task delivered is what discharged it.
       'keyword-detector',
+      // P6-T7's flip — `ast-grep-sg-via-bash` + its reverse canary, and the
+      // phase6-mcp-editing.md §3/§6 cells, in one commit.
+      'ast-grep-sg-provision',
     ])
   })
 })
@@ -338,7 +341,7 @@ describe('P3-T2 HOOK_MANIFEST — spot checks (hard-coded against phase3-hooks.m
     expect(entry?.upstreamFiles.some((file) => file.includes('utils/src/ast-grep/sg-provisioner.ts'))).toBe(true)
     expect(entry?.upstreamFiles.some((file) => file.includes('utils/src/runtime/which.ts'))).toBe(true)
     expect(entry?.e2eScenario).toBe('ast-grep-sg-via-bash')
-    expect(entry?.status).toBe('pending')
+    expect(entry?.status).toBe('ported')
   })
 
   it('the B+D rows record the primary decision surface (event/mode) plus D in the summary', () => {
@@ -504,15 +507,21 @@ describe('P3-T2 derived helpers', () => {
       'prometheus-md-only',
       'ulw-execute',
       'keyword-detector',
+      // P6-T7's flip. This set is the ⑤ test's OWN hard-coded portrait of the
+      // ported side — which is precisely why a flip has to be written here as
+      // well: a portrait that never moves is not testing the subject.
+      'ast-grep-sg-provision',
     ])
-    // Every id is ported EXCEPT the one pending row: P4-T13's flip closed the
-    // last open row of the first era; P6-T6 opened a new one
-    // (`ast-grep-sg-provision`, pending until its P6-T7 e2e and the phase6
-    // doc-side flip land together). Asserted over the FULL expected id set in
-    // both directions, so this is not satisfied by an empty `ported` — a manifest
-    // that had lost rows would leave `EXPECTED_IDS.filter(…)` non-empty, and one
-    // that had invented a row would leave `ported` oversized.
-    const PENDING_IDS = ['ast-grep-sg-provision']
+    // Every id is ported, with NOTHING pending: P4-T13 closed the last open row
+    // of the first era, P6-T6 opened a new one (`ast-grep-sg-provision`) and
+    // P6-T7 closed it — the scenario, the canary and the phase6-mcp-editing.md
+    // §3/§6 cells landed together. Asserted over the FULL expected id set in both
+    // directions, so this is not satisfied by an empty `ported` — a manifest that
+    // had lost rows would leave `EXPECTED_IDS.filter(…)` non-empty, and one that
+    // had invented a row would leave `ported` oversized. `PENDING_IDS` stays
+    // EMPTY and stays in the assertion: a row arriving 'pending' later must be
+    // named here before the suite will pass again.
+    const PENDING_IDS: string[] = []
     expect(EXPECTED_IDS.filter((id) => !ported.has(id) && !PENDING_IDS.includes(id))).toEqual([])
     expect([...ported].filter((id) => !EXPECTED_IDS.includes(id))).toEqual([])
     expect(hooksByStatus(HOOK_MANIFEST, 'pending').map((row) => row.id)).toEqual(PENDING_IDS)
@@ -532,6 +541,7 @@ describe('P3-T2 derived helpers', () => {
       'prometheus-md-only',
       'ulw-execute',
       'keyword-detector',
+      'ast-grep-sg-provision',
     ])
     // The ported set really is the 'ported' set (the two assertions above could
     // both pass if a row were in neither list).

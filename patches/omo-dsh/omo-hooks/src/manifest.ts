@@ -36,7 +36,7 @@
 // `*.test.ts` files go to `upstreamTestFiles` — they are the R-3 unit-test
 // seeds — and `AGENTS.md` is excluded from both lists (N-03: that file
 // disagrees with the code in several places). Among the port group's 16 rows
-// (15 'ported' + 1 'pending' — the authority paragraph on MANIFEST_ROWS' count
+// (16 'ported' + 0 'pending' since P6-T7 flipped the last open row — the authority paragraph on MANIFEST_ROWS' count
 // lineage), TWO upstream directories ship an `AGENTS.md` — H-03's
 // `todo-continuation-enforcer/` (34 ls-tree entries = 17 实现 + 16 测试 +
 // 1 AGENTS.md, so its "33 文件" count already excludes the doc) AND H-33's
@@ -73,7 +73,7 @@
 //
 // ONE-WAY SYNC DISCIPLINE. phase3-hooks.md §1 is the human-readable coverage
 // baseline and this file is the machine-readable one; they carry the SAME
-// facts. The 14 Phase-3 rows (16 rows now: 15 'ported' + 1 'pending') are 1:1
+// facts. The 14 Phase-3 rows (16 rows now: all 16 'ported') are 1:1
 // with the coverage baseline's H-02…H-32 port group
 // (each row's comment names its baseline line), and the consistency test
 // (P3-T20, phase3-plan.md §4.7 L1(③)) asserts the two agree. When a port
@@ -240,8 +240,9 @@ export const EXPECTED_HOOK_COUNT = 16
  * 16, and the count has a history worth keeping (A-MINOR-T6-1: this line said
  * "15-row" while EXPECTED_HOOK_COUNT above said 16 — a stale hand-count, the same
  * failure NOTICES' counts had): 14 through Phase 3 → 15 at P4-T12
- * (`keyword-detector`) → 16 at P6-T6 (`ast-grep-sg-provision`, 'pending', its e2e
- * scenario is P6-T7's). 15 rows are 'ported', one is 'pending'.
+ * (`keyword-detector`) → 16 at P6-T6 (`ast-grep-sg-provision`, opened as
+ * 'pending' with its e2e scenario promised to P6-T7). All 16 rows are 'ported'
+ * since P6-T7 delivered that scenario and flipped this row in the same commit.
  * **This paragraph is the authority**: every other count comment in this file
  * (header line 1, the AGENTS.md audit, the H-01 removal note, the one-way-sync
  * note, the status note, validateManifest's step 5) belongs to the same lineage
@@ -1060,12 +1061,15 @@ const MANIFEST_ROWS = [
   //    以 `whichOnPath` 内联（候选序与守卫逐字，win32 PATHEXT 臂随 D9 出）——
   //    该上游件因此入本行 upstreamFiles 作语义出处（keyword-detector 的
   //    config/schema 先例：语义出处在目录外，登记在列）。
-  // ⑦ **状态 'pending' 的理由与翻转锚**：listener + 单测随本任务落地；e2e 场景
-  //    （`ast-grep-sg-via-bash`，含 §5.1 反向金丝雀）属 T7（门 3 由 T7 跑）；
-  //    c14 并集按 §0-1 不扩 → 本文档侧翻转锚 = phase6-mcp-editing.md §3 G-1/
-  //    G-2b 行 + §6 S-16 行（并行流/仲裁侧文件，本任务只读）。翻转 = 文档侧行
-  //    改「已移植」与本行改 'ported' 同 commit（T20 pending-配对纪律的 Phase 6
-  //    形态，锚点在此成文）。
+  // ⑦ **状态翻转已完成（P6-T7）**：listener + 单测随 P6-T6 落地；e2e 场景随
+  //    P6-T7 落地 = `ast-grep-sg-via-bash`（正腿：技能送达 → bash → 富 fake sg
+  //    真身 → 其字节骑链回会话日志）+ `ast-grep-sg-absent-named-failure`
+  //    （§5.1 反向金丝雀：`sg` 缺席必响亮）；c14 并集按 §0-1 不扩 → 文档侧翻转
+  //    锚 = phase6-mcp-editing.md §3 G-1/G-2b 行 + §6 S-16 行，已在同 commit 改
+  //    「已移植」（T20 pending-配对纪律的 Phase 6 形态已闭合；守卫 =
+  //    PHASE6_ROSTER_ANCHORS 翻转守卫，半翻即红）。改写腿取舍在册：任务书
+  //    「搜索/改写」是析取，正腿以搜索满足，改写需副本+第二遍 --update-all 而
+  //    证明的是同一条传输链——富 fake 因此对 `-r`/`--update-all` 具名拒绝而非静默接受。
   {
     id: 'ast-grep-sg-provision',
     upstreamFiles: [
@@ -1091,13 +1095,17 @@ const MANIFEST_ROWS = [
     summary:
       '会话发表 → 保障 `sg` 二进制在位：once-per-process 记忆 + resolver(env→runtimeDir→PATH) 短路 + 异步 provision（fetch 60s + sha256 校验 + 手写 zip + chmod 755 + 原子 rename）；失败 = LOUD 具名 marker + 结构化指引，永不破会话；双来源裁定（钩层权威 / 技能 install.sh 回退保留）、D9 Windows 减项逐条在册',
     e2eScenario: 'ast-grep-sg-via-bash',
-    // 'pending' — listener + adapted unit tests land with P6-T6; the e2e
-    // scenario (`ast-grep-sg-via-bash`, forward promise registered in
-    // manifest-coverage-consistency.test.ts's FORWARD_PROMISE_SCENARIOS) is
-    // P6-T7's, and the doc-side flip anchor is phase6-mcp-editing.md §3/§6
-    // (c14 union NOT extended per FORKS.md §0-1 — the flip is both-sides in
-    // one commit, with the anchor spelled in row note ⑦).
-    status: 'pending',
+    // 'ported' — P6-T7 closed this row in ONE commit, both sides together: the
+    // e2e scenario `ast-grep-sg-via-bash` now exists in tests/e2e/drive.mjs
+    // (forward leg: skill delivered → bash → the hermetic `sg` double → its bytes
+    // back in the session log), the reverse canary
+    // `ast-grep-sg-absent-named-failure` proves the absence is LOUD, and
+    // phase6-mcp-editing.md §3 G-1 / §6 S-16 flipped to 已移植 in the same
+    // commit (c14 union NOT extended per FORKS.md §0-1; the PHASE6_ROSTER_ANCHORS
+    // guard in manifest-coverage-consistency.test.ts is what makes a half-flip
+    // impossible). FORWARD_PROMISE_SCENARIOS self-clears: the promised scenario is
+    // now DECLARED, so rule 1 has nothing left to demand.
+    status: 'ported',
   },
 ] as const satisfies readonly HookManifestEntry[]
 

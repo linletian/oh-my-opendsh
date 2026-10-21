@@ -15,3 +15,10 @@ dist/
 
 # Manual-test probe artifacts (concerto AC-6 negative probes; see docs/concerto-current-dsh_zh-CN.md §10)
 probe*.txt
+
+# The ast-grep double's invocation evidence (P6-T7). It is RUNTIME evidence the
+# scenario writes inside its own sandbox copy and reads back at a derived path; a
+# copy committed next to the fixture originals would be a stale piece of evidence
+# that `cpSync` carries into every sandbox and that the argv leg could be fed by.
+# Ignored repo-wide by name so no run location can leave it tracked.
+.fake-sg-calls.log

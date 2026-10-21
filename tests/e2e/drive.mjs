@@ -596,6 +596,42 @@ import {
 // download. A `.mjs` importing the plugin's `.ts` is this repo's established seam
 // (scripts/doctor-lite.mjs → doctor-lite-core.ts); the module is pure data.
 import { SG_PINNED_VERSION } from '../../patches/omo-dsh/omo-hooks/src/ast-grep/sg-manifest.ts'
+// P6-T7: the pinned expectation set and the sentinel family. The driver imports
+// the PIN and the token; it deliberately does NOT import the double's matcher, so
+// "the tool's bytes equal the driver's scan" compares two readers rather than one
+// function with itself (see astGrepExpectedMatchesFromFixture below).
+import {
+  AST_GREP_FIXTURE_DECOY_MARKERS,
+  AST_GREP_FIXTURE_SOURCE_FILES,
+  AST_GREP_PINNED_MATCHES,
+  AST_GREP_PINNED_MATCH_COUNT,
+  AST_GREP_SENTINEL_PATTERN,
+  AST_GREP_SENTINEL_TOKEN,
+} from './fixtures/ast-grep-fixture-constants.mjs'
+// FIX-T7-R4-5: the double's ARGV GRAMMAR, imported so its named refusations can be
+// asserted hermetically instead of being remembered by hand. This is a deliberate,
+// narrow exception to the rule two lines above, and the rule survives it: what must
+// never be imported is the double's MATCHER (`collectMatches` / `sentinelCallIndex`),
+// because the byte-comparison between tool output and driver scan has to be two
+// readers rather than one function compared with itself. Refusing `-` or a bogus
+// flag is not a reader — it is the CLI's contract with its caller, and a contract
+// with no automated leg is a contract that silently rots. The module's own
+// `process.argv[1]` guard keeps this import from running a CLI.
+import { main as astGrepFakeMain } from './fixtures/ast-grep-fake-sg.mjs'
+// P6-T7 canary: the failure lines are asserted through the HOOK'S OWN builders,
+// never transcribed — `buildProvisionFailureGuidance` is the single place that
+// text exists, so a wording change in the hook moves the assertion with it
+// instead of leaving a stale literal that passes by accident.
+import {
+  AST_GREP_SG_PROVISION_MARKER,
+  buildProvisionFailureGuidance,
+} from '../../patches/omo-dsh/omo-hooks/src/hooks/ast-grep-sg-provision.ts'
+// The canary's guidance line ENDS with `targetDir: <dir>`, and <dir> is the
+// supply layer's own `astGrepRuntimeDir(...)` output — platform-and-arch slugged,
+// not a hand-written path. Importing it is the only way the assertion can name the
+// directory the hook actually failed on; a literal here would be a second source of
+// truth that drifts the first time the slug format moves.
+import { astGrepRuntimeDir } from '../../patches/omo-dsh/omo-hooks/src/ast-grep/index.ts'
 import { pathToFileURL } from 'node:url'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -13855,6 +13891,109 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P6-T7 the ast-grep pair (fabricated, hermetic, spawns nothing) ──────────
+  // One leg per mutation surface, on BOTH scenarios. The positive pair's split is
+  // the point: a mutation of the TOOL's bytes reddens transport + specification
+  // while CONTENT stands, and a mutation of the DRIVER's scan reddens transport +
+  // content while specification stands. A single-reader design cannot tell those
+  // two apart, and would pass on a fixture that had quietly changed.
+  {
+    const goodAg = analyzeAstGrepViaBash(fabricatedAstGrepViaBashInput(routes), routes)
+    if (goodAg.result !== 'PASS') {
+      problems.push(`fabricated GOOD ast-grep-sg-via-bash must PASS, got FAIL on: ${goodAg.failed.join(', ')}`)
+    }
+    AST_GREP_SELF_TEST_ATTESTATION.push(['P6-T7', 'ast-grep-sg-via-bash', 'GOOD-input-PASS'])
+    const agCases = astGrepViaBashDefectCases()
+    if (agCases.length !== 17) {
+      // 14 from P6-T7, two from FIX-T7-R2 (the cwd binding on the invocation log,
+      // and decoy 2's marker now riding on the reportable line), and one from
+      // FIX-T7-R4: the prefix-lookalike cwd, which is the leg that distinguishes
+      // `endsWith` from `includes` — without it the binding could regress silently.
+      problems.push(`fabricated ast-grep-sg-via-bash: the defect list must hold exactly 17 legs, got ${agCases.length} — one per mutation surface of this scenario's checks`)
+    }
+    for (const [label, mutate, expectedChecks] of agCases) {
+      const input = fabricatedAstGrepViaBashInput(routes)
+      mutate(input)
+      const verdict = analyzeAstGrepViaBash(input, routes)
+      const failed = [...verdict.failed].sort().join(',')
+      const expected = [...expectedChecks].sort().join(',')
+      if (verdict.result !== 'FAIL' || failed !== expected) {
+        problems.push(`fabricated ast-grep-sg-via-bash defect "${label}" must FAIL on exactly [${expected}], got ${verdict.result} [${failed}]`)
+      }
+      AST_GREP_SELF_TEST_ATTESTATION.push(['P6-T7', 'ast-grep-sg-via-bash', label])
+    }
+    const goodAbsent = analyzeAstGrepAbsentNamedFailure(fabricatedAstGrepAbsentInput(routes), routes)
+    if (goodAbsent.result !== 'PASS') {
+      problems.push(`fabricated GOOD ast-grep-sg-absent-named-failure must PASS, got FAIL on: ${goodAbsent.failed.join(', ')}`)
+    }
+    AST_GREP_SELF_TEST_ATTESTATION.push(['P6-T7', 'ast-grep-sg-absent-named-failure', 'GOOD-input-PASS'])
+    const absentCases = astGrepAbsentDefectCases()
+    if (absentCases.length !== 10) {
+      problems.push(`fabricated ast-grep-sg-absent-named-failure: the defect list must hold exactly 10 legs, got ${absentCases.length} — one per mutation surface of the canary's checks`)
+    }
+    for (const [label, mutate, expectedChecks] of absentCases) {
+      const input = fabricatedAstGrepAbsentInput(routes)
+      mutate(input)
+      const verdict = analyzeAstGrepAbsentNamedFailure(input, routes)
+      const failed = [...verdict.failed].sort().join(',')
+      const expected = [...expectedChecks].sort().join(',')
+      if (verdict.result !== 'FAIL' || failed !== expected) {
+        problems.push(`fabricated ast-grep-sg-absent-named-failure defect "${label}" must FAIL on exactly [${expected}], got ${verdict.result} [${failed}]`)
+      }
+      AST_GREP_SELF_TEST_ATTESTATION.push(['P6-T7', 'ast-grep-sg-absent-named-failure', label])
+    }
+    // The scenario-level seal: the positive leg must NOT be able to pass without
+    // the double's evidence. A transcript whose fake sg never logged is the
+    // shape of a scenario that would pass on a hallucinated tool result.
+    const unsealed = fabricatedAstGrepViaBashInput(routes)
+    unsealed.fakeSgLogText = undefined
+    if (!analyzeAstGrepViaBash(unsealed, routes).failed.includes('fakeSgLogRecorded')) {
+      problems.push('ast-grep-sg-via-bash must refuse a transcript with no fake-sg invocation evidence')
+    }
+    AST_GREP_SELF_TEST_ATTESTATION.push(['P6-T7', 'ast-grep-sg-via-bash', 'no-invocation-evidence-is-refused'])
+    // FIX-T7-R4-5: the double's own named-refusal surface, asserted in-process.
+    // Every face here used to be checked by hand once per review round and asserted
+    // by nothing, so a regression to a silent exit 0 — or back to a bare node stack
+    // trace — had no automated tripwire. Each leg pins the exit code AND a fragment
+    // of the naming line, and a refused leg must additionally stay silent on stdout
+    // and leave no invocation evidence: a refused run searched nothing, so a log
+    // line from one would be evidence of work that never happened.
+    const fakeRefusals = astGrepFakeRefusalCases()
+    if (fakeRefusals.length !== 11) {
+      problems.push(`ast-grep-fake-sg: the refusal list must hold exactly 11 legs (10 named refusals + 1 accepted-argv control), got ${fakeRefusals.length}`)
+    }
+    const refusalCwd = mkdtempSync(join(tmpdir(), 'omo-ag-refuse-'))
+    try {
+      for (const [label, argv, expectedCode, expectedFragment] of fakeRefusals) {
+        const run = runAstGrepFakeInProcess(argv, refusalCwd)
+        if (run.code !== expectedCode) {
+          problems.push(`ast-grep-fake-sg face "${label}" must exit ${String(expectedCode)}, got ${String(run.code)} — stderr: ${run.stderr.slice(0, 90)}`)
+        }
+        // The channel follows the outcome, by the double's own contract: a refusal
+        // speaks on stderr and says nothing on stdout; the accepted argv prints its
+        // matches on stdout and is silent on stderr. Checking the wrong channel is
+        // how a control leg looks green while proving nothing — which is exactly
+        // what the first run of this family caught itself doing.
+        const spoken = expectedCode === 2 ? run.stderr : run.stdout
+        if (!spoken.includes(expectedFragment)) {
+          problems.push(`ast-grep-fake-sg face "${label}" must emit "${expectedFragment}" on ${expectedCode === 2 ? 'stderr' : 'stdout'}, got: ${(expectedCode === 2 ? run.stderr : run.stdout).slice(0, 130)}`)
+        }
+        if (expectedCode === 2 && run.stdout.length > 0) {
+          problems.push(`ast-grep-fake-sg refusal "${label}" must print nothing on stdout, got ${String(run.stdout.length)} bytes`)
+        }
+        if (expectedCode === 2 && run.evidenceWritten) {
+          problems.push(`ast-grep-fake-sg refusal "${label}" must leave no invocation evidence — a refused run searched nothing`)
+        }
+        if (expectedCode === 0 && run.stdout.length === 0) {
+          problems.push('ast-grep-fake-sg accepted-argv control must emit match bytes; an empty stdout means every refusal leg above passes for the wrong reason')
+        }
+        AST_GREP_SELF_TEST_ATTESTATION.push(['P6-T7', 'ast-grep-fake-sg-refusals', label])
+      }
+    } finally {
+      rmSync(refusalCwd, { recursive: true, force: true })
+    }
+  }
+
   // ── P6-T5 the LSP double pair (fabricated, hermetic, spawns nothing) ────────
   // One leg per new named check, on BOTH scenarios. The first positive case is
   // the mutation self-proof the task book demands in its fabricated half — the
@@ -24171,7 +24310,8 @@ export function teamNestedCreateDeniedSettleDefectCases() {
 //   from `env['LSP_TOOLS_MCP_USER_CONFIG']` falling back to
 //   `$HOME/.codex/lsp-client.json` (src/mcp.ts:155 → src/request-context.ts:81,
 //   :139-142, `process.env` read at :77). The e2e sandbox already pins HOME
-//   into the sandbox (scenarioEnv, drive.mjs:4612; HOME itself at :4618), so the seed writes the
+//   into the sandbox (scenarioEnv, drive.mjs:4638; HOME itself at :4644 — both re-measured at
+//   FIX-T7, which is where the 26-line import block that had moved them was noticed), so the seed writes the
 //   sandbox's own `$HOME/.codex/lsp-client.json` and NO extra env plumbing is
 //   needed — the row's `env:` block then carries `LSP_DOUBLE_LOG`, which the
 //   transport hands to the spawned server
@@ -24437,6 +24577,33 @@ function lspHermeticSgSealSelfTest() {
   if (probe.status !== 0) problems.push(`P6-T6 MAJOR-1: the fake sg exited ${String(probe.status)} on --version (the resolver's PATH probe requires exit 0)`)
   if (!versionOut.toLowerCase().includes('ast-grep')) problems.push(`P6-T6 MAJOR-1: the fake sg's --version output does not say "ast-grep" ([${versionOut.trim()}]) — isAstGrepVersionOutput would reject it`)
   if (!versionOut.includes(SG_PINNED_VERSION)) problems.push(`P6-T6 MAJOR-1: the fake sg announces [${versionOut.trim()}] but the provisioner pins ${SG_PINNED_VERSION} — the pre-seed and the release it replaces have drifted; move the fixture with the pin`)
+  // FIX-T7-7: the P6-T7 double is sealed the same way, through the SAME entry
+  // name the agent types. Spawning `ast-grep-bin/sg` rather than the `.mjs`
+  // covers BOTH links in one shot — the shim and the body behind it — so a
+  // broken shebang, a lost executable bit or a renamed body all show up here as
+  // the named failure they are instead of as a scenario that quietly stops
+  // running a tool. `ast-grep-fake-sg.mjs` keeps its `ANNOUNCED_VERSION` as a
+  // literal (it has no import of the pin, and an earlier comment here claimed
+  // otherwise); this spawn is what makes that literal a fact rather than a
+  // claim, which is exactly why the env override it used to read was removed.
+  const doubleEntry = join(AST_GREP_BIN_DIR, 'sg')
+  if (!existsSync(doubleEntry)) {
+    problems.push(`P6-T7: the agent's bare \`sg\` does not exist at ${doubleEntry} — the scenario would run no tool at all`)
+  } else {
+    const doubleStats = statSync(doubleEntry)
+    if (!doubleStats.isFile()) problems.push(`P6-T7: ${doubleEntry} is not a regular file`)
+    if (doubleStats.size === 0) problems.push(`P6-T7: ${doubleEntry} is EMPTY — a zero-byte shim cannot answer, and PATH would still offer it`)
+    if ((doubleStats.mode & 0o111) === 0) problems.push(`P6-T7: ${doubleEntry} is not executable (mode ${doubleStats.mode.toString(8)}) — the agent's \`sg\` would resolve and then fail to spawn`)
+    const doubleProbe = spawnSync(doubleEntry, ['--version'], { encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'pipe'] })
+    if (doubleProbe.error !== undefined && doubleProbe.error !== null) {
+      problems.push(`P6-T7: the agent's \`sg\` could not be spawned for --version: ${String(doubleProbe.error.message ?? doubleProbe.error)}`)
+    } else {
+      const doubleOut = String(doubleProbe.stdout ?? '')
+      if (doubleProbe.status !== 0) problems.push(`P6-T7: the agent's \`sg --version\` exited ${String(doubleProbe.status)} — the resolver's PATH probe requires exit 0`)
+      if (!doubleOut.toLowerCase().includes('ast-grep')) problems.push(`P6-T7: the agent's \`sg --version\` does not say "ast-grep" ([${doubleOut.trim()}]) — isAstGrepVersionOutput would reject it`)
+      if (!doubleOut.includes(SG_PINNED_VERSION)) problems.push(`P6-T7: the agent's \`sg\` announces [${doubleOut.trim()}] but the provisioner pins ${SG_PINNED_VERSION} — the double and the pin have drifted; move the fixture with the pin`)
+    }
+  }
   return problems
 }
 
@@ -24864,6 +25031,1014 @@ export function lspMissingServerDefectCases() {
     }, ['noSgProvisionArtifactsInSandbox']],
   ]
 }
+
+// ── P6-T7 ast-grep scenarios (the tool chain, and its loud absence) ────────────
+//
+// WHAT THESE TWO SCENARIOS PROVE, and nothing more. P6-T6 shipped the ast-grep
+// supply layer and sealed every other scenario away from it; P6-T7 is the first
+// round that makes the layer DO something on gate 3. Two scenarios, two opposite
+// directions, because the task book's judgement is a pair: a match that rides the
+// whole way back, and an absence that nobody can mistake for success.
+//
+//   1. `ast-grep-sg-via-bash` — the POSITIVE leg. The chain is
+//        mock-LLM → dsh's `bash` tool → the hermetic `sg` (a real child process)
+//        → its stdout → the tool result → the session log → these assertions,
+//      and the bytes compared at the end are bytes the DOUBLE authored by
+//      reading the fixture files. Three readers touch those files:
+//        * the double, scanning the SANDBOX COPY at run time;
+//        * the driver, scanning the REPO ORIGINAL at analysis time, with its own
+//          scanner written here and not imported from the double;
+//        * ast-grep-fixture-constants.mjs, which reads nothing and is the pin.
+//      Each pair is a separate named check and none is implied by another:
+//      double-vs-driver is TRANSPORT (did the tool's bytes survive the chain),
+//      driver-vs-pin is CONTENT (is the fixture still the fixture this scenario
+//      was written for), double-vs-pin is SPECIFICATION. Delete the pin and the
+//      first check still passes while the scenario stops noticing its own fixture
+//      changing — which is the quiet failure this file exists to prevent.
+//   2. `ast-grep-sg-absent-named-failure` — the REVERSE CANARY. No `sg` on
+//      PATH, the resolver's gate ① reopened by an explicit `''`, and the
+//      provisioner pointed at a proxy that refuses instantly. The hook must
+//      really schedule, really fail, and say so twice (`PROVISION FAILED (…)`
+//      and the structured guidance), while the agent's own `sg` comes back 127.
+//      A silently empty result here is the RED the task book names.
+//
+// WHY THE FIXTURE IS COPIED INTO THE SANDBOX. The command is a real process run
+// against a real directory. The committed originals are documents the assertions
+// read, and a scenario that hands a tool write-access to them would make the
+// evidence and the subject the same mutable file — the driver could not tell "the
+// fixture moved" from "the tool wrote to it". The copy is the write target; the
+// original is the truth the driver reads. (P6-T5's LSP fixture is pointed at in
+// place because that scenario's tool is read-only by protocol; this one's is a
+// shell, and a shell needs no excuse.)
+//
+// WHY THE REWRITE LEG IS NOT HERE. The task book says 搜索/改写 — a disjunctive.
+// Search satisfies it, and the assertion target is the match set. A rewrite leg
+// would need the copied fixture (already here) PLUS a second `--update-all` pass
+// PLUS post-write byte assertions on the copy PLUS a restore, and it would prove
+// the same transport chain a second time. The double therefore REFUSES `-r` and
+// `--update-all` by name rather than accepting them quietly: the skill's biggest
+// documented gotcha is that real sg takes `--json --update-all` and mutates
+// nothing, and a double that mimicked that silence would be teaching the failure
+// instead of testing the success. RESIDUAL BOUNDARY, not claimed closed: nothing
+// in this round demonstrates that a real `sg` parses TypeScript — the double has
+// no AST and no grammar, only the line rule stated in its own header.
+//
+// A SECOND RESIDUAL BOUNDARY, on the JSON SHAPE (FIX-T7). Real
+// `sg run --json=compact` emits `{ file, range: {start, end}, text, replacement?,
+// lines, language, … }` — the authority is the vendored SKILL.md:243, the
+// "Output discipline" bullet. What this double and this driver agree on is the
+// fixture's OWN shape, `{file, line, column, text}`, and `line`/`column` are
+// flattened coordinates that real sg expresses as a `range` object. So the
+// transport assertions are true of the chain they were written against and would
+// NOT survive a swap to the real binary without a rewrite: `astGrepParseMatches`
+// would find no `line` field on those rows and every coordinate check would go
+// RED BY NAME (`matchesEqualFixtureScan`, `matchesEqualPinnedSet`,
+// `noRowsOutsideTheFixture`), which is the loud shape this scenario insists on —
+// a boundary that fails visibly is worth more than one that passes quietly. The
+// difference does not weaken this round's claims, because this round's claim is
+// that bytes authored by a tool survive transport, not that the tool's wire
+// format is this one.
+/** A heading from the vendored ast-grep SKILL.md BODY (not its frontmatter), so
+ *  the skill-leg assertion cannot be satisfied by a description-only delivery —
+ *  the same distinction skills-catalog-visible draws. */
+const AST_GREP_SKILL_BODY_SENTINEL = '## Three things the agent must internalize'
+
+const AST_GREP_FIXTURE_PROJECT = join(
+  REPO_ROOT, 'tests', 'e2e', 'fixtures', 'ast-grep-fixture-project',
+)
+const AST_GREP_FAKE_SG = join(
+  REPO_ROOT, 'tests', 'e2e', 'fixtures', 'ast-grep-fake-sg.mjs',
+)
+/** The directory `PATH` gets prepended with, so the agent can type BARE `sg`.
+ *  A SEPARATE directory from the fixture project on purpose: prepending
+ *  `tests/e2e/fixtures` would also expose `fake-sg.sh` under no useful name and
+ *  put every other fixture file on the executable search path. `ast-grep-bin`
+ *  contains exactly one entry, `sg`. */
+const AST_GREP_BIN_DIR = join(REPO_ROOT, 'tests', 'e2e', 'fixtures', 'ast-grep-bin')
+
+/** The scenario's own copy of the fixture, inside the sandbox project. */
+function astGrepCopyRoot(sandbox) {
+  return join(sandbox.project, 'ast-grep-fixture-project')
+}
+
+/** Where the double writes its invocation evidence: `<copy>/.fake-sg-calls.log`,
+ *  derived from the cwd the search runs in. Both sides compute it independently —
+ *  the double from its cwd, the driver from the copy root — and neither passes it
+ *  to the other, so a missing file cannot be explained away by a plumbing typo. */
+function astGrepFakeSgLogPath(sandbox) {
+  return join(astGrepCopyRoot(sandbox), '.fake-sg-calls.log')
+}
+
+/** Copy the fixture into the sandbox and REMOVE any `.fake-sg-calls.log` that came
+ *  with it. Evidence in this scenario is always THIS round's: the double writes the
+ *  log as it is spawned, and the driver reads it back to prove the spawn happened.
+ *  A log that arrived by way of `cpSync` — because someone ran the double by hand
+ *  against the repo originals — would pre-date the turn it purports to evidence,
+ *  and the argv leg would pass on bytes no scenario produced. Deleting it here
+ *  means the only way the file can exist at analysis time is that something was
+ *  spawned during this run; the cwd binding on the argv leg covers the same hole
+ *  from the other side, so neither side has to trust the other. */
+function astGrepSeedFixture(sandbox) {
+  cpSync(AST_GREP_FIXTURE_PROJECT, astGrepCopyRoot(sandbox), { recursive: true })
+  const carried = astGrepFakeSgLogPath(sandbox)
+  if (existsSync(carried)) rmSync(carried)
+}
+
+/** The canary's PATH: the host PATH with every directory that contains an
+ *  `ast-grep` binary REMOVED. This exists because the resolver's PATH gate looks
+ *  up the bare name `ast-grep` without running the `--version` probe it applies
+ *  to bare `sg`, so installing ast-grep on the build host would silently satisfy
+ *  that gate, short-circuit provisioning, and make the canary red for a reason
+ *  that has nothing to do with what it tests. Filtering is dynamic and reads the
+ *  filesystem at scenario-assembly time, so it tracks the host instead of assuming
+ *  one. An empty result is a NAMED throw rather than an empty PATH: a scenario
+ *  whose PATH had quietly collapsed would still prove the absence of `sg`, but it
+ *  would prove it by breaking every other command in the turn as well, and that
+ *  is a failure the driver should report about itself, not one it should let the
+ *  model trip over.
+ *
+ *  The SAME rule does NOT extend to bare `sg`, and FIX-T7-R3 is why. An earlier
+ *  revision of this helper threw by name when a kept directory held an executable
+ *  `sg`, on the reasoning that the agent's command would then resolve. That was
+ *  right about the mechanism and wrong about the consequence. A host MAY ship an
+ *  executable `sg` — this one does not, measured: Ubuntu 26.04, nothing named `sg`
+ *  on PATH and `dpkg -L passwd` (533 files, live database) lists neither `sg` nor
+ *  `newgrp` — but a gate that refuses to run wherever such a file exists would be
+ *  red on any host that does ship one, and a check whose verdict depends on which
+ *  distribution the runner happens to use is not a gate. Worse than red: the throw
+ *  fired while the env thunk was being evaluated, outside the per-scenario catch,
+ *  so it took the whole driver down and erased the verdicts of scenarios that had
+ *  already passed.
+ *
+ *  Two faces, two mechanisms, and they are NOT equally strong — stated plainly
+ *  because this comment used to claim they were (FIX-T7-R4):
+ *
+ *    AGENT FACE — host-independent by construction. `astGrepCanaryCommand` below
+ *    prefixes its own `PATH='…'` with every executable-`sg` directory removed, so
+ *    `sg` cannot resolve anywhere and the evidence is the 127 "command not found"
+ *    shape on every machine.
+ *
+ *    HOOK FACE — STILL HOST-DEPENDENT, and no PATH filter of this shape can make
+ *    it otherwise by luck. Resolver gate ③ walks `["ast-grep", "sg"]` in that
+ *    order (sg-resolver.ts:107-109); `ast-grep` is accepted on name alone, while
+ *    bare `sg` must pass `hasAstGrepVersion` (sg-resolver.ts:187-191), whose probe
+ *    runs `sg --version` and accepts output containing "ast-grep"
+ *    (sg-resolver.ts:92-94, stdout only, 5s, a throw meaning "not ast-grep"). So
+ *    on a host where `sg` IS ast-grep, the resolver accepts it, provisioning is
+ *    short-circuited, `provisionFailed*` goes RED, and it is a LOUD false red on
+ *    an undeclared host reason — never a false green, which is the direction that
+ *    matters for a canary, but a false red all the same.
+ *
+ *  The hardening below narrows that remaining gap by mirroring the resolver's own
+ *  acceptance rule rather than guessing at it: a directory whose `sg` PROVES itself
+ *  ast-grep by the resolver's probe is dropped. Note what this does NOT do — it
+ *  does not drop `/usr/bin` merely because some `sg` lives there (that would be
+ *  the revoked rule by another route, and would break every other command in the
+ *  turn); it drops a directory only when the probe says that specific file is the
+ *  binary the resolver would wrongly accept. On such a host the hook then fails
+ *  provisioning and produces the same PROVISION FAILED evidence a clean host does.
+ *  This is test-bench neutralisation, not production behaviour: where a real
+ *  ast-grep is installed, production legitimately skips provisioning and this
+ *  scenario does not apply at all. Same philosophy as the agent face's PATH prefix —
+ *  the canary states the conditions of its own premise instead of inheriting them. */
+function astGrepCanaryPath() {
+  const hostDirs = (process.env.PATH ?? '').split(':').filter((dir) => dir.length > 0)
+  const withoutAstGrep = hostDirs.filter((dir) => !existsSync(join(dir, 'ast-grep')))
+  if (withoutAstGrep.length === 0) {
+    throw new Error(
+      `[ast-grep-sg-absent-named-failure] every PATH directory contains an \`ast-grep\` `
+      + `(${String(hostDirs.length)} dirs) — the canary cannot neutralise resolver gate ③ `
+      + 'without an empty PATH, which would break the whole turn rather than just the gate',
+    )
+  }
+  // Mirror of the resolver's bare-`sg` acceptance rule, probe for probe: same
+  // stdout-only capture, same 5s ceiling, same "a throw means not ast-grep"
+  // (sg-resolver.ts:81-94). Only a directory whose own `sg` answers as ast-grep is
+  // dropped, so a host `/usr/bin` holding an unrelated `sg` stays on the PATH.
+  const kept = withoutAstGrep.filter((dir) => {
+    const candidate = join(dir, 'sg')
+    try {
+      const st = statSync(candidate)
+      if (!st.isFile() || (st.mode & 0o111) === 0) return true
+    } catch {
+      return true
+    }
+    try {
+      const probed = spawnSync(candidate, ['--version'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 5_000,
+      })
+      return !String(probed.stdout ?? '').toLowerCase().includes('ast-grep')
+    } catch {
+      return true
+    }
+  })
+  if (kept.length === 0) {
+    throw new Error(
+      `[ast-grep-sg-absent-named-failure] every PATH directory holds an \`sg\` that answers `
+      + `as ast-grep (${String(withoutAstGrep.length)} dirs) — the resolver would accept one `
+      + 'of them at gate ③, so this canary has no PATH left to search and would prove nothing',
+    )
+  }
+  return kept.join(':')
+}
+
+/** The CANARY's own command, deliberately NOT `astGrepSearchCommand`.
+ *
+ *  The positive leg asks for a working search and must therefore inherit the
+ *  host's real PATH; the canary asks for `sg` to be UNREACHABLE, and leaving that
+ *  to what the host happens to provide is the difference between a canary and a
+ *  coin toss. So the command states its own search path: every host PATH
+ *  directory holding an EXECUTABLE `sg` is dropped. `sg` then cannot resolve
+ *  anywhere, and the evidence the scenario reads is the same `command not found`
+ *  plus exit 127 on every machine.
+ *
+ *  Measured, so the reason is recorded rather than assumed: on THIS host (Ubuntu
+ *  26.04, x86_64) there is no `sg` anywhere on PATH, and `dpkg -L passwd` — 533
+ *  files, so the package database is live — lists neither `sg` nor `newgrp`. This
+ *  machine ships no such file and this file does not claim it does. What the design
+ *  leans on is only the conditional: IF some host does provide an executable `sg`,
+ *  a canary that inherited the host PATH would RUN it and collect GNU sg's "does
+ *  not exist" at some other exit code instead of the 127 shape
+ *  `bashFailureIsNamed` matches. Dropping sg-bearing directories makes the
+ *  conditional moot, which is exactly why no claim about any particular distribution
+ *  has to be settled for the canary to mean the same thing everywhere. Verified
+ *  both ways: a clean host (35 PATH dirs, zero dropped) and a planted executable
+ *  `sg` at the head of PATH (that dir dropped, canary still reporting 127).
+ *
+ *  An empty filtered PATH is not a problem but the cleanest case: `PATH='' sg …`
+ *  is a shell-internal lookup that fails with 127 without ever consulting an
+ *  external `env`, so the canary does not even depend on `/usr/bin/env` existing
+ *  (hand-tested: exit 127, `sg: command not found`).
+ *
+ *  The `PATH=` prefix is the canary's host-independence mechanism, not a departure
+ *  from the skill's taught shape: the call remains the bare `sg run -p …` form the
+ *  ast-grep skill teaches, with the pinned pattern intact, so
+ *  `bashAttemptedBareSg` and `bashCallCarriesPinnedPattern` read the same thing
+ *  they always did. */
+function astGrepCanaryCommand(copyRoot) {
+  const hostDirs = (process.env.PATH ?? '').split(':').filter((dir) => dir.length > 0)
+  const searchable = hostDirs.filter((dir) => {
+    const candidate = join(dir, 'sg')
+    try {
+      const st = statSync(candidate)
+      return !(st.isFile() && (st.mode & 0o111) !== 0)
+    } catch {
+      return true
+    }
+  })
+  // Escaped, not merely wrapped: a PATH entry containing a `'` would otherwise
+  // close the quote and turn a 127 into a shell syntax error at exit 2.
+  return `cd ${shellSingleQuote(copyRoot)} && PATH=${shellSingleQuote(searchable.join(':'))} sg run -p ${shellSingleQuote(AST_GREP_SENTINEL_PATTERN)} --lang ts --json=compact .`
+}
+
+const AST_GREP_VIA_BASH_PROMPT =
+  'e2e ast-grep-sg-via-bash: load the ast-grep skill and use sg to structurally search the fixture project for the sentinel calls, then report how many matched'
+const AST_GREP_VIA_BASH_SUMMARY =
+  `MOCK-AST-GREP-7c4d19: sg matched ${String(AST_GREP_PINNED_MATCH_COUNT)} sentinel calls across ${String(AST_GREP_FIXTURE_SOURCE_FILES.length)} files in the fixture project`
+const AST_GREP_ABSENT_PROMPT =
+  'e2e ast-grep-sg-absent-named-failure: load the ast-grep skill and try to run sg on the fixture project, then report exactly what came back'
+const AST_GREP_ABSENT_SUMMARY =
+  'MOCK-AST-GREP-ABSENT-3f8a02: sg is NOT INSTALLED — the command was not found and no structural search could run'
+
+/** POSIX single-quote an interpolated value (FIX-T7-R4-3).
+ *
+ *  Both command builders below wrap a value built from the environment — a PATH
+ *  entry, a sandbox copy root — in single quotes. That is correct right up until a
+ *  value contains a `'`, which CLOSES the quote early and leaves the rest of the
+ *  line to the shell: the run then dies on a syntax error at exit 2, not the 127
+ *  the canary matches, so `bashFailureIsNamed` misses it and the scenario reports a
+ *  failure that has nothing to do with what it is about. The standard escape ends
+ *  the quote, inserts an escaped literal quote, and reopens — `it's` becomes
+ *  `'it'\''s'` — which keeps every other character inside the quote literal, `$`
+ *  and backticks included (the pinned pattern relies on exactly that for `$ARG`).
+ *
+ *  The alternative was to refuse such values by name; escaping was chosen because
+ *  a path with an apostrophe is a legal path, and a harness that cannot express one
+ *  is testing a narrower world than the product runs in. */
+function shellSingleQuote(value) {
+  return `'${String(value).split("'").join(`'\\''`)}'`
+}
+
+/** The command the agent runs, assembled from the pinned pattern so the mock,
+ *  the assertions and the double can never disagree about what was asked. */
+function astGrepSearchCommand(copyRoot) {
+  // `cd` took the copy root raw until FIX-T7-R4-3; it is quoted now for the same
+  // reason PATH is. The analysis compares against THIS function, so both sides of
+  // the `===` move together and the comparison keeps its meaning.
+  return `cd ${shellSingleQuote(copyRoot)} && sg run -p ${shellSingleQuote(AST_GREP_SENTINEL_PATTERN)} --lang ts --json=compact .`
+}
+
+/**
+ * The driver's OWN scan of the fixture originals. Deliberately NOT imported from
+ * the double: two readers, two implementations, one fixture. If both called the
+ * same function the byte-comparison would compare a function with itself.
+ *
+ * The rule it applies is the documented one (`TOKEN(` in the code part of a
+ * line, not the declaration), restated here on purpose — a shared implementation
+ * would make agreement structural instead of evidential.
+ */
+function astGrepExpectedMatchesFromFixture() {
+  const matches = []
+  for (const relativeFile of [...AST_GREP_FIXTURE_SOURCE_FILES].sort()) {
+    const full = join(AST_GREP_FIXTURE_PROJECT, relativeFile)
+    if (!existsSync(full)) {
+      throw new Error(
+        `[ast-grep-sg-via-bash] fixture source absent: ${full} — the expected set cannot be `
+        + 'derived, and an empty expectation would make the transport check pass on nothing',
+      )
+    }
+    readFileSync(full, 'utf8').split('\n').forEach((line, index) => {
+      // Cut at a `//` that is not inside a string, then require the CALL form
+      // OUTSIDE any string. Two independent bugs lived in this loop and both were
+      // caught by name, which is what the pin is for:
+      //   * the FIRST version `continue`d while inside a quote and so dropped the
+      //     string contents, reporting `OMO_E2E_AST_GREP_TARGET()` for a line
+      //     reading `…('alpha-7f3c')` — caught by `matchesEqualFixtureScan` and
+      //     `fixtureScanMatchesPinnedSet`;
+      //   * the SECOND version kept the contents but scored `TOKEN(` wherever it
+      //     appeared in the surviving text, so a quoted `'TOKEN(x) …'` counted as
+      //     a call. Quote state belongs to the OCCURRENCE, not the line, and
+      //     `at` is now recorded only where `quote === null`.
+      // Escapes consume the character they escape, in this reader and in the
+      // double's `codePartOf`, so both compute the same code part byte for byte.
+      let code = ''
+      let quote = null
+      let at = -1
+      for (let i = 0; i < line.length; i += 1) {
+        const ch = line[i]
+        if (quote !== null) {
+          code += ch
+          if (ch === '\\') {
+            if (i + 1 < line.length) { i += 1; code += line[i] }
+          } else if (ch === quote) quote = null
+          continue
+        }
+        if (ch === '"' || ch === "'" || ch === '`') { quote = ch; code += ch; continue }
+        if (ch === '/' && line[i + 1] === '/') break
+        if (at === -1 && line.startsWith(`${AST_GREP_SENTINEL_TOKEN}(`, i)
+          && !/function\s*$/.test(line.slice(0, i))) at = i
+        code += ch
+      }
+      if (at === -1) return
+      matches.push({ file: relativeFile, line: index + 1, column: at + 1, text: code.trim() })
+    })
+  }
+  if (matches.length === 0) {
+    throw new Error(
+      `[ast-grep-sg-via-bash] the sentinel pattern derives ZERO expectations from `
+      + `${AST_GREP_FIXTURE_PROJECT} — the scenario would then be satisfied by an empty `
+      + 'result, which is the silent-degradation shape the canary exists to catch',
+    )
+  }
+  return matches
+}
+
+/** Parse the JSON the tool echoed back. A parse failure is a NAMED null, not a
+ *  swallowed exception: the checks below treat it as "the chain carried no
+ *  parseable result", which is the honest reading. */
+function astGrepParseMatches(text) {
+  if (typeof text !== 'string') return undefined
+  const start = text.indexOf('[')
+  const end = text.lastIndexOf(']')
+  if (start === -1 || end <= start) return undefined
+  try {
+    const parsed = JSON.parse(text.slice(start, end + 1))
+    return Array.isArray(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The canonical form both sides are compared in: sorted by file/line, four
+ *  fields, so ordering differences cannot mask a content difference. */
+function astGrepCanonical(matches) {
+  return [...matches]
+    .map((m) => ({ file: m.file, line: m.line, column: m.column, text: m.text }))
+    .sort((a, b) => `${a.file}:${String(a.line)}`.localeCompare(`${b.file}:${String(b.line)}`))
+}
+
+function astGrepSameSet(left, right) {
+  if (left.length !== right.length) return false
+  const a = astGrepCanonical(left)
+  const b = astGrepCanonical(right)
+  return a.every((entry, index) => entry.file === b[index].file
+    && entry.line === b[index].line
+    && entry.column === b[index].column
+    && entry.text === b[index].text)
+}
+
+/** Read the provision tree as [{rel, mode}] — the listing the canary's hermetic
+ *  boundary is judged from. The RULE (no `.partial`, no executable bit) is in the
+ *  analysis, not here, so the rule can be tested against a listing the self-test
+ *  hands in without a real download having to happen. */
+function astGrepListTree(root) {
+  if (!existsSync(root)) return []
+  const out = []
+  const stack = [['', root]]
+  while (stack.length > 0) {
+    const [relPrefix, dir] = stack.pop()
+    for (const entry of readdirSync(dir)) {
+      const rel = relPrefix === '' ? entry : `${relPrefix}/${entry}`
+      const full = join(dir, entry)
+      const stats = statSync(full)
+      if (stats.isDirectory()) { stack.push([rel, full]); continue }
+      out.push({ rel, mode: stats.mode })
+    }
+  }
+  return out
+}
+
+/** The RAW bytes of the scenario's durable session log, walked out of the
+ *  sandbox rather than taken from the parsed `log` the driver already holds: the
+ *  leg this feeds must compare the tool's bytes against a DIFFERENT source than
+ *  the one they were parsed out of, or it cannot fail on its own. One session per
+ *  scenario by construction; more than one file is reported, not silently merged. */
+function astGrepDurableLogText(sandbox) {
+  const root = join(sandbox.dshHome, 'sessions')
+  if (!existsSync(root)) return undefined
+  const found = []
+  const stack = [root]
+  while (stack.length > 0) {
+    const dir = stack.pop()
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) { stack.push(full); continue }
+      if (entry === 'session.v4.jsonl') found.push(full)
+    }
+  }
+  if (found.length !== 1) {
+    throw new Error(
+      `[ast-grep-sg-via-bash] expected exactly ONE durable session log under ${root}, `
+      + `found ${String(found.length)} — merging several would let bytes from another session `
+      + 'satisfy the durable-log leg, and zero means the turn never persisted',
+    )
+  }
+  return readFileSync(found[0], 'utf8')
+}
+
+function astGrepViaBashScript(sandbox) {
+  const command = astGrepSearchCommand(astGrepCopyRoot(sandbox))
+  return {
+    sisyphus: [
+      { type: 'tool_calls', calls: [{ name: 'skill', arguments: { name: 'ast-grep' } }] },
+      { type: 'tool_calls', calls: [{ name: 'bash', arguments: { command, description: 'Structural search of the fixture project with sg' } }] },
+      { type: 'text', text: AST_GREP_VIA_BASH_SUMMARY },
+    ],
+  }
+}
+
+function astGrepAbsentScript(sandbox) {
+  // NOT `astGrepSearchCommand`: the canary needs its own command that states a
+  // search path where no `sg` can resolve. See `astGrepCanaryCommand`.
+  const command = astGrepCanaryCommand(astGrepCopyRoot(sandbox))
+  return {
+    sisyphus: [
+      { type: 'tool_calls', calls: [{ name: 'skill', arguments: { name: 'ast-grep' } }] },
+      { type: 'tool_calls', calls: [{ name: 'bash', arguments: { command, description: 'Try the structural search with sg' } }] },
+      { type: 'text', text: AST_GREP_ABSENT_SUMMARY },
+    ],
+  }
+}
+
+export function analyzeAstGrepViaBash(
+  { log, requests, providersJson, bootLog, expectedMatches, pinnedMatches, skillBodySentinel, copyRoot, fakeSgLogText, durableLogText },
+  routes,
+) {
+  const events = log?.events ?? []
+  const calls = events.filter((event) => event.type === 'tool/call')
+  const results = toolResultParts(events)
+  const findCall = (name) => calls.find((event) => event.data?.name === name)
+  const resultFor = (call) => (call === undefined
+    ? undefined
+    : results.find((part) => part.callId === call.data?.callId))
+  const skillCall = findCall('skill')
+  const skillResult = resultFor(skillCall)
+  const bashCall = findCall('bash')
+  const bashResult = resultFor(bashCall)
+  const bashArguments = bashCall === undefined ? undefined : toolCallArguments(bashCall)
+  const matched = astGrepParseMatches(bashResult?.text)
+  const expectedCommand = astGrepSearchCommand(copyRoot ?? '')
+  const fixtureFiles = new Set(expectedMatches.map((match) => match.file))
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+    // The skill leg: the model asked for `ast-grep` and got ITS OWN body back,
+    // so the search below is guided by the skill rather than improvised.
+    skillToolAskedForAstGrep: skillCall !== undefined
+      && toolCallArguments(skillCall)?.name === 'ast-grep',
+    skillBodyDelivered: skillResult !== undefined
+      && skillResult.isError !== true
+      && skillResult.text.includes(skillBodySentinel),
+    // The bash leg: the call happened, carried the pinned pattern and the copy's
+    // path, and did not error.
+    bashCallCarriesPinnedPattern: bashArguments !== undefined
+      && typeof bashArguments.command === 'string'
+      && bashArguments.command === expectedCommand,
+    bashExecutedWithoutError: bashResult !== undefined && bashResult.isError !== true,
+    bashReturnedParseableJson: matched !== undefined,
+    // TRANSPORT: the double's bytes equal the driver's own scan of the originals.
+    matchesEqualFixtureScan: matched !== undefined && astGrepSameSet(matched, expectedMatches),
+    // CONTENT: the driver's scan still equals the inert pin. This is the leg that
+    // goes red when a fixture line moves, because the scan moves and the pin does
+    // not — without it the transport check would pass against any fixture at all.
+    fixtureScanMatchesPinnedSet: astGrepSameSet(expectedMatches, pinnedMatches),
+    // SPECIFICATION: what the tool answered is what the pin says, not merely what
+    // the fixture happens to contain today.
+    matchesEqualPinnedSet: matched !== undefined && astGrepSameSet(matched, pinnedMatches),
+    // The double really was a spawned process, asked for THIS pattern — read off
+    // its own evidence file, so a non-empty result is never taken on trust. The
+    // argv is compared to the command's own pattern, not to a restated copy.
+    fakeSgLogRecorded: typeof fakeSgLogText === 'string' && fakeSgLogText.length > 0,
+    // The row must ALSO name the cwd this scenario ran in. Without that binding the
+    // argv half could be satisfied by a log written anywhere else — most readily by
+    // a stale `.fake-sg-calls.log` left next to the fixture ORIGINALS by a manual
+    // probe, which `cpSync` would carry into every sandbox and which would then
+    // testify to a search that happened in the repository on some earlier run.
+    // Tying the row to `cwd=<copyRoot>` makes evidence from another place
+    // structurally unable to satisfy it, whatever else the line contains.
+    fakeSgRecordedSentinelArgv: typeof fakeSgLogText === 'string'
+      && fakeSgLogText.split('\n')
+        .some((line) => line.includes('spawned argv=')
+          && line.includes(AST_GREP_SENTINEL_PATTERN)
+          && line.includes('--json=compact')
+          && (typeof copyRoot === 'string' && copyRoot.length > 0
+            // SUFFIX, not substring: `cwd=` is the LAST field on the line, so a
+            // prefix-shaped impostor like `<copyRoot>-OLD` — a sibling directory
+            // that an earlier run of a copied sandbox could well have left behind —
+            // satisfies `includes` while being demonstrably not this run's subject.
+            // `endsWith` closes that by the line's own grammar rather than by
+            // hoping no such path exists.
+            ? line.endsWith(`cwd=${copyRoot}`)
+            : line.includes('cwd='))),
+    // The skill's body reached the MODEL on the wire after the load step, so the
+    // search below is guided by the delivered skill and not by an improvisation
+    // that happens to use the same command (the skills-catalog-visible habit).
+    skillBodyReachedNextModelRequest: requests.filter((r) => r.role === 'sisyphus').some(
+      (request, index) => index > 0
+        && JSON.stringify(request.body ?? {}).includes(skillBodySentinel),
+    ),
+    // NEGATIVE LEG: no row names a file the fixture does not contain, and no
+    // decoy shape leaked in.
+    noRowsOutsideTheFixture: matched !== undefined
+      && matched.every((match) => fixtureFiles.has(match.file)),
+    noDecoyShapeReported: matched !== undefined
+      && !matched.some((match) => AST_GREP_FIXTURE_DECOY_MARKERS.some((marker) => match.text.includes(marker))),
+    // The matched text rode into the DURABLE log. `durableLogText` is the RAW
+    // bytes of the session JSONL read off disk by `analysisInput`, NOT the
+    // `log.events` structure these same matches were parsed out of — compared
+    // against the parsed structure this would be tautological and could never go
+    // red on its own, which is the same vacuity the c29 ①b comment warns about.
+    // With NO matches there is nothing to carry, and this leg says nothing — the
+    // missing result is named by `bashReturnedParseableJson` /
+    // `bashExecutedWithoutError`, not redundantly by this one. One check, one
+    // fact: here, that every match the tool reported is present in the RAW bytes.
+    matchTextRodeIntoSessionLog: matched === undefined || matched.length === 0
+      || (typeof durableLogText === 'string'
+        && matched.every((match) => durableLogText.includes(match.text))),
+    assistantSummaryRecorded: events.some(
+      (event) => event.type === 'assistant/message' && eventText(event).includes(AST_GREP_VIA_BASH_SUMMARY),
+    ),
+    turnCompleted: events.some(
+      (event) => event.type === 'turn/end'
+        && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+    ),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    detail: {
+      expected: astGrepCanonical(expectedMatches),
+      reported: matched === undefined ? undefined : astGrepCanonical(matched),
+      command: bashArguments?.command,
+    },
+  }
+}
+
+export function analyzeAstGrepAbsentNamedFailure(
+  { log, requests, providersJson, bootLog, provisionRoot, provisionFiles, failedLinePrefix, guidanceText },
+  routes,
+) {
+  const events = log?.events ?? []
+  const calls = events.filter((event) => event.type === 'tool/call')
+  const results = toolResultParts(events)
+  const bashCall = calls.find((event) => event.data?.name === 'bash')
+  const bashResult = bashCall === undefined
+    ? undefined
+    : results.find((part) => part.callId === bashCall.data?.callId)
+  const bashText = bashResult?.text ?? ''
+  const skillCall = calls.find((event) => event.data?.name === 'skill')
+  const skillResult = skillCall === undefined
+    ? undefined
+    : results.find((part) => part.callId === skillCall.data?.callId)
+  // The parseable-but-empty shape: the agent's search must NOT have produced
+  // matches. Anything parseable and non-empty here would mean the canary found a
+  // way to succeed, which is the silence this scenario is built to forbid.
+  const reported = astGrepParseMatches(bashText)
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+    // The skill was delivered even though the binary was not: this is the G-3
+    // empty-instruction invariant in its e2e form — the instruction exists, the
+    // tool it teaches does not, and the gap must be LOUD, not implied.
+    skillStillDelivered: skillResult !== undefined && skillResult.isError !== true,
+    // HOOK FACE: the provisioner really ran and really failed, named twice.
+    provisionFailedLineInBootLog: (bootLog ?? '').includes(failedLinePrefix),
+    provisionGuidanceInBootLog: (bootLog ?? '').includes(guidanceText),
+    // AGENT FACE: bare `sg` came back as a named failure, not an empty success.
+    bashAttemptedBareSg: bashCall !== undefined
+      && typeof toolCallArguments(bashCall)?.command === 'string'
+      && toolCallArguments(bashCall).command.includes('sg run -p'),
+    bashFailureIsNamed: bashResult !== undefined
+      && (bashResult.isError === true
+        || /command not found|not found|未找到命令|exit code: 127/.test(bashText)),
+    noMatchesDespiteSkillBeingLoaded: reported === undefined || reported.length === 0,
+    // The agent's closing text names the absence rather than glossing it.
+    assistantNamesTheAbsence: events.some(
+      (event) => event.type === 'assistant/message' && eventText(event).includes('NOT INSTALLED'),
+    ),
+    assistantSummaryRecorded: events.some(
+      (event) => event.type === 'assistant/message' && eventText(event).includes(AST_GREP_ABSENT_SUMMARY),
+    ),
+    turnCompleted: events.some(
+      (event) => event.type === 'turn/end'
+        && (event.data?.reason?.kind ?? event.data?.reason) === 'completed',
+    ),
+    // HERMETIC BOUNDARY, checked not assumed: a failed fetch dies BEFORE any
+    // write, so the provision dir may exist with failure traces but must carry no
+    // `.partial` and no executable. Anything here means bytes were written, which
+    // would put the canary back into downloading on gate 3.
+    // `provisionFiles` is the directory listing the driver read off disk at
+    // analysis time ( [{rel, mode}] ); the RULE lives here, so the self-test can
+    // hand in a listing that contains a `.partial` or an executable and watch
+    // this go red without the self-test having to write a binary anywhere.
+    noBinaryWrittenDespiteRetry: (provisionFiles ?? []).every((entry) =>
+      !entry.rel.endsWith('.partial') && (entry.mode & 0o111) === 0),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    detail: {
+      bashTextHead: bashText.slice(0, 240),
+      reportedCount: reported?.length,
+      provisionRootExists: provisionRoot !== undefined && existsSync(provisionRoot),
+    },
+  }
+}
+
+// ── fabricated P6-T7 inputs (must earn their PASS) and their defect cases ───────
+//
+// The fabricated world mirrors what the real scenario produced, assembled from the
+// SAME pin and the SAME builders the live analysis consumes — so a PASS here means
+// the analysis accepts a correctly-shaped transcript, and every RED below means it
+// refuses a specific lie. Nothing here reads a fixture: the pin is the fixture's
+// transcription and `astGrepExpectedMatchesFromFixture()` is the scan, and the
+// self-test deliberately feeds them SEPARATELY so a mutation of one is visible.
+
+const AST_GREP_FABRICATED_SKILL_BODY = `---\nname: ast-grep\n---\n\n# ast-grep\n\n${AST_GREP_SKILL_BODY_SENTINEL}\n\n`
+
+function astGrepFabricatedEvents(copyRoot, {
+  skillName = 'ast-grep',
+  skillIsError = false,
+  skillText = AST_GREP_FABRICATED_SKILL_BODY,
+  command = astGrepSearchCommand(copyRoot),
+  bashIsError = false,
+  bashText = undefined,
+  summary = AST_GREP_VIA_BASH_SUMMARY,
+  closeTurn = true,
+} = {}) {
+  const events = [
+    { seq: 1, type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'tool-call', id: 'ag-1', name: 'skill', arguments: JSON.stringify({ name: skillName }) }] } } },
+    { seq: 2, type: 'tool/call', data: { turn: 1, step: 1, callId: 'ag-1', name: 'skill', arguments: JSON.stringify({ name: skillName }) } },
+    { seq: 3, type: 'tool/result', data: { turn: 1, step: 1, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'ag-1', content: [{ type: 'text', text: skillText }], isError: skillIsError }] } } },
+    { seq: 4, type: 'assistant/message', data: { turn: 1, step: 2, message: { content: [{ type: 'tool-call', id: 'ag-2', name: 'bash', arguments: JSON.stringify({ command }) }] } } },
+    { seq: 5, type: 'tool/call', data: { turn: 1, step: 2, callId: 'ag-2', name: 'bash', arguments: JSON.stringify({ command }) } },
+    { seq: 6, type: 'tool/result', data: { turn: 1, step: 2, message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'ag-2', content: [{ type: 'text', text: bashText ?? JSON.stringify(AST_GREP_PINNED_MATCHES) }], isError: bashIsError }] } } },
+    { seq: 7, type: 'assistant/message', data: { turn: 1, step: 3, message: { content: [{ type: 'text', text: summary }] } } },
+  ]
+  if (closeTurn) events.push({ seq: 8, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+  return events
+}
+
+export function fabricatedAstGrepViaBashInput(routes) {
+  const copyRoot = '/fabricated/project/ast-grep-fixture-project'
+  const expected = astGrepExpectedMatchesFromFixture()
+  const eventsOfGood = astGrepFabricatedEvents(copyRoot, {
+    // The fabricated transcript reports what the SCAN found, so the GOOD input is
+    // internally consistent by construction and a PASS here means the analysis
+    // accepts a correct transcript — not that it accepts any.
+    bashText: JSON.stringify(expected),
+  })
+  return {
+    log: {
+      path: '/fabricated/session.jsonl',
+      header: { type: 'session', id: 'session-fabricated-ast-grep' },
+      events: eventsOfGood,
+    },
+    requests: [
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: AST_GREP_VIA_BASH_PROMPT }] } },
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: AST_GREP_FABRICATED_SKILL_BODY }] } },
+      { role: 'sisyphus', body: { messages: [{ role: 'user', content: JSON.stringify(expected) }] } },
+    ],
+    providersJson: `{"provider":"${routes.sisyphus.provider}","active":true}`,
+    bootLog: `${FABRICATED_BOOT_LOG}\ndsh web: http://127.0.0.1:1/?token=fabricated\n`,
+    // The RAW transcript, derived from the SAME events the fabricated world built,
+    // so the GOOD input is consistent; the defect case that reddens the durable
+    // leg empties THIS and leaves the events standing.
+    durableLogText: JSON.stringify(eventsOfGood),
+    expectedMatches: expected,
+    pinnedMatches: AST_GREP_PINNED_MATCHES,
+    skillBodySentinel: AST_GREP_SKILL_BODY_SENTINEL,
+    copyRoot,
+    fakeSgLogText: `spawned argv=["run","-p","${AST_GREP_SENTINEL_PATTERN}","--lang","ts","--json=compact","."] cwd=${copyRoot}\n`,
+  }
+}
+
+/** Run the double's CLI in-process and capture what it says.
+ *
+ *  In-process, not spawned: these legs assert the double's ARGV GRAMMAR, and a
+ *  spawn would add nothing but a process per leg while making the captured bytes
+ *  harder to attribute. stdout/stderr are swapped for the duration of the call —
+ *  `main` writes through `process.stdout.write`/`process.stderr.write`, so this is
+ *  the whole of what the caller would see. The writes are restored in `finally`,
+ *  because a leg that leaked the capture would silence the rest of the self-test.
+ *
+ *  `cwd` is a fresh temp directory: a refusal must leave NO invocation evidence, so
+ *  a leg that wrote a log line would be caught by the `evidenceWritten` expectation
+ *  rather than being invisible. */
+function runAstGrepFakeInProcess(argv, cwd) {
+  const out = []
+  const err = []
+  const originalOut = process.stdout.write
+  const originalErr = process.stderr.write
+  process.stdout.write = (chunk) => { out.push(String(chunk)); return true }
+  process.stderr.write = (chunk) => { err.push(String(chunk)); return true }
+  let code = null
+  try {
+    code = astGrepFakeMain(argv, cwd)
+  } finally {
+    process.stdout.write = originalOut
+    process.stderr.write = originalErr
+  }
+  return {
+    code,
+    stdout: out.join(''),
+    stderr: err.join(''),
+    evidenceWritten: existsSync(join(cwd, '.fake-sg-calls.log')),
+  }
+}
+
+/** The double's named-refusal surface: the eight faces, with `--json=<fmt>` split
+ *  into its three spellings, plus one accepted-argv control (FIX-T7-R4-5). Until now
+ *  every one of these was verified by hand each round and asserted by nobody: a
+ *  regression to a silent exit 0, or to a bare node stack trace, would have shown up
+ *  only as someone noticing. Each leg states the exit code AND the fragment of the
+ *  line that names the refusal, so a refusal that changes shape fails by name.
+ *
+ *  The last entry is a CONTROL, not a refusal: the same runner must accept the one
+ *  argv this double exists to serve, returning 0 with match bytes. Without it, a
+ *  runner that reported exit 2 for everything would pass all ten refusal legs. */
+export function astGrepFakeRefusalCases() {
+  const pattern = AST_GREP_SENTINEL_PATTERN
+  const missingDir = `/nonexistent-ast-grep-canary-${process.pid}`
+  const fileAsDir = join(AST_GREP_FIXTURE_PROJECT, 'package.json')
+  return [
+    ['stdin-dash-refused', ['run', '-p', pattern, '-'], 2, 'is not implemented by this double'],
+    ['missing-directory-refused', ['run', '-p', pattern, '--json=compact', missingDir], 2, 'is not a readable directory'],
+    ['file-as-directory-refused', ['run', '-p', pattern, '--json=compact', fileAsDir], 2, 'is not a readable directory'],
+    ['json-stream-refused', ['run', '-p', pattern, '--json=stream', '.'], 2, 'does not emit'],
+    ['json-pretty-refused', ['run', '-p', pattern, '--json=pretty', '.'], 2, 'does not emit'],
+    ['json-yaml-refused', ['run', '-p', pattern, '--json=yaml', '.'], 2, 'not a format sg emits'],
+    ['unknown-flag-refused', ['run', '-p', pattern, '--bogus', '.'], 2, 'unknown flag'],
+    ['shorthand-without-run-refused', ['-p', pattern], 2, 'requires the explicit `run`'],
+    ['two-positionals-refused', ['run', '-p', pattern, '.', missingDir], 2, 'searches exactly ONE directory'],
+    ['short-glob-flag-refused', ['run', '-p', pattern, '-g', 'x', '.'], 2, 'unknown flag `-g`'],
+    ['accepted-argv-still-works-control', ['run', '-p', pattern, '--lang', 'ts', '--json=compact', AST_GREP_FIXTURE_PROJECT], 0, '"file"'],
+  ]
+}
+
+export function astGrepViaBashDefectCases() {
+  const copyRoot = '/fabricated/project/ast-grep-fixture-project'
+  const resultEventOf = (input) => input.log.events.find(
+    (event) => event.type === 'tool/result' && event.data?.message?.content?.[0]?.toolCallId === 'ag-2',
+  )
+  // The tool-result's OWN text sits one level deeper than a text part: a
+  // `tool-result` content block carries `content: [{ type:'text', text }]`
+  // inside it, so reaching for `content[0].text` yields undefined and the
+  // mutation silently mutates nothing — which would have made four defect legs
+  // report a spurious PASS. Read it at the depth it actually lives at.
+  const textOf = (event) => event.data.message.content[0].content[0].text
+  const setText = (event, next) => { event.data.message.content[0].content[0].text = next }
+  // Every case that moves the tool RESULT must move the RAW transcript with it:
+  // in the live scenario the durable log is read AFTER the turn, so it always
+  // carries whatever the tool finally emitted. Leaving the fabricated raw copy at
+  // its pre-mutation bytes would make `matchTextRodeIntoSessionLog` report a
+  // spurious red on unrelated mutations — the check would look sharp while
+  // actually measuring the fixture's staleness. The one case that MUST leave it
+  // stale is the dedicated durable-leg case below.
+  const syncDurable = (input) => { input.durableLogText = JSON.stringify(input.log.events) }
+  return [
+    // The task book's mutation ② in its fabricated half: the tool's bytes move by
+    // one character. Both transport and specification go red; CONTENT does not,
+    // because the fixture itself is untouched — exactly the discrimination the
+    // three-reader split exists to make.
+    ['the double reports a byte that is not in the fixture', (input) => {
+      const event = resultEventOf(input)
+      setText(event, textOf(event).replace('alpha-7f3c', 'alpha-7f3d'))
+      syncDurable(input)
+    }, ['matchesEqualFixtureScan', 'matchesEqualPinnedSet']],
+    ['the double drops a match', (input) => {
+      const event = resultEventOf(input)
+      setText(event, JSON.stringify(astGrepParseMatches(textOf(event)).slice(0, 2)))
+      syncDurable(input)
+    }, ['matchesEqualFixtureScan', 'matchesEqualPinnedSet']],
+    ['the double invents a row from outside the fixture', (input) => {
+      const event = resultEventOf(input)
+      setText(event, JSON.stringify([...AST_GREP_PINNED_MATCHES, { file: 'src/invented.ts', line: 1, column: 1, text: 'OMO_E2E_AST_GREP_TARGET(x)' }]))
+      syncDurable(input)
+    }, ['matchesEqualFixtureScan', 'matchesEqualPinnedSet', 'noRowsOutsideTheFixture']],
+    ['a quoted call shape leaks into the result set (both readers refuse it)', (input) => {
+      // The row is the fixture's OWN decoy line, byte for byte, presented as if
+      // it had matched. It is call-shaped AND quoted, so it is the third door:
+      // neither the double nor the driver scores an occurrence whose quote state
+      // is not null, and this case is what proves `noDecoyShapeReported` has
+      // teeth against THAT door rather than only against the no-parens one.
+      const event = resultEventOf(input)
+      setText(event, JSON.stringify([...AST_GREP_PINNED_MATCHES, { file: 'src/app.ts', line: 45, column: 45, text: "export const DECOY_INSIDE_STRING_LITERAL = 'OMO_E2E_AST_GREP_TARGET(x) appears here as text only'" }]))
+      syncDurable(input)
+    }, ['matchesEqualFixtureScan', 'matchesEqualPinnedSet', 'noDecoyShapeReported']],
+    ['the driver scan and the pin disagree (fixture moved, pin did not)', (input) => {
+      input.expectedMatches = input.expectedMatches.map((m, i) => (i === 0 ? { ...m, line: m.line + 1 } : m))
+    }, ['matchesEqualFixtureScan', 'fixtureScanMatchesPinnedSet']],
+    ['the tool output is not parseable JSON at all', (input) => {
+      setText(resultEventOf(input), 'sg: internal error')
+      syncDurable(input)
+    }, ['bashReturnedParseableJson', 'matchesEqualFixtureScan', 'matchesEqualPinnedSet', 'noRowsOutsideTheFixture', 'noDecoyShapeReported']],
+    ['the bash call errored', (input) => {
+      const event = resultEventOf(input)
+      event.data.message.content[0].isError = true
+      setText(event, '')
+      syncDurable(input)
+      // The errored call still has to be REFUSED for the right reason: the
+      // transcript is intact, the call itself failed.
+    }, ['bashExecutedWithoutError', 'bashReturnedParseableJson', 'matchesEqualFixtureScan', 'matchesEqualPinnedSet', 'noRowsOutsideTheFixture', 'noDecoyShapeReported']],
+    ['the agent ran a different pattern than the pinned one', (input) => {
+      input.log.events.forEach((event) => {
+        if (event.data?.callId === 'ag-2') event.data.arguments = JSON.stringify({ command: 'grep -r OMO . ' })
+        if (event.data?.message?.content?.[0]?.toolCallId === 'ag-2') { /* result unchanged */ }
+      })
+      input.log.events = input.log.events.map((event) => (event.type === 'assistant/message'
+        && event.data?.message?.content?.[0]?.id === 'ag-2'
+        ? { ...event, data: { ...event.data, message: { content: [{ type: 'tool-call', id: 'ag-2', name: 'bash', arguments: JSON.stringify({ command: 'grep -r OMO .' }) }] } } }
+        : event))
+    }, ['bashCallCarriesPinnedPattern']],
+    ['the skill load errored', (input) => {
+      const event = input.log.events.find((e) => e.type === 'tool/result' && e.data?.message?.content?.[0]?.toolCallId === 'ag-1')
+      event.data.message.content[0].isError = true
+      event.data.message.content[0].content[0].text = 'skill not found'
+      input.requests[1] = { role: 'sisyphus', body: { messages: [{ role: 'user', content: 'skill not found' }] } }
+    }, ['skillBodyDelivered', 'skillBodyReachedNextModelRequest']],
+    ['the agent asked for a different skill', (input) => {
+      input.log.events.forEach((event) => {
+        if (event.data?.name === 'skill') event.data.arguments = JSON.stringify({ name: 'git-master' })
+      })
+    }, ['skillToolAskedForAstGrep']],
+    ['the double never logged its invocation', (input) => {
+      input.fakeSgLogText = ''
+    }, ['fakeSgLogRecorded', 'fakeSgRecordedSentinelArgv']],
+    ['the invocation log was written SOMEWHERE ELSE (stale evidence)', (input) => {
+      // The argv is perfect and the file is non-empty — this is the shape that
+      // used to pass. It is a log from a run in the REPOSITORY, not in this
+      // sandbox: exactly what a `.fake-sg-calls.log` left next by a manual probe
+      // and carried into the copy by `cpSync` would look like. The cwd binding is
+      // the only thing that refuses it, so the binding gets its own leg.
+      input.fakeSgLogText = `spawned argv=["run","-p","${AST_GREP_SENTINEL_PATTERN}","--lang","ts","--json=compact","."] cwd=/repo/originals/are/not/the/subject\n`
+    }, ['fakeSgRecordedSentinelArgv']],
+    ['the invocation log names a PREFIX-LOOKALIKE copy root (cwd=<copyRoot>-OLD)', (input) => {
+      // The discriminating leg for FIX-T7-R3-3's `endsWith`. The leg above moves
+      // the cwd somewhere unrelated, which `includes` also refuses — so it cannot
+      // tell `endsWith` from `includes` and the binding could regress silently.
+      // This row keeps the copy root as a literal PREFIX and appends `-OLD`: the
+      // shape a sibling directory left behind by an earlier run of a copied
+      // sandbox would leave. `includes(\`cwd=${copyRoot}\`)` matches it and passes
+      // the check on bytes from a different directory; `endsWith` refuses it. If
+      // someone weakens the binding back to `includes`, this is the leg that goes
+      // green-to-red and says so by name.
+      input.fakeSgLogText = `spawned argv=["run","-p","${AST_GREP_SENTINEL_PATTERN}","--lang","ts","--json=compact","."] cwd=${String(input.copyRoot ?? '')}-OLD\n`
+    }, ['fakeSgRecordedSentinelArgv']],
+    ['decoy 2 (wrong callee) is reported as a match', (input) => {
+      // app.ts:51, the line whose callee is wrong but whose marker now rides in
+      // the printed text. Before FIX-T7-R2-6 this row carried no marker at all
+      // (`formatLabel(…)`), so `noDecoyShapeReported` had no purchase on decoy 2
+      // and this defect could not be caught by name.
+      //
+      // It reddens THREE checks and not four, and the absent one is the point:
+      // `noRowsOutsideTheFixture` is the FILE axis — is every reported row inside
+      // a fixture file — and `src/app.ts` is, so it stays green. The decoy axis is
+      // a separate question with a separate name; this leg keeps them apart.
+      const event = resultEventOf(input)
+      setText(event, JSON.stringify([...AST_GREP_PINNED_MATCHES, { file: 'src/app.ts', line: 51, column: 10, text: "return formatLabel_decoyDifferentCallee('beta-9d21')" }]))
+      syncDurable(input)
+    }, ['matchesEqualFixtureScan', 'matchesEqualPinnedSet', 'noDecoyShapeReported']],
+    ['the durable log does not carry the matched bytes', (input) => {
+      // Only the RAW log moves: the parsed events keep their matches, so this
+      // reddens exactly one check — the proof that the leg reads two sources.
+      input.durableLogText = ''
+    }, ['matchTextRodeIntoSessionLog']],
+    ['the wrap-up summary is missing', (input) => {
+      input.log.events = input.log.events.filter((event) => !(event.type === 'assistant/message' && JSON.stringify(event).includes(AST_GREP_VIA_BASH_SUMMARY)))
+    }, ['assistantSummaryRecorded']],
+    ['the turn never closed', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'turn/end')
+    }, ['turnCompleted']],
+  ]
+}
+
+export function fabricatedAstGrepAbsentInput(routes) {
+  const copyRoot = '/fabricated/project/ast-grep-fixture-project'
+  const targetDir = `${copyRoot}-runtime-target`
+  const failedLine = `${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (ECONNREFUSED): fetch failed`
+  return {
+    log: {
+      path: '/fabricated/session.jsonl',
+      header: { type: 'session', id: 'session-fabricated-ast-grep-absent' },
+      events: astGrepFabricatedEvents(copyRoot, {
+        bashIsError: true,
+        bashText: '[stderr]\nbash: line 1: sg: command not found\n[exit code: 127]',
+        summary: AST_GREP_ABSENT_SUMMARY,
+      }),
+    },
+    requests: [{ role: 'sisyphus', body: { messages: [{ role: 'user', content: AST_GREP_ABSENT_PROMPT }] } }],
+    providersJson: `{"provider":"${routes.sisyphus.provider}","active":true}`,
+    bootLog: `${FABRICATED_BOOT_LOG}\ndsh web: http://127.0.0.1:1/?token=fabricated\n${failedLine}\n${buildProvisionFailureGuidance(targetDir)}\n`,
+    provisionRoot: '/fabricated/runtime/ast-grep',
+    provisionFiles: [],
+    failedLinePrefix: `${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (`,
+    guidanceText: buildProvisionFailureGuidance(targetDir),
+  }
+}
+
+export function astGrepAbsentDefectCases() {
+  const bashResultOf = (input) => input.log.events.find(
+    (event) => event.type === 'tool/result' && event.data?.message?.content?.[0]?.toolCallId === 'ag-2',
+  )
+  return [
+    ['the hook failed but never said PROVISION FAILED', (input) => {
+      input.bootLog = input.bootLog.replace(`${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (`, `${AST_GREP_SG_PROVISION_MARKER} provisioning finished `)
+    }, ['provisionFailedLineInBootLog']],
+    ['the hook failed but the guidance block is absent', (input) => {
+      input.bootLog = input.bootLog.replace(input.guidanceText, '')
+    }, ['provisionGuidanceInBootLog']],
+    ['the guidance names a different targetDir', (input) => {
+      input.guidanceText = buildProvisionFailureGuidance('/some/other/dir')
+    }, ['provisionGuidanceInBootLog']],
+    ['the absent sg silently succeeded with matches', (input) => {
+      const event = bashResultOf(input)
+      event.data.message.content[0].isError = false
+      event.data.message.content[0].content[0].text = JSON.stringify(AST_GREP_PINNED_MATCHES)
+    }, ['bashFailureIsNamed', 'noMatchesDespiteSkillBeingLoaded']],
+    ['the absent sg came back silently empty', (input) => {
+      const event = bashResultOf(input)
+      event.data.message.content[0].isError = false
+      event.data.message.content[0].content[0].text = ''
+    }, ['bashFailureIsNamed']],
+    ['the skill was not delivered either', (input) => {
+      const event = input.log.events.find((e) => e.type === 'tool/result' && e.data?.message?.content?.[0]?.toolCallId === 'ag-1')
+      event.data.message.content[0].isError = true
+    }, ['skillStillDelivered']],
+    ['the agent glossed the absence instead of naming it', (input) => {
+      input.log.events = input.log.events.map((event) => (event.type === 'assistant/message'
+        && JSON.stringify(event).includes(AST_GREP_ABSENT_SUMMARY)
+        ? { ...event, data: { ...event.data, message: { content: [{ type: 'text', text: 'MOCK-AST-GREP-ABSENT-3f8a02: the search completed successfully' }] } } }
+        : event))
+    }, ['assistantNamesTheAbsence', 'assistantSummaryRecorded']],
+    ['a binary or a .partial landed despite the fetch dying first', (input) => {
+      input.provisionFiles = [{ rel: 'linux-x64/sg', mode: 0o100755 }]
+    }, ['noBinaryWrittenDespiteRetry']],
+    ['a .partial landed', (input) => {
+      input.provisionFiles = [{ rel: 'linux-x64/.sg-abc.partial', mode: 0o100644 }]
+    }, ['noBinaryWrittenDespiteRetry']],
+    ['the turn never closed', (input) => {
+      input.log.events = input.log.events.filter((event) => event.type !== 'turn/end')
+    }, ['turnCompleted']],
+  ]
+}
+
+/** What the `--self-test` banner records for P6-T7, one entry per leg proven. */
+export const AST_GREP_SELF_TEST_ATTESTATION = []
 
 const SCENARIOS = [
   {
@@ -25834,6 +27009,141 @@ const SCENARIOS = [
     }),
     analyze: analyzeLspMissingServerNamedFailure,
   },
+  {
+    // P6-T7 POSITIVE LEG. The floor design does the heavy lifting: `scenarioEnv`
+    // exports `OMO_AST_GREP_SG_PATH` as a FLOOR (`if (… === undefined)`), so a
+    // scenario that names its own value wins — here it names the rich double, and
+    // resolver gate ① short-circuits so nothing is provisioned and nothing is
+    // downloaded. `PATH` is prepended with `ast-grep-bin` so the BARE `sg` the
+    // skill teaches resolves; the two entry names point at ONE implementation file,
+    // which is why the hook's face and the agent's face cannot drift.
+    name: 'ast-grep-sg-via-bash',
+    prompt: AST_GREP_VIA_BASH_PROMPT,
+    roles: ['sisyphus'],
+    env: () => ({
+      OMO_AST_GREP_SG_PATH: AST_GREP_FAKE_SG,
+      PATH: `${AST_GREP_BIN_DIR}:${process.env.PATH ?? ''}`,
+    }),
+    seed: (sandbox) => {
+      for (const path of [AST_GREP_FAKE_SG, join(AST_GREP_BIN_DIR, 'sg'), AST_GREP_FIXTURE_PROJECT]) {
+        if (!existsSync(path)) throw new Error(`[ast-grep-sg-via-bash] fixture absent: ${path}`)
+      }
+      // The COPY is the write target; the repo original stays the truth the
+      // driver reads. See the block above for why a shell needs that separation.
+      astGrepSeedFixture(sandbox)
+    },
+    script: astGrepViaBashScript,
+    analysisInput: (sandbox) => ({
+      expectedMatches: astGrepExpectedMatchesFromFixture(),
+      pinnedMatches: AST_GREP_PINNED_MATCHES,
+      skillBodySentinel: AST_GREP_SKILL_BODY_SENTINEL,
+      copyRoot: astGrepCopyRoot(sandbox),
+      // Read at ANALYSIS time: the file is written by the spawned double during
+      // the turn, so reading it in `seed` would see nothing and prove nothing.
+      durableLogText: astGrepDurableLogText(sandbox),
+      fakeSgLogText: existsSync(astGrepFakeSgLogPath(sandbox))
+        ? readFileSync(astGrepFakeSgLogPath(sandbox), 'utf8')
+        : undefined,
+    }),
+    analyze: analyzeAstGrepViaBash,
+  },
+  {
+    // P6-T7 REVERSE CANARY. The wiring is the arbitrator's measured matrix
+    // (`.omo/evidence/p6t7/canary-mechanism-probe.md`, corrected revision), and
+    // the corrected facts are what this comment states:
+    //   * `NODE_USE_ENV_PROXY=1` is what makes Node's global fetch honour the
+    //     proxy env at all — with it unset and the same lowercase `https_proxy`
+    //     pointing at a closed port, the fetch goes DIRECT and returns 200.
+    //   * LOWERCASE `https_proxy` takes precedence over uppercase `HTTPS_PROXY`,
+    //     and uppercase honoured ALONE is honoured too (measured after `env -u`:
+    //     ECONNREFUSED in ~20ms). An earlier revision of this comment claimed
+    //     uppercase was NOT honoured; that was wrong — what it had actually
+    //     observed was the inherited lowercase working proxy winning.
+    //   * Lowercase is therefore chosen so this scenario is not at the mercy of a
+    //     host's uppercase release proxy, not because uppercase is inert.
+    //   * Deleting these two lines is NOT a no-op: this host inherits a WORKING
+    //     proxy, so the fetch succeeds and the provisioner really downloads the
+    //     8.1MB archive — `provisionFailedLineInBootLog` then goes RED and the
+    //     canary stops being canary. The explicit wiring is the only source of
+    //     cross-machine determinism here, not redundant belt-and-braces.
+    //   * Loopback is NOT exempt automatically (see the `no_proxy` lines below),
+    //     so the mock-LLM's survival has to be pinned too.
+    // Net effect: the GitHub fetch dies in ~21ms with ECONNREFUSED while the
+    // mock-LLM keeps answering, with no network and no 60s timeout.
+    //
+    // `OMO_AST_GREP_SG_PATH: ''` is load-bearing and deliberate: `''` is not
+    // "unset", it is the value the resolver's `nonEmptyValue` trims to "no
+    // override" (sg-resolver.ts:59-62), which REOPENS gate ① without deleting
+    // the key — the floor stays in place for every other scenario.
+    name: 'ast-grep-sg-absent-named-failure',
+    prompt: AST_GREP_ABSENT_PROMPT,
+    roles: ['sisyphus'],
+    env: () => ({
+      OMO_AST_GREP_SG_PATH: '',
+      NODE_USE_ENV_PROXY: '1',
+      https_proxy: 'http://127.0.0.1:1',
+      // Loopback exemption stated EXPLICITLY, because it is not automatic: with
+      // `no_proxy`/`NO_PROXY` removed from the environment, a fetch to
+      // 127.0.0.1 fails with UND_ERR_SOCKET — Node's env-proxy does not exempt
+      // loopback on its own. The mock-LLM has been surviving that only because
+      // this host inherits a `no_proxy` from the operator's shell, which is a
+      // host dependency dressed up as a mechanism, so both spellings are pinned
+      // here and the canary no longer depends on the host remembering them.
+      no_proxy: 'localhost,127.0.0.1,::1',
+      NO_PROXY: 'localhost,127.0.0.1,::1',
+      // Gate ③ of the resolver (`PATH`) is neutralised the same way, by NAME
+      // rather than by luck: the resolver checks the bare name `ast-grep`
+      // WITHOUT a `--version` probe, so a host that happens to have
+      // `ast-grep` installed would satisfy gate ③, short-circuit provisioning,
+      // and turn BOTH `provisionFailed*` checks red — loud, but red for an
+      // undeclared host reason instead of the one this scenario is about. Every
+      // PATH directory containing an `ast-grep` is therefore filtered out below.
+      //
+      // This PATH is the HOOK's face only. The AGENT's face is neutralised inside
+      // the command itself (`astGrepCanaryCommand`), because a PATH shared by both
+      // faces cannot do both jobs: the hook needs `ast-grep` gone while keeping the
+      // host usable, and the agent needs every executable `sg` gone. Refusing to
+      // run when such a file exists would make gate 3 red on any host that ships
+      // one — this host does not (measured: no `sg` on PATH, `dpkg -L passwd`
+      // lists neither `sg` nor `newgrp`), which is precisely the point: the
+      // canary must not have to know which host it is on. The earlier named-throw
+      // was revoked in FIX-T7-R3 for that reason; the canary now states its own
+      // search path instead of arguing with the host about it.
+      //
+      // What the resolver's probe does and does not protect, stated exactly: the
+      // probe guards GATE ③, the HOOK's face — it runs `sg --version` and refuses
+      // an output without "ast-grep", so a setgroups `/usr/bin/sg` is rejected
+      // there and the hook falls through to provisioning, which this scenario then
+      // sees fail. The AGENT's face is not covered by any of that: it is a shell
+      // resolving `sg` with no probe in the way, and when the resolution fails the
+      // failure reaches the model as ORDINARY OUTPUT, not as an error — dsh's bash
+      // tool reports non-zero exits without setting `isError`, only infrastructure
+      // failures do (dsh-tool-bash/lib/index.js:141-143: "Non-zero exits are
+      // reported, not errored"). So the agent's absence is named by
+      // `bashFailureIsNamed` reading the text and the exit marker, and nothing
+      // else; that is why that regex carries the locale spellings and
+      // `exit code: 127`, and why the command drops `sg`-bearing directories from
+      // its own PATH so the shape it produces is 127 on every host rather than GNU
+      // sg's "does not exist" on some.
+      PATH: astGrepCanaryPath(),
+    }),
+    seed: (sandbox) => {
+      astGrepSeedFixture(sandbox)
+    },
+    script: astGrepAbsentScript,
+    analysisInput: (sandbox) => {
+      const targetDir = astGrepRuntimeDir(
+        join(sandbox.home, '.omo'), process.platform, process.arch,
+      )
+      return {
+        provisionRoot: lspSgProvisionRoot(sandbox),
+        provisionFiles: astGrepListTree(lspSgProvisionRoot(sandbox)),
+        failedLinePrefix: `${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (`,
+        guidanceText: buildProvisionFailureGuidance(targetDir),
+      }
+    },
+    analyze: analyzeAstGrepAbsentNamedFailure,
+  },
 ]
 
 /**
@@ -25858,46 +27168,59 @@ async function runScenario(def, baseRoutes) {
   // generation's behaviour moves; on dsh 0.2.0-rc.2 it is where the explore
   // child stops dying with UNKNOWN_MODEL. `baseRoutes` stays in the signature
   // because the AC-5 mutation fixtures pass their own collapsed/swapped maps.
-  const seatOverlay = { ...runtimeSeatEnv(), ...scenarioEnvOverlay(def) }
-  const env = scenarioEnv(sandbox, seatOverlay)
-  const routes = resolveModelRoutes(env)
-  // Anti-drift, and the reason `baseRoutes` is still in the signature: every row
-  // whose EFFECTIVE seat differs from the shipped default must differ for one of
-  // exactly two reasons — the installed catalog forced it, or THIS scenario asked
-  // for it by name. Anything else is an unexplained drift (a mistyped env name,
-  // a stale scenario pin) and stops the run here.
-  const scenarioPinnedAgents = new Set(
-    Object.keys(scenarioEnvOverlay(def))
-      .map((name) => Object.entries(MODEL_ROUTE_ENV_VARS)
-        .find(([, names]) => names.provider === name || names.model === name)?.[0])
-      .filter((agent) => agent !== undefined),
-  )
-  const unexplainedDrift = Object.entries(routes)
-    .filter(([agent, route]) => {
-      const shipped = baseRoutes[agent]
-      if (shipped.provider === route.provider && shipped.model === route.model) return false
-      if (scenarioPinnedAgents.has(agent)) return false
-      if (RUNTIME_RESOLVED_SEATS[agent]?.forcedByEnvVar === 'OMO_E2E_FORCE_SEAT') return false
-      return RUNTIME_RESOLVED_SEATS[agent]?.substituted !== true
-    })
-    .map(([agent, route]) => `${agent}: shipped ${baseRoutes[agent].provider}/${baseRoutes[agent].model} → effective ${route.provider}/${route.model}`)
-  if (unexplainedDrift.length > 0) {
-    throw new Error(
-      `[${def.name}] effective seats drift from roster.ts's shipped defaults for reasons `
-      + `neither the runtime catalog nor this scenario's own env declares: ${unexplainedDrift.join('; ')}`,
-    )
-  }
-  // P3-T16 (the webfetch-private-target-unprobed scenario): a scenario may need a
-  // PROCESS-LOCAL HTTP fixture whose ephemeral PORT exists only after it is
-  // listening, and the mock script's tool arguments must name that URL. `setup`
-  // therefore runs BEFORE the mock server starts and its return value is handed
-  // to `script`/`analysisInput` and closed in the `finally` below. Scenarios
-  // without `setup` are unchanged (the parameter is undefined).
-  const setup = def.setup === undefined ? undefined : await def.setup(sandbox)
-  const server = await startMockLlmServer({ script: def.script(sandbox, setup) })
+  let server
+  let setup
   let child
   let scenario = { name: def.name, result: 'FAIL', failed: ['driver did not complete'] }
   try {
+    // FIX-T7-R3-1c: the env thunk and everything derived from it are evaluated
+    // INSIDE this try. They used to sit above it, which meant a scenario whose env
+    // construction failed by design (the ast-grep canary throwing when every PATH
+    // directory holds an `ast-grep`) escaped the per-scenario catch, killed the
+    // whole driver, and left the report with `scenarios: []` — the PASS verdicts of
+    // scenarios that had already run disappeared with it, so a reader could not tell
+    // "everything is red" from "the harness fell over on row two". Inside the try the
+    // same throw becomes one ordinary single-scenario `driver error:` RED, and the
+    // rows around it keep their verdicts. The order is unchanged: overlay, env,
+    // routes, anti-drift, setup, mock server — the anti-drift check still sees the
+    // same `routes`, and `setup` still runs before the server starts.
+    const seatOverlay = { ...runtimeSeatEnv(), ...scenarioEnvOverlay(def) }
+    const env = scenarioEnv(sandbox, seatOverlay)
+    const routes = resolveModelRoutes(env)
+    // Anti-drift, and the reason `baseRoutes` is still in the signature: every row
+    // whose EFFECTIVE seat differs from the shipped default must differ for one of
+    // exactly two reasons — the installed catalog forced it, or THIS scenario asked
+    // for it by name. Anything else is an unexplained drift (a mistyped env name,
+    // a stale scenario pin) and stops the run here.
+    const scenarioPinnedAgents = new Set(
+      Object.keys(scenarioEnvOverlay(def))
+        .map((name) => Object.entries(MODEL_ROUTE_ENV_VARS)
+          .find(([, names]) => names.provider === name || names.model === name)?.[0])
+        .filter((agent) => agent !== undefined),
+    )
+    const unexplainedDrift = Object.entries(routes)
+      .filter(([agent, route]) => {
+        const shipped = baseRoutes[agent]
+        if (shipped.provider === route.provider && shipped.model === route.model) return false
+        if (scenarioPinnedAgents.has(agent)) return false
+        if (RUNTIME_RESOLVED_SEATS[agent]?.forcedByEnvVar === 'OMO_E2E_FORCE_SEAT') return false
+        return RUNTIME_RESOLVED_SEATS[agent]?.substituted !== true
+      })
+      .map(([agent, route]) => `${agent}: shipped ${baseRoutes[agent].provider}/${baseRoutes[agent].model} → effective ${route.provider}/${route.model}`)
+    if (unexplainedDrift.length > 0) {
+      throw new Error(
+        `[${def.name}] effective seats drift from roster.ts's shipped defaults for reasons `
+        + `neither the runtime catalog nor this scenario's own env declares: ${unexplainedDrift.join('; ')}`,
+      )
+    }
+    // P3-T16 (the webfetch-private-target-unprobed scenario): a scenario may need a
+    // PROCESS-LOCAL HTTP fixture whose ephemeral PORT exists only after it is
+    // listening, and the mock script's tool arguments must name that URL. `setup`
+    // therefore runs BEFORE the mock server starts and its return value is handed
+    // to `script`/`analysisInput` and closed in the `finally` below. Scenarios
+    // without `setup` are unchanged (the parameter is undefined).
+    setup = def.setup === undefined ? undefined : await def.setup(sandbox)
+    server = await startMockLlmServer({ script: def.script(sandbox, setup) })
     const patchPath = seedSandbox(sandbox, routes, server.baseUrl)
     def.seed?.(sandbox) // fixtures land after seedSandbox mkdirs the project dir
     // P5-T9 双评审修复轮：探针插件的 overlay `insert:` 行（仅两枚 T9 场景）。
@@ -26556,7 +27879,12 @@ async function runScenario(def, baseRoutes) {
     }
   } finally {
     if (child !== undefined) await stopDsh(child)
-    await server.close()
+    // Guarded because the server may never have started: FIX-T7-R3-1c moved the env
+    // thunk above it INTO this try, so a scenario can now reach `finally` with
+    // `server` still undefined. Closing undefined would swap the named scenario RED
+    // for a TypeError out of the cleanup path — the harness breaking the very report
+    // it was writing.
+    if (server !== undefined) await server.close()
     if (typeof setup?.close === 'function') await setup.close()
   }
   return { scenario, sandboxRoot: sandbox.root }
@@ -28234,6 +29562,17 @@ function ulwPlanBodyText() {
   return vendoredSkillEntries().get('ulw-plan')?.document?.content ?? ''
 }
 
+/** Verdicts accumulated by the CURRENT run, visible to the top-level crash
+ *  handler (FIX-T7-R3-2). They used to be local to `main`, so a crash after
+ *  thirty scenarios printed `scenarios: []` and a CI reader could not tell
+ *  "every scenario is red" from "the harness died on the way through" — and in
+ *  the reproduction of B-MAJOR-1 the difference mattered, because the positive
+ *  leg had genuinely PASSED and its verdict simply vanished from the report.
+ *  A crash report now carries what it has and says `partial: true`; an empty list
+ *  with `completed: 0` then means what it should mean: nothing ran. */
+const RUN_SCENARIO_VERDICTS = []
+let RUN_SCENARIO_TOTAL = 0
+
 async function main() {
   const routes = resolveModelRoutes()
   // §14.4.5: analysis QA runs BEFORE the expensive spawn.
@@ -28311,9 +29650,12 @@ async function main() {
   const selected = only.length === 0
     ? SCENARIOS
     : nameAddressable.filter((def) => only.includes(def.name))
+  RUN_SCENARIO_TOTAL = selected.length
+  RUN_SCENARIO_VERDICTS.length = 0
   for (const def of selected) {
     const { scenario, sandboxRoot } = await runScenario(def, routes)
     scenarios.push(scenario)
+    RUN_SCENARIO_VERDICTS.push(scenario)
     sandboxRoots.push(sandboxRoot)
   }
 
@@ -28563,10 +29905,34 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
         return `${task} ${scenario}: ${labels.join(', ')}`
       })
       .join('; ')
-    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 10 on team-create-and-message (9 T10 checks + the T15 settle-pin leg), 5 on team-shutdown-handshake (4 T10 checks + the T15 settle-pin leg), each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing / settle-hook-vanished) FAILs on its own named check; ${TEAM_T15_SETTLE_SELF_TEST_BANNER} (the P5-T15 nested settle leg — settleReached undefined, the weak form's hole, red ONLY on settleReachedChildren) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; ${LSP_SELF_TEST_BANNER} (the P6-T5/P6-T6 LSP legs on BOTH lsp-* scenarios — every fabricated defect of the forward round-trip and of the reverse canary, the marker-derivation THROW leg, and P6-T6 MAJOR-1's hermetic sg pre-seal leg, which spawns the committed fixture for real and refuses a pre-seed that is missing, relative, empty, non-executable or pinned to a different version) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
+    // P6-T7's own legs, grouped the same way and derived from the SAME
+    // attestation array the legs push into — the banner restates nothing.
+    const AST_GREP_SELF_TEST_BANNER = [...AST_GREP_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [task, scenario, label]) => {
+        const key = `${task}\u0000${scenario}`
+        byScenario.set(key, [...(byScenario.get(key) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([key, labels]) => {
+        const [task, scenario] = key.split('\u0000')
+        return `${task} ${scenario}: ${labels.join(', ')}`
+      })
+      .join('; ')
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 10 on team-create-and-message (9 T10 checks + the T15 settle-pin leg), 5 on team-shutdown-handshake (4 T10 checks + the T15 settle-pin leg), each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing / settle-hook-vanished) FAILs on its own named check; ${TEAM_T15_SETTLE_SELF_TEST_BANNER} (the P5-T15 nested settle leg — settleReached undefined, the weak form's hole, red ONLY on settleReachedChildren) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; ${LSP_SELF_TEST_BANNER} (the P6-T5/P6-T6 LSP legs on BOTH lsp-* scenarios — every fabricated defect of the forward round-trip and of the reverse canary, the marker-derivation THROW leg, and P6-T6 MAJOR-1's hermetic sg pre-seal leg, which spawns the committed fixture for real and refuses a pre-seed that is missing, relative, empty, non-executable or pinned to a different version) FAILs on its own named check; ${AST_GREP_SELF_TEST_BANNER} (the P6-T7 ast-grep legs on BOTH ast-grep-* scenarios — the forward leg's 17 fabricated defects and the canary's 10, each red ONLY on its own named checks, and the split between them is the substance: mutate the TOOL's bytes and TRANSPORT+SPECIFICATION redden while CONTENT stands, mutate the DRIVER's scan and TRANSPORT+CONTENT redden while SPECIFICATION stands, so no single-reader design could tell a lying tool from a moved fixture; plus the refusal of a transcript whose fake sg never logged its invocation, which is the shape of a scenario that would pass on a hallucinated tool result) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
   } else {
     main().catch((error) => {
-      console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))
+      // `partial: true` plus whatever verdicts already exist. The old shape here
+      // printed `scenarios: []` unconditionally, which read as "nothing ran, all
+      // red" even when the crash came after a PASS row — and the crash was in fact
+      // reachable from a scenario's own env thunk until FIX-T7-R3-1c moved it.
+      console.log(JSON.stringify({
+        result: 'FAIL',
+        reason: `driver crash: ${error.message}`,
+        partial: true,
+        completed: RUN_SCENARIO_VERDICTS.length,
+        total: RUN_SCENARIO_TOTAL,
+        scenarios: [...RUN_SCENARIO_VERDICTS],
+      }))
       process.exit(1)
     })
   }

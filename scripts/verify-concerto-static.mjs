@@ -1025,7 +1025,66 @@ async function run() {
       if (derivedSet.size !== derivedIds.length) {
         problems.push(`baseline yields duplicate listener ids: [${derivedIds.join(', ')}]`)
       }
-      const missing = portedManifestIds.filter((id) => !derivedSet.has(id))
+      // FORKS.md §0-1: the c14 union is NOT extended this phase, so a Phase 6
+      // row that flips to 'ported' has NO §1 row to be found in — and `missing`
+      // would otherwise demand one and refuse the correct commit. The exemption is
+      // a REGISTRY, not a free-form skip: the ids below are the same ids
+      // PHASE6_ROSTER_ANCHORS registers in
+      // tests/omo-hooks/manifest-coverage-consistency.test.ts, and the two faces
+      // are asserted to agree right here, so the exemption list cannot grow in
+      // silence on this side and cannot shrink in silence on that side. The row's
+      // doc home is its ANCHOR line in phase6-mcp-editing.md, and the flip guard
+      // that reads it lives in that unit test — c14 names the exemption and hands
+      // the checking over, it does not waive it.
+      const phase6AnchoredIds = ['ast-grep-sg-provision']
+      {
+        const testSrc = readFileSync(
+          join(REPO_ROOT, 'tests', 'omo-hooks', 'manifest-coverage-consistency.test.ts'), 'utf8')
+        // The block is cut by BRACKET DEPTH from the array's own `[` to its
+        // matching `]`, not by "up to the next `const SCENARIO_TOKEN`". That
+        // earlier form was quietly wrong in both directions: `SCENARIO_TOKEN` is
+        // declared ABOVE this registry, so the comparison `indexOf(SCENARIO_TOKEN)
+        // > indexOf(PHASE6_ROSTER_ANCHORS)` was FALSE and the ternary fell back
+        // to `testSrc.length` — the "block" ran to END OF FILE, and any
+        // `  id: '…',` line anywhere later in the test would have been read as a
+        // registered anchor, widening the exemption without anyone registering it.
+        // A registry whose parser can be widened by unrelated text exempts
+        // nothing. Same depth-counter fragility note as drive.mjs's SCENARIO
+        // extraction applies: this reads raw brackets and assumes no bracket
+        // inside a string literal, and the registry's strings (a doc path and a
+        // Chinese anchor phrase) carry none.
+        const anchorStart = testSrc.indexOf('const PHASE6_ROSTER_ANCHORS')
+        // The `[` is sought AFTER the `=`, not after the name: the declaration is
+        // `const PHASE6_ROSTER_ANCHORS: readonly { … }[] = [`, and the first `[`
+        // after the name belongs to the TYPE annotation's `}[]`. Taking that one
+        // cut a block of literally `[]`, which parsed to zero ids and made this
+        // gate cry "vacuous" about a registry that was perfectly populated — a
+        // false alarm is still a false alarm, even one that fails safe.
+        const anchorAssign = anchorStart === -1 ? -1 : testSrc.indexOf('=', anchorStart)
+        const open = anchorAssign === -1 ? -1 : testSrc.indexOf('[', anchorAssign)
+        let close = -1
+        if (open !== -1) {
+          let depth = 0
+          for (let i = open; i < testSrc.length; i += 1) {
+            const ch = testSrc[i]
+            if (ch === '[') depth += 1
+            else if (ch === ']') { depth -= 1; if (depth === 0) { close = i; break } }
+          }
+        }
+        if (anchorStart === -1 || open === -1 || close === -1) {
+          problems.push('c14 exemption registry: PHASE6_ROSTER_ANCHORS is absent or its array literal never closes — the registry cannot be read, so the §0-1 exemption cannot be checked')
+        }
+        const block = open !== -1 && close !== -1 ? testSrc.slice(open, close) : ''
+        const registered = [...block.matchAll(/^\s+id: '([^']+)',$/gm)].map((m) => m[1])
+        if (registered.length === 0) {
+          problems.push('c14 exemption registry: no ids parsed out of PHASE6_ROSTER_ANCHORS — the registry went vacuous, so this exemption would exempt anything')
+        }
+        if ([...phase6AnchoredIds].sort().join(',') !== [...registered].sort().join(',')) {
+          problems.push(`c14's phase6 exemption [${[...phase6AnchoredIds].sort().join(', ')}] disagrees with PHASE6_ROSTER_ANCHORS [${[...registered].sort().join(', ')}] — the two faces of the §0-1 split must move together`)
+        }
+      }
+      const missing = portedManifestIds.filter((id) => !derivedSet.has(id)
+        && !phase6AnchoredIds.includes(id))
       const extra = derivedIds.filter((id) => !manifestSet.has(id))
       const union = COVERAGE_BASELINE_MDS.map((f) => relative(REPO_ROOT, f)).join(' + ')
       if (missing.length > 0) problems.push(`ported manifest ids absent from the ${union} §1 port group: ${missing.join(', ')}`)
