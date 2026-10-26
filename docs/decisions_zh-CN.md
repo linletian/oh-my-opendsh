@@ -188,4 +188,19 @@
 
 ---
 
+- **2026-10-27**：**D19 复审触发条件 ① 成立**（编辑模型 fork E）。触发源＝L2-1 arm A 的真实模型会话（真实模型
+  `studio2207` / `Qwen3.8-Flash-Next-oQ4e-mtp`），任务 `fa` / 失败类 **F-a（歧义匹配类）**：原生面**响亮拒绝**
+  ——`Error: old_string matched 2 times in "…/fa.txt"; provide a more specific old_string or set replace_all to
+  true`——随后模型升级用 `replace_all: true` **把两处全写**，而台架卡片自身的消歧恢复（`armA.recovery.old_string`，
+  以第二行上下文加宽锚点）本应**只动一处**。**这不是静默错写**：工具响亮拒绝、模型对错误与升级双双如实自述、
+  写下的每个字节都是卡片自己的 `new_string` 文本。**(E-A) 在静默错写轴上维持**——原生面每一类可判失败都产出了
+  逐字的机判错误与内嵌恢复指引。**过界应用是真实的模型行为风险，据此在册登记**。**fork E 复审重开**，评估范围
+  =（i）提示层缓解：歧义拒绝后模型应当**消歧（加宽锚点）而非诉诸 `replace_all`**；（ii）该风险是否改变 **(E-A)**
+  的成本-收益结论。**权重注记**：F-a 的歧义是**卡片内置**的（`old_string` 在夹具中本就按设计出现两次），故这与
+  D19「未测量面（诚实登记）」条款留开的**自发型模型级串复写**错误类**不完全同类**——它是另一种模型级失败形态
+  （响亮拒绝后的过宽升级），本案例不给满权重。证据：`.omo/evidence/p6-l2-edit-ab/D19-trigger1-evidence.md`
+  （untracked 证据树——本条目才是 tracked 权威面记录，依「tracked 文档为权威」约定）。
+
+---
+
 **English version**: [`decisions.md`](./decisions.md)

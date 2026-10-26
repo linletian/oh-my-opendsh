@@ -187,4 +187,25 @@ The following risks were confirmed by the user as "accept as-is / defer"; the ri
 
 ---
 
+- **2026-10-27**: **D19 reopening trigger ① ESTABLISHED** (editing-model fork E). Live-model evidence from L2-1
+  arm A (real model `studio2207` / `Qwen3.8-Flash-Next-oQ4e-mtp`), task `fa` / failure class **F-a (ambiguous
+  match)**: the native face refused loudly — `Error: old_string matched 2 times in "…/fa.txt"; provide a more
+  specific old_string or set replace_all to true` — and the model then escalated to `replace_all: true`, writing
+  **BOTH** occurrences where the rig card's own disambiguating recovery (`armA.recovery.old_string`, which widens
+  the anchor with a second context line) was to touch **one** site. **This is NOT a silent mis-write**: the tool
+  errored audibly, the model disclosed both the error and its escalation, and every byte written is the card's own
+  `new_string` text. **(E-A) HOLDS on the silent-mis-write axis** — every decidable failure class on the native
+  face produced verbatim machine-judged errors with embedded recovery guidance. **Over-application is a real
+  model-behaviour risk and is registered as such.** **Fork E review is REOPENED**, scope = (i) the prompt-layer
+  mitigation that after an ambiguous-match rejection the model should DISAMBIGUATE (widen the anchor) rather than
+  reach for `replace_all`, and (ii) whether this risk changes the cost-benefit conclusion of **(E-A)**.
+  **Weighting note**: F-a's ambiguity is authored into the card (the `old_string` occurs twice in the fixture by
+  design), so this is **not identical in kind** to the spontaneous model-level string-reproduction failure class that
+  D19's "unmeasured, honestly registered" clause left open — it is a *different* model-level failure mode
+  (over-broad escalation after a loud refusal), and the case is not to be weighted as fully representative.
+  Evidence: `.omo/evidence/p6-l2-edit-ab/D19-trigger1-evidence.md` (untracked evidence tree — this entry is the
+  tracked authoritative record, per the tracked-docs-as-authority convention).
+
+---
+
 **中文版**：[`decisions_zh-CN.md`](./decisions_zh-CN.md)
