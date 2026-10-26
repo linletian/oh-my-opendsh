@@ -96,7 +96,7 @@ ROADMAP §4 Phase 6 原文：
 - **默认形态**：本阶段无新插件包。钩子形条目（S-14/S-15/S-16 若移植）进 omo-hooks manifest（H-33 模块内演进先例，`EXPECTED_HOOK_COUNT` 与同步网随条目数变化）；vendor 件进 `patches/omo-dsh/vendor/`。
 - **MCP server 挂载形态（评审 BLOCKER-1 更正 2026-10-13，亲验）**：`dsh-mcp-client` **未被 dsh-base 挂载**（dsh-base 只挂 `mcp-resources`（:492-493）；`dsh-mcp-client` 不在其 dependencies（grep 0 命中）、全树无组合文件挂载）；规范挂载形态 = **每个 server 一条 `insert:` 行**（`dsh-agent-preset/skills/cordis-plugin-development/templates/mcp/cordis.patch.yml` 模板逐字：`insert:` + `name: '@deepseek-ai/dsh-mcp-client'` + `config:{serverName, transport, …}`）。**原稿「配置行（非 insert 插件行）」作废**——(L-B)/(G-B) 每臂触发一条新插行，两臂同落 = 两条。
 - **条件形态（新包，仅 fork L=(L-A) 触发）**：`patches/omo-dsh/omo-lsp/`（host-only）+ 第五 insert 行。职责单一口径：LSP 工具面与语言服务器生命周期——不吸收编辑语义（omo-hooks enhancer）、不吸收 provisioning（S-16 归 omo-hooks）。
-- **COUNT COUPLING NET 触发条件（更正后）**：**任何新插行都触发**——(L-A) 新包行 / (L-B) mcp-client 行 / (G-B) mcp-client 行 / 组合（4→5→6 逐条同 commit 全点位：cordis.yml 头注、doctor-lite `EXPECTED_INSERT_ROW_IDS`（`doctor-lite-core.ts:48` 现值四行）、cordis-inserts.test（手抄 pin）、cold-start、drive.mjs、probe、smoke-real）。破门机制实证在册：doctor-lite 钉死「exactly the 4 plugin rows in mount order」，多一条 insert 行 → 门 4 + 门 6 同红。
+- **COUNT COUPLING NET 触发条件（更正后）**：**任何新插行都触发**——(L-A) 新包行 / (L-B) mcp-client 行 / (G-B) mcp-client 行 / 组合（4→5→6 逐条同 commit 全点位：cordis.yml 头注、doctor-lite `EXPECTED_INSERT_ROW_IDS`（`doctor-lite-core.ts:52` 现值五行）、cordis-inserts.test（手抄 pin）、cold-start、drive.mjs、probe、smoke-real）。破门机制实证在册：doctor-lite 钉死「exactly the 4 plugin rows in mount order」，多一条 insert 行 → 门 4 + 门 6 同红。
 - **manifest 纪律**：若新包成立，`src/manifest.ts` 单一事实源（omo-team 先例：id / 上游源路径 / 原生面对应 / 处置 / e2e 场景名 / 状态）；翻动规则沿用 T5 refined 版（`pending→ported` = 行自身语义落地 + 其 e2e 覆盖转绿，同 commit）。
 
 ### 4.3 编辑模型决策：A/B 证据台架（fork E 的执行面）

@@ -52,6 +52,68 @@ export const LLM_ADAPTER_ROWS = [
 export const EXPECTED_INSERT_ROW_IDS = ['omo-agents', 'omo-hooks', 'omo-commands', 'omo-team', 'omo-lsp'] as const
 
 /**
+ * WHY `omo-lsp` HAS AN ARM HERE AND `ast-grep` DELIBERATELY DOES NOT
+ * (P6-T9 adjudication, task book 门 4 「`sg`/LSP 检查」 — resolved as (b)
+ * cover-by-record rather than (a) add-an-arm, and the reason is scope, not
+ * convenience).
+ *
+ * What this module owns is the COMPOSITION CONTRACT: the insert rows the
+ * repo-root cordis.yml must carry, their id ↔ name coupling, the install sites
+ * that must install each one, the pinned dsh version, and the rendered
+ * delegation roster row contract. Every check here is a question about the
+ * OVERLAY — "is the row present, does it name the package its id implies, is
+ * there a boot site that installs it".
+ *
+ * `omo-lsp` is inside that contract because it IS an insert row (the fifth,
+ * P6-T4), and a row is exactly what this gate can see.
+ *
+ * `ast-grep` is not. It is not a row at all: `grep -c ast-grep cordis.yml`
+ * returns 0, so there is no insert row, no id ↔ name coupling and no install
+ * site for doctor-lite to hold to a contract — the package that carries the
+ * ast-grep face is `@oh-my-opendsh/omo-hooks`, already covered here as the
+ * SECOND row. What ast-grep actually consists of is a hook row inside that
+ * plugin's manifest, a vendored skill, and the `sg` binary supply layer, and
+ * each of those three already has a named owner:
+ *
+ *   hook manifest ↔ implementation file  — c13, bidirectional SET EQUALITY,
+ *     measured live "16 top-level listener files ↔ 16 manifest ids". Note what
+ *     that does and does not do: c13 compares two SETS and never names a member,
+ *     so `ast-grep-sg-provision` is covered as one of the 16 (with
+ *     `src/hooks/ast-grep-sg-provision.ts` beside it) but is not pinned BY NAME
+ *     there — drop the row and its implementation file together and the two sets
+ *     stay equal at 15↔15 and c13 stays green.
+ *   the `sg` supply layer                — c29, "6 provisioning files ↔ expected"
+ *     over `src/ast-grep/` (index / install-script / sg-manifest / sg-provisioner
+ *     / sg-resolver / types) plus the seam wiring and the NOTICES 供给层 mirror;
+ *     c12/c13 scan `src/hooks/` only, which is precisely why c29 exists. c29 is
+ *     also the arm that holds this hook BY NAME — its own failure text is
+ *     "manifest carries no row with id 'ast-grep-sg-provision' — the provisioning
+ *     layer lost its owner" — so the named responsibility lives there, not in c13.
+ *   the vendored ast-grep SKILL        — c19, "19 vendored skills" agreement
+ *     across manifest, vendor directory and NOTICES.
+ *   registration at boot                — the probe's $EXPECTED_HOOK_REGISTERED_LINES,
+ *     derived from HOOK_MANIFEST × formatHookRegisteredLine, so the registered line
+ *     for this hook is grepped by name on every boot.
+ *   the provisioning path itself        — the supply-layer unit suites (gate 2) and
+ *     the P6-T7 canary e2e, where a provision failure is loud. It is NOT asserted
+ *     by the probe, which never creates a session and therefore cannot trigger the
+ *     `session/created` listener that fires it.
+ *
+ * So an arm here would assert "HOOK_MANIFEST carries ast-grep-sg-provision"
+ * (that is c13) and "src/ast-grep/ exists" (that is c29) — a second copy of
+ * both, one layer down, free to drift from the copies that are actually
+ * watching. The house rule against that is the reason this gate exists at all:
+ * "A second copy of the rule would be the same drift this gate exists to catch,
+ * one layer down." Adding it would make two places honest-looking and only one
+ * authoritative, which is worse than one authoritative place and a note saying so.
+ *
+ * If ast-grep ever becomes a COMPOSITION fact — its own insert row, or a row
+ * whose Config selects an sg provider — it enters this contract and belongs
+ * here; that is the condition to revisit this note, and it is written down so
+ * the revisit has a trigger rather than requiring someone to remember.
+ */
+
+/**
  * The id ↔ name coupling exception (P6-T4): the `@oh-my-opendsh/<id>` rule
  * holds for every row EXCEPT the ones declared here, which mount a plugin
  * BUNDLED with the installed dsh instead of a package this repo publishes
