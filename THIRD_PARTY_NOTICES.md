@@ -27,6 +27,21 @@ distribution is authorized.
   byte-for-byte (sha256 `b61ac928f152d13517328263e6bee9175b928f9ab696a2d2ca2b6cfd961ddc32`).
 - **Vendored into this repository at:** [`patches/omo-dsh/vendor/hashline-core`](patches/omo-dsh/vendor/hashline-core)
   (a pnpm workspace package; the upstream package name `@oh-my-opencode/hashline-core@0.1.0` is kept unchanged as the provenance anchor for drift detection and targeted intake).
+- **Consumption status: vendored but NOT consumed** (fork E = **(E-A)**, D19). Nothing mounts or
+  imports this package: it has no row in `cordis.yml` and no import site anywhere in
+  `patches/omo-dsh/omo-*` or `tests/` — the only mentions that treat it as a **dependency** are
+  attribution/licensing ones (the license and vendor-manifest tooling). Two other mentions exist and are
+  not hidden here, and neither is a dependency edge: `vitest.config.ts:23` names the package in a comment
+  that records the collection split — the shared-skills skill-payload tests are excluded (they need the Bun
+  runtime), while the vendored *package* tests (hashline-core) **keep running** through the `include` above,
+  and
+  `patches/omo-dsh/omo-hooks/src/hooks/bash-file-read-guard.ts:28-31` names hashline (the concept, not a
+  package specifier) while recording why the hashline clause was dropped from the read advisory. Naming a
+  thing in a comment is not importing it — no import, no mount, no execution path anywhere outside its own
+  tree. The contrast is
+  `@oh-my-opencode/lsp-core`, which DOES have a mount row (`omo-lsp`) and is live. Attribution here
+  is therefore unconditional and does not depend on consumption: the copy exists, so the notice
+  exists, whether or not anything runs it.
 
 > ⚠️ **MODIFIED COPY — prominent notice required by SUL-1.0 "Notices".**
 > This project has **modified** the vendored copy of `hashline-core`. The
@@ -206,7 +221,11 @@ category**, and reaching the seam takes TWO things at once — mounting `omo-hoo
 AND creating a session. Faces, enumerated:
 * **Mounts omo-hooks AND creates a session — exactly two, both sealed by the same
   floor:** `tests/e2e/drive.mjs` (RPC `session.create`/`session/create`; the floor
-  export sits at :4626), the e2e face that runs in CI, exports `OMO_AST_GREP_SG_PATH`
+  export is the `if (env.OMO_AST_GREP_SG_PATH === undefined)` assignment inside its
+  `scenarioEnv` builder — cited by construct, not by line number, because that file is
+  ~31k lines (measured) and every phase adding a scenario moves the number (the one that used to sit
+  here was stale before this line was written), and it is the e2e face that runs in CI,
+  exporting `OMO_AST_GREP_SG_PATH`
   **globally** from its `scenarioEnv`; and `scripts/smoke-real.mjs` — the MANUAL
   real-model face, needs a real key, never runs in CI — whose two anchors are split so
   neither is asked to carry a fact it does not sit on: RPC session-creating call sites
@@ -1216,6 +1235,46 @@ semantics of that MIT package's `src/cli.ts` (~30 lines: run the MCP stdio serve
 dispose the default LSP manager on exit). Per the (L-B) ruling (FORKS.md §0-6) the
 package is NOT vendored — no license file is copied; this paragraph is the
 attribution. Copyright of the referenced semantics remains with code-yeongyu (MIT).
+
+### Phase 6 license paths: MIT and SUL are two different doors, not one
+
+The `checked=66` this phase ends on is reached through **two independent allow paths** in
+`scripts/verify-licenses.mjs`, and conflating them hides what each unit actually rests on.
+They are listed separately here, each with the predicate that decides it.
+
+**Path A — `SUL-1.0`, gated by package name.** `tokenAllowed` grants `SUL-1.0` **only** when
+`SUL_ALLOWED_NAME` matches the package name (`scripts/verify-licenses.mjs:97`, applied at that
+function's SUL branch). Riding this path: the six vendored `@oh-my-opencode/*` packages —
+hashline-core, lsp-core, mcp-stdio-core, prompts-team, shared-skills, team-core. This is the
+only way in for them: upstream ships no `license` field at all, so the field had to be added
+(D15 ¶1) **and** the name gate had to be extended to this scope (D16); the first without the
+second still scores a violation.
+
+**Path B — the `MIT` token, name-blind.** `UNIVERSAL_WHITELIST` grants plain `MIT` without
+looking at the name (`scripts/verify-licenses.mjs:71`, consulted before the SUL branch). Riding
+this path: the two e2e fixture workspaces, `@oh-my-opendsh/fixture-lsp-double-project` and
+`@oh-my-opendsh/fixture-ast-grep-project`, each declaring `MIT OR SUL-1.0`. Their names do
+**not** satisfy `SUL_ALLOWED_NAME`, so the `SUL-1.0` alternative inside that expression is inert
+— measured against the exported predicate, `exprAllowed('SUL-1.0',
+'@oh-my-opendsh/fixture-lsp-double-project')` is `false`, while the same name with
+`MIT OR SUL-1.0` is `true`. The `MIT OR` half is therefore load-bearing rather than decorative:
+it is what these two units actually stand on, and dropping it would turn both into violations.
+
+One accuracy note, because the upstream **author** and an upstream **package scope** are
+different things and have been read as one: `code-yeongyu` is the author handle, appearing
+throughout this file as the copyright holder of `oh-my-openagent`; there is **no
+`@code-yeongyu/*` package** in this repository — `grep -c code-yeongyu pnpm-lock.yaml` returns
+0. Path B is carried by the two fixture workspaces and by ordinary MIT-licensed dependencies,
+not by a scope of that name.
+
+The count, every step accounted for: **61** at the Phase 6 baseline (task book PRE-2) →
+**64** at P6-T4 (+3: `vendor/lsp-core`, `vendor/mcp-stdio-core`, and `bun-types@1.3.12`,
+which arrives as a devDependency of the vendored `mcp-stdio-core`
+(`patches/omo-dsh/vendor/mcp-stdio-core/package.json:41`) and enters the lockfile in that same
+commit — easy to miss, because it is not a vendored directory) → **65** at the P6-T5+T6 commit
+(+1: `tests/e2e/fixtures/lsp-double-project/package.json`) → **66** at P6-T7 (+1:
+`tests/e2e/fixtures/ast-grep-fixture-project/package.json`), re-verified by
+`scripts/verify-licenses.sh` at the close of this phase.
 
 ## oh-my-pi
 
