@@ -21,7 +21,16 @@
 //   c06 installer passes bash -n
 //   c07 installer TAG pin equals .omo/compat.yaml tag_alias
 //   c08 preset.yml identity (name + description non-empty)
-//   c09 persona shadow      (hard-blocks + anti-patterns in both personas)
+//   c09 persona shadow      (hard-blocks section present, PLUS the anti-pattern
+//       SECTION compared VERBATIM against the single source of truth
+//       system-sections/anti-patterns.md at every persona site of the shipped
+//       preset: its `- **Category**:` bullets bullet for bullet AND its whole
+//       non-bullet body — the prose above the list — line for line, in order,
+//       de-indented only, bidirectionally. Upgraded in FIX-C09 from the
+//       inclusion-only arm `text.includes('## Anti-Patterns')`, which could not
+//       see a dropped bullet or a changed word; the body-level arm and the
+//       source-side dash SHAPE guard landed in FIX-C09-R2 (review B MAJOR-1 /
+//       its B11 + B12 legs); see D19-REVIEW §3 行 A 尾注 + §5c ⑤)
 //   c10 live path roster integrity (P2-T15; generalized into per-class
 //       assertion records by P2-T20 — the template under
 //       patches/omo-dsh/omo-agents/, still the build/e2e/cold-start load
@@ -144,6 +153,18 @@ const PRESET_YML = join(PATCH_DIR, 'preset', 'preset.yml')
 const PLUGIN_JS = join(PATCH_DIR, 'concerto-plugin.host.js')
 const INSTALL_SH = join(REPO_ROOT, 'scripts', 'install-concerto.sh')
 const COMPAT_YML = join(REPO_ROOT, '.omo', 'compat.yaml')
+
+// ── FIX-C09 (D19-REVIEW §3 行 A 尾注 / §5c ⑤): c09 的真源面 ────────────────────
+// `omo-agents/system-sections/anti-patterns.md` 是这段 prose 的**唯一真源**
+// （`omo-agents/src/system-prompt.ts:16-21` 的不变量：the persona that boots IS
+// this builder's output, so no second artifact can drift）。而上面那个 AGENT_YML
+// (`omo-agents-current/`) 是**手工维护的第二工件**：`scripts/install-concerto.sh:1014`
+// 直接 curl 它，`scripts/` 内没有任何脚本再生成它（D19-REVIEW §3 行 A 亲验）。
+// 所以「第二工件不得漂移」这条不变量在本仓里**没有结构性保证**，只能由门守着——
+// 旧 c09 只做 `text.includes('## Anti-Patterns')`，删一条 bullet、改一个词都看不见，
+// c09 绿**不是**同步的证据。下面的逐字 bullet 集比对就是把这道门补上。
+const SYSTEM_SECTIONS_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'system-sections')
+const ANTI_PATTERNS_MD = join(SYSTEM_SECTIONS_DIR, 'anti-patterns.md')
 
 // P3-T19 c12–c14：omo-hooks 源码树、它的 manifest、以及 manifest 必须与之
 // 一致的「人读」覆盖基线文档。
@@ -357,6 +378,218 @@ function flatten(rows) {
   return out
 }
 
+// ── FIX-C09: c09 的逐字比对机构 ────────────────────────────────────────────────
+// 三条设计约束，都是为了让这道门**只会因真实漂移而红**：
+//   1. **切块按标题行，绝不写死行号**——`-current/preset/agent.cordis.yml` 是
+//      手工维护的归档，行号天然会位移（D19 那轮就位移过一次）；锚在标题上，
+//      位移不打红门，内容漂移才打。
+//   2. **归一化只剥行首空白**——缩进 0（源 markdown）/ 6（conductor block scalar）
+//      / 10（explore block scalar）是 YAML 排版差异，不是内容差异；column 0 之后
+//      的正文一个字符都不改，逐字节比。
+//   3. **同一标题出现的每一块都比对**——复制一份第二块（无论源侧还是副本侧）都
+//      必须同样逐字，否则那块未比对的副本就是静默漂移面。
+const POLICY_HEADING_ANTI_PATTERNS = '## Anti-Patterns (BLOCKING violations)'
+
+/** ATX 标题行（行首至多 3 空格才是标题；block scalar 里的更深缩进不是）。 */
+const ATX_HEADING_RE = /^ {0,3}#{1,6}\s/
+
+/**
+ * Every slice of `text` sitting under a line whose TRIMMED content equals
+ * `heading`, running to the next ATX heading (or end of text). Returns `[]`
+ * when the heading never appears — the caller FAILs on empty, never skips.
+ *
+ * FIX-C09-R2 (评审 B NIT-3) — an ASYMMETRY, documented and NOT changed here:
+ * the START match is trim-equality (any indentation of the section's own
+ * heading is accepted), while the END match is the ATX rule `^ {0,3}#{1,6}\s`
+ * (a heading indented 4+ spaces is NOT a heading). So a deeply-indented later
+ * heading would end no slice, and the slice would run to the end of the text.
+ * That is unreachable under today's premise, which the shipped archive holds:
+ * every persona here arrives through a YAML block scalar, and the parser
+ * removes the block's indentation indent, so every heading inside a rendered
+ * persona sits at column 0 — matching both rules alike. If a future renderer
+ * ever keeps indentation inside its strings, re-open this: the slices would
+ * then swallow everything below the section and the body comparison would
+ * report a divergence the fix has to locate in the renderer, not in the prose.
+ */
+function slicePolicySections(text, heading) {
+  const lines = String(text ?? '').split('\n')
+  const blocks = []
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== heading) continue
+    let end = lines.length
+    for (let j = i + 1; j < lines.length; j++) {
+      if (ATX_HEADING_RE.test(lines[j])) { end = j; break }
+    }
+    blocks.push(lines.slice(i + 1, end))
+  }
+  return blocks
+}
+
+/** `- **Category**: description` — the ONE canonical bullet shape of this section. */
+const POLICY_BULLET_RE = /^-\s*\*\*[^*]+\*\*:/
+
+/**
+ * A line that OPENS a dash list (`- …`, `-` alone, `-\t…`). Every bullet of
+ * this section must additionally match POLICY_BULLET_RE; a line that matches
+ * THIS one and not that one is shape drift. FIX-C09-R2 (评审 B 的 B12 腿实证过
+ * 这个洞): the bullet arms only ever LOOK at canonical bullets, so a line of
+ * shape `- Warning: …` added to the source is invisible to them — it is in no
+ * bullet set on either side, so both sides still "match". Without a shape guard
+ * such a line is silently dropped from every comparison, which is exactly the
+ * quiet surface this gate exists to close, so the source side FAILs on it.
+ */
+const POLICY_DASH_ITEM_RE = /^-(?:\s|\t|$)/
+
+/** `- **Category**: description` bullet lines, DE-INDENTED only (see above). */
+function policyBullets(bodyLines) {
+  return (bodyLines ?? [])
+    .map((line) => line.replace(/^[ \t]+/, ''))
+    .filter((line) => POLICY_BULLET_RE.test(line))
+}
+
+/**
+ * FIX-C09-R2 (评审 B MAJOR-1，方案 (a)) — the COMPLEMENT of policyBullets:
+ * every remaining line of a section body, DE-INDENTED only, IN ORDER. That is
+ * the section's prose (the "Wording gradient: …" paragraph today) plus any dash
+ * line that is not a canonical bullet. Before this round c09 compared the
+ * bullet SETS only, so rewording, reflowing or deleting the prose left the
+ * bullets untouched and the gate green (评审 B 的 B11 腿). The two arms now
+ * partition the body with no line left unwatched: a line is either a canonical
+ * bullet (comparePolicyBullets) or part of this rest (comparePolicyBody).
+ *
+ * ONE extra normalization beyond de-indent, stated here because it is the only
+ * one: BLANK LINES AT THE VERY END OF THE BODY are trimmed from BOTH sides.
+ * The source markdown file ends with a newline (so its split leaves one trailing
+ * empty line) while the shipped personas carry `|-` block scalars, whose strip
+ * chomping removes exactly that empty line — a container property, not content
+ * (亲验：the only difference between the source and either persona today was
+ * that trailing empty line).
+ *
+ * FIX-C09-R3 (评审 B MINOR-1) — the order of these two passes IS the contract,
+ * and R2 had it backwards. R2 filtered the bullets out FIRST and trimmed the
+ * tail SECOND, which dragged the blank line SEPARATING the prose from the first
+ * bullet down to the end of the sequence and trimmed it away there. Consequence,
+ * measured by 评审 B: a source that gains that one separator line against copies
+ * that never moved stayed GREEN — the drift was swallowed by the normalization
+ * that is supposed to be the only permitted one. Trimming the BODY first (so
+ * the tail trim can only ever reach the EOF empty line, because the last element
+ * it meets is a bullet) and filtering the bullets SECOND puts that separator
+ * back inside the compared sequence, where it belongs: it is paragraph structure,
+ * not container layout. Blank lines INSIDE the prose keep participating exactly as
+ * before; a trailing empty line at EOF stays permitted on the source side alone,
+ * because that is the one difference YAML strip chomping erases.
+ */
+function policyBodyRest(bodyLines) {
+  const body = (bodyLines ?? []).map((line) => line.replace(/^[ \t]+/, ''))
+  while (body.length > 0 && body[body.length - 1] === '') body.pop()
+  return body.filter((line) => !POLICY_BULLET_RE.test(line))
+}
+
+/**
+ * Body-level verbatim comparison (FIX-C09-R2): the source's non-bullet lines
+ * against one rendered block's, byte for byte and in order. Reports the FIRST
+ * divergence only — located by non-bullet body line number, then named: a
+ * length difference quotes the substantive line(s) that are missing or extra
+ * (blank lines aside, so an empty paragraph separator is never reported as
+ * "the dropped line"), and an equal-length difference reuses the same
+ * EXPECTED/ACTUAL character window the bullet arm uses. The FAIL banner thus
+ * reads like the existing c09 output instead of dumping two whole sections.
+ */
+function comparePolicyBody(wantRest, gotRest, site, blockIndex, blockTotal) {
+  if (wantRest.join('\n') === gotRest.join('\n')) return []
+  const where = blockTotal > 1 ? `${site} — Anti-Patterns block ${blockIndex + 1}/${blockTotal}` : site
+  const n = Math.max(wantRest.length, gotRest.length)
+  let i = 0
+  while (i < n && (wantRest[i] ?? null) === (gotRest[i] ?? null)) i++
+  const head = `${where}: the NON-BULLET body (prose, plus any dash line outside the canonical "- **Category**:" shape) under its "${POLICY_HEADING_ANTI_PATTERNS}" heading is NOT verbatim against the single source of truth ${relative(REPO_ROOT, ANTI_PATTERNS_MD)} — first difference at non-bullet body line ${i + 1} (source ${wantRest.length} line(s), copy ${gotRest.length})`
+  // The RAW slice is what every test in this function reads; JSON.stringify runs
+  // ONLY at display time (FIX-C09-R3, 评审 B MINOR-2 — see the extra branch).
+  const substantive = (lines, from) => lines.slice(from).filter((l) => l !== '').slice(0, 3)
+  const quoted = (lines) => lines.map((l) => JSON.stringify(l))
+  const shapeClause = (lines) => (lines.some((l) => POLICY_DASH_ITEM_RE.test(l))
+    ? ' — and the copy renders it as a NON-CANONICAL dash line, outside the "- **Category**: description" shape this section is allowed to hold' : '')
+  if (gotRest.length < wantRest.length) {
+    const missing = substantive(wantRest, i)
+    const named = missing.length > 0 ? `[${quoted(missing).join(', ')}]` : '[BLANK separator line(s) — the only thing there]'
+    return [`${head} — the copy ENDS ${wantRest.length - gotRest.length} line(s) short of the source; the source has these there (blank separators aside): ${named}`]
+  }
+  if (gotRest.length > wantRest.length) {
+    // FIX-C09-R3 (评审 B MINOR-2): the shape test reads `rawExtra`, the RAW
+    // slice. R2 handed `shapeClause` the already-JSON.stringify'd output of
+    // `substantive`, so every element began with a `"` character, `^-` could not
+    // match, and the shape clause this branch exists to print was dead code: a
+    // copy running ahead of the source with `- Warning: …` quoted the line but
+    // never named its shape.
+    const rawExtra = substantive(gotRest, i)
+    // FIX-C09-R4 (评审 B MINOR-2): the copy side gets the SAME explicit fallback the missing side already carries — `substantive` filters blanks out, so when the one extra line IS that blank separator, `rawExtra` is empty and this message used to end with a bare `[]` (zero information at the exact moment the gate is right).
+    const named = rawExtra.length > 0 ? `[${quoted(rawExtra).join(', ')}]` : '[BLANK separator line(s) — the only thing there]'
+    return [`${head} — the copy carries ${gotRest.length - wantRest.length} line(s) the source never had: ${named}${shapeClause(rawExtra)}`]
+  }
+  return [`${head} — ${bulletDivergence(wantRest[i], gotRest[i])}${shapeClause([gotRest[i]])}`]
+}
+
+/** The `Category` of a normalized bullet, or `(uncategorised)` for the report. */
+function bulletCategory(bullet) {
+  const m = String(bullet).match(/^-\s*\*\*([^*]+)\*\*:/)
+  return m ? m[1] : '(uncategorised)'
+}
+
+/** 期望/实际差异摘要：首个分歧字符位置 + 两侧窗口，不打印整条 bullet 以外的噪声。 */
+function bulletDivergence(want, got) {
+  let i = 0
+  while (i < want.length && i < got.length && want[i] === got[i]) i++
+  const cut = (s) => JSON.stringify(s.slice(Math.max(0, i - 20), i + 60))
+  return `first difference at character ${i + 1} of the line — EXPECTED ${cut(want)} ACTUAL ${cut(got)} (expected ${want.length} chars, actual ${got.length} chars)`
+}
+
+/**
+ * The verbatim comparison itself: ONE source bullet set against ONE rendered
+ * block, reporting every problem as a named, localized string so the FAIL
+ * banner says WHICH bullet at WHICH site and what the difference is.
+ * Arms, strongest-first: a copy that changed a word (same category, different
+ * body), a copy that dropped a bullet, a copy that added one the source never
+ * had, and a copy whose bullets are all present but reordered.
+ */
+function comparePolicyBullets(want, got, site, blockIndex, blockTotal) {
+  const problems = []
+  const where = blockTotal > 1 ? `${site} — Anti-Patterns block ${blockIndex + 1}/${blockTotal}` : site
+  if (got.length === 0) {
+    return [`${where} carries 0 anti-pattern bullets under its "${POLICY_HEADING_ANTI_PATTERNS}" heading — the comparison would be vacuous, so an empty copy FAILs rather than passing empty`]
+  }
+  // Multiset diff, so a duplicated bullet cannot hide behind a matching first copy.
+  const pool = [...got]
+  const unmatchedWant = []
+  for (const bullet of want) {
+    const at = pool.indexOf(bullet)
+    if (at < 0) unmatchedWant.push(bullet)
+    else pool.splice(at, 1)
+  }
+  // A dropped bullet and a reworded bullet look identical until paired by
+  // category: same category present on both sides = a WORD changed, not a line lost.
+  const reworded = []
+  const dropped = []
+  for (const bullet of unmatchedWant) {
+    const cat = bulletCategory(bullet)
+    const at = pool.findIndex((x) => bulletCategory(x) === cat)
+    if (at < 0) dropped.push(bullet)
+    else reworded.push([bullet, pool.splice(at, 1)[0]])
+  }
+  for (const [want1, got1] of reworded) {
+    problems.push(`${where}: bullet **${bulletCategory(want1)}** is NOT verbatim — ${bulletDivergence(want1, got1)}`)
+  }
+  for (const bullet of dropped) {
+    problems.push(`${where}: the source bullet **${bulletCategory(bullet)}** is ABSENT from the rendered copy (${want.length} bullets expected in the source, ${got.length} present) — ${JSON.stringify(bullet)}`)
+  }
+  for (const bullet of pool) {
+    problems.push(`${where}: bullet **${bulletCategory(bullet)}** exists in the rendered copy but NOT in the single source of truth ${relative(REPO_ROOT, ANTI_PATTERNS_MD)} (${got.length} present, ${want.length} in the source) — the hand-maintained copy has drifted ahead: ${JSON.stringify(bullet)}`)
+  }
+  if (reworded.length === 0 && dropped.length === 0 && pool.length === 0 && want.join('\n') !== got.join('\n')) {
+    const at = want.findIndex((b, i) => b !== got[i])
+    problems.push(`${where}: all ${want.length} source bullets are present verbatim but the ORDER differs — position ${at + 1} wants **${bulletCategory(want[at])}**, the copy renders **${bulletCategory(got[at] ?? '(absent)')}**`)
+  }
+  return problems
+}
+
 /**
  * The ten c10 assertion records (P2-T20): ONE result per DoD-c assertion
  * class, so the gate's assertion count is enumerable and the pre-Phase-2
@@ -432,24 +665,122 @@ async function run() {
     if (JSON.stringify(groupIds) !== JSON.stringify(wantGroup)) c03Problems.push(`delegation group rows=${JSON.stringify(groupIds)} (want ${wantGroup.join(', ')})`)
     results.push(check('c03', 'single delegation path', c03Problems.length === 0, c03Problems.join('; ') || `delegation group = ${wantGroup.join(', ')}`))
 
-    // c09 — persona shadow: hard blocks + anti-patterns in both personas.
+    // c09 — persona shadow: hard blocks present, anti-patterns VERBATIM at every
+    // rendered persona site of the shipped preset (today: two — conductor + explore).
     // The conductor's key is `prefix` (renamed from `text` at
     // dsh-v0.1.3-alpha.2 — docs/dsh-0.1.5-rc.1-review.md §2); reading the old
     // key here would have made this check silently vacuous rather than failing.
+    //
+    // FIX-C09 (D19-REVIEW §3 行 A 尾注：「c09 passing is NOT evidence of sync」
+    // / §5c ⑤「verbatim-comparison gate remains open work」)：旧臂只做
+    // `text.includes('## Anti-Patterns')`——删掉一条 bullet、把 `Never` 改成
+    // `Never ever`，它照绿。真源是 `system-sections/anti-patterns.md`
+    // （`system-prompt.ts:79-99` 在 apply 时现渲染，live 面天然同步），而
+    // `-current/preset/agent.cordis.yml` 由 `install-concerto.sh:1014` 直接
+    // curl 发出去、**没有任何脚本再生成它**——所以它是必须逐字钉住的第二工件。
+    // 本臂因此是**双向**逐字比对：副本少一条红（源改了没跟上）、副本多一条红
+    // （副本跑到源前面）、改一个词红、换顺序红。记录数不变：仍是这一条 c09，
+    // 内部多断言全部汇入 c09Problems。
+    //
+    // FIX-C09-R2（评审 B MAJOR-1，方案 (a)）：上面那一轮把 body 一刀切成
+    // 「bullet / 其余」两半，只有前半有门。于是源里改一个散文词（B 的 B11 腿）、
+    // 加一条非规范 dash 行（B 的 B12 腿）都能穿过这道门而绿。本轮补上后半：
+    // `policyBodyRest` 取「其余行」（去缩进、**先剥 body 末尾空行再滤 bullet**），
+    // 〔R3 订正：次序已改为先剥尾再滤 bullet；R2 落地为相反次序〕
+    // 逐字节、含行序地与源比对；源侧的非规范 dash 行由 SHAPE GUARD 当场具名红——它两半都不属于，
+    // 不守就是静默蒸发面。记录数**仍不变**：新断言同样汇入 c09Problems。
     const conductor = agentRows.find((r) => r && r.id === 'persona')
     const exploreRow = flatRows.find((r) => r && r.config && r.config.toolName === 'call_omo_explore')
     const c09Problems = []
-    for (const [label, text] of [
-      ['conductor', conductor && conductor.config && conductor.config.prefix],
-      ['explore', exploreRow && exploreRow.config && exploreRow.config.persona],
-    ]) {
-      if (typeof text !== 'string' || text.length === 0) {
-        c09Problems.push(`${label} persona missing`)
-      } else if (!(text.includes('## Hard Blocks') && text.includes('## Anti-Patterns'))) {
-        c09Problems.push(`${label} persona lacks hard-blocks/anti-patterns sections`)
+
+    // The single source of truth. Unreadable or bullet-less = FAIL, never skip:
+    // a gate whose expectation is empty passes everything.
+    let antiPatternsSource = ''
+    try {
+      antiPatternsSource = readFileSync(ANTI_PATTERNS_MD, 'utf8')
+    } catch (e) {
+      c09Problems.push(`the single source of truth ${relative(REPO_ROOT, ANTI_PATTERNS_MD)} could not be read: ${String(e.message ?? e)} — c09 has nothing to compare against, so it FAILs rather than falling back to the old inclusion-only arm`)
+    }
+    const sourceBlocks = antiPatternsSource === '' ? [] : slicePolicySections(antiPatternsSource, POLICY_HEADING_ANTI_PATTERNS)
+    if (antiPatternsSource !== '' && sourceBlocks.length === 0) {
+      c09Problems.push(`${relative(REPO_ROOT, ANTI_PATTERNS_MD)} carries no "${POLICY_HEADING_ANTI_PATTERNS}" heading — every expectation below would be empty, which is a vacuous PASS, so this FAILs`)
+    }
+    const want = sourceBlocks.length > 0 ? policyBullets(sourceBlocks[0]) : []
+    if (antiPatternsSource !== '' && sourceBlocks.length > 0 && want.length === 0) {
+      c09Problems.push(`${relative(REPO_ROOT, ANTI_PATTERNS_MD)}: its Anti-Patterns section holds 0 "- **Category**: description" bullets — the comparison would be vacuous`)
+    }
+    if (sourceBlocks.length > 1) {
+      c09Problems.push(`${relative(REPO_ROOT, ANTI_PATTERNS_MD)} carries ${sourceBlocks.length} copies of "${POLICY_HEADING_ANTI_PATTERNS}" — the source itself has forked, so there is no longer ONE set to compare against`)
+    }
+
+    // FIX-C09-R2 (评审 B MAJOR-1): the source's non-bullet lines are the body
+    // expectation, and the source's own SHAPES are guarded first. A dash line
+    // outside the canonical bullet shape joins no bullet set, so no BULLET arm
+    // can ever see it. The body arm CAN see it (it is one of the rest lines),
+    // and today that is what fails a source-only shape edit — but only until a
+    // copy mirrors the edit: a shape drift replicated on every face makes both
+    // other arms green, which is exactly the silent surface the guard closes.
+    // Named red, source side, before any site is compared.
+    const wantRest = sourceBlocks.length > 0 ? policyBodyRest(sourceBlocks[0]) : []
+    if (sourceBlocks.length > 0) {
+      const sourceDeindented = sourceBlocks[0].map((line) => line.replace(/^[ \t]+/, ''))
+      const shapeDrift = []
+      sourceDeindented.forEach((line, i) => {
+        if (POLICY_DASH_ITEM_RE.test(line) && !POLICY_BULLET_RE.test(line)) shapeDrift.push(`section body line ${i + 1}: ${JSON.stringify(line)}`)
+      })
+      if (shapeDrift.length > 0) {
+        c09Problems.push(`${relative(REPO_ROOT, ANTI_PATTERNS_MD)}: its Anti-Patterns section holds ${shapeDrift.length} dash line(s) that do NOT match the canonical "- **Category**: description" shape [${shapeDrift.join(' | ')}] — no BULLET arm of this check can ever see such a line (it joins no bullet set on either side), and if the copies ever mirrored it the body arm would go green around it, so the SHAPE GUARD fails it HERE instead of letting the section quietly stop being a bullet list`)
       }
     }
-    results.push(check('c09', 'persona shadow', c09Problems.length === 0, c09Problems.join('; ') || 'hard-blocks + anti-patterns in both personas'))
+
+    // Named sites: the two rendered blocks the installer ships, both REQUIRED.
+    const c09Sites = [
+      ['conductor persona prefix (row `persona` .config.prefix)', conductor && conductor.config && conductor.config.prefix],
+      ['explore persona shadow (row `tool-subagent-explore` .config.persona)', exploreRow && exploreRow.config && exploreRow.config.persona],
+    ]
+    // Discovery arm: any OTHER row in the shipped preset whose config string
+    // renders the same section (one level into `config`) is compared too, so a
+    // third persona cannot join the shipped preset unsynced and unchecked.
+    const namedRows = new Set([conductor, exploreRow])
+    for (const r of flatRows) {
+      const cfg = r && r.config
+      if (!r || namedRows.has(r) || !cfg || typeof cfg !== 'object' || Array.isArray(cfg)) continue
+      for (const [key, value] of Object.entries(cfg)) {
+        if (typeof value === 'string' && value.includes(POLICY_HEADING_ANTI_PATTERNS)) {
+          c09Sites.push([`row \`${r.id ?? '(no id)'}\` .config.${key}`, value])
+        }
+      }
+    }
+
+    const c09Compared = []
+    for (const [site, text] of c09Sites) {
+      if (typeof text !== 'string' || text.length === 0) {
+        c09Problems.push(`${site} missing`)
+        continue
+      }
+      if (!text.includes('## Hard Blocks')) {
+        c09Problems.push(`${site} lacks the hard-blocks section`)
+        continue
+      }
+      const blocks = slicePolicySections(text, POLICY_HEADING_ANTI_PATTERNS)
+      if (blocks.length === 0) {
+        c09Problems.push(`${site} lacks the "${POLICY_HEADING_ANTI_PATTERNS}" section`)
+        continue
+      }
+      for (let bi = 0; bi < blocks.length; bi++) {
+        const got = policyBullets(blocks[bi])
+        // FIX-C09-R2: the bullet set and the rest of the body are compared by
+        // two arms over a partition of the same slice — no line is unwatched.
+        const gotRest = policyBodyRest(blocks[bi])
+        c09Problems.push(...comparePolicyBullets(want, got, site, bi, blocks.length))
+        c09Problems.push(...comparePolicyBody(wantRest, gotRest, site, bi, blocks.length))
+        c09Compared.push(`${site.split(' (')[0]} block ${bi + 1}/${blocks.length} = ${got.length} bullets + ${gotRest.length} non-bullet line(s)`)
+      }
+    }
+    results.push(check('c09', 'persona shadow — anti-pattern bullets VERBATIM against system-sections/anti-patterns.md at every rendered persona site', c09Problems.length === 0,
+      c09Problems.length > 0
+        ? c09Problems.join('; ')
+        : `${want.length} anti-pattern bullets AND ${wantRest.length} non-bullet body line(s) (the prose of the section) of the single source of truth ${relative(REPO_ROOT, ANTI_PATTERNS_MD)} matched VERBATIM, bullet for bullet AND line for line AND in order, across ${c09Compared.length} rendered block(s) at ${c09Sites.length} persona site(s) of ${relative(REPO_ROOT, AGENT_YML)}: ${c09Compared.join('; ')} — bidirectional over BOTH halves of the body, which the two arms partition (an absent bullet, a copy that ran ahead of the source, a reworded bullet, a reordered bullet, a reworded / reflowed / DROPPED prose line and a copy carrying prose the source never had all FAIL here); normalization = DE-INDENT ONLY (layout 0/6/10 spaces is YAML block-scalar indentation, not content — every character after column 0 is compared unchanged), plus BLANK lines trimmed at the very END of the body on BOTH sides alike (the source .md ends with a newline while the personas are \`|-\` block scalars whose strip chomping drops exactly that empty line — container layout, not content); blank lines INSIDE the prose ARE compared, INCLUDING the blank line that SEPARATES the prose from the first bullet, and that holds only because the tail trim runs BEFORE the bullet filter (FIX-C09-R3: R2 filtered the bullets out first, which pulled that separator down to the end of the sequence and trimmed it as if it were container layout — a source gaining exactly that line against unmoved copies stayed green); interior blank lines are paragraph structure; blocks located by their "${POLICY_HEADING_ANTI_PATTERNS}" heading line, never by line number, and EVERY occurrence of that heading in a persona is compared; a dash line in the SOURCE that is not a canonical "- **Category**:" bullet FAILs on its own SHAPE GUARD, because it joins no bullet set and no bullet arm could ever see it; hard-blocks title containment retained as its own arm. RESIDUAL BOUNDARY, not claimed closed: this arm compares the IN-REPO shipped archive, not an installed profile (the installer curls a REMOTE tag — D19-REVIEW §3 行 A), the hard-blocks section stays title-inclusion-only, and the arm that DISCOVERS extra persona sites reads each row's \`config\` exactly ONE level deep (its own string values, NO recursion into nested objects or arrays), so a third copy rendered below that depth is outside its scan — today the heading occurs at exactly the two named sites`))
   }
 
   // c04 — the plugin artifact parses as a function body.
