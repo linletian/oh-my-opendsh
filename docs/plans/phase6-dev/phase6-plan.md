@@ -195,7 +195,7 @@ ROADMAP 原文：「每个入选能力在脚本化场景中被 agent 真实使�
 | **DoD-d** | 本目录文档与实测无冲突——凡 T1 钉测推翻计划假设处，改文档不改结论（修订记录成文）；三个 fork 裁定连同依据回填本节与 ROADMAP Phase 6 措辞 | 修订记录 + ROADMAP 回馈 |
 | **DoD-e** | 未移除任何既有署名；`verify-licenses` 计数变化全部有对应条目；`THIRD_PARTY_NOTICES.md` 既有条目只增不改 | 合规复核任务 |
 
-**三 fork 裁定已回填本节（DoD-d 的「回填本节」半）**：D19（编辑模型 **(E-A)**）/ D20（LSP **(L-B)**）/ D21（ast-grep **(G-A)**），见 `docs/decisions.md:182/184/186`（中文 `docs/decisions_zh-CN.md:183/185/187`）与 `docs/roadmap.md:97` / `docs/roadmap_zh-CN.md:97`。另 **fork E 复审已于 2026-10-27 结案**（触发条件①成立后重开；结论 = **(E-A) 维持、无 re-ruling**；缓解 A/F 落地（B 上游建议待递交）+ 复审触发集修订（①收窄、④新增、②③保留）），权威记录同见 `docs/decisions.md` 末条与 `.omo/evidence/p6t11/D19-REVIEW.md`。
+**三 fork 裁定已回填本节（DoD-d 的「回填本节」半）**：D19（编辑模型 **(E-A)**）/ D20（LSP **(L-B)**）/ D21（ast-grep **(G-A)**），见 `docs/decisions.md:182/184/186`（中文 `docs/decisions_zh-CN.md:183/185/187`）与 `docs/roadmap.md:97` / `docs/roadmap_zh-CN.md:97`。另 **fork E 复审已于 2026-10-27 结案**（触发条件①成立后重开；结论 = **(E-A) 维持、无 re-ruling**；缓解 A/F 落地（B 上游建议仅内部记录——D5）+ 复审触发集修订（①收窄、④新增、②③保留）），权威记录同见 `docs/decisions.md` 末条与 `.omo/evidence/p6t11/D19-REVIEW.md`。
 
 **明确不属于退出标准**（范围蔓延护栏）：
 
