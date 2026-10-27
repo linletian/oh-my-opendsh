@@ -201,6 +201,59 @@
   （响亮拒绝后的过宽升级），本案例不给满权重。证据：`.omo/evidence/p6-l2-edit-ab/D19-trigger1-evidence.md`
   （untracked 证据树——本条目才是 tracked 权威面记录，依「tracked 文档为权威」约定）。
 
+- **2026-10-27**：**D19 fork E 复审结案——(E-A) 维持，不改判。** 触发条件①仍为**成立**，其性质是真实的
+  **过界应用**模型行为风险，与静默错写**不同类**。
+  **语义亲读源**：`replace_all` 是真·全文替换——`applyLiteralEdit` 未置该标志即抛 `FS_AMBIGUOUS_EDIT`
+  （`@deepseek-ai/dsh-fs-local/lib/index.js:704`），置位后执行 `content.split(old).join(new)`（`:706`）；
+  不存在「仅首个匹配」模式，故工具完全按文档执行，**非工具正确性缺陷**。
+  **协议层发现（使本案降权）**：卡片自身的消歧锚 `armA.recovery.old_string` **从未送达模型**——以**权威
+  session JSONL（95 条）**，为准，3 条 `user/message` 均无 `armA.recovery` 载荷；`replace_all` 在**用户指令流中
+  完全不出现**（模型仅从 rec 12 的工具 schema（逐字 = `dsh-tool-fs:695`）与拒绝文案得知该参数）；`return false`
+  出现在 **4 条 `tool/result` 读取记录中——4 处不同出现，JSONL 原始子串命中 7 次**（rec 26×2 / 71×2 / 80×2 / 89×1——**0-based**；JSONL 行 27/72/81/90，全为 `tool/result`），从未作为指令出现。模型收到的重试指令只有通用一句
+  （"try once more using the file's current real content"），而拒绝文案把 `set replace_all to true` 列为
+  **同等并列、无意图限定**的 remedy。要产出 `expected/a-fa.txt` 必须选中 `beta()` 那一处——这是指令**从未言明**
+  的偏好；台架之所以对上，只因人类已把该歧义预解进卡片。字节差恰为**多一处（第 2 行）**，所写每字节均为卡内
+  `new_string`。摘要归档 `.omo/evidence/p6-l2-edit-ab/armA-session-log-digest.md`。
+  **成本-收益**：A/B 轴（静默错写 0/0；每类可判失败均产出逐字机判错误并内嵌恢复指引）**未被触碰**——拒绝是
+  响亮的，模型读了并照做了（**可以说过于痛快，但指引通道确实起了作用**），且模型如实自述错误与升级。
+  **指引路径发现（已更正）**：在环的 remedy 指引**只有一条**——工具拒绝文案将两个 remedy 并列
+  （`dsh-fs-local:704`）——外加一条通用重试指令；另有两面**本可**消歧却**缺席**：我方
+  `edit-error-recovery.ts` **未装载未触发**（L2-1 跑的是**纯 DSH 默认 agent**：rec 8 系统提示零 omo persona
+  内容，rec 12 暴露 26 个标准工具且零 omo 工具，95 条记录中 `EDIT ERROR`/`IMMEDIATE ACTION`/`APOLOGIZE` 命中
+  全为 0；其触发表对该类的**匹配能力**成立（`:152`/`:162`），但「在此路径触发过」为假——且即便装载，追加的也只是
+  类无关提醒（`:175-186`）），以及卡片扣住了它的消歧锚。故过界应用**近乎由真正在环的指引所预测**，权重应落在
+  **指引设计而非模型可靠性**。拒绝文案位于 **dsh 包，不属本仓修改面**。**推论**：L2-1 从未演练本产品的已配置
+  agent 面——这是该证据自身的固有限制。
+  **采纳的缓解（A，落地三处——仅在仓内工作树；到达已安装 preset 需发布 + tag 移动 + 重装，live 线在 apply 时取源
+  改动）**：反模式条 **Over-Broad Replace**——歧义拒绝后应加宽 `old_string` 到你真正要改
+  的那一处；**若指令未指名哪一处，按指令给出的上下文判定并报告你所选的位置，不得整片替换**——写入源
+  `patches/omo-dsh/omo-agents/system-sections/anti-patterns.md` **及** `patches/omo-dsh/omo-agents-current/
+  preset/agent.cordis.yml` 的两段渲染块（因 `scripts/install-concerto.sh:1014` 直接 curl 该渲染副本，且无脚本
+  再生成它）；三处已验去缩进后逐字相同。
+  **B——上游建议，三处**：`replace_all` 参数描述加 when-to-set 规则（`dsh-tool-fs:695`）；拒绝文案加意图限定
+  （`dsh-fs-local:704`）；**成功**文案（`dsh-tool-fs:660-661`）在 `replace_all` 时附「已全局替换 N 处，若只需
+  其一请改用更具体锚点」（模型曾逐字引用该成功文案，故它是活跃 nudge 面，非装饰）。
+  **C——记为后续**：`edit-error-recovery.ts` 内按类路由是我方修改面内最贴决策点的修法，但该提醒块是**被单测
+  钉死的逐字上游移植**（`:171-173`）；缓办，与 B 同批作耐久修法。**D——拒**：preset 内 persona 散文本身就是
+  `system-sections/*.md` 的渲染副本，A 已落在唯一真源，D 只是重复。**E——拒**：对 `replace_all` 要求显式确认
+  会破坏合法全局改名且不成比例。**F——耐久记录**：耐久权威 = `docs/decisions.md` 与 `docs/decisions_zh-CN.md`
+  的 **tracked** 双语条目；`.omo/evidence/p6t1/FORKS.md` §1.7 是 **untracked 裁定书注记**（仓根**不存在**
+  `FORKS.md`），不具耐久权威。残余风险为建议级缓解、非消除，且可接受，因该失败形态**响亮且评审可见**。
+  **触发集修订——§1.7（`FORKS.md:110`）的复审触发集按下列文字修订（① 权重收窄；原 ②③ 保留不变；
+  新增一条，编号 ④）：**
+
+  *编号说明：原拟新增 ②，但 §1.7 既有 ②（model-in-loop 重跑测出构成层分化）与 ③（DSH 原生 edit 面
+  语义退化），再称 ② 将发生编号冲突，且在落入 **tracked** 条目时有静默顶掉 ③ 之虞；故新增条编号为 **④**——内容
+  与指示一致，此处明示偏离而非静默改号。**原 ②／③ 依原文保留不变，本条为新增 ④.***
+  > ① 真实会话证据（live-model 使用中原生 edit 的串复写/锚定失败类遥测）——**其中歧义须为自发（非卡片/台架内置）
+  > 方可给满权重；卡片内置歧义按半权计**。
+  > ④ 任何 model-in-loop 重跑**必须**在下列二者中取一：把消歧锚点随指令**送达模型**，**或**把「模型在无发生位置
+  > 选择器时自行解歧」列为**独立计分类**单独记分——否则该歧义属台架伪影，不得读作模型不可靠。
+  **④ 采为注记而非台架改动**，理由：该伪影靠*申明*规则即在每次重跑处被消除，散文式二选一协议零成本、不触碰
+  任何冻结 fixture；若实现为计分则要为一个新类新增计分、新增 expected、新增门断言，去服务一个经本次复审后
+  **卡片内置、半权**的案例——其不成比例与缓办 C 的同一理由。若将来真需要拆分，计分归属该次重跑的责任人彼时定。
+  证据：`.omo/evidence/p6t11/D19-REVIEW.md`、`.omo/evidence/p6-l2-edit-ab/armA-session-log-digest.md`。
+
 ---
 
 **English version**: [`decisions.md`](./decisions.md)

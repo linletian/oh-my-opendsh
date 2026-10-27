@@ -206,6 +206,77 @@ The following risks were confirmed by the user as "accept as-is / defer"; the ri
   Evidence: `.omo/evidence/p6-l2-edit-ab/D19-trigger1-evidence.md` (untracked evidence tree — this entry is the
   tracked authoritative record, per the tracked-docs-as-authority convention).
 
+- **2026-10-27**: **D19 fork E review CLOSED — (E-A) MAINTAINED, no re-ruling.** Trigger ① remains ESTABLISHED
+  as a real **over-application** model-behaviour risk, distinct in kind from silent mis-write.
+  **Semantics read at source:** `replace_all` is a genuine global replace — `applyLiteralEdit` throws
+  `FS_AMBIGUOUS_EDIT` unless it is set, then executes `content.split(old).join(new)`
+  (`@deepseek-ai/dsh-fs-local/lib/index.js:704`, `:706`); it has no first-match-only mode, so the tool executed
+  exactly as documented. **Not a tool correctness defect.**
+  **Protocol finding (de-weighting the case):** the card's own disambiguator `armA.recovery.old_string` **never
+  reached the live model** — on the authoritative **session JSONL (95 records)**, none of the 3 `user/message`
+  records carries an `armA.recovery` payload, `replace_all` appears **nowhere in the user instruction stream**
+  (the model learned the parameter only from the tool schema at rec 12, verbatim `dsh-tool-fs:695`, and from the
+  refusal text), and `return false` appears in **4 `tool/result` read records — 4 distinct appearances, raw JSONL substring hits = 7** (rec 26×2 / 71×2 / 80×2 / 89×1 — **0-based**, all `tool/result`; JSONL lines 27/72/81/90), never as instruction. The model
+  received only the generic retry ("try once more using the file's current real content"), while the refusal lists
+  `set replace_all to true` as a **co-equal, intent-unqualified** remedy. Producing `expected/a-fa.txt` required
+  selecting the `beta()` site — a preference the instruction never stated; the scripted arm matched only because a
+  human had pre-resolved that ambiguity into the card. Byte delta is exactly one extra site (line 2), every
+  written byte the card's own `new_string`. Digest: `.omo/evidence/p6-l2-edit-ab/armA-session-log-digest.md`.
+  **Cost-benefit:** the A/B axis (silent mis-write 0/0; every decidable class producing verbatim machine-judged
+  errors with embedded recovery guidance) is **untouched** — the refusal was audible, the model read it and acted
+  on it (**arguably *too* readily, but the guidance channel demonstrably worked**), and it disclosed both the
+  error and its escalation.
+  **Guidance-path finding (corrected):** **one** remedy guidance was in the loop — the tool refusal offering both
+  remedies at equal standing (`dsh-fs-local:704`) plus a generic retry line — and **two** surfaces that could have
+  disambiguated were **absent**: our own `edit-error-recovery.ts` was **not loaded and did not fire** (L2-1 ran a
+  **bare DSH default agent**: rec 8 system prompt has zero omo persona content, rec 12 exposes 26 standard tools
+  with zero omo-family, and `EDIT ERROR` / `IMMEDIATE ACTION` / `APOLOGIZE` return 0 hits across all 95 records;
+  its trigger table's *capability* to match this class stands at `:152`/`:162`, but "fired here" is false — and
+  even loaded it appends only the class-agnostic reminder at `:175-186`), and the card withheld its disambiguator.
+  The over-application is therefore close to **predicted by the guidance actually in the loop**, relocating weight
+  onto **guidance design rather than model reliability**. The refusal text lives in the **dsh package, which is
+  not this repo's change surface**. **Corollary:** L2-1 never exercised this product's configured agent surface —
+  a limitation of that evidence in its own right.
+  **Mitigation adopted (A, landed in three places — in the repo working tree only; reaching an installed preset requires publish + tag move + reinstall, while the live line takes the source edit at apply time):** the anti-pattern bullet **"Over-Broad Replace"** — after an
+  ambiguous-match refusal widen `old_string` to the one site you mean; **if the instruction names no occurrence,
+  choose it from the instruction's own context and report which site you chose; never replace the whole span** —
+  written to source `patches/omo-dsh/omo-agents/system-sections/anti-patterns.md` **and** both rendered blocks of
+  `patches/omo-dsh/omo-agents-current/preset/agent.cordis.yml`, because `scripts/install-concerto.sh:1014` curls
+  the rendered copy and no script regenerates it; all three verified byte-identical after de-indent.
+  **B — upstream recommendation, three places:** when-to-set rule on `replace_all` (`dsh-tool-fs:695`); intent
+  qualifier on the refusal (`dsh-fs-local:704`); and on the **success** text (`dsh-tool-fs:660-661`) append, when
+  `replaceAll`, that N occurrences were replaced globally and a more specific anchor should be used if only one was
+  meant (the model quoted this text back, so it is a live nudge surface).
+  **C — recorded as follow-up:** per-class routing in `edit-error-recovery.ts` is the most targeted fix in our
+  surface, but the reminder block is a verbatim upstream port pinned by a unit test (`:171-173`); deferred, to be
+  done together with B as the durable fix. **D — rejected:** the persona prose in the preset is itself the
+  rendered copy of `system-sections/*.md`, so A already lands in the single source of truth; D would duplicate it.
+  **E — rejected:** explicit confirmation for `replace_all` breaks legitimate global renames and is disproportionate.
+  **F — durable record:** authority = the **tracked** bilingual entries in `docs/decisions.md` and
+  `docs/decisions_zh-CN.md`; `.omo/evidence/p6t1/FORKS.md` §1.7 is an **untracked ruling annotation** (there is
+  no `FORKS.md` at the repo root) and carries no durable authority. Residual risk is advisory-mitigated, not
+  eliminated, and is acceptable because this failure mode is loud and review-visible.
+  **Trigger set amended — the review-trigger set at §1.7 (`FORKS.md:110`) is revised by the following text
+  (① weighting narrowed; original ② and ③ retained unchanged; one item added, numbered ④):**
+
+  *Numbering note: the earlier draft proposed 新增 ②, but §1.7 already contains a ② (model-in-loop
+  re-run) and a ③ (native edit-face semantic degradation), so a second ② would collide and risk silently
+  displacing ③ on a **tracked** landing. The new item is therefore numbered **④** — content unchanged from the
+  instruction; flagging the deviation rather than silently renumbering. **Original ② and ③ are retained as they
+  stand; this added item is ④.***
+  *(FORKS.md §1.7 is written in Chinese; the amended items below are quoted verbatim in the original language — §5b carries the same block.)*
+  > ① 真实会话证据（live-model 使用中原生 edit 的串复写/锚定失败类遥测）——**其中歧义须为自发（非卡片/台架内置）
+  > 方可给满权重；卡片内置歧义按半权计**。
+  > ④ 任何 model-in-loop 重跑**必须**在下列二者中取一：把消歧锚点随指令**送达模型**，**或**把「模型在无发生位置
+  > 选择器时自行解歧」列为**独立计分类**单独记分——否则该歧义属台架伪影，不得读作模型不可靠。
+  **④ is adopted as an annotation, not a rig change** — reasoning: the artifact is eliminated by *stating* the
+  rule wherever the rig is re-run, and requiring the two-branch protocol in prose costs nothing and touches no
+  frozen fixture; implementing it as scoring would mean new classes, new expected files and new gate assertions on
+  a **verbatim-pinned** rig for a case that is, after this review, **card-authored and half-weighted** — the
+  disproportion is the same one that deferred option C. If a future model-in-loop run actually needs the split,
+  scoring belongs to that run's owner at that time.
+  Evidence: `.omo/evidence/p6t11/D19-REVIEW.md`, `.omo/evidence/p6-l2-edit-ab/armA-session-log-digest.md`.
+
 ---
 
 **中文版**：[`decisions_zh-CN.md`](./decisions_zh-CN.md)
