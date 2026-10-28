@@ -50,6 +50,7 @@ import {
 import type { Task } from '@oh-my-opencode/team-core/types'
 
 import type { TeamAgent } from './team-create.ts'
+import type { TeamLiveAgents } from './team-message.ts'
 
 /** 工具名（manifest.ts team_status 行的 id 同一词汇）。 */
 export const TEAM_STATUS_TOOL_NAME = 'team_status'
@@ -68,9 +69,14 @@ export class TeamStatusError extends Error {
 }
 
 /** 工具层装配依赖（状态骨架——纯读面，零通道调用；tasks 段经 store 的
- *  vendored listTasks 薄直通臂读取，T8b）。 */
+ *  vendored listTasks 薄直通臂读取，T8b）。
+ *
+ * P5-T16（评审 MINOR-5）：加一枚**活体注册表**读面（`agents`），供
+ * `team_status` 给出成员行的 `resident` 活体观测——`phase` 六态里只有
+ * `'running'` 有生产者，账面阶段不足以回答「成员还活着吗」。 */
 export interface TeamStatusDeps {
   readonly store: TeamStateStore
+  readonly agents: TeamLiveAgents
 }
 
 /** execute 的第二参（同族工具同一形状）。 */
@@ -81,12 +87,27 @@ interface TeamStatusToolExec {
 /** 握手态投影（成员行上的 `shutdown` 字段；none = 从未有请求）。 */
 export type TeamShutdownState = 'none' | 'pending' | 'approved' | 'rejected'
 
-/** 聚合的成员行（骨架行 + 握手投影）。 */
+/** 聚合的成员行（骨架行 + 握手投影 + 活体观测）。 */
 export interface TeamStatusMember {
   readonly name: string
   readonly seat: string
   readonly sessionId?: string
   readonly phase: string
+  /**
+   * **活体观测**（P5-T16 评审 MINOR-5）：该成员会话此刻**在不在活体注册表里**。
+   *
+   * 为什么要有这一列：`phase` 词表六态里只有 `'running'` 有生产者（全仓唯一
+   * 的 `setMemberPhase` 调用点写的就是它），其余三态（`completed` /
+   * `errored` / `idle`）**至今无任何写入方**——所以 `phase` 在生产上恒读作
+   * `running`，成员做完活、报错、掉线都读不出来。一个会系统性误导 lead 的
+   * 状态面（lead 据此决定要不要再等、要不要重派）。
+   *
+   * `resident` 不需要新事件源就能给出**真值**：成员会话在活体注册表里 = 它此刻
+   * 活着；不在 = 它冷着（DSH 的 cold resume 会在下一次投递时把它唤醒）或已经
+   * 没了。与 `phase` 读数并列，lead 拿到的是「阶段（账面）+ 活性（观测）」两
+   * 条独立的线。
+   */
+  readonly resident: boolean
   readonly agentType: string
   readonly shutdown: {
     readonly state: TeamShutdownState
@@ -122,6 +143,19 @@ export interface TeamStatusResult {
   /** 消息面观测（去重账的规模——lead 排障一眼可见，非上游字段，同账待遇）。 */
   readonly processedMessageCount: number
   readonly briefingInjectedMembers: readonly string[]
+  /**
+   * `phase` 读数的**读法说明**（P5-T16 评审 MINOR-5）。
+   *
+   * 词表六态（`pending` / `running` / `idle` / `errored` / `completed` /
+   * `shutdown_approved`）里**只有 `'running'` 有生产者**——成员建队后即写
+   * `'running'`，其余五态的生产者尚未接线（`idle` 的写入方在文件头登记为
+   * 「待 T9」，`completed` / `errored` 至今无写入方）。所以 `phase` 此刻读的是
+   * **账面阶段**，不是**活性事实**；活性事实看每行的 `resident`（活体观测）。
+   *
+   * 这条说明进模型可见面，是因为一个恒等于 `running` 的读数若不解释，lead 会
+   * 把它当成活性判据——那正是评审点名的「系统性误导」。
+   */
+  readonly memberPhaseNote: string
 }
 
 /** 握手投影：latest 请求 → 四值态（approved 优先于 rejected 的读序——
@@ -185,6 +219,8 @@ export async function executeTeamStatus(
       seat: member.seat,
       ...(member.sessionId === undefined ? {} : { sessionId: member.sessionId }),
       phase: member.phase,
+      // P5-T16（评审 MINOR-5）：活体观测——不依赖任何新事件源的事实面。
+      resident: member.sessionId !== undefined && deps.agents.get(member.sessionId) !== undefined,
       agentType: member.agentType,
       shutdown: {
         state: shutdownState,
@@ -215,8 +251,22 @@ export async function executeTeamStatus(
     taskBoardNote: 'tasks are read live from the vendored team-tasklist board (P5-T8b); an empty list means the board has no task files yet — the board itself exists from team_create onward',
     processedMessageCount: state.processedMessageIds.length,
     briefingInjectedMembers: state.briefingInjectedMembers,
+    memberPhaseNote: TEAM_MEMBER_PHASE_NOTE,
   }
 }
+
+/**
+ * `phase` 读法的说明（进模型可见面；P5-T16 评审 MINOR-5）。
+ *
+ * 词表六态里只有 `'running'` 有生产者（建队后即写它），其余五态的生产者尚未
+ * 接线——所以 `phase` 此刻是**账面阶段**；活性事实看每行的 `resident`。
+ */
+export const TEAM_MEMBER_PHASE_NOTE =
+  'member.phase is the ledger phase, not a liveness fact: only "running" has a producer so far '
+  + '(pending/idle/errored/completed/shutdown_approved have none yet), so a member that finished, '
+  + 'failed or went offline still reads "running" here. Use member.resident (a live-registry '
+  + 'observation: true = the member session is live right now, false = it is cold or gone) for '
+  + 'liveness.'
 
 /** team_status 定义（描述 = 上游 query.ts:38 逐字首句）。 */
 export function createTeamStatusDefinition(deps: TeamStatusDeps): unknown {
@@ -238,7 +288,7 @@ export function createTeamStatusDefinition(deps: TeamStatusDeps): unknown {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['teamRunId', 'teamName', 'status', 'specSource', 'createdAt', 'bounds', 'members', 'shutdownRequests', 'tasks', 'taskBoardNote', 'processedMessageCount', 'briefingInjectedMembers'],
+        required: ['teamRunId', 'teamName', 'status', 'specSource', 'createdAt', 'bounds', 'members', 'shutdownRequests', 'tasks', 'taskBoardNote', 'processedMessageCount', 'briefingInjectedMembers', 'memberPhaseNote'],
         properties: {
           teamRunId: { type: 'string' },
           teamName: { type: 'string' },
@@ -253,6 +303,7 @@ export function createTeamStatusDefinition(deps: TeamStatusDeps): unknown {
           taskBoardNote: { type: 'string' },
           processedMessageCount: { type: 'number' },
           briefingInjectedMembers: { type: 'array', items: { type: 'string' } },
+          memberPhaseNote: { type: 'string' },
         },
       },
       render: (_args: unknown, value: unknown) => [{ type: 'text', text: JSON.stringify(value) }],

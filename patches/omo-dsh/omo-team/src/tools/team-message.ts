@@ -59,10 +59,13 @@
 // （账本 reservation，非上游 `.delivering-` 预约——那不移植，:23 已成文）**：
 // 并发同 id 只有一个拿到入账位——先入账才碰原生通道，
 // 「不重复投递」才不是查与投之间的竞态空话；单收件人投递失败 → 补偿退账
-// （unmarkMessageProcessed，同 id 重试可再投）；广播部分失败 → **不退账**
-// （宁漏不重，重投须换新 correlationId）。同 id 重投（入账位已被占）→ 不再
-// 调用原生通道，返回去重说明（delivered:false, deduplicated:true）。时序与
-// team-state.ts markMessageProcessed/unmarkMessageProcessed 的账注逐点对齐。
+// （unmarkMessageProcessed，同 id 重试可再投）；广播**部分**失败 → **不退账**
+// （宁漏不重，重投须换新 correlationId）；广播**零投递**失败（首个成员即失败）
+// → **退账**（P5-T16 评审 MAJOR-2 更正：零投递时无人收到过，把 id 烧在去重
+// 账里等于整条广播静默消失，而模型最自然的动作就是拿同一个 id 重试）。
+// 同 id 重投（入账位已被占）→ 不再调用原生通道，返回去重说明
+// （delivered:false, deduplicated:true）。时序与 team-state.ts
+// markMessageProcessed/unmarkMessageProcessed 的账注逐点对齐。
 //
 // ── 与上游的其他成文差异（v1）───────────────────────────────────────────────
 // * summary/references 参数在册（形状对齐），v1 不进帧文本——上游
@@ -76,6 +79,10 @@
 //   `(N delivered before failure)`，N = deliveries.length = 失败点前
 //   已投成功数），预约账**不退**（R-6 不对称的广播臂）——同 id
 //   重试会被整条去重（宁漏不重），补投须换新 id。差异记此（NOTES 同步）。
+//   **零投递例外**（P5-T16 评审 MAJOR-2）：首个成员即失败（deliveries 为空）
+//   时预约账**退**——此时无人收到过，同 id 重试可再投；错误文本同步改口
+//   （"no member received the message, so the correlationId reservation is
+//   released; re-send under the SAME correlationId"）。
 // * bounds 执法面：v1 仅执法 payload 32 KB（PAYLOAD_TOO_LARGE 臂）；上游
 //   RuntimeBounds 的 `maxMessagesPerRun`（10000/run）v1 **不执法**，差异记
 //   此（Q1a §7 对账口径；team-state.ts bounds 常量注同词登记）。
@@ -458,14 +465,26 @@ export async function executeTeamSendMessage(
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
       // 补偿退账的不对称（文件头成文）：单收件人投递失败 → 退账，同 id
-      // 重试可再投（消息从未送达，不该被「已送达」的账拦）；广播部分失败
-      // → **不退**（退了会对已收到的成员重投——宁漏不重，补投须换新 id）。
-      if (!isBroadcast) await deps.store.unmarkMessageProcessed(clean.teamRunId, messageId)
+      // 重试可再投（消息从未送达，不该被「已送达」的账拦）；广播**部分**失败
+      // → **不退**（退了会对已收到的成员重投——宁漏不重，补投须换新 id）；
+      // 广播**零投递**失败（首个成员即失败，deliveries.length === 0）→ **退账**
+      // （P5-T16 评审 MAJOR-2）：此时**一个成员都没收到**，把 correlationId 烧在
+      // 去重账里等于让整条广播静默消失——模型看到 DELIVERY_FAILED 后最自然的
+      // 动作是拿同一个 correlationId 重试（工具描述第 505 行还明写着「Re-sending
+      // the same correlationId is deduplicated: it is not delivered twice」），而
+      // 旧行为会把它变成 `deduplicated:true, delivered:false, deliveries:[]`
+      // ——读起来像「已经发过了」，实则全丢。零投递时根本不存在「重」的余地
+      // （没有收件人收到过），退账不违反「宁漏不重」，只把「零投递」与
+      // 「部分投递」分账。
+      const zeroDeliveryBroadcast = isBroadcast && deliveries.length === 0
+      if (!isBroadcast || zeroDeliveryBroadcast) {
+        await deps.store.unmarkMessageProcessed(clean.teamRunId, messageId)
+      }
       // 广播臂实况计数（文件头差异段「点名成员与已投计数」的成文兑现）：
       // deliveries 此刻 = 扇出序中失败点之前已投成功的成员——随 throw 丢弃
       // 会白丢实况，拼进错误文本 `(N delivered before failure)`。
       throw new TeamMessageError(
-        `team_send_message: delivery to ${isBroadcast ? 'broadcast member' : 'member'} '${target.name}' (${target.sessionId}) failed: ${reason}${isBroadcast ? ` (${deliveries.length} delivered before failure) — broadcast ledger keeps the reservation; re-deliver under a NEW correlationId` : ''}`,
+        `team_send_message: delivery to ${isBroadcast ? 'broadcast member' : 'member'} '${target.name}' (${target.sessionId}) failed: ${reason}${isBroadcast ? ` (${deliveries.length} delivered before failure) — ${zeroDeliveryBroadcast ? 'no member received the message, so the correlationId reservation is released; re-send under the SAME correlationId' : 'broadcast ledger keeps the reservation; re-deliver under a NEW correlationId'}` : ''}`,
         'DELIVERY_FAILED',
       )
     }
@@ -502,7 +521,10 @@ export function createTeamSendMessageDefinition(deps: TeamMessageDeps): unknown 
       'Send a message to a team member or broadcast to the team. '
       + 'Recipients: a member name, \'' + TEAM_LEAD_SENTINEL + '\' (the leading session), or * for broadcast — broadcast requires the lead role. '
       + 'Delivery rides the native adjacent-relay channel: lead↔member direct; member-to-member is relayed through the lead and the frame says so. '
-      + 'An offline recipient is woken by the delivery itself. Re-sending the same correlationId is deduplicated: it is not delivered twice.',
+      + 'An offline recipient is woken by the delivery itself. '
+      + 'Re-sending the same correlationId is deduplicated: it is not delivered twice. '
+      + 'A failed delivery that reached NO recipient releases the id, so you may retry that same correlationId; '
+      + 'a broadcast that reached SOME recipients keeps the id and must be re-sent under a NEW correlationId.',
     parameters: {
       type: 'object',
       additionalProperties: false,

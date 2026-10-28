@@ -178,8 +178,49 @@ If any issues are found during critical review:
  * 体例同 `omo-hooks/src/hooks/keyword-detector/messages.ts` 的
  * `ULTRAWORK_CARRIER_NOTE`：正文保持上游形态可逐字比对，差异写在正文之外并明确
  * 标注为移植注记。
+ *
+ * ⚠️ **P5-T16（评审 MAJOR-3）：本常量是「降级路径」的注记，逐字节 = P4
+ * （= `origin/develop` 的同一常量）。**
+ *
+ * 旧实现只有一枚注记常量，两条路径共用，于是降级路径（team 工具缺席 ⇒ 渲染
+ * `REMOVE_AI_SLOPS_COMMAND_TEMPLATE`）的**模型可见正文**也带上了 P5 的第 2 条
+ * ——"TEAM MODE IS A RUNTIME SWITCH (P5-T13) … At P5-T13 the addendum IS ported
+ * …"。于是任务书与本文件注释里的那句断言「降级逐字节 = P4」**与事实不符**：
+ * 模型可见正文的唯一一处内容变化就是那一条。
+ *
+ * 更糟的是那条新措辞在降级时刻**自相矛盾**：降级形态下 `team_*` 工具**并不
+ * 在场**，而第 2 条却告诉模型 "the live team_* tool surface IS the switch"——
+ * 在工具缺席的时刻宣称「活着的工具面就是开关」，恰是这条注记本该避免的误导。
+ *
+ * 更正（评审给的两案取 (a)）：**降级路径的注记逐字节回到 P4**，P5 的「运行时
+ * 开关」解释只留在**在场路径**的注记（{@link REMOVE_AI_SLOPS_CARRIER_NOTE_P5}）
+ * 里。降级形态下「本部署没有 team 工具族、那段 addendum 没有移植」是**真话**
+ * ——在场形态下它是假话，所以两枚注记按路径分立是**语义正确**的，不是文字游戏。
+ *
+ * 两路径的一致性由**同一个在场判据**保证：team 工具缺席 ⇒ 两条命令都渲染降级
+ * 形态；team 工具在场 ⇒ 两条命令都渲染完整形态（且 team 关键词正文也才注入
+ * ——omo-hooks 的在场闸读的是同一枚事实，`omoTeamKeywordFace.teamToolsPresent`
+ * 与 omo-team 的两张在场脸同源）。
  */
 export const REMOVE_AI_SLOPS_CARRIER_NOTE = `[oh-my-opendsh] Remove AI slops carrier note (semantic port of omo v4.19.4 builtin-commands/templates/remove-ai-slops.ts):
+
+1. SKILL LOADING CARRIES OVER VERBATIM. The body dispatches one agent per changed file with load_skills=["remove-ai-slops"] and refers to the skill as $omo:remove-ai-slops throughout. This harness has the equivalent model-facing surface - the skill tool (@deepseek-ai/dsh-tool-skill) - and remove-ai-slops is already registered in this deployment's skill catalog. So load_skills=["remove-ai-slops"] means: call the skill tool to load the skill named remove-ai-slops, and pass it along to the agent you spawn. Nothing in the body was rewritten.
+
+2. NO TEAM MODE. Upstream ships a second export, REMOVE_AI_SLOPS_TEAM_MODE_ADDENDUM (its lines 116-216), which overrides Phase 2-4 when team_* tools are present. This harness has no team tool family, so that addendum was NOT ported and you will not receive it. Follow the Phase 1-4 flow above; do not wait for a team protocol.
+
+3. HOST TOOL SPELLINGS NOT REWRITTEN. The Task/Bash/TodoWrite spellings and the leading "Codex Harness Tool Compatibility" table are upstream-host specifics. That table does not apply to this harness - ignore it rather than translating into its tools. Execute the remaining steps through whichever tools cover the same capability (spawning parallel workers, shell git commands, reading and writing the task list).
+
+4. Everything else - the four phases, the Safety/Behavior/Quality checklists, the Output Format and the Quality Assurance list - is upstream's text unchanged.`
+
+/**
+ * 在场路径的载体注记（P5-T13 起盘）——**只**挂在
+ * {@link REMOVE_AI_SLOPS_COMMAND_TEMPLATE_FULL}（team 工具在场时）上。
+ *
+ * 与降级路径的 {@link REMOVE_AI_SLOPS_CARRIER_NOTE} 的**唯一**差别 = 第 2 条：
+ * 在场形态里「team 工具族存在、addendum 已移植、且是运行时按调用时刻判的开关」
+ * 是**真话**，所以这段解释只写在这里。降级路径不挂它（见上注的 MAJOR-3 处置）。
+ */
+export const REMOVE_AI_SLOPS_CARRIER_NOTE_P5 = `[oh-my-opendsh] Remove AI slops carrier note (semantic port of omo v4.19.4 builtin-commands/templates/remove-ai-slops.ts):
 
 1. SKILL LOADING CARRIES OVER VERBATIM. The body dispatches one agent per changed file with load_skills=["remove-ai-slops"] and refers to the skill as $omo:remove-ai-slops throughout. This harness has the equivalent model-facing surface - the skill tool (@deepseek-ai/dsh-tool-skill) - and remove-ai-slops is already registered in this deployment's skill catalog. So load_skills=["remove-ai-slops"] means: call the skill tool to load the skill named remove-ai-slops, and pass it along to the agent you spawn. Nothing in the body was rewritten.
 
@@ -333,9 +374,13 @@ ${REMOVE_AI_SLOPS_ADDENDUM_STATUS_RULE}
  * 完整形态送进模型的完整消息模板（T13）= 载体注记 + 主段正文 + team-mode
  * addendum 三段拼接，外框与降级模板同形（`<command-instruction>` +
  * `<user-request>$ARGUMENTS</user-request>`，占位符仍只有 `$ARGUMENTS`）。
+ *
+ * P5-T16（评审 MAJOR-3）：本模板挂的是**在场路径**的注记
+ * （{@link REMOVE_AI_SLOPS_CARRIER_NOTE_P5}）——降级路径的注记逐字节 = P4，
+ * 两枚注记按路径分立（理由见 {@link REMOVE_AI_SLOPS_CARRIER_NOTE} 的注）。
  */
 export const REMOVE_AI_SLOPS_COMMAND_TEMPLATE_FULL = `<command-instruction>
-${REMOVE_AI_SLOPS_CARRIER_NOTE}
+${REMOVE_AI_SLOPS_CARRIER_NOTE_P5}
 
 ---
 
@@ -361,6 +406,10 @@ $ARGUMENTS
  * `<session-context>` 段，故没有 `$SESSION_ID` / `$TIMESTAMP`）——所以
  * `/remove-ai-slops` 的渲染**不依赖会话 id**，`MissingCommandSessionIDError`
  * 在这条命令上不可能触发（单测钉死这一点）。
+ *
+ * P5-T16（评审 MAJOR-3）：「P4 形态逐字保留」这句断言**现在字面为真**——
+ * 降级路径的载体注记逐字节 = `origin/develop` 的同一常量（两枚注记按路径
+ * 分立，见 {@link REMOVE_AI_SLOPS_CARRIER_NOTE} 的注）。
  */
 export const REMOVE_AI_SLOPS_COMMAND_TEMPLATE = `<command-instruction>
 ${REMOVE_AI_SLOPS_CARRIER_NOTE}

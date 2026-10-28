@@ -505,6 +505,14 @@ export type KeywordSkipReason =
   | 'no-keyword'
   | 'already-injected-message'
   | 'subagent-keyword-filtered'
+  /**
+   * P5-T16（评审 MAJOR-4）：**team 载体不在场**——关键词命中了，但本部署的
+   * `team_*` 工具面没有注册（omo-team 未挂载 / 某枚工具行注册 FAILED），注入
+   * 那段正文只会产出指向不存在开关的死指令，故撤掉该命中、不注入。
+   * **必记日志**——它与 `no-keyword` 是两回事（「有命中但无载体」vs「没命中」），
+   * 静默它等于把死指令的来源藏起来。
+   */
+  | 'team-surface-absent'
   | 'vendor-texts-unavailable'
 
 export type KeywordDecision =
@@ -546,6 +554,20 @@ export interface KeywordStepFacts {
   readonly sessionOrigin: 'subagent' | undefined
   readonly descriptor: SessionDescriptor
   readonly config: KeywordDetectorConfig
+  /**
+   * **team 工具面是否在场**（P5-T16 评审 MAJOR-4 的缺席闸）。
+   *
+   * vendored `team.md` 教模型用 `team_create` / `team_task_*` /
+   * `team_send_message` 编排，尾部还指向一个本部署**没有**的开关
+   * （"set team_mode.enabled=true and restart opencode"）。载体不在场时注入
+   * 这段正文 = 产出**死指令**——Phase 4 当初刻意不接线该槽的理由正是
+   * "一个没有等价载体的关键词命中后只会产出死指令"。
+   *
+   * 事实源 = omo-team 发布的 `omoTeamKeywordFace` 面的 `teamToolsPresent`
+   * （**本次 boot 实际注册成功**的 ①–⑪ 工具行齐备 ⇒ true；事实层，不是
+   * manifest 的声明层）。消费侧**每次调用现读** `ctx.get`（绝不 apply 期缓存）。
+   */
+  readonly teamSurfacePresent: boolean
 }
 
 /**
@@ -671,6 +693,19 @@ export function decideKeywordInjection(facts: KeywordStepFacts): KeywordDecision
     hits = hits.filter((hit) => SUBAGENT_ALLOWED_TYPES.includes(hit.type))
     if (hits.length === 0) return { kind: 'skip', reason: 'subagent-keyword-filtered' }
   }
+  // P5-T16（评审 MAJOR-4）：**team 槽的在场闸**。载体不在场 ⇒ 撤掉 team 命中
+  // （不注入那段正文）。理由名独立于 `no-keyword`——「命中了但没有等价载体」
+  // 与「压根没命中」是两回事，日志必须能分辨（否则死指令的来源不可追）。
+  //
+  // 位置在 ⑥b 之后：子会话本来就不放行 team（`SUBAGENT_ALLOWED_TYPES` 不含
+  // team），那条闸的 reason 优先于本闸，保持既有日志口径不变。
+  if (!facts.teamSurfacePresent) {
+    const hasTeamHit = hits.some((hit) => hit.type === 'team')
+    if (hasTeamHit) {
+      hits = hits.filter((hit) => hit.type !== 'team')
+      if (hits.length === 0) return { kind: 'skip', reason: 'team-surface-absent' }
+    }
+  }
   if (hits.length === 0) return { kind: 'skip', reason: 'no-keyword' }
   // ① 号幂等（消息级，上游 hook.ts:31-36 逐字）：注入正文已在文本里 → 不重复注入。
   // **逐条应用后按 type 去重**：一条 hit 被保留当且仅当存在**某条**候选文本还没带着
@@ -735,6 +770,15 @@ export interface KeywordDetectorDeps {
   readonly log: (line: string) => void
   /** 读 `payload.agent`；默认取 `payload.agent`（与 ulw-execute 同名函数同构）。 */
   readonly readAgent?: (payload: unknown) => PreStepAgentLike | undefined
+  /**
+   * **team 工具面在场判据**（P5-T16 评审 MAJOR-4）。生产实现 = 现读
+   * `ctx.get('omoTeamKeywordFace')` 的 `teamToolsPresent` 字段；缺席（omo-team
+   * 未挂载）或字段不合 ⇒ **false**（载体不在场 ⇒ 不注入 team 正文）。
+   *
+   * 每次调用现读、**不缓存**：服务可能晚于本插件挂载（cordis 的服务面是
+   * 逐层挂载的），apply 期缓存会把「还没挂上」永久化。
+   */
+  readonly readTeamSurfacePresent?: () => boolean
 }
 
 type PreStepNextLike = () => unknown
@@ -790,6 +834,27 @@ function logSafely(deps: KeywordDetectorDeps, line: string): void {
   }
 }
 
+/**
+ * team 工具面在场判据（现读；缺席即不在场）。
+ *
+ * P5-T16（评审 MAJOR-4）：事实源是 omo-team 发布的 `omoTeamKeywordFace`
+ * ——它的 `teamToolsPresent` 字段读的是**本次 boot 实际注册成功**的 ①–⑪
+ * 工具行齐备与否（事实层），不是 manifest 的 `status:'ported'` 声明层。
+ *
+ * 三态归一（保守）：服务缺席（omo-team 未挂载 —— 例如 `noteam` profile）⇒
+ * false；形状不合 ⇒ false；显式 true ⇒ true。**只有显式 true 才放行注入**。
+ */
+export function readTeamSurfacePresent(deps: KeywordDetectorDeps): boolean {
+  const read = deps.readTeamSurfacePresent
+  if (typeof read !== 'function') return false
+  try {
+    return read() === true
+  } catch {
+    // 判据读失败 = 判据不可得 = 保守按「不在场」处理（不注入死指令）。
+    return false
+  }
+}
+
 /** listener 自有逻辑：零 `next()` 调用（见上方 F-1 注记）。 */
 function runKeywordDetectorStep(
   deps: KeywordDetectorDeps,
@@ -820,6 +885,9 @@ function runKeywordDetectorStep(
       sessionOrigin,
       descriptor,
       config: deps.config,
+      // P5-T16（评审 MAJOR-4）：team 槽的在场闸——载体不在场则不注入那段
+      // 正文（vendored team.md 的尾部指向本部署不存在的配置开关与宿主重启）。
+      teamSurfacePresent: readTeamSurfacePresent(deps),
     },
   )
   if (decision.kind === 'skip') {
@@ -931,8 +999,32 @@ export const registerKeywordDetector: HookRegistrar = (
     texts,
     config,
     log: (line) => console.warn(line),
+    // P5-T16（评审 MAJOR-4）：team 槽的在场闸——现读 omo-team 发布的
+    // `omoTeamKeywordFace`（它的 `teamToolsPresent` 读的是**本次 boot 实际
+    // 注册成功**的 ①–⑪ 工具行齐备与否）。omo-team 未挂载（`noteam` profile）
+    // ⇒ 服务缺席 ⇒ false ⇒ team 关键词命中**不注入**那段正文。
+    readTeamSurfacePresent: () => readTeamSurfacePresence(ctx),
   })
   ctx.on(entry.event, (payload: unknown, next: unknown) => listener(payload, next))
+}
+
+/**
+ * omo-team 的 team 关键词面服务名（提供侧拼写 = `omoTeamKeywordFace`）。
+ * 两侧各自本地声明、互不 import（跨包纪律），等值由单测钉死。
+ */
+export const OMO_TEAM_KEYWORD_FACE_SERVICE = 'omoTeamKeywordFace'
+
+/**
+ * 现读 omo-team 的 team 关键词面，取它的 `teamToolsPresent`。
+ *
+ * 三态归一（保守）：服务缺席（omo-team 未挂载）⇒ false；形状不合 ⇒ false；
+ * 只有显式 `true` ⇒ true。**只有显式 true 才放行注入**——载体缺席时注入
+ * 那段正文 = 产出指向不存在开关的死指令（评审 MAJOR-4 的核心）。
+ */
+export function readTeamSurfacePresence(ctx: HooksRegistrationContext): boolean {
+  const face = readOptionalService(ctx, OMO_TEAM_KEYWORD_FACE_SERVICE)
+  if (!isObject(face)) return false
+  return (face as { teamToolsPresent?: unknown }).teamToolsPresent === true
 }
 
 /**

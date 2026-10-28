@@ -149,7 +149,7 @@ rather than in code.
 
 ## Project Decisions
 
-The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D14), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
+The project decision record lives in [decisions.md](./docs/decisions.md) — confirmed decisions (D1–D18), risk dispositions (R1–R6), and open-dimension status tracking (O1–O8). The feasibility report is the research basis for those decisions.
 
 ## Roadmap
 

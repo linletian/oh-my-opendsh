@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest'
 import {
   REMOVE_AI_SLOPS_ADDENDUM_STATUS_RULE,
   REMOVE_AI_SLOPS_CARRIER_NOTE,
+  REMOVE_AI_SLOPS_CARRIER_NOTE_P5,
   REMOVE_AI_SLOPS_COMMAND_TEMPLATE,
   REMOVE_AI_SLOPS_TEAM_MODE_ADDENDUM,
   REMOVE_AI_SLOPS_TEMPLATE,
@@ -25,6 +26,7 @@ import {
 } from '../../patches/omo-dsh/omo-commands/src/commands/remove-ai-slops.ts'
 import {
   OMO_TEAM_SLOP_ADDENDUM_TEAM_FACE as PROVIDER_FACE_NAME,
+  TEAM_TOOL_ROW_IDS,
   teamToolPresenceSnapshot,
 } from '../../patches/omo-dsh/omo-team/src/team/team-tool-presence.ts'
 import { TEAM_TASK_STATUSES } from '../../patches/omo-dsh/omo-team/src/tools/team-task.ts'
@@ -57,7 +59,9 @@ describe('P5-T13 服务名交叉等值 + 保守读', () => {
     expect(readSlopTeamModePresent(() => undefined)).toBe(false)
     expect(readSlopTeamModePresent(() => ({ teamToolsPresent: true }))).toBe(false) // 缺 statuses 臂
     expect(readSlopTeamModePresent(() => ({ teamToolsPresent: 'yes', teamTaskStatuses: [] }))).toBe(false)
-    expect(readSlopTeamModePresent(() => teamToolPresenceSnapshot())).toBe(true)
+    // P5-T16（评审 MINOR-7）：提供侧快照读的是**实际注册结果**（事实层），
+    // 所以这里显式给一份「①–⑪ 全部注册成功」的注册结果集。
+    expect(readSlopTeamModePresent(() => teamToolPresenceSnapshot(new Set(TEAM_TOOL_ROW_IDS)))).toBe(true)
   })
 })
 
@@ -109,8 +113,27 @@ describe('P5-T13 渲染 — 完整腿的 addendum 形态', () => {
     expect(REMOVE_AI_SLOPS_TEAM_MODE_ADDENDUM).toContain('"category":"quick"')
     // 注记同样**不点名**该键（注记也是模型可见面——它只说"pointing at a
     // configuration flag"，键名只活在 vendor deviations[] 与源码注释里）。
-    expect(REMOVE_AI_SLOPS_CARRIER_NOTE).toContain('pointing at a configuration flag')
-    expect(REMOVE_AI_SLOPS_CARRIER_NOTE).not.toContain('team_mode.enabled')
+    // P5-T16（评审 MAJOR-3）：这一句只挂在**在场路径**的注记上；降级路径的
+    // 注记逐字节 = P4（那句 P5 解释在降级形态下是自相矛盾的误导）。
+    expect(REMOVE_AI_SLOPS_CARRIER_NOTE_P5).toContain('pointing at a configuration flag')
+    expect(REMOVE_AI_SLOPS_CARRIER_NOTE_P5).not.toContain('team_mode.enabled')
+  })
+
+  it('P5-T16 (MAJOR-3) 降级路径的载体注记逐字节 = P4（在场的解释不进降级面）', () => {
+    // 评审 MAJOR-3 的正面腿：降级路径的第 2 条必须逐字是 P4 的 "NO TEAM MODE"
+    // 措辞——那时它**是真话**（本部署确实没有 team 工具族、那段 addendum 确实
+    // 没有移植）。P5 的「运行时开关」解释只许出现在完整形态。
+    expect(REMOVE_AI_SLOPS_CARRIER_NOTE).toContain('2. NO TEAM MODE.')
+    expect(REMOVE_AI_SLOPS_CARRIER_NOTE).toContain(
+      'This harness has no team tool family, so that addendum was NOT ported and you will not receive it.',
+    )
+    expect(REMOVE_AI_SLOPS_CARRIER_NOTE).not.toContain('TEAM MODE IS A RUNTIME SWITCH')
+    expect(REMOVE_AI_SLOPS_CARRIER_NOTE).not.toContain('P5-T13')
+    // 降级渲染面确实挂着 P4 注记、且**不**挂 P5 注记。
+    const { value } = invocation('clean the branch')
+    const degraded = renderRemoveAiSlopsInstruction(value)
+    expect(degraded).toContain(REMOVE_AI_SLOPS_CARRIER_NOTE)
+    expect(degraded).not.toContain(REMOVE_AI_SLOPS_CARRIER_NOTE_P5)
   })
 
   it('评审席队外委派点名 plan-reviewer（只读席不入队的反面点名进 MUST NOT）', () => {
@@ -147,7 +170,7 @@ describe('P5-T13 handler — 惰性读 + 回报文本分形态', () => {
     expect(r1.kind === 'success' && r1.text).not.toContain('team-mode addendum attached')
     expect(first.queued[0]).not.toContain('Team Mode Protocol')
 
-    mounted = teamToolPresenceSnapshot()
+    mounted = teamToolPresenceSnapshot(new Set(TEAM_TOOL_ROW_IDS))
     const second = invocation('clean b')
     const r2 = command.handler(second.value)
     expect(r2.kind === 'success' && r2.text).toContain('team-mode addendum attached')

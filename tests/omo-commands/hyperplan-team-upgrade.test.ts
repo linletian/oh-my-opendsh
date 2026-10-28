@@ -64,8 +64,10 @@ function invocation(rawInput: string) {
   }
 }
 
-/** 在场脸（提供侧真函数的产物，不手搓形状）。 */
-const presentFace = teamToolPresenceSnapshot()
+/** 在场脸（提供侧真函数的产物，不手搓形状）。
+ *  P5-T16（评审 MINOR-7）：提供侧快照读的是**本次 boot 实际注册成功**的行 id 集
+ *  （事实层），所以这里显式给一份「①–⑪ 全部注册成功」的注册结果集。 */
+const presentFace = teamToolPresenceSnapshot(new Set(TEAM_TOOL_ROW_IDS))
 
 describe('P5-T13 服务名交叉等值（R-5 双拼写先例）', () => {
   it('消费侧拼写与提供侧拼写逐字相等', () => {
@@ -244,7 +246,7 @@ describe('P5-T13 handler — 惰性读证明（一次注册，中途挂载）', 
     expect(first.queued[0]).toContain(HYPERPLAN_ROSTER_CONTRACT)
 
     // provider 纤在两次调用**之间**挂载（roster 顺序无关性的运行时形态）。
-    mounted = teamToolPresenceSnapshot()
+    mounted = teamToolPresenceSnapshot(new Set(TEAM_TOOL_ROW_IDS))
     const second = invocation('plan b')
     const r2 = command.handler(second.value)
     expect(r2.kind === 'success' && r2.text).toContain('FULL team-mode ring')

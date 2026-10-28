@@ -40,7 +40,9 @@ async function makeFixture(): Promise<{ deps: TeamStatusDeps; teamRunId: string;
     ],
   })
   await store.transition(state.teamRunId, 'active')
-  return { deps: { store }, teamRunId: state.teamRunId, store }
+  // P5-T16（评审 MINOR-5）：活体注册表读面——默认**全员冷**（无人活体），
+  // resident 观测因此为 false；单独一腿覆盖「某成员活着」的情形。
+  return { deps: { store, agents: { get: () => undefined } }, teamRunId: state.teamRunId, store }
 }
 
 const abortSignal = new AbortController().signal
@@ -161,7 +163,7 @@ describe('P5-T7 team_status surface & definition', async () => {
   })
 
   it('the definition keeps the upstream first sentence verbatim', async () => {
-    const def = createTeamStatusDefinition({ store: makeStore() }) as {
+    const def = createTeamStatusDefinition({ store: makeStore(), agents: { get: () => undefined } }) as {
       name: string
       description: string
       parameters: { required: string[] }
@@ -169,5 +171,32 @@ describe('P5-T7 team_status surface & definition', async () => {
     expect(def.name).toBe(TEAM_STATUS_TOOL_NAME)
     expect(def.description.startsWith('Return full status for a team run.')).toBe(true)
     expect(def.parameters.required).toEqual(['teamRunId'])
+  })
+})
+
+describe('P5-T16 (MINOR-5) 成员活体观测面 — phase 是账面、resident 是活性', async () => {
+  it('resident 反映活体注册表；phase 读法有说明（模型可见面）', async () => {
+    const { deps, teamRunId, store } = await makeFixture()
+    // 一枚活体成员（analyst）+ 一枚冷成员（builder）。
+    const liveDeps: TeamStatusDeps = {
+      store,
+      agents: { get: (sessionId: string) => (sessionId === ANALYST ? makeAgent(ANALYST) : undefined) },
+    }
+    const result = await executeTeamStatus({ teamRunId }, { agent: makeAgent(LEAD) }, liveDeps)
+    expect(result.members.map((m) => [m.name, m.resident])).toEqual([
+      ['analyst', true],
+      ['builder', false],
+    ])
+    // phase 仍是账面读数（唯一有生产者的态），但**读法**必须解释清楚，
+    // 否则 lead 会把恒等于 running 的读数当活性判据。
+    expect(result.members.every((m) => m.phase === 'pending' || m.phase === 'running')).toBe(true)
+    expect(result.memberPhaseNote).toContain('resident')
+    expect(result.memberPhaseNote).toContain('not a liveness fact')
+  })
+
+  it('无人活体时全员 resident=false（不把冷成员说成活着）', async () => {
+    const { deps, teamRunId } = await makeFixture()
+    const result = await executeTeamStatus({ teamRunId }, { agent: makeAgent(LEAD) }, deps)
+    expect(result.members.every((m) => m.resident === false)).toBe(true)
   })
 })

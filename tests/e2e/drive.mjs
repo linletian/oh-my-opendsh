@@ -16197,11 +16197,18 @@ const TEAM_KEYWORD_PROMPT =
 const TEAM_CHILD_TASK_TEXT =
   'e2e team-keyword-mode member probe: this delegated task text mentions team mode, first echo the child marker then report'
 const TEAM_CHILD_MARKER = 'team-keyword-child-marker-9c3f5e'
-// Turn 2 pastes the FULL vendored body back — derived from the loader's own
-// text, never a restated copy, so the idempotence gate is tested against the
-// exact bytes the hook compares.
+// Turn 2 pastes the FULL injected text back — derived from the plugin's own
+// built message (never a restated copy), so the idempotence gate is tested
+// against the exact bytes the hook compares.
+//
+// P5-T16 (评审 MAJOR-4): the injected text is no longer the vendored body
+// alone — a carrier note is prepended (it defuses the upstream "set
+// team_mode.enabled=true and restart opencode" dead instruction). The paste
+// control must therefore carry the WHOLE injected text, or the message-level
+// idempotence gate (which compares the whole built message) would not match —
+// and the control would stop testing what it claims to test.
 const TEAM_KEYWORD_PASTE_PROMPT =
-  `e2e team-keyword-mode idempotence control: the previous turn injected exactly this — ${KEYWORD_TEXTS.team} — say the marker, add nothing`
+  `e2e team-keyword-mode idempotence control: the previous turn injected exactly this — ${buildExpectedInjectedText('team')} — say the marker, add nothing`
 const TEAM_KEYWORD_CONTROL_PROMPT =
   'e2e team-keyword-mode negative control: a plain prose turn naming no keyword at all, echo the step marker then summarize'
 const TEAM_KEYWORD_SUMMARY =

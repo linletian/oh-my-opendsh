@@ -104,6 +104,7 @@
 // node:crypto / node:fs/promises（清账面）。
 
 import { rm, readdir, readFile } from 'node:fs/promises'
+import { renameSync } from 'node:fs'
 import type { Dirent } from 'node:fs'
 import path from 'node:path'
 
@@ -147,6 +148,19 @@ export const TEAM_RUNTIME_STATUSES = [
 
 /** team run 生命周期状态（派生自词表，不手抄）。 */
 export type TeamRuntimeStatus = (typeof TEAM_RUNTIME_STATUSES)[number]
+
+/**
+ * 「可清账」状态集（`forgetRun` 的闸）——**终态三态**。
+ *
+ * P5-T16（评审 NIT-13）：活跃 run 的账只能走 `team_delete`（三重闸）收；
+ * 诊断面（`forgetRun`）只许擦终态 run 的 tombstone——否则任何能把
+ * `teamRunId` 透传给它的消费面都能无声拆掉另一支队的账与任务板。
+ */
+export const TEAM_FORGETTABLE_STATUSES: ReadonlySet<TeamRuntimeStatus> = new Set<TeamRuntimeStatus>([
+  'deleted',
+  'failed',
+  'orphaned',
+])
 
 /**
  * 成员六态词表，上游 RuntimeStateMemberSchema.status（types.ts:144 枚举）
@@ -541,13 +555,47 @@ function assembleState(vendored: RuntimeState, ledger: OmoTeamRunLedger): TeamRu
  */
 export class TeamStateStore {
   // 显式字段 + 构造体内赋值（strip-only 纪律，TeamStateError 同一理由）。
-  readonly config: TeamModeConfig
+  //
+  // P5-T16（NIT-14）：`config` 从**字段**改成**惰性 getter**——构造入参既可以
+  // 是配置对象，也可以是**配置提供者**（`() => TeamModeConfig`）。
+  //
+  // 旧形态：`export const teamStateStore = new TeamStateStore(buildTeamModeConfig())`
+  // 在**模块 import 期**就读了 `process.env.OMO_TEAM_BASE_DIR`——那早于插件的
+  // `apply()`，于是「base_dir 的生效时点」与「row config（`maxMembers`）的生效
+  // 时点」（apply() 里 `setTeamRowConfig` 落的）分属两个时刻。今天 base_dir 只有
+  // env 一条路，影响是潜在的；但配置生效时点不该由「谁先 import」决定。
+  //
+  // 新形态：单例传**提供者**（`buildTeamModeConfig` 本身），配置在**首次真正
+  // 使用**时解析（= boot resume 的时刻，已在 apply() 之后）；`apply()` 再显式
+  // `refreshConfig()` 一次，把解析时点钉在「两条配置线同一刻生效」上。
+  private readonly configProvider: () => TeamModeConfig
+  private resolvedConfig: TeamModeConfig | undefined
   private readonly mirror = new Map<string, TeamRuntimeState>()
   private readonly teamRunIdByLeadSession = new Map<string, string>()
   private readonly participationByMemberSession = new Map<string, TeamMemberParticipation>()
 
-  constructor(config: TeamModeConfig) {
-    this.config = config
+  constructor(config: TeamModeConfig | (() => TeamModeConfig)) {
+    if (typeof config === 'function') {
+      this.configProvider = config
+      this.resolvedConfig = undefined
+    } else {
+      this.configProvider = () => config
+      this.resolvedConfig = config
+    }
+  }
+
+  /** 惰性解析后的配置（memoize：env 读面在一次解析里只发生一次）。 */
+  get config(): TeamModeConfig {
+    if (this.resolvedConfig === undefined) this.resolvedConfig = this.configProvider()
+    return this.resolvedConfig
+  }
+
+  /**
+   * 丢弃已解析的配置，下次访问时重新解析（apply() 时点调用——两条配置线的
+   * 生效时点就此对齐）。
+   */
+  refreshConfig(): void {
+    this.resolvedConfig = undefined
   }
 
   // ── 寻址与 sidecar ──────────────────────────────────────────────────────────
@@ -598,10 +646,47 @@ export class TeamStateStore {
         briefingInjectedMembers: Array.isArray(parsed.briefingInjectedMembers) ? parsed.briefingInjectedMembers.filter((x): x is string => typeof x === 'string') : [],
       }
     } catch (err) {
+      const code = (err as NodeJS.ErrnoException | undefined)?.code
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
+        // 账**尚未存在**（首次记前的正常态）——不是损坏，不告警。
+        return this.emptyLedger(teamRunId)
+      }
+      // P5-T16（评审 MINOR-9）：**损坏**不再静默重置两个幂等账。
+      //
+      // 旧行为：解析失败（半写、磁盘故障、手工编辑）⇒ 账被重置为空 ⇒
+      //   * 已投递过的 correlationId 可以**再投一次**（去重语义反了），
+      //   * briefing 可以**再注一帧**（破坏 T6/T7 的「恰好一次」不变量——
+      //     `tools/team-create.ts` 的注入闸完全依赖这张账）。
+      // 头注只承认了后者（"briefing 可能重注一次"），去重丢失**没有单独记一笔**
+      // ——它不是良性降级，是正确性回归。
+      //
+      // 更正：① 坏文件**先改名留档**（`omo-team-extensions.json.corrupt-<ts>`）
+      // （现场不丢，可事后取证）；② 两种后果**分别具名**告警——不再合成一句
+      // "briefing dedup restarts from zero, processed-message dedup likewise"。
+      this.quarantineCorruptLedger(teamRunId)
       console.warn(
-        `${LOG_PREFIX} sidecar ledger MISSING/CORRUPT for team ${teamRunId} (${err instanceof Error ? err.message : String(err)}) — rebuilding an empty ledger; briefing dedup restarts from zero, processed-message dedup likewise`,
+        `${LOG_PREFIX} sidecar ledger CORRUPT for team ${teamRunId} (${err instanceof Error ? err.message : String(err)}) — the damaged file was preserved as ${this.corruptLedgerPath(teamRunId)} and an empty ledger was rebuilt. `
+        + 'CONSEQUENCE 1: processed-message dedup restarts from zero — a correlationId that was already delivered may be delivered AGAIN. '
+        + 'CONSEQUENCE 2: briefing dedup restarts from zero — a member may receive a SECOND briefing frame.',
       )
       return this.emptyLedger(teamRunId)
+    }
+  }
+
+  /** 坏账的留档文件名（时间戳后缀；同一 run 多次损坏不覆盖）。 */
+  private corruptLedgerPath(teamRunId: string): string {
+    return `${this.ledgerPath(teamRunId)}.corrupt-${Date.now()}`
+  }
+
+  /**
+   * 坏账留档：把损坏的 sidecar 改名到 `.corrupt-<ts>`（best-effort——留档失败
+   * 不阻断重建，但错误已在调用侧具名告警）。
+   */
+  private quarantineCorruptLedger(teamRunId: string): void {
+    try {
+      renameSync(this.ledgerPath(teamRunId), this.corruptLedgerPath(teamRunId))
+    } catch {
+      // 留档是尽力面：改名失败（文件已被移走/无权限）时，空账重建照常进行。
     }
   }
 
@@ -800,6 +885,31 @@ export class TeamStateStore {
         this.participationByMemberSession.set(member.sessionId, { role: 'member', teamRunId: state.teamRunId, memberName: member.name })
       }
     }
+    // P5-T16（评审 MINOR-10）：**撤掉陈旧行**。旧实现只增不删——一旦某个成员的
+    // `sessionId` 变了或被抹掉（vendored `markDeadWorkersErrored` 把它写成
+    // `undefined` 落盘），旧 sessionId 的参与行仍留在索引里 ⇒
+    // `participationOfMember(oldSessionId)` 仍返回一行「活着的参与账」⇒
+    // `team_send_message` 的成员闸或成员面分发可能认下一个**已经不属于本队**
+    // 的会话。
+    //
+    // 撤行的判据 = 「上一份镜像里有、这一份里没有（或换成了别的 id）」。只撤
+    // 本队自己的行（别队的行不归本队处置）。
+    const previous = this.mirror.get(vendored.teamRunId)
+    if (previous !== undefined) {
+      const currentSessionIds = new Set(
+        state.members
+          .map((member) => member.sessionId)
+          .filter((id): id is string => id !== undefined),
+      )
+      for (const member of previous.members) {
+        if (member.sessionId === undefined) continue
+        if (currentSessionIds.has(member.sessionId)) continue
+        const indexed = this.participationByMemberSession.get(member.sessionId)
+        if (indexed !== undefined && indexed.teamRunId === vendored.teamRunId) {
+          this.participationByMemberSession.delete(member.sessionId)
+        }
+      }
+    }
     this.mirror.set(state.teamRunId, state)
     return state
   }
@@ -898,21 +1008,47 @@ export class TeamStateStore {
    * （withLock 的 O_EXCL 锁 + 锁内读；T5 内存形态的「保证域=本进程」注
    * 作废）。失败时调用方 unmarkMessageProcessed 补偿退账，同一不变量：
    * 未送达不占幂等位。
+   *
+   * P5-T16（评审 MINOR-8）：去重账**有界**——追加后按 vendored 的
+   * `max_messages_per_run`（上游同值 10000）裁掉**最旧**的一条（滚动窗口）。
+   * 旧形态两个数组只增不删 ⇒ 长跑团队的单文件与内存占用无上界，且每记一条
+   * 都要把整个 sidecar 读-改-写一遍（O(n)）。
+   *
+   * 窗口长度取上游的每轮消息上限（vendored `bounds.maxMessagesPerRun` 同一
+   * 指针）——超出那个上限的 run 本就出界，所以「最旧的一条被挤出」只影响
+   * **早已超出上游上限**的那条消息的去重记忆，不影响任何合法 run 的语义。
    */
   async markMessageProcessed(teamRunId: string, messageId: string): Promise<boolean> {
     this.requireState(teamRunId)
     return withLock(this.ledgerLockPath(teamRunId), async () => {
       const ledger = await this.readLedgerUnlocked(teamRunId)
       if (ledger.processedMessageIds.includes(messageId)) return false
+      const next = this.boundedProcessedIds(ledger.processedMessageIds, messageId)
       await this.writeLedgerUnlocked(teamRunId, {
         ...ledger,
-        processedMessageIds: [...ledger.processedMessageIds, messageId],
+        processedMessageIds: next,
       })
       this.applyLedgerToMirror(teamRunId, {
-        processedMessageIds: [...ledger.processedMessageIds, messageId],
+        processedMessageIds: next,
       })
       return true
     }, { ownerTag: 'omo-team-ledger' })
+  }
+
+  /**
+   * 去重账的**有界追加**（P5-T16 评审 MINOR-8）：追加一条 id 后，若账长超过
+   * vendored 的 `max_messages_per_run`（上游同值 10000），挤掉**最旧**的一条。
+   *
+   * 窗口长度 = 上游的每轮消息上限（`config.max_messages_per_run`）——超出那个
+   * 上限的 run 本就出界，故「最旧的被挤出」只影响早已越界的消息的去重记忆。
+   * 账长因此**有上界**（sidecar 文件与镜像占用不再无界）。
+   */
+  private boundedProcessedIds(existing: readonly string[], messageId: string): string[] {
+    const appended = [...existing, messageId]
+    const cap = this.config.max_messages_per_run
+    if (appended.length <= cap) return appended
+    // 挤最旧的（保留最新的 cap 条）——数组保持追加序（最旧在前）。
+    return appended.slice(appended.length - cap)
   }
 
   /** 补偿退账（reservation 回执作废；账不在位 = 幂等无操作）。 */
@@ -1236,9 +1372,24 @@ export class TeamStateStore {
   /**
    * 清账（诊断/管理面）：删整个 runtime 目录（state.json + sidecar + 任务板
    * 随目录同灭——上游清扫的显式手动形态）+ 镜像/索引撤账。
+   *
+   * P5-T16（评审 NIT-13）：补一道**状态白名单闸**——默认只许清**终态** run
+   * （deleted / failed / orphaned）。旧形态无闸：任何 `teamRunId` 都能被无声
+   * 拆掉整支队的账与任务板。今天本方法只有诊断面可达（**不是**注册工具），
+   * 所以这道闸不是堵漏洞，而是把「将来任何把 teamRunId 透传给它的消费面」
+   * 的后果**前置成显式约束**：活跃队的账只能走 `team_delete`（三重闸）收。
+   *
+   * 诊断面要清活跃队时，走**具名**的 `{ force: true }` 旁路——旁路必须写在
+   * 调用点（可见），而不是默认开着（不可见）。
    */
-  async forgetRun(teamRunId: string): Promise<void> {
+  async forgetRun(teamRunId: string, options?: { readonly force?: boolean }): Promise<void> {
     const state = this.mirror.get(teamRunId)
+    if (state !== undefined && options?.force !== true && !TEAM_FORGETTABLE_STATUSES.has(state.status)) {
+      throw new TeamStateError(
+        `forgetRun refuses to erase an active team run '${teamRunId}' (status '${state.status}') — only a terminal run (${[...TEAM_FORGETTABLE_STATUSES].join(' / ')}) may be erased; use team_delete for a live run (or pass force for the diagnostic face)`,
+        'TEAM_NOT_FORGETTABLE',
+      )
+    }
     await rm(this.runtimeDir(teamRunId), { recursive: true, force: true })
     if (state === undefined) return
     this.mirror.delete(teamRunId)
@@ -1289,10 +1440,15 @@ export class TeamStateStore {
 }
 
 /**
- * 进程单例：config 由 team-config.ts 的唯一构造点在模块装载时给出
- * （base_dir = 项目 .omo/teams/ 面，T8b 裁定钉死）。index.ts 的 apply() 在
- * boot 时经本实例 rebuildIndexes() + resume()（vendored resumeAllTeams 原样
- * 承载 creating 30min→failed 等语义）。调用方（T5-T7 工具层 + T8b 任务板）
- * 经同一实例读写，绕过方法面的旁路不存在。
+ * 进程单例：config 由 team-config.ts 的唯一构造点给出（base_dir = 项目
+ * .omo/teams/ 面，T8b 裁定钉死）。index.ts 的 apply() 在 boot 时经本实例
+ * rebuildIndexes() + resume()（vendored resumeAllTeams 原样承载 creating
+ * 30min→failed 等语义）。调用方（T5-T7 工具层 + T8b 任务板）经同一实例读写，
+ * 绕过方法面的旁路不存在。
+ *
+ * P5-T16（NIT-14）：单例传的是**配置提供者**（`buildTeamModeConfig` 本体）
+ * 而不是它的**结果**——env 读面因此不在**模块 import 期**发生，而落在首次
+ * 真正使用时（boot resume，已在 apply() 之后）；apply() 再显式
+ * `refreshConfig()` 一次，把 base_dir 与 row config 的生效时点对齐到同一刻。
  */
-export const teamStateStore = new TeamStateStore(buildTeamModeConfig())
+export const teamStateStore = new TeamStateStore(buildTeamModeConfig)

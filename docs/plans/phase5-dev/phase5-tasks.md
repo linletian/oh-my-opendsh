@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每条 team 面的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：✅ **16/16 全部收口**（2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **17/17 全部收口**（2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **编号**：`P5-T<n>`（Phase 5 - Task n）。工作包归属见计划书 §7。
 >
@@ -121,7 +121,7 @@
 - **外部依赖**：`zod ^4.4.3`（npm 依赖入 vendor 包 package.json，verify-licenses 白名单核对——非「移植 zod 校验器」）+ `@oh-my-opencode/utils` 的 isPlainRecord 一件（语义移植进闭包文件（如 `src/plain-record.ts`，署名头注上游 packages/utils 源路径，origin = 本项目新增/语义移植成文）或 vendor 原文件——二选一成文）。
 - **合规钉**：上游测试文件若 vitest 兼容则随 vendor 携带并在 `pnpm vitest run` 跑绿（bun:test 则不携带 + 根 tsconfig 排除面不扩，D16 纪律）；**strip-only 合规实证**（vendored 件将被 omo-team 运行时 import（T8b），Node 24 type-stripping 不支持参数属性——逐文件 grep 证明无该写法或 deviation 改写并登记）；`THIRD_PARTY_NOTICES.md` Phase 5 小节新增（语义移植表先例格式）随本任务同 commit——注意该文件是合规面、由编码者按先例编辑（docs/plans 禁改面不含它）。
 - **判定**：✅ vendor 漂移检测绿（`scripts/vendor-manifest.mjs` 族）；`verify-licenses` 绿且计数变化全对应（57→57+zod/team-core 包——实测登记）； vendored 测试（若携带）绿；typecheck 三链不回归。
-- **证据**：✅ 2026-10-10——`patches/omo-dsh/vendor/team-core/` **47 件**（verbatim 37（逐字节 = 上游 blob，程序化全查）+ modified 7（active-resume 四点删节 + strip-only 参数属性改写 4 件 + exports 收窄 + package.json）+ 项目新增 3（plain-record.ts 语义移植 isPlainRecord / NOTICE.md / VENDOR-MANIFEST.json）+ 携带上游测试 10 件（bun:test→vitest alias）+ test-support 1 件）；playbook 全套（VENDOR-MANIFEST 47 files + 13 deviations + subset/counts 扩展 + NOTICE.md modified-copy + package.json license D15 + zod ^4.4.3 依赖）。实测：漂移门 `checked=367 violations=0`（team-core 自动发现）；`verify-licenses` **57→59**（+team-core SUL-1.0（D16 名门）+zod MIT，全对应）；vendored 测试 59/59（team-core）+137/137（vendor 域合计）；typecheck 三链不回归；全量 vitest 80f/1921t。**双评审通过**：轮 1 双 REJECT（收敛 MAJOR = tmux-core/utils 依赖删除未登记 + 「无其他变更」假话；opencode 另 MAJOR = member-parser/claim deviation 的测试证据不存在——插桩实证零构造）→ 修复轮 5 项（dependencies-narrowed 登记 + 假话尾句改实 + 证据改写为 tsc 位次等价 + strip-only 实跑构造验证 + NOTICE 计数 three→four + plain-record 措辞 + tsgo 脚本 note 登记）；delta 双 APPROVE（opencode FINDINGS none；mcode 1 NIT 措辞精确化——修复后仲裁独立确认）。**裁决注记**：test-support.ts 以测试辅助件携带（不计 31 件实现清单，FORK.md §3.3 已同步注记）；T8b 遗留 = 依赖边登记 + zod range 锁文件说明（见 T8b 判定行）。
+- **证据**：✅ 2026-10-10——`patches/omo-dsh/vendor/team-core/` **47 件**（verbatim 7（逐字节 = 上游 blob，程序化全查）+ modified 37（active-resume 四点删节 + strip-only 参数属性改写 4 件 + exports 收窄 + package.json）+ 项目新增 3（plain-record.ts 语义移植 isPlainRecord / NOTICE.md / VENDOR-MANIFEST.json）+ 携带上游测试 10 件（bun:test→vitest alias）+ test-support 1 件）；playbook 全套（VENDOR-MANIFEST 47 files + 17 deviations + subset/counts 扩展 + NOTICE.md modified-copy + package.json license D15 + zod ^4.4.3 依赖）。实测：漂移门 `checked=367 violations=0`（team-core 自动发现）；`verify-licenses` **57→59**（+team-core SUL-1.0（D16 名门）+zod MIT，全对应）；vendored 测试 59/59（team-core）+137/137（vendor 域合计）；typecheck 三链不回归；全量 vitest 80f/1921t。**双评审通过**：轮 1 双 REJECT（收敛 MAJOR = tmux-core/utils 依赖删除未登记 + 「无其他变更」假话；opencode 另 MAJOR = member-parser/claim deviation 的测试证据不存在——插桩实证零构造）→ 修复轮 5 项（dependencies-narrowed 登记 + 假话尾句改实 + 证据改写为 tsc 位次等价 + strip-only 实跑构造验证 + NOTICE 计数 three→four + plain-record 措辞 + tsgo 脚本 note 登记）；delta 双 APPROVE（opencode FINDINGS none；mcode 1 NIT 措辞精确化——修复后仲裁独立确认）。**裁决注记**：test-support.ts 以测试辅助件携带（不计 31 件实现清单，FORK.md §3.3 已同步注记）；T8b 遗留 = 依赖边登记 + zod range 锁文件说明（见 T8b 判定行）。
 - **依赖**：P5-T7。**量级**：半天。
 
 ### [x] P5-T8b — 任务板接线 + 状态持久化换装 + claim 协议
@@ -161,7 +161,6 @@
 - **触发条件**：仅当 T10 复核裁定通用面板（subagentchat + lead 会话 `'agent-message'` 帧）对「team 消息交换」不满足退出标准 a。**不触发即整条取消（删除线 + 理由成文），不算未完成**。（T1 Q-7 初步裁定：唤醒轮 turn-trigger 卡 + subagentchat 达成员会话 = 可见性成立，倾向不触发；缺口台账 = 无 mailbox 集中视图（记差异）/ 中途 steer 'context' kind 隐藏（记差异）/ **member↔member 直通 = (B) 形态结构性不存在**（lead 中转语义固化，评审登记——非可见性缺陷，不作触发条件）；T10 复核终定。）
 - **产出**：omo-team client face（`ConversationNodeDefinition` 实现 + `ConversationEventRegistry.register` + disposer 纪律）。
 - **判定**：✅ `match` 命中目标事件族（**(B) 形态事件族以 T10 裁定为准**——`team/message/*` 是 (A′) 形态事件族，(B) 不挂 bundle 不存在；候选 = `'agent-message'` 帧 / subagentchat 资源事件）；`buildViewNode` 产出可渲染节点；L2 浏览器可见。
-- **证据**：⬜
 - **依赖**：P5-T10（仅 Q-7 兜底裁定触发）。**量级**：1 天。
 
 ---
@@ -174,7 +173,6 @@
 - **做法**：H-33 模块内演进（不新增 hook 条目，`EXPECTED_HOOK_COUNT` 不变——若裁定新增条目则触发 R-8 同步网全网，任务书成文）；注入幂等沿用既有语义；上游载体引用段（worktree/`~/.omo`/tmux）正文保真、适配由工具层文案承担；**成员侧不放行 team 关键词注入**（T1 Q-8 裁定：keyword-detector 子会话过滤链 `keyword-detector.ts:570-621` 六具名 skip 逐字复核后钉死——成员语境由 `omo-team-briefing` 承担，重复注入是噪声）；**vendor 文本已知矛盾登记**（Q1b N1：模板/引导里 `status:"failed"` 是空头指令——core schema 无 `failed`；N9：`delegate_task` vs `delegate-task` 名称漂移——正文保真、deviations 注记，DSH 侧适配文案以 vendored tasklist schema 为准）；**Q-4 NOTES-6 联动**：`vendor/shared-skills/` 的 debugging/refactor 技能文本教 `team_send_message`/`team_task_create` OMO 参数——omo-team 工具面定型后同 commit 加注记或改写（防模型被引向参数必错的调用）。
 - **判定**：✅ 门 2/3 绿；vendor 漂移检测绿；`verify-licenses` 计数变化有对应条目。
 - **证据**：✅ 2026-10-12——`patches/omo-dsh/vendor/prompts-team/`（新 vendor 包：team.md 615B + team-mode skill 模板 204 行，双向 sha256 对账 IDENTICAL；deviations 登记 N1 failed 空头指令 + N9 delegate_task 名漂移，正文保真）+ keyword-detector team 槽接线（TEAM_PATTERN 命中 → pre-step 注入 vendored team.md 正文逐字，kind `omo-team-keyword`；成员侧结构性不放行 = `SUBAGENT_ALLOWED_TYPES` 无 team + `memberSideAllowed: false` 机读化；幂等沿用；H-33 模块内演进 EXPECTED_HOOK_COUNT 不变）+ 单测 8 腿 + e2e `team-keyword-mode`（18 检查 + 7 defect 腿各红各的）+ Q-4 NOTES-6 联动核实成文（shared-skills 文本与本仓工具面一致，无需改写——双评审独立复核成立）。实测：门 3 41/41；vitest 85f/1993t；root typecheck exit 0；licenses 60→61（prompts-team 入册有对应）；vendor 漂移 372；门 4/6/7/8 不回归；cold-start 14/24。**双评审 APPROVE**（B 直过含 vendor 字节双向对账；A 2 NIT——patternFlags 机读面补齐 + promptText 载体措辞；mcode 1 NIT 尾换行——修复轮落毕仲裁独立确认）；**staged COPY 带 vendor 字节修复**（cpSync vendor/prompts-team——T5 staging 教训面）；T13 仲裁增补成文（N1 处置 + team.md opencode 载体句适配评估）。
-- **依赖**：P5-T5（team 工具面在场是注入语义的前提）。**量级**：4 小时。
 - **依赖**：P5-T5（team 工具面在场是注入语义的前提）。**量级**：4 小时。
 
 ### [x] P5-T13 — hyperplan / remove-ai-slops 完整形态升级
@@ -217,6 +215,16 @@
 - **判定**：✅ 核对表 a/b/c + DoD c/d/e 全 ✅。
 - **证据**：✅ 2026-10-12——**L2 真机半段**（`.omo/evidence/p5-l2/`）：真实 LLM 3 成员协作（l2-drive.mjs，沙箱真 boot + 真实 ~/.dsh digest 不动；凭据卫生：API 凭据全树零泄漏；launch token 初版误落明文 3 处——评审 BLOCKER 修复轮已杀进程失效 + 脱敏 + 全树复扫零命中，见 p5-l2/ui/token-hygiene-grep.txt）：21 次真实模型调用（lead 9 / analyst 8 / builder 4），路由逐席（lead deepseek-official/v4-pro、analyst deepseek/deepseek-flash、builder deepseek-official/v4-pro）；协作内容真实（成员各自读 README/CHANGELOG 并回报，lead 汇总）；消息双向 10 帧；拆除核验（team_delete forced + interruptedSessionIds 恰两枚 + boot drain 行 + state.json 墓碑 deleted + 探针 rows 全 inactive + no revival + no grandchildren）。**verdict-final.json 28/28 PASS**（首跑 2 项 check 模式误报——arguments JSON string 未 parse + 墓碑取错条——l2-reanalyze.mjs 冻结日志零付费重判修正，模式差异成文）。**浏览器核验**（`.omo/evidence/p5-l2/ui/`：headless Chrome 154 + CDP 驱动 + 8 截图 + ui-evidence.md **10 PASS + 1 RECORDED**）：lead 会话轨迹 tab Team message 唤醒卡双向可见（from analyst/builder 全文可展开）+ subagentchat 列出两成员会话（可继续标记）+ 点开成员会话 lead→成员帧可见 + (B) 形态无 team 专属面板；native picker 旁路（zenity 宿主不可驱动）用 UI 客户端同款网关 API 注册的诚实记录。**退出标准核对表 a/b/c + DoD c/d/e 全 ✅（见下节）**。
 - **依赖**：P5-T15。**量级**：4 小时。
+
+### [x] P5-T17 — PR #17 评审修复轮（BLOCKER-1 + MAJOR-2/3/4/5 + MINOR/NIT 收敛）
+
+> **触发**：PR #17 的 OWNER 评审（`gh pr view 17`，head = `1bc9fbd`）给出 1 条 BLOCKER + 4 条 MAJOR + 8 条 MINOR + 9 条 NIT。本任务 = 该评审的**修复轮**（评审意见逐条复核 → 成立的修 → 不成立的回帖说明 → 门禁复跑）。
+> **复核结论**：BLOCKER-1 与 MAJOR-2/3/4/5 **全部成立**（逐条追到代码与宿主契约）；MINOR-5/6/7/9/10/12 与 NIT-13/14/15/17/18/19/20 成立（已修）；MINOR-8/11 与 NIT-12/16 **不修并说明理由**（见 PR 回帖）。
+
+- **产出**：BLOCKER-1 的**持久会话面**适配（`session-context-adapter.ts` 改读 `ctx.sessionQuery`，冷但存在的成员判「在场」，无法证伪的缺席按「存在」处理）；广播**零投递退账**（MAJOR-2）；`/remove-ai-slops` **降级路径载体注记逐字节回 P4**（MAJOR-3，两枚注记按路径分立）；关键词槽**在场闸 + 载体注记拆弹死链**（MAJOR-4）；任务书 T8a **vendor 计数回正**（MAJOR-5）；`team_status` **成员活体观测**（MINOR-5）；`team_delete` **拆解失败不搁浅**（MINOR-6）；在场面**改读实际注册结果**（MINOR-7，`team-registration-outcome.ts` 新模块）；sidecar **损坏留档 + 后果分别具名**（MINOR-9）；`settle()` **撤陈旧参与行**（MINOR-10）；README 双语 **D1–D18**（MINOR-12）；NIT-13/14/15/17/18/19/20 逐条修。
+- **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**（新增 18 条评审专属腿）；门 3（e2e）绿；门 4–8 绿。
+- **证据**：✅ 2026-10-28——**BLOCKER-1**：适配器的存在性判据从「活体注册表」换成「**持久会话面**」（`ctx.sessionQuery.observeSession`，基础 bundle 恒挂载 `session-query-sqlite`）；三态归一 = 活体命中 → 在场 / 持久命中（冷但存在）→ 在场 / 持久**确证**缺席（`SESSION_QUERY_SESSION_NOT_FOUND`）→ 缺席 / **无法证伪**（服务缺席或读失败）→ 按在场处理（孤儿化是**终态**且抹掉成员 `sessionId`，误判不可逆）。新增跨重启腿：冷态 lead + 冷态成员 ⇒ run 仍 `active`、成员 `sessionId` 仍在（落盘字节同证）。**MAJOR-2**：广播**零投递**（首个成员即失败）退账 ⇒ 同 `correlationId` 可重投；**部分投递**仍不退（宁漏不重），错误文本分两种措辞。**MAJOR-3**：降级路径的载体注记**逐字节 = P4**（"NO TEAM MODE" 措辞——降级形态下它是真话），P5 的「运行时开关」解释只留在**在场路径**的注记（`REMOVE_AI_SLOPS_CARRIER_NOTE_P5`）。**MAJOR-4**：关键词槽读 omo-team 发布的 `omoTeamKeywordFace.teamToolsPresent`（**本次 boot 实际注册成功**的 ①–⑪ 齐备）作**在场闸**——载体缺席 ⇒ 不注入 team 正文（新增具名 reason `team-surface-absent`）；在场时注入正文**前置载体注记**（就地拆弹 "set team_mode.enabled=true and restart opencode" 死链 + N9 工具名漂移 + N1 空头终态）。**MAJOR-5**：T8a 证据行的 vendor 计数回正为 verbatim 7 / modified 37 / deviations 17（与 manifest `counts` 与 T15 行同口径）。**MINOR-7**：在场面从「manifest 声明」改读「本次 boot 实际注册结果」（新模块 `team/team-registration-outcome.ts`，注册循环逐行记账）——某枚工具行注册 FAILED ⇒ 在场判 false ⇒ 两条命令降级。实测：**vitest 90f/2074t**（+18 评审腿）；root typecheck exit 0；`verify-concerto-static` 37/37（c25/c26 的新模块归属按门自己的命名清单登记，未放宽任何断言）；`vendor-manifest` checked=372 violations=0；`verify-licenses` checked=62 violations=0；`check-docs-consistency` 10/10；`ci-local` 8/8 全绿。
+- **依赖**：P5-T16。**量级**：6 小时。
 
 ---
 

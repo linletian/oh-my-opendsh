@@ -45,13 +45,22 @@ export const OMO_TEAM_SLOP_ADDENDUM_TEAM_FACE = 'omoTeamSlopAddendumTeamFace'
 /** 本命令消费的在场脸最小面（与 hyperplan 消费面同款形状，独立声明）。 */
 export interface SlopAddendumTeamPresenceLike {
   readonly teamToolsPresent?: boolean
+  readonly teamToolNames?: readonly string[]
   readonly teamTaskStatuses?: readonly string[]
 }
 
 /**
- * 每次调用现读一次在场判据（`readTeamModePresent` 的同族镜像；消费字段不同：
- * 本命令的 addendum 正文要引用任务态五值，所以形状校验读 `teamTaskStatuses`
- * 这一臂——缺臂 = 脸不完整 = 降级，N1 注记不许在没有词表背书时进模型面）。
+ * 每次调用现读一次在场判据（`readTeamModePresent` 的同族镜像）。
+ *
+ * P5-T16（评审 NIT-15）：两侧的**校验臂现在同形**——都校验
+ * `teamToolsPresent`（读的字段）与 `teamToolNames`（共同臂）。旧形态是
+ * 「校验的字段与消费的字段不对位」：本命令校验 `teamTaskStatuses` 却读
+ * `teamToolsPresent`，hyperplan 校验 `teamToolNames` 却读 `teamToolsPresent`
+ * ——两张脸字段集相同，今天无 bug，但降级判据的**形状**两侧不对称（改一侧
+ * 不会让另一侧变红）。
+ *
+ * 任务态五值这一臂（`teamTaskStatuses`）**仍在**校验里：N1 注记不许在没有词表
+ * 背书时进模型面——它是 addendum 正文的引用来源，缺臂 = 脸不完整 = 降级。
  */
 export function readSlopTeamModePresent(
   get: ((name: string) => unknown) | undefined,
@@ -60,6 +69,7 @@ export function readSlopTeamModePresent(
   const face = get(OMO_TEAM_SLOP_ADDENDUM_TEAM_FACE)
   if (typeof face !== 'object' || face === null) return false
   const candidate = face as SlopAddendumTeamPresenceLike
+  if (!Array.isArray(candidate.teamToolNames)) return false
   if (!Array.isArray(candidate.teamTaskStatuses)) return false
   return candidate.teamToolsPresent === true
 }

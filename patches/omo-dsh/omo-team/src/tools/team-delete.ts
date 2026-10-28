@@ -225,7 +225,7 @@ export async function executeTeamDelete(
     )
   }
   const interruptedSessionIds: string[] = []
-  const faults: string[] = []
+  const interruptFaults: string[] = []
   const current = deps.store.get(teamRunId) ?? state
   for (const member of current.members) {
     if (member.sessionId === undefined) continue
@@ -234,24 +234,56 @@ export async function executeTeamDelete(
       deps.subagents.interrupt(member.sessionId, { kind: 'ancestor', agent: interruptAgent })
     } catch (err) {
       // 响亮不吞（T5 回滚同纪律）：fault 进错误文本，其余成员继续拆。
-      faults.push(`${member.name}: ${err instanceof Error ? err.message : String(err)}`)
+      interruptFaults.push(`${member.name}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
+  let drainFault: string | undefined
   try {
     await deps.subagents.drainContinuableChildren(interruptAgent, interruptedSessionIds)
   } catch (err) {
-    faults.push(`drain: ${err instanceof Error ? err.message : String(err)}`)
+    drainFault = err instanceof Error ? err.message : String(err)
   }
-  if (faults.length > 0) {
+
+  // P5-T16（评审 MINOR-6）：拆解失败时的**收口纪律**。
+  //
+  // 旧行为：任何 fault（成员 interrupt 失败 **或** drain 失败）都在 `deleting`
+  // 态上抛 TEARDOWN_FAULT，而 `deleting` 只有 `deleting → deleted` 一条前向迁移
+  // ——run 就此**永久搁浅**（进程存活期内没有别的出路，只有重启后的 resume 清扫
+  // （STALE_DELETING_TTL_MS）才收掉它）。
+  //
+  // 更正：**成员 interrupt 失败**与**drain 失败**分开判——两者的后果不同：
+  //   * 成员 interrupt 失败 = 那个成员**可能还在跑** ⇒ 账本**不许**收（收了就
+  //     制造一个无主成员）⇒ 留在 `deleting`，抛具名错并写明「重跑 team_delete
+  //     即可续上」（interrupt/drain 对已散的孩子天然 no-op，重跑是幂等的）；
+  //   * drain 失败 = 成员**全部已被 interrupt**（每个成员都停摆了），失败的只是
+  //     原生通道的**释放**步骤 ⇒ 账本**可以**安全收口 ⇒ 收口（deleted + 撤账），
+  //     失败原因进 note + warn 行（不静默）。
+  if (interruptFaults.length > 0) {
+    const faults = [...interruptFaults, ...(drainFault === undefined ? [] : [`drain: ${drainFault}`])]
     throw new TeamDeleteError(
-      `${TEAM_DELETE_TOOL_NAME}: teardown faults for team ${teamRunId}: ${faults.join('; ')}`,
+      `${TEAM_DELETE_TOOL_NAME}: teardown faults for team ${teamRunId}: ${faults.join('; ')} — `
+      + `at least one member could not be interrupted, so the run stays in 'deleting' (its ledger is NOT closed); `
+      + `re-run ${TEAM_DELETE_TOOL_NAME} for the same teamRunId to finish the teardown (interrupts are idempotent)`,
       'TEARDOWN_FAULT',
     )
   }
 
   // ⑤ → deleted + ⑥ 参与索引撤账（tombstone 留行）。
-  await deps.store.transition(teamRunId, 'deleted')
+  // 幂等重删：`deleted` 是终态（迁移表 `deleted: ∅`），再转一次会抛
+  // INVALID_TRANSITION——「deleting/deleted 在白名单内 = 幂等重删的入口」这句
+  // 契约要求重删**成功**，故终态已到位时跳过迁移（P5-T16 同轮更正）。
+  const beforeClose = deps.store.get(teamRunId)
+  if (beforeClose?.status !== 'deleted') {
+    await deps.store.transition(teamRunId, 'deleted')
+  }
   deps.store.retireRunIndexes(teamRunId)
+  if (drainFault !== undefined) {
+    // drain 失败但账本已收：成员全部停摆，残留的原生驻留由原生运行时在父会话
+    // 消亡时回收。**不静默**——warn 行 + note 都点名它。
+    console.warn(
+      `${LOG_PREFIX} native drain reported a fault for team ${teamRunId} (${drainFault}) — every member was interrupted and the ledger is closed; the residual native residency is reaped by the host runtime`,
+    )
+  }
   console.log(
     `${LOG_PREFIX} team ${teamRunId} deleted (${interruptedSessionIds.length} member session(s) interrupted + drained, forced=${forced}${forceCompletedMembers.length > 0 ? `, force-completed: ${forceCompletedMembers.join(', ')}` : ''})`,
   )
@@ -261,7 +293,9 @@ export async function executeTeamDelete(
     forced,
     forceCompletedMembers,
     interruptedSessionIds,
-    note: `team ${teamRunId} deleted — member sessions interrupted with inbox preserved (native keepInbox); the teamRunId is now retired`,
+    note: drainFault === undefined
+      ? `team ${teamRunId} deleted — member sessions interrupted with inbox preserved (native keepInbox); the teamRunId is now retired`
+      : `team ${teamRunId} deleted — every member session was interrupted (inbox preserved) and the teamRunId is retired; the native drain reported: ${drainFault}`,
   }
 }
 

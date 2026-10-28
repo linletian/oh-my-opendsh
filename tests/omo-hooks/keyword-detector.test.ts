@@ -117,6 +117,7 @@ import {
   KEYWORD_DETECTORS,
   ROSTER_TAIL_NOTE,
   WIRED_KEYWORD_TYPES,
+  TEAM_CARRIER_NOTE,
   ULTRAWORK_CARRIER_NOTE,
   buildHyperplanMessage,
   buildHyperplanUltraworkMessage,
@@ -262,6 +263,10 @@ function mainFacts(text: string, overrides: Partial<KeywordStepFacts> = {}): Key
     sessionOrigin: undefined,
     descriptor: NO_DESCRIPTOR,
     config: resolveConfig(),
+    // P5-T16（评审 MAJOR-4）：team 槽的**在场闸**。默认 = 载体在场（team
+    // 工具面注册成功），与生产面的常态一致；载体缺席的腿单独覆写
+    // （`teamSurfacePresent: false`）。
+    teamSurfacePresent: true,
     ...overrides,
   }
 }
@@ -982,7 +987,7 @@ describe('P4-T12 ⑤ the combo suppresses the standalones, and the idempotency g
     // `KeywordStepFacts` 上再没有 `alreadyInjected` 这个键 —— 断言它的缺席，
     // 这样「有人又把会话闸加回来」会先红（TS 也会红，但运行期断言才是这条纪律）。
     expect(Object.keys(mainFacts('ulw go')).sort()).toEqual(
-      ['config', 'descriptor', 'hasInject', 'promptTexts', 'sessionOrigin', 'texts'],
+      ['config', 'descriptor', 'hasInject', 'promptTexts', 'sessionOrigin', 'teamSurfacePresent', 'texts'],
     )
     // 二次武装的**真实路径**：同一条 listener、同一个会话对象、两次 pre-step。
     // 这是评审点名要修的后果（初版把用户第二次敲的 ulw 静默吞掉了，只留一行 warn）。
@@ -1625,17 +1630,48 @@ describe('P4-T12 ⑧ the manifest row describes exactly this implementation', ()
 describe('P5-T12 team slot: the wired team keyword arms on the lead, verbatim', () => {
   it('a team-mode hit injects the vendored team.md verbatim, in its own face', () => {
     // 判定面的分面事实：纯 team 批次 `text` 为空串（不铸 detector 消息）、
-    // `teamText` = vendored 正文 + 分隔尾装置（Q-8 A1 的 kind 分面在 listener
-    // 段的注入断言里钉）。
+    // `teamText` = 载体注记 + vendored 正文 + 分隔尾装置（Q-8 A1 的 kind 分面在
+    // listener 段的注入断言里钉）。
+    //
+    // P5-T16（评审 MAJOR-4）：正文**逐字不变**，前面多一段**载体注记**
+    // （TEAM_CARRIER_NOTE）——它就地拆弹 vendored 正文尾部那句指向本部署不存在的
+    // 配置开关与宿主重启的死链。vendor 字节不动（注记在正文之外）。
     const decision = decide(mainFacts('please enter team mode now'))
     expect(decision.kind).toBe('inject')
     if (decision.kind !== 'inject') return
     expect(decision.types).toEqual(['team'])
     expect(decision.text).toBe('')
-    expect(decision.teamText).toBe(`${TEXTS.team}\n\n${INJECTION_SEPARATOR}\n`)
-    // 逐字：正文首尾与 vendor 字节一致（`[team-mode]` 标记行是首行，无包装）。
-    expect(decision.teamText?.startsWith('[team-mode]')).toBe(true)
+    expect(decision.teamText).toBe(`${TEAM_CARRIER_NOTE}\n\n${TEXTS.team}\n\n${INJECTION_SEPARATOR}\n`)
+    // 逐字：vendored 正文原样在场（首行仍是 `[team-mode]` 标记行，无包装）。
+    expect(decision.teamText?.includes(TEXTS.team)).toBe(true)
     expect(decision.teamText?.endsWith(`---\n`)).toBe(true)
+  })
+
+  it('P5-T16 the carrier note defuses the dead "team_mode.enabled + restart opencode" instruction', () => {
+    // 评审 MAJOR-4 的核心诉求：vendored team.md 的最后一句指向本部署**没有**的
+    // 配置键与宿主重启。注记必须就地回答那句死链，且**不得**再复述那个键名。
+    expect(TEXTS.team).toContain('team_mode.enabled=true')
+    expect(TEAM_CARRIER_NOTE).toContain('team_mode.enabled=true')
+    expect(TEAM_CARRIER_NOTE).toContain('THE SWITCH IS THE TOOL SURFACE, NOT A FLAG')
+    expect(TEAM_CARRIER_NOTE).toContain('The live `team_*` tool surface IS the switch')
+    // N9 / N1 两条已登记 deviation 在注记里就地拆弹（vendor 正文保真不动）。
+    expect(TEAM_CARRIER_NOTE).toContain('`delegate_task` IS NOT A TOOL NAME HERE')
+    expect(TEAM_CARRIER_NOTE).toContain('`status:"failed"` IS NOT A TASK STATE HERE')
+  })
+
+  it('P5-T16 the presence gate: no team surface ⇒ the team body is NOT injected', () => {
+    // 载体不在场（omo-team 未挂载 / 某枚工具行注册 FAILED）⇒ 撤掉 team 命中，
+    // 不注入那段正文（否则就是一条死指令）。reason 独立于 `no-keyword`——
+    // 「命中了但没有等价载体」与「压根没命中」是两回事，日志必须能分辨。
+    const decision = decide(mainFacts('please enter team mode now', { teamSurfacePresent: false }))
+    expect(decision).toEqual({ kind: 'skip', reason: 'team-surface-absent' })
+    // 混合批次：team 撤掉，其余照常（不连坐）。
+    const mixed = decide(mainFacts('ulw and team mode together', { teamSurfacePresent: false }))
+    expect(mixed.kind).toBe('inject')
+    if (mixed.kind !== 'inject') return
+    expect([...mixed.types]).toEqual(['ultrawork'])
+    expect(mixed.text.length).toBeGreaterThan(0)
+    expect(mixed.teamText).toBeUndefined()
   })
 
   it('the pattern variants hit, and the near-misses do not', () => {
@@ -1660,7 +1696,7 @@ describe('P5-T12 team slot: the wired team keyword arms on the lead, verbatim', 
     expect([...decision.types].sort()).toEqual(['team', 'ultrawork'])
     expect(decision.text.length).toBeGreaterThan(0)
     expect(decision.text).toContain('<ultrawork-mode>')
-    expect(decision.teamText).toBe(`${TEXTS.team}\n\n${INJECTION_SEPARATOR}\n`)
+    expect(decision.teamText).toBe(`${TEAM_CARRIER_NOTE}\n\n${TEXTS.team}\n\n${INJECTION_SEPARATOR}\n`)
     // 组合抑制不碰 team：combo + team 同臂，combo 吞掉独立 ultrawork 而已。
     const combo = decide(mainFacts('hyperplan ulw plus team mode'))
     expect(combo.kind === 'inject' && [...combo.types].sort()).toEqual(['hyperplan-ultrawork', 'team'])
@@ -1676,6 +1712,8 @@ describe('P5-T12 team slot: the wired team keyword arms on the lead, verbatim', 
       texts: TEXTS,
       config: resolveConfig(),
       log: (line) => lines.push(line),
+      // P5-T16（评审 MAJOR-4）：载体在场 ⇒ team 槽放行。
+      readTeamSurfacePresent: () => true,
     })
     const next = () => 'next'
     const session = { header: { id: 'ses_team_lead' } }
@@ -1687,9 +1725,11 @@ describe('P5-T12 team slot: the wired team keyword arms on the lead, verbatim', 
     expect(injected).toHaveLength(4)
     const kinds = injected.map((m) => m.source.kind)
     expect(kinds).toEqual(['omo-keyword-detector', 'omo-team-keyword', 'omo-keyword-detector', 'omo-team-keyword'])
-    // team 消息的正文首行是 `[team-mode]`；detector 消息永远不带它（分面干净）。
+    // team 消息的正文带载体注记 + vendored 正文（首行仍是 `[team-mode]` 标记行）；
+    // detector 消息永远不带它（分面干净）。
     expect(injected.filter((m) => m.source.kind === 'omo-team-keyword')
-      .every((m) => m.content[0]?.text.startsWith('[team-mode]'))).toBe(true)
+      .every((m) => m.content[0]?.text.includes(TEAM_CARRIER_NOTE)
+        && m.content[0]?.text.includes(TEXTS.team))).toBe(true)
     expect(injected.filter((m) => m.source.kind === 'omo-keyword-detector')
       .every((m) => !m.content[0]?.text.includes('[team-mode]'))).toBe(true)
     // 每条新铸 id（宿主 pending 唯一性校验的生存面）。
@@ -1699,6 +1739,39 @@ describe('P5-T12 team slot: the wired team keyword arms on the lead, verbatim', 
     expect(lines.filter((line) => line.includes('injected [team] into')).length).toBe(1)
     expect(lines.filter((line) => line.includes('injected [ultrawork, team]')
       || line.includes('injected [team, ultrawork]')).length).toBe(1)
+  })
+
+  it('P5-T16 the listener drops the team face when the carrier is absent', async () => {
+    // 载体缺席 ⇒ 只铸 detector 消息；team 命中被撤掉（一条 `team-surface-absent`
+    // 具名日志，不静默）。
+    const injected: InjectedUserMessage[] = []
+    const lines: string[] = []
+    const listener = createKeywordDetectorListener({
+      texts: TEXTS,
+      config: resolveConfig(),
+      log: (line) => lines.push(line),
+      readTeamSurfacePresent: () => false,
+    })
+    const next = () => 'next'
+    const session = { header: { id: 'ses_team_lead' } }
+    const inject = (m: InjectedUserMessage) => injected.push(m)
+    await listener({ messages: [userMessage('engage team mode')], agent: { session, inject } }, next)
+    expect(injected).toHaveLength(0)
+    expect(lines.some((line) => line.includes('team-surface-absent'))).toBe(true)
+    // 对照：载体在场 ⇒ 铸一条 team 消息。
+    const present: InjectedUserMessage[] = []
+    const presentListener = createKeywordDetectorListener({
+      texts: TEXTS,
+      config: resolveConfig(),
+      log: () => undefined,
+      readTeamSurfacePresent: () => true,
+    })
+    await presentListener(
+      { messages: [userMessage('engage team mode')], agent: { session, inject: (m: InjectedUserMessage) => present.push(m) } },
+      next,
+    )
+    expect(present).toHaveLength(1)
+    expect(present[0]!.source.kind).toBe('omo-team-keyword')
   })
 
   it('the member side is NOT released (Q-8): every child shape skips the team hit', async () => {

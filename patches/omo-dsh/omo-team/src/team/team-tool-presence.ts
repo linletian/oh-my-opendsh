@@ -19,17 +19,26 @@
 // 服务名两侧各自本地声明、互不 import，等值由单测钉死
 // （tests/omo-team/team-tool-presence.test.ts 的 R-5 同族交叉断言）。
 //
-// ── 「在场」的诚实定义（派生，不硬编码）─────────────────────────────────────
-// `teamToolsPresent` **不是** registrar 跑过就 true 的橡皮章——它是从
-// TEAM_MANIFEST 派生的判据：①–⑪ 十一枚工具行的 status **全部** 'ported' 才
-// 在场；任何一枚回退 pending，两张脸同时翻 false，两条命令同时降级。名单本身
-// 取自 tools/*.ts 的具名常量（名单与行 id 同一词汇——manifest.ts 行注释成文的
-// 同一性），所以「在场」的分子分母都没有第二份转抄。
+// ── 「在场」的诚实定义（事实层，不是声明层）───────────────────────────────
+// `teamToolsPresent` **不是** registrar 跑过就 true 的橡皮章，也**不是**
+// manifest 的 `status:'ported'` 声明层复读——它读的是**本次 boot 实际注册成功**
+// 的行 id 集（team-registration-outcome.ts，注册循环逐行记账）：①–⑪ 十一枚工具
+// 行**全部**在本次 boot 注册成功才在场；任何一枚注册 FAILED，两张脸同时翻
+// false，两条命令同时降级。名单本身取自 tools/*.ts 的具名常量（名单与行 id 同
+// 一词汇——manifest.ts 行注释成文的同一性），所以「在场」的分子分母都没有第二份
+// 转抄。
+//
+// P5-T16 更正（评审 MINOR-7）：旧实现读 manifest 的 `status === 'ported'`——
+// 那是**声明**。而注册循环是逐行 try/catch、loud-but-non-fatal 的：某枚工具行
+// 的 registrar 在 boot 时抛错 ⇒ 该行打 FAILED、**没有注册** ⇒ 声明层仍说
+// 'ported' ⇒ 在场判据仍报 true ⇒ `/hyperplan` 与 `/remove-ai-slops` 渲染
+// FULL 环（"the team_* tools are live here"），向模型宣称一批并不存在的工具。
+// **切换开关朝一个方向撒谎**——本面改读事实层。
+//
 // 诚实边界（与 T9 的 readTeamQueryService 同款，成文而非沉默）：service 在场 =
-// omo-team 已挂载 + 本行已 ported + registrar 未抛 + 工具行全 ported；某枚
-// 工具行在**本次 boot** 注册 FAILED 的瞬时事实不由这里复读——那是 census
-// `<r>/<24>` 与 loud `FAILED` 行的领地（注册循环的 loud-but-non-fatal 契约），
-// 探针与门各自看得见；本面复读的是**声明层**的在场，且只读。
+// omo-team 已挂载 + 本行已 ported + registrar 未抛 + ①–⑪ 本次 boot 全部注册
+// 成功；某枚工具行在**本次 boot** 注册 FAILED 的瞬时事实由本面**如实反映**
+// （判缺席 ⇒ 降级），census `<r>/<24>` 与 loud `FAILED` 行照旧各自可见。
 //
 // ── 两张脸，一枚快照 ──────────────────────────────────────────────────────────
 // 行 ⑮ 消费半是 `/hyperplan`、行 ⑯ 消费半是 `/remove-ai-slops`——一行一处置，
@@ -38,8 +47,8 @@
 //
 // strip-only 纪律（T5 NOTES-6）：本文件不用参数属性；零 @deepseek-ai import。
 
-import { TEAM_MANIFEST, type TeamManifestEntry } from '../manifest.ts'
 import { TEAM_CATEGORY_SEAT_ALIASES_V1 } from './member-validator.ts'
+import { registeredTeamRowIds } from './team-registration-outcome.ts'
 import { TEAM_CREATE_TOOL_NAME } from '../tools/team-create.ts'
 import { TEAM_DELETE_TOOL_NAME } from '../tools/team-delete.ts'
 import {
@@ -102,16 +111,28 @@ export interface TeamToolPresenceFace {
 }
 
 /**
- * 从 manifest + 词表派生一枚在场快照。纯函数：输入是 TEAM_MANIFEST 与
- * tools/member-validator 的冻结常量，无 io、无时钟。
+ * 本次 boot **实际注册成功**的 ①–⑪ 工具行齐备 ⇒ true（事实层）。
+ *
+ * P5-T16（评审 MINOR-7）：这是「team 工具在场」的**事实**判据的唯一实现——
+ * 在场脸（行 ⑮/⑯）与关键词槽的在场闸（行 ⑭）共用它，两处读同一枚事实，
+ * 口径不可能分叉。
+ */
+export function teamToolsRegisteredThisBoot(): boolean {
+  const registered = registeredTeamRowIds()
+  return TEAM_TOOL_ROW_IDS.every((id) => registered.has(id))
+}
+
+/**
+ * 从**本次 boot 的实际注册结果** + 词表派生一枚在场快照。纯函数：输入是
+ * 已注册行 id 集 + tools/member-validator 的冻结常量，无 io、无时钟。
+ *
+ * P5-T16（评审 MINOR-7）：入参从「manifest 行集」改成「**实际注册成功的行
+ * id 集**」——声明层（status:'ported'）会说谎，事实层不会。
  */
 export function teamToolPresenceSnapshot(
-  entries: readonly TeamManifestEntry[] = TEAM_MANIFEST,
+  registeredRowIds: ReadonlySet<string> = registeredTeamRowIds(),
 ): TeamToolPresenceFace {
-  const portedIds = new Set(
-    entries.filter((entry) => entry.status === 'ported').map((entry) => entry.id),
-  )
-  const teamToolsPresent = TEAM_TOOL_ROW_IDS.every((id) => portedIds.has(id))
+  const teamToolsPresent = TEAM_TOOL_ROW_IDS.every((id) => registeredRowIds.has(id))
   return Object.freeze({
     teamToolsPresent,
     teamToolNames: Object.freeze([...TEAM_TOOL_ROW_IDS]),

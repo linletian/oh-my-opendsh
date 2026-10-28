@@ -16,12 +16,12 @@
 //
 // The `.ts` extension in the import path is load-bearing: Node 24
 // type-stripping does no specifier resolution (tsconfig.host.json header).
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it, afterEach, vi } from 'vitest'
 
 import { buildTeamModeConfig } from '../../patches/omo-dsh/omo-team/src/team/team-config.ts'
 import { buildTeamSessionContext } from '../../patches/omo-dsh/omo-team/src/team/session-context-adapter.ts'
@@ -323,7 +323,8 @@ describe('P5-T5 transition / setMemberPhase / forgetRun', async () => {
     const store = makeStore()
     const state = await store.create(provisioningInput())
     await store.transition(state.teamRunId, 'active')
-    await store.forgetRun(state.teamRunId)
+    // P5-T16（NIT-13）：活跃 run 的清账要**具名**的 force 旁路（默认闸拒绝）。
+    await store.forgetRun(state.teamRunId, { force: true })
     expect(store.get(state.teamRunId)).toBeUndefined()
     expect(store.teamOfLead('lead-session-1')).toBeUndefined()
     expect(store.participationOfMember('child-a')).toBeUndefined()
@@ -331,6 +332,22 @@ describe('P5-T5 transition / setMemberPhase / forgetRun', async () => {
     // A freed lead can create again.
     const next = await store.create(provisioningInput())
     expect(next.status).toBe('creating')
+  })
+
+  it('P5-T16 (NIT-13) forgetRun refuses an active run unless the caller names the force bypass', async () => {
+    const store = makeStore()
+    const state = await store.create(provisioningInput())
+    await store.transition(state.teamRunId, 'active')
+    await expect(store.forgetRun(state.teamRunId)).rejects.toThrow(/forgetRun refuses to erase an active team run/)
+    await expect(store.forgetRun(state.teamRunId)).rejects.toMatchObject({ code: 'TEAM_NOT_FORGETTABLE' })
+    // 账还在（拒绝不吞）。
+    expect(store.get(state.teamRunId)?.status).toBe('active')
+    // 终态 run 默认可清（无需 force）。
+    await store.transition(state.teamRunId, 'shutdown_requested')
+    await store.transition(state.teamRunId, 'deleting')
+    await store.transition(state.teamRunId, 'deleted')
+    await store.forgetRun(state.teamRunId)
+    expect(store.get(state.teamRunId)).toBeUndefined()
   })
 
   it('listActive reports only the gating trio', async () => {
@@ -614,12 +631,159 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     const store = new TeamStateStore(config)
     const state = await store.create(provisioningInput())
     await store.transition(state.teamRunId, 'active')
-    // 空注册表 = lead 与成员都不在场（适配器把 ctx.agents.get 译成 404 形）。
+    // 持久面**确证** lead 与成员都不存在（404 形）⇒ 孤儿化。
     const agents: TeamLiveAgents = { get: () => undefined }
-    const report = await store.resume(buildTeamSessionContext(agents))
+    const report = await store.resume(buildTeamSessionContext({
+      agents,
+      get: () => ({
+        observeSession: async () => {
+          throw { code: 'SESSION_QUERY_SESSION_NOT_FOUND', message: 'session not found' }
+        },
+      }),
+    }))
     expect(report.marked_orphaned).toBe(1)
     expect(readFileSync(join(dir, 'runtime', state.teamRunId, 'state.json'), 'utf8')).toContain('"orphaned"')
     // orphaned 非 ACTIVE：镜像随 resume 重建后嵌套闸已松绑。
     expect(store.participantOf('lead-session-1')).toBeUndefined()
+  })
+
+  it('P5-T16 (BLOCKER-1) a cold-but-persisted team survives the restart: active, sessionIds intact', async () => {
+    // 评审 BLOCKER-1 的核心腿：**跨重启**的持久团队必须仍是 active，成员的
+    // `sessionId` 必须还在。旧实现把「不活」当「不存在」，于是每次 DSH 重启
+    // 都把活着的团队判成 orphaned（终态）并抹掉成员的 sessionId（不可逆）。
+    //
+    // 这里的形态正是重启后的真实形态：lead 与成员都**冷**（未被唤醒即未物化
+    // ⇒ 活体注册表查不到），但**持久会话记录仍在**（DSH 的 cold resume 就是
+    // 用同一张持久面把冷成员读回来的）。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const first = new TeamStateStore(config)
+    const state = await first.create(provisioningInput())
+    await first.transition(state.teamRunId, 'active')
+
+    // 「重启」= 同一 base_dir 上的新实例 + 冷态注册表（无人活体）。
+    const second = new TeamStateStore(config)
+    await second.rebuildIndexes()
+    const coldAgents: TeamLiveAgents = { get: () => undefined }
+    const report = await second.resume(buildTeamSessionContext({
+      agents: coldAgents,
+      get: () => ({
+        // 持久面：会话记录都还在（冷但存在）。
+        observeSession: async (sessionId: string) => ({ id: sessionId }),
+      }),
+    }))
+    expect(report.marked_orphaned).toBe(0)
+    expect(report.resumed).toBe(1)
+    const after = second.get(state.teamRunId)
+    expect(after?.status).toBe('active')
+    // 成员的 sessionId 关联**仍在**（旧的 markDeadWorkersErrored 会抹成 undefined）。
+    expect(after?.members.map((m) => m.sessionId)).toEqual(['child-a', 'child-b'])
+    // 落盘字节同样保住（不止镜像）。
+    const onDisk = JSON.parse(readFileSync(join(dir, 'runtime', state.teamRunId, 'state.json'), 'utf8')) as {
+      status: string
+      members: { name: string; sessionId?: string; status: string }[]
+    }
+    expect(onDisk.status).toBe('active')
+    expect(onDisk.members.map((m) => m.sessionId)).toEqual(['child-a', 'child-b'])
+    expect(onDisk.members.map((m) => m.status)).not.toContain('errored')
+  })
+
+  it('P5-T16 (BLOCKER-1) an unprovable absence never orphans: the durable reader is optional', async () => {
+    // 保守方向：没有持久面（或读失败）⇒ **无法证伪缺席** ⇒ 不孤儿化。
+    // 孤儿化是终态且不可逆（成员 sessionId 被抹），误判的代价远大于多留一个
+    // 可回收的 active run（lead 可 team_delete；creating 30min 超时与 deleting
+    // 扫描照旧收口）。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const store = new TeamStateStore(config)
+    const state = await store.create(provisioningInput())
+    await store.transition(state.teamRunId, 'active')
+
+    // ① 持久面缺席（服务未挂载）。
+    const noReader = await store.resume(buildTeamSessionContext({
+      agents: { get: () => undefined },
+    }))
+    expect(noReader.marked_orphaned).toBe(0)
+    expect(store.get(state.teamRunId)?.status).toBe('active')
+
+    // ② 持久面读失败（基础设施故障，不是缺席）。
+    const failingReader = await store.resume(buildTeamSessionContext({
+      agents: { get: () => undefined },
+      get: () => ({
+        observeSession: async () => {
+          throw new Error('persistence backend unavailable')
+        },
+      }),
+    }))
+    expect(failingReader.marked_orphaned).toBe(0)
+    expect(store.get(state.teamRunId)?.status).toBe('active')
+  })
+
+  it('P5-T16 (MINOR-8) the processed-message ledger is BOUNDED (rolling window at the vendored cap)', async () => {
+    // 旧形态两个账只增不删 ⇒ 长跑团队的 sidecar 单文件与镜像占用无上界。
+    // 更正：去重账按 vendored 的 `max_messages_per_run`（上游同值 10000）封顶，
+    // 挤掉**最旧**的一条（窗口长度 = 上游的每轮消息上限 ⇒ 合法 run 语义不变）。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    // 造一个**小**上限（测试面不真跑一万条）。
+    const smallConfig = { ...config, max_messages_per_run: 3 }
+    const store = new TeamStateStore(smallConfig)
+    const state = await store.create(provisioningInput())
+    for (const id of ['m1', 'm2', 'm3', 'm4']) {
+      expect(await store.markMessageProcessed(state.teamRunId, id)).toBe(true)
+    }
+    // 账长 = 上限（3），最旧的被挤出。
+    expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['m2', 'm3', 'm4'])
+    // 挤出窗口外的那条不再被去重（窗口语义）；窗口内的仍在。
+    expect(store.hasProcessedMessage(state.teamRunId, 'm1')).toBe(false)
+    expect(store.hasProcessedMessage(state.teamRunId, 'm4')).toBe(true)
+    // 重复投递窗口内的 id 仍被去重（核心不变量未松）。
+    expect(await store.markMessageProcessed(state.teamRunId, 'm4')).toBe(false)
+    // 落盘账同样有界。
+    const onDisk = JSON.parse(readFileSync(join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json'), 'utf8')) as {
+      processedMessageIds: string[]
+    }
+    expect(onDisk.processedMessageIds).toEqual(['m2', 'm3', 'm4'])
+  })
+
+  it('P5-T16 (MINOR-9) a corrupt sidecar is quarantined and its two consequences are named separately', async () => {
+    // 旧行为：解析失败 ⇒ 静默重置空账 ⇒ 已投递过的 correlationId 可再投（去重
+    // 语义反了）+ briefing 可能再注一帧（破坏「恰好一次」）。头注只承认了
+    // 后者，去重丢失**没有单独记一笔**——它不是良性降级，是正确性回归。
+    // 更正：坏文件**先改名留档**，两种后果**分别具名**告警。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const store = new TeamStateStore(config)
+    const state = await store.create(provisioningInput())
+    await store.transition(state.teamRunId, 'active')
+    await store.markMessageProcessed(state.teamRunId, 'msg-1')
+
+    // 写一份**损坏**的 sidecar（半写/手工编辑的形态）。
+    const ledgerPath = join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json')
+    writeFileSync(ledgerPath, '{ this is not json', 'utf8')
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      // 触发一次 sidecar 读（记账路径）——损坏在那里被察觉。
+      await store.markMessageProcessed(state.teamRunId, 'msg-2')
+      const warned = warnSpy.mock.calls.map((call) => String(call[0])).join('\n')
+      expect(warned).toContain('sidecar ledger CORRUPT')
+      // 两种后果分别具名（不再合成一句）。
+      expect(warned).toContain('CONSEQUENCE 1: processed-message dedup restarts from zero')
+      expect(warned).toContain('CONSEQUENCE 2: briefing dedup restarts from zero')
+      // 坏文件留档（现场不丢）。
+      const quarantined = readdirSync(join(dir, 'runtime', state.teamRunId))
+        .filter((name) => name.startsWith('omo-team-extensions.json.corrupt-'))
+      expect(quarantined).toHaveLength(1)
+      // 坏文件已被改名（原路径现在是重建后的账）。
+      expect(existsSync(ledgerPath)).toBe(true)
+      expect(readFileSync(ledgerPath, 'utf8')).not.toContain('this is not json')
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 })

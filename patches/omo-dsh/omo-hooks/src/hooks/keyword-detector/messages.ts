@@ -398,7 +398,46 @@ export function buildHyperplanUltraworkMessage(deps: KeywordMessageDeps): string
 }
 
 /**
- * team 槽正文（P5-T12）= vendored `team.md` **逐字**，零附加。
+ * team 槽的**载体注记**（P5-T16 评审 MAJOR-4）——前置在 vendored 正文之前，
+ * 体例同 {@link ULTRAWORK_CARRIER_NOTE}：**正文逐字不动，差异写在正文之外**。
+ *
+ * 为什么必须有它（评审的实证）：vendored `team.md` 的**最后一句**是
+ * "If the team_* tools are absent, team_mode is disabled — tell the user to set
+ * team_mode.enabled=true and restart opencode."。本部署**没有** `team_mode.enabled`
+ * 这个配置键、没有对应配置文件、也没有"重启 opencode"这回事（本仓是 DSH；
+ * `omo-team` 的 row Config 只有 `{ maxMembers?: number }`）。逐字把这句送进
+ * 模型 = 把用户领向一个不存在的开关——**死指令**。
+ *
+ * 处置分两层（评审的两条建议都在这里落地）：
+ *   1. **在场闸**（在 keyword-detector.ts 的判定面）：载体不在场 ⇒ **不注入**
+ *      team 正文（降级为空串）——把 Phase 4 当初刻意不接线该槽的理由（"一个
+ *      没有等价载体的关键词命中后只会产出死指令"）补回来；
+ *   2. **载体注记**（本常量）：载体在场时正文照旧注入，但那句死链就地拆弹
+ *      ——把"存在配置开关"改写成"活着的 team_* 工具面就是开关"。
+ *
+ * 另外两条已登记 deviation（N1 空头终态 / N9 工具名漂移）同样逐字进模型，
+ * 按评审意见在注记里**就地拆弹**（vendor 正文保真不动，注记只声明差异）。
+ */
+export const TEAM_CARRIER_NOTE = [
+  '[oh-my-opendsh] Carrier note (team mode): three carrier-level differences from this',
+  'deployment, declared rather than rewritten — the protocol below is verbatim.',
+  '(1) THE SWITCH IS THE TOOL SURFACE, NOT A FLAG. The last sentence of the body below',
+  'points at `team_mode.enabled=true` and a host restart. This deployment has NEITHER:',
+  'there is no `team_mode.enabled` setting, no config file for it, and no host to',
+  'restart. The live `team_*` tool surface IS the switch — you received this body',
+  'because those tools are present in this session. If they are absent, team mode is',
+  'simply off and there is nothing to enable or restart.',
+  '(2) `delegate_task` IS NOT A TOOL NAME HERE. The body names it only to forbid',
+  'substituting ordinary delegation for team orchestration — that ban still holds,',
+  'whichever name this deployment\'s delegation tools use.',
+  '(3) `status:"failed"` IS NOT A TASK STATE HERE. This surface accepts exactly five',
+  'task statuses: `pending`, `claimed`, `in_progress`, `completed`, `deleted`. A task',
+  'that cannot succeed is settled `completed` with the failure reported to the lead in',
+  'the message body.',
+].join('\n')
+
+/**
+ * team 槽正文（P5-T12）= vendored `team.md` **逐字** + 一段**载体注记**（P5-T16）。
  *
  * 上游形状：`team/default.ts` 的 `TEAM_MESSAGE` 就是 `TEAM_MODE_PROMPT`
  * （`prompts-core/prompts/mode/team.md` 全文，仅 `stripFinalLineFeed`），
@@ -410,12 +449,19 @@ export function buildHyperplanUltraworkMessage(deps: KeywordMessageDeps): string
  * deviations[]，由运行期工具面自证——注记改写正文的每一条冲动都交给
  * deviations 登记，不进正文。
  *
+ * P5-T16（评审 MAJOR-4）的**一处形状变更**：正文**前置**一段载体注记
+ * （{@link TEAM_CARRIER_NOTE}），把 vendored 正文尾部那句指向本部署**不存在**
+ * 的配置开关与宿主重启的死链就地拆弹。**vendor 字节不动**（注记在正文之外，
+ * 与 ultrawork 侧同体例）；判别面是「在场闸」——载体不在场时**根本不注入**
+ * team 正文（keyword-detector.ts 的判定面），所以这段注记只会出现在
+ * 「team 工具确实在场」的时刻。
+ *
  * 正文的 `team.md` 无 YAML frontmatter（实测首行即 `[team-mode]`），
  * loader 的 stripFrontmatter 对它是 no-op；`.trim()` 剥尾部换行 = 上游
  * `stripFinalLineFeed` 同形。
  */
 export function buildTeamMessage(deps: KeywordMessageDeps): string {
-  return deps.texts.team
+  return `${TEAM_CARRIER_NOTE}\n\n${deps.texts.team}`
 }
 
 /**

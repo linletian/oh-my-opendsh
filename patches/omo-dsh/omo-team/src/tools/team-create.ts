@@ -176,14 +176,34 @@ export function buildTeamMemberLabel(teamRunId: string, memberName: string): str
  * briefing 是成员会话里唯一由 omo-team 书写的帧——coordinates 落在这里是
  * 该参数可填的唯一诚实位置（briefing kind 不变，仍是 omo-team-briefing）。
  */
+/**
+ * 名字插值的**净化**（P5-T16 评审 NIT-19）。
+ *
+ * 队名 / 成员名来自模型自己的 `inline_spec`，所以插值进注入帧属**自注入**
+ * （无跨用户边界），风险低；但换行 / `#` 之类的字符可以**伪造帧结构**——例如
+ * 成员名里带一个换行就能让注入帧多出一段看似独立的指令。
+ *
+ * 处置：**引号包裹 + 控制字符清理**（不改写语义——只把控制字符换成空格并
+ * 折叠空白），让插值永远落在**一行**里、且不破坏引号配对。
+ */
+export function sanitizeTeamNameFragment(name: string): string {
+  // 控制字符（含换行/制表）→ 空格；再折叠连续空白；首尾空白去掉。
+  const cleaned = name.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+  // 单引号会让 `'${name}'` 的引号配对失真 → 换成全角引号（可读、不改语义）。
+  return cleaned.replace(/'/g, '’')
+}
+
 export function buildTeamBriefingText(teamName: string, memberName: string, teamRunId: string): string {
+  const safeMember = sanitizeTeamNameFragment(memberName)
+  const safeTeam = sanitizeTeamNameFragment(teamName)
+  const safeRunId = sanitizeTeamNameFragment(teamRunId)
   return [
     '# Team Briefing',
-    `You are '${memberName}', a member of team '${teamName}' running under the omo-team runtime on DSH. The team lead is addressed as '${TEAM_LEAD_SENTINEL}'.`,
+    `You are '${safeMember}', a member of team '${safeTeam}' running under the omo-team runtime on DSH. The team lead is addressed as '${TEAM_LEAD_SENTINEL}'.`,
     'Work arrives as injected messages steered into this resident session. Finish the instructions you were given, report your result to the lead, then end your turn — going idle after reporting is the expected flow: idle is not an error and does not end your membership; the next injected message wakes this session with more work.',
     'You must NOT spawn or delegate further children: team members never create sub-sessions and never create teams. No child-delegation channel exists on this surface and you must not attempt to create one — do the assigned work yourself with the tools you keep.',
     'When you complete assigned work, address a concise summary to the lead via the team messaging surface (team_send_message, once it is mounted in your tool set), then end your turn.',
-    `Your team coordinates for the messaging surface: {"teamRunId":"${teamRunId}"} — pass that teamRunId verbatim to team_send_message; 'lead' is a valid \`to\` value, addressed to the session that leads this team.`,
+    `Your team coordinates for the messaging surface: {"teamRunId":"${safeRunId}"} — pass that teamRunId verbatim to team_send_message; 'lead' is a valid \`to\` value, addressed to the session that leads this team.`,
   ].join('\n\n')
 }
 
@@ -459,7 +479,29 @@ export function registerTeamCreateSurface(
     // 工具面照常装（scoped 贡献随各 agent 实例，与 briefing 的账无关——
     // 去重的是**帧**，不是**面**）。e2e 硬断言：离线唤醒后 briefing 帧数
     // 恰 1（drive.mjs `team-create-and-message` 的 exactly-once 检查）。
-    if (!(await deps.store.claimBriefingInjection(participation.teamRunId, participation.memberName))) {
+    //
+    // P5-T16（评审 NIT-20）：**claim 臂也包进 try/catch**。
+    //
+    // 宿主契约逐字（dsh-agent types/index.d.ts:288-291）："Rejects if the id is
+    // already registered **or a serial `agent/created` listener fails**"，且
+    // "every agent or session creation announcement that began is paired by
+    // `agent/disposed` … during rollback"。即：监听器抛错 ⇒ 该**成员 agent 被
+    // 连带 dispose**。
+    //
+    // 旧实现里 `claimBriefingInjection`（一次 fs/锁读改写）**不在** try/catch
+    // 里 ⇒ 一次瞬时的磁盘错误会让整个成员 agent 被连带处置掉，而它本该只是
+    // 「跳过这次 briefing」。处置：claim 失败 → **warn + 跳过**（不抛、不吞成员
+    // agent）；账既未记（claim 抛错 ⇒ 未占幂等位），下一次物化仍可再投。
+    let claimed = false
+    try {
+      claimed = await deps.store.claimBriefingInjection(participation.teamRunId, participation.memberName)
+    } catch (err) {
+      console.warn(
+        `${LOG_PREFIX} briefing claim FAILED for member '${participation.memberName}' of team ${participation.teamRunId} (${err instanceof Error ? err.message : String(err)}) — skipping this briefing frame (the member agent is NOT disposed for a briefing-side failure; the ledger was not marked, so the next materialization may retry)`,
+      )
+      return
+    }
+    if (!claimed) {
       console.log(
         `${LOG_PREFIX} briefing already injected for member '${participation.memberName}' of team ${participation.teamRunId} — skipping re-injection on re-materialization of session ${header.id}`,
       )

@@ -35,6 +35,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { TeamRegistrationContext } from '../index.ts'
+import { teamToolsRegisteredThisBoot } from './team-tool-presence.ts'
 
 /**
  * 服务名（提供侧拼写；消费侧——探针/测试——本地声明同字面常量，交叉等值由
@@ -81,6 +82,19 @@ export interface TeamKeywordFace {
   readonly promptText: string
   /** 核验通过的 sha256（VENDOR-MANIFEST pin 与实测字节同一枚的凭证）。 */
   readonly teamMdSha256: string
+  /**
+   * **本次 boot 实际注册成功**的 ①–⑪ 工具行齐备 ⇒ true（事实层，读自
+   * team-registration-outcome.ts 的注册结果集）。
+   *
+   * P5-T16（评审 MAJOR-4）：这枚字段是**消费侧的缺席闸**——`team.md` 正文
+   * 教模型用 `team_create` / `team_task_*` / `team_send_message` 编排，尾部还
+   * 指向一个本部署**没有**的开关（"set team_mode.enabled=true and restart
+   * opencode"）。载体不在场时注入这段正文 = 产出一条**死指令**（Phase 4 当初
+   * 刻意不接线该槽的理由："一个没有等价载体的关键词命中后只会产出死指令"）。
+   * 消费侧（omo-hooks 的 keyword-detector）据此判：**载体缺席 ⇒ 不注入**
+   * team 正文（降级为空串），把 Phase 4 的纪律补回来。
+   */
+  readonly teamToolsPresent: boolean
 }
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
@@ -105,6 +119,7 @@ function sha256(text: string): string {
 export function loadVerifiedTeamKeywordFace(
   read: (absolutePath: string) => string = (p) => readFileSync(p, 'utf8'),
   exists: (absolutePath: string) => boolean = existsSync,
+  teamToolsPresent: boolean = teamToolsRegisteredThisBoot(),
 ): TeamKeywordFace {
   if (!exists(TEAM_VENDOR_MANIFEST_PATH)) {
     throw new Error(`team-keyword-injection: vendor manifest absent at ${TEAM_VENDOR_MANIFEST_PATH}`)
@@ -147,6 +162,7 @@ export function loadVerifiedTeamKeywordFace(
     memberSideAllowed: false as const,
     promptText,
     teamMdSha256: actual,
+    teamToolsPresent,
   })
 }
 

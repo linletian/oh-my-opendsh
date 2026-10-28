@@ -2573,6 +2573,7 @@ async function run() {
     'team/team-core-vendor.ts',
     'team/team-keyword-slot.ts',
     'team/team-prompts-vendor.ts',
+    'team/team-registration-outcome.ts',
     'team/team-row-config.ts',
     'team/team-stop-continuation.ts',
     'team/team-tool-presence.ts',
@@ -2691,6 +2692,7 @@ async function run() {
     'team/team-row-config.ts', // 门 4 row Config（apply 消费，注册循环的门槛参数）
     'team/team-prompts-vendor.ts', // 行 ㉔ 的启动守门人（字节的家在 vendor/prompts-team）
     'team/team-core-vendor.ts', // 行 ⑱–㉓ 六枚 vendor 行的启动守门人（字节的家在 vendor/team-core；P5-T15）
+    'team/team-registration-outcome.ts', // 行 ⑭/⑮/⑯ 的在场事实来源（注册循环逐行记账；P5-T16 评审 MINOR-7）
   ])
   const TEAM_INFRA_ROOT_FILES = new Set(['index.ts', 'manifest.ts', 'boot-markers.ts'])
   if (teamManifest !== null) {

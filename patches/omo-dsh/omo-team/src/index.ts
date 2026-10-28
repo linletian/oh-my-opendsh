@@ -90,6 +90,10 @@ import {
 // dispatch) lands the second row through the same door.
 import { teamStateStore } from './team/team-state.ts'
 import {
+  recordTeamRowRegistered,
+  resetTeamRegistrationOutcome,
+} from './team/team-registration-outcome.ts'
+import {
   registerTeamCreateSurface,
   type TeamAgent,
   type TeamContinuableChannel,
@@ -358,7 +362,7 @@ export const TEAM_REGISTRARS: Record<string, TeamRegistrar> = {
   // 的 24 条目读序，team_status 是第 11 条）——plan §1 表格把 task_list/
   // task_get 合一行，表格口径此行为第 10 行，manifest.ts 行注保持表格口径，
   // 两套锚各按各的序，逐枚可对（评审 T7-MINOR 的裁决面）。
-  team_status: (ctx) => registerTeamStatusSurface(ctx, { store: teamStateStore }),
+  team_status: (ctx) => registerTeamStatusSurface(ctx, { store: teamStateStore, agents: ctx.agents }),
   // P5-T12 · ⑭ §3 行 1：team 关键词槽的 omo-team 可见半 = 启动期把门面
   // （vendored team.md 对 VENDOR-MANIFEST sha pin 核验 + 槽位机读契约
   // patternSource/injectionKind/memberSideAllowed=false 发布；注入动作的
@@ -437,6 +441,9 @@ export function runTeamRegistrations(
   registrars: Readonly<Record<string, TeamRegistrar>>,
   log: (line: string) => void,
 ): void {
+  // P5-T16 (评审 MINOR-7): 本次 boot 的注册结果集清零——在场面读的是**事实**
+  // （哪些行真的注册上了），不是 manifest 的**声明**（status:'ported'）。
+  resetTeamRegistrationOutcome()
   try {
     validateManifest(entries)
   } catch (err) {
@@ -461,6 +468,11 @@ export function runTeamRegistrations(
         ctx.effect(() => disposer)
       }
       registered.push(entry)
+      // P5-T16 (评审 MINOR-7): 成功注册的行 id 进「本次 boot 实际注册」集——
+      // 在场探测面读它，而不是 manifest 的声明（某枚工具行 registrar 在 boot
+      // 时抛错 ⇒ 该行没注册 ⇒ 在场判据必须翻 false，两条命令必须降级，
+      // 而不是向模型宣称一批不存在的工具）。
+      recordTeamRowRegistered(entry.id)
       log(formatTeamSurfaceRegisteredLine(entry.id))
     } catch (err) {
       log(formatTeamSurfaceFailedLine(entry.id, err))
@@ -505,6 +517,17 @@ export function runTeamRegistrations(
  * Consumers grep by prefix (`[omo-team]`), never by position, so the extra
  * lines cannot break the loaded-marker contract.
  *
+ * P5-T16 (评审 BLOCKER-1 更正): the adapter's existence predicate is the
+ * DURABLE session face (`ctx.sessionQuery.observeSession`), not the live
+ * registry alone. Upstream's `client.session.get()` answers "does a session
+ * RECORD exist" (a cold session still exists); `ctx.agents.get()` answers "is
+ * a live agent present". Mapping the second onto the first made every boot
+ * orphan every persisted team — and, with it, wipe the members' `sessionId`
+ * (`markDeadWorkersErrored` is irreversible). The adapter now reads both
+ * faces: live hit → present; durable hit → present (cold); durable
+ * NOT-FOUND → absent; unprovable (service absent / read failed) → present
+ * (conservative: orphaning is terminal, keeping a run is recoverable).
+ *
  * P5-T14 (门 4): the SECOND parameter is the cordis-resolved row config — the
  * host validates it against the exported `Config` (`~standard.validate`,
  * @deepseek-ai/cordis lib/index.js:957-961) and passes the result in
@@ -519,16 +542,24 @@ export function apply(ctx: TeamRegistrationContext, config?: unknown): void {
   // Row config first: the registration loop must not register a surface that
   // would read a stale config (there is exactly one write, right here).
   setTeamRowConfig(config)
+  // P5-T16 (NIT-14): base_dir 的 env 读面与 row config **同一时点**生效——
+  // 状态机的配置此刻重新解析（此前它在模块 import 期就读了 env，早于 apply）。
+  teamStateStore.refreshConfig()
   const log = (line: string): void => {
     console.log(line)
   }
   runTeamRegistrations(ctx, TEAM_MANIFEST, TEAM_REGISTRARS, log)
   // Boot persistence pass — fire-and-forget by contract (apply is sync), loud
-  // either way. The adapter maps the OMO-shaped session client onto the live
-  // ctx.agents registry (session-context-adapter.ts, boundary documented).
+  // either way. The adapter maps the OMO-shaped session client onto DSH's
+  // session-existence faces: the live ctx.agents registry AND the durable
+  // ctx.sessionQuery surface (session-context-adapter.ts, boundary documented).
+  // P5-T16 BLOCKER-1: the durable face is what makes "cold but existing"
+  // (a continuable member after a restart) read as ALIVE — mapping the
+  // question onto the live registry alone orphaned every persisted team on
+  // every DSH boot and wiped the members' sessionId for good.
   teamStateStore
     .rebuildIndexes()
-    .then(() => teamStateStore.resume(buildTeamSessionContext(ctx.agents)))
+    .then(() => teamStateStore.resume(buildTeamSessionContext({ agents: ctx.agents, get: ctx.get })))
     .then((report) => {
       // The state machine's own boot answer (boot-markers.ts carries the
       // format contract; the probe derives its expectation from the shipped

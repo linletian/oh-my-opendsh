@@ -410,6 +410,37 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(store.hasProcessedMessage(state.teamRunId, CORRID_B)).toBe(true)
   })
 
+  it('P5-T16 (MAJOR-2) a broadcast that reached NOBODY releases the reservation (same id may retry)', async () => {
+    // 评审 MAJOR-2 的核心腿：**首个成员即失败** ⇒ deliveries 为空 ⇒ 一个成员
+    // 都没收到。此时把 correlationId 烧在去重账里 = 整条广播静默消失，而模型
+    // 最自然的动作就是拿同一个 id 重试（工具描述还写着「Re-sending the same
+    // correlationId is deduplicated」）——旧行为会把它变成
+    // `deduplicated:true, delivered:false, deliveries:[]`，读起来像「已经发过了」。
+    //
+    // 更正：零投递 ⇒ 退账（同 id 可重试）；部分投递 ⇒ 仍不退（宁漏不重）。
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    deps.subagents.failOn.add(fixture.analystSessionId) // 扇出**第一**席就失败
+    const lead = makeAgent(fixture.leadSessionId)
+
+    const err = await rejectionOf(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_A }, execOf(lead), deps,
+    ))
+    expect(err.code).toBe('DELIVERY_FAILED')
+    expect(err.message).toContain('(0 delivered before failure)')
+    expect(err.message).toContain('reservation is released')
+    // 账已退：同 id 可再投。
+    expect(deps.store.hasProcessedMessage(fixture.teamRunId, CORRID_A)).toBe(false)
+
+    deps.subagents.failOn.clear()
+    const retry = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_A }, execOf(lead), deps,
+    )
+    expect(retry.delivered).toBe(true)
+    expect(retry.deduplicated).toBe(false)
+    expect(retry.deliveries.map((d) => d.to)).toEqual(['analyst', 'builder'])
+  })
+
   it('single-target delivery failure COMPENSATES the reservation (retry may deliver)', async () => {
     const fixture = await seedTeam(makeStore())
     const deps = await makeDeps(fixture)

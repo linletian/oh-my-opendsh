@@ -49,6 +49,8 @@ interface MockChannel {
   interrupts: Array<{ targetSessionId: string; authority: { kind: string; agent?: TeamAgent; parentSessionId?: string } }>
   drains: Array<{ parent: TeamAgent; parentId: string; childIds: readonly string[] }>
   failInterruptOn: Set<string>
+  /** P5-T16（MINOR-6）：drain 失败开关（与 interrupt 失败分开判）。 */
+  failDrain: boolean
   interrupt(targetSessionId: string, authority: { kind: string; agent?: TeamAgent; parentSessionId?: string }): unknown
   drainContinuableChildren(parent: TeamAgent, childIds: readonly string[]): Promise<void>
   startContinuable(spec: {
@@ -65,12 +67,14 @@ function makeChannel(): MockChannel {
     interrupts: [],
     drains: [],
     failInterruptOn: new Set<string>(),
+    failDrain: false,
     interrupt(targetSessionId, authority) {
       this.interrupts.push({ targetSessionId, authority })
       if (this.failInterruptOn.has(targetSessionId)) throw new Error(`mock: interrupt rejected for ${targetSessionId}`)
     },
     async drainContinuableChildren(parent, childIds) {
       this.drains.push({ parent, parentId: parent.session.header.id, childIds })
+      if (this.failDrain) throw new Error('mock: drain rejected (UNAUTHORIZED: stale parent)')
     },
     async startContinuable() {
       throw new Error('mock: team_delete never starts children')
@@ -334,8 +338,38 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', async () => {
     expect(store.get(teamRunId)!.status).toBe('deleted')
   })
 
-  it('unknown teamRunId is refused TEAM_NOT_FOUND (senpi 缺账 no-op 不采，差异成文)', async () => {
-    const { deps } = await makeFixture()
+  it('P5-T16 (MINOR-6) a drain-only fault still closes the ledger (every member was interrupted)', async () => {
+    // 评审 MINOR-6 的正面腿：drain 失败 ≠ 成员还在跑。成员**全部**被 interrupt
+    // 了，失败的只是原生通道的**释放**步骤——旧实现在这里把账永久搁在
+    // 'deleting'（该态只有 deleting→deleted 一条前向迁移 ⇒ 进程存活期内没有
+    // 别的出路）。更正后：账收口（deleted + 撤账），失败原因进 note + warn 行。
+    const { deps, teamRunId, store, channel } = await makeFixture()
+    await approveBoth(store, teamRunId)
+    channel.failDrain = true
+    const result = await executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
+    expect(result.status).toBe('deleted')
+    expect(store.get(teamRunId)!.status).toBe('deleted')
+    expect(store.participantOf(LEAD)).toBeUndefined()
+    expect(store.participationOfMember('child-analyst')).toBeUndefined()
+    // 不静默：note 点名 drain 的失败原因。
+    expect(result.note).toContain('native drain reported')
+    expect(result.note).toContain('UNAUTHORIZED')
+  })
+
+  it('P5-T16 (MINOR-6) the idempotent re-delete succeeds (deleted is terminal — no INVALID_TRANSITION)', async () => {
+    // 「deleting/deleted 在白名单内 = 幂等重删的入口」这句契约今天名不副实：
+    // 末段的 transition('deleted') 在已是 deleted 的 run 上会被迁移表当场拒
+    // （`deleted: ∅`）。更正后终态已到位时跳过迁移，重删返回成功。
+    const { deps, teamRunId, store } = await makeFixture()
+    await approveBoth(store, teamRunId)
+    const first = await executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
+    expect(first.status).toBe('deleted')
+    const second = await executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
+    expect(second.status).toBe('deleted')
+    expect(store.get(teamRunId)!.status).toBe('deleted')
+  })
+
+  it('unknown teamRunId is refused TEAM_NOT_FOUND (senpi 缺账 no-op 不采，差异成文)', async () => {    const { deps } = await makeFixture()
     const err = await rejectionOf(executeTeamDelete(
       { teamRunId: 'no-such-run' },
       { agent: makeAgent(LEAD), signal: abortSignal },
