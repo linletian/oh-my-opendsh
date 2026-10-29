@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每条 team 面的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：✅ **21/21 全部收口**（2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **22/22 全部收口**（2026-10-29 增补 T22 = 第五轮 delta 自查残余；2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **编号**：`P5-T<n>`（Phase 5 - Task n）。工作包归属见计划书 §7。
 >
@@ -265,6 +265,16 @@
 - **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
 - **证据**：✅ 2026-10-29——**MAJOR-1**：工具级复现腿（评审原式）——A 挂起在 `sendMessage` 里 ⇒ 把 A 的 `at` 改到 TTL 之外 ⇒ B 用**同一** correlationId 拿到 `quarantined`（`delivered/inFlight/deduplicated` 三项皆 false，note 含 QUARANTINED 且**不含** "was already delivered"）⇒ `channel.sends` 恒为 1，**同一 correlationId 没有被物理重复投递**。store 级腿：过期 ⇒ `quarantined`（不是 `reserved`），且旧 owner 用自己 token 的 rollback 才能清掉封存行（那是"我失败了"的证明）。**MAJOR-2**：cap=1 复现腿——A 预约 → `at` 改到 TTL 之外 → B（不同 id）**被 cap 拒**（过期不释放名额）→ A 的迟到 commit ⇒ 磁盘 `processedMessageIds=['A']`、在途 0，总数恒 1 → C 仍被拒。**MAJOR-3**：对**实际** `buildHyperplanMessage` 输出取证——拆弹句在场、且在正文 "Before starting, verify:" **之前**；命令路径同一句仍在（两侧口径一致）。实测：**vitest 91f/2102t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0（**vendor 字节零改动**）；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
 - **依赖**：P5-T20。**量级**：4 小时。
+
+### [x] P5-T22 — 第五轮 delta 的自查残余（不留到下一轮）
+
+> **触发**：不等第六轮评审，主动把第五轮 delta 里我能看见的三处残余**先处理掉**：① `team_status` 只暴露 `processedMessageCount`（已送达），而满载判据是 `delivered + inFlight`——lead 撞到 `MESSAGE_LEDGER_FULL` 时从状态面看不出预算被谁吃掉；② quarantine 只有单投腿，广播路径无证据；③ "死掉的发送者永久占用一格预算"这个**取舍**只写在代码注释里，没进工具合同。
+
+- **产出**：**① 可观测性**：`team_status.messageLedger = { delivered, inFlight, stalledInFlight, cap, remaining }` + 模型可见的 `messageLedgerNote`（三条事实：满载判据是 delivered+inFlight / 停滞行**永不回收** / 满载是终态）。store 新增 `messageBudget()`（锁内读落盘账，因为镜像只投影已送达）。**② 覆盖**：广播路径的 quarantine 腿（`to='*'` + 停滞 id ⇒ `quarantined:true`、`deliveries:[]`、**零扇出**）。**③ 合同**：`team_send_message` 描述写明「被隔离的 correlationId **永久占用**一格 `max_messages_per_run` 预算，从不回收；`team_status.messageLedger` 让它可见而非静默」。
+- **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
+- **证据**：✅ 2026-10-29——`tests/omo-team/team-status.test.ts` 新增「cap=3、2 条已送达 + 1 条停滞在途 ⇒ `messageLedger={delivered:2,inFlight:1,stalledInFlight:1,cap:3,remaining:0}`，且随后一条确实被 `MESSAGE_LEDGER_FULL` 拒」；`tests/omo-team/team-message.test.ts` 新增广播 quarantine 腿（零扇出）。实测：**vitest 91f/2104t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
+- **决策记录（③ 的取舍，明确写死）**：采用 **at-least-once + 同 ID 不重投**。停滞预约**不回收**（回收等于把投递权交还给"可能还活着"的旧 owner，正是第五轮 MAJOR-1 的根因）；代价是死发送者永久占一格预算、且那条消息可能两次都没到——两条都在工具合同与 `messageLedgerNote` 里对模型明说。若要严格 exactly-once，需要宿主导航层提供幂等或投递 fencing（本仓做不到，登记为 follow-up）。
+- **依赖**：P5-T21。**量级**：2 小时。
 
 ---
 

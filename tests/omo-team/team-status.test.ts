@@ -4,6 +4,8 @@
 //
 // The `.ts` extension in the import paths is load-bearing (Node 24
 // type-stripping).
+import { readFileSync, writeFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 import { makeStore } from './support/ephemeral-store.ts'
 import {
@@ -200,6 +202,40 @@ describe('P5-T16 (MINOR-5) 成员活体观测面 — phase 是账面、resident 
       expect(result.memberPhaseNote, producer).toContain(producer)
     }
     expect(result.memberPhaseNote).toContain('normal turn lifecycle')
+  })
+
+  it('P5-T22 (自查残余 a) messageLedger 把预算拆成 delivered / inFlight / stalledInFlight', async () => {
+    // 撞到 MESSAGE_LEDGER_FULL 的 lead 必须能从状态面看出"预算被谁吃掉了"：
+    // 满载判据是 delivered + inFlight，而停滞在途行（发送者失联）**永不回收**。
+    const { deps, teamRunId, store } = await makeFixture()
+    // 造一个 cap=3 的小账：2 条已送达 + 1 条**停滞**在途。
+    const capped = new TeamStateStore({ ...store.config, max_messages_per_run: 3 })
+    await capped.rebuildIndexes()
+    for (const id of ['d1', 'd2']) {
+      const reserved = await capped.reserveMessageDelivery(teamRunId, id)
+      if (reserved.state !== 'reserved') throw new Error('expected reserved')
+      await capped.commitMessageDelivery(teamRunId, id, reserved.token)
+    }
+    const stalled = await capped.reserveMessageDelivery(teamRunId, 's1')
+    if (stalled.state !== 'reserved') throw new Error('expected reserved')
+    // 把 s1 改成 TTL 之外（模拟发送者失联）。
+    const dir = String(capped.config.base_dir)
+    const ledgerPath = `${dir}/runtime/${teamRunId}/omo-team-extensions.json`
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
+    const result = await executeTeamStatus(
+      { teamRunId },
+      { agent: makeAgent(LEAD) },
+      { store: capped, agents: { get: () => undefined } },
+    )
+    expect(result.messageLedger).toEqual({ delivered: 2, inFlight: 1, stalledInFlight: 1, cap: 3, remaining: 0 })
+    // 读法说明进模型可见面，且点名"停滞行永不回收 + 满载是终态"。
+    expect(result.messageLedgerNote).toContain('delivered + inFlight')
+    expect(result.messageLedgerNote).toContain('NEVER reclaimed')
+    expect(result.messageLedgerNote).toContain('a new correlationId does NOT help')
+    // 满载（剩余 0）⇒ 下一条被拒，与 messageLedger 的读数一致。
+    await expect(capped.reserveMessageDelivery(teamRunId, 'next')).rejects.toMatchObject({ code: 'MESSAGE_LEDGER_FULL' })
   })
 
   it('无人活体时全员 resident=false（不把冷成员说成活着）', async () => {

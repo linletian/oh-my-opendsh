@@ -626,6 +626,10 @@ export function createTeamSendMessageDefinition(deps: TeamMessageDeps): unknown 
       + 'An offline recipient is woken by the delivery itself. '
       + 'Re-sending the same correlationId is deduplicated: it is not delivered twice. '
       + 'If a sender dies mid-delivery, its correlationId is QUARANTINED instead of reused (reusing it could deliver the same message twice): you get quarantined=true, nothing is delivered, and a guaranteed re-send must use a NEW correlationId. '
+      // P5-T22（自查残余 c）：**把取舍写进合同**，不只写在代码注释里。停滞预约
+      // 那一格预算**不回收**——回收就等于把投递权交还给"可能还活着"的旧 owner。
+      + 'A quarantined correlationId keeps consuming its one unit of the run\'s message budget (max_messages_per_run) forever: that unit is never reclaimed, so a run whose senders died spends budget on messages that were never confirmed. '
+      + 'team_status.messageLedger shows delivered / inFlight / stalledInFlight / remaining, so this is visible rather than silent. '
       + 'A failed delivery that reached NO recipient releases the id, so you may retry that same correlationId; '
       + 'a broadcast that reached SOME recipients keeps the id and must be re-sent under a NEW correlationId.',
     parameters: {

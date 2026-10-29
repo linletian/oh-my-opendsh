@@ -142,6 +142,22 @@ export interface TeamStatusResult {
   readonly taskBoardNote: string
   /** 消息面观测（去重账的规模——lead 排障一眼可见，非上游字段，同账待遇）。 */
   readonly processedMessageCount: number
+  /**
+   * **完整消息预算**（P5-T22·自查残余 a）：`processedMessageCount` 只数已送达，
+   * 而满载判据是 `delivered + inFlight`。lead 撞到 `MESSAGE_LEDGER_FULL` 时，
+   * 必须能从状态面看出预算是被**在途行**吃掉的（含**停滞**在途行——发送者挂起/
+   * 崩溃后那一行永不释放名额，P5-T21 的取舍）。
+   */
+  readonly messageLedger: {
+    readonly delivered: number
+    readonly inFlight: number
+    /** 已超过 TTL 的在途行（再被请求即 `quarantined`）。 */
+    readonly stalledInFlight: number
+    readonly cap: number
+    readonly remaining: number
+  }
+  /** `messageLedger` 的读法说明（模型可见：满载时的排障口径）。 */
+  readonly messageLedgerNote: string
   readonly briefingInjectedMembers: readonly string[]
   /**
    * `phase` 读数的**读法说明**（P5-T16 评审 MINOR-5）。
@@ -250,6 +266,17 @@ export async function executeTeamStatus(
     tasks: await deps.store.listTasks(teamRunId),
     taskBoardNote: 'tasks are read live from the vendored team-tasklist board (P5-T8b); an empty list means the board has no task files yet — the board itself exists from team_create onward',
     processedMessageCount: state.processedMessageIds.length,
+    messageLedger: await (async () => {
+      const budget = await deps.store.messageBudget(teamRunId)
+      return {
+        delivered: budget.delivered,
+        inFlight: budget.inFlight,
+        stalledInFlight: budget.stalledInFlight,
+        cap: budget.cap,
+        remaining: Math.max(0, budget.cap - budget.delivered - budget.inFlight),
+      }
+    })(),
+    messageLedgerNote: TEAM_MESSAGE_LEDGER_NOTE,
     briefingInjectedMembers: state.briefingInjectedMembers,
     memberPhaseNote: TEAM_MEMBER_PHASE_NOTE,
   }
@@ -264,6 +291,23 @@ export async function executeTeamStatus(
  * 跑完、turn 失败、turn 之间的 idle 三种情形都不写 phase。所以 `phase` 此刻
  * 是**账面阶段**；活性事实看每行的 `resident`。
  */
+/**
+ * 消息预算的读法说明（模型可见；P5-T22·自查残余 a）。
+ *
+ * 三条事实必须一起读，否则 `processedMessageCount` 会误导：
+ *   1. 满载判据 = `delivered + inFlight`（不是在途只算"过程态"）；
+ *   2. **停滞在途行永久占名额**（发送者失联后不回收——宁漏不重，见 T21）；
+ *   3. 满载是**终态**：换新 correlationId 无效，只能 `team_delete` 重建。
+ */
+export const TEAM_MESSAGE_LEDGER_NOTE =
+  'messageLedger is the full message budget: the fullness test is delivered + inFlight (not delivered alone), '
+  + 'so a lead that hit MESSAGE_LEDGER_FULL can see which side consumed the budget. '
+  + 'stalledInFlight counts reservations whose sender never confirmed (hung or dead): those rows are NEVER reclaimed '
+  + '(reclaiming them would let a hung-but-alive sender deliver the same correlationId twice), so they keep consuming '
+  + 'budget permanently — a dead sender costs one unit for the rest of the run. '
+  + 'When remaining reaches 0 the run\'s message budget is final: a new correlationId does NOT help, the only recovery is '
+  + 'team_delete and a fresh run.'
+
 export const TEAM_MEMBER_PHASE_NOTE =
   'member.phase is the ledger phase, not a liveness fact. The phase producers wired today are: '
   + '"pending" (the team was created), "running" (the member was spawned), "shutdown_approved" '
@@ -294,7 +338,7 @@ export function createTeamStatusDefinition(deps: TeamStatusDeps): unknown {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['teamRunId', 'teamName', 'status', 'specSource', 'createdAt', 'bounds', 'members', 'shutdownRequests', 'tasks', 'taskBoardNote', 'processedMessageCount', 'briefingInjectedMembers', 'memberPhaseNote'],
+        required: ['teamRunId', 'teamName', 'status', 'specSource', 'createdAt', 'bounds', 'members', 'shutdownRequests', 'tasks', 'taskBoardNote', 'processedMessageCount', 'messageLedger', 'messageLedgerNote', 'briefingInjectedMembers', 'memberPhaseNote'],
         properties: {
           teamRunId: { type: 'string' },
           teamName: { type: 'string' },
@@ -308,6 +352,19 @@ export function createTeamStatusDefinition(deps: TeamStatusDeps): unknown {
           tasks: { type: 'array', items: { type: 'object' } },
           taskBoardNote: { type: 'string' },
           processedMessageCount: { type: 'number' },
+          messageLedger: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['delivered', 'inFlight', 'stalledInFlight', 'cap', 'remaining'],
+            properties: {
+              delivered: { type: 'number' },
+              inFlight: { type: 'number' },
+              stalledInFlight: { type: 'number' },
+              cap: { type: 'number' },
+              remaining: { type: 'number' },
+            },
+          },
+          messageLedgerNote: { type: 'string' },
           briefingInjectedMembers: { type: 'array', items: { type: 'string' } },
           memberPhaseNote: { type: 'string' },
         },

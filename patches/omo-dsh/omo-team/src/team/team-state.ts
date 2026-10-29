@@ -1235,6 +1235,37 @@ export class TeamStateStore {
   }
 
   /**
+   * 消息预算的**可观测读数**（P5-T22·自查残余 a）：`team_status` 用。
+   *
+   * 为什么需要：`processedMessageCount` 只数**已送达**，而满载判据是
+   * `delivered + inFlight`——一个 lead 撞到 `MESSAGE_LEDGER_FULL` 时，光看
+   * 已送达数**看不出**预算是被在途行吃掉的。更隐蔽的是**停滞在途行**：
+   * 发送者挂起/崩溃后，那一行**永不释放名额**（P5-T21 的设计取舍），却既不在
+   * 已送达账里、也不在状态面上——排障时等于隐身。
+   *
+   * 读**落盘账**（锁内）而不是镜像：镜像只投影已送达，在途只存在于 sidecar。
+   */
+  async messageBudget(teamRunId: string): Promise<{
+    readonly delivered: number
+    readonly inFlight: number
+    /** 其中已超过 TTL、再被请求就会答 `quarantined` 的行数（停滞发送者）。 */
+    readonly stalledInFlight: number
+    readonly cap: number
+  }> {
+    this.requireState(teamRunId)
+    return withLock(this.ledgerLockPath(teamRunId), async () => {
+      const ledger = await this.readLedgerUnlocked(teamRunId)
+      const now = Date.now()
+      return {
+        delivered: ledger.processedMessageIds.length,
+        inFlight: ledger.inFlightMessages.length,
+        stalledInFlight: ledger.inFlightMessages.filter((row) => now - row.at > TEAM_MESSAGE_RESERVATION_TTL_MS).length,
+        cap: this.config.max_messages_per_run,
+      }
+    }, { ownerTag: 'omo-team-ledger' })
+  }
+
+  /**
    * briefing 注入账的原子「查+记」（P5-T6 NOTES-7 治理的账本体）：账键 =
    * (teamRunId, memberName)（契约见 TeamRuntimeState.briefingInjectedMembers
    * 注——T8b 随持久化重申）。锁内重读判定，跨重启不再重注。

@@ -704,6 +704,35 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(channel.sends).toHaveLength(1)
   })
 
+  it('P5-T22 (自查残余 b) a QUARANTINED id also blocks the BROADCAST path (zero fan-out)', async () => {
+    // 残余 b：quarantine 此前只有单投腿。广播与单投共享同一次 `reserve`，所以
+    // 行为**应当**一致——但"应当"不是证据。这里对广播路径取同样的证：拿到
+    // quarantined ⇒ 一帧都不许扇出，且不得宣称任何投递。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    // 造一条**停滞**在途行（直接预约后把 at 改到 TTL 之外）。
+    const reserved = await store.reserveMessageDelivery(fixture.teamRunId, CORRID_A)
+    if (reserved.state !== 'reserved') throw new Error('expected reserved')
+    const ledgerPath = join(String(store.config.base_dir), 'runtime', fixture.teamRunId, 'omo-team-extensions.json')
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
+    const lead = makeAgent(fixture.leadSessionId)
+    const result = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_A },
+      execOf(lead),
+      deps as never,
+    )
+    expect(result.quarantined).toBe(true)
+    expect(result.delivered).toBe(false)
+    expect(result.deduplicated).toBe(false)
+    expect(result.inFlight).toBe(false)
+    expect(result.deliveries).toEqual([])
+    // **零扇出**：一次原生投递都没发生。
+    expect(deps.subagents.sends).toHaveLength(0)
+  })
+
   it('single-target delivery failure COMPENSATES the reservation (retry may deliver)', async () => {
     const fixture = await seedTeam(makeStore())
     const deps = await makeDeps(fixture)
