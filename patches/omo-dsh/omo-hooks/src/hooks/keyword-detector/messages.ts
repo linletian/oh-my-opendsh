@@ -260,6 +260,30 @@ export function buildUltraworkMessage(deps: KeywordMessageDeps): string {
  * 根本不存在的 opencode 配置文件（P4-T1 已登记的配置面不一致，见
  * ../keyword-detector.ts 的 S-7）。
  */
+/**
+ * `hyperplan` 正文里那段 `team_create` 的**合规替换规格**（P5-T20 第四轮评审
+ * MAJOR-3）——逐字等于 `omo-commands/src/skills.ts` 的
+ * `HYPERPLAN_TEAM_SPEC_REPLACEMENT`（跨包禁 import，等值由交叉钉测试保证，
+ * 体例同 `OMO_TEAM_*` 服务名的 R-5 双拼写先例）。
+ *
+ * 为什么 keyword 面需要它：正文（vendored `hyperplan/SKILL.md`）的 Phase 1 让
+ * 模型 `team_create({ inline_spec: { name, description, members: [{kind, ...}] } })`
+ * ——`description` 与 `kind` 都是本仓 closed shape 的拒收字段，只「把 category
+ * 换成 quick/deep」不能让它通过解析。
+ */
+export const HYPERPLAN_TEAM_SPEC_REPLACEMENT = [
+  'team_create({ inline_spec: {',
+  '  "name": "hyperplan",',
+  '  "members": [',
+  '    { "name": "skeptic",    "category": "quick", "prompt": "<full Skeptic system prompt>" },',
+  '    { "name": "validator",  "category": "quick", "prompt": "<full Validator system prompt>" },',
+  '    { "name": "researcher", "category": "deep",  "prompt": "<full Researcher system prompt>" },',
+  '    { "name": "architect",  "category": "deep",  "prompt": "<full Architect system prompt>" },',
+  '    { "name": "creative",   "category": "quick", "prompt": "<full Creative system prompt>" }',
+  '  ]',
+  '} })',
+].join('\n')
+
 export const HYPERPLAN_CARRIER_NOTE = [
   '[oh-my-opendsh] Carrier note: the body below is upstream\'s hyperplan text and names the',
   'opencode lead-team tools (`team_create`, `task_send`, `team_delete`) and the opencode',
@@ -275,6 +299,19 @@ export const HYPERPLAN_CARRIER_NOTE = [
   '  * The opencode categories do NOT resolve here — `quick` and `deep` are the only two',
   '    member categories.',
   '  * The `/hyperplan` command carries this deployment\'s adapted full adversarial ring.',
+
+  // P5-T20（第四轮评审 MAJOR-3）：**只说「换 category」不够**。正文里那段
+  // `team_create` spec 还带着 spec 级 `description` 与每个 member 的 `kind`——
+  // 本仓 closed shape 两枚都拒（`V1_UNSUPPORTED_FIELD`，先 description 后 kind），
+  // 所以 keyword 触发的 hyperplan 仍会在 Phase 1 直接失败。修法：把**整段 spec
+  // 换掉**。
+  '',
+  "REPLACE the inline spec printed in the body below with EXACTLY this one (the body's",
+  'spec is REJECTED by this parser: spec-level `description` and per-member `kind` are',
+  'closed-shape violations — `V1_UNSUPPORTED_FIELD`, first one then the other — and the',
+  'opencode categories do not resolve):',
+  '',
+  ...HYPERPLAN_TEAM_SPEC_REPLACEMENT.split('\n'),
   '',
   'IF the team_* tools are ABSENT in this session, the nearest surface is DSH subagent',
   'dispatch: one delegation per member over this deployment\'s seats (explore, hephaestus,',

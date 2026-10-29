@@ -453,9 +453,11 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 2 })
     await capped.rebuildIndexes() // 同一 base_dir 上的新实例：从磁盘重建镜像
     for (const id of ['m-aaa', 'm-bbb']) {
-      expect(await capped.reserveMessageDelivery(fixture.teamRunId, id)).toBe('reserved')
-      // 满载判据读**已送达**账 ⇒ 必须确认送达（P5-T19 后预约与送达分账）。
-      await capped.commitMessageDelivery(fixture.teamRunId, id)
+      // 满载判据读**已送达**账 ⇒ 必须确认送达（P5-T19 后预约与送达分账）；
+      // P5-T20 起 commit 必须携带该次预约的 token。
+      const reserved = await capped.reserveMessageDelivery(fixture.teamRunId, id)
+      if (reserved.state !== 'reserved') throw new Error(`expected reserved for ${id}, got ${reserved.state}`)
+      await capped.commitMessageDelivery(fixture.teamRunId, id, reserved.token)
     }
     const cappedDeps = { ...deps, store: capped }
     const lead = makeAgent(fixture.leadSessionId)
@@ -480,9 +482,11 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 2 })
     await capped.rebuildIndexes() // 同一 base_dir 上的新实例：从磁盘重建镜像
     for (const id of ['m-aaa', 'm-bbb']) {
-      expect(await capped.reserveMessageDelivery(fixture.teamRunId, id)).toBe('reserved')
-      // 满载判据读**已送达**账 ⇒ 必须确认送达（P5-T19 后预约与送达分账）。
-      await capped.commitMessageDelivery(fixture.teamRunId, id)
+      // 满载判据读**已送达**账 ⇒ 必须确认送达（P5-T19 后预约与送达分账）；
+      // P5-T20 起 commit 必须携带该次预约的 token。
+      const reserved = await capped.reserveMessageDelivery(fixture.teamRunId, id)
+      if (reserved.state !== 'reserved') throw new Error(`expected reserved for ${id}, got ${reserved.state}`)
+      await capped.commitMessageDelivery(fixture.teamRunId, id, reserved.token)
     }
     const cappedDeps = { ...deps, store: capped }
     const lead = makeAgent(fixture.leadSessionId)
@@ -610,6 +614,43 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(retry.delivered).toBe(true)
     expect(retry.inFlight).toBe(false)
     expect(storeB.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(true)
+  })
+
+  it('P5-T20 (MAJOR-1) two DIFFERENT ids in flight cannot both pass a cap of 1', async () => {
+    // 第四轮评审 MAJOR-1 的真实投递腿：cap=1 时 A（不同 ID）已进在途，B 的预约
+    // 必须被拒（旧实现只看已送达 ⇒ B 也能 reserved，随后两条都 commit ⇒ 超帽）。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 1 })
+    await capped.rebuildIndexes()
+    // A：一个**挂起**的投递（预约已落盘、还没 commit）。
+    let releaseFirst: (() => void) | undefined
+    const channel = {
+      sends: [] as string[],
+      async sendMessage(_sender: TeamAgent, targetSessionId: string) {
+        this.sends.push(targetSessionId)
+        if (this.sends.length === 1) await new Promise<void>((resolve) => { releaseFirst = resolve })
+        return 'accepted'
+      },
+    }
+    const cappedDeps = { ...deps, store: capped, subagents: channel }
+    const lead = makeAgent(fixture.leadSessionId)
+    const aPromise = executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), cappedDeps as never,
+    )
+    for (let i = 0; i < 200 && channel.sends.length === 0; i += 1) await new Promise((r) => setTimeout(r, 5))
+    expect(channel.sends).toHaveLength(1)
+    // B：**不同** ID ⇒ 满载（在途计入 cap）⇒ 具名拒收。
+    await expect(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'y', correlationId: CORRID_B }, execOf(lead), cappedDeps as never,
+    )).rejects.toMatchObject({ code: 'MESSAGE_LEDGER_FULL' })
+    expect(channel.sends).toHaveLength(1)
+    releaseFirst?.()
+    const aResult = await aPromise
+    expect(aResult.delivered).toBe(true)
+    await capped.rebuildIndexes()
+    expect(capped.get(fixture.teamRunId)!.processedMessageIds).toEqual([CORRID_A])
   })
 
   it('single-target delivery failure COMPENSATES the reservation (retry may deliver)', async () => {

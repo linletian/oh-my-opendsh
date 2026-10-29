@@ -468,7 +468,7 @@ export async function executeTeamSendMessage(
     }
     throw err
   }
-  if (reservation === 'duplicate') {
+  if (reservation.state === 'duplicate') {
     // 真去重：这个 id **已确认送达**过（不是「预约中」）。
     const note = `duplicate message id: ${messageId} was already delivered for team ${clean.teamRunId} — not delivered again (deduplicated)`
     console.log(`${LOG_PREFIX} deduplicated ${messageId} for team ${clean.teamRunId}`)
@@ -483,7 +483,7 @@ export async function executeTeamSendMessage(
       note,
     }
   }
-  if (reservation === 'in-flight') {
+  if (reservation.state === 'in-flight') {
     // **不宣称已交付**：本调用没有投递任何东西，同 id 正被另一个调用投。
     // 返回可重试的 IN_PROGRESS 语义（`delivered:false, deduplicated:false,
     // inFlight:true`）——不是错误，模型稍后重试即可；若首发失败退账，重试会
@@ -502,6 +502,11 @@ export async function executeTeamSendMessage(
       note,
     }
   }
+
+  // P5-T20（第四轮评审 MAJOR-2）：**归属 token**。预约行可能被 TTL 剔除后由别的
+  // 调用重新预约；commit / rollback 只作用于**本 token 那一行**，否则旧调用会把
+  // 别人的新预约删掉（→ 同 id 并发重复投递）。
+  const reservationToken = reservation.token
 
   // 7) 原生投递（逐目标）。residentAtSend = 投递前一刻活体观测（金丝雀的
   //    工具级对应面）。任一目标抛 → 响亮冒泡（点名成员）；退账按 R-6 的
@@ -535,10 +540,10 @@ export async function executeTeamSendMessage(
       const fullyUndelivered = !isBroadcast || zeroDeliveryBroadcast
       if (fullyUndelivered) {
         // 一条都没送达 ⇒ 放弃预约（只碰在途行，已送达账一条不动）。
-        await deps.store.rollbackMessageReservation(clean.teamRunId, messageId)
+        await deps.store.rollbackMessageReservation(clean.teamRunId, messageId, reservationToken)
       } else {
         // 部分送达 ⇒ **确认送达**（已有人收到；同 id 重投必须被去重）。
-        await deps.store.commitMessageDelivery(clean.teamRunId, messageId)
+        await deps.store.commitMessageDelivery(clean.teamRunId, messageId, reservationToken)
       }
       // 广播臂实况计数（文件头差异段「点名成员与已投计数」的成文兑现）：
       // deliveries 此刻 = 扇出序中失败点之前已投成功的成员——随 throw 丢弃
@@ -556,7 +561,7 @@ export async function executeTeamSendMessage(
 
   // 8) 确认送达（P5-T19 MAJOR-1 的第二段）：整条消息投递完成 ⇒ 从在途移到
   //    已送达。此后同 id 的重投才会被**真去重**。
-  await deps.store.commitMessageDelivery(clean.teamRunId, messageId)
+  await deps.store.commitMessageDelivery(clean.teamRunId, messageId, reservationToken)
 
   return {
     teamRunId: clean.teamRunId,

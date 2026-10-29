@@ -611,13 +611,13 @@ export const TEAM_SURFACE_SHAPES_NOTE = [
  */
 export const HYPERPLAN_TEAM_SPEC_REPLACEMENT = [
   'team_create({ inline_spec: {',
-  '  name: "hyperplan",',
-  '  members: [',
-  '    { name: "skeptic",    category: "quick", prompt: "<full Skeptic system prompt>" },',
-  '    { name: "validator",  category: "quick", prompt: "<full Validator system prompt>" },',
-  '    { name: "researcher", category: "deep",  prompt: "<full Researcher system prompt>" },',
-  '    { name: "architect",  category: "deep",  prompt: "<full Architect system prompt>" },',
-  '    { name: "creative",   category: "quick", prompt: "<full Creative system prompt>" }',
+  '  "name": "hyperplan",',
+  '  "members": [',
+  '    { "name": "skeptic",    "category": "quick", "prompt": "<full Skeptic system prompt>" },',
+  '    { "name": "validator",  "category": "quick", "prompt": "<full Validator system prompt>" },',
+  '    { "name": "researcher", "category": "deep",  "prompt": "<full Researcher system prompt>" },',
+  '    { "name": "architect",  "category": "deep",  "prompt": "<full Architect system prompt>" },',
+  '    { "name": "creative",   "category": "quick", "prompt": "<full Creative system prompt>" }',
   '  ]',
   '} })',
 ].join('\n')

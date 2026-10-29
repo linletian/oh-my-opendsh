@@ -44,9 +44,12 @@ import {
 } from '../../patches/omo-dsh/omo-commands/src/skills.ts'
 import {
   HYPERPLAN_CARRIER_NOTE,
+  HYPERPLAN_TEAM_SPEC_REPLACEMENT as HYPERPLAN_TEAM_SPEC_REPLACEMENT_HOOKS,
   TEAM_CARRIER_NOTE,
   ULTRAWORK_CARRIER_NOTE,
   ULTRAWORK_TEAM_CARRIER_NOTE,
+  buildHyperplanMessage,
+  loadInstructionTexts,
 } from '../../patches/omo-dsh/omo-hooks/src/hooks/keyword-detector/messages.ts'
 import { parseTeamSpec } from '../../patches/omo-dsh/omo-team/src/team/team-spec.ts'
 import { registerTeamTaskSurface } from '../../patches/omo-dsh/omo-team/src/tools/team-task.ts'
@@ -59,6 +62,11 @@ import {
   registerTeamShutdownRequestSurface,
 } from '../../patches/omo-dsh/omo-team/src/tools/team-shutdown.ts'
 import { registerTeamMessageSurface } from '../../patches/omo-dsh/omo-team/src/tools/team-message.ts'
+
+/** 真实的 vendored 正文（与 keyword 注入面读的是同一份盘上字节）。 */
+const loadedTexts = loadInstructionTexts()
+if (!loadedTexts.ok) throw new Error(`vendored instruction texts unavailable: ${JSON.stringify(loadedTexts.failures)}`)
+const KEYWORD_TEXTS = loadedTexts.texts
 
 interface CapturedTool {
   readonly name: string
@@ -354,11 +362,54 @@ describe('P5-T16 (MAJOR-4) vendored skill 的 team 面适配注记（消费侧�
     expect(halfFixed.code).toBe('V1_UNSUPPORTED_FIELD')
   })
 
+  it('P5-T20 (MAJOR-3) 真实的 buildHyperplanMessage 输出自带合规替换规格，且它真的能过解析', () => {
+    // 第四轮评审 MAJOR-3：技能注册面与命令路径都给了 replacement，但 **keyword
+    // 注入面**（omo-hooks 的 HYPERPLAN_CARRIER_NOTE）只翻译了 category ——
+    // 实际注入的正文里 spec 仍带 spec 级 `description` 与 member 级 `kind`，
+    // Phase 1 照样被 `parseTeamSpec` 拒。这条腿直接对**实际构建出来的消息**取证，
+    // 不对常量取证。
+    const message = buildHyperplanMessage({ texts: KEYWORD_TEXTS, agentName: 'sisyphus' })
+    // ① replacement 在场，且带明确的「替换整段 spec」指令。
+    expect(message).toContain('REPLACE the inline spec printed in the body below')
+    expect(message).toContain('spec-level `description` and per-member `kind`')
+    expect(message).toContain(HYPERPLAN_TEAM_SPEC_REPLACEMENT_HOOKS)
+    // ② 从**消息正文**里抠出那段 replacement（不是从常量），跑真实解析器。
+    // replacement 用的是 **JSON 形态**的 spec（引号键），所以这里抠出来的就是
+    // 一段合法 JSON —— 也正是模型该原样传给 `inline_spec` 的东西。
+    const start = message.indexOf('team_create({ inline_spec: {')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const specStart = message.indexOf('{', message.indexOf('inline_spec:', start))
+    const end = message.indexOf('} })', specStart)
+    expect(end).toBeGreaterThan(specStart)
+    const json = message.slice(specStart, end + 1)
+    const parsed = parseTeamSpec(json)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.spec.members).toHaveLength(5)
+    // ③ 反向腿：上游原样（description + kind）仍被拒，证明这条腿不是空转。
+    const upstream = parseTeamSpec(JSON.stringify({
+      name: 'hyperplan',
+      description: 'Adversarial planning team for cross-critique debate.',
+      members: [
+        { kind: 'category', name: 'skeptic', category: 'quick', prompt: 'p' },
+        { kind: 'category', name: 'validator', category: 'quick', prompt: 'p' },
+      ],
+    }))
+    expect(upstream.ok).toBe(false)
+    if (upstream.ok) return
+    expect(upstream.code).toBe('V1_UNSUPPORTED_FIELD')
+  })
+
+  it('P5-T20 (MAJOR-3) the two packages carry the SAME replacement spec, byte for byte', () => {
+    // 跨包禁 import：两份各持一份，等值靠这道钉（R-5 先例）。
+    expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT_HOOKS).toBe(HYPERPLAN_TEAM_SPEC_REPLACEMENT)
+  })
+
   it('P5-T19 (MAJOR-3) 跨包 team 形状声明逐字相同（R-5 双拼写先例）', () => {
     // omo-commands 与 omo-hooks 各持一份（跨包禁 import），等值靠这道钉。
     expect(ULTRAWORK_TEAM_CARRIER_NOTE).toBe(TEAM_SURFACE_SHAPES_NOTE)
     // 替换规格必须点名两个被拒字段（否则模型不知道该删什么）。
-    expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT).toContain('category: "quick"')
+    expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT).toContain('"category": "quick"')
     expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT).not.toContain('description')
     expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT).not.toContain('kind:')
   })

@@ -518,7 +518,22 @@ export interface OmoTeamRunLedger {
    * 永远钉在在途态。剔除的代价是「崩溃前恰好投递成功但没来得及 commit」那条
    * 可能被重投一次；这比「永远发不出去」可接受，且窗口由 TTL 显式声明。
    */
-  readonly inFlightMessages: readonly { readonly id: string; readonly at: number }[]
+  readonly inFlightMessages: readonly {
+    readonly id: string
+    /** 预约时刻（毫秒）。超过 `TEAM_MESSAGE_RESERVATION_TTL_MS` 的行按「发起进程已死」读时剔除。 */
+    readonly at: number
+    /**
+     * **预约归属凭证**（P5-T20 第四轮评审 MAJOR-2）。每次 `reserveMessageDelivery`
+     * 现铸一枚 uuid，`commit` / `rollback` 只作用于**同一 token 的那一行**。
+     *
+     * 没有它时的确定性事故（评审复现）：A 预约后挂起、TTL 过期、B 因过期拿到新
+     * 预约；旧 A 随后 rollback —— 按 id 删会删掉**B 的新预约**，C 再取同 id 又
+     * 得到 `reserved`，于是 B、C 同时真投同一个 correlationId，正是第三轮要消除
+     * 的 exactly-once 违反。带 token 后旧 A 的 rollback 只可能命中它自己那行
+     * （早已被 TTL 剔除）→ no-op。
+     */
+    readonly token: string
+  }[]
   readonly briefingInjectedMembers: readonly string[]
 }
 
@@ -532,7 +547,17 @@ export const TEAM_MESSAGE_RESERVATION_TTL_MS = 5 * 60 * 1000
  *   * `in-flight` —— 这个 id **正在被另一个调用投递**（既不是重复也不是失败：
  *     本调用没有投递任何东西，应稍后重试；**不许**宣称已交付）。
  */
-export type TeamMessageReservation = 'reserved' | 'duplicate' | 'in-flight'
+export type TeamMessageReservation =
+  | { readonly state: 'reserved'; readonly token: string }
+  | { readonly state: 'duplicate' }
+  | { readonly state: 'in-flight' }
+
+/** 在途行的解析形状（`readLedgerUnlocked` 与写入共用）。 */
+interface TeamMessageInFlightRow {
+  readonly id: string
+  readonly at: number
+  readonly token: string
+}
 
 /** sidecar 文件名（runtime 目录内，与 vendored state.json / state.lock 并列而不相犯）。 */
 export const OMO_TEAM_LEDGER_FILE = 'omo-team-extensions.json'
@@ -705,11 +730,14 @@ export class TeamStateStore {
         processedMessageIds: Array.isArray(parsed.processedMessageIds) ? parsed.processedMessageIds.filter((x): x is string => typeof x === 'string') : [],
         // 在途行：解析合法的 {id, at}，并**剔除过期行**（发起进程已死）。
         inFlightMessages: (Array.isArray(parsed.inFlightMessages) ? parsed.inFlightMessages : [])
-          .filter((row): row is { id: string; at: number } => (
+          .filter((row): row is { id: string; at: number; token?: unknown } => (
             typeof row === 'object' && row !== null
             && typeof (row as { id?: unknown }).id === 'string'
             && typeof (row as { at?: unknown }).at === 'number'
           ))
+          // 旧版写下的行没有 token：按空串承载（任何铸造的 token 都不会等于空串
+          // ⇒ 旧调用**无法**用它的 token 删掉这一行；TTL 会把它自然清掉）。
+          .map((row) => ({ id: row.id, at: row.at, token: typeof row.token === 'string' ? row.token : '' }))
           .filter((row) => now - row.at <= TEAM_MESSAGE_RESERVATION_TTL_MS),
         briefingInjectedMembers: Array.isArray(parsed.briefingInjectedMembers) ? parsed.briefingInjectedMembers.filter((x): x is string => typeof x === 'string') : [],
       }
@@ -1088,62 +1116,83 @@ export class TeamStateStore {
     return withLock(this.ledgerLockPath(teamRunId), async () => {
       const ledger = await this.readLedgerUnlocked(teamRunId)
       // ① 已送达 ⇒ 真重复。
-      if (ledger.processedMessageIds.includes(messageId)) return 'duplicate'
+      if (ledger.processedMessageIds.includes(messageId)) return { state: 'duplicate' }
       // ② 在途 ⇒ 有人在投同一个 id（既非重复也非失败）。
-      if (ledger.inFlightMessages.some((row) => row.id === messageId)) return 'in-flight'
+      if (ledger.inFlightMessages.some((row) => row.id === messageId)) return { state: 'in-flight' }
       // ③ 满载 ⇒ 显式拒收（不裁剪任何一条）。
+      //
+      //    P5-T20（第四轮评审 MAJOR-1）：满载判据必须**同时统计在途行**。上一版
+      //    只看 `processedMessageIds.length`，于是并发的**不同** ID 可以在任何一条
+      //    确认送达前全部拿到预约（`reserve(A)`、`reserve(B)` 都 `reserved`），随后
+      //    全部 commit ⇒ 磁盘 `processedMessageIds=[A,B]` 而 cap=1。这同时让在途账
+      //    在投递未完成期间**无上界**（MINOR-8 的有界性诉求）。
+      //
+      //    记 `delivered + inFlight ≥ cap` 为满：锁内串行保证「任一时刻
+      //    delivered + inFlight ≤ cap」，而 commit 只是把一行从在途移到已送达
+      //    （总数不变）⇒ **提交路径无需再查 cap**，`delivered` 也永远不会超过 cap。
+      //    唯一能超出 cap 的路径是「预约过期后才成功的迟到 commit」——那条消息
+      //    确实送达了，拒绝记账会让同 id 的重投再送一次（见 commit 的注）。
       const cap = this.config.max_messages_per_run
-      if (ledger.processedMessageIds.length >= cap) {
+      const reserved = ledger.processedMessageIds.length + ledger.inFlightMessages.length
+      if (reserved >= cap) {
         throw new TeamStateError(
-          `message dedup ledger for team ${teamRunId} is full (${cap} delivered ids = the vendored max_messages_per_run bound) — `
+          `message dedup ledger for team ${teamRunId} is full (${cap} = the vendored max_messages_per_run bound; `
+          + `${ledger.processedMessageIds.length} delivered + ${ledger.inFlightMessages.length} in flight) — `
           + `refusing to record '${messageId}'. This is the run's terminal message budget: a NEW correlationId does NOT help `
           + `(the ledger length does not change), so the only recovery is to tear this run down (team_delete) and start a new one`,
           'MESSAGE_LEDGER_FULL',
         )
       }
-      // ④ 入在途。
-      const next: readonly { readonly id: string; readonly at: number }[] = [
+      // ④ 入在途（现铸归属 token）。
+      const token = randomUUID()
+      const next: readonly TeamMessageInFlightRow[] = [
         ...ledger.inFlightMessages,
-        { id: messageId, at: Date.now() },
+        { id: messageId, at: Date.now(), token },
       ]
       await this.writeLedgerUnlocked(teamRunId, { ...ledger, inFlightMessages: next })
       // 镜像只投影「已送达」——在途是短命内部态，不进团队状态面。
-      return 'reserved'
+      return { state: 'reserved', token }
     }, { ownerTag: 'omo-team-ledger' })
   }
 
   /**
-   * **确认送达**（第二段）：把 id 从在途移到已送达。
+   * **确认送达**（第二段）：把 id 记进已送达账，并**只**清掉属于 `token` 的在途行。
    *
-   * 幂等：已在已送达集里 ⇒ 只清在途行。**不因满载而丢弃**——这条消息**确实
-   * 送达了**，拒绝记账会让同 id 的重投再送一次（正是去重要防的事）。
+   * 两条规则（P5-T20 第四轮评审 MAJOR-2）：
+   *   * **记账无条件**：调用方说「我投递成功了」⇒ 这个 id 必须进已送达账（幂等）。
+   *     拒绝记账会让同 id 的重投再送一次，那正是去重要防的事。唯一的超帽路径因此
+   *     是「预约已过期（TTL）但投递最终还是成功」的迟到 commit——罕见、且必须记账。
+   *   * **清行认 token**：在途行可能早已被 TTL 剔除、被别的调用重新预约 ⇒ 按 id
+   *     清会误删别人的新预约。token 不匹配 ⇒ 只记账、不动别人的行。
    */
-  async commitMessageDelivery(teamRunId: string, messageId: string): Promise<void> {
+  async commitMessageDelivery(teamRunId: string, messageId: string, token: string): Promise<void> {
     this.requireState(teamRunId)
     await withLock(this.ledgerLockPath(teamRunId), async () => {
       const ledger = await this.readLedgerUnlocked(teamRunId)
       const delivered = ledger.processedMessageIds.includes(messageId)
         ? ledger.processedMessageIds
         : [...ledger.processedMessageIds, messageId]
-      const inFlight = ledger.inFlightMessages.filter((row) => row.id !== messageId)
+      const inFlight = ledger.inFlightMessages.filter((row) => !(row.id === messageId && row.token === token))
       await this.writeLedgerUnlocked(teamRunId, { ...ledger, processedMessageIds: delivered, inFlightMessages: inFlight })
       this.applyLedgerToMirror(teamRunId, { processedMessageIds: delivered })
     }, { ownerTag: 'omo-team-ledger' })
   }
 
   /**
-   * **放弃预约**（第二段·失败臂）：把 id 从在途删掉——**已送达账一条不动**。
+   * **放弃预约**（第二段·失败臂）：只删**属于 `token`** 的在途行——已送达账一条
+   * 不动。
    *
-   * 这与上一轮的 `unmarkMessageProcessed` 的差别是本轮修复的核心：旧实现从
-   * 「已送达」里删，于是「预约 → 失败 → 退账」在并发面上会把**别人已经投递
-   * 成功的同 id** 也删掉；现在退账只碰在途行。
+   * P5-T20（第四轮评审 MAJOR-2）：上一版按 id 删，于是「A 预约 → 挂起 → TTL 过期
+   * → B 拿到新预约 → A 迟到 rollback」会删掉 **B 的新预约**，C 再取同 id 又得到
+   * `reserved` ⇒ B、C 同时真投同一个 correlationId（exactly-once 再次被破）。
+   * 带 token 后旧调用的 rollback 只可能命中它自己那行（早已被 TTL 剔除）⇒ no-op。
    */
-  async rollbackMessageReservation(teamRunId: string, messageId: string): Promise<void> {
+  async rollbackMessageReservation(teamRunId: string, messageId: string, token: string): Promise<void> {
     this.requireState(teamRunId)
     await withLock(this.ledgerLockPath(teamRunId), async () => {
       const ledger = await this.readLedgerUnlocked(teamRunId)
-      if (!ledger.inFlightMessages.some((row) => row.id === messageId)) return
-      const inFlight = ledger.inFlightMessages.filter((row) => row.id !== messageId)
+      if (!ledger.inFlightMessages.some((row) => row.id === messageId && row.token === token)) return
+      const inFlight = ledger.inFlightMessages.filter((row) => !(row.id === messageId && row.token === token))
       await this.writeLedgerUnlocked(teamRunId, { ...ledger, inFlightMessages: inFlight })
     }, { ownerTag: 'omo-team-ledger' })
   }
@@ -1421,21 +1470,37 @@ export class TeamStateStore {
    * delete-team.ts:39）；其余来源具名拒 INVALID_TRANSITION 族）。
    */
   async forceTransitionToDeleting(teamRunId: string): Promise<TeamRuntimeState> {
-    let vendored: RuntimeState
+    // P5-T20（第四轮评审 MINOR）：**读 + 判 + 写收进同一把 `state.lock`**。
+    //
+    // 上一版 `loadRuntimeState` 与 `saveRuntimeState` 都在锁外，而它是
+    // `orphaned → deleting` 的**唯一写者**（team_delete 的 force 臂走这里）。
+    // 于是 `forgetRun` 即便把自己的「确证 + 白名单 + rm」收进了同一把锁，仍有
+    // 一个不拿锁的写者能在「确证 orphaned」与「rm」之间把 run 推进
+    // `orphaned → deleting` ——目录会在拆解中途被删（评审点名的 TOCTOU 残余）。
+    //
+    // 现在：锁内重读 → 锁内判白名单 → 锁内写。与 `forgetRun`、vendored
+    // `transitionRuntimeState` 共用同一把 `state.lock`（三处写者，一把锁）。
+    let next: RuntimeState | undefined
     try {
-      vendored = await loadRuntimeState(teamRunId, this.config)
+      next = await withLock(path.join(this.runtimeDir(teamRunId), 'state.lock'), async () => {
+        const vendored = await loadRuntimeState(teamRunId, this.config)
+        if (vendored.status === 'deleting') return undefined
+        if (vendored.status !== 'creating' && vendored.status !== 'orphaned') {
+          throw new TeamStateError(
+            `illegal force-deleting bypass from ${vendored.status} for team ${teamRunId}`,
+            'INVALID_TRANSITION',
+          )
+        }
+        const flipped: RuntimeState = { ...vendored, status: 'deleting' }
+        await saveRuntimeState(flipped, this.config)
+        return flipped
+      }, { ownerTag: 'omo-team-state' })
     } catch (err) {
+      if (err instanceof TeamStateError) throw err
       throw this.wrapStateError(err, teamRunId)
     }
-    if (vendored.status === 'deleting') return this.settle(vendored)
-    if (vendored.status !== 'creating' && vendored.status !== 'orphaned') {
-      throw new TeamStateError(
-        `illegal force-deleting bypass from ${vendored.status} for team ${teamRunId}`,
-        'INVALID_TRANSITION',
-      )
-    }
-    const next: RuntimeState = { ...vendored, status: 'deleting' }
-    await saveRuntimeState(next, this.config)
+    // `next === undefined` = 锁内已发现它本来就是 `deleting`（幂等早退）。
+    if (next === undefined) return this.settle(await loadRuntimeState(teamRunId, this.config))
     return this.settle(next)
   }
 

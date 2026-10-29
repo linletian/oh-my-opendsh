@@ -24,6 +24,7 @@ import { join } from 'node:path'
 import { describe, expect, it, afterEach, vi } from 'vitest'
 
 import { buildTeamModeConfig } from '../../patches/omo-dsh/omo-team/src/team/team-config.ts'
+import { withLock } from '../../patches/omo-dsh/vendor/team-core/src/team-state-store/locks.ts'
 import { buildTeamSessionContext } from '../../patches/omo-dsh/omo-team/src/team/session-context-adapter.ts'
 import type { TeamLiveAgents } from '../../patches/omo-dsh/omo-team/src/tools/team-message.ts'
 import {
@@ -57,6 +58,16 @@ function makeStore(): TeamStateStore {
   const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
   tempDirs.push(dir)
   return new TeamStateStore(buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir }))
+}
+
+/**
+ * 预约并返回归属 token（P5-T20：`reserveMessageDelivery` 现在回判别式结果，
+ * commit/rollback 必须带**这次预约的** token）。测试面的唯一入口。
+ */
+async function reserveToken(store: TeamStateStore, teamRunId: string, messageId: string): Promise<string> {
+  const result = await store.reserveMessageDelivery(teamRunId, messageId)
+  if (result.state !== 'reserved') throw new Error(`expected 'reserved' for ${messageId}, got '${result.state}'`)
+  return result.token
 }
 
 /** 一个合法的两成员 create 入参（lead + 两席；childId 手打便于逐枚断言）。
@@ -609,8 +620,7 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
     const first = new TeamStateStore(config)
     const state = await first.create(provisioningInput())
-    await first.reserveMessageDelivery(state.teamRunId, 'msg-1')
-    await first.commitMessageDelivery(state.teamRunId, 'msg-1')
+    await first.commitMessageDelivery(state.teamRunId, 'msg-1', await reserveToken(first, state.teamRunId, 'msg-1'))
     await first.claimBriefingInjection(state.teamRunId, 'structure-analyst')
     await first.transition(state.teamRunId, 'active')
 
@@ -621,7 +631,7 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     expect(second.hasDeliveredMessage(state.teamRunId, 'msg-1')).toBe(true)
     expect(second.hasBriefingInjected(state.teamRunId, 'structure-analyst')).toBe(true)
     // 锁内重读的去重跨实例成立：新实例再投同 id = false。
-    expect(await second.reserveMessageDelivery(state.teamRunId, 'msg-1')).toBe('duplicate')
+    expect(await second.reserveMessageDelivery(state.teamRunId, 'msg-1')).toMatchObject({ state: 'duplicate' })
     // 参与账跨重启重建：嵌套闸对新实例的同一 lead 照样拦。
     expect(second.participantOf('lead-session-1')?.teamRunId).toBe(state.teamRunId)
   })
@@ -733,8 +743,7 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     const store = new TeamStateStore(smallConfig)
     const state = await store.create(provisioningInput())
     for (const id of ['m1', 'm2', 'm3']) {
-      expect(await store.reserveMessageDelivery(state.teamRunId, id)).toBe('reserved')
-      await store.commitMessageDelivery(state.teamRunId, id)
+      await store.commitMessageDelivery(state.teamRunId, id, await reserveToken(store, state.teamRunId, id))
     }
     // 满载 ⇒ 新 id **被拒**（具名），不是「挤掉最旧的」。
     await expect(store.reserveMessageDelivery(state.teamRunId, 'm4')).rejects.toMatchObject({
@@ -763,20 +772,20 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     const store = new TeamStateStore(config)
     const state = await store.create(provisioningInput())
     // ① 预约 ⇒ 在途（**不是**已送达）。
-    expect(await store.reserveMessageDelivery(state.teamRunId, 'm1')).toBe('reserved')
+    const tokenA = await reserveToken(store, state.teamRunId, 'm1')
     expect(store.get(state.teamRunId)!.processedMessageIds).toEqual([])
     expect(store.hasDeliveredMessage(state.teamRunId, 'm1')).toBe(false)
     // ② 另一个调用（同一 base_dir 上的新实例）拿同 id ⇒ in-flight（既非重复也非失败）。
     const peer = new TeamStateStore(config)
     await peer.rebuildIndexes()
-    expect(await peer.reserveMessageDelivery(state.teamRunId, 'm1')).toBe('in-flight')
+    expect(await peer.reserveMessageDelivery(state.teamRunId, 'm1')).toMatchObject({ state: 'in-flight' })
     // ③ 首发失败退账 ⇒ 在途清空，已送达仍空。
-    await store.rollbackMessageReservation(state.teamRunId, 'm1')
-    expect(await peer.reserveMessageDelivery(state.teamRunId, 'm1')).toBe('reserved')
+    await store.rollbackMessageReservation(state.teamRunId, 'm1', tokenA)
+    const tokenB = await reserveToken(peer, state.teamRunId, 'm1')
     // ④ 确认送达后，同 id 才是**真重复**；且退账**不许**碰已送达账。
-    await store.commitMessageDelivery(state.teamRunId, 'm1')
-    expect(await peer.reserveMessageDelivery(state.teamRunId, 'm1')).toBe('duplicate')
-    await store.rollbackMessageReservation(state.teamRunId, 'm1')
+    await store.commitMessageDelivery(state.teamRunId, 'm1', tokenB)
+    expect(await peer.reserveMessageDelivery(state.teamRunId, 'm1')).toMatchObject({ state: 'duplicate' })
+    await store.rollbackMessageReservation(state.teamRunId, 'm1', tokenB)
     expect(store.hasDeliveredMessage(state.teamRunId, 'm1')).toBe(true)
     expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['m1'])
   })
@@ -787,14 +796,14 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
     const store = new TeamStateStore(config)
     const state = await store.create(provisioningInput())
-    expect(await store.reserveMessageDelivery(state.teamRunId, 'm1')).toBe('reserved')
+    const token = await reserveToken(store, state.teamRunId, 'm1')
     // 手写一条**过期**在途行（模拟「发起进程崩溃」）：TTL 之外 ⇒ 读时剔除。
     const ledgerPath = join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json')
     const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as Record<string, unknown>
-    ledger.inFlightMessages = [{ id: 'm1', at: Date.now() - 10 * 60 * 1000 }]
+    ledger.inFlightMessages = [{ id: 'm1', at: Date.now() - 10 * 60 * 1000, token }]
     writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
     // 过期 ⇒ 不再挡路。
-    expect(await store.reserveMessageDelivery(state.teamRunId, 'm1')).toBe('reserved')
+    expect(await store.reserveMessageDelivery(state.teamRunId, 'm1')).toMatchObject({ state: 'reserved' })
   })
 
   it('P5-T16 (MAJOR-2) a failed delivery compensates EXACTLY — no delivered id is touched', async () => {
@@ -804,19 +813,15 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     const smallConfig = { ...config, max_messages_per_run: 3 }
     const store = new TeamStateStore(smallConfig)
     const state = await store.create(provisioningInput())
-    await store.reserveMessageDelivery(state.teamRunId, 'm1')
-    await store.commitMessageDelivery(state.teamRunId, 'm1')
-    await store.reserveMessageDelivery(state.teamRunId, 'm2')
-    await store.commitMessageDelivery(state.teamRunId, 'm2')
+    await store.commitMessageDelivery(state.teamRunId, 'm1', await reserveToken(store, state.teamRunId, 'm1'))
+    await store.commitMessageDelivery(state.teamRunId, 'm2', await reserveToken(store, state.teamRunId, 'm2'))
     // 预约 m3 → 投递失败退账 ⇒ 已送达账**逐条还原**（m1/m2 一条不少），m3 不在。
-    expect(await store.reserveMessageDelivery(state.teamRunId, 'm3')).toBe('reserved')
-    await store.rollbackMessageReservation(state.teamRunId, 'm3')
+    await store.rollbackMessageReservation(state.teamRunId, 'm3', await reserveToken(store, state.teamRunId, 'm3'))
     expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['m1', 'm2'])
     expect(store.hasDeliveredMessage(state.teamRunId, 'm1')).toBe(true)
     expect(store.hasDeliveredMessage(state.teamRunId, 'm3')).toBe(false)
     // 再预约同一个 id：还有位，且不挤任何东西。
-    expect(await store.reserveMessageDelivery(state.teamRunId, 'm3')).toBe('reserved')
-    await store.commitMessageDelivery(state.teamRunId, 'm3')
+    await store.commitMessageDelivery(state.teamRunId, 'm3', await reserveToken(store, state.teamRunId, 'm3'))
     expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['m1', 'm2', 'm3'])
   })
 
@@ -866,6 +871,95 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     const preserved = formatCorruptLedgerWarning('run-1', 'bad json', { preserved: true, path: '/tmp/x/omo-team-extensions.json.corrupt-1-ab' })
     expect(preserved).toContain('the damaged file was preserved as /tmp/x/omo-team-extensions.json.corrupt-1-ab')
     expect(preserved).not.toContain('could NOT be archived')
+  })
+
+  it('P5-T20 (MAJOR-1) the cap counts IN-FLIGHT rows too — concurrent different ids cannot exceed it', async () => {
+    // 第四轮评审 MAJOR-1 的 store 级复现：上一版只数 `processedMessageIds`，于是
+    // 并发的**不同** ID 可以在任何一条送达之前全部拿到预约，随后全部 commit ⇒
+    // cap 被实际突破；在途账本身也没有上界。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const store = new TeamStateStore({ ...config, max_messages_per_run: 3 })
+    const state = await store.create(provisioningInput())
+    // 三条**不同** ID 全部停在在途（一条都没 commit）：都拿到 reserved。
+    const tokens: string[] = []
+    for (const id of ['a', 'b', 'c']) tokens.push(await reserveToken(store, state.teamRunId, id))
+    expect(tokens).toHaveLength(3)
+    // 第四条（不同 ID）必须被拒——在途计入 cap。
+    await expect(store.reserveMessageDelivery(state.teamRunId, 'd')).rejects.toMatchObject({
+      code: 'MESSAGE_LEDGER_FULL',
+    })
+    // 在途账有界：恰 3 条（= cap），不是无界增长。
+    const ledgerPath = join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json')
+    const onDisk = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: unknown[] }
+    expect(onDisk.inFlightMessages).toHaveLength(3)
+    // 把三条都 commit：已送达 3 条 = cap，仍不越界。
+    for (const [index, id] of ['a', 'b', 'c'].entries()) {
+      await store.commitMessageDelivery(state.teamRunId, id, tokens[index]!)
+    }
+    expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['a', 'b', 'c'])
+    // 之后的第五条仍被拒（满载是终态）。
+    await expect(store.reserveMessageDelivery(state.teamRunId, 'e')).rejects.toMatchObject({
+      code: 'MESSAGE_LEDGER_FULL',
+    })
+  })
+
+  it('P5-T20 (MAJOR-2) a TIMED-OUT owner cannot roll back the NEW reservation that replaced it', async () => {
+    // 第四轮评审 MAJOR-2 的确定性复现：在途行没有 owner token 时，旧调用迟到的
+    // rollback 会删掉 TTL 之后别人刚建立的新预约 ⇒ 同 id 又能被第三个调用预约
+    // ⇒ 两条真投递并发。带 token 后旧 rollback 只可能命中它自己那行。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const store = new TeamStateStore(config)
+    const state = await store.create(provisioningInput())
+    const tokenA = await reserveToken(store, state.teamRunId, 'm1')
+    // ① 把 A 的那行改成 TTL 之外（模拟 A 挂起/崩溃）。
+    const ledgerPath = join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json')
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
+    // ② B 拿到新预约（过期行被剔除）。
+    const tokenB = await reserveToken(store, state.teamRunId, 'm1')
+    expect(tokenB).not.toBe(tokenA)
+    // ③ **旧 A 迟到 rollback**：不许删 B 的新预约。
+    await store.rollbackMessageReservation(state.teamRunId, 'm1', tokenA)
+    const afterA = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, token: string }[] }
+    expect(afterA.inFlightMessages).toEqual([{ id: 'm1', at: expect.any(Number), token: tokenB }])
+    // ④ C 再取同 id ⇒ 仍是 in-flight（B 在投），不是 reserved ⇒ 不会并发重投。
+    expect(await store.reserveMessageDelivery(state.teamRunId, 'm1')).toMatchObject({ state: 'in-flight' })
+  })
+
+  it('P5-T20 (MINOR) the orphaned→deleting writer takes the SAME state.lock as forgetRun', async () => {
+    // 第四轮评审 MINOR：`forceTransitionToDeleting` 是 orphaned→deleting 的**唯一**
+    // 写者，此前它的 load+save 都在锁外 ⇒ forgetRun 的「确证 + rm」仍可与它交错。
+    // 现在它拿同一把 state.lock：外部占住锁时它必须**等着**。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const store = new TeamStateStore(config)
+    const state = await store.create({ ...provisioningInput(), leadSessionId: 'lead-lock-1' })
+    const lockPath = join(dir, 'runtime', state.teamRunId, 'state.lock')
+    let release = () => {}
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const holding = withLock(lockPath, async () => {
+      await held
+    }, { ownerTag: 'test-holder' })
+    // 让 holding 真的拿到锁。
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    let settled = false
+    const pending = store.forceTransitionToDeleting(state.teamRunId).then((value) => {
+      settled = true
+      return value
+    })
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    // 锁被外部占着 ⇒ 写者还没完成。
+    expect(settled).toBe(false)
+    release()
+    await holding
+    const flipped = await pending
+    expect(flipped.status).toBe('deleting')
   })
 
   it('P5-T16 (MINOR-9) a corrupt sidecar is quarantined and its two consequences are named separately', async () => {

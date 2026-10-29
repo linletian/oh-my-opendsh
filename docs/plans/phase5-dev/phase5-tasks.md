@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每条 team 面的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：✅ **19/19 全部收口**（2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **20/20 全部收口**（2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **编号**：`P5-T<n>`（Phase 5 - Task n）。工作包归属见计划书 §7。
 >
@@ -245,6 +245,16 @@
 - **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
 - **证据**：✅ 2026-10-29——**MAJOR-1**：`reserveMessageDelivery` 返回三态（`reserved` / `duplicate` / `in-flight`），满载判据读**已送达**账；工具层 `inFlight:true` 走独立返回形状（不给 `deduplicated`、不给 "was already delivered"）。新腿：并发同 ID（A 挂起、B 读 in-flight、A 成功后 B 才 dedup；A 失败后 B 重试真投递）+ store 级三段序 + 过期在途行剔除。**MAJOR-2/3/4**：`VENDOR_SKILL_TEAM_ADAPTATION_NOTES` 四枚；`TEAM_SURFACE_SHAPES_NOTE` 跨包逐字同源（交叉钉）；`HYPERPLAN_TEAM_SPEC_REPLACEMENT` 进 FULL guidance + 技能注记，并用**真实** `parseTeamSpec` 证明「照抄能过、上游原样被拒（`V1_UNSUPPORTED_FIELD`，先 description 后 kind）」。**MINOR**：`MESSAGE_LEDGER_FULL` 文本改为「拆队重建」；`forgetRun` 的 `force` 先行（force 时直接擦，非 force 才锁内确证 + 白名单 + 同一临界区 `rm`）；`formatCorruptLedgerWarning` 纯函数两分支；反向门命中数 `['debugging','hyperplan','refactor','ultrawork']`；e2e 重启腿按名对照。**E2E harness（同轮实测修的挂死面）**：mock 钳位步从 `team_status` 工具调用改成文本终止符（游标越界会重复最后一 step ⇒ 钳位成工具调用会把「队列没预料的额外唤醒轮」变成无界工具循环，实测 1169 次 status 直到 step-cap 打断）、静默前置改**真轮询**（250ms×120s）、`stopDsh` 对已退出子进程立即返回、restart 步 8 分钟 + 采纳 90s 时间盒。实测：**vitest 91f/2094t**；root typecheck exit 0；`verify-concerto-static` 37/37；`vendor-manifest` checked=372 violations=0（**vendor 字节零改动**）；`verify-licenses` checked=61 violations=0；`check-docs-consistency` 10/10；e2e **41/41**；`ci-local` 8/8 全绿。
 - **依赖**：P5-T18。**量级**：6 小时。
+
+### [x] P5-T20 — PR #17 第四轮评审修复轮（3 MAJOR + 1 MINOR）
+
+> **触发**：PR #17 的第四轮 OWNER 评审（`gh pr view 17`，`8e46c23 → e97a648`），结论 = **Request changes（暂缓合入）**：3 MAJOR（在途不计 cap 导致超帽/无界、TTL 无 owner 导致旧 rollback 删新预约、hyperplan keyword 注入路径仍带 closed-spec 违规字段）+ 1 MINOR（`forgetRun` 的锁没覆盖 `orphaned→deleting` 的实际写者）。
+> **复核结论**：**全部成立**（MAJOR-1/2 是第三轮两态账引入的新边界；MAJOR-3 是第三轮只修了技能注册面与命令路径、**漏了 keyword 注入面**；MINOR 是第三轮只锁住了 forgetRun 自己那一半）。
+
+- **产出**：**MAJOR-1**：满载判据改为 `delivered + inFlight ≥ cap`（锁内串行 ⇒ 任一时刻总数 ≤ cap；commit 只移行不改总数 ⇒ 提交路径无需再查）；**MAJOR-2**：在途行加**归属 token**（每次预约现铸 uuid），`commit` / `rollback` 只作用于同一 token 的那一行（记账仍无条件——迟到的成功投递必须记账）；**MAJOR-3**：omo-hooks 的 `HYPERPLAN_CARRIER_NOTE` 补「**整段替换** spec」的指令 + 合规 replacement（与 omo-commands 那份逐字相同，跨包交叉钉保证）；replacement 同时改成 **JSON 形态**（引号键），模型可原样当 `inline_spec` 传。**MINOR**：`forceTransitionToDeleting`（`orphaned → deleting` 的唯一写者）的「读 + 判 + 写」收进同一把 `state.lock`。
+- **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
+- **证据**：✅ 2026-10-29——**MAJOR-1**：store 腿 cap=3 时三条**不同** ID 全停在在途 ⇒ 第四条被拒、在途行恰 3 条（有界）、三条 commit 后仍不越界；工具腿 cap=1 时 A（挂起）已占在途 ⇒ B（不同 ID）拿 `MESSAGE_LEDGER_FULL` 且一次原生投递都没发。**MAJOR-2**：确定性复现腿——A 预约后把 `at` 改成 TTL 之外 ⇒ B 拿到新 token ⇒ **旧 A 的 rollback 不动 B 的行**（落盘逐字段断言）⇒ C 取同 id 仍是 `in-flight`。**MAJOR-3**：对**实际** `buildHyperplanMessage` 输出取证（不是常量）——replacement 在场、指令在场，并从消息正文抠出那段 JSON 跑**真实** `parseTeamSpec` 通过；反向腿（上游原样 spec）仍被 `V1_UNSUPPORTED_FIELD` 拒；另有跨包逐字等值钉。**MINOR**：外部占住 `state.lock` 时 `forceTransitionToDeleting` 必须等待（250ms 后仍未完成），释放后收敛到 `deleting`。实测：**vitest 91f/2100t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0（**vendor 字节零改动**）；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
+- **依赖**：P5-T19。**量级**：5 小时。
 
 ---
 
