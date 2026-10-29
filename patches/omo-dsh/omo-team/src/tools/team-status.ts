@@ -302,11 +302,12 @@ export async function executeTeamStatus(
 export const TEAM_MESSAGE_LEDGER_NOTE =
   'messageLedger is the full message budget: the fullness test is delivered + inFlight (not delivered alone), '
   + 'so a lead that hit MESSAGE_LEDGER_FULL can see which side consumed the budget. '
-  + 'stalledInFlight counts reservations whose sender never confirmed (hung or dead): those rows are NEVER reclaimed '
-  + '(reclaiming them would let a hung-but-alive sender deliver the same correlationId twice), so they keep consuming '
-  + 'budget permanently — a dead sender costs one unit for the rest of the run. '
-  + 'When remaining reaches 0 the run\'s message budget is final: a new correlationId does NOT help, the only recovery is '
-  + 'team_delete and a fresh run.'
+  + 'stalledInFlight counts reservations whose sender has not confirmed for longer than the reservation TTL: those rows are '
+  + 'NOT auto-reclaimed (auto-reclaiming would let a hung-but-alive sender deliver the same correlationId twice), but they are '
+  + 'not lost either — the original sender settling late frees the unit (a late rollback) or turns the id into delivered '
+  + '(a late commit), so stalledInFlight can go down. '
+  + 'remaining=0 is not always terminal: if inFlight > 0 and not all of it is stalled, those sends can still settle and release '
+  + 'units (wait and retry); if delivered alone has reached cap, the budget is spent and only team_delete and a fresh run remain.'
 
 export const TEAM_MEMBER_PHASE_NOTE =
   'member.phase is the ledger phase, not a liveness fact. The phase producers wired today are: '

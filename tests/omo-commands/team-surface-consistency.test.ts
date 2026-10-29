@@ -410,6 +410,12 @@ describe('P5-T16 (MAJOR-4) vendored skill 的 team 面适配注记（消费侧�
     expect(message).toContain('never STOP on that check')
     expect(message).toContain('the senpi restart line is dead')
     expect(message).toContain('`--no-omo-task` does not exist here')
+    // P5-T23（第六轮评审 MINOR-1）：**条件句**——noteam / 工具注册失败时这条
+    // note 仍会被注入（keyword-detector 只过滤 type='team'，不过滤 hyperplan），
+    // 所以不许无条件断言 "team_send_message IS in your tool list"。
+    expect(message).not.toContain('it IS in your tool list')
+    expect(message).toContain('IF the team_*')
+    expect(message).toContain('genuinely ABSENT')
     // ② 它必须在**正文之前**（模型先读到它，才可能拦下那次 STOP）。
     const bodyStart = message.indexOf('Before starting, verify:')
     expect(bodyStart).toBeGreaterThanOrEqual(0)

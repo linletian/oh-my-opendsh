@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每条 team 面的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：✅ **22/22 全部收口**（2026-10-29 增补 T22 = 第五轮 delta 自查残余；2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **23/23 全部收口**（2026-10-29 增补 T23 = PR #17 第六轮评审修复轮；2026-10-29 增补 T22 = 第五轮 delta 自查残余；2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **编号**：`P5-T<n>`（Phase 5 - Task n）。工作包归属见计划书 §7。
 >
@@ -270,12 +270,22 @@
 
 > **触发**：不等第六轮评审，主动把第五轮 delta 里我能看见的三处残余**先处理掉**：① `team_status` 只暴露 `processedMessageCount`（已送达），而满载判据是 `delivered + inFlight`——lead 撞到 `MESSAGE_LEDGER_FULL` 时从状态面看不出预算被谁吃掉；② quarantine 只有单投腿，广播路径无证据；③ "死掉的发送者永久占用一格预算"这个**取舍**只写在代码注释里，没进工具合同。
 
-- **产出**：**① 可观测性**：`team_status.messageLedger = { delivered, inFlight, stalledInFlight, cap, remaining }` + 模型可见的 `messageLedgerNote`（三条事实：满载判据是 delivered+inFlight / 停滞行**永不回收** / 满载是终态）。store 新增 `messageBudget()`（锁内读落盘账，因为镜像只投影已送达）。**② 覆盖**：广播路径的 quarantine 腿（`to='*'` + 停滞 id ⇒ `quarantined:true`、`deliveries:[]`、**零扇出**）。**③ 合同**：`team_send_message` 描述写明「被隔离的 correlationId **永久占用**一格 `max_messages_per_run` 预算，从不回收；`team_status.messageLedger` 让它可见而非静默」。
+- **产出**：**① 可观测性**：`team_status.messageLedger = { delivered, inFlight, stalledInFlight, cap, remaining }` + 模型可见的 `messageLedgerNote`（三条事实：满载判据是 delivered+inFlight / 停滞行**永不回收** / 满载是终态）。store 新增 `messageBudget()`（锁内读落盘账，因为镜像只投影已送达）。**② 覆盖**：广播路径的 quarantine 腿（`to='*'` + 停滞 id ⇒ `quarantined:true`、`deliveries:[]`、**零扇出**）。**③ 合同**：`team_send_message` 描述写明「被隔离的 correlationId 占用一格 `max_messages_per_run` 预算且**不自动回收**（原 owner 迟到 settle 可释放）；满载不一定是终态；`team_status.messageLedger` 让它可见而非静默」。
 - **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
 - **证据**：✅ 2026-10-29——`tests/omo-team/team-status.test.ts` 新增「cap=3、2 条已送达 + 1 条停滞在途 ⇒ `messageLedger={delivered:2,inFlight:1,stalledInFlight:1,cap:3,remaining:0}`，且随后一条确实被 `MESSAGE_LEDGER_FULL` 拒」；`tests/omo-team/team-message.test.ts` 新增广播 quarantine 腿（零扇出）。实测：**vitest 91f/2104t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
 - **Follow-up 登记**：本取舍带来的固有代价（消息可能静默丢失、封存不可逆、TTL 误判、重启累积损耗、预算语义漂移、sidecar 完整性、时钟边界）已单独立档 **`docs/followup-team-message-delivery.md`**（OPEN，含 8 条问题、根因、4 个待议选项、3 条未实施小修与改动落点）——**后续再议**，不在本轮修。
-- **决策记录（③ 的取舍，明确写死）**：采用 **at-least-once + 同 ID 不重投**。停滞预约**不回收**（回收等于把投递权交还给"可能还活着"的旧 owner，正是第五轮 MAJOR-1 的根因）；代价是死发送者永久占一格预算、且那条消息可能两次都没到——两条都在工具合同与 `messageLedgerNote` 里对模型明说。若要严格 exactly-once，需要宿主导航层提供幂等或投递 fencing（本仓做不到，登记为 follow-up）。
+- **决策记录（③ 的取舍，明确写死；P5-T23 订正术语）**：合同是**三条**——**① 同 ID 防重；② 可能漏投（静默）；③ 跨 ID 可能重复**。原文写作 "at-least-once" 是错的（quarantined 恰恰允许零送达），换新 id 也只是 **best-effort** 而非 guarantee。停滞预约**不回收**（回收等于把投递权交还给"可能还活着"的旧 owner，正是第五轮 MAJOR-1 的根因）；代价是死发送者永久占一格预算、且那条消息可能两次都没到——两条都在工具合同与 `messageLedgerNote` 里对模型明说。若要严格 exactly-once，需要宿主导航层提供幂等或投递 fencing（本仓做不到，登记为 follow-up）。
 - **依赖**：P5-T21。**量级**：2 小时。
+
+### [x] P5-T23 — PR #17 第六轮评审修复轮（3 MINOR + 1 NIT）
+
+> **触发**：PR #17 的第六轮 OWNER 评审（`gh pr view 17`，`99eb108 → 645439a`），结论 = **COMMENT（无 BLOCKER/MAJOR，建议修文案后合入）**：第五轮 3 个 MAJOR 全部关闭；剩 3 MINOR（keyword defusal 无条件宣称工具在场、`terminal/forever/never reclaimed` 与 rollback 状态机不符、`at-least-once`/`guaranteed` 术语过强）+ 1 组过期内部注释。
+> **复核结论**：**全部成立**（三条都是**模型可见文案说了比实际更强的话**——正是前几轮反复出现的那类错误；NIT 是我改了算法没清注释）。
+
+- **产出**：**MINOR-1**：keyword 拆弹改为**条件句**（`IF the team_* tools ARE in your tool list` … 否则走 subagent fallback）——noteam / 注册失败时这条 note 仍会被注入（keyword-detector 只过滤 `type='team'`，不过滤 hyperplan）。**MINOR-2**：满载文案按「谁占着名额」**分三路**（全已送达=终态 / fresh 在途=**暂时**，等 settle 或失败释放 / 只剩停滞=原 owner 迟到 settle 才能释放）；`TEAM_MESSAGE_LEDGER_NOTE` 同步改成「NOT auto-reclaimed + `stalledInFlight` 会下降 + `remaining=0` 不总是终态」；工具合同删掉 forever/never reclaimed。**MINOR-3**：quarantined 文案改为 **BEST-EFFORT, not a guarantee**，写明「跨 id 可能重复」与「只在漏掉比重复更糟时才换新 id」；任务书的 "at-least-once" 订正为**三条合同**（同 ID 防重 / 可能漏投 / 跨 ID 可能重复）。**NIT**：`team-state.ts` 与 `team-message.ts` 里描述旧 TTL 算法（读时剔除、新 owner 接管、旧 rollback no-op、迟到 commit 是唯一超帽路径）的注记全部重写。
+- **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
+- **证据**：✅ 2026-10-29——新增双腿对应评审的两个反例：① cap=1 且名额被 **fresh 在途**占着 ⇒ 错误文本含 `IN-FLIGHT reservations`/`TEMPORARY` 且**不含** `all 1 units are DELIVERED`，A rollback 后 B 立刻 `reserved`；② 两条停滞行 ⇒ `messageBudget().stalledInFlight=2` ⇒ 原 owner 迟到 rollback 后 `=1`、迟到 commit 后 `=0` 且该 id 变 `duplicate`。另加 keyword 条件句的反向断言（`not.toContain('it IS in your tool list')`）与 quarantined note 的 best-effort 断言。实测：**vitest 91f/2106t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0（**vendor 字节零改动**）；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
+- **依赖**：P5-T22。**量级**：2 小时。
 
 ---
 

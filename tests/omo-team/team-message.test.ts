@@ -695,6 +695,12 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(bResult.deduplicated).toBe(false)
     expect(bResult.note).toContain('QUARANTINED')
     expect(bResult.note).not.toContain('was already delivered')
+    // P5-T23（第六轮评审 MINOR-3）：**不许**把换新 id 说成"保证送达"。实际保证是
+    // 「同 ID 防重 + 可能漏投 + 跨 ID 可能重复」，措辞必须是 best-effort。
+    expect(bResult.note).toContain('BEST-EFFORT, not a guarantee')
+    expect(bResult.note).toContain('will arrive a second time')
+    expect(bResult.note).toContain('Only re-send new-ID if losing this message is worse than duplicating it')
+    expect(bResult.note).not.toContain('delivery guarantee, re-send')
     expect(channel.sends).toHaveLength(1)
     // 放行 A：它自己那帧落地并 commit。
     releaseFirst?.()

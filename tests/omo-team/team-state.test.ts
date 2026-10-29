@@ -947,6 +947,57 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     })
   })
 
+  it('P5-T23 (MINOR-2) a full ledger held by FRESH in-flight rows is TEMPORARY — the text says so and rollback frees it', async () => {
+    // 第六轮评审 MINOR-2 的反例 1：cap=1 时 A 的 fresh 在途行占满名额 ⇒ B 被拒，
+    // 但 A 一 rollback 预算就回来了 ⇒ 这**不是**终态，错误文本不能劝人拆队。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const store = new TeamStateStore({ ...config, max_messages_per_run: 1 })
+    const state = await store.create(provisioningInput())
+    const tokenA = await reserveToken(store, state.teamRunId, 'A')
+    await expect(store.reserveMessageDelivery(state.teamRunId, 'B')).rejects.toMatchObject({
+      code: 'MESSAGE_LEDGER_FULL',
+    })
+    // 文本必须说"暂时/等 settle"，且**不得**说 "all N units are DELIVERED"。
+    const err = await store.reserveMessageDelivery(state.teamRunId, 'B').catch((e: unknown) => e as Error & { message: string })
+    expect(String((err as Error).message)).toContain('IN-FLIGHT reservations')
+    expect(String((err as Error).message)).toContain('TEMPORARY')
+    expect(String((err as Error).message)).not.toContain('all 1 units are DELIVERED')
+    // A 失败退账 ⇒ 预算立刻回来，B 能预约（"终态"之说在这里就是错的）。
+    await store.rollbackMessageReservation(state.teamRunId, 'A', tokenA)
+    await expect(store.reserveMessageDelivery(state.teamRunId, 'B')).resolves.toMatchObject({ state: 'reserved' })
+  })
+
+  it('P5-T23 (MINOR-2) a STALLED row is not lost: the original owner late-settles it (rollback frees, commit delivers)', async () => {
+    // 反例 2：停滞行**不是**永远拿不回来。原 owner 的迟到 settle 会释放预算
+    // （rollback）或把 id 变成已送达（commit）——`stalledInFlight` 因此会下降。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const store = new TeamStateStore({ ...config, max_messages_per_run: 2 })
+    const state = await store.create(provisioningInput())
+    const tokenA = await reserveToken(store, state.teamRunId, 'A')
+    const tokenB = await reserveToken(store, state.teamRunId, 'B')
+    // 两条都改成 TTL 之外 ⇒ stalledInFlight = 2。
+    const ledgerPath = join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json')
+    const rewriteStale = () => {
+      const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+      ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
+      writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
+    }
+    rewriteStale()
+    expect(await store.messageBudget(state.teamRunId)).toMatchObject({ stalledInFlight: 2, inFlight: 2, delivered: 0 })
+    // ① 原 owner 迟到 rollback ⇒ 释放一格预算，stalled 降到 1。
+    await store.rollbackMessageReservation(state.teamRunId, 'A', tokenA)
+    expect(await store.messageBudget(state.teamRunId)).toMatchObject({ stalledInFlight: 1, inFlight: 1 })
+    // ② 原 owner 迟到 commit ⇒ 该 id 变已送达，stalled 归零。
+    await store.commitMessageDelivery(state.teamRunId, 'B', tokenB)
+    expect(await store.messageBudget(state.teamRunId)).toMatchObject({ stalledInFlight: 0, inFlight: 0, delivered: 1 })
+    // ③ 已送达账与 id 状态一致：B 现在是 duplicate，A 回到可预约。
+    expect(await store.reserveMessageDelivery(state.teamRunId, 'B')).toMatchObject({ state: 'duplicate' })
+  })
+
   it('P5-T20 (MINOR) the orphaned→deleting writer takes the SAME state.lock as forgetRun', async () => {
     // 第四轮评审 MINOR：`forceTransitionToDeleting` 是 orphaned→deleting 的**唯一**
     // 写者，此前它的 load+save 都在锁外 ⇒ forgetRun 的「确证 + rm」仍可与它交错。

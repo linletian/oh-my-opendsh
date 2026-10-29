@@ -230,10 +230,16 @@ describe('P5-T16 (MINOR-5) 成员活体观测面 — phase 是账面、resident 
       { store: capped, agents: { get: () => undefined } },
     )
     expect(result.messageLedger).toEqual({ delivered: 2, inFlight: 1, stalledInFlight: 1, cap: 3, remaining: 0 })
-    // 读法说明进模型可见面，且点名"停滞行永不回收 + 满载是终态"。
+    // 读法说明进模型可见面。P5-T23（第六轮评审 MINOR-2）：**不许**说成"永不回收 /
+    // 满载即终态"——停滞行可由原 owner 的迟到 settle 释放，fresh 在途也能被失败
+    // 释放。这里钉住准确的三段口径。
     expect(result.messageLedgerNote).toContain('delivered + inFlight')
-    expect(result.messageLedgerNote).toContain('NEVER reclaimed')
-    expect(result.messageLedgerNote).toContain('a new correlationId does NOT help')
+    expect(result.messageLedgerNote).toContain('NOT auto-reclaimed')
+    expect(result.messageLedgerNote).toContain('stalledInFlight can go down')
+    expect(result.messageLedgerNote).toContain('remaining=0 is not always terminal')
+    expect(result.messageLedgerNote).toContain('delivered alone has reached cap')
+    expect(result.messageLedgerNote).not.toContain('NEVER reclaimed')
+    expect(result.messageLedgerNote).not.toContain('the only recovery is')
     // 满载（剩余 0）⇒ 下一条被拒，与 messageLedger 的读数一致。
     await expect(capped.reserveMessageDelivery(teamRunId, 'next')).rejects.toMatchObject({ code: 'MESSAGE_LEDGER_FULL' })
   })

@@ -513,14 +513,19 @@ export interface OmoTeamRunLedger {
    * 并发同 ID 的第二个调用读到的是 `in-flight` ⇒ 返回**可重试**的 IN_PROGRESS
    * 结果，不再宣称已交付。
    *
-   * `at` 是**崩溃兜底**：预约带时刻，超过 `TEAM_MESSAGE_RESERVATION_TTL_MS`
-   * 的在途行按「发起进程已死」处理（读时剔除）——否则一次崩溃会把那个 id
-   * 永远钉在在途态。剔除的代价是「崩溃前恰好投递成功但没来得及 commit」那条
-   * 可能被重投一次；这比「永远发不出去」可接受，且窗口由 TTL 显式声明。
+   * `at` 让 TTL 能区分「慢」与「死」——但**只用来决定怎么回答**，不用来回收：
+   *
+   *   * 未过期 ⇒ 同 id 的请求得到 `in-flight`（等它 settle）；
+   *   * 已过期 ⇒ `quarantined`（推定旧 owner 已死，**不交出投递权**）。
+   *
+   * P5-T21 之前这里是「读时剔除」，那会把投递权交还给一个可能还活着的旧
+   * owner ⇒ 同一 correlationId 被物理重复投递（第五轮评审 MAJOR-1）。现在行
+   * **保留**：原 owner 的迟到 commit / rollback 仍能 settle 它（也正因如此，
+   * 它占的预算单位**不是**永远拿不回来，见 `messageBudget()`）。
    */
   readonly inFlightMessages: readonly {
     readonly id: string
-    /** 预约时刻（毫秒）。超过 `TEAM_MESSAGE_RESERVATION_TTL_MS` 的行按「发起进程已死」读时剔除。 */
+    /** 预约时刻（毫秒）。超过 `TEAM_MESSAGE_RESERVATION_TTL_MS` ⇒ 该 id 的报告态变为 `quarantined`（行保留）。 */
     readonly at: number
     /**
      * **预约归属凭证**（P5-T20 第四轮评审 MAJOR-2）。每次 `reserveMessageDelivery`
@@ -529,8 +534,9 @@ export interface OmoTeamRunLedger {
      * 没有它时的确定性事故（评审复现）：A 预约后挂起、TTL 过期、B 因过期拿到新
      * 预约；旧 A 随后 rollback —— 按 id 删会删掉**B 的新预约**，C 再取同 id 又
      * 得到 `reserved`，于是 B、C 同时真投同一个 correlationId，正是第三轮要消除
-     * 的 exactly-once 违反。带 token 后旧 A 的 rollback 只可能命中它自己那行
-     * （早已被 TTL 剔除）→ no-op。
+     * 的 exactly-once 违反。带 token 后旧 A 的 rollback 只可能命中**它自己那行**
+     * ——P5-T21 之后过期行不再被剔除，所以它确实会删掉自己那行（并归还预算），
+     * 但**永远碰不到**别人后来建的行。
      */
     readonly token: string
   }[]
@@ -1111,13 +1117,16 @@ export class TeamStateStore {
    * O_EXCL 锁 + 锁内重读），变的是**记什么**：
    *
    *   * 已送达 ⇒ `duplicate`（真去重，可以放心宣称「此前已交付」）；
-   *   * 在途 ⇒ `in-flight`（**不许**宣称已交付——本调用什么都没投）；
+   *   * 在途**未过期** ⇒ `in-flight`（**不许**宣称已交付——本调用什么都没投）；
+   *   * 在途**已过期** ⇒ `quarantined`（P5-T21：推定旧 owner 已死，但**不交出
+   *     投递权**——复用该 id 会造成同一 correlationId 的物理重复投递）；
    *   * 谁都没占 ⇒ 写入在途行，返回 `reserved`。
    *
-   * 满载（已送达数 ≥ vendored `max_messages_per_run`）⇒ 抛具名
-   * `MESSAGE_LEDGER_FULL`。**注意**：满载时换新 correlationId 也**无效**
-   * （账长不变，新 id 一样被拒）——真实终态只有「拆队重建」，错误文本与
-   * 工具层文案都按这个口径写（P5-T19 评审 MINOR-1 的更正）。
+   * 满载（`delivered + inFlight ≥ cap`，cap = vendored `max_messages_per_run`）
+   * ⇒ 抛具名 `MESSAGE_LEDGER_FULL`。**满载不一定是终态**（P5-T23 第六轮评审
+   * MINOR-2 的订正）：错误文本按「谁占着名额」分三种说——全部已送达才是终态；
+   * 还有 fresh 在途 ⇒ 等它们 settle（失败会释放）；只剩停滞行 ⇒ 只有原 owner
+   * 迟到 settle 才能释放，否则才轮到拆队重建。
    */
   async reserveMessageDelivery(teamRunId: string, messageId: string): Promise<TeamMessageReservation> {
     this.requireState(teamRunId)
@@ -1162,16 +1171,30 @@ export class TeamStateStore {
       //    记 `delivered + inFlight ≥ cap` 为满：锁内串行保证「任一时刻
       //    delivered + inFlight ≤ cap」，而 commit 只是把一行从在途移到已送达
       //    （总数不变）⇒ **提交路径无需再查 cap**，`delivered` 也永远不会超过 cap。
-      //    唯一能超出 cap 的路径是「预约过期后才成功的迟到 commit」——那条消息
-      //    确实送达了，拒绝记账会让同 id 的重投再送一次（见 commit 的注）。
+      //
+      //    P5-T21 之后**没有超帽路径**：过期行不再被剔除（不像第四轮那样腾出
+      //    名额），所以「迟到 commit 再占一格」的叠加不存在了。
       const cap = this.config.max_messages_per_run
-      const reserved = ledger.processedMessageIds.length + ledger.inFlightMessages.length
-      if (reserved >= cap) {
+      const deliveredCount = ledger.processedMessageIds.length
+      const inFlightCount = ledger.inFlightMessages.length
+      if (deliveredCount + inFlightCount >= cap) {
+        // P5-T23（第六轮评审 MINOR-2）：**别把"满载"一律说成终态**。评审给的两个
+        // 反例都成立：① cap=1 时 A 的 fresh 在途行占满名额，B 被拒——但 A 一
+        // rollback 预算就回来了，B 立刻能预约 ⇒ 这是**暂时**满载；② 停滞行也可
+        // 由原 owner 的迟到 rollback/commit 释放。所以按「谁占着名额」分三路说。
+        const now = Date.now()
+        const stalledCount = ledger.inFlightMessages
+          .filter((row) => now - row.at > TEAM_MESSAGE_RESERVATION_TTL_MS).length
+        const freshCount = inFlightCount - stalledCount
+        const diagnosis = deliveredCount >= cap
+          ? `all ${cap} units are DELIVERED — this run's message budget is spent; a NEW correlationId does NOT help (the ledger length does not change), so the only recovery is to tear this run down (team_delete) and start a new one`
+          : freshCount > 0
+            ? `${freshCount} unit(s) are held by IN-FLIGHT reservations that can still settle: wait for those sends to settle — a failed one RELEASES its unit — then retry. This fullness may be TEMPORARY, so do not tear the run down yet`
+            : `${stalledCount} unit(s) are held by STALLED reservations whose senders are presumed dead. Those rows are not auto-reclaimed (reclaiming them would let a hung-but-alive sender deliver twice), so the unit comes back only if the original sender settles late (a late commit moves it to delivered, a late rollback frees it). If it never does, the only recovery is to tear this run down (team_delete) and start a new one`
         throw new TeamStateError(
           `message dedup ledger for team ${teamRunId} is full (${cap} = the vendored max_messages_per_run bound; `
-          + `${ledger.processedMessageIds.length} delivered + ${ledger.inFlightMessages.length} in flight) — `
-          + `refusing to record '${messageId}'. This is the run's terminal message budget: a NEW correlationId does NOT help `
-          + `(the ledger length does not change), so the only recovery is to tear this run down (team_delete) and start a new one`,
+          + `${deliveredCount} delivered + ${inFlightCount} in flight, ${stalledCount} stalled) — `
+          + `refusing to record '${messageId}'. ${diagnosis}`,
           'MESSAGE_LEDGER_FULL',
         )
       }
@@ -1194,8 +1217,12 @@ export class TeamStateStore {
    *   * **记账无条件**：调用方说「我投递成功了」⇒ 这个 id 必须进已送达账（幂等）。
    *     拒绝记账会让同 id 的重投再送一次，那正是去重要防的事。唯一的超帽路径因此
    *     是「预约已过期（TTL）但投递最终还是成功」的迟到 commit——罕见、且必须记账。
-   *   * **清行认 token**：在途行可能早已被 TTL 剔除、被别的调用重新预约 ⇒ 按 id
-   *     清会误删别人的新预约。token 不匹配 ⇒ 只记账、不动别人的行。
+   *   * **清行认 token**：在途行可能属于别的调用（同一个 id 的**不同**消息不会
+   *     共用一行，但 id 被 quarantine 之后原 owner 仍可能迟到 commit）⇒ 按 id
+   *     清会误删别人的行。token 不匹配 ⇒ 只记账、不动别人的行。
+   *
+   * P5-T21 之后过期行**不再被剔除**，所以"迟到 commit 是唯一超帽路径"那句已
+   * 作废：commit 只是把一行从在途移到已送达，总数不变（P5-T23 注释订正）。
    */
   async commitMessageDelivery(teamRunId: string, messageId: string, token: string): Promise<void> {
     this.requireState(teamRunId)
@@ -1214,10 +1241,13 @@ export class TeamStateStore {
    * **放弃预约**（第二段·失败臂）：只删**属于 `token`** 的在途行——已送达账一条
    * 不动。
    *
-   * P5-T20（第四轮评审 MAJOR-2）：上一版按 id 删，于是「A 预约 → 挂起 → TTL 过期
-   * → B 拿到新预约 → A 迟到 rollback」会删掉 **B 的新预约**，C 再取同 id 又得到
-   * `reserved` ⇒ B、C 同时真投同一个 correlationId（exactly-once 再次被破）。
-   * 带 token 后旧调用的 rollback 只可能命中它自己那行（早已被 TTL 剔除）⇒ no-op。
+   * P5-T20（第四轮评审 MAJOR-2）：上一版按 id 删 ⇒ 旧调用的迟到 rollback 可能删掉
+   * 别人的行。带 token 后只命中**自己那行**。
+   *
+   * P5-T21 之后过期行**保留**（不再被读时剔除），所以原 owner 的迟到 rollback
+   * 会**真的删掉它自己的停滞行**并把那格预算还回来——这是设计内的：它用行动
+   * 证明了"这次投递失败"，比任何 TTL 猜测都可靠（P5-T23 注释订正；退出码面
+   * 见 `messageBudget().stalledInFlight` 会随之下降）。
    */
   async rollbackMessageReservation(teamRunId: string, messageId: string, token: string): Promise<void> {
     this.requireState(teamRunId)

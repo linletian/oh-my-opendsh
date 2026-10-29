@@ -498,7 +498,12 @@ export async function executeTeamSendMessage(
     // 过）——只如实说它被封存了，并让调用方换新 id 重发。
     const note = `message id ${messageId} is QUARANTINED for team ${clean.teamRunId}: its previous sender was presumed dead ${Math.round(reservation.staleForMs / 1000)}s ago, so it MAY or MAY NOT have been delivered. `
       + 'This call did NOT deliver it and will not reuse that id (re-sending it could deliver the same correlationId twice). '
-      + 'If you need a delivery guarantee, re-send the content under a NEW correlationId.'
+      // P5-T23（第六轮评审 MINOR-3）：**不许把它说成"保证送达"**。换新 id 是
+      // best-effort：可能再失败、再被隔离、撞满载，而且旧 owner 若其实投成功了，
+      // 内容会以两个 id 各到一份（跨 id 的重复不受同 id 去重约束）。
+      + 'A re-send under a NEW correlationId is BEST-EFFORT, not a guarantee: it can fail again, be quarantined again, or hit the run message budget, '
+      + 'and if the previous sender did deliver, that content will arrive a second time (same-ID dedup does not apply across ids). '
+      + 'Only re-send new-ID if losing this message is worse than duplicating it.'
     console.log(`${LOG_PREFIX} quarantined ${messageId} for team ${clean.teamRunId} — not delivered by this call`)
     return {
       teamRunId: clean.teamRunId,
@@ -625,10 +630,12 @@ export function createTeamSendMessageDefinition(deps: TeamMessageDeps): unknown 
       + 'Delivery rides the native adjacent-relay channel: lead↔member direct; member-to-member is relayed through the lead and the frame says so. '
       + 'An offline recipient is woken by the delivery itself. '
       + 'Re-sending the same correlationId is deduplicated: it is not delivered twice. '
-      + 'If a sender dies mid-delivery, its correlationId is QUARANTINED instead of reused (reusing it could deliver the same message twice): you get quarantined=true, nothing is delivered, and a guaranteed re-send must use a NEW correlationId. '
-      // P5-T22（自查残余 c）：**把取舍写进合同**，不只写在代码注释里。停滞预约
-      // 那一格预算**不回收**——回收就等于把投递权交还给"可能还活着"的旧 owner。
-      + 'A quarantined correlationId keeps consuming its one unit of the run\'s message budget (max_messages_per_run) forever: that unit is never reclaimed, so a run whose senders died spends budget on messages that were never confirmed. '
+      + 'If a sender dies mid-delivery, its correlationId is QUARANTINED instead of reused (reusing it could deliver the same message twice): you get quarantined=true, nothing is delivered, and re-sending that content requires a NEW correlationId (best-effort — see the note). '
+      // P5-T22（自查残余 c）+ P5-T23（第六轮评审 MINOR-2）：**把取舍写进合同**，
+      // 但按"谁能释放"分三路说，不许一律说成"永久/终态"——fresh 在途可以被
+      // 失败释放、停滞行可以被原 owner 的迟到 settle 释放。
+      + 'A quarantined correlationId keeps consuming one unit of the run\'s message budget (max_messages_per_run) and is NOT auto-reclaimed: it comes back only if the original sender settles late (a late rollback frees it, a late commit turns it into a delivered id). '
+      + 'A full ledger is therefore not always terminal: when the units are held by IN-FLIGHT reservations, wait for them to settle (a failed send releases its unit); when they are all DELIVERED, the run\'s budget is spent and only team_delete and a fresh run remain. '
       + 'team_status.messageLedger shows delivered / inFlight / stalledInFlight / remaining, so this is visible rather than silent. '
       + 'A failed delivery that reached NO recipient releases the id, so you may retry that same correlationId; '
       + 'a broadcast that reached SOME recipients keeps the id and must be re-sent under a NEW correlationId.',
