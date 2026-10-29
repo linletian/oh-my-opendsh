@@ -5934,6 +5934,13 @@ function bootDsh(sandbox, patchPath, env) {
 
 function stopDsh(child) {
   return new Promise((resolveStop) => {
+    // P5-T19：**已经退出的子进程立刻返回**。`child.once('exit')` 只在进程尚未
+    // 退出时才会触发——若它在我们挂监听之前就退了（例如上一轮的逃逸轮把宿主
+    // 拖崩），这里会永远等下去（实测把套件挂住）。
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolveStop()
+      return
+    }
     const killTimer = setTimeout(() => child.kill('SIGKILL'), 15_000)
     child.once('exit', () => {
       clearTimeout(killTimer)
@@ -20993,12 +21000,19 @@ function teamTaskClaimScript() {
       // between stamps a live board read after adoption.
       { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
       { type: 'text', text: TEAM_TASK_LEAD_REBOOT_SUMMARY },
-      // THE FINAL step is a READ-ONLY team_status: the mock CLAMPS the cursor
-      // at the last step, so every later request on this lane — including the
-      // fresh READER session the reboot helper spawns — answers with a live
-      // board read. The reader's own prompt carries `"teamRunId":"<uuid>"`
-      // verbatim so the {{teamRunId}} capture resolves on its virgin context.
-      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      // P5-T19：THE FINAL step is a **text terminator**, not a `team_status`
+      // call. The mock CLAMPS the cursor at the last step (`steps[Math.min(
+      // index, steps.length - 1)]`), so every request past the end repeats it.
+      // A clamped TOOL CALL therefore turns one extra wake turn into an
+      // unbounded tool loop — measured: the lead's 8th turn (an extra
+      // member-wake the queue did not foresee) repeated `team_status` 1169
+      // times until the host's step cap interrupted it, which then made the
+      // reboot's quiescence precondition red and the adoption stall.
+      // A clamped TEXT step degrades an unforeseen extra turn to one harmless
+      // reply. (No post-reboot reader exists — `TEAM_TASK_REBOOT_STATUS_PROMPT`
+      // is defined but never used — so no live-read contract is lost here; the
+      // post-reboot anchor is the DISK audit, not a tool call.)
+      { type: 'text', text: TEAM_TASK_LEAD_STATUS_SUMMARY },
     ],
     // The spawn turn of a briefing-seated member consumes extra steps while the
     // injected briefing drains (MEASURED P5-T8b run 1: REPLY then three
@@ -21183,7 +21197,7 @@ async function restartAdoptAndAudit(boot, sandbox, sessionId, patchPath, env, ro
   // journal replay (never re-reaches the LLM), and a FRESH root is refused
   // team_status by name (not a participant) — so on this runtime the honest
   // live-anchor is the disk the new process rebuilt its world from.
-  const postAudit = auditBoardOnDisk(boardDir)
+  const postAudit = auditBoardOnDisk(boardDir, preMemberSessionIds)
   return {
     reached: adopted && postFiles.state && postFiles.ledger && postAudit.ok,
     adopted,
@@ -21204,7 +21218,7 @@ async function restartAdoptAndAudit(boot, sandbox, sessionId, patchPath, env, ro
 }
 
 /** Read the persisted board back from disk and check the pinned end-state. */
-function auditBoardOnDisk(boardDir) {
+function auditBoardOnDisk(boardDir, preMemberSessionIds = {}) {
   const readTask = (id) => {
     try {
       return JSON.parse(readFileSync(join(boardDir, 'tasks', `${id}.json`), 'utf8'))
@@ -24773,24 +24787,36 @@ const SCENARIOS = [
         // mock cursor and the post-reboot read-back). A clean reboot needs
         // turn/start == turn/end on EVERY lane.
         kind: 'await',
+        // P5-T19：**轮询直到静默**，不是「采样一次」。
+        //
+        // 上一版这个 hook 只读一次就把 false 返回——可 lead 第 7 个 turn（成员
+        // 回包的唤醒轮）恰好可能正落在采样瞬间，于是 precondition 假红、重启带上
+        // 一个未结算的 lane，采纳轮又在宿主的重放上卡死（实测把套件挂住一小时）。
+        // 真正的语义是「等到静默」，所以这里按 250ms 轮询到 120s 期限。
         until: async (boot, sandbox, sessionId) => {
-          const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
-          const lanes = logs.filter((c) => String(c.header?.id) === String(sessionId)
-            || String(c.header?.parentSession) === String(sessionId))
-          if (lanes.length < 3) return false
-          const open = lanes.filter((lane) => {
-            const starts = (lane.events ?? []).filter((e) => e.type === 'turn/start').length
-            const ends = (lane.events ?? []).filter((e) => e.type === 'turn/end').length
-            return starts !== ends || ends < 1
-          })
-          if (open.length > 0) {
-            console.error(`drive: [team-task-claim] quiescence pending on ${open.length} lane(s): `
-              + open.map((l) => `${String(l.header?.id ?? '?').slice(0, 8)}:`
+          const deadline = Date.now() + 120_000
+          let lastReport = ''
+          for (;;) {
+            const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+            const lanes = logs.filter((c) => String(c.header?.id) === String(sessionId)
+              || String(c.header?.parentSession) === String(sessionId))
+            if (lanes.length >= 3) {
+              const open = lanes.filter((lane) => {
+                const starts = (lane.events ?? []).filter((e) => e.type === 'turn/start').length
+                const ends = (lane.events ?? []).filter((e) => e.type === 'turn/end').length
+                return starts !== ends || ends < 1
+              })
+              if (open.length === 0) return true
+              lastReport = open.map((l) => `${String(l.header?.id ?? '?').slice(0, 8)}:`
                 + `${(l.events ?? []).filter((e) => e.type === 'turn/start').length}`
-                + `/${(l.events ?? []).filter((e) => e.type === 'turn/end').length}`).join(', '))
-            return false
+                + `/${(l.events ?? []).filter((e) => e.type === 'turn/end').length}`).join(', ')
+            }
+            if (Date.now() > deadline) {
+              console.error(`drive: [team-task-claim] quiescence TIMED OUT after 120s on: ${lastReport || '(lanes<3)'}`)
+              return false
+            }
+            await sleep(250)
           }
-          return true
         },
         note: 'every lane quiescent (turn/start == turn/end) — clean-reboot precondition',
       },
@@ -25375,7 +25401,16 @@ async function runScenario(def, baseRoutes) {
         // adoption → 落盘审计。REBINDS boot/child（之后的 prompt 与尾部 stopDsh
         // 都跑在新进程上）；观察整枚记账，analysis 读账——绝不静默。
         if (action.kind === 'restartAdoptAndAudit') {
-          const observation = await restartAdoptAndAudit(boot, sandbox, created.sessionId, patchPath, env, routes)
+          // P5-T19：**整步时间盒**。重启/采纳链里有多处宿主交互，任何一处卡住
+          // 都会把整个套件挂死（实测两次，各一小时）。现在 8 分钟上限：超时 ⇒
+          // 具名 detail + `reached:false`，让分析侧按具名 check 红，套件照常跑完。
+          const observation = await Promise.race([
+            restartAdoptAndAudit(boot, sandbox, created.sessionId, patchPath, env, routes),
+            new Promise((resolveTimeout) => setTimeout(
+              () => resolveTimeout({ reached: false, detail: 'restart step TIMED OUT after 8 minutes (host stall)' }),
+              8 * 60_000,
+            )),
+          ])
           if (observation.boot !== undefined) {
             boot = observation.boot
             child = boot.child
