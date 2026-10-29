@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每条 team 面的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：✅ **20/20 全部收口**（2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **21/21 全部收口**（2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **编号**：`P5-T<n>`（Phase 5 - Task n）。工作包归属见计划书 §7。
 >
@@ -255,6 +255,16 @@
 - **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
 - **证据**：✅ 2026-10-29——**MAJOR-1**：store 腿 cap=3 时三条**不同** ID 全停在在途 ⇒ 第四条被拒、在途行恰 3 条（有界）、三条 commit 后仍不越界；工具腿 cap=1 时 A（挂起）已占在途 ⇒ B（不同 ID）拿 `MESSAGE_LEDGER_FULL` 且一次原生投递都没发。**MAJOR-2**：确定性复现腿——A 预约后把 `at` 改成 TTL 之外 ⇒ B 拿到新 token ⇒ **旧 A 的 rollback 不动 B 的行**（落盘逐字段断言）⇒ C 取同 id 仍是 `in-flight`。**MAJOR-3**：对**实际** `buildHyperplanMessage` 输出取证（不是常量）——replacement 在场、指令在场，并从消息正文抠出那段 JSON 跑**真实** `parseTeamSpec` 通过；反向腿（上游原样 spec）仍被 `V1_UNSUPPORTED_FIELD` 拒；另有跨包逐字等值钉。**MINOR**：外部占住 `state.lock` 时 `forceTransitionToDeleting` 必须等待（250ms 后仍未完成），释放后收敛到 `deleting`。实测：**vitest 91f/2100t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0（**vendor 字节零改动**）；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
 - **依赖**：P5-T19。**量级**：5 小时。
+
+### [x] P5-T21 — PR #17 第五轮评审修复轮（3 MAJOR）
+
+> **触发**：PR #17 的第五轮 OWNER 评审（`gh pr view 17`，`e97a648 → 99eb108`），结论 = **Request changes（暂缓合入）**：3 MAJOR（TTL 重新预约不是投递 fence ⇒ 同 correlationId 物理重复投递；TTL 迟到 commit 仍可超帽；keyword 的 HARD PRECONDITIONS **STOP/Restart 死前置**未拆）+ 0 MINOR。
+> **复核结论**：**全部成立**（前两条是第四轮 owner-token 方案的边界：token 保住了**账**的归属，但没保住**物理投递**的唯一性；第三条是 keyword 面只补了 spec、没补 STOP/Restart 拆弹）。
+
+- **产出**：**MAJOR-1/2 同一根因，一处修**：**TTL 不再交出投递权**。过期行不再被读时剔除；请求同一 id 的调用拿到新的 `quarantined` 结果——**不投递**、**不宣称已交付**（我们并不知道它是否落地过）、并让调用方换新 correlationId 重发。于是 `delivered + inFlight ≤ cap` 从"靠锁串行"升级为**严格不变量**（过期不释放名额；迟到 commit 只把一行从在途**移**到已送达，总数不变）。**MAJOR-3**：keyword 注记补 STOP/Restart 拆弹段（与命令路径的 `HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_SPLIT` 同一口径），放在正文**之前**。
+- **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
+- **证据**：✅ 2026-10-29——**MAJOR-1**：工具级复现腿（评审原式）——A 挂起在 `sendMessage` 里 ⇒ 把 A 的 `at` 改到 TTL 之外 ⇒ B 用**同一** correlationId 拿到 `quarantined`（`delivered/inFlight/deduplicated` 三项皆 false，note 含 QUARANTINED 且**不含** "was already delivered"）⇒ `channel.sends` 恒为 1，**同一 correlationId 没有被物理重复投递**。store 级腿：过期 ⇒ `quarantined`（不是 `reserved`），且旧 owner 用自己 token 的 rollback 才能清掉封存行（那是"我失败了"的证明）。**MAJOR-2**：cap=1 复现腿——A 预约 → `at` 改到 TTL 之外 → B（不同 id）**被 cap 拒**（过期不释放名额）→ A 的迟到 commit ⇒ 磁盘 `processedMessageIds=['A']`、在途 0，总数恒 1 → C 仍被拒。**MAJOR-3**：对**实际** `buildHyperplanMessage` 输出取证——拆弹句在场、且在正文 "Before starting, verify:" **之前**；命令路径同一句仍在（两侧口径一致）。实测：**vitest 91f/2102t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0（**vendor 字节零改动**）；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
+- **依赖**：P5-T20。**量级**：4 小时。
 
 ---
 

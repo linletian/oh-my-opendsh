@@ -400,6 +400,26 @@ describe('P5-T16 (MAJOR-4) vendored skill 的 team 面适配注记（消费侧�
     expect(upstream.code).toBe('V1_UNSUPPORTED_FIELD')
   })
 
+  it('P5-T21 (MAJOR-3) the injected hyperplan message DEFUSES the STOP/Restart precondition', () => {
+    // 第五轮评审 MAJOR-3：正文的 HARD PRECONDITIONS 要求 `team_create`/`task_send`/
+    // `team_delete` 齐备，否则 STOP 并让用户「Restart senpi without --no-omo-task」。
+    // 本部署 `task_send` 字面恒不存在、`--no-omo-task` 与「重启 senpi」都不存在
+    // ⇒ 不拆弹时模型可以照正文停下来、并把一条无效的重启指令复述给用户。
+    const message = buildHyperplanMessage({ texts: KEYWORD_TEXTS, agentName: 'sisyphus' })
+    // ① 拆弹句在场。
+    expect(message).toContain('never STOP on that check')
+    expect(message).toContain('the senpi restart line is dead')
+    expect(message).toContain('`--no-omo-task` does not exist here')
+    // ② 它必须在**正文之前**（模型先读到它，才可能拦下那次 STOP）。
+    const bodyStart = message.indexOf('Before starting, verify:')
+    expect(bodyStart).toBeGreaterThanOrEqual(0)
+    expect(message.indexOf('never STOP on that check')).toBeLessThan(bodyStart)
+    expect(message.indexOf('the senpi restart line is dead')).toBeLessThan(bodyStart)
+    // ③ 命令路径的同一句仍然在（两侧口径一致，不是只补了 keyword 面）。
+    expect(HYPERPLAN_TEAM_MODE_GUIDANCE).toContain('never STOP on that check')
+    expect(HYPERPLAN_TEAM_MODE_GUIDANCE).toContain('the senpi restart line is dead')
+  })
+
   it('P5-T20 (MAJOR-3) the two packages carry the SAME replacement spec, byte for byte', () => {
     // 跨包禁 import：两份各持一份，等值靠这道钉（R-5 先例）。
     expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT_HOOKS).toBe(HYPERPLAN_TEAM_SPEC_REPLACEMENT)

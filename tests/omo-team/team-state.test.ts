@@ -790,20 +790,62 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['m1'])
   })
 
-  it('P5-T19 (MAJOR-1) a stale in-flight reservation is pruned (crashed sender does not wedge the id)', async () => {
+  it('P5-T21 (MAJOR-1) a stale reservation is QUARANTINED — the same id is never re-delivered', async () => {
+    // 第五轮评审 MAJOR-1：上一版让 TTL 过期行「读时剔除」⇒ 同一 id 可被第二个
+    // 调用重新预约 ⇒ 挂起但没死的旧 owner 与新 owner **各自真投一帧**（同一
+    // correlationId 物理重复）。TTL 只能表达「推定他死了」，不能表达「你可以
+    // 再投一次」。现在过期 ⇒ `quarantined`：不交出投递权、也不宣称已交付。
     const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
     tempDirs.push(dir)
     const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
     const store = new TeamStateStore(config)
     const state = await store.create(provisioningInput())
     const token = await reserveToken(store, state.teamRunId, 'm1')
-    // 手写一条**过期**在途行（模拟「发起进程崩溃」）：TTL 之外 ⇒ 读时剔除。
+    // 把这条行改成 TTL 之外（模拟 owner 挂起）。
     const ledgerPath = join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json')
-    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as Record<string, unknown>
-    ledger.inFlightMessages = [{ id: 'm1', at: Date.now() - 10 * 60 * 1000, token }]
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
     writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
-    // 过期 ⇒ 不再挡路。
+    // 过期 ⇒ **隔离**（不交权、不可重投）。
+    const quarantined = await store.reserveMessageDelivery(state.teamRunId, 'm1')
+    expect(quarantined).toMatchObject({ state: 'quarantined' })
+    // 再取一次仍是 quarantined（没有被谁"接管"）。
+    expect(await store.reserveMessageDelivery(state.teamRunId, 'm1')).toMatchObject({ state: 'quarantined' })
+    // 旧 owner 的 rollback（它自己那条 token）可以清掉封存行——那是"我失败了"的
+    // 证明，清掉之后该 id 才重新可用（不会造成重复投递）。
+    await store.rollbackMessageReservation(state.teamRunId, 'm1', token)
     expect(await store.reserveMessageDelivery(state.teamRunId, 'm1')).toMatchObject({ state: 'reserved' })
+  })
+
+  it('P5-T21 (MAJOR-2) a stale reservation does NOT release budget: the late commit cannot break the cap', async () => {
+    // 第五轮评审 MAJOR-2 的 store 复现（cap=1）：A 预约 → `at` 改到 TTL 之外
+    // → B 预约（上一版会成功，因为过期行被剔除）→ A、B 先后 commit ⇒ 总数 2 > cap。
+    // 现在过期**不释放名额**：B 被 cap 拒；A 的迟到 commit 只把那一行移到已送达，
+    // 总数恒为 1。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const store = new TeamStateStore({ ...config, max_messages_per_run: 1 })
+    const state = await store.create(provisioningInput())
+    const tokenA = await reserveToken(store, state.teamRunId, 'A')
+    const ledgerPath = join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json')
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
+    // B（**不同** id）必须被拒——过期不释放名额。
+    await expect(store.reserveMessageDelivery(state.teamRunId, 'B')).rejects.toMatchObject({
+      code: 'MESSAGE_LEDGER_FULL',
+    })
+    // A 的迟到 commit：总数仍是 1（从在途移到已送达）。
+    await store.commitMessageDelivery(state.teamRunId, 'A', tokenA)
+    expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['A'])
+    const after = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { processedMessageIds: string[], inFlightMessages: unknown[] }
+    expect(after.inFlightMessages).toHaveLength(0)
+    expect(after.processedMessageIds).toEqual(['A'])
+    // 仍满载。
+    await expect(store.reserveMessageDelivery(state.teamRunId, 'C')).rejects.toMatchObject({
+      code: 'MESSAGE_LEDGER_FULL',
+    })
   })
 
   it('P5-T16 (MAJOR-2) a failed delivery compensates EXACTLY — no delivered id is touched', async () => {
@@ -903,32 +945,6 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     await expect(store.reserveMessageDelivery(state.teamRunId, 'e')).rejects.toMatchObject({
       code: 'MESSAGE_LEDGER_FULL',
     })
-  })
-
-  it('P5-T20 (MAJOR-2) a TIMED-OUT owner cannot roll back the NEW reservation that replaced it', async () => {
-    // 第四轮评审 MAJOR-2 的确定性复现：在途行没有 owner token 时，旧调用迟到的
-    // rollback 会删掉 TTL 之后别人刚建立的新预约 ⇒ 同 id 又能被第三个调用预约
-    // ⇒ 两条真投递并发。带 token 后旧 rollback 只可能命中它自己那行。
-    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
-    tempDirs.push(dir)
-    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
-    const store = new TeamStateStore(config)
-    const state = await store.create(provisioningInput())
-    const tokenA = await reserveToken(store, state.teamRunId, 'm1')
-    // ① 把 A 的那行改成 TTL 之外（模拟 A 挂起/崩溃）。
-    const ledgerPath = join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json')
-    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
-    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
-    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
-    // ② B 拿到新预约（过期行被剔除）。
-    const tokenB = await reserveToken(store, state.teamRunId, 'm1')
-    expect(tokenB).not.toBe(tokenA)
-    // ③ **旧 A 迟到 rollback**：不许删 B 的新预约。
-    await store.rollbackMessageReservation(state.teamRunId, 'm1', tokenA)
-    const afterA = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, token: string }[] }
-    expect(afterA.inFlightMessages).toEqual([{ id: 'm1', at: expect.any(Number), token: tokenB }])
-    // ④ C 再取同 id ⇒ 仍是 in-flight（B 在投），不是 reserved ⇒ 不会并发重投。
-    expect(await store.reserveMessageDelivery(state.teamRunId, 'm1')).toMatchObject({ state: 'in-flight' })
   })
 
   it('P5-T20 (MINOR) the orphaned→deleting writer takes the SAME state.lock as forgetRun', async () => {

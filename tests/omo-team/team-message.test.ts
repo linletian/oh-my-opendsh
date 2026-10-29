@@ -24,6 +24,9 @@
 // as a red assertion, not as a phantom green.
 //
 // The `.ts` extension in the import paths is load-bearing (Node 24 type-stripping).
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 import { makeStore } from './support/ephemeral-store.ts'
 import {
@@ -651,6 +654,54 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(aResult.delivered).toBe(true)
     await capped.rebuildIndexes()
     expect(capped.get(fixture.teamRunId)!.processedMessageIds).toEqual([CORRID_A])
+  })
+
+  it('P5-T21 (MAJOR-1) a hung owner past the TTL is QUARANTINED — no second native send for that correlationId', async () => {
+    // 第五轮评审 MAJOR-1 的原始复现（它用 executeTeamSendMessage 实测到
+    // `nativeSendCalls = 2`）：A 挂起在 sendMessage 里 → 把 A 的 at 改到 TTL 之外
+    // → B 用**同一** correlationId。上一版 B 会拿到新 token 并**再发一帧**；现在
+    // B 拿到 quarantined：**不发帧**、不宣称已交付。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    let releaseFirst: (() => void) | undefined
+    const channel = {
+      sends: [] as string[],
+      async sendMessage(_sender: TeamAgent, targetSessionId: string) {
+        this.sends.push(targetSessionId)
+        if (this.sends.length === 1) await new Promise<void>((resolve) => { releaseFirst = resolve })
+        return 'accepted'
+      },
+    }
+    const toolDeps = { ...deps, subagents: channel }
+    const lead = makeAgent(fixture.leadSessionId)
+    const aPromise = executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), toolDeps as never,
+    )
+    for (let i = 0; i < 200 && channel.sends.length === 0; i += 1) await new Promise((r) => setTimeout(r, 5))
+    expect(channel.sends).toHaveLength(1)
+    // 把 A 的在途行改到 TTL 之外（模拟"挂起"）。
+    const ledgerPath = join(String(store.config.base_dir), 'runtime', fixture.teamRunId, 'omo-team-extensions.json')
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
+    // B：**同一** correlationId ⇒ quarantined，且**没有**第二次原生投递。
+    const bResult = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), toolDeps as never,
+    )
+    expect(bResult.quarantined).toBe(true)
+    expect(bResult.delivered).toBe(false)
+    expect(bResult.inFlight).toBe(false)
+    expect(bResult.deduplicated).toBe(false)
+    expect(bResult.note).toContain('QUARANTINED')
+    expect(bResult.note).not.toContain('was already delivered')
+    expect(channel.sends).toHaveLength(1)
+    // 放行 A：它自己那帧落地并 commit。
+    releaseFirst?.()
+    const aResult = await aPromise
+    expect(aResult.delivered).toBe(true)
+    // 总原生投递次数恰 1 —— 同一 correlationId 没有被物理重复投递。
+    expect(channel.sends).toHaveLength(1)
   })
 
   it('single-target delivery failure COMPENSATES the reservation (retry may deliver)', async () => {

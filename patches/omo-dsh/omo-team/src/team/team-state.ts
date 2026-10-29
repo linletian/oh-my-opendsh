@@ -551,6 +551,16 @@ export type TeamMessageReservation =
   | { readonly state: 'reserved'; readonly token: string }
   | { readonly state: 'duplicate' }
   | { readonly state: 'in-flight' }
+  /**
+   * **已隔离**（P5-T21 第五轮评审 MAJOR-1）：这个 id 的在途预约已超过 TTL——
+   * 上一个 owner 被推定已死，但它的原生投递**可能已经落地**。本调用**不许**
+   * 重新投递该 id（那会造成同一 correlationId 的物理重复投递）。
+   *
+   * 与 `duplicate` 的差别是**诚实性**：我们并不知道它是否送达过，所以不能对
+   * 模型宣称「此前已交付」；只能如实说「上一个发送者失联、这条 id 已封存」，
+   * 并让调用方换**新** correlationId 重发。
+   */
+  | { readonly state: 'quarantined'; readonly staleForMs: number }
 
 /** 在途行的解析形状（`readLedgerUnlocked` 与写入共用）。 */
 interface TeamMessageInFlightRow {
@@ -721,7 +731,6 @@ export class TeamStateStore {
       if (parsed.version !== 1 || parsed.teamRunId !== teamRunId) {
         throw new Error('ledger version/teamRunId mismatch')
       }
-      const now = Date.now()
       return {
         version: 1,
         teamRunId,
@@ -737,8 +746,7 @@ export class TeamStateStore {
           ))
           // 旧版写下的行没有 token：按空串承载（任何铸造的 token 都不会等于空串
           // ⇒ 旧调用**无法**用它的 token 删掉这一行；TTL 会把它自然清掉）。
-          .map((row) => ({ id: row.id, at: row.at, token: typeof row.token === 'string' ? row.token : '' }))
-          .filter((row) => now - row.at <= TEAM_MESSAGE_RESERVATION_TTL_MS),
+          .map((row) => ({ id: row.id, at: row.at, token: typeof row.token === 'string' ? row.token : '' })),
         briefingInjectedMembers: Array.isArray(parsed.briefingInjectedMembers) ? parsed.briefingInjectedMembers.filter((x): x is string => typeof x === 'string') : [],
       }
     } catch (err) {
@@ -1117,9 +1125,33 @@ export class TeamStateStore {
       const ledger = await this.readLedgerUnlocked(teamRunId)
       // ① 已送达 ⇒ 真重复。
       if (ledger.processedMessageIds.includes(messageId)) return { state: 'duplicate' }
-      // ② 在途 ⇒ 有人在投同一个 id（既非重复也非失败）。
-      if (ledger.inFlightMessages.some((row) => row.id === messageId)) return { state: 'in-flight' }
+      // ② 在途 ⇒ 有人在投同一个 id（既非重复也非失败）。**过期不交出投递权**：
+      //
+      //    P5-T21（第五轮评审 MAJOR-1）：上一版让 TTL 过期行**读时剔除**，于是同一
+      //    id 可以被第二个调用重新预约 ⇒ 挂起（但没死）的旧 owner 与新 owner
+      //    **各自真投一帧**，同一 correlationId 物理重复投递两次（评审实测
+      //    `nativeSendCalls = 2`，而工具说明仍承诺 "not delivered twice"）。
+      //    TTL 只能表达「我推定他死了」，**不能**表达「所以你可以再投一次」——
+      //    后者需要投递层 fencing，而跨悬挂中的 send 做不到。
+      //
+      //    改法：过期行**永不**把投递权交出去。请求方拿到 `quarantined`：id 被封存、
+      //    本调用不投递、也不宣称「已交付」（我们并不知道它是否落地过），调用方
+      //    换**新** correlationId 重发。代价是“挂起进程那条消息可能两次都没到”
+      //    （宁漏不重），且它占用的预算单位**保留**（见 ③ 的 cap 计法）——两条都
+      //    在注释与工具文案里写死。
+      const ownRow = ledger.inFlightMessages.find((row) => row.id === messageId)
+      if (ownRow !== undefined) {
+        const ageMs = Date.now() - ownRow.at
+        if (ageMs <= TEAM_MESSAGE_RESERVATION_TTL_MS) return { state: 'in-flight' }
+        return { state: 'quarantined', staleForMs: ageMs }
+      }
       // ③ 满载 ⇒ 显式拒收（不裁剪任何一条）。
+      //
+      //    P5-T21（第五轮评审 MAJOR-2）：**过期不再释放名额**（见 ②），所以
+      //    `delivered + inFlight ≤ cap` 从"靠锁串行"升级为**严格不变量**：不存在
+      //    「过期行腾出名额、旧 owner 又迟到 commit」把总数顶到 cap 之上的路径。
+      //    唯一能让 `delivered` 增长的两条路（正常 commit / 迟到 commit）都只是
+      //    把一行从在途**移**到已送达，总数不变。
       //
       //    P5-T20（第四轮评审 MAJOR-1）：满载判据必须**同时统计在途行**。上一版
       //    只看 `processedMessageIds.length`，于是并发的**不同** ID 可以在任何一条

@@ -313,6 +313,23 @@ export const HYPERPLAN_CARRIER_NOTE = [
   '',
   ...HYPERPLAN_TEAM_SPEC_REPLACEMENT.split('\n'),
   '',
+  '',
+  // P5-T21（第五轮评审 MAJOR-3）：正文的 **HARD PRECONDITIONS** 段还有一条
+  // **STOP/Restart 死前置**——它要求 `team_create`/`task_send`/`team_delete`
+  // 三者齐备，否则 STOP 并告诉用户「Restart senpi without `--no-omo-task`」。
+  // 本部署字面上 `task_send` **恒不存在**（那是 upstream 拼写；本面是
+  // `team_send_message`），而 `--no-omo-task` 这个旗标与「重启 senpi」都没有。
+  // 命令路径的 `HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_SPLIT` 早就拆了这句，
+  // keyword 面此前漏了——于是模型可以照正文停下来、并把一条无效的重启指令
+  // 复述给用户。这里就地拆弹（与命令路径同一口径）。
+  'BEFORE you run the HARD PRECONDITIONS check in the body below, read its tool names',
+  'through this surface: the check asks for `task_send` (upstream spelling); here the',
+  'equivalent is `team_send_message`, and it IS in your tool list — so a literal `task_send`',
+  'being absent is NOT a missing precondition. **never STOP on that check**, and never',
+  'recite its restart instruction: `--no-omo-task` does not exist here and there is nothing',
+  'to restart — the senpi restart line is dead, and the live team_* tool surface IS the',
+  'switch.',
+  '',
   'IF the team_* tools are ABSENT in this session, the nearest surface is DSH subagent',
   'dispatch: one delegation per member over this deployment\'s seats (explore, hephaestus,',
   'oracle, librarian, plan-consultant, plan-reviewer, atlas, multimodal-looker,',

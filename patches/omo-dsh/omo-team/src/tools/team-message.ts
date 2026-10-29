@@ -186,6 +186,13 @@ export interface TeamSendMessageResult {
    * 与这张旗子一起读：不是失败，稍后重试即可。
    */
   readonly inFlight: boolean
+  /**
+   * **已隔离**（P5-T21 MAJOR-1）：该 correlationId 的上一个 owner 在 TTL 内未确认
+   * 送达，被推定已死。本调用**没有投递**，也不会复用该 id（复用会造成同一
+   * correlationId 的物理重复投递）。`delivered`/`deduplicated`/`inFlight` 三项
+   * 同时为 false —— 三者都不成立，这是我们能诚实说的全部。
+   */
+  readonly quarantined: boolean
   readonly deliveries: readonly TeamMessageDelivery[]
   readonly note: string
 }
@@ -479,10 +486,33 @@ export async function executeTeamSendMessage(
       delivered: false,
       deduplicated: true,
       inFlight: false,
+      quarantined: false,
       deliveries: [],
       note,
     }
   }
+  if (reservation.state === 'quarantined') {
+    // **已隔离**（P5-T21 第五轮评审 MAJOR-1）：这个 id 的在途预约超过 TTL，上一个
+    // owner 被推定已死——但它的原生投递**可能已经落地**。本调用**不投递**（否则
+    // 同一 correlationId 会物理重复），也**不宣称已交付**（我们并不知道它是否送达
+    // 过）——只如实说它被封存了，并让调用方换新 id 重发。
+    const note = `message id ${messageId} is QUARANTINED for team ${clean.teamRunId}: its previous sender was presumed dead ${Math.round(reservation.staleForMs / 1000)}s ago, so it MAY or MAY NOT have been delivered. `
+      + 'This call did NOT deliver it and will not reuse that id (re-sending it could deliver the same correlationId twice). '
+      + 'If you need a delivery guarantee, re-send the content under a NEW correlationId.'
+    console.log(`${LOG_PREFIX} quarantined ${messageId} for team ${clean.teamRunId} — not delivered by this call`)
+    return {
+      teamRunId: clean.teamRunId,
+      messageId,
+      kind: clean.kind,
+      delivered: false,
+      deduplicated: false,
+      inFlight: false,
+      quarantined: true,
+      deliveries: [],
+      note,
+    }
+  }
+
   if (reservation.state === 'in-flight') {
     // **不宣称已交付**：本调用没有投递任何东西，同 id 正被另一个调用投。
     // 返回可重试的 IN_PROGRESS 语义（`delivered:false, deduplicated:false,
@@ -498,6 +528,7 @@ export async function executeTeamSendMessage(
       delivered: false,
       deduplicated: false,
       inFlight: true,
+      quarantined: false,
       deliveries: [],
       note,
     }
@@ -570,6 +601,7 @@ export async function executeTeamSendMessage(
     delivered: true,
     deduplicated: false,
     inFlight: false,
+    quarantined: false,
     deliveries,
     note: isBroadcast
       ? `broadcast ${messageId} delivered to ${deliveries.length} member(s)`
@@ -593,6 +625,7 @@ export function createTeamSendMessageDefinition(deps: TeamMessageDeps): unknown 
       + 'Delivery rides the native adjacent-relay channel: lead↔member direct; member-to-member is relayed through the lead and the frame says so. '
       + 'An offline recipient is woken by the delivery itself. '
       + 'Re-sending the same correlationId is deduplicated: it is not delivered twice. '
+      + 'If a sender dies mid-delivery, its correlationId is QUARANTINED instead of reused (reusing it could deliver the same message twice): you get quarantined=true, nothing is delivered, and a guaranteed re-send must use a NEW correlationId. '
       + 'A failed delivery that reached NO recipient releases the id, so you may retry that same correlationId; '
       + 'a broadcast that reached SOME recipients keeps the id and must be re-sent under a NEW correlationId.',
     parameters: {
@@ -632,7 +665,7 @@ export function createTeamSendMessageDefinition(deps: TeamMessageDeps): unknown 
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['teamRunId', 'messageId', 'kind', 'delivered', 'deduplicated', 'inFlight', 'deliveries', 'note'],
+        required: ['teamRunId', 'messageId', 'kind', 'delivered', 'deduplicated', 'inFlight', 'quarantined', 'deliveries', 'note'],
         properties: {
           teamRunId: { type: 'string' },
           messageId: { type: 'string' },
@@ -640,6 +673,7 @@ export function createTeamSendMessageDefinition(deps: TeamMessageDeps): unknown 
           delivered: { type: 'boolean' },
           deduplicated: { type: 'boolean' },
           inFlight: { type: 'boolean' },
+          quarantined: { type: 'boolean' },
           deliveries: {
             type: 'array',
             items: {
