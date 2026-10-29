@@ -434,7 +434,27 @@ export async function executeTeamSendMessage(
 
   // 6) R-6 去重原子闸：整条消息一个 id（广播 = 整条一个 id，扇出部分
   //    失败的后果成文于文件头）。见过 → 不再调用原生通道，返回去重说明。
-  if (!(await deps.store.markMessageProcessed(clean.teamRunId, messageId))) {
+  //
+  //    P5-T16（评审 MAJOR-2）：去重账**满载**时 store 抛具名
+  //    `MESSAGE_LEDGER_FULL`（显式拒收，不裁剪任何一条——裁剪会让补偿退账
+  //    永久丢失被挤掉那条的去重记忆）。这里把它**翻译成本工具的错误族**
+  //    （响亮、可恢复：换新 correlationId 即可继续），不把 store 的内部码
+  //    泄给模型。
+  let reserved = false
+  try {
+    reserved = await deps.store.markMessageProcessed(clean.teamRunId, messageId)
+  } catch (err) {
+    if (err instanceof TeamMessageError) throw err
+    const code = (err as { code?: unknown } | undefined)?.code
+    if (code === 'MESSAGE_LEDGER_FULL') {
+      throw new TeamMessageError(
+        `team_send_message: ${err instanceof Error ? err.message : String(err)}`,
+        'MESSAGE_LEDGER_FULL',
+      )
+    }
+    throw err
+  }
+  if (!reserved) {
     const note = `duplicate message id: ${messageId} was already delivered for team ${clean.teamRunId} — not delivered again (deduplicated)`
     console.log(`${LOG_PREFIX} deduplicated ${messageId} for team ${clean.teamRunId}`)
     return {

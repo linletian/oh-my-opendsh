@@ -441,6 +441,55 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(retry.deliveries.map((d) => d.to)).toEqual(['analyst', 'builder'])
   })
 
+  it('P5-T16 (MAJOR-2) a FULL ledger refuses a new id — and the refusal never evicts an older one', async () => {
+    // 评审点名的联合回归腿之一：「满载＋单投失败」。
+    // 满载 ⇒ 具名拒收（不裁剪）⇒ 工具层译成本工具的错误族（响亮、可恢复：
+    // 换新 correlationId 即可继续）。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    // 造一个**小**上限的 store（同一个 base_dir ⇒ 同一份落盘账）。
+    const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 2 })
+    await capped.rebuildIndexes() // 同一 base_dir 上的新实例：从磁盘重建镜像
+    for (const id of ['m-aaa', 'm-bbb']) {
+      expect(await capped.markMessageProcessed(fixture.teamRunId, id)).toBe(true)
+    }
+    const cappedDeps = { ...deps, store: capped }
+    const lead = makeAgent(fixture.leadSessionId)
+    await expect(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A },
+      execOf(lead),
+      cappedDeps,
+    )).rejects.toMatchObject({ code: 'MESSAGE_LEDGER_FULL' })
+    // 旧的两条**一条不少**（没有裁剪）。
+    expect(capped.get(fixture.teamRunId)!.processedMessageIds).toEqual(['m-aaa', 'm-bbb'])
+    // 工具**没有**投递（拒收发生在预约之前）。
+    expect(deps.subagents.sends).toHaveLength(0)
+  })
+
+  it('P5-T16 (MAJOR-2) a FULL ledger + a FAILED broadcast keeps every recorded id (nothing evicted)', async () => {
+    // 评审点名的联合回归腿之二：「满载＋广播零投递」。
+    // 第一轮的滚动窗口在这里会：预约（挤掉最旧）→ 零投递失败 → 退账 ⇒ **最旧的
+    // 那条永久消失**。更正后的行为：满载即拒收（不预约、不投递、不裁剪）。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 2 })
+    await capped.rebuildIndexes() // 同一 base_dir 上的新实例：从磁盘重建镜像
+    for (const id of ['m-aaa', 'm-bbb']) {
+      expect(await capped.markMessageProcessed(fixture.teamRunId, id)).toBe(true)
+    }
+    const cappedDeps = { ...deps, store: capped }
+    const lead = makeAgent(fixture.leadSessionId)
+    await expect(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_A },
+      execOf(lead),
+      cappedDeps,
+    )).rejects.toMatchObject({ code: 'MESSAGE_LEDGER_FULL' })
+    expect(capped.get(fixture.teamRunId)!.processedMessageIds).toEqual(['m-aaa', 'm-bbb'])
+    expect(deps.subagents.sends).toHaveLength(0)
+  })
+
   it('single-target delivery failure COMPENSATES the reservation (retry may deliver)', async () => {
     const fixture = await seedTeam(makeStore())
     const deps = await makeDeps(fixture)

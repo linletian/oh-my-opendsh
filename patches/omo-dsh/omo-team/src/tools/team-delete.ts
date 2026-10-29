@@ -244,26 +244,34 @@ export async function executeTeamDelete(
     drainFault = err instanceof Error ? err.message : String(err)
   }
 
-  // P5-T16（评审 MINOR-6）：拆解失败时的**收口纪律**。
+  // P5-T16（评审 MAJOR-1 更正）：**任一拆解 fault ⇒ 账不收口**。
   //
-  // 旧行为：任何 fault（成员 interrupt 失败 **或** drain 失败）都在 `deleting`
-  // 态上抛 TEARDOWN_FAULT，而 `deleting` 只有 `deleting → deleted` 一条前向迁移
-  // ——run 就此**永久搁浅**（进程存活期内没有别的出路，只有重启后的 resume 清扫
-  // （STALE_DELETING_TTL_MS）才收掉它）。
+  // 第一轮修复轮曾把「只有 drain 失败」判成「成员全停摆 ⇒ 账可安全收口」——
+  // **那条推理是错的**，本轮评审把它驳回了，理由成立：
+  //   * 原生 `interrupt` 只是**发起异步取消**，不代表目标已经停下；
+  //   * DSH 的 `drainChildren`（dsh-subagent/lib/index.js:929-940）在
+  //     exact-live-parent 校验失败时**在任何 child release 之前**就抛
+  //     `UNAUTHORIZED`；child dispose 失败同样会让 drain 抛错——所以
+  //     **drain 失败恰恰意味着「成员可能仍在 resident 且仍在跑」**。
+  // 收账（deleted + 撤参与索引）会把这些成员变成**无主且仍在运行**的孤儿。
   //
-  // 更正：**成员 interrupt 失败**与**drain 失败**分开判——两者的后果不同：
-  //   * 成员 interrupt 失败 = 那个成员**可能还在跑** ⇒ 账本**不许**收（收了就
-  //     制造一个无主成员）⇒ 留在 `deleting`，抛具名错并写明「重跑 team_delete
-  //     即可续上」（interrupt/drain 对已散的孩子天然 no-op，重跑是幂等的）；
-  //   * drain 失败 = 成员**全部已被 interrupt**（每个成员都停摆了），失败的只是
-  //     原生通道的**释放**步骤 ⇒ 账本**可以**安全收口 ⇒ 收口（deleted + 撤账），
-  //     失败原因进 note + warn 行（不静默）。
-  if (interruptFaults.length > 0) {
-    const faults = [...interruptFaults, ...(drainFault === undefined ? [] : [`drain: ${drainFault}`])]
+  // 更正：任何 fault（成员 interrupt 失败 **或** drain 失败）都
+  //   * 账**留在 `deleting`**（`deleting` 在门禁白名单内 ⇒ 重删合法），且
+  //   * 抛具名 TEARDOWN_FAULT，错误文本写明「重跑同一 teamRunId 即可续上」
+  //     （interrupt/drain 对已散的孩子天然 no-op，重跑是幂等的）。
+  // 这同时是第一轮 MINOR-6 给的两案里的**第 2 案**（「drain 的 UNAUTHORIZED
+  // 降级为非致命并在错误文本里写明可重试」）——第一轮我选了第 1 案（收账），
+  // 本轮按评审驳回改选第 2 案。永久性 fault 的收口仍由 boot 的 deleting
+  // 清扫（STALE_DELETING_TTL_MS）负责。
+  const faults = [
+    ...interruptFaults,
+    ...(drainFault === undefined ? [] : [`drain: ${drainFault}`]),
+  ]
+  if (faults.length > 0) {
     throw new TeamDeleteError(
       `${TEAM_DELETE_TOOL_NAME}: teardown faults for team ${teamRunId}: ${faults.join('; ')} — `
-      + `at least one member could not be interrupted, so the run stays in 'deleting' (its ledger is NOT closed); `
-      + `re-run ${TEAM_DELETE_TOOL_NAME} for the same teamRunId to finish the teardown (interrupts are idempotent)`,
+      + `the ledger is NOT closed and the run stays in 'deleting' (a member may still be resident and running, so closing the ledger would orphan it); `
+      + `re-run ${TEAM_DELETE_TOOL_NAME} for the same teamRunId to finish the teardown (interrupts and drains are idempotent)`,
       'TEARDOWN_FAULT',
     )
   }
@@ -271,19 +279,12 @@ export async function executeTeamDelete(
   // ⑤ → deleted + ⑥ 参与索引撤账（tombstone 留行）。
   // 幂等重删：`deleted` 是终态（迁移表 `deleted: ∅`），再转一次会抛
   // INVALID_TRANSITION——「deleting/deleted 在白名单内 = 幂等重删的入口」这句
-  // 契约要求重删**成功**，故终态已到位时跳过迁移（P5-T16 同轮更正）。
+  // 契约要求重删**成功**，故终态已到位时跳过迁移。
   const beforeClose = deps.store.get(teamRunId)
   if (beforeClose?.status !== 'deleted') {
     await deps.store.transition(teamRunId, 'deleted')
   }
   deps.store.retireRunIndexes(teamRunId)
-  if (drainFault !== undefined) {
-    // drain 失败但账本已收：成员全部停摆，残留的原生驻留由原生运行时在父会话
-    // 消亡时回收。**不静默**——warn 行 + note 都点名它。
-    console.warn(
-      `${LOG_PREFIX} native drain reported a fault for team ${teamRunId} (${drainFault}) — every member was interrupted and the ledger is closed; the residual native residency is reaped by the host runtime`,
-    )
-  }
   console.log(
     `${LOG_PREFIX} team ${teamRunId} deleted (${interruptedSessionIds.length} member session(s) interrupted + drained, forced=${forced}${forceCompletedMembers.length > 0 ? `, force-completed: ${forceCompletedMembers.join(', ')}` : ''})`,
   )
@@ -293,9 +294,7 @@ export async function executeTeamDelete(
     forced,
     forceCompletedMembers,
     interruptedSessionIds,
-    note: drainFault === undefined
-      ? `team ${teamRunId} deleted — member sessions interrupted with inbox preserved (native keepInbox); the teamRunId is now retired`
-      : `team ${teamRunId} deleted — every member session was interrupted (inbox preserved) and the teamRunId is retired; the native drain reported: ${drainFault}`,
+    note: `team ${teamRunId} deleted — member sessions interrupted with inbox preserved (native keepInbox); the teamRunId is now retired`,
   }
 }
 

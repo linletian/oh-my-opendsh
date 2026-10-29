@@ -77,6 +77,7 @@ import {
   type TeamStateStore,
 } from '../team/team-state.ts'
 import type { TeamAgent } from './team-create.ts'
+import { sanitizeTeamNameFragment } from './team-create.ts'
 import type { TeamMessageSendChannel } from './team-message.ts'
 
 /** 工具名三枚（manifest.ts §1 行 3/4/5 的 id 同一词汇）。 */
@@ -164,12 +165,23 @@ export interface TeamRejectShutdownResult {
 // 询问/结果帧自己的关联 id（上游 createShutdownMessage 的 messageId 语义，
 // randomUUID）。
 
-/** 询问帧：前缀 + 回复指引（成员用 approve/reject 工具回复，坐标随帧）。 */
+/**
+ * 帧里插值的**净化**（P5-T16 第二轮评审 NIT-19 的后半段）。
+ *
+ * 第一轮只净化了 briefing 帧；关停三帧（request / approve / reject）仍原样插
+ * 成员名——评审复现：一个**合法**成员名 `bad"member\n# forged` 会让
+ * coordinates 的 JSON 解析失败、并伪造出一行新的帧结构。
+ *
+ * 处置：① 坐标用 `JSON.stringify` **构造**（不是字符串拼接）⇒ JSON 永远合法；
+ * ② 其余插值统一走 {@link sanitizeTeamNameFragment}（控制字符清理 + 引号配对
+ * 保护）⇒ 插值永远落在同一行、且不破坏包裹引号。
+ */
 export function buildTeamShutdownRequestContent(
   requestId: string,
   targetMemberName: string,
   teamRunId: string,
 ): readonly { type: 'text'; text: string }[] {
+  const coordinates = JSON.stringify({ teamRunId, memberName: targetMemberName })
   return [
     { type: 'text', text: `Team shutdown request ${requestId} from ${TEAM_LEAD_SENTINEL}:` },
     {
@@ -178,7 +190,7 @@ export function buildTeamShutdownRequestContent(
         `The team lead requests that you shut down. Finish any critical work, then reply with the shutdown lifecycle tool: `
         + `team_approve_shutdown to approve (your session will be eligible for teardown), `
         + `or team_reject_shutdown with a reason to refuse and keep working. `
-        + `Your coordinates: {"teamRunId":"${teamRunId}","memberName":"${targetMemberName}"}.`,
+        + `Your coordinates: ${coordinates}.`,
     },
   ]
 }
@@ -190,10 +202,10 @@ export function buildTeamShutdownApprovedContent(
   memberName: string,
 ): readonly { type: 'text'; text: string }[] {
   return [
-    { type: 'text', text: `Team shutdown approved ${requestId} from ${approverName}:` },
+    { type: 'text', text: `Team shutdown approved ${requestId} from ${sanitizeTeamNameFragment(approverName)}:` },
     {
       type: 'text',
-      text: `Member '${memberName}' approved the shutdown request and is now shutdown_approved — the run can be torn down with team_delete when all members are deletable.`,
+      text: `Member '${sanitizeTeamNameFragment(memberName)}' approved the shutdown request and is now shutdown_approved — the run can be torn down with team_delete when all members are deletable.`,
     },
   ]
 }
@@ -206,10 +218,10 @@ export function buildTeamShutdownRejectedContent(
   reason: string,
 ): readonly { type: 'text'; text: string }[] {
   return [
-    { type: 'text', text: `Team shutdown rejected ${requestId} from ${rejectorName}:` },
+    { type: 'text', text: `Team shutdown rejected ${requestId} from ${sanitizeTeamNameFragment(rejectorName)}:` },
     {
       type: 'text',
-      text: `Member '${memberName}' rejected the shutdown request. The team stays active and this member keeps working. Reason: ${reason}`,
+      text: `Member '${sanitizeTeamNameFragment(memberName)}' rejected the shutdown request. The team stays active and this member keeps working. Reason: ${sanitizeTeamNameFragment(reason)}`,
     },
   ]
 }

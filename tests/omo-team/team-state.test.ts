@@ -721,32 +721,58 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     expect(store.get(state.teamRunId)?.status).toBe('active')
   })
 
-  it('P5-T16 (MINOR-8) the processed-message ledger is BOUNDED (rolling window at the vendored cap)', async () => {
-    // 旧形态两个账只增不删 ⇒ 长跑团队的 sidecar 单文件与镜像占用无上界。
-    // 更正：去重账按 vendored 的 `max_messages_per_run`（上游同值 10000）封顶，
-    // 挤掉**最旧**的一条（窗口长度 = 上游的每轮消息上限 ⇒ 合法 run 语义不变）。
+  it('P5-T16 (MAJOR-2) the processed-message ledger is CAPPED WITHOUT EVICTION (explicit refusal)', async () => {
+    // 第二轮评审 MAJOR-2 的正面腿：第一轮实现的「滚动窗口」（挤掉最旧的一条）
+    // 是**不可逆**的，而预约失败要走 `unmarkMessageProcessed` 补偿退账（只删新增
+    // 的那一条）——于是「满载 + 连续失败」会在没有一条新成功消息的情况下逐步
+    // 清空历史去重账（cap=3：[m1,m2,m3] → 预约 m4（挤掉 m1）→ 失败退账 ⇒
+    // [m2,m3]，m1 的去重记忆永久消失）。
+    //
+    // 更正：**满载时显式拒收**（不裁剪任何一条）：账长有上界（MINOR-8 的诉求），
+    // 且账里的任何一条都不丢 ⇒ 补偿退账永远精确。
     const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
     tempDirs.push(dir)
     const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
-    // 造一个**小**上限（测试面不真跑一万条）。
     const smallConfig = { ...config, max_messages_per_run: 3 }
     const store = new TeamStateStore(smallConfig)
     const state = await store.create(provisioningInput())
-    for (const id of ['m1', 'm2', 'm3', 'm4']) {
+    for (const id of ['m1', 'm2', 'm3']) {
       expect(await store.markMessageProcessed(state.teamRunId, id)).toBe(true)
     }
-    // 账长 = 上限（3），最旧的被挤出。
-    expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['m2', 'm3', 'm4'])
-    // 挤出窗口外的那条不再被去重（窗口语义）；窗口内的仍在。
-    expect(store.hasProcessedMessage(state.teamRunId, 'm1')).toBe(false)
-    expect(store.hasProcessedMessage(state.teamRunId, 'm4')).toBe(true)
-    // 重复投递窗口内的 id 仍被去重（核心不变量未松）。
-    expect(await store.markMessageProcessed(state.teamRunId, 'm4')).toBe(false)
-    // 落盘账同样有界。
+    // 满载 ⇒ 新 id **被拒**（具名），不是「挤掉最旧的」。
+    await expect(store.markMessageProcessed(state.teamRunId, 'm4')).rejects.toMatchObject({
+      code: 'MESSAGE_LEDGER_FULL',
+    })
+    // 旧的三条**一条不少**（第一轮的滚动窗口会把 m1 挤掉——这正是被驳回的地方）。
+    expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['m1', 'm2', 'm3'])
+    expect(store.hasProcessedMessage(state.teamRunId, 'm1')).toBe(true)
+    expect(store.hasProcessedMessage(state.teamRunId, 'm4')).toBe(false)
+    // 落盘账同样一条不少（有界但无损）。
     const onDisk = JSON.parse(readFileSync(join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json'), 'utf8')) as {
       processedMessageIds: string[]
     }
-    expect(onDisk.processedMessageIds).toEqual(['m2', 'm3', 'm4'])
+    expect(onDisk.processedMessageIds).toEqual(['m1', 'm2', 'm3'])
+  })
+
+  it('P5-T16 (MAJOR-2) a failed delivery compensates EXACTLY — no id is lost when the ledger is full', async () => {
+    // 联合回归腿（评审点名要补的「满载＋失败」）：预约 → 投递失败 → 退账，
+    // 账必须**逐条还原**（既不多也不少）。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const smallConfig = { ...config, max_messages_per_run: 3 }
+    const store = new TeamStateStore(smallConfig)
+    const state = await store.create(provisioningInput())
+    await store.markMessageProcessed(state.teamRunId, 'm1')
+    await store.markMessageProcessed(state.teamRunId, 'm2')
+    // 预约 m3（满）→ 退账（投递失败）⇒ 账回到 [m1,m2]，m1 的去重记忆仍在。
+    expect(await store.markMessageProcessed(state.teamRunId, 'm3')).toBe(true)
+    await store.unmarkMessageProcessed(state.teamRunId, 'm3')
+    expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['m1', 'm2'])
+    expect(store.hasProcessedMessage(state.teamRunId, 'm1')).toBe(true)
+    // 再预约：还有位（上限内），且不挤任何东西。
+    expect(await store.markMessageProcessed(state.teamRunId, 'm3')).toBe(true)
+    expect(store.get(state.teamRunId)!.processedMessageIds).toEqual(['m1', 'm2', 'm3'])
   })
 
   it('P5-T16 (MINOR-9) a corrupt sidecar is quarantined and its two consequences are named separately', async () => {

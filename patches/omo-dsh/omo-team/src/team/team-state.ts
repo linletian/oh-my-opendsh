@@ -103,6 +103,7 @@
 // import 依赖边上的 vendored 件（@oh-my-opencode/team-core/*，铁律允许）与
 // node:crypto / node:fs/promises（清账面）。
 
+import { randomUUID } from 'node:crypto'
 import { rm, readdir, readFile } from 'node:fs/promises'
 import { renameSync } from 'node:fs'
 import type { Dirent } from 'node:fs'
@@ -663,9 +664,19 @@ export class TeamStateStore {
       // 更正：① 坏文件**先改名留档**（`omo-team-extensions.json.corrupt-<ts>`）
       // （现场不丢，可事后取证）；② 两种后果**分别具名**告警——不再合成一句
       // "briefing dedup restarts from zero, processed-message dedup likewise"。
-      this.quarantineCorruptLedger(teamRunId)
+      //
+      // P5-T16（第二轮评审 MINOR）：留档**可能失败**，所以告警**不许**无条件
+      // 宣称「文件已保存」——旧形态 renameSync 的失败被吞掉，而告警仍写着
+      // "the damaged file was preserved as …"，且告警里的路径是**另一次**
+      // `Date.now()` 生成的（跨毫秒时根本不是实际留档的那个路径）。
+      // 更正：留档函数返回**实际结果**（成功=实际路径 / 失败=错误），告警按
+      // 结果分流；路径**只生成一次**（同一次留档与告警共用它）。
+      const quarantine = this.quarantineCorruptLedger(teamRunId)
+      const preserved = quarantine.preserved
+        ? `the damaged file was preserved as ${quarantine.path}`
+        : `the damaged file could NOT be archived (${quarantine.error}) — it was overwritten by the rebuilt empty ledger, so the original bytes are gone`
       console.warn(
-        `${LOG_PREFIX} sidecar ledger CORRUPT for team ${teamRunId} (${err instanceof Error ? err.message : String(err)}) — the damaged file was preserved as ${this.corruptLedgerPath(teamRunId)} and an empty ledger was rebuilt. `
+        `${LOG_PREFIX} sidecar ledger CORRUPT for team ${teamRunId} (${err instanceof Error ? err.message : String(err)}) — ${preserved} and an empty ledger was rebuilt. `
         + 'CONSEQUENCE 1: processed-message dedup restarts from zero — a correlationId that was already delivered may be delivered AGAIN. '
         + 'CONSEQUENCE 2: briefing dedup restarts from zero — a member may receive a SECOND briefing frame.',
       )
@@ -673,20 +684,18 @@ export class TeamStateStore {
     }
   }
 
-  /** 坏账的留档文件名（时间戳后缀；同一 run 多次损坏不覆盖）。 */
-  private corruptLedgerPath(teamRunId: string): string {
-    return `${this.ledgerPath(teamRunId)}.corrupt-${Date.now()}`
-  }
-
   /**
-   * 坏账留档：把损坏的 sidecar 改名到 `.corrupt-<ts>`（best-effort——留档失败
-   * 不阻断重建，但错误已在调用侧具名告警）。
+   * 坏账留档的结果：**成功**（实际留档路径）或**失败**（错误文本）。
+   * 路径只在这里生成一次（告警与实际改名共用同一个串）。
    */
-  private quarantineCorruptLedger(teamRunId: string): void {
+  private quarantineCorruptLedger(teamRunId: string):
+    { readonly preserved: true, readonly path: string } | { readonly preserved: false, readonly error: string } {
+    const target = `${this.ledgerPath(teamRunId)}.corrupt-${Date.now()}-${randomUUID().slice(0, 8)}`
     try {
-      renameSync(this.ledgerPath(teamRunId), this.corruptLedgerPath(teamRunId))
-    } catch {
-      // 留档是尽力面：改名失败（文件已被移走/无权限）时，空账重建照常进行。
+      renameSync(this.ledgerPath(teamRunId), target)
+      return { preserved: true, path: target }
+    } catch (err) {
+      return { preserved: false, error: err instanceof Error ? err.message : String(err) }
     }
   }
 
@@ -1009,21 +1018,39 @@ export class TeamStateStore {
    * 作废）。失败时调用方 unmarkMessageProcessed 补偿退账，同一不变量：
    * 未送达不占幂等位。
    *
-   * P5-T16（评审 MINOR-8）：去重账**有界**——追加后按 vendored 的
-   * `max_messages_per_run`（上游同值 10000）裁掉**最旧**的一条（滚动窗口）。
-   * 旧形态两个数组只增不删 ⇒ 长跑团队的单文件与内存占用无上界，且每记一条
-   * 都要把整个 sidecar 读-改-写一遍（O(n)）。
+   * P5-T16（评审 MINOR-8 + MAJOR-2）：去重账**有上界**，但**不裁剪**。
    *
-   * 窗口长度取上游的每轮消息上限（vendored `bounds.maxMessagesPerRun` 同一
-   * 指针）——超出那个上限的 run 本就出界，所以「最旧的一条被挤出」只影响
-   * **早已超出上游上限**的那条消息的去重记忆，不影响任何合法 run 的语义。
+   * 第一轮修复轮曾实现「追加后裁掉最旧的一条」（滚动窗口）——第二轮评审驳回
+   * 了它，理由成立：**裁剪是不可逆的**，而预约失败要走 `unmarkMessageProcessed`
+   * 补偿退账（只删新增的那一条）。于是：
+   *   cap=3，账=[m1,m2,m3] → 预约 m4（追加⇒[m1,m2,m3,m4]⇒裁剪⇒[m2,m3,m4]）
+   *   → 投递失败退账（删 m4）⇒ 账=[m2,m3] —— **m1 的去重记忆被永久抹掉**，
+   *   再次 `mark(m1)` 会返回 true（允许重复投递）。连续失败可以在没有一条新
+   *   成功消息的情况下逐步清空历史去重账。
+   *
+   * 更正：**满载时显式拒收**（第一轮评审自己的措辞：「按 maxMessagesPerRun
+   * 封顶并**显式拒收超限**」），不裁剪任何一条：
+   *   * 账长 = vendored `max_messages_per_run`（上游同值 10000）——账本大小与
+   *     内存占用**有上界**（MINOR-8 的诉求达成）；
+   *   * 满载 ⇒ 抛具名 `MESSAGE_LEDGER_FULL`（响亮、可恢复：模型换新
+   *     correlationId 即可继续），**账里的任何一条都不丢** ⇒ 补偿退账永远
+   *     精确（MAJOR-2 的不变量）。
    */
   async markMessageProcessed(teamRunId: string, messageId: string): Promise<boolean> {
     this.requireState(teamRunId)
     return withLock(this.ledgerLockPath(teamRunId), async () => {
       const ledger = await this.readLedgerUnlocked(teamRunId)
       if (ledger.processedMessageIds.includes(messageId)) return false
-      const next = this.boundedProcessedIds(ledger.processedMessageIds, messageId)
+      const cap = this.config.max_messages_per_run
+      if (ledger.processedMessageIds.length >= cap) {
+        throw new TeamStateError(
+          `message dedup ledger for team ${teamRunId} is full (${cap} recorded ids = the vendored max_messages_per_run bound) — `
+          + `refusing to record '${messageId}' rather than evicting an older id (an eviction would silently drop that older message's dedup memory); `
+          + `send under a NEW correlationId, or tear the run down and start a new one`,
+          'MESSAGE_LEDGER_FULL',
+        )
+      }
+      const next = [...ledger.processedMessageIds, messageId]
       await this.writeLedgerUnlocked(teamRunId, {
         ...ledger,
         processedMessageIds: next,
@@ -1033,22 +1060,6 @@ export class TeamStateStore {
       })
       return true
     }, { ownerTag: 'omo-team-ledger' })
-  }
-
-  /**
-   * 去重账的**有界追加**（P5-T16 评审 MINOR-8）：追加一条 id 后，若账长超过
-   * vendored 的 `max_messages_per_run`（上游同值 10000），挤掉**最旧**的一条。
-   *
-   * 窗口长度 = 上游的每轮消息上限（`config.max_messages_per_run`）——超出那个
-   * 上限的 run 本就出界，故「最旧的被挤出」只影响早已越界的消息的去重记忆。
-   * 账长因此**有上界**（sidecar 文件与镜像占用不再无界）。
-   */
-  private boundedProcessedIds(existing: readonly string[], messageId: string): string[] {
-    const appended = [...existing, messageId]
-    const cap = this.config.max_messages_per_run
-    if (appended.length <= cap) return appended
-    // 挤最旧的（保留最新的 cap 条）——数组保持追加序（最旧在前）。
-    return appended.slice(appended.length - cap)
   }
 
   /** 补偿退账（reservation 回执作废；账不在位 = 幂等无操作）。 */
@@ -1383,10 +1394,37 @@ export class TeamStateStore {
    * 调用点（可见），而不是默认开着（不可见）。
    */
   async forgetRun(teamRunId: string, options?: { readonly force?: boolean }): Promise<void> {
+    const force = options?.force === true
     const state = this.mirror.get(teamRunId)
-    if (state !== undefined && options?.force !== true && !TEAM_FORGETTABLE_STATUSES.has(state.status)) {
+    // P5-T16（第二轮评审 MINOR）：**mirror 缺位不许直接 rm**。
+    //
+    // 旧形态：`state === undefined`（本进程的镜像不认识这个 run——例如另一个
+    // store 实例共享同一 base_dir 但还没 rebuildIndexes）时**直接**递归删目录，
+    // 于是「一个 active run 的整份账 + 任务板」被无声拆掉——评审已独立复现。
+    //
+    // 更正：**失败封闭**。镜像不认识 ⇒ 从磁盘**确证**状态（锁内，与 vendored
+    // 的状态写入同一把锁），确证不到（读不出 state.json / 读失败）⇒ 抛具名
+    // 错、**不删**；确证到了 ⇒ 走与镜像路径**同一条**终态白名单闸。
+    let status: TeamRuntimeStatus | undefined = state?.status
+    if (status === undefined) {
+      let onDisk: RuntimeState
+      try {
+        onDisk = await withLock(
+          path.join(this.runtimeDir(teamRunId), 'state.lock'),
+          async () => loadRuntimeState(teamRunId, this.config),
+          { ownerTag: 'omo-team-state' },
+        )
+      } catch (err) {
+        throw new TeamStateError(
+          `forgetRun cannot confirm the status of team run '${teamRunId}' from disk (${err instanceof Error ? err.message : String(err)}) — refusing to erase an unconfirmed run directory; pass force to erase it anyway`,
+          'TEAM_STATUS_UNCONFIRMED',
+        )
+      }
+      status = onDisk.status
+    }
+    if (!force && !TEAM_FORGETTABLE_STATUSES.has(status)) {
       throw new TeamStateError(
-        `forgetRun refuses to erase an active team run '${teamRunId}' (status '${state.status}') — only a terminal run (${[...TEAM_FORGETTABLE_STATUSES].join(' / ')}) may be erased; use team_delete for a live run (or pass force for the diagnostic face)`,
+        `forgetRun refuses to erase an active team run '${teamRunId}' (status '${status}') — only a terminal run (${[...TEAM_FORGETTABLE_STATUSES].join(' / ')}) may be erased; use team_delete for a live run (or pass force for the diagnostic face)`,
         'TEAM_NOT_FORGETTABLE',
       )
     }

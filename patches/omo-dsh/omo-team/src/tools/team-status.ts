@@ -256,15 +256,21 @@ export async function executeTeamStatus(
 }
 
 /**
- * `phase` 读法的说明（进模型可见面；P5-T16 评审 MINOR-5）。
+ * `phase` 读法的说明（进模型可见面；P5-T16 评审 MINOR-5，第二轮订正措辞）。
  *
- * 词表六态里只有 `'running'` 有生产者（建队后即写它），其余五态的生产者尚未
- * 接线——所以 `phase` 此刻是**账面阶段**；活性事实看每行的 `resident`。
+ * 词表六态里**已接线**的生产者：`pending`（建队）/ `running`（成员起跑）/
+ * `shutdown_approved`（握手批准）/ `completed`（force 拆除清账）/ `errored`
+ * （resume 发现成员会话不在）。**未接线**的是**正常 turn 生命周期**——turn
+ * 跑完、turn 失败、turn 之间的 idle 三种情形都不写 phase。所以 `phase` 此刻
+ * 是**账面阶段**；活性事实看每行的 `resident`。
  */
 export const TEAM_MEMBER_PHASE_NOTE =
-  'member.phase is the ledger phase, not a liveness fact: only "running" has a producer so far '
-  + '(pending/idle/errored/completed/shutdown_approved have none yet), so a member that finished, '
-  + 'failed or went offline still reads "running" here. Use member.resident (a live-registry '
+  'member.phase is the ledger phase, not a liveness fact. The phase producers wired today are: '
+  + '"pending" (the team was created), "running" (the member was spawned), "shutdown_approved" '
+  + '(the member approved the shutdown handshake), "completed" (a forced teardown completed it) '
+  + 'and "errored" (a resume pass found the member session gone). What is NOT wired yet is the '
+  + 'normal turn lifecycle: a member whose turn finished, whose turn failed, or that is sitting '
+  + 'idle between turns still reads "running" here. Use member.resident (a live-registry '
   + 'observation: true = the member session is live right now, false = it is cold or gone) for '
   + 'liveness.'
 

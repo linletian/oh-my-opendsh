@@ -547,6 +547,80 @@ export function scanVendorSkills(
 }
 
 /**
+ * P5-T16（第二轮评审 MAJOR-4）：**消费侧的 team 面适配注记**。
+ *
+ * 问题：vendored `shared-skills` 里有两枚技能的正文带着**与本部署的 team 工具面
+ * 不兼容**的 Team Mode 分支——Phase 5 之前那句「shared-skills 文本与本仓工具面
+ * 一致，无需改写」是**假的**（评审逐条复核后驳回）：
+ *
+ *   * `refactor` 的 Phase 5.1-T（`refactor-squad` 队）：调 `team_list`（本部署
+ *     无此工具）、写 `~/.omo/teams/refactor-squad/config.json`（本部署**没有**
+ *     盘上 team config 面）、用 `team_create(teamName=...)`（本面只收
+ *     `inline_spec`）、用 `category: "unspecified-low"`（本面只有
+ *     `quick`/`deep`）、多次调缺必填参数的 `team_task_update(status=...)`。
+ *   * `hyperplan` 的 Phase 1（`team_create` + OMO category + `task_send` +
+ *     `team_run_id`）：category 在本部署**解析不出来**，`task_send` / `team_run_id`
+ *     这两个拼写在本部署**不存在**。
+ *
+ * 处置（评审建议的第一半「在消费侧完成适配」）：**vendor 字节不动**（vendor
+ * 树保持对冻结 tag 的逐字忠实），在**注册给模型的那份正文**前置一段载体注记，
+ * 把差异就地讲清——体例同 `ULTRAWORK_CARRIER_NOTE` / `TEAM_CARRIER_NOTE`。
+ * `refactor` 的处置是评审建议的第二半「未完成前**强制走 legacy 路径**」：
+ * 它的 Team 分支没有被适配，所以注记直接判它走 Phase 5.1-L。
+ *
+ * **按名登记，不按模式扫**（门 6 c26 的「named, not pattern-matched」同款纪律）：
+ * 一枚新技能若也带 team 分支，它的注记必须显式登记在这里——漏登记 = 该技能的
+ * 不兼容正文原样进模型面。
+ */
+export const VENDOR_SKILL_TEAM_ADAPTATION_NOTES: Readonly<Record<string, string>> = {
+  refactor: [
+    '[oh-my-opendsh] Carrier note (refactor skill): the Team Mode branch in this skill',
+    '(Phase 5.1-T, the `refactor-squad` team) is NOT adapted to this deployment — run the',
+    'LEGACY path (Phase 5.1-L) instead. If the Phase 5 dispatch decision selects the Team',
+    'path, take the legacy branch here. Why (the upstream branch names surfaces this',
+    'deployment does not have):',
+    '  * `team_list` — no such tool here. This deployment\'s team surface is team_create /',
+    '    team_send_message / team_task_create / team_task_list / team_task_update /',
+    '    team_task_get / team_status / team_shutdown_request / team_approve_shutdown /',
+    '    team_reject_shutdown / team_delete.',
+    '  * `~/.omo/teams/refactor-squad/config.json` — this deployment has NO on-disk team',
+    '    config; a team is created through `team_create` with an inline spec.',
+    '  * `team_create(teamName="refactor-squad")` — this surface takes ONE argument:',
+    '    `inline_spec` (an object or a JSON string of one).',
+    '  * `category: "unspecified-low"` — the member categories here are exactly `quick`',
+    '    and `deep`.',
+    '  * `team_task_update(status=...)` — the required arguments are `teamRunId`, `taskId`',
+    '    and `status`.',
+    'Everything below this note is upstream\'s text unchanged.',
+  ].join('\n'),
+  hyperplan: [
+    '[oh-my-opendsh] Carrier note (hyperplan skill): the body below is upstream\'s text and',
+    'names the opencode team vocabulary. This deployment HAS a team surface, but it is not',
+    'the opencode one — translate the team calls:',
+    '  * `team_create` takes ONE argument here: `inline_spec` (an object or a JSON string of',
+    '    one) whose members are `{"name":..., "category":"quick"|"deep", "prompt":...}`.',
+    '  * `task_send({to, team_run_id, message})` becomes',
+    '    `team_send_message(teamRunId=<id>, to=<member|"lead"|"*">, body=<text>)` — `body` is',
+    '    REQUIRED on this surface.',
+    '  * `team_run_id` becomes `teamRunId`.',
+    '  * The opencode categories (`unspecified-low`, `unspecified-high`, `ultrabrain`,',
+    '    `artistry`) do NOT resolve here — `quick` and `deep` are the only two member',
+    '    categories.',
+    '  * `team_task_create(teamRunId=<id>, subject=..., description=...)` and',
+    '    `team_task_update(teamRunId=<id>, taskId=<id>, status=...)`.',
+    'If the team_* tools are ABSENT in this session, the nearest surface is DSH subagent',
+    'dispatch (one delegation per member); there is no `team_run_id` then — the returned',
+    'session labels are your lane map. Everything below this note is upstream\'s text',
+    'unchanged.',
+  ].join('\n'),
+}
+
+/** 一枚技能要不要前置它的 team 面适配注记（按名登记）。 */
+export function teamAdaptationNoteFor(skillName: string): string | undefined {
+  return VENDOR_SKILL_TEAM_ADAPTATION_NOTES[skillName]
+}
+
+/**
  * The registration handed to `ctx.skills.register`, built from a parsed
  * document. `invocation` is deliberately ABSENT: dsh defaults it to
  * model+user invocable (lib/index.js:203-206), and the `ulw-plan` row's
@@ -569,7 +643,12 @@ export function toSkillRegistration(entry: VendorSkillEntry): {
     description: document.description,
     ...document.whenToUse !== undefined ? { whenToUse: document.whenToUse } : {},
     ...document.metadata !== undefined ? { metadata: document.metadata } : {},
-    content: document.content,
+    // P5-T16 (MAJOR-4): 前置该技能的 team 面适配注记（vendor 字节不动——
+    // 注记在**注册给模型的那份正文**之外的前置位，与 ultrawork/hyperplan 的
+    // 载体注记同体例）。
+    content: teamAdaptationNoteFor(document.name) === undefined
+      ? document.content
+      : `${teamAdaptationNoteFor(document.name)}\n\n---\n\n${document.content}`,
     // Absolute path of the SKILL.md itself, so the model can resolve a
     // relative reference (`references/…`) against its own directory.
     path: entry.path,

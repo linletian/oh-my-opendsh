@@ -21187,6 +21187,13 @@ function auditBoardOnDisk(boardDir) {
   try {
     state = JSON.parse(readFileSync(join(boardDir, 'state.json'), 'utf8'))
   } catch { /* missing → not ok */ }
+  // P5-T16 (第二轮评审 MINOR): 把**重启后的 run 态**也读出来——run 必须仍是
+  // `active`、且每个成员仍带着它的 `sessionId`（第一轮 BLOCKER-1 的生产修复
+  // 「重启不孤儿化、不抹 sessionId」在这里第一次有了**真实跨进程**的硬断言；
+  // 此前这条场景只断言「state.json 存在 + 任务板/双账在位」，
+  // `boot resume FAILED` 也能满足它那几处 substring 检查）。
+  const members = Array.isArray(state?.members) ? state.members : []
+  const memberSessionIds = members.map((m) => m?.sessionId)
   return {
     ok: t1?.status === 'completed' && t1?.owner === TEAM_MEMBER_ANALYST
       && t2?.status === 'claimed' && t2?.owner === TEAM_MEMBER_ANALYST
@@ -21195,6 +21202,13 @@ function auditBoardOnDisk(boardDir) {
     t1: t1 === undefined ? undefined : { status: t1.status, owner: t1.owner },
     t2: t2 === undefined ? undefined : { status: t2.status, owner: t2.owner, blockedBy: t2.blockedBy },
     statePresent: state !== undefined,
+    runStatus: state?.status,
+    memberCount: members.length,
+    memberSessionIds,
+    // 每个成员都还在、且都带着非空 sessionId（被抹成 undefined = 第一轮
+    // BLOCKER-1 的生产症状）。
+    memberSessionIdsIntact: members.length > 0
+      && members.every((m) => typeof m?.sessionId === 'string' && m.sessionId.length > 0),
   }
 }
 
@@ -21237,7 +21251,12 @@ export function analyzeTeamTaskClaim(
   const checks = {
     pluginLoaded: pluginsLoaded(bootLog),
     bootCensusTwentyTwoOfTwentyFour: (bootLog ?? '').includes('— 22/24 team surfaces registered'),
-    bootResumeLine: (bootLog ?? '').includes('[omo-team] boot resume'),
+    // P5-T16 (第二轮评审 MINOR): 收紧——旧形态只查 `includes('[omo-team] boot
+    // resume')`，而**失败行** `[omo-team] boot resume FAILED (...)` 同样含这个
+    // 子串 ⇒ 一次失败的 resume 也能让这条检查变绿。现在必须命中**成功形**
+    // （`boot resume: resumed=`）且**不得**含 FAILED。
+    bootResumeLine: (bootLog ?? '').includes('[omo-team] boot resume: resumed=')
+      && !(bootLog ?? '').includes('[omo-team] boot resume FAILED'),
     taskQuartetRegisteredPreReboot: (() => {
       const pre = rebootObservation?.preBootLog ?? ''
       return pre.includes('[omo-team] team surface team_task_create registered')
@@ -21285,6 +21304,20 @@ export function analyzeTeamTaskClaim(
       if (!Array.isArray(ledger.briefingInjectedMembers)) return false
       return ledger.briefingInjectedMembers.includes(TEAM_MEMBER_ANALYST)
         && ledger.briefingInjectedMembers.includes(TEAM_MEMBER_BUILDER)
+    })(),
+    // P5-T16 (第二轮评审 MINOR): **重启后 run 仍是 active** —— 第一轮
+    // BLOCKER-1 的生产修复（持久会话面判存在性）的真实跨进程硬断言。
+    runStillActiveAfterReboot: postAudit.runStatus === 'active',
+    // 成员 `sessionId` **没被抹掉**（第一轮 BLOCKER-1 的另一个生产症状：
+    // `markDeadWorkersErrored` 把它写成 undefined 落盘，不可逆）。
+    memberSessionIdsIntactAfterReboot: postAudit.memberSessionIdsIntact === true
+      && Array.isArray(postAudit.memberSessionIds)
+      && postAudit.memberSessionIds.length === postAudit.memberCount,
+    // 重启后的 resume 报告**零孤儿、零错误**（旧形态从未断言过这两项）。
+    rebootResumeReportsNoOrphan: (() => {
+      const b = rebootObservation?.rebootBootLog ?? ''
+      const line = b.split('\n').find((l) => l.includes('[omo-team] boot resume:')) ?? ''
+      return line.includes('orphaned=0') && line.includes('errors=0')
     })(),
     boardFilesOnDiskPreReboot: (() => {
       const detail = rebootObservation?.detail ?? ''

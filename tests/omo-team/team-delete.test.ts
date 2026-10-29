@@ -338,22 +338,32 @@ describe('P5-T7 executeTeamDelete — force 旁路与 lead-only', async () => {
     expect(store.get(teamRunId)!.status).toBe('deleted')
   })
 
-  it('P5-T16 (MINOR-6) a drain-only fault still closes the ledger (every member was interrupted)', async () => {
-    // 评审 MINOR-6 的正面腿：drain 失败 ≠ 成员还在跑。成员**全部**被 interrupt
-    // 了，失败的只是原生通道的**释放**步骤——旧实现在这里把账永久搁在
-    // 'deleting'（该态只有 deleting→deleted 一条前向迁移 ⇒ 进程存活期内没有
-    // 别的出路）。更正后：账收口（deleted + 撤账），失败原因进 note + warn 行。
+  it('P5-T16 (MAJOR-1) a drain fault does NOT close the ledger — the run stays deleting and may retry', async () => {
+    // 第二轮评审 MAJOR-1 的正面腿：**drain 失败不许收账**。
+    // 原生 `interrupt` 只是发起异步取消；DSH 的 `drainChildren` 在
+    // exact-live-parent 校验失败时**在任何 child release 之前**抛
+    // `UNAUTHORIZED`（dsh-subagent/lib/index.js:929-940）——所以 drain 失败
+    // 恰恰意味着「成员可能仍在 resident 且仍在跑」。此时收账（deleted + 撤
+    // 参与索引）会制造**无主且仍在运行**的成员。
     const { deps, teamRunId, store, channel } = await makeFixture()
     await approveBoth(store, teamRunId)
     channel.failDrain = true
-    const result = await executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
-    expect(result.status).toBe('deleted')
+    const err = await rejectionOf(executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps))
+    expect(err.code).toBe('TEARDOWN_FAULT')
+    expect(err.message).toContain('drain:')
+    expect(err.message).toContain('the ledger is NOT closed')
+    // 账留在 deleting，参与索引**不动**（成员仍属于本队，不是孤儿）。
+    // （`participationOfMember` 刻意**不**按状态过滤——那正是「成员还属于本队」
+    // 的读面；`participantOf` 会按 ACTIVE 三态过滤，`deleting` 不在其中。）
+    expect(store.get(teamRunId)!.status).toBe('deleting')
+    expect(store.participationOfMember('child-analyst')).toBeDefined()
+    expect(store.participationOfMember('child-builder')).toBeDefined()
+    // 重跑即续上（interrupt/drain 幂等）。
+    channel.failDrain = false
+    const retry = await executeTeamDelete({ teamRunId }, { agent: makeAgent(LEAD), signal: abortSignal }, deps)
+    expect(retry.status).toBe('deleted')
     expect(store.get(teamRunId)!.status).toBe('deleted')
-    expect(store.participantOf(LEAD)).toBeUndefined()
     expect(store.participationOfMember('child-analyst')).toBeUndefined()
-    // 不静默：note 点名 drain 的失败原因。
-    expect(result.note).toContain('native drain reported')
-    expect(result.note).toContain('UNAUTHORIZED')
   })
 
   it('P5-T16 (MINOR-6) the idempotent re-delete succeeds (deleted is terminal — no INVALID_TRANSITION)', async () => {

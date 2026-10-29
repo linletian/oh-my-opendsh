@@ -1174,7 +1174,13 @@ describe('P4-T12 ⑥ the injected text is the vendored body, and the listener ne
     expect(message).toContain('`team_create`')
     expect(message).toContain('`task_send`')
     expect(message).toContain('`team_delete`')
-    expect(message).toContain('NO equivalent in this deployment')
+    // P5-T16（第二轮评审 MAJOR-4 同族）：注记里那句「NO equivalent in this
+    // deployment」在 Phase 5 之后是**假话**——team 面已经落地，且 OMO 的
+    // category 词表在本部署解析不出来。注记现在给出真实的词汇翻译。
+    expect(message).toContain('THIS DEPLOYMENT HAS A TEAM SURFACE')
+    expect(message).toContain('team_send_message(teamRunId=<id>')
+    expect(message).toContain('`team_run_id` becomes `teamRunId`')
+    expect(message).toContain('`quick` and `deep` are the only two')
     expect(message).toContain('no `team_run_id`')
     expect(message).not.toContain('team_mode.enabled')
     expect(message).not.toContain('.config/opencode/')
