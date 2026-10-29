@@ -581,7 +581,11 @@ export function scanVendorSkills(
  * 体例同 `OMO_TEAM_*` 服务名的 R-5 双拼写先例。
  */
 export const TEAM_SURFACE_SHAPES_NOTE = [
-  'TEAM SURFACE HERE (not the opencode one): `team_create` takes ONLY `inline_spec`',
+  // P5-T24：**条件句**（第六轮 MINOR-1 的同类漏网）。这条 note 也会在 team 面
+  // **缺席**的会话里被注入（skill 随时可加载、keyword 只过滤 type='team'），
+  // 所以不能无条件断言「surface 在这里」。
+  'IF the team_* tools are in your tool list, THIS deployment\'s surface (not the opencode',
+  'one) is: `team_create` takes ONLY `inline_spec`',
   '(`{ name, members: [{ name, category, prompt }] }` — spec level accepts ONLY `name`',
   'and `members`, so NO `description`/`lead`/`leadAgentId`; a member accepts ONLY',
   '`name`/`category`/`seat`/`prompt`, so NO `kind`/`subagent_type`); a member `category`',

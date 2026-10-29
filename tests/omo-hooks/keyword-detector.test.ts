@@ -1186,7 +1186,11 @@ describe('P4-T12 ⑥ the injected text is the vendored body, and the listener ne
     // P5-T16（第二轮评审 MAJOR-4 同族）：注记里那句「NO equivalent in this
     // deployment」在 Phase 5 之后是**假话**——team 面已经落地，且 OMO 的
     // category 词表在本部署解析不出来。注记现在给出真实的词汇翻译。
-    expect(message).toContain('THIS DEPLOYMENT HAS A TEAM SURFACE')
+    //
+    // P5-T24（第六轮 MINOR-1 的同类漏网）：在场断言必须是**条件句**——这条 note
+    // 在 team 面缺席的会话里也会被注入（keyword 闸只过滤 type='team'）。
+    expect(message).toContain('IF THIS DEPLOYMENT HAS THE TEAM SURFACE')
+    expect(message).not.toContain('THIS DEPLOYMENT HAS A TEAM SURFACE —')
     expect(message).toContain('team_send_message(teamRunId=<id>')
     expect(message).toContain('`team_run_id` becomes `teamRunId`')
     expect(message).toContain('`quick` and `deep` are the only two')

@@ -289,7 +289,8 @@ export const HYPERPLAN_CARRIER_NOTE = [
   'opencode lead-team tools (`team_create`, `task_send`, `team_delete`) and the opencode',
   'category roster (`unspecified-low`, `unspecified-high`, `deep`, `ultrabrain`, `artistry`).',
   '',
-  'THIS DEPLOYMENT HAS A TEAM SURFACE — it is not the opencode one. Translate the team calls:',
+  'IF THIS DEPLOYMENT HAS THE TEAM SURFACE (check your tool list), it is NOT the opencode',
+  'one. Translate the team calls:',
   '  * `team_create` takes ONE argument: `inline_spec` (an object or a JSON string of one)',
   '    whose members are `{"name":..., "category":"quick"|"deep", "prompt":...}`.',
   '  * `task_send({to, team_run_id, message})` becomes',
@@ -409,7 +410,8 @@ export const ULTRAWORK_CARRIER_NOTE = [
   // 路。这一段与 `omo-commands/src/skills.ts` 的 `TEAM_SURFACE_SHAPES_NOTE`
   // **逐字相同**（跨包禁 import，等值由
   // `tests/omo-commands/team-surface-consistency.test.ts` 的交叉钉保证）。
-  '(4) TEAM SURFACE HERE (not the opencode one): `team_create` takes ONLY `inline_spec`',
+  '(4) IF the team_* tools are in your tool list, THIS deployment\'s surface (not the opencode',
+  'one) is: `team_create` takes ONLY `inline_spec`',
   '(`{ name, members: [{ name, category, prompt }] }` — spec level accepts ONLY `name`',
   'and `members`, so NO `description`/`lead`/`leadAgentId`; a member accepts ONLY',
   '`name`/`category`/`seat`/`prompt`, so NO `kind`/`subagent_type`); a member `category`',
@@ -427,7 +429,10 @@ export const ULTRAWORK_CARRIER_NOTE = [
  * 先例）。
  */
 export const ULTRAWORK_TEAM_CARRIER_NOTE = [
-  'TEAM SURFACE HERE (not the opencode one): `team_create` takes ONLY `inline_spec`',
+  // P5-T24：与 `omo-commands/src/skills.ts` 的 `TEAM_SURFACE_SHAPES_NOTE` **逐字相同**
+  // ——包括这条条件句（它会在 team 面缺席的会话里被注入，不许无条件断言在场）。
+  'IF the team_* tools are in your tool list, THIS deployment\'s surface (not the opencode',
+  'one) is: `team_create` takes ONLY `inline_spec`',
   '(`{ name, members: [{ name, category, prompt }] }` — spec level accepts ONLY `name`',
   'and `members`, so NO `description`/`lead`/`leadAgentId`; a member accepts ONLY',
   '`name`/`category`/`seat`/`prompt`, so NO `kind`/`subagent_type`); a member `category`',

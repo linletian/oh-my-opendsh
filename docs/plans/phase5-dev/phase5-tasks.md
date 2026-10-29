@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每条 team 面的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：✅ **23/23 全部收口**（2026-10-29 增补 T23 = PR #17 第六轮评审修复轮；2026-10-29 增补 T22 = 第五轮 delta 自查残余；2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **24/24 全部收口**（2026-10-29 增补 T24 = 第六轮 delta 自审残余；2026-10-29 增补 T23 = PR #17 第六轮评审修复轮；2026-10-29 增补 T22 = 第五轮 delta 自查残余；2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **编号**：`P5-T<n>`（Phase 5 - Task n）。工作包归属见计划书 §7。
 >
@@ -286,6 +286,16 @@
 - **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
 - **证据**：✅ 2026-10-29——新增双腿对应评审的两个反例：① cap=1 且名额被 **fresh 在途**占着 ⇒ 错误文本含 `IN-FLIGHT reservations`/`TEMPORARY` 且**不含** `all 1 units are DELIVERED`，A rollback 后 B 立刻 `reserved`；② 两条停滞行 ⇒ `messageBudget().stalledInFlight=2` ⇒ 原 owner 迟到 rollback 后 `=1`、迟到 commit 后 `=0` 且该 id 变 `duplicate`。另加 keyword 条件句的反向断言（`not.toContain('it IS in your tool list')`）与 quarantined note 的 best-effort 断言。实测：**vitest 91f/2106t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0（**vendor 字节零改动**）；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
 - **依赖**：P5-T22。**量级**：2 小时。
+
+### [x] P5-T24 — 第六轮 delta 自查：同类"无条件在场断言"漏网（不进第七轮）
+
+> **触发**：回答「还需要第七轮吗」时做的自审——**不看代码，只看"还有没有同类句子"**。结果在 10 分钟内找到 **2 处**与第六轮 MINOR-1 完全同类的残余：`HYPERPLAN_CARRIER_NOTE` 的开头 `THIS DEPLOYMENT HAS A TEAM SURFACE`、`ULTRAWORK_CARRIER_NOTE` 第 (4) 段开头 `TEAM SURFACE HERE`，以及两包共用的 `TEAM_SURFACE_SHAPES_NOTE` 首句——三处都在 team 面**缺席**的会话里照样注入（keyword 闸只过滤 `type='team'`，skill 随时可加载），因此都是无条件断言。
+
+- **产出**：三处首句全部改成**条件句**（`IF the team_* tools are in your tool list, THIS deployment's surface …` / `IF THIS DEPLOYMENT HAS THE TEAM SURFACE (check your tool list) …`）；`ULTRAWORK_TEAM_CARRIER_NOTE` 与 omo-commands 的 `TEAM_SURFACE_SHAPES_NOTE` 保持**逐字相同**（含新的换行位置，交叉钉仍成立，且 `ULTRAWORK_CARRIER_NOTE` 的 `(4)` 段仍是它的超串）；满载诊断补**混合情形**（fresh 与停滞并存时，fresh 部分说"暂时"，另附停滞部分的唯一释放路径）。
+- **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿；门 3（e2e）绿；门 4–8 绿。
+- **证据**：✅ 2026-10-29——`keyword-detector.test.ts` 的在场断言从 `toContain('THIS DEPLOYMENT HAS A TEAM SURFACE')` 改为条件句测试 + `not.toContain('THIS DEPLOYMENT HAS A TEAM SURFACE —')`；`team-surface-consistency.test.ts` 的跨包等值钉仍绿（两包逐字相同）；`team-state.test.ts` 的满载文案腿补了混合情形。实测：**vitest 91f/2106t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass；`run-proofs` 8/8。
+- **备注**：本条**不是**评审提出的问题，是自审发现的同类残余；按「发现的残留先处理掉，不要留到下一轮」的纪律就地闭合。
+- **依赖**：P5-T23。**量级**：1 小时。
 
 ---
 

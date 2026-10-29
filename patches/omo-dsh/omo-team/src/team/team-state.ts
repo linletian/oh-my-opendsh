@@ -1190,6 +1190,7 @@ export class TeamStateStore {
           ? `all ${cap} units are DELIVERED — this run's message budget is spent; a NEW correlationId does NOT help (the ledger length does not change), so the only recovery is to tear this run down (team_delete) and start a new one`
           : freshCount > 0
             ? `${freshCount} unit(s) are held by IN-FLIGHT reservations that can still settle: wait for those sends to settle — a failed one RELEASES its unit — then retry. This fullness may be TEMPORARY, so do not tear the run down yet`
+              + (stalledCount > 0 ? ` The other ${stalledCount} unit(s) are STALLED (owners presumed dead): those come back only if the original sender settles late.` : '')
             : `${stalledCount} unit(s) are held by STALLED reservations whose senders are presumed dead. Those rows are not auto-reclaimed (reclaiming them would let a hung-but-alive sender deliver twice), so the unit comes back only if the original sender settles late (a late commit moves it to delivered, a late rollback frees it). If it never does, the only recovery is to tear this run down (team_delete) and start a new one`
         throw new TeamStateError(
           `message dedup ledger for team ${teamRunId} is full (${cap} = the vendored max_messages_per_run bound; `
