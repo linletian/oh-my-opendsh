@@ -294,7 +294,7 @@ describe('P5-T6 member↔member: no native sibling edge → lead relay', async (
     ).rejects.toMatchObject({ code: 'RELAY_LEAD_NOT_LIVE', name: 'TeamMessageError' })
     // Nothing reached the channel, and the dedup ledger is empty (attempt ≠ delivery).
     expect(deps.subagents.sends).toHaveLength(0)
-    expect(deps.store.hasProcessedMessage(fixture.teamRunId, CORRID_A)).toBe(false)
+    expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(false)
   })
 })
 
@@ -356,7 +356,7 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
       fixture.analystSessionId,
       fixture.builderSessionId,
     ])
-    expect(deps.store.hasProcessedMessage(fixture.teamRunId, CORRID_A)).toBe(true)
+    expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(true)
   })
 
   it('broadcast partial failure names the member AND counts what landed first', async () => {
@@ -407,7 +407,7 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
       'child-builder-9',
     ])
     // 宁漏不重 unchanged: the ledger keeps the whole-message id.
-    expect(store.hasProcessedMessage(state.teamRunId, CORRID_B)).toBe(true)
+    expect(store.hasDeliveredMessage(state.teamRunId, CORRID_B)).toBe(true)
   })
 
   it('P5-T16 (MAJOR-2) a broadcast that reached NOBODY releases the reservation (same id may retry)', async () => {
@@ -430,7 +430,7 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(err.message).toContain('(0 delivered before failure)')
     expect(err.message).toContain('reservation is released')
     // 账已退：同 id 可再投。
-    expect(deps.store.hasProcessedMessage(fixture.teamRunId, CORRID_A)).toBe(false)
+    expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(false)
 
     deps.subagents.failOn.clear()
     const retry = await executeTeamSendMessage(
@@ -444,7 +444,8 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
   it('P5-T16 (MAJOR-2) a FULL ledger refuses a new id — and the refusal never evicts an older one', async () => {
     // 评审点名的联合回归腿之一：「满载＋单投失败」。
     // 满载 ⇒ 具名拒收（不裁剪）⇒ 工具层译成本工具的错误族（响亮、可恢复：
-    // 换新 correlationId 即可继续）。
+    // （P5-T19：**别**再把它说成「换新 correlationId 即可继续」——满载是终端
+    //  预算，换 id 不改变账长；真实恢复只有拆队重建）。
     const store = makeStore()
     const fixture = await seedTeam(store)
     const deps = await makeDeps(fixture)
@@ -452,7 +453,9 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 2 })
     await capped.rebuildIndexes() // 同一 base_dir 上的新实例：从磁盘重建镜像
     for (const id of ['m-aaa', 'm-bbb']) {
-      expect(await capped.markMessageProcessed(fixture.teamRunId, id)).toBe(true)
+      expect(await capped.reserveMessageDelivery(fixture.teamRunId, id)).toBe('reserved')
+      // 满载判据读**已送达**账 ⇒ 必须确认送达（P5-T19 后预约与送达分账）。
+      await capped.commitMessageDelivery(fixture.teamRunId, id)
     }
     const cappedDeps = { ...deps, store: capped }
     const lead = makeAgent(fixture.leadSessionId)
@@ -477,7 +480,9 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 2 })
     await capped.rebuildIndexes() // 同一 base_dir 上的新实例：从磁盘重建镜像
     for (const id of ['m-aaa', 'm-bbb']) {
-      expect(await capped.markMessageProcessed(fixture.teamRunId, id)).toBe(true)
+      expect(await capped.reserveMessageDelivery(fixture.teamRunId, id)).toBe('reserved')
+      // 满载判据读**已送达**账 ⇒ 必须确认送达（P5-T19 后预约与送达分账）。
+      await capped.commitMessageDelivery(fixture.teamRunId, id)
     }
     const cappedDeps = { ...deps, store: capped }
     const lead = makeAgent(fixture.leadSessionId)
@@ -490,6 +495,123 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(deps.subagents.sends).toHaveLength(0)
   })
 
+  it('P5-T19 (MAJOR-1) a HUNG first send makes the concurrent same-id return IN-FLIGHT, never "already delivered"', async () => {
+    // 第三轮评审 MAJOR-1 的核心腿：**并发同 ID + 首投挂起**。
+    // 旧实现把预约当已送达 ⇒ B 立刻收到 `deduplicated:true` + note
+    // "...was already delivered..."，而 A 还在投、甚至可能失败 ⇒ **零送达却
+    // 宣称已交付**。现在 B 读到的是 `in-flight`：`delivered:false,
+    // deduplicated:false, inFlight:true`，note 明说本调用什么都没投。
+    const fixture = await seedTeam(makeStore())
+    const lead = makeAgent(fixture.leadSessionId)
+
+    // A 的通道：第一次 sendMessage **挂起**（由测试手动放行）。
+    let releaseFirst: (() => void) | undefined
+    let firstSettled: (() => void) | undefined
+    const firstSettling = new Promise<void>((resolve) => { firstSettled = resolve })
+    const hangingChannel = {
+      sends: [] as string[],
+      failOn: new Set<string>(),
+      async sendMessage(_sender: TeamAgent, targetSessionId: string) {
+        this.sends.push(targetSessionId)
+        const index = this.sends.length
+        if (index === 1) {
+          await new Promise<void>((resolve) => { releaseFirst = resolve })
+          firstSettled?.()
+        }
+        return `accepted-${index}`
+      },
+    }
+    const depsA = { subagents: hangingChannel, agents: makeAgentsRegistry([fixture.leadSessionId, fixture.analystSessionId]), store: fixture.store }
+
+    // ① A 发起首投（立即挂起在 sendMessage 内）。
+    const aPromise = executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsA as never,
+    )
+    // 等到 A 真的进了 sendMessage（预约已落盘）。
+    for (let i = 0; i < 200 && hangingChannel.sends.length === 0; i += 1) await new Promise((r) => setTimeout(r, 5))
+    expect(hangingChannel.sends).toHaveLength(1)
+
+    // ② B（**另一个 store 实例**，同一 base_dir）用同 ID —— 必须是 in-flight。
+    const storeB = new TeamStateStore(depsA.store.config)
+    await storeB.rebuildIndexes()
+    const depsB = { ...depsA, store: storeB }
+    const bResult = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsB as never,
+    )
+    expect(bResult.inFlight).toBe(true)
+    expect(bResult.delivered).toBe(false)
+    expect(bResult.deduplicated).toBe(false)
+    expect(bResult.note).not.toContain('was already delivered')
+    expect(bResult.note).toContain('IN FLIGHT')
+    expect(bResult.deliveries).toEqual([])
+    // B 一次原生投递都没发。
+    expect(hangingChannel.sends).toHaveLength(1)
+
+    // ③ 放行 A ⇒ A 成功并**确认送达** ⇒ 账上出现该 id。
+    releaseFirst?.()
+    await firstSettling
+    const aResult = await aPromise
+    expect(aResult.delivered).toBe(true)
+    // 镜像按进程缓存（跨进程真相在 sidecar 上）——重读一次才能看到 A 的 commit。
+    await storeB.rebuildIndexes()
+    expect(storeB.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(true)
+    // ④ 此时同 ID 才是**真重复**。
+    const cResult = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsB as never,
+    )
+    expect(cResult.deduplicated).toBe(true)
+    expect(cResult.inFlight).toBe(false)
+  })
+
+  it('P5-T19 (MAJOR-1) a HUNG first send that then FAILS leaves nothing behind — the retry really delivers', async () => {
+    // 第三轮评审 MAJOR-1 的第二条腿（首投挂起后**失败**）：旧实现在这里会
+    // 退账到空账，而 B 早已被告知「已交付」⇒ 零送达 + 双份谎言。现在：
+    // A 失败 ⇒ 在途清空、已送达仍空；B 重试拿到预约并真正投出去。
+    const fixture = await seedTeam(makeStore())
+    const lead = makeAgent(fixture.leadSessionId)
+    let releaseFirst: (() => void) | undefined
+    let firstSettled: (() => void) | undefined
+    const firstSettling = new Promise<void>((resolve) => { firstSettled = resolve })
+    const channel = {
+      sends: [] as string[],
+      failFirst: true,
+      async sendMessage(_sender: TeamAgent, targetSessionId: string) {
+        this.sends.push(targetSessionId)
+        const index = this.sends.length
+        if (index === 1) {
+          await new Promise<void>((resolve) => { releaseFirst = resolve })
+          firstSettled?.()
+          throw new Error('mock: first send failed after the suspend')
+        }
+        return `accepted-${index}`
+      },
+    }
+    const depsA = { subagents: channel, agents: makeAgentsRegistry([fixture.leadSessionId, fixture.analystSessionId]), store: fixture.store }
+    const aPromise = executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsA as never,
+    )
+    for (let i = 0; i < 200 && channel.sends.length === 0; i += 1) await new Promise((r) => setTimeout(r, 5))
+    const storeB = new TeamStateStore(depsA.store.config)
+    await storeB.rebuildIndexes()
+    const depsB = { ...depsA, store: storeB }
+    const bResult = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsB as never,
+    )
+    expect(bResult.inFlight).toBe(true)
+    // A 失败（退账只碰在途行）。
+    releaseFirst?.()
+    await firstSettling
+    await expect(aPromise).rejects.toMatchObject({ code: 'DELIVERY_FAILED' })
+    expect(storeB.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(false)
+    // B 重试：拿到预约并真的投出去（不是「已交付」的假象）。
+    const retry = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsB as never,
+    )
+    expect(retry.delivered).toBe(true)
+    expect(retry.inFlight).toBe(false)
+    expect(storeB.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(true)
+  })
+
   it('single-target delivery failure COMPENSATES the reservation (retry may deliver)', async () => {
     const fixture = await seedTeam(makeStore())
     const deps = await makeDeps(fixture)
@@ -499,7 +621,7 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     await expect(
       executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), deps),
     ).rejects.toMatchObject({ code: 'DELIVERY_FAILED' })
-    expect(deps.store.hasProcessedMessage(fixture.teamRunId, CORRID_A)).toBe(false)
+    expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(false)
 
     // The same id now goes through (the message was never delivered).
     deps.subagents.failOn.clear()

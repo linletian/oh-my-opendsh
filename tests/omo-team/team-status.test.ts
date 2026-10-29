@@ -192,6 +192,14 @@ describe('P5-T16 (MINOR-5) 成员活体观测面 — phase 是账面、resident 
     expect(result.members.every((m) => m.phase === 'pending' || m.phase === 'running')).toBe(true)
     expect(result.memberPhaseNote).toContain('resident')
     expect(result.memberPhaseNote).toContain('not a liveness fact')
+    // P5-T19（第三轮评审 MINOR）：上一版写「only running has a producer」是**事实
+    // 错误**——pending / shutdown_approved / completed / errored 各有生产者。
+    // 未接线的是**正常 turn 生命周期**；注记必须这么写。
+    expect(result.memberPhaseNote).not.toContain('only "running" has a producer')
+    for (const producer of ['"pending"', '"shutdown_approved"', '"completed"', '"errored"']) {
+      expect(result.memberPhaseNote, producer).toContain(producer)
+    }
+    expect(result.memberPhaseNote).toContain('normal turn lifecycle')
   })
 
   it('无人活体时全员 resident=false（不把冷成员说成活着）', async () => {

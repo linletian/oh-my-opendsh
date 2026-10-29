@@ -494,14 +494,72 @@ export interface OmoTeamRunLedger {
    *  status/color/worktreePath），omo 侧的 category 遂入 sidecar——差异记
    *  NOTES：category 的落盘位是 sidecar，不是 state.json 的成员行）。 */
   readonly memberCategories: Readonly<Record<string, string>>
+  /**
+   * **已送达**的 correlationId（去重账的权威集）。P5-T19（第三轮评审 MAJOR-1）：
+   * 这张账的回答是「这条消息**投递成功过**吗」——不是「有人正在投它吗」。
+   * 预约态住在下面的 `inFlightMessages`，与它分开。
+   */
   readonly processedMessageIds: readonly string[]
+  /**
+   * **在途预约**（已登记、尚未确认送达）。P5-T19（第三轮评审 MAJOR-1）。
+   *
+   * 旧形态只有一张 `processedMessageIds`，预约即入账 ⇒ 并发同 ID 的第二个调用
+   * 会读到「已在账上」并被告知 "was already delivered"，而首发可能还没投完、
+   * 甚至随后失败退账 ⇒ **零送达却宣称已交付**。评级：这条消息的语义被一次
+   * 预约污染了。
+   *
+   * 现在：预约落在这里（带时刻），投递成功后 `commitMessageDelivery` 把它移到
+   * `processedMessageIds`；失败则 `rollbackMessageReservation` 删掉它。
+   * 并发同 ID 的第二个调用读到的是 `in-flight` ⇒ 返回**可重试**的 IN_PROGRESS
+   * 结果，不再宣称已交付。
+   *
+   * `at` 是**崩溃兜底**：预约带时刻，超过 `TEAM_MESSAGE_RESERVATION_TTL_MS`
+   * 的在途行按「发起进程已死」处理（读时剔除）——否则一次崩溃会把那个 id
+   * 永远钉在在途态。剔除的代价是「崩溃前恰好投递成功但没来得及 commit」那条
+   * 可能被重投一次；这比「永远发不出去」可接受，且窗口由 TTL 显式声明。
+   */
+  readonly inFlightMessages: readonly { readonly id: string; readonly at: number }[]
   readonly briefingInjectedMembers: readonly string[]
 }
+
+/** 预约的在途 TTL（超过即按「发起进程已死」处理）。 */
+export const TEAM_MESSAGE_RESERVATION_TTL_MS = 5 * 60 * 1000
+
+/**
+ * 一次消息预约的三态结果（P5-T19 MAJOR-1）：
+ *   * `reserved` —— 本调用拿到投递权，去投；
+ *   * `duplicate` —— 这个 id **已确认送达**过（真去重）；
+ *   * `in-flight` —— 这个 id **正在被另一个调用投递**（既不是重复也不是失败：
+ *     本调用没有投递任何东西，应稍后重试；**不许**宣称已交付）。
+ */
+export type TeamMessageReservation = 'reserved' | 'duplicate' | 'in-flight'
 
 /** sidecar 文件名（runtime 目录内，与 vendored state.json / state.lock 并列而不相犯）。 */
 export const OMO_TEAM_LEDGER_FILE = 'omo-team-extensions.json'
 /** sidecar 专属锁名（与 vendored `state.lock` 分锁——两把锁不嵌套，不死锁）。 */
 export const OMO_TEAM_LEDGER_LOCK = 'omo-team-extensions.lock'
+
+/**
+ * 坏账告警的**文本构造**（纯函数，便于两条分支各自被单测钉住；P5-T19 评审 MINOR-3）。
+ *
+ * 关键不变量：**留档失败时不许断言原字节已丢失**。读路径只读，覆盖写发生在
+ * 之后的记账里、且同样可能失败——"已丢了"是一个当时无法证实的断言，而模型与
+ * 用户会照它行动（放弃取证）。上一版的失败文案正是这么写的。
+ */
+export function formatCorruptLedgerWarning(
+  teamRunId: string,
+  reason: string,
+  quarantine:
+    { readonly preserved: true, readonly path: string } | { readonly preserved: false, readonly error: string },
+): string {
+  const preserved = quarantine.preserved
+    ? `the damaged file was preserved as ${quarantine.path}`
+    : `the damaged file could NOT be archived (${quarantine.error}) — the in-memory dedup/briefing ledger is reset to empty. `
+      + 'NOTE: this warning does NOT claim the damaged file is gone — the read path only reads, and a later write may or may not succeed in replacing it, so inspect the path before assuming either way'
+  return `${LOG_PREFIX} sidecar ledger CORRUPT for team ${teamRunId} (${reason}) — ${preserved} and an empty ledger was rebuilt. `
+    + 'CONSEQUENCE 1: processed-message dedup restarts from zero — a correlationId that was already delivered may be delivered AGAIN. '
+    + 'CONSEQUENCE 2: briefing dedup restarts from zero — a member may receive a SECOND briefing frame.'
+}
 
 /** 日志前缀（sidecar 降级面响亮用）。 */
 const LOG_PREFIX = '[omo-team team-state]'
@@ -620,7 +678,7 @@ export class TeamStateStore {
     seats: Readonly<Record<string, string>> = {},
     categories: Readonly<Record<string, string>> = {},
   ): OmoTeamRunLedger {
-    return { version: 1, teamRunId, memberSeats: seats, memberCategories: categories, processedMessageIds: [], briefingInjectedMembers: [] }
+    return { version: 1, teamRunId, memberSeats: seats, memberCategories: categories, processedMessageIds: [], inFlightMessages: [], briefingInjectedMembers: [] }
   }
 
   /** sidecar 读（锁内）：缺失 → 空账（成员 seat 从 state.json 行名兜底为空）；损坏 → 空账 + 响亮 warn。 */
@@ -638,12 +696,21 @@ export class TeamStateStore {
       if (parsed.version !== 1 || parsed.teamRunId !== teamRunId) {
         throw new Error('ledger version/teamRunId mismatch')
       }
+      const now = Date.now()
       return {
         version: 1,
         teamRunId,
         memberSeats: parsed.memberSeats ?? {},
         memberCategories: parsed.memberCategories ?? {},
         processedMessageIds: Array.isArray(parsed.processedMessageIds) ? parsed.processedMessageIds.filter((x): x is string => typeof x === 'string') : [],
+        // 在途行：解析合法的 {id, at}，并**剔除过期行**（发起进程已死）。
+        inFlightMessages: (Array.isArray(parsed.inFlightMessages) ? parsed.inFlightMessages : [])
+          .filter((row): row is { id: string; at: number } => (
+            typeof row === 'object' && row !== null
+            && typeof (row as { id?: unknown }).id === 'string'
+            && typeof (row as { at?: unknown }).at === 'number'
+          ))
+          .filter((row) => now - row.at <= TEAM_MESSAGE_RESERVATION_TTL_MS),
         briefingInjectedMembers: Array.isArray(parsed.briefingInjectedMembers) ? parsed.briefingInjectedMembers.filter((x): x is string => typeof x === 'string') : [],
       }
     } catch (err) {
@@ -671,15 +738,11 @@ export class TeamStateStore {
       // `Date.now()` 生成的（跨毫秒时根本不是实际留档的那个路径）。
       // 更正：留档函数返回**实际结果**（成功=实际路径 / 失败=错误），告警按
       // 结果分流；路径**只生成一次**（同一次留档与告警共用它）。
-      const quarantine = this.quarantineCorruptLedger(teamRunId)
-      const preserved = quarantine.preserved
-        ? `the damaged file was preserved as ${quarantine.path}`
-        : `the damaged file could NOT be archived (${quarantine.error}) — it was overwritten by the rebuilt empty ledger, so the original bytes are gone`
-      console.warn(
-        `${LOG_PREFIX} sidecar ledger CORRUPT for team ${teamRunId} (${err instanceof Error ? err.message : String(err)}) — ${preserved} and an empty ledger was rebuilt. `
-        + 'CONSEQUENCE 1: processed-message dedup restarts from zero — a correlationId that was already delivered may be delivered AGAIN. '
-        + 'CONSEQUENCE 2: briefing dedup restarts from zero — a member may receive a SECOND briefing frame.',
-      )
+      console.warn(formatCorruptLedgerWarning(
+        teamRunId,
+        err instanceof Error ? err.message : String(err),
+        this.quarantineCorruptLedger(teamRunId),
+      ))
       return this.emptyLedger(teamRunId)
     }
   }
@@ -1003,75 +1066,91 @@ export class TeamStateStore {
 
   // ── 双账（sidecar，锁内「查+记」——跨进程原子自此成立）────────────────────
 
-  /**
-   * R-6 去重账查询（只读诊断面，镜像）。判重走 markMessageProcessed——
-   * 与 T5 同一分工。
-   */
-  hasProcessedMessage(teamRunId: string, messageId: string): boolean {
-    return this.requireState(teamRunId).processedMessageIds.includes(messageId)
-  }
 
   /**
-   * 原子「查+记」（R-6 去重闸的账本体）：**sidecar 锁内重读 → 判 → 原子写
-   * → 镜像更新**，先记后投（reservation 语义）。T8b 起原子域 = 跨进程
-   * （withLock 的 O_EXCL 锁 + 锁内读；T5 内存形态的「保证域=本进程」注
-   * 作废）。失败时调用方 unmarkMessageProcessed 补偿退账，同一不变量：
-   * 未送达不占幂等位。
+   * **预约投递权**（R-6 去重闸的第一段：P5-T19 评审 MAJOR-1 重做）。
    *
-   * P5-T16（评审 MINOR-8 + MAJOR-2）：去重账**有上界**，但**不裁剪**。
+   * 三段序：`reserveMessageDelivery` → 投递 → `commitMessageDelivery`（成功）/
+   * `rollbackMessageReservation`（失败）。锁内「查+记」的原子域不变（跨进程
+   * O_EXCL 锁 + 锁内重读），变的是**记什么**：
    *
-   * 第一轮修复轮曾实现「追加后裁掉最旧的一条」（滚动窗口）——第二轮评审驳回
-   * 了它，理由成立：**裁剪是不可逆的**，而预约失败要走 `unmarkMessageProcessed`
-   * 补偿退账（只删新增的那一条）。于是：
-   *   cap=3，账=[m1,m2,m3] → 预约 m4（追加⇒[m1,m2,m3,m4]⇒裁剪⇒[m2,m3,m4]）
-   *   → 投递失败退账（删 m4）⇒ 账=[m2,m3] —— **m1 的去重记忆被永久抹掉**，
-   *   再次 `mark(m1)` 会返回 true（允许重复投递）。连续失败可以在没有一条新
-   *   成功消息的情况下逐步清空历史去重账。
+   *   * 已送达 ⇒ `duplicate`（真去重，可以放心宣称「此前已交付」）；
+   *   * 在途 ⇒ `in-flight`（**不许**宣称已交付——本调用什么都没投）；
+   *   * 谁都没占 ⇒ 写入在途行，返回 `reserved`。
    *
-   * 更正：**满载时显式拒收**（第一轮评审自己的措辞：「按 maxMessagesPerRun
-   * 封顶并**显式拒收超限**」），不裁剪任何一条：
-   *   * 账长 = vendored `max_messages_per_run`（上游同值 10000）——账本大小与
-   *     内存占用**有上界**（MINOR-8 的诉求达成）；
-   *   * 满载 ⇒ 抛具名 `MESSAGE_LEDGER_FULL`（响亮、可恢复：模型换新
-   *     correlationId 即可继续），**账里的任何一条都不丢** ⇒ 补偿退账永远
-   *     精确（MAJOR-2 的不变量）。
+   * 满载（已送达数 ≥ vendored `max_messages_per_run`）⇒ 抛具名
+   * `MESSAGE_LEDGER_FULL`。**注意**：满载时换新 correlationId 也**无效**
+   * （账长不变，新 id 一样被拒）——真实终态只有「拆队重建」，错误文本与
+   * 工具层文案都按这个口径写（P5-T19 评审 MINOR-1 的更正）。
    */
-  async markMessageProcessed(teamRunId: string, messageId: string): Promise<boolean> {
+  async reserveMessageDelivery(teamRunId: string, messageId: string): Promise<TeamMessageReservation> {
     this.requireState(teamRunId)
     return withLock(this.ledgerLockPath(teamRunId), async () => {
       const ledger = await this.readLedgerUnlocked(teamRunId)
-      if (ledger.processedMessageIds.includes(messageId)) return false
+      // ① 已送达 ⇒ 真重复。
+      if (ledger.processedMessageIds.includes(messageId)) return 'duplicate'
+      // ② 在途 ⇒ 有人在投同一个 id（既非重复也非失败）。
+      if (ledger.inFlightMessages.some((row) => row.id === messageId)) return 'in-flight'
+      // ③ 满载 ⇒ 显式拒收（不裁剪任何一条）。
       const cap = this.config.max_messages_per_run
       if (ledger.processedMessageIds.length >= cap) {
         throw new TeamStateError(
-          `message dedup ledger for team ${teamRunId} is full (${cap} recorded ids = the vendored max_messages_per_run bound) — `
-          + `refusing to record '${messageId}' rather than evicting an older id (an eviction would silently drop that older message's dedup memory); `
-          + `send under a NEW correlationId, or tear the run down and start a new one`,
+          `message dedup ledger for team ${teamRunId} is full (${cap} delivered ids = the vendored max_messages_per_run bound) — `
+          + `refusing to record '${messageId}'. This is the run's terminal message budget: a NEW correlationId does NOT help `
+          + `(the ledger length does not change), so the only recovery is to tear this run down (team_delete) and start a new one`,
           'MESSAGE_LEDGER_FULL',
         )
       }
-      const next = [...ledger.processedMessageIds, messageId]
-      await this.writeLedgerUnlocked(teamRunId, {
-        ...ledger,
-        processedMessageIds: next,
-      })
-      this.applyLedgerToMirror(teamRunId, {
-        processedMessageIds: next,
-      })
-      return true
+      // ④ 入在途。
+      const next: readonly { readonly id: string; readonly at: number }[] = [
+        ...ledger.inFlightMessages,
+        { id: messageId, at: Date.now() },
+      ]
+      await this.writeLedgerUnlocked(teamRunId, { ...ledger, inFlightMessages: next })
+      // 镜像只投影「已送达」——在途是短命内部态，不进团队状态面。
+      return 'reserved'
     }, { ownerTag: 'omo-team-ledger' })
   }
 
-  /** 补偿退账（reservation 回执作废；账不在位 = 幂等无操作）。 */
-  async unmarkMessageProcessed(teamRunId: string, messageId: string): Promise<void> {
+  /**
+   * **确认送达**（第二段）：把 id 从在途移到已送达。
+   *
+   * 幂等：已在已送达集里 ⇒ 只清在途行。**不因满载而丢弃**——这条消息**确实
+   * 送达了**，拒绝记账会让同 id 的重投再送一次（正是去重要防的事）。
+   */
+  async commitMessageDelivery(teamRunId: string, messageId: string): Promise<void> {
     this.requireState(teamRunId)
     await withLock(this.ledgerLockPath(teamRunId), async () => {
       const ledger = await this.readLedgerUnlocked(teamRunId)
-      if (!ledger.processedMessageIds.includes(messageId)) return
-      const next = ledger.processedMessageIds.filter((id) => id !== messageId)
-      await this.writeLedgerUnlocked(teamRunId, { ...ledger, processedMessageIds: next })
-      this.applyLedgerToMirror(teamRunId, { processedMessageIds: next })
+      const delivered = ledger.processedMessageIds.includes(messageId)
+        ? ledger.processedMessageIds
+        : [...ledger.processedMessageIds, messageId]
+      const inFlight = ledger.inFlightMessages.filter((row) => row.id !== messageId)
+      await this.writeLedgerUnlocked(teamRunId, { ...ledger, processedMessageIds: delivered, inFlightMessages: inFlight })
+      this.applyLedgerToMirror(teamRunId, { processedMessageIds: delivered })
     }, { ownerTag: 'omo-team-ledger' })
+  }
+
+  /**
+   * **放弃预约**（第二段·失败臂）：把 id 从在途删掉——**已送达账一条不动**。
+   *
+   * 这与上一轮的 `unmarkMessageProcessed` 的差别是本轮修复的核心：旧实现从
+   * 「已送达」里删，于是「预约 → 失败 → 退账」在并发面上会把**别人已经投递
+   * 成功的同 id** 也删掉；现在退账只碰在途行。
+   */
+  async rollbackMessageReservation(teamRunId: string, messageId: string): Promise<void> {
+    this.requireState(teamRunId)
+    await withLock(this.ledgerLockPath(teamRunId), async () => {
+      const ledger = await this.readLedgerUnlocked(teamRunId)
+      if (!ledger.inFlightMessages.some((row) => row.id === messageId)) return
+      const inFlight = ledger.inFlightMessages.filter((row) => row.id !== messageId)
+      await this.writeLedgerUnlocked(teamRunId, { ...ledger, inFlightMessages: inFlight })
+    }, { ownerTag: 'omo-team-ledger' })
+  }
+
+  /** 已送达查询（只读诊断面，镜像）。 */
+  hasDeliveredMessage(teamRunId: string, messageId: string): boolean {
+    return this.requireState(teamRunId).processedMessageIds.includes(messageId)
   }
 
   /**
@@ -1396,39 +1475,46 @@ export class TeamStateStore {
   async forgetRun(teamRunId: string, options?: { readonly force?: boolean }): Promise<void> {
     const force = options?.force === true
     const state = this.mirror.get(teamRunId)
-    // P5-T16（第二轮评审 MINOR）：**mirror 缺位不许直接 rm**。
+    // P5-T16（第二轮评审 MINOR）→ P5-T19（第三轮评审 MINOR）：**失败封闭**，
+    // 且闸与删除在**同一临界区**。
     //
-    // 旧形态：`state === undefined`（本进程的镜像不认识这个 run——例如另一个
-    // store 实例共享同一 base_dir 但还没 rebuildIndexes）时**直接**递归删目录，
-    // 于是「一个 active run 的整份账 + 任务板」被无声拆掉——评审已独立复现。
+    // 第二轮修掉了「mirror 缺位 ⇒ 直接 rm」，但留下两个洞，本轮都补上：
     //
-    // 更正：**失败封闭**。镜像不认识 ⇒ 从磁盘**确证**状态（锁内，与 vendored
-    // 的状态写入同一把锁），确证不到（读不出 state.json / 读失败）⇒ 抛具名
-    // 错、**不删**；确证到了 ⇒ 走与镜像路径**同一条**终态白名单闸。
-    let status: TeamRuntimeStatus | undefined = state?.status
-    if (status === undefined) {
-      let onDisk: RuntimeState
-      try {
-        onDisk = await withLock(
-          path.join(this.runtimeDir(teamRunId), 'state.lock'),
-          async () => loadRuntimeState(teamRunId, this.config),
-          { ownerTag: 'omo-team-state' },
-        )
-      } catch (err) {
-        throw new TeamStateError(
-          `forgetRun cannot confirm the status of team run '${teamRunId}' from disk (${err instanceof Error ? err.message : String(err)}) — refusing to erase an unconfirmed run directory; pass force to erase it anyway`,
-          'TEAM_STATUS_UNCONFIRMED',
-        )
+    // ① **force 契约不可达**：旧形态先 `loadRuntimeState` 再判 force，于是
+    //    读盘失败时即便 `force:true` 也抛 `TEAM_STATUS_UNCONFIRMED`——而错误
+    //    文本还在劝「pass force to erase it anyway」。现在：**force 先行**
+    //    （它本来就表示「我知道自己在干什么」），绕过状态确证；非 force 才
+    //    要求确证 + 终态白名单。
+    //
+    // ② **TOCTOU**：旧形态 `state.lock` 只包住读盘，白名单判断与 `rm` 都在锁外
+    //    ——另一个写者能在「确证 orphaned」与「rm」之间把 run 推进
+    //    `orphaned → deleting`，目录会在拆解中途被删。现在：确证、白名单、rm
+    //    全在**同一把 state.lock** 内（该锁与 vendored 的状态写入同一把）。
+    const runtimeDir = this.runtimeDir(teamRunId)
+    await withLock(path.join(runtimeDir, 'state.lock'), async () => {
+      if (!force) {
+        // 锁内确证：镜像值可能陈旧，锁内重读磁盘才是判定对象。
+        let diskStatus: TeamRuntimeStatus | undefined
+        try {
+          diskStatus = (await loadRuntimeState(teamRunId, this.config)).status
+        } catch (err) {
+          throw new TeamStateError(
+            `forgetRun cannot confirm the status of team run '${teamRunId}' from disk (${err instanceof Error ? err.message : String(err)}) — refusing to erase an unconfirmed run directory; pass { force: true } to erase it anyway`,
+            'TEAM_STATUS_UNCONFIRMED',
+          )
+        }
+        if (!TEAM_FORGETTABLE_STATUSES.has(diskStatus)) {
+          throw new TeamStateError(
+            `forgetRun refuses to erase an active team run '${teamRunId}' (status '${diskStatus}') — only a terminal run (${[...TEAM_FORGETTABLE_STATUSES].join(' / ')}) may be erased; use team_delete for a live run (or pass { force: true } for the diagnostic face)`,
+            'TEAM_NOT_FORGETTABLE',
+          )
+        }
       }
-      status = onDisk.status
-    }
-    if (!force && !TEAM_FORGETTABLE_STATUSES.has(status)) {
-      throw new TeamStateError(
-        `forgetRun refuses to erase an active team run '${teamRunId}' (status '${status}') — only a terminal run (${[...TEAM_FORGETTABLE_STATUSES].join(' / ')}) may be erased; use team_delete for a live run (or pass force for the diagnostic face)`,
-        'TEAM_NOT_FORGETTABLE',
-      )
-    }
-    await rm(this.runtimeDir(teamRunId), { recursive: true, force: true })
+      // 检查与删除同一临界区：写者拿不到锁，run 不会在 rm 前被推进新状态。
+      // （删掉目录会连带删掉锁文件本身——那正是「run 已不存在」的终态；
+      //  withLock 的 finally 对 ENOENT 是幂等 no-op。）
+      await rm(runtimeDir, { recursive: true, force: true })
+    }, { ownerTag: 'omo-team-state' })
     if (state === undefined) return
     this.mirror.delete(teamRunId)
     if (state.leadSessionId !== undefined) this.teamRunIdByLeadSession.delete(state.leadSessionId)

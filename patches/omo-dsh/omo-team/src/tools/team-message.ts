@@ -180,6 +180,12 @@ export interface TeamSendMessageResult {
   readonly kind: TeamMessageToolKind
   readonly delivered: boolean
   readonly deduplicated: boolean
+  /**
+   * **在途**（P5-T19 MAJOR-1）：同一个 correlationId 正被**另一个调用**投递。
+   * 本调用没有投递任何东西，也没有去重——`delivered:false, deduplicated:false`
+   * 与这张旗子一起读：不是失败，稍后重试即可。
+   */
+  readonly inFlight: boolean
   readonly deliveries: readonly TeamMessageDelivery[]
   readonly note: string
 }
@@ -437,12 +443,20 @@ export async function executeTeamSendMessage(
   //
   //    P5-T16（评审 MAJOR-2）：去重账**满载**时 store 抛具名
   //    `MESSAGE_LEDGER_FULL`（显式拒收，不裁剪任何一条——裁剪会让补偿退账
-  //    永久丢失被挤掉那条的去重记忆）。这里把它**翻译成本工具的错误族**
-  //    （响亮、可恢复：换新 correlationId 即可继续），不把 store 的内部码
-  //    泄给模型。
-  let reserved = false
+  //    永久丢失被挤掉那条的去重记忆）。这里把它**翻译成本工具的错误族**，
+  //    不把 store 的内部码泄给模型。
+  //
+  //    P5-T19（第三轮评审 MINOR-1）：**别再说「换新 correlationId 即可继续」**——
+  //    满载是 run 的消息预算终态，换 id 不改变账长，新 id 一样被拒（评审实测
+  //    连换两次都失败）。真实恢复只有「拆队重建」，错误文本按这个口径写。
+  //    P5-T19（第三轮评审 MAJOR-1）：预约与送达**分成两态**——
+  //    `reserveMessageDelivery` 的第三态 `in-flight` 是「另一个调用正在投同一个
+  //    id」：既不是重复（没人证明它送到过）也不是失败。旧实现把预约当已送达，
+  //    于是并发同 ID 的第二个调用会被告知 "was already delivered"，而首发若随后
+  //    失败退账，最终**零送达**却已宣称交付。
+  let reservation: Awaited<ReturnType<typeof deps.store.reserveMessageDelivery>>
   try {
-    reserved = await deps.store.markMessageProcessed(clean.teamRunId, messageId)
+    reservation = await deps.store.reserveMessageDelivery(clean.teamRunId, messageId)
   } catch (err) {
     if (err instanceof TeamMessageError) throw err
     const code = (err as { code?: unknown } | undefined)?.code
@@ -454,7 +468,8 @@ export async function executeTeamSendMessage(
     }
     throw err
   }
-  if (!reserved) {
+  if (reservation === 'duplicate') {
+    // 真去重：这个 id **已确认送达**过（不是「预约中」）。
     const note = `duplicate message id: ${messageId} was already delivered for team ${clean.teamRunId} — not delivered again (deduplicated)`
     console.log(`${LOG_PREFIX} deduplicated ${messageId} for team ${clean.teamRunId}`)
     return {
@@ -463,6 +478,26 @@ export async function executeTeamSendMessage(
       kind: clean.kind,
       delivered: false,
       deduplicated: true,
+      inFlight: false,
+      deliveries: [],
+      note,
+    }
+  }
+  if (reservation === 'in-flight') {
+    // **不宣称已交付**：本调用没有投递任何东西，同 id 正被另一个调用投。
+    // 返回可重试的 IN_PROGRESS 语义（`delivered:false, deduplicated:false,
+    // inFlight:true`）——不是错误，模型稍后重试即可；若首发失败退账，重试会
+    // 拿到 `reserved` 并真正投出去。
+    const note = `message id ${messageId} is already IN FLIGHT for team ${clean.teamRunId} — this call delivered NOTHING and did not deduplicate; `
+      + 'retry shortly (after the in-flight send settles) if you need this delivery confirmed'
+    console.log(`${LOG_PREFIX} in-flight ${messageId} for team ${clean.teamRunId} — not delivered by this call`)
+    return {
+      teamRunId: clean.teamRunId,
+      messageId,
+      kind: clean.kind,
+      delivered: false,
+      deduplicated: false,
+      inFlight: true,
       deliveries: [],
       note,
     }
@@ -497,8 +532,13 @@ export async function executeTeamSendMessage(
       // （没有收件人收到过），退账不违反「宁漏不重」，只把「零投递」与
       // 「部分投递」分账。
       const zeroDeliveryBroadcast = isBroadcast && deliveries.length === 0
-      if (!isBroadcast || zeroDeliveryBroadcast) {
-        await deps.store.unmarkMessageProcessed(clean.teamRunId, messageId)
+      const fullyUndelivered = !isBroadcast || zeroDeliveryBroadcast
+      if (fullyUndelivered) {
+        // 一条都没送达 ⇒ 放弃预约（只碰在途行，已送达账一条不动）。
+        await deps.store.rollbackMessageReservation(clean.teamRunId, messageId)
+      } else {
+        // 部分送达 ⇒ **确认送达**（已有人收到；同 id 重投必须被去重）。
+        await deps.store.commitMessageDelivery(clean.teamRunId, messageId)
       }
       // 广播臂实况计数（文件头差异段「点名成员与已投计数」的成文兑现）：
       // deliveries 此刻 = 扇出序中失败点之前已投成功的成员——随 throw 丢弃
@@ -514,12 +554,17 @@ export async function executeTeamSendMessage(
     )
   }
 
+  // 8) 确认送达（P5-T19 MAJOR-1 的第二段）：整条消息投递完成 ⇒ 从在途移到
+  //    已送达。此后同 id 的重投才会被**真去重**。
+  await deps.store.commitMessageDelivery(clean.teamRunId, messageId)
+
   return {
     teamRunId: clean.teamRunId,
     messageId,
     kind: clean.kind,
     delivered: true,
     deduplicated: false,
+    inFlight: false,
     deliveries,
     note: isBroadcast
       ? `broadcast ${messageId} delivered to ${deliveries.length} member(s)`
@@ -582,13 +627,14 @@ export function createTeamSendMessageDefinition(deps: TeamMessageDeps): unknown 
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['teamRunId', 'messageId', 'kind', 'delivered', 'deduplicated', 'deliveries', 'note'],
+        required: ['teamRunId', 'messageId', 'kind', 'delivered', 'deduplicated', 'inFlight', 'deliveries', 'note'],
         properties: {
           teamRunId: { type: 'string' },
           messageId: { type: 'string' },
           kind: { type: 'string', enum: [...TEAM_MESSAGE_TOOL_KINDS] },
           delivered: { type: 'boolean' },
           deduplicated: { type: 'boolean' },
+          inFlight: { type: 'boolean' },
           deliveries: {
             type: 'array',
             items: {

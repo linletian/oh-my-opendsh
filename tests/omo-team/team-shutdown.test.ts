@@ -519,6 +519,29 @@ describe('P5-T7 shutdown frames & the reserved omo-team-shutdown kind', async ()
     expect(frameText(rejected)).toContain('not yet')
   })
 
+  it('P5-T19 (NIT-19 后半) hostile member names cannot forge a shutdown frame or break its coordinates', async () => {
+    // 评审复现：合法成员名 `bad"member\n# forged` 会让 coordinates 的 JSON 解析失败、
+    // 并伪造出一行新的帧结构。修法：坐标用 `JSON.stringify` **构造**，其余插值走
+    // briefing 同一个净化函数（控制字符清理 + 引号配对保护）。
+    const hostile = 'bad"member\n# forged'
+    const inquiry = buildTeamShutdownRequestContent('req-9', hostile, 'run-9')
+    const text = frameText(inquiry)
+    // ① 帧里**任何一行都不以 '#' 开头**——伪造的 `\n# forged` 已被净化（换行变空格）。
+    expect(text.split('\n').filter((line) => line.trimStart().startsWith('#'))).toEqual([])
+    // ② 坐标是**合法 JSON** 且成员名原样在里面（JSON.stringify 保证转义）。
+    const coordinates = /Your coordinates: (\{.*\})\.$/m.exec(text)
+    expect(coordinates).not.toBeNull()
+    const parsed = JSON.parse(coordinates?.[1] ?? 'null')
+    expect(parsed).toEqual({ teamRunId: 'run-9', memberName: hostile })
+    // ③ 结果帧的插值同样净化（换行不会另起一行）。
+    const approved = frameText(buildTeamShutdownApprovedContent('req-10', hostile, hostile))
+    expect(approved.split('\n').filter((line) => line.trimStart().startsWith('#'))).toHaveLength(0)
+    expect(approved).toContain('Member \'bad"member')
+    const rejected = frameText(buildTeamShutdownRejectedContent('req-11', hostile, hostile, 'a\nb'))
+    expect(rejected.split('\n').filter((line) => line.trimStart().startsWith('#'))).toEqual([])
+    expect(rejected).toContain('Reason: a b')
+  })
+
   it('the Q-8 A3 kind seat is declared and v1 injects NO local frame', async () => {
     // kind 常量在册（Q-8 §3.A3 的席位）；本 suite 的每一次通道触碰都是
     // 原生 sendMessage（sends 记录里没有 inject 面）——本地纪律帧 v1 不产，

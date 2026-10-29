@@ -119,6 +119,7 @@ import {
   WIRED_KEYWORD_TYPES,
   TEAM_CARRIER_NOTE,
   ULTRAWORK_CARRIER_NOTE,
+  ULTRAWORK_TEAM_CARRIER_NOTE,
   buildHyperplanMessage,
   buildHyperplanUltraworkMessage,
   buildUltraworkMessage,
@@ -1158,7 +1159,15 @@ describe('P4-T12 ⑥ the injected text is the vendored body, and the listener ne
     expect(delivered).toContain('mktemp -t ulw-')
     // It rides on the ultrawork side only — the combo carries it too (same body),
     // and the hyperplan side is governed by its OWN note (team tools), not this one.
-    expect(ULTRAWORK_CARRIER_NOTE).not.toContain('team_create')
+    //
+    // P5-T19（第三轮评审 MAJOR-3）：本条**反转**——上一轮这里断言注记**不含**
+    // `team_create`（P4 时代的分工：team 是 hyperplan 注记的事）。但 ultrawork
+    // 的正文 `SKILL.md:373-393` 自己就教 team 词汇（`category | subagent_type`、
+    // `task_send`、`team_run_id`、`task_create/...`），而 keyword 注入面此前
+    // 没有翻译它。现在 ultrawork 注记自带一段 team 形状声明（与
+    // `omo-commands` 的 `TEAM_SURFACE_SHAPES_NOTE` 逐字相同）。
+    expect(ULTRAWORK_CARRIER_NOTE).toContain(ULTRAWORK_TEAM_CARRIER_NOTE)
+    expect(ULTRAWORK_CARRIER_NOTE).toContain('`team_run_id` is spelled `teamRunId`')
     expect(buildHyperplanMessage({ texts: TEXTS, agentName: 'sisyphus' })).not.toContain(ULTRAWORK_CARRIER_NOTE)
   })
 

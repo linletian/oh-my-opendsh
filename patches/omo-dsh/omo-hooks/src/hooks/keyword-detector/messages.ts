@@ -345,6 +345,43 @@ export const ULTRAWORK_CARRIER_NOTE = [
   'is NOT a syntax error. What `-t` cannot do is choose the destination — it defers to the',
   'platform temporary dir. `-p <dir>` is the form that takes a directory (supported by both',
   'BSD and GNU), which is exactly what (1) needs; that is why (1) uses `-p`.',
+  '',
+  // P5-T19（第三轮评审 MAJOR-3）：ultrawork 正文里那段 "omo-senpi task + team tools"
+  // （`SKILL.md:373-393`）教的是 opencode 的 team 词汇——`category | subagent_type`
+  // （本面**拒** `subagent_type`，`SUBAGENT_TYPE_UNSUPPORTED`）、`task_send`、
+  // `team_run_id`、`task_create/task_list/...`（本面是 `team_task_*`）。上一轮只给
+  // 技能注册面加了注记，**keyword 注入面**没有——而 prose 命中 "ulw" 走的就是这条
+  // 路。这一段与 `omo-commands/src/skills.ts` 的 `TEAM_SURFACE_SHAPES_NOTE`
+  // **逐字相同**（跨包禁 import，等值由
+  // `tests/omo-commands/team-surface-consistency.test.ts` 的交叉钉保证）。
+  '(4) TEAM SURFACE HERE (not the opencode one): `team_create` takes ONLY `inline_spec`',
+  '(`{ name, members: [{ name, category, prompt }] }` — spec level accepts ONLY `name`',
+  'and `members`, so NO `description`/`lead`/`leadAgentId`; a member accepts ONLY',
+  '`name`/`category`/`seat`/`prompt`, so NO `kind`/`subagent_type`); a member `category`',
+  'is exactly `quick` or `deep`; messages are',
+  '`team_send_message(teamRunId=<id>, to=<member|"lead"|"*">, body=<text>)` (`body` REQUIRED);',
+  'the task board is `team_task_create/team_task_list/team_task_update/team_task_get`',
+  '(NOT `task_create`/`task_list`/`task_update`/`task_get`); teardown is',
+  '`team_delete(teamRunId=<id>)`; there is NO `team_list`, NO on-disk team config',
+  '(`~/.omo/teams/**.json` is never read here), and `team_run_id` is spelled `teamRunId`.',
+].join('\n')
+
+/**
+ * ultrawork 注记里的 team 段——**逐字等于** `omo-commands/src/skills.ts` 的
+ * `TEAM_SURFACE_SHAPES_NOTE`（跨包禁 import；等值由交叉钉测试保证，R-5 双拼写
+ * 先例）。
+ */
+export const ULTRAWORK_TEAM_CARRIER_NOTE = [
+  'TEAM SURFACE HERE (not the opencode one): `team_create` takes ONLY `inline_spec`',
+  '(`{ name, members: [{ name, category, prompt }] }` — spec level accepts ONLY `name`',
+  'and `members`, so NO `description`/`lead`/`leadAgentId`; a member accepts ONLY',
+  '`name`/`category`/`seat`/`prompt`, so NO `kind`/`subagent_type`); a member `category`',
+  'is exactly `quick` or `deep`; messages are',
+  '`team_send_message(teamRunId=<id>, to=<member|"lead"|"*">, body=<text>)` (`body` REQUIRED);',
+  'the task board is `team_task_create/team_task_list/team_task_update/team_task_get`',
+  '(NOT `task_create`/`task_list`/`task_update`/`task_get`); teardown is',
+  '`team_delete(teamRunId=<id>)`; there is NO `team_list`, NO on-disk team config',
+  '(`~/.omo/teams/**.json` is never read here), and `team_run_id` is spelled `teamRunId`.',
 ].join('\n')
 
 /**

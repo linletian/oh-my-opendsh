@@ -572,6 +572,78 @@ export function scanVendorSkills(
  * 一枚新技能若也带 team 分支，它的注记必须显式登记在这里——漏登记 = 该技能的
  * 不兼容正文原样进模型面。
  */
+/**
+ * 本部署 team 面的**真实形状**（P5-T19 第三轮评审 MAJOR-3/MAJOR-4 的共享片段）。
+ *
+ * 一份文本、三处消费（refactor / hyperplan / ultrawork 的技能注记）；与 omo-hooks
+ * 的 `ULTRAWORK_TEAM_CARRIER_NOTE` **逐字相同**——那一份在另一个包（跨包禁 import），
+ * 等值由 `tests/omo-commands/team-surface-consistency.test.ts` 的交叉钉保证，
+ * 体例同 `OMO_TEAM_*` 服务名的 R-5 双拼写先例。
+ */
+export const TEAM_SURFACE_SHAPES_NOTE = [
+  'TEAM SURFACE HERE (not the opencode one): `team_create` takes ONLY `inline_spec`',
+  '(`{ name, members: [{ name, category, prompt }] }` — spec level accepts ONLY `name`',
+  'and `members`, so NO `description`/`lead`/`leadAgentId`; a member accepts ONLY',
+  '`name`/`category`/`seat`/`prompt`, so NO `kind`/`subagent_type`); a member `category`',
+  'is exactly `quick` or `deep`; messages are',
+  '`team_send_message(teamRunId=<id>, to=<member|"lead"|"*">, body=<text>)` (`body` REQUIRED);',
+  'the task board is `team_task_create/team_task_list/team_task_update/team_task_get`',
+  '(NOT `task_create`/`task_list`/`task_update`/`task_get`); teardown is',
+  '`team_delete(teamRunId=<id>)`; there is NO `team_list`, NO on-disk team config',
+  '(`~/.omo/teams/**.json` is never read here), and `team_run_id` is spelled `teamRunId`.',
+].join('\n')
+
+/**
+ * `hyperplan` 技能体里那段 `team_create` 的**合规替换规格**（P5-T19 第三轮评审
+ * MAJOR-4）。
+ *
+ * 评审的实测：vendored `SKILL.md:223-235` 的 spec 带 spec 级 `description` 与每个
+ * member 的 `kind`——本仓 `parseTeamSpec` 的 closed shape 两枚都拒
+ * （`V1_UNSUPPORTED_FIELD`，`TEAM_SPEC_UNSUPPORTED_UPSTREAM_FIELDS_V1` 含
+ * `description`，`TEAM_MEMBER_UNSUPPORTED_UPSTREAM_FIELDS_V1` 含 `kind`）。上一轮
+ * 的注记只翻译 category / 消息工具名 / `teamRunId`，**没有说这两个字段要删**——于是
+ * 模型按注记换成 quick/deep 之后，`team_create` 仍然在 Phase 1 被拒。
+ *
+ * 这份常量给出**可直接抄的完整规格**（两个被拒字段已删、category 已映射），
+ * 消费侧三处引用它：本文件的 `hyperplan` 技能注记、`templates/hyperplan.ts` 的
+ * FULL roster 契约。`tests/omo-commands/team-surface-consistency.test.ts` 用它跑
+ * **真实** `parseTeamSpec`，证明"照抄就能过"。
+ */
+export const HYPERPLAN_TEAM_SPEC_REPLACEMENT = [
+  'team_create({ inline_spec: {',
+  '  name: "hyperplan",',
+  '  members: [',
+  '    { name: "skeptic",    category: "quick", prompt: "<full Skeptic system prompt>" },',
+  '    { name: "validator",  category: "quick", prompt: "<full Validator system prompt>" },',
+  '    { name: "researcher", category: "deep",  prompt: "<full Researcher system prompt>" },',
+  '    { name: "architect",  category: "deep",  prompt: "<full Architect system prompt>" },',
+  '    { name: "creative",   category: "quick", prompt: "<full Creative system prompt>" }',
+  '  ]',
+  '} })',
+].join('\n')
+
+/**
+ * 消费侧的 team 面适配注记（P5-T19 第三轮评审 MAJOR-2/3/4 扩容）。
+ *
+ * 背景（上一轮）：vendored `shared-skills` 里带 team 分支的技能与本部署的工具面
+ * 不兼容；处置是**消费侧**前置注记（vendor 字节不动）。
+ *
+ * 本轮补三件事：
+ *   ① **`debugging` 漏了**——它的 team 路径不在顶层 `SKILL.md`，而在
+ *      `references/methodology/02-investigate.md` 的 Path A（写盘上
+ *      `~/.omo/teams/debug-squad/config.json`、spec 带 `lead`/`kind`、广播缺
+ *      `teamRunId`/`body`）。上一轮的反向门只扫顶层 SKILL.md，所以漏了它。
+ *      处置：注记**强制走 Path B**（异步委派），并点名 Path A 的三处不兼容。
+ *   ② **`ultrawork` 漏了**——它的 team 指南（`SKILL.md:373-393`）教
+ *      `category | subagent_type`（本面拒 `subagent_type`）、`task_send`、
+ *      `team_run_id`、`task_create/task_list/...`（本面是 `team_task_*`）。
+ *   ③ **`hyperplan` 的注记不够**——只翻译词汇，没删 `description`/`kind`，
+ *      照抄仍然被 `parseTeamSpec` 拒。现在直接给**合规替换规格**。
+ *
+ * **按名登记，不按模式扫**（门 6 c26 的同款纪律）：一枚新技能若也带 team 分支，
+ * 它的注记必须显式登记在这里——反向门（`team-surface-consistency` 测试）会扫
+ * **顶层 SKILL.md + references/\*\*.md**，漏登记即红。
+ */
 export const VENDOR_SKILL_TEAM_ADAPTATION_NOTES: Readonly<Record<string, string>> = {
   refactor: [
     '[oh-my-opendsh] Carrier note (refactor skill): the Team Mode branch in this skill',
@@ -579,39 +651,72 @@ export const VENDOR_SKILL_TEAM_ADAPTATION_NOTES: Readonly<Record<string, string>
     'LEGACY path (Phase 5.1-L) instead. If the Phase 5 dispatch decision selects the Team',
     'path, take the legacy branch here. Why (the upstream branch names surfaces this',
     'deployment does not have):',
-    '  * `team_list` — no such tool here. This deployment\'s team surface is team_create /',
-    '    team_send_message / team_task_create / team_task_list / team_task_update /',
-    '    team_task_get / team_status / team_shutdown_request / team_approve_shutdown /',
-    '    team_reject_shutdown / team_delete.',
+    '  * `team_list` — no such tool here.',
     '  * `~/.omo/teams/refactor-squad/config.json` — this deployment has NO on-disk team',
     '    config; a team is created through `team_create` with an inline spec.',
-    '  * `team_create(teamName="refactor-squad")` — this surface takes ONE argument:',
+    '  * calling `team_create` with a `teamName` field — this surface takes ONE argument:',
     '    `inline_spec` (an object or a JSON string of one).',
     '  * `category: "unspecified-low"` — the member categories here are exactly `quick`',
     '    and `deep`.',
-    '  * `team_task_update(status=...)` — the required arguments are `teamRunId`, `taskId`',
+    '  * calling `team_task_update` with only `status` — the required arguments are',
+    '    `teamRunId`, `taskId`',
     '    and `status`.',
+    '',
+    TEAM_SURFACE_SHAPES_NOTE,
+    '',
     'Everything below this note is upstream\'s text unchanged.',
   ].join('\n'),
   hyperplan: [
     '[oh-my-opendsh] Carrier note (hyperplan skill): the body below is upstream\'s text and',
     'names the opencode team vocabulary. This deployment HAS a team surface, but it is not',
-    'the opencode one — translate the team calls:',
-    '  * `team_create` takes ONE argument here: `inline_spec` (an object or a JSON string of',
-    '    one) whose members are `{"name":..., "category":"quick"|"deep", "prompt":...}`.',
-    '  * `task_send({to, team_run_id, message})` becomes',
-    '    `team_send_message(teamRunId=<id>, to=<member|"lead"|"*">, body=<text>)` — `body` is',
-    '    REQUIRED on this surface.',
-    '  * `team_run_id` becomes `teamRunId`.',
-    '  * The opencode categories (`unspecified-low`, `unspecified-high`, `ultrabrain`,',
-    '    `artistry`) do NOT resolve here — `quick` and `deep` are the only two member',
-    '    categories.',
-    '  * `team_task_create(teamRunId=<id>, subject=..., description=...)` and',
-    '    `team_task_update(teamRunId=<id>, taskId=<id>, status=...)`.',
-    'If the team_* tools are ABSENT in this session, the nearest surface is DSH subagent',
-    'dispatch (one delegation per member); there is no `team_run_id` then — the returned',
-    'session labels are your lane map. Everything below this note is upstream\'s text',
-    'unchanged.',
+    'the opencode one.',
+    '',
+    TEAM_SURFACE_SHAPES_NOTE,
+    '',
+    'REPLACE the inline spec printed in the body below with EXACTLY this one (the body\'s',
+    'spec is REJECTED by this parser: spec-level `description` and per-member `kind` are',
+    'closed-shape violations — `V1_UNSUPPORTED_FIELD`, first one then the other — and the',
+    'opencode categories do not resolve):',
+    '',
+    HYPERPLAN_TEAM_SPEC_REPLACEMENT,
+    '',
+    'Then translate the rest: `task_send` becomes `team_send_message(teamRunId, to, body)`,',
+    '`team_run_id` becomes `teamRunId`. If the team_* tools are ABSENT in this session, the',
+    'nearest surface is DSH subagent dispatch (one delegation per member); everything below',
+    'this note is upstream\'s text unchanged.',
+  ].join('\n'),
+  debugging: [
+    '[oh-my-opendsh] Carrier note (debugging skill): the Phase 3 team path',
+    '(`references/methodology/02-investigate.md`, "Path A: Team mode ENABLED") is NOT',
+    'adapted to this deployment — when you reach Phase 3, take **Path B (async subagents)**',
+    'instead, even though the team_* tools may be present. Why Path A fails here:',
+    '  * it writes `~/.omo/teams/debug-squad/config.json` — this deployment has NO on-disk',
+    '    team config; a team is created through `team_create` with an inline spec.',
+    '  * its spec carries `lead` (spec level) and `kind` (per member) — both are',
+    '    closed-shape violations here (`V1_UNSUPPORTED_FIELD`).',
+    '  * its broadcast `team_send_message` call carries only `to="*"` — the REQUIRED',
+    '    `teamRunId` and `body` are missing.',
+    '  * its `category: "deep"` members are fine, but the lead must be the creating',
+    '    session — this surface has no `lead` field.',
+    '',
+    TEAM_SURFACE_SHAPES_NOTE,
+    '',
+    'Everything below this note is upstream\'s text unchanged.',
+  ].join('\n'),
+  ultrawork: [
+    '[oh-my-opendsh] Carrier note (ultrawork skill): the "omo-senpi task + team tools"',
+    'section below is upstream\'s text and names the opencode vocabulary. This deployment',
+    'HAS a team surface, but it is not the opencode one — translate that section:',
+    '  * `task_send` is `team_send_message` here; `team_run_id` is `teamRunId`.',
+    '  * the shared task board is `team_task_create` / `team_task_list` /',
+    '    `team_task_update` / `team_task_get` — NOT `task_create` / `task_list` /',
+    '    `task_update` / `task_get`.',
+    '  * a member may NOT take `subagent_type` on this surface (it is refused by name,',
+    '    `SUBAGENT_TYPE_UNSUPPORTED`); use `category` (`quick` or `deep`) or `seat`.',
+    '',
+    TEAM_SURFACE_SHAPES_NOTE,
+    '',
+    'Everything below this note is upstream\'s text unchanged.',
   ].join('\n'),
 }
 

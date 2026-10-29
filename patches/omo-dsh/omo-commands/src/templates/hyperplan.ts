@@ -66,7 +66,7 @@
 // "加载 hyperplan skill" 这句话指向别的东西。catalog 里确实有它这件事由
 // tests/omo-commands/skills.test.ts 的 catalog 断言负责，不是本文件的责任。
 
-import { VENDOR_SKILLS_DIR } from '../skills.ts'
+import { HYPERPLAN_TEAM_SPEC_REPLACEMENT, VENDOR_SKILLS_DIR } from '../skills.ts'
 
 /** 上游 commands.ts:114 的 argumentHint，逐字。 */
 export const HYPERPLAN_ARGUMENT_HINT = '[planning-request]'
@@ -250,7 +250,11 @@ export const HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_SPLIT = `Carrier spellings —
  */
 export const HYPERPLAN_TEAM_MODE_GUIDANCE = `[oh-my-opendsh] TEAM-MODE RING ACTIVE — the full adversarial loop is live in this session.
 
-Run the skill's phases AS WRITTEN, including "Phase 1: Spawn the adversarial team" (that call is \`team_create\` with the inline spec the roster contract above defines) and the Phase 7 cleanup. ${HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_SPLIT} The rounds ride the team surface:
+Run the skill's phases AS WRITTEN, including "Phase 1: Spawn the adversarial team" and the Phase 7 cleanup — with ONE substitution: the skill body prints a \`team_create\` inline spec that this parser REJECTS (spec-level \`description\` and per-member \`kind\` are closed-shape violations here, \`V1_UNSUPPORTED_FIELD\`). Use EXACTLY this spec instead, then continue with the roster contract above:
+
+\`\`\`
+${HYPERPLAN_TEAM_SPEC_REPLACEMENT}
+\`\`\` ${HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_SPLIT} The rounds ride the team surface:
 
 1. Broadcast the attack criteria ONCE — \`team_send_message(teamRunId=<id>, to="*", kind="announcement", body=<the attack criteria>)\` — so each task description stays minimal. (\`body\` is REQUIRED on this surface; a call without it is refused with \`BODY_REQUIRED\`.) Broadcast is lead-only here; the tool enforces that verbatim.
 2. Create one \`team_task_create(teamRunId=<id>, subject=..., description=...)\` per attack round; members claim, attack, settle their tasks via \`team_task_update\`, and report back via \`team_send_message(teamRunId=<id>, to="lead", body=<your findings>)\`. A single \`team_send_message\` body is capped at 32768 bytes on this surface — over the cap the tool refuses the send and its refusal names the limit (\`message_payload_max_bytes=32768\`); the refusal is loud and recoverable: split a longer report into sequential messages (mark the part in \`summary\`, e.g. "report 2/3") instead of resending the oversized body.

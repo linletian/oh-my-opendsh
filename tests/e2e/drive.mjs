@@ -21094,6 +21094,9 @@ function teamRunIdFromLeadLog(log) {
 // rides a module-scope register, written by the action, read by the hook.
 let lastRestartAdoptedAt = 0
 
+/** `Promise.race` 的超时哨兵（采纳调用用；对象身份比较，不会与任何回包相撞）。 */
+const ADOPTION_TIMEOUT_SENTINEL = Symbol('adoption-timeout')
+
 async function restartAdoptAndAudit(boot, sandbox, sessionId, patchPath, env, routes) {
   lastRestartAdoptedAt = 0
   const teamRunId = teamRunIdFromLeadLog(
@@ -21108,6 +21111,17 @@ async function restartAdoptAndAudit(boot, sandbox, sessionId, patchPath, env, ro
     task2: existsSync(join(boardDir, 'tasks', '2.json')),
     claims: existsSync(join(boardDir, 'tasks', 'claims')),
   }
+  // P5-T19（第三轮评审 MINOR）：先把**重启前**的成员名 → sessionId 快照下来，
+  // 重启后按名对照——只断言「是个非空字符串」抓不出「成员丢了/换成了别人的 id」。
+  let preMemberSessionIds = {}
+  try {
+    const preState = JSON.parse(readFileSync(join(boardDir, 'state.json'), 'utf8'))
+    preMemberSessionIds = Object.fromEntries(
+      (Array.isArray(preState?.members) ? preState.members : [])
+        .filter((m) => typeof m?.name === 'string')
+        .map((m) => [m.name, m.sessionId]),
+    )
+  } catch { /* 缺位：分析侧会红 */ }
   await stopDsh(boot.child)
   let rebooted
   try {
@@ -21124,14 +21138,31 @@ async function restartAdoptAndAudit(boot, sandbox, sessionId, patchPath, env, ro
   let adopted = false
   let adoptedAt = 0
   let adoptionDetail = ''
+  // P5-T19：**采纳调用必须有超时**。宿主在「被中断的 turn 的日志重放」上可能
+  // 卡住（本文件下面的 POST-REBOOT 注释记的就是这个实测行为），而上一版这里是
+  // 无超时 `await` ⇒ 一次重放卡死会把**整个 e2e 套件**挂住一小时（实测）。
+  // 现在：超时 ⇒ 记录具名 detail、`adopted=false`，让分析侧按具名 check 红，
+  // 而不是把套件挂死。
+  let adoptTimer
   try {
-    const r = await sessionCreate(rebooted, { cwd: sandbox.project, sessionId: String(sessionId), agentPreset: CONCERTO_PRESET_ID })
-    adopted = String(r?.sessionId ?? '') === String(sessionId)
-    adoptedAt = Date.now()
-    lastRestartAdoptedAt = adoptedAt
-    adoptionDetail = `adoption sessionId=${r?.sessionId ?? '?'}`
+    const r = await Promise.race([
+      sessionCreate(rebooted, { cwd: sandbox.project, sessionId: String(sessionId), agentPreset: CONCERTO_PRESET_ID }),
+      new Promise((resolve) => {
+        adoptTimer = setTimeout(() => resolve(ADOPTION_TIMEOUT_SENTINEL), 90_000)
+      }),
+    ])
+    if (r === ADOPTION_TIMEOUT_SENTINEL) {
+      adoptionDetail = 'adoption TIMED OUT after 90s (host stalled the adopted turn — journal replay of an interrupted turn)'
+    } else {
+      adopted = String(r?.sessionId ?? '') === String(sessionId)
+      adoptedAt = Date.now()
+      lastRestartAdoptedAt = adoptedAt
+      adoptionDetail = `adoption sessionId=${r?.sessionId ?? '?'}`
+    }
   } catch (err) {
     adoptionDetail = `adoption refused: ${err instanceof Error ? err.message : String(err)}`
+  } finally {
+    if (adoptTimer !== undefined) clearTimeout(adoptTimer)
   }
   const postFiles = {
     state: existsSync(join(boardDir, 'state.json')),
@@ -21205,10 +21236,20 @@ function auditBoardOnDisk(boardDir) {
     runStatus: state?.status,
     memberCount: members.length,
     memberSessionIds,
-    // 每个成员都还在、且都带着非空 sessionId（被抹成 undefined = 第一轮
-    // BLOCKER-1 的生产症状）。
-    memberSessionIdsIntact: members.length > 0
-      && members.every((m) => typeof m?.sessionId === 'string' && m.sessionId.length > 0),
+    preMemberSessionIds,
+    // P5-T19（第三轮评审 MINOR）：按**成员名**对照重启前后的 sessionId——
+    // 丢一个成员、或换成别人的 id，都会在这里红（旧形态只要求「是个非空串」）。
+    memberSessionIdsIntact: (() => {
+      const preNames = Object.keys(preMemberSessionIds)
+      if (preNames.length === 0 || members.length !== preNames.length) return false
+      for (const member of members) {
+        if (typeof member?.name !== 'string') return false
+        const pre = preMemberSessionIds[member.name]
+        if (typeof pre !== 'string' || pre.length === 0) return false
+        if (member.sessionId !== pre) return false
+      }
+      return true
+    })(),
   }
 }
 
@@ -21310,14 +21351,21 @@ export function analyzeTeamTaskClaim(
     runStillActiveAfterReboot: postAudit.runStatus === 'active',
     // 成员 `sessionId` **没被抹掉**（第一轮 BLOCKER-1 的另一个生产症状：
     // `markDeadWorkersErrored` 把它写成 undefined 落盘，不可逆）。
-    memberSessionIdsIntactAfterReboot: postAudit.memberSessionIdsIntact === true
-      && Array.isArray(postAudit.memberSessionIds)
-      && postAudit.memberSessionIds.length === postAudit.memberCount,
+    // （P5-T19：`postAudit.memberSessionIdsIntact` 内部已按**成员名**对照重启前
+    //  的 sessionId；上一轮的 `sessionIds.length === memberCount` 是两个同源派生
+    //  值的恒真比较，已删。）
+    memberSessionIdsIntactAfterReboot: postAudit.memberSessionIdsIntact === true,
     // 重启后的 resume 报告**零孤儿、零错误**（旧形态从未断言过这两项）。
     rebootResumeReportsNoOrphan: (() => {
+      // P5-T19（第三轮评审 MINOR）：**数值解析**，不是 substring——
+      // `orphaned=01` 也能满足 `includes('orphaned=0')`，那是假的鼓励。
       const b = rebootObservation?.rebootBootLog ?? ''
       const line = b.split('\n').find((l) => l.includes('[omo-team] boot resume:')) ?? ''
-      return line.includes('orphaned=0') && line.includes('errors=0')
+      const read = (key) => {
+        const m = new RegExp(`(?:^|[\\s,])${key}=(\\d+)(?:$|[,\\s])`).exec(line)
+        return m === null ? undefined : Number.parseInt(m[1], 10)
+      }
+      return read('orphaned') === 0 && read('errors') === 0
     })(),
     boardFilesOnDiskPreReboot: (() => {
       const detail = rebootObservation?.detail ?? ''
