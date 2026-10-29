@@ -273,6 +273,7 @@
 - **产出**：**① 可观测性**：`team_status.messageLedger = { delivered, inFlight, stalledInFlight, cap, remaining }` + 模型可见的 `messageLedgerNote`（三条事实：满载判据是 delivered+inFlight / 停滞行**永不回收** / 满载是终态）。store 新增 `messageBudget()`（锁内读落盘账，因为镜像只投影已送达）。**② 覆盖**：广播路径的 quarantine 腿（`to='*'` + 停滞 id ⇒ `quarantined:true`、`deliveries:[]`、**零扇出**）。**③ 合同**：`team_send_message` 描述写明「被隔离的 correlationId **永久占用**一格 `max_messages_per_run` 预算，从不回收；`team_status.messageLedger` 让它可见而非静默」。
 - **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
 - **证据**：✅ 2026-10-29——`tests/omo-team/team-status.test.ts` 新增「cap=3、2 条已送达 + 1 条停滞在途 ⇒ `messageLedger={delivered:2,inFlight:1,stalledInFlight:1,cap:3,remaining:0}`，且随后一条确实被 `MESSAGE_LEDGER_FULL` 拒」；`tests/omo-team/team-message.test.ts` 新增广播 quarantine 腿（零扇出）。实测：**vitest 91f/2104t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
+- **Follow-up 登记**：本取舍带来的固有代价（消息可能静默丢失、封存不可逆、TTL 误判、重启累积损耗、预算语义漂移、sidecar 完整性、时钟边界）已单独立档 **`docs/followup-team-message-delivery.md`**（OPEN，含 8 条问题、根因、4 个待议选项、3 条未实施小修与改动落点）——**后续再议**，不在本轮修。
 - **决策记录（③ 的取舍，明确写死）**：采用 **at-least-once + 同 ID 不重投**。停滞预约**不回收**（回收等于把投递权交还给"可能还活着"的旧 owner，正是第五轮 MAJOR-1 的根因）；代价是死发送者永久占一格预算、且那条消息可能两次都没到——两条都在工具合同与 `messageLedgerNote` 里对模型明说。若要严格 exactly-once，需要宿主导航层提供幂等或投递 fencing（本仓做不到，登记为 follow-up）。
 - **依赖**：P5-T21。**量级**：2 小时。
 
