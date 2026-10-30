@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每条 team 面的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：✅ **25/25 全部收口**（2026-10-30 增补 T25 = PR #17 第七轮评审修复轮；2026-10-29 增补 T24 = 第六轮 delta 自审残余；2026-10-29 增补 T23 = PR #17 第六轮评审修复轮；2026-10-29 增补 T22 = 第五轮 delta 自查残余；2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **26/26 全部收口**（2026-10-30 增补 T26 = 面清单自枚举门；2026-10-30 增补 T25 = PR #17 第七轮评审修复轮；2026-10-29 增补 T24 = 第六轮 delta 自审残余；2026-10-29 增补 T23 = PR #17 第六轮评审修复轮；2026-10-29 增补 T22 = 第五轮 delta 自查残余；2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **编号**：`P5-T<n>`（Phase 5 - Task n）。工作包归属见计划书 §7。
 >
@@ -310,6 +310,16 @@
 - **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
 - **证据**：✅ 2026-10-30——`team-surface-consistency.test.ts` 新增两道枚举门（14→16 例）；`team-message.test.ts` 的广播部分失败腿改标题并钉住 `COMMITTED AS DELIVERED` / 不含 `keeps the reservation` / 含 `did NOT receive it` + `BEST-EFFORT`；零投递腿同步改口径；`team-state.test.ts` 新增混合腿（fresh+stalled ⇒ 文本同时含 `TEMPORARY` 与 `The other 1 unit(s) are STALLED`，且迟 rollback 后 `stalledInFlight` 归零）。实测：**vitest 91f/2109t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0（**vendor 字节零改动**）；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass；`run-proofs` 8/8。
 - **依赖**：P5-T24。**量级**：3 小时。
+
+### [x] P5-T26 — 「还有必要第八轮吗」的机械审计 + 面清单自枚举门
+
+> **触发**：回答「还有必要第八轮吗」时，不再靠直觉，而是**用前四轮评审的判据把全仓机械扫一遍**，并把第七轮暴露的结构弱点（面清单是手维护的）变成门。
+
+- **产出**：**① 机械审计**：对 `patches/omo-dsh/{omo-commands,omo-hooks,omo-team,omo-agents}/src/**/*.ts`（81 个文件）扫三类历史判据——无条件在场断言（`HAS a team surface` / `TEAM SURFACE HERE` / `team surface is here|present`）、STOP/Restart 死指令（`Restart senpi|the session without`）、过期账本文案（`keeps the reservation` / `never reclaimed` / `guaranteed re-send` / `delivery guarantee` / `terminal message budget`）——**模型可见面命中 0**（2 处命中是**解释拆弹的注释**，不是注入文本）。**② 面清单自枚举门（P5-T26）**：不再手写"要检查哪些面"，而是**从源码发现**所有 `*_CARRIER_NOTE` / `*_COMMAND_TEMPLATE_FULL` 导出，要求每一个都有登记处置（`gated` = 由门检查 / `documentation-only` = 明确不进模型面），并双向断言（未登记 ⇒ 点名红；登记了但源码已无 ⇒ 僵尸条目红）；非真空下界 10 个面、`gated` 档 ≥ 6。**③ 核实一个易被误判的面**：`omo-commands/templates/hyperplan.ts` 的 `HYPERPLAN_CARRIER_NOTE` 与 hooks 侧同名，但它**没有任何注入点**（`grep` 全仓仅定义处），其自身 item 3 也写明"此注记给审阅者、不进模型面"——已在处置表里登记为 `documentation-only`。
+- **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）源码未变（本轮只改测试），沿用同树 41/41；门 4–8 绿。
+- **证据**：✅ 2026-10-30——新增 1 例（自枚举门），`team-surface-consistency.test.ts` 15 例全绿。**突变自证 ×2**：① 把技能注记里的 `**never STOP on that check**` 改小写 ⇒ 门 1 红并点名 `skill registration (skill(name="hyperplan"))`；② 新增一个未登记的 `MUTATION_PROBE_CARRIER_NOTE` 导出 ⇒ 自枚举门红并点名该常量。两次恢复后均绿。实测：**vitest 91f/2110t**；root typecheck exit 0；`verify-concerto-static` 37/37；`vendor-manifest` 372/0；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass。
+- **备注**：本条**不是**评审提出的问题；是"要不要第八轮"这个决策的**证据准备**——如果下一轮还想找"第 N 个消费面"，这轮已经把清单变成自枚举的了。
+- **依赖**：P5-T25。**量级**：1 小时。
 
 ---
 

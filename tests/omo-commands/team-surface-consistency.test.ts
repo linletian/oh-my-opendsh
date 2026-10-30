@@ -466,6 +466,58 @@ describe('P5-T16 (MAJOR-4) vendored skill 的 team 面适配注记（消费侧�
     }
   })
 
+  it('P5-T26 every carrier-note / full-template export in the tree has a REGISTERED disposition', () => {
+    // 第七轮的核心教训：**面清单是手维护的**——只要有人新增一个注记/模板而没登记，
+    // 上面两道门就看不见它，下一轮评审就会再抓到一个"第 N 个消费面"。
+    // 这条门把"清单"变成**从源码发现**：树里每个 carrier-note / FULL 模板导出，
+    // 必须在下面这张表里有明确处置（由门检查 / 或明确是读者向文档、不进模型面）。
+    const DISPOSITIONS: ReadonlyMap<string, 'gated' | 'documentation-only'> = new Map([
+      // ── 由上面的门检查（模型可见） ──────────────────────────────────────────
+      ['HYPERPLAN_CARRIER_NOTE', 'gated'], // hooks 侧（本文件以 hooks 的为准）
+      ['ULTRAWORK_CARRIER_NOTE', 'gated'],
+      ['ULTRAWORK_TEAM_CARRIER_NOTE', 'gated'],
+      ['TEAM_CARRIER_NOTE', 'gated'],
+      ['HYPERPLAN_COMMAND_TEMPLATE_FULL', 'gated'],
+      ['REMOVE_AI_SLOPS_COMMAND_TEMPLATE_FULL', 'gated'],
+      // ── 读者向文档，不进模型面（逐条记录为何不进） ──────────────────────────
+      ['HANDOFF_CARRIER_NOTE', 'documentation-only'], // 读者向：解释 handoff 语义移植的差异
+      ['STOP_CONTINUATION_CARRIER_NOTE', 'documentation-only'],
+      ['REMOVE_AI_SLOPS_CARRIER_NOTE', 'documentation-only'],
+      ['REMOVE_AI_SLOPS_CARRIER_NOTE_P5', 'documentation-only'],
+      ['ULW_EXECUTE_CARRIER_NOTE', 'documentation-only'],
+    ])
+    const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../patches/omo-dsh')
+    const PACKAGES = ['omo-commands', 'omo-hooks', 'omo-team']
+    const discovered = new Map<string, string[]>()
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) { walk(full); continue }
+        if (!entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) continue
+        const text = readFileSync(full, 'utf8')
+        for (const match of text.matchAll(/export const ([A-Z][A-Z0-9_]+)\s*(?::[^=]*)?=/g)) {
+          const name = match[1]!
+          if (!/(?:CARRIER_NOTE(?:_P\d+)?|COMMAND_TEMPLATE_FULL)$/.test(name)) continue
+          const list = discovered.get(name) ?? []
+          list.push(full.slice(ROOT.length + 1))
+          discovered.set(name, list)
+        }
+      }
+    }
+    for (const pkg of PACKAGES) walk(join(ROOT, pkg, 'src'))
+    // 非真空：确实发现了一组面（发现不到 = 正则失效，不是"没有面"）。
+    expect(discovered.size).toBeGreaterThanOrEqual(10)
+    // 每个被发现的面都必须有处置；缺失的逐个点名（-- 而不是一个空数组）。
+    const unregistered = [...discovered.keys()].filter((name) => !DISPOSITIONS.has(name))
+    expect(unregistered).toEqual([])
+    // 处置表里不许有"僵尸条目"（登记了但源码里已不存在）——那会让清单慢慢失真。
+    const stale = [...DISPOSITIONS.keys()].filter((name) => !discovered.has(name))
+    expect(stale).toEqual([])
+    // 由门检查的那一档必须有实质数量（防止有人把所有条目改成 documentation-only）。
+    const gated = [...DISPOSITIONS.values()].filter((d) => d === 'gated')
+    expect(gated.length).toBeGreaterThanOrEqual(6)
+  })
+
   it('P5-T25 (MINOR-1) NO model-visible surface makes an UNCONDITIONAL team-surface-presence claim', () => {
     // 第六轮 MINOR-1 / 第七轮 MINOR-1 是同一类错误的两次出现：只要有一条 note 说
     // "本部署有 team 面"，而该 note 在 team 面**缺席**时也会注入（keyword 闸只过滤
