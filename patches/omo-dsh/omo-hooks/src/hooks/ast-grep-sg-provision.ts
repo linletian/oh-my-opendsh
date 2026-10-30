@@ -73,6 +73,10 @@
 //   [omo-hooks] ast-grep-sg-provision PROVISION FAILED (<code>): <message>
 //   [omo-hooks] ast-grep-sg-provision guidance: the vendored `ast-grep` skill teaches the `sg` CLI, but no `sg` binary is guaranteed on PATH — install ast-grep pinned to <version> manually (https://ast-grep.github.io), or pre-seed a binary and export OMO_AST_GREP_SG_PATH=<path> (the resolver's first gate). targetDir: <dir>
 //
+// The FAILED line's second logger argument retains the original Error cause chain.
+// The stable message stays upstream-shaped, while console.warn still exposes a
+// nested ECONNREFUSED that Node's top-level "fetch failed" message would hide.
+//
 // THE "skill present but binary unguaranteed" INVARIANT (空头指令纪律,
 // phase6-mcp-editing.md G-3) lives HERE — in this loud failure path — and NOT
 // as a boot-time hard failure: a session must never die because a helper binary
@@ -172,7 +176,12 @@ async function runProvision(targetDir: string, deps: AstGrepSgProvisionDeps): Pr
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const code = error instanceof Error && 'code' in error ? String((error as { code: unknown }).code) : 'unknown'
-    deps.log(`${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (${code}): ${message}`)
+    deps.log(`${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (${code}): ${message}`, {
+      // Keep the stable one-line prefix, but do not discard the nested network
+      // cause: Node's fetch message is only "fetch failed"; ECONNREFUSED lives
+      // on its cause chain and is the e2e canary's proxy-refusal evidence.
+      cause: error instanceof Error ? (error.cause ?? error) : error,
+    })
     deps.log(buildProvisionFailureGuidance(targetDir))
   }
 }

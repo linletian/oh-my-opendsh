@@ -131,6 +131,28 @@ describe('createAstGrepSgProvisionHook', () => {
     expect(events.some((event) => event.includes('guidance:'))).toBe(true)
   })
 
+  it('#given provisioning fails with a nested network cause #when background work runs #then the logger receives the intact cause chain', async () => {
+    // PR #18 MAJOR-2: the stable message says only "fetch failed". The e2e
+    // hermetic canary can assert ECONNREFUSED only if the original cause reaches
+    // the real console.warn logger instead of being flattened away here.
+    const events: string[] = []
+    const cause = Object.assign(new Error('connect refused'), { code: 'ECONNREFUSED' })
+    const failure = new Error('fetch failed', { cause })
+    const logs: Array<{ message: string; data?: Record<string, unknown> }> = []
+    const hook = createAstGrepSgProvisionHook(createDeps(events, {
+      log: (message, data) => logs.push({ message, data }),
+      provisionSgBinary: async () => { throw failure },
+    }))
+
+    hook.handleSessionCreated({ id: 'ses_test' })
+    await Promise.resolve()
+
+    const log = logs.find((entry) => entry.message.includes('PROVISION FAILED'))
+    expect(log).toBeDefined()
+    expect(log?.data?.cause).toBe(cause)
+    expect((log?.data?.cause as { code?: string }).code).toBe('ECONNREFUSED')
+  })
+
   it('#given the event gate itself explodes #when the handler runs #then it fails open with a named log', () => {
     // discipline ②: the handler's own catch (upstream hook.ts:68-71). A
     // poisoned resolver input must not travel back into the emit dispatch.

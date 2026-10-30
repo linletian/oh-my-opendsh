@@ -5955,25 +5955,26 @@ function installPlugin(sandbox, env, def) {
 let noOpenSupport
 function supportsNoOpen() {
   if (noOpenSupport === undefined) {
-    // The probe must NOT inherit this process's environment. `dsh --profile web
+    // The probe must NOT inherit this process's HOME pointers unchanged. `dsh --profile web
     // --help` does not merely print help: it BOOTS the profile, creating
     // $DSH_HOME (.anonymous-user-id, profiles/) as a side effect. Run with the
     // ambient env and a script that promises "your real ~/.dsh is never
     // touched" silently creates or boots it — invisible on a developer machine
     // where the directory already exists, and loudly visible in CI on a fresh
     // HOME (the credential digest flips to `realDshUntouched: false`).
-    // A throwaway home keeps the probe as isolated as the scenarios themselves.
+    // A throwaway home keeps the probe as isolated as the scenarios themselves;
+    // scenarioEnv also gives this otherwise-unaffiliated dsh spawn the same
+    // hermetic ast-grep floor and mock credentials as every other spawn.
     const probeHome = mkdtempSync(join(tmpdir(), 'omo-noopen-probe-'))
     try {
       const probe = spawnSync('dsh', ['--profile', PROFILE, '--help'], {
         encoding: 'utf8',
-        env: {
-          ...process.env,
-          HOME: probeHome,
-          XDG_CONFIG_HOME: join(probeHome, '.config'),
-          DSH_HOME: join(probeHome, '.dsh'),
-          DSH_AGENTS_HOME: join(probeHome, '.agents'),
-        },
+        env: scenarioEnv({
+          home: probeHome,
+          xdg: join(probeHome, '.config'),
+          dshHome: join(probeHome, '.dsh'),
+          agentsHome: join(probeHome, '.agents'),
+        }),
       })
       noOpenSupport = `${probe.stdout ?? ''}${probe.stderr ?? ''}`.includes('--no-open')
     } finally {
@@ -14109,8 +14110,8 @@ async function runAnalysisSelfTest(routes) {
     }
     AST_GREP_SELF_TEST_ATTESTATION.push(['P6-T7', 'ast-grep-sg-absent-named-failure', 'GOOD-input-PASS'])
     const absentCases = astGrepAbsentDefectCases()
-    if (absentCases.length !== 10) {
-      problems.push(`fabricated ast-grep-sg-absent-named-failure: the defect list must hold exactly 10 legs, got ${absentCases.length} — one per mutation surface of the canary's checks`)
+    if (absentCases.length !== 12) {
+      problems.push(`fabricated ast-grep-sg-absent-named-failure: the defect list must hold exactly 12 legs, got ${absentCases.length} — one per mutation surface of the canary's checks, including independent wrong-code and direct-timeout legs`)
     }
     for (const [label, mutate, expectedChecks] of absentCases) {
       const input = fabricatedAstGrepAbsentInput(routes)
@@ -26078,7 +26079,7 @@ export function analyzeAstGrepViaBash(
 }
 
 export function analyzeAstGrepAbsentNamedFailure(
-  { log, requests, providersJson, bootLog, provisionRoot, provisionFiles, failedLinePrefix, guidanceText },
+  { log, requests, providersJson, bootLog, provisionRoot, provisionFiles, guidanceText },
   routes,
 ) {
   const events = log?.events ?? []
@@ -26109,7 +26110,13 @@ export function analyzeAstGrepAbsentNamedFailure(
     // tool it teaches does not, and the gap must be LOUD, not implied.
     skillStillDelivered: skillResult !== undefined && skillResult.isError !== true,
     // HOOK FACE: the provisioner really ran and really failed, named twice.
-    provisionFailedLineInBootLog: (bootLog ?? '').includes(failedLinePrefix),
+    // HERMETIC FAILURE, not merely "some failure": the stable provisioner code
+    // AND the nested proxy-refusal cause must both be present. A direct network
+    // attempt that later times out also produces download_failed, but cannot
+    // satisfy the ECONNREFUSED leg.
+    provisionFailedLineInBootLog: (bootLog ?? '').includes(
+      `${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (download_failed):`,
+    ) && (bootLog ?? '').includes('ECONNREFUSED'),
     provisionGuidanceInBootLog: (bootLog ?? '').includes(guidanceText),
     // AGENT FACE: bare `sg` came back as a named failure, not an empty success.
     bashAttemptedBareSg: bashCall !== undefined
@@ -26425,7 +26432,7 @@ export function astGrepViaBashDefectCases() {
 export function fabricatedAstGrepAbsentInput(routes) {
   const copyRoot = '/fabricated/project/ast-grep-fixture-project'
   const targetDir = `${copyRoot}-runtime-target`
-  const failedLine = `${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (ECONNREFUSED): fetch failed`
+  const failedLine = `${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (download_failed): failed to download ast-grep: fetch failed\n  [cause]: AggregateError [ECONNREFUSED]`
   return {
     log: {
       path: '/fabricated/session.jsonl',
@@ -26441,7 +26448,6 @@ export function fabricatedAstGrepAbsentInput(routes) {
     bootLog: `${FABRICATED_BOOT_LOG}\ndsh web: http://127.0.0.1:1/?token=fabricated\n${failedLine}\n${buildProvisionFailureGuidance(targetDir)}\n`,
     provisionRoot: '/fabricated/runtime/ast-grep',
     provisionFiles: [],
-    failedLinePrefix: `${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (`,
     guidanceText: buildProvisionFailureGuidance(targetDir),
   }
 }
@@ -26453,6 +26459,14 @@ export function astGrepAbsentDefectCases() {
   return [
     ['the hook failed but never said PROVISION FAILED', (input) => {
       input.bootLog = input.bootLog.replace(`${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (`, `${AST_GREP_SG_PROVISION_MARKER} provisioning finished `)
+    }, ['provisionFailedLineInBootLog']],
+    ['the failure names a code other than download_failed', (input) => {
+      input.bootLog = input.bootLog.replace('PROVISION FAILED (download_failed):', 'PROVISION FAILED (write_failed):')
+    }, ['provisionFailedLineInBootLog']],
+    ['download_failed came from a direct-network timeout instead of proxy refusal', (input) => {
+      // This is the PR #18 MAJOR-2 hole: the old prefix-only assertion accepted
+      // this input even though it is exactly the real-egress + timeout shape.
+      input.bootLog = input.bootLog.replace('ECONNREFUSED', 'The operation timed out')
     }, ['provisionFailedLineInBootLog']],
     ['the hook failed but the guidance block is absent', (input) => {
       input.bootLog = input.bootLog.replace(input.guidanceText, '')
@@ -28108,6 +28122,8 @@ const SCENARIOS = [
     //   * `NODE_USE_ENV_PROXY=1` is what makes Node's global fetch honour the
     //     proxy env at all — with it unset and the same lowercase `https_proxy`
     //     pointing at a closed port, the fetch goes DIRECT and returns 200.
+    //     The flag was added in Node 24, so `main()` refuses every live run on
+    //     an older runtime BEFORE any sandbox or child process exists.
     //   * LOWERCASE `https_proxy` takes precedence over uppercase `HTTPS_PROXY`,
     //     and uppercase honoured ALONE is honoured too (measured after `env -u`:
     //     ECONNREFUSED in ~20ms). An earlier revision of this comment claimed
@@ -28123,7 +28139,9 @@ const SCENARIOS = [
     //   * Loopback is NOT exempt automatically (see the `no_proxy` lines below),
     //     so the mock-LLM's survival has to be pinned too.
     // Net effect: the GitHub fetch dies in ~21ms with ECONNREFUSED while the
-    // mock-LLM keeps answering, with no network and no 60s timeout.
+    // mock-LLM keeps answering, with no network and no 60s timeout. The hook
+    // forwards the nested cause to console.warn, so the analysis can require
+    // BOTH download_failed and ECONNREFUSED instead of accepting any failure.
     //
     // `OMO_AST_GREP_SG_PATH: ''` is load-bearing and deliberate: `''` is not
     // "unset", it is the value the resolver's `nonEmptyValue` trims to "no
@@ -28192,7 +28210,6 @@ const SCENARIOS = [
       return {
         provisionRoot: lspSgProvisionRoot(sandbox),
         provisionFiles: astGrepListTree(lspSgProvisionRoot(sandbox)),
-        failedLinePrefix: `${AST_GREP_SG_PROVISION_MARKER} PROVISION FAILED (`,
         guidanceText: buildProvisionFailureGuidance(targetDir),
       }
     },
@@ -30782,7 +30799,21 @@ function ulwPlanBodyText() {
 const RUN_SCENARIO_VERDICTS = []
 let RUN_SCENARIO_TOTAL = 0
 
+export function assertLiveE2eNodeVersion(version = process.versions.node) {
+  const major = Number(version.split('.')[0])
+  if (!Number.isSafeInteger(major) || major < 24) {
+    throw new Error(
+      `live e2e requires Node >= 24 (running ${version}); NODE_USE_ENV_PROXY=1, which the `
+      + 'ast-grep hermetic canary relies on, was added in Node 24 — refusing to risk a direct GitHub fetch',
+    )
+  }
+}
+
 async function main() {
+  // Do this BEFORE self-tests, sandbox creation, or any spawned process. The
+  // hermetic --self-test branch below remains usable for pure analysis QA; a
+  // live run on an older Node must never turn its proxy assumption into egress.
+  assertLiveE2eNodeVersion()
   const routes = resolveModelRoutes()
   // §14.4.5: analysis QA runs BEFORE the expensive spawn.
   const selfTestAll = await runAnalysisSelfTest(routes)
@@ -31103,7 +31134,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
         return `${task} ${scenario}: ${labels.join(', ')}`
       })
       .join('; ')
-    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 10 on team-create-and-message (9 T10 checks + the T15 settle-pin leg), 5 on team-shutdown-handshake (4 T10 checks + the T15 settle-pin leg), each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing / settle-hook-vanished) FAILs on its own named check; ${TEAM_T15_SETTLE_SELF_TEST_BANNER} (the P5-T15 nested settle leg — settleReached undefined, the weak form's hole, red ONLY on settleReachedChildren) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; ${LSP_SELF_TEST_BANNER} (the P6-T5/P6-T6 LSP legs on BOTH lsp-* scenarios — every fabricated defect of the forward round-trip and of the reverse canary, the marker-derivation THROW leg, and P6-T6 MAJOR-1's hermetic sg pre-seal leg, which spawns the committed fixture for real and refuses a pre-seed that is missing, relative, empty, non-executable or pinned to a different version) FAILs on its own named check; ${AST_GREP_SELF_TEST_BANNER} (the P6-T7 ast-grep legs on BOTH ast-grep-* scenarios — the forward leg's 17 fabricated defects and the canary's 10, each red ONLY on its own named checks, and the split between them is the substance: mutate the TOOL's bytes and TRANSPORT+SPECIFICATION redden while CONTENT stands, mutate the DRIVER's scan and TRANSPORT+CONTENT redden while SPECIFICATION stands, so no single-reader design could tell a lying tool from a moved fixture; plus the refusal of a transcript whose fake sg never logged its invocation, which is the shape of a scenario that would pass on a hallucinated tool result) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope; ${WEB_SELF_TEST_BANNER} (the P6-T8 web legs on ALL THREE web-search-* scenarios plus the fixture double itself — every fabricated defect of the round-trip and of both honesty shapes, the named-404 and canned-200 arms of the double, and the renderer differential that pins the driver's derivation to the installed dsh-tool-web)`)
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 10 on team-create-and-message (9 T10 checks + the T15 settle-pin leg), 5 on team-shutdown-handshake (4 T10 checks + the T15 settle-pin leg), each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing / settle-hook-vanished) FAILs on its own named check; ${TEAM_T15_SETTLE_SELF_TEST_BANNER} (the P5-T15 nested settle leg — settleReached undefined, the weak form's hole, red ONLY on settleReachedChildren) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; ${LSP_SELF_TEST_BANNER} (the P6-T5/P6-T6 LSP legs on BOTH lsp-* scenarios — every fabricated defect of the forward round-trip and of the reverse canary, the marker-derivation THROW leg, and P6-T6 MAJOR-1's hermetic sg pre-seal leg, which spawns the committed fixture for real and refuses a pre-seed that is missing, relative, empty, non-executable or pinned to a different version) FAILs on its own named check; ${AST_GREP_SELF_TEST_BANNER} (the P6-T7 ast-grep legs on BOTH ast-grep-* scenarios — the forward leg's 17 fabricated defects and the canary's 12, each red ONLY on its own named checks, and the split between them is the substance: mutate the TOOL's bytes and TRANSPORT+SPECIFICATION redden while CONTENT stands, mutate the DRIVER's scan and TRANSPORT+CONTENT redden while SPECIFICATION stands, so no single-reader design could tell a lying tool from a moved fixture; plus the refusal of a transcript whose fake sg never logged its invocation, which is the shape of a scenario that would pass on a hallucinated tool result) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope; ${WEB_SELF_TEST_BANNER} (the P6-T8 web legs on ALL THREE web-search-* scenarios plus the fixture double itself — every fabricated defect of the round-trip and of both honesty shapes, the named-404 and canned-200 arms of the double, and the renderer differential that pins the driver's derivation to the installed dsh-tool-web)`)
   } else {
     main().catch((error) => {
       // `partial: true` plus whatever verdicts already exist. The old shape here

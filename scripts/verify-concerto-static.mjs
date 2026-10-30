@@ -123,8 +123,8 @@
 //       first NON-hook module directory — c12/c13 scan src/hooks/ only, so
 //       without this record the whole provisioning side of the ast-grep-sg-
 //       provision port unit (file set, signature headers, the barrel seam, the
-//       manifest row's file arithmetic, and the NOTICES 供给层 count mirror)
-//       would drift unwatched. Same exclusion discipline as src/services/: it
+//       manifest row's file arithmetic, and the NOTICES count + per-file table
+//       mirrors) would drift unwatched. Same exclusion discipline as src/services/: it
 //       never joins the c13 numbers; it gets its own counter instead.
 //
 // The record COUNT appears nowhere in this file or in ci-local.sh / ci.yml: the
@@ -2197,7 +2197,8 @@ async function run() {
   //   ④c upstreamTestFiles 全集臂：同法，显式 5 项常量多重集（hook 1 + 供给层
   //      4；ARBITRATION-r2 A-R2-NIT-2 补——④ 的 5 只是数量）。
   //   ⑤ NOTICES 镜像：THIRD_PARTY_NOTICES.md 的 `src/ast-grep/ 供给层 = N files`
-  //      必须等于磁盘实测——手改散文不动文件，在这里不可能（c21 的同一药方）。
+  //      必须等于磁盘实测；⑤b 再把逐文件表的 derived 路径与磁盘、上游路径与
+  //      manifest 双向对账，处置列只接受 semantic port only + 可选注记。
   if (hooksManifest === null) {
     results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', false,
       'manifest.ts could not be imported — the provisioning-layer cross-check would be vacuous'))
@@ -2217,7 +2218,7 @@ async function run() {
     }
     const hookSrc = readFileSync(join(HOOKS_DIR, 'ast-grep-sg-provision.ts'), 'utf8')
     if (!hookSrc.includes("from '../ast-grep/index.ts'")) problems.push('the hook does not import the provisioning barrel ../ast-grep/index.ts — the single-import seam is broken')
-    for (const deeper of ['../ast-grep/sg-manifest.ts', '../ast-grep/sg-resolver.ts', '../ast-grep/sg-provisioner.ts', '../ast-grep/install-script.ts', '../ast-grep/types.ts']) {
+    for (const deeper of wantLayer.filter((rel) => rel !== 'index.ts').map((rel) => `../ast-grep/${rel}`)) {
       if (hookSrc.includes(`from '${deeper}'`)) problems.push(`the hook reaches deeper than the barrel (${deeper}) — half-survival through a renamed module becomes possible`)
     }
     // ①b **barrel 多重集臂**（ARBITRATION-r1 B-MINOR-1，r3 B-MINOR-3 强化）：barrel
@@ -2348,11 +2349,57 @@ async function run() {
     const mirror = notices.match(/src\/ast-grep\/ 供给层 = (\d+) files/)
     if (mirror === null) problems.push('THIRD_PARTY_NOTICES.md lost the `src/ast-grep/ 供给层 = N files` count mirror')
     else if (Number(mirror[1]) !== layerFiles.length) problems.push(`NOTICES says the provisioning layer is ${mirror[1]} files, the filesystem says ${layerFiles.length}`)
+    // ⑤b per-file NOTICES mirror (PR #18 MINOR-1). The count above cannot see a
+    // deleted row, a false disposition, or an upstream path that drifted away
+    // from the manifest. Parse ONLY this section's table, then reconcile both
+    // directions: local rows ↔ disk files, and upstream cells ↔ manifest paths.
+    const astGrepNoticesHeading = '### Phase 6 provisioning layer: `src/ast-grep/` (P6-T6, ast-grep-sg-provision)'
+    const noticesHeadingAt = notices.indexOf(astGrepNoticesHeading)
+    if (noticesHeadingAt < 0) problems.push(`THIRD_PARTY_NOTICES.md lost the ast-grep provisioning section (${astGrepNoticesHeading})`)
+    const noticesRest = noticesHeadingAt < 0 ? '' : notices.slice(noticesHeadingAt + astGrepNoticesHeading.length)
+    const nextNoticesHeading = noticesRest.search(/^###? /m)
+    const noticesSection = nextNoticesHeading < 0 ? noticesRest : noticesRest.slice(0, nextNoticesHeading)
+    const noticeRows = [...noticesSection.matchAll(/^\| `([^`]+)` \| ([^|]+) \| ([^|]+) \|\s*$/gm)]
+      .map((match) => ({ derived: match[1], upstreamCell: match[2].trim(), disposition: match[3].trim() }))
+    if (noticeRows.length === 0) problems.push('the ast-grep NOTICES table parsed 0 per-file rows — the mirror would be vacuous')
+    const noticedDerived = new Set()
+    const noticedUpstream = new Set()
+    const declaredUpstream = new Set(Array.isArray(row?.upstreamFiles) ? row.upstreamFiles : [])
+    for (const noticeRow of noticeRows) {
+      if (noticedDerived.has(noticeRow.derived)) problems.push(`the ast-grep NOTICES table lists ${noticeRow.derived} more than once`)
+      noticedDerived.add(noticeRow.derived)
+      const rel = noticeRow.derived.replace(/^src\/ast-grep\//, '')
+      if (!layerFiles.includes(rel) || noticeRow.derived !== `src/ast-grep/${rel}`) {
+        problems.push(`the ast-grep NOTICES table names ${noticeRow.derived}, which is not a provisioning file on disk`)
+      }
+      if (!/^semantic port only(?:（.+）)?$/.test(noticeRow.disposition)) {
+        problems.push(`${noticeRow.derived}: disposition ${JSON.stringify(noticeRow.disposition)} is outside the closed vocabulary [semantic port only] with an optional parenthesised explanation`)
+      }
+      const upstreamPaths = [...noticeRow.upstreamCell.matchAll(/`([^`]+)`/g)]
+        .map((match) => match[1])
+        // Inline semantic names such as `whichOnPath` are not file paths; every
+        // actual upstream source in this table is a packages/**/*.ts path.
+        .filter((path) => path.includes('/') || path.endsWith('.ts'))
+      if (upstreamPaths.length === 0) problems.push(`${noticeRow.derived}: the upstream-source cell names no backtick-quoted path`)
+      for (const upstreamPath of upstreamPaths) {
+        noticedUpstream.add(upstreamPath)
+        if (!declaredUpstream.has(upstreamPath)) problems.push(`${noticeRow.derived}: NOTICES names ${upstreamPath}, which the manifest row's upstreamFiles does not declare`)
+      }
+    }
+    for (const rel of layerFiles) {
+      const derived = `src/ast-grep/${rel}`
+      if (!noticedDerived.has(derived)) problems.push(`provisioning file ${derived} has no per-file NOTICES row`)
+    }
+    for (const upstreamPath of declaredUpstream) {
+      if (upstreamPath.startsWith('packages/utils/src/ast-grep/') && !noticedUpstream.has(upstreamPath)) {
+        problems.push(`the manifest row declares ${upstreamPath}, which no ast-grep NOTICES row names`)
+      }
+    }
     if (layerFiles.length === 0) problems.push('empty provisioning layer — assertion would be vacuous')
     results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', problems.length === 0,
       problems.length > 0
         ? problems.join('; ')
-        : `${layerFiles.length} provisioning files ↔ explicit roster ↔ barrel re-export MULTISET equal to the ${wantBarrel.length} roster members (no duplicate, no escaping specifier) ↔ row arithmetic (9+5) ↔ upstreamFiles multiset-equal to the 9 named paths ↔ upstreamTestFiles multiset-equal to the 5 named seeds ↔ barrel-only hook import ↔ barrel IMPORTED LIVE, 4 seam symbols present ↔ barrel namespace ⊆ union of the ${wantBarrel.length} member modules' exports ↔ NOTICES mirror`))
+        : `${layerFiles.length} provisioning files ↔ explicit roster ↔ barrel re-export MULTISET equal to the ${wantBarrel.length} roster members (no duplicate, no escaping specifier) ↔ row arithmetic (9+5) ↔ upstreamFiles multiset-equal to the 9 named paths ↔ upstreamTestFiles multiset-equal to the 5 named seeds ↔ barrel-only hook import derived from that same roster ↔ barrel IMPORTED LIVE, 4 seam symbols present ↔ barrel namespace ⊆ union of the ${wantBarrel.length} member modules' exports ↔ NOTICES count + ${noticeRows.length} per-file rows mirrored both ways against disk + manifest, with a closed disposition vocabulary`))
   } catch (e) {
     results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', false,
       `the provisioning-layer cross-check could not run: ${String(e.message ?? e)}`))

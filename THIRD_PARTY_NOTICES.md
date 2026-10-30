@@ -263,7 +263,7 @@ the self-test and by the scenario belts, not by this prose). The vendored skill'
 ruling: the hook layer is authoritative; the shared `OMO_AST_GREP_BIN_DIR` →
 `astGrepRuntimeDir` targetDir convention is pinned by tests, not by prose).
 
-**不入 c13 文件集核对**（`src/ast-grep/` 不在 `src/hooks/`，非 listener），故 16 ids / 27 files 的计数不含它；此供给层由 `scripts/verify-concerto-static.mjs` record **c29** 逐文件核对（文件集双向、署名头、barrel 接线、manifest 行、以及本段的 `src/ast-grep/ 供给层 = 6 files` 计数镜像）。
+**不入 c13 文件集核对**（`src/ast-grep/` 不在 `src/hooks/`，非 listener），故 16 ids / 27 files 的计数不含它；此供给层由 `scripts/verify-concerto-static.mjs` record **c29** 逐文件核对（文件集双向、署名头、barrel 接线、manifest 行、本段的 `src/ast-grep/ 供给层 = 6 files` 计数镜像，以及下表与磁盘 / manifest 的逐文件双向对账）。
 
 | Derived file under `patches/omo-dsh/omo-hooks/` | Upstream source file(s) at `v4.19.4` | Disposition |
 |---|---|---|
