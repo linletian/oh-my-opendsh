@@ -146,7 +146,7 @@ export interface TeamStatusResult {
    * **完整消息预算**（P5-T22·自查残余 a）：`processedMessageCount` 只数已送达，
    * 而满载判据是 `delivered + inFlight`。lead 撞到 `MESSAGE_LEDGER_FULL` 时，
    * 必须能从状态面看出预算是被**在途行**吃掉的（含**停滞**在途行——发送者挂起/
-   * 崩溃后那一行永不释放名额，P5-T21 的取舍）。
+   * 崩溃后那一行**不会自动**释放名额，P5-T21 的取舍；原 owner 迟到 settle 仍可释放）。
    */
   readonly messageLedger: {
     readonly delivered: number
@@ -292,12 +292,15 @@ export async function executeTeamStatus(
  * 是**账面阶段**；活性事实看每行的 `resident`。
  */
 /**
- * 消息预算的读法说明（模型可见；P5-T22·自查残余 a）。
+ * 消息预算的读法说明（模型可见；P5-T22 立、P5-T23/P5-T25 订正）。
  *
  * 三条事实必须一起读，否则 `processedMessageCount` 会误导：
  *   1. 满载判据 = `delivered + inFlight`（不是在途只算"过程态"）；
- *   2. **停滞在途行永久占名额**（发送者失联后不回收——宁漏不重，见 T21）；
- *   3. 满载是**终态**：换新 correlationId 无效，只能 `team_delete` 重建。
+ *   2. **停滞在途行不自动回收**（自动回收 = 把投递权交还给可能还活着的旧 owner），
+ *      但**不是永久**：原 owner 迟到 settle 会释放（迟到 rollback 归还、
+ *      迟到 commit 转已送达 ⇒ `stalledInFlight` 会下降）；
+ *   3. 满载**不一定是终态**：全由已送达占满才是终态；还有 fresh 在途 ⇒ 等 settle，
+ *      失败的会释放名额。
  */
 export const TEAM_MESSAGE_LEDGER_NOTE =
   'messageLedger is the full message budget: the fullness test is delivered + inFlight (not delivered alone), '

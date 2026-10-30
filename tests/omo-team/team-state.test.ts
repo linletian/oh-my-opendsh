@@ -998,6 +998,35 @@ describe('P5-T8b persistence — 落盘在场、双账跨实例、resume 经适�
     expect(await store.reserveMessageDelivery(state.teamRunId, 'B')).toMatchObject({ state: 'duplicate' })
   })
 
+  it('P5-T25 (NIT-2) the FULL text names the MIXED case: fresh rows (temporary) + stalled rows (owner-only)', async () => {
+    // 第七轮 NIT-2：P5-T24 声称补了"fresh+stalled 混合"腿，实际没补（证据声明超过
+    // 兑现）。这里补上，并钉住那句 `The other N unit(s) are STALLED`。
+    const dir = mkdtempSync(join(tmpdir(), 'omo-team-state-test-'))
+    tempDirs.push(dir)
+    const config = buildTeamModeConfig({ OMO_TEAM_BASE_DIR: dir })
+    const store = new TeamStateStore({ ...config, max_messages_per_run: 2 })
+    const state = await store.create(provisioningInput())
+    // 一条 fresh（保持新鲜）+ 一条停滞（at 改到 TTL 之外），刚好占满 cap=2。
+    await reserveToken(store, state.teamRunId, 'fresh-1')
+    const stalledToken = await reserveToken(store, state.teamRunId, 'stalled-1')
+    const ledgerPath = join(dir, 'runtime', state.teamRunId, 'omo-team-extensions.json')
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => (
+      row.id === 'stalled-1' ? { ...row, at: Date.now() - 10 * 60 * 1000 } : row
+    ))
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
+    // 第三条（不同 id）被拒，且文本同时点名两半。
+    const err = await store.reserveMessageDelivery(state.teamRunId, 'next').catch((e: unknown) => e as Error)
+    const message = (err as Error).message
+    expect(message).toContain('IN-FLIGHT reservations')
+    expect(message).toContain('TEMPORARY')
+    expect(message).toContain('The other 1 unit(s) are STALLED')
+    expect(message).toContain('owners presumed dead')
+    // 停滞那半确实可被原 owner 释放：迟 rollback 后名额回到 1。
+    await store.rollbackMessageReservation(state.teamRunId, 'stalled-1', stalledToken)
+    expect(await store.messageBudget(state.teamRunId)).toMatchObject({ stalledInFlight: 0, inFlight: 1 })
+  })
+
   it('P5-T20 (MINOR) the orphaned→deleting writer takes the SAME state.lock as forgetRun', async () => {
     // 第四轮评审 MINOR：`forceTransitionToDeleting` 是 orphaned→deleting 的**唯一**
     // 写者，此前它的 load+save 都在锁外 ⇒ forgetRun 的「确证 + rm」仍可与它交错。

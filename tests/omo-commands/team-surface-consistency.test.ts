@@ -40,6 +40,7 @@ import {
   TEAM_SURFACE_SHAPES_NOTE,
   VENDOR_SKILL_TEAM_ADAPTATION_NOTES,
   teamAdaptationNoteFor,
+  readVendorSkillDocument,
   toSkillRegistration,
 } from '../../patches/omo-dsh/omo-commands/src/skills.ts'
 import {
@@ -64,6 +65,8 @@ import {
 import { registerTeamMessageSurface } from '../../patches/omo-dsh/omo-team/src/tools/team-message.ts'
 
 /** 真实的 vendored 正文（与 keyword 注入面读的是同一份盘上字节）。 */
+const VENDOR_SKILLS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../patches/omo-dsh/vendor/shared-skills/skills')
+
 const loadedTexts = loadInstructionTexts()
 if (!loadedTexts.ok) throw new Error(`vendored instruction texts unavailable: ${JSON.stringify(loadedTexts.failures)}`)
 const KEYWORD_TEXTS = loadedTexts.texts
@@ -424,6 +427,76 @@ describe('P5-T16 (MAJOR-4) vendored skill 的 team 面适配注记（消费侧�
     // ③ 命令路径的同一句仍然在（两侧口径一致，不是只补了 keyword 面）。
     expect(HYPERPLAN_TEAM_MODE_GUIDANCE).toContain('never STOP on that check')
     expect(HYPERPLAN_TEAM_MODE_GUIDANCE).toContain('the senpi restart line is dead')
+  })
+
+  // ── P5-T25（第七轮评审）：把「按名字改一处」升级成「按判据扫全部面」 ──────
+  //
+  // 第七轮抓到的四件事有同一个形状：**同一个缺陷在 N 个消费面上，评审点名哪个我
+  // 就修哪个**。所以这一节不再逐条钉，而是先把「面」显式枚举出来，再对每个面套
+  // 同一组判据。新加一个面而忘了适配 ⇒ 这里直接红。
+  const buildRegistrationBody = (skillDir: string): string => toSkillRegistration(
+    readVendorSkillDocument(join(VENDOR_SKILLS_DIR, skillDir, 'SKILL.md'), skillDir),
+  ).content
+
+  it('P5-T25 (MAJOR) EVERY surface that carries the hyperplan body defuses the STOP/Restart precondition', () => {
+    // 三个消费面：① /hyperplan 命令 FULL；② keyword 注入；③ **直接 skill 加载**。
+    // 第七轮 MAJOR 指的就是 ③：只补了 replacement + absent fallback，没有拆弹，
+    // 于是正文的 HARD PRECONDITIONS 仍会让模型 STOP 并复述一条无效重启指令。
+    // 每个面自报"是否携带 upstream 正文"：携带者必须**在正文之前**拆弹；不携带者
+    // （命令模板用的是本部署自带的完整环）也必须自带同一组拆弹句。
+    const surfaces: readonly { readonly label: string, readonly text: string, readonly carriesBody: boolean }[] = [
+      { label: '/hyperplan command FULL', text: HYPERPLAN_COMMAND_TEMPLATE_FULL, carriesBody: false },
+      { label: '/hyperplan team-mode guidance', text: HYPERPLAN_TEAM_MODE_GUIDANCE, carriesBody: false },
+      { label: 'keyword injection (buildHyperplanMessage)', text: buildHyperplanMessage({ texts: KEYWORD_TEXTS, agentName: 'sisyphus' }), carriesBody: true },
+      { label: 'skill registration (skill(name="hyperplan"))', text: buildRegistrationBody('hyperplan'), carriesBody: true },
+    ]
+    expect(surfaces).toHaveLength(4)
+    expect(surfaces.filter((surface) => surface.carriesBody)).toHaveLength(2)
+    for (const surface of surfaces) {
+      const stop = surface.text.indexOf('never STOP on that check')
+      const dead = surface.text.indexOf('the senpi restart line is dead')
+      expect(stop, `${surface.label}: never-STOP defusal`).toBeGreaterThanOrEqual(0)
+      expect(dead, `${surface.label}: restart-is-dead defusal`).toBeGreaterThanOrEqual(0)
+      if (!surface.carriesBody) continue
+      // 携带 upstream 正文的面：拆弹必须在正文**之前**，且正文确实在场。
+      const body = surface.text.indexOf('Before starting, verify:')
+      expect(body, `${surface.label}: carries the upstream body`).toBeGreaterThanOrEqual(0)
+      expect(stop, `${surface.label}: defusal must precede the body`).toBeLessThan(body)
+      expect(dead, `${surface.label}: defusal must precede the body`).toBeLessThan(body)
+    }
+  })
+
+  it('P5-T25 (MINOR-1) NO model-visible surface makes an UNCONDITIONAL team-surface-presence claim', () => {
+    // 第六轮 MINOR-1 / 第七轮 MINOR-1 是同一类错误的两次出现：只要有一条 note 说
+    // "本部署有 team 面"，而该 note 在 team 面**缺席**时也会注入（keyword 闸只过滤
+    // type='team'；skill 随时可加载），这句话就是假的。
+    //
+    // 判据：禁止无条件句式；允许的写法必须以 `IF` 引出。
+    const unconditional: readonly RegExp[] = [
+      /HAS a team surface/i,
+      /TEAM SURFACE HERE/,
+      /has a team surface, but it is not/i,
+    ]
+    const surfaces: readonly { readonly label: string, readonly text: string }[] = [
+      ...MODEL_VISIBLE_TEMPLATES,
+      // 四个技能注册面（实际注册正文，不是注记常量）。
+      ...['hyperplan', 'ultrawork', 'refactor', 'debugging']
+        .map((dir) => ({ label: `skill registration body: ${dir}`, text: buildRegistrationBody(dir) })),
+    ]
+    expect(surfaces.length).toBeGreaterThanOrEqual(12)
+    const offenders: string[] = []
+    for (const surface of surfaces) {
+      for (const pattern of unconditional) {
+        if (pattern.test(surface.text)) offenders.push(`${surface.label} matches ${pattern}`)
+      }
+    }
+    expect(offenders).toEqual([])
+    // 非真空：确实有面在讲"在场"，而且它们是条件句。
+    const mentionsPresence = surfaces.filter((s) =>
+      /team_\*\* tools|team_\* tools|team surface/i.test(s.text))
+    expect(mentionsPresence.length).toBeGreaterThanOrEqual(8)
+    const conditional = surfaces.filter((s) => s.text.includes('IF '))
+    expect(conditional.length).toBeGreaterThanOrEqual(8)
   })
 
   it('P5-T20 (MAJOR-3) the two packages carry the SAME replacement spec, byte for byte', () => {

@@ -4,7 +4,7 @@
 >
 > **用法**：这是**唯一**记录 Phase 5 进度的地方。每完成一项，勾选并把"证据"栏填上实测输出（命令 + 关键行）。计划书描述"为什么这么做"，覆盖基线给出"每条 team 面的处置"，本文描述"做什么、怎么判定做完了"。
 >
-> **状态**：✅ **24/24 全部收口**（2026-10-29 增补 T24 = 第六轮 delta 自审残余；2026-10-29 增补 T23 = PR #17 第六轮评审修复轮；2026-10-29 增补 T22 = 第五轮 delta 自查残余；2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
+> **状态**：✅ **25/25 全部收口**（2026-10-30 增补 T25 = PR #17 第七轮评审修复轮；2026-10-29 增补 T24 = 第六轮 delta 自审残余；2026-10-29 增补 T23 = PR #17 第六轮评审修复轮；2026-10-29 增补 T22 = 第五轮 delta 自查残余；2026-10-29 增补 T21 = PR #17 第五轮评审修复轮；2026-10-29 增补 T20 = PR #17 第四轮评审修复轮；2026-10-29 增补 T19 = PR #17 第三轮评审修复轮；2026-10-29 增补 T18 = PR #17 第二轮评审修复轮；2026-10-28 增补 T17 = PR #17 评审修复轮；2026-10-12：T1–T16 全部完成（T11 仲裁终裁不触发——条件任务，不算未完成）；退出标准 a/b/c + DoD c/d/e 全 ✅（见文末核对表）；fork = (B)（`.omo/evidence/p5t1/FORK.md`）；ci-local 8/8 全绿（`.omo/evidence/p5t15/ci-local.log`））。`[ ]` = 未开始 · `[~]` = 进行中 · `[x]` = 完成（证据已填）· ~~删除线~~ = 仲裁取消。
 >
 > **编号**：`P5-T<n>`（Phase 5 - Task n）。工作包归属见计划书 §7。
 >
@@ -293,9 +293,23 @@
 
 - **产出**：三处首句全部改成**条件句**（`IF the team_* tools are in your tool list, THIS deployment's surface …` / `IF THIS DEPLOYMENT HAS THE TEAM SURFACE (check your tool list) …`）；`ULTRAWORK_TEAM_CARRIER_NOTE` 与 omo-commands 的 `TEAM_SURFACE_SHAPES_NOTE` 保持**逐字相同**（含新的换行位置，交叉钉仍成立，且 `ULTRAWORK_CARRIER_NOTE` 的 `(4)` 段仍是它的超串）；满载诊断补**混合情形**（fresh 与停滞并存时，fresh 部分说"暂时"，另附停滞部分的唯一释放路径）。
 - **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿；门 3（e2e）绿；门 4–8 绿。
-- **证据**：✅ 2026-10-29——`keyword-detector.test.ts` 的在场断言从 `toContain('THIS DEPLOYMENT HAS A TEAM SURFACE')` 改为条件句测试 + `not.toContain('THIS DEPLOYMENT HAS A TEAM SURFACE —')`；`team-surface-consistency.test.ts` 的跨包等值钉仍绿（两包逐字相同）；`team-state.test.ts` 的满载文案腿补了混合情形。实测：**vitest 91f/2106t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass；`run-proofs` 8/8。
+- **证据**：✅ 2026-10-29——`keyword-detector.test.ts` 的在场断言从 `toContain('THIS DEPLOYMENT HAS A TEAM SURFACE')` 改为条件句测试 + `not.toContain('THIS DEPLOYMENT HAS A TEAM SURFACE —')`；`team-surface-consistency.test.ts` 的跨包等值钉仍绿（两包逐字相同）；（**P5-T25 订正**：本条当时**没有**补混合情形的测试——只有代码改了，测试与证据声明都不实；混合腿由 P5-T25 补上。）实测：**vitest 91f/2106t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass；`run-proofs` 8/8。
 - **备注**：本条**不是**评审提出的问题，是自审发现的同类残余；按「发现的残留先处理掉，不要留到下一轮」的纪律就地闭合。
 - **依赖**：P5-T23。**量级**：1 小时。
+
+### [x] P5-T25 — PR #17 第七轮评审修复轮（1 MAJOR + 3 MINOR + 2 NIT）
+
+> **触发**：PR #17 的第七轮 OWNER 评审（`gh pr view 17`，`645439a → 388340f`），结论 = **Request changes**：核心机制方向正确（"不要再动 TTL/reserve/rollback/commit 状态机"），但**第三个消费面**（直接 `skill(name="hyperplan")` 加载）仍缺 STOP/Restart 拆弹（MAJOR）+ 3 MINOR（技能注记外层无条件在场断言、广播部分失败文案与实际 commit 冲突、follow-up 文档自相矛盾）+ 2 NIT（旧注释未清完、P5-T24 的测试证据不实）。
+> **复核结论**：**全部成立**。四条"未收敛"的发现形状完全一致：**同一缺陷在 N 个消费面上，评审点名哪个我修哪个**——这正是收敛方向不对的证据（见下"收敛判据"）。
+
+- **产出**：**MAJOR**：hyperplan **技能注册注记**补 STOP/Restart 拆弹（与 `/hyperplan` 命令、keyword 注入同一口径，放在正文之前）。**MINOR-1**：hyperplan / ultrawork 两条技能注记的**外层**句子改条件句。**MINOR-2**：部分广播失败的错误文本改为「id **已 commit 为已送达**」，补投指引写明「只补**未收到**的成员 + best-effort + 跨 id 会重复」；工具合同同改。**MINOR-3**：follow-up 文档加"以代码为准"的读法与 `[已修]/[OPEN]` 标记，P3 改成历史叙述，§5 标注三条小修**已全部实施**，末段删掉与自身取舍冲突的"承认 at-least-once"建议。**NIT-1**：`team-state.ts` / `team-message.ts` / `team-status.ts` 里 7 处旧状态机注释全部重写。**NIT-2**：补 fresh+stalled **混合**腿，并订正 P5-T24 的不实证据声明。
+- **收敛判据（本轮真正的产出）**：不再"按行号改"，改成**按判据扫全部面**——新增两道**枚举门**，把消费面显式列出来再套同一组判据：
+  1. 「**每个携带 upstream hyperplan 正文的面都必须拆弹**」：面 = {命令 FULL、team-mode guidance、keyword 注入、**技能注册**（真实 `toSkillRegistration` 产物）}，逐面断言两句拆弹存在且在正文之前；
+  2. 「**任何模型可见面都不得有无条件在场断言**」：面 = 所有模板 + 四条技能**注册正文**（不是注记常量），禁止 `HAS a team surface` / `TEAM SURFACE HERE` 句式，并断言"提到在场"与"条件句"的面数下界（非真空）。
+  **突变自证**：把技能注记里的 `**never STOP on that check**` 改小写后，门 1 立刻红且点名 `skill registration (skill(name="hyperplan"))`；恢复后绿。
+- **判定**：✅ 门 1（typecheck）绿；门 2（vitest）绿且**计数增长**；门 3（e2e）绿；门 4–8 绿。
+- **证据**：✅ 2026-10-30——`team-surface-consistency.test.ts` 新增两道枚举门（14→16 例）；`team-message.test.ts` 的广播部分失败腿改标题并钉住 `COMMITTED AS DELIVERED` / 不含 `keeps the reservation` / 含 `did NOT receive it` + `BEST-EFFORT`；零投递腿同步改口径；`team-state.test.ts` 新增混合腿（fresh+stalled ⇒ 文本同时含 `TEMPORARY` 与 `The other 1 unit(s) are STALLED`，且迟 rollback 后 `stalledInFlight` 归零）。实测：**vitest 91f/2109t**；root typecheck exit 0；e2e **41/41**；`verify-concerto-static` 37/37；`vendor-manifest` 372/0（**vendor 字节零改动**）；`verify-licenses` 61/0；`check-docs-consistency` 10/10；`doctor-lite` pass；`run-proofs` 8/8。
+- **依赖**：P5-T24。**量级**：3 小时。
 
 ---
 

@@ -341,7 +341,7 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(result.note).toContain('broadcast')
   })
 
-  it('broadcast partial failure bubbles NAMED and keeps the reservation (宁漏不重)', async () => {
+  it('broadcast partial failure bubbles NAMED and COMMITS the id as delivered (宁漏不重)', async () => {
     const fixture = await seedTeam(makeStore())
     const deps = await makeDeps(fixture)
     deps.subagents.failOn.add(fixture.builderSessionId)
@@ -353,13 +353,20 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     expect(err.code).toBe('DELIVERY_FAILED')
     expect(err.message).toContain('builder')
     // analyst got it once; the channel was called for builder and rejected —
-    // two channel CALLS, ONE accepted delivery. The ledger KEEPS the id —
-    // retry needs a new one (宁漏不重, file header ruling).
+    // two channel CALLS, ONE accepted delivery.
     expect(deps.subagents.sends.map((s) => s.targetSessionId)).toEqual([
       fixture.analystSessionId,
       fixture.builderSessionId,
     ])
+    // P5-T25（第七轮 MINOR-2）：部分送达后调的是 **commit**，所以这个 id 在
+    // **已送达**账里（不是"保留预约"）。旧标题与旧错误文本都说成了 reservation。
     expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(true)
+    // 错误文本必须与实际账本状态一致，且补投指引点名"只补未收到的成员 + best-effort"。
+    expect(err.message).toContain('COMMITTED AS DELIVERED')
+    expect(err.message).not.toContain('keeps the reservation')
+    expect(err.message).toContain('did NOT receive it')
+    expect(err.message).toContain('BEST-EFFORT')
+    expect(err.message).toContain('under a NEW correlationId')
   })
 
   it('broadcast partial failure names the member AND counts what landed first', async () => {
@@ -431,7 +438,7 @@ describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () =
     ))
     expect(err.code).toBe('DELIVERY_FAILED')
     expect(err.message).toContain('(0 delivered before failure)')
-    expect(err.message).toContain('reservation is released')
+    expect(err.message).toContain('ROLLED BACK')
     // 账已退：同 id 可再投。
     expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(false)
 

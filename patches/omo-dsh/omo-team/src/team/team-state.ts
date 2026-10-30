@@ -743,7 +743,8 @@ export class TeamStateStore {
         memberSeats: parsed.memberSeats ?? {},
         memberCategories: parsed.memberCategories ?? {},
         processedMessageIds: Array.isArray(parsed.processedMessageIds) ? parsed.processedMessageIds.filter((x): x is string => typeof x === 'string') : [],
-        // 在途行：解析合法的 {id, at}，并**剔除过期行**（发起进程已死）。
+        // 在途行：解析合法的 {id, at, token}。**不剔除过期行**（P5-T21 起）——
+        // 过期只改变该 id 的报告态（`quarantined`），行本身保留到原 owner settle。
         inFlightMessages: (Array.isArray(parsed.inFlightMessages) ? parsed.inFlightMessages : [])
           .filter((row): row is { id: string; at: number; token?: unknown } => (
             typeof row === 'object' && row !== null
@@ -751,7 +752,8 @@ export class TeamStateStore {
             && typeof (row as { at?: unknown }).at === 'number'
           ))
           // 旧版写下的行没有 token：按空串承载（任何铸造的 token 都不会等于空串
-          // ⇒ 旧调用**无法**用它的 token 删掉这一行；TTL 会把它自然清掉）。
+          // ⇒ 任何**新**调用都无法用它的 token 删掉这一行；该行只能由原 owner 的
+          // 迟到 settle 释放，或永久占用一格预算）。
           .map((row) => ({ id: row.id, at: row.at, token: typeof row.token === 'string' ? row.token : '' })),
         briefingInjectedMembers: Array.isArray(parsed.briefingInjectedMembers) ? parsed.briefingInjectedMembers.filter((x): x is string => typeof x === 'string') : [],
       }
@@ -1216,14 +1218,14 @@ export class TeamStateStore {
    *
    * 两条规则（P5-T20 第四轮评审 MAJOR-2）：
    *   * **记账无条件**：调用方说「我投递成功了」⇒ 这个 id 必须进已送达账（幂等）。
-   *     拒绝记账会让同 id 的重投再送一次，那正是去重要防的事。唯一的超帽路径因此
-   *     是「预约已过期（TTL）但投递最终还是成功」的迟到 commit——罕见、且必须记账。
+   *     拒绝记账会让同 id 的重投再送一次，那正是去重要防的事。
    *   * **清行认 token**：在途行可能属于别的调用（同一个 id 的**不同**消息不会
    *     共用一行，但 id 被 quarantine 之后原 owner 仍可能迟到 commit）⇒ 按 id
    *     清会误删别人的行。token 不匹配 ⇒ 只记账、不动别人的行。
    *
-   * P5-T21 之后过期行**不再被剔除**，所以"迟到 commit 是唯一超帽路径"那句已
-   * 作废：commit 只是把一行从在途移到已送达，总数不变（P5-T23 注释订正）。
+   * P5-T21 之后过期行**不再被剔除**，因此**没有任何超帽路径**：commit 只是把一行
+   * 从在途移到已送达，总数不变（P5-T25 注释订正：旧注说"迟到 commit 是唯一超帽
+   * 路径"，那是"过期行会被剔除"时代的结论）。
    */
   async commitMessageDelivery(teamRunId: string, messageId: string, token: string): Promise<void> {
     this.requireState(teamRunId)
@@ -1271,8 +1273,10 @@ export class TeamStateStore {
    * 为什么需要：`processedMessageCount` 只数**已送达**，而满载判据是
    * `delivered + inFlight`——一个 lead 撞到 `MESSAGE_LEDGER_FULL` 时，光看
    * 已送达数**看不出**预算是被在途行吃掉的。更隐蔽的是**停滞在途行**：
-   * 发送者挂起/崩溃后，那一行**永不释放名额**（P5-T21 的设计取舍），却既不在
-   * 已送达账里、也不在状态面上——排障时等于隐身。
+   * 发送者挂起/崩溃后，那一行**不会自动释放名额**（P5-T21 的设计取舍——自动回收
+   * 等于把投递权交还给可能还活着的旧 owner）；它只能由原 owner 的迟到 settle
+   * 释放（迟到 rollback 归还、迟到 commit 转已送达），此前既不在已送达账里、
+   * 也不在状态面上——排障时等于隐身。
    *
    * 读**落盘账**（锁内）而不是镜像：镜像只投影已送达，在途只存在于 sidecar。
    */

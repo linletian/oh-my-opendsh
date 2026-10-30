@@ -672,10 +672,24 @@ export const VENDOR_SKILL_TEAM_ADAPTATION_NOTES: Readonly<Record<string, string>
   ].join('\n'),
   hyperplan: [
     '[oh-my-opendsh] Carrier note (hyperplan skill): the body below is upstream\'s text and',
-    'names the opencode team vocabulary. This deployment HAS a team surface, but it is not',
-    'the opencode one.',
+    'names the opencode team vocabulary. IF this session has the team_* tools (check your',
+    'tool list), their surface is NOT the opencode one.',
     '',
     TEAM_SURFACE_SHAPES_NOTE,
+    '',
+    // P5-T25（第七轮评审 MAJOR）：**第三个消费面**。`/hyperplan` 命令与 keyword 注入
+    // 都已拆弹，但**直接 `skill(name="hyperplan")` 加载**的注册正文只给了 spec
+    // replacement + absent fallback——正文的 HARD PRECONDITIONS 仍会把字面
+    // `task_send` 缺席解释成"任务组件被禁用" ⇒ STOP + 让用户 `Restart senpi
+    // without --no-omo-task`（该旗标与"重启 senpi"在本部署都不存在）。
+    'BEFORE you run the HARD PRECONDITIONS check in the body below, read its tool names',
+    'through this surface: the check asks for `task_send` (upstream spelling). IF the team_*',
+    'tools ARE in your tool list, the equivalent here is `team_send_message` and the literal',
+    'name `task_send` being absent is NOT a missing precondition. **never STOP on that check**',
+    'either way, and never recite its restart instruction: `--no-omo-task` does not exist here',
+    'and there is nothing to restart — the senpi restart line is dead. IF the team_* tools are',
+    'genuinely ABSENT, do not stop the plan: use DSH subagent dispatch (one delegation per',
+    'member) as described below.',
     '',
     'REPLACE the inline spec printed in the body below with EXACTLY this one (the body\'s',
     'spec is REJECTED by this parser: spec-level `description` and per-member `kind` are',
@@ -709,8 +723,9 @@ export const VENDOR_SKILL_TEAM_ADAPTATION_NOTES: Readonly<Record<string, string>
   ].join('\n'),
   ultrawork: [
     '[oh-my-opendsh] Carrier note (ultrawork skill): the "omo-senpi task + team tools"',
-    'section below is upstream\'s text and names the opencode vocabulary. This deployment',
-    'HAS a team surface, but it is not the opencode one — translate that section:',
+    'section below is upstream\'s text and names the opencode vocabulary. IF this session has',
+    'the team_* tools (check your tool list), their surface is NOT the opencode one —',
+    'translate that section:',
     '  * `task_send` is `team_send_message` here; `team_run_id` is `teamRunId`.',
     '  * the shared task board is `team_task_create` / `team_task_list` /',
     '    `team_task_update` / `team_task_get` — NOT `task_create` / `task_list` /',

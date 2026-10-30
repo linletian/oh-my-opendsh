@@ -454,8 +454,11 @@ export async function executeTeamSendMessage(
   //    不把 store 的内部码泄给模型。
   //
   //    P5-T19（第三轮评审 MINOR-1）：**别再说「换新 correlationId 即可继续」**——
-  //    满载是 run 的消息预算终态，换 id 不改变账长，新 id 一样被拒（评审实测
-  //    连换两次都失败）。真实恢复只有「拆队重建」，错误文本按这个口径写。
+  //    换 id 不改变账长（评审实测连换两次都失败）。
+  //    P5-T23/P5-T25 订正：满载**不一定是终态**。store 现在按「谁占着名额」分三路
+  //    给文本（全已送达=终态 / 还有 fresh 在途=暂时，等 settle 或失败释放 /
+  //    只剩停滞=原 owner 迟到 settle 才能释放）。本层只做错误族翻译，**不**再加
+  //    "只能拆队"这类绝对句。
   //    P5-T19（第三轮评审 MAJOR-1）：预约与送达**分成两态**——
   //    `reserveMessageDelivery` 的第三态 `in-flight` 是「另一个调用正在投同一个
   //    id」：既不是重复（没人证明它送到过）也不是失败。旧实现把预约当已送达，
@@ -539,9 +542,10 @@ export async function executeTeamSendMessage(
     }
   }
 
-  // P5-T20（第四轮评审 MAJOR-2）：**归属 token**。预约行可能被 TTL 剔除后由别的
-  // 调用重新预约；commit / rollback 只作用于**本 token 那一行**，否则旧调用会把
-  // 别人的新预约删掉（→ 同 id 并发重复投递）。
+  // P5-T20（第四轮评审 MAJOR-2）：**归属 token**。commit / rollback 只作用于
+  // **本 token 那一行**，否则旧调用会误删别人的行（→ 同 id 并发重复投递）。
+  // P5-T25 订正：P5-T21 之后过期行**不再被剔除**，所以"TTL 剔除后被重新预约"
+  // 这句话已不成立；token 的作用变成"原 owner 迟到 settle 时只命中自己那行"。
   const reservationToken = reservation.token
 
   // 7) 原生投递（逐目标）。residentAtSend = 投递前一刻活体观测（金丝雀的
@@ -585,7 +589,15 @@ export async function executeTeamSendMessage(
       // deliveries 此刻 = 扇出序中失败点之前已投成功的成员——随 throw 丢弃
       // 会白丢实况，拼进错误文本 `(N delivered before failure)`。
       throw new TeamMessageError(
-        `team_send_message: delivery to ${isBroadcast ? 'broadcast member' : 'member'} '${target.name}' (${target.sessionId}) failed: ${reason}${isBroadcast ? ` (${deliveries.length} delivered before failure) — ${zeroDeliveryBroadcast ? 'no member received the message, so the correlationId reservation is released; re-send under the SAME correlationId' : 'broadcast ledger keeps the reservation; re-deliver under a NEW correlationId'}` : ''}`,
+        `team_send_message: delivery to ${isBroadcast ? 'broadcast member' : 'member'} '${target.name}' (${target.sessionId}) failed: ${reason}${isBroadcast
+          ? ` (${deliveries.length} delivered before failure) — ${zeroDeliveryBroadcast
+            // P5-T25（第七轮评审 MINOR-2）：**文案必须与实际账本状态一致**。零投递
+            // ⇒ 调的是 rollback（id 还回去，可同 id 重发）；部分投递 ⇒ 调的是
+            // commit（id 已进**已送达**账）。旧文案在部分投递时说"keeps the
+            // reservation"，与 commit 直接矛盾。
+            ? 'no member received the message, so the reservation was ROLLED BACK and re-sending under the SAME correlationId is safe'
+            : `the id is COMMITTED AS DELIVERED after this partial fan-out — the ${deliveries.length} member(s) listed above already received it, so re-broadcasting would deliver the same content to them twice; re-send (BEST-EFFORT) only to the members that did NOT receive it, under a NEW correlationId`}`
+          : ''}`,
         'DELIVERY_FAILED',
       )
     }
@@ -638,7 +650,9 @@ export function createTeamSendMessageDefinition(deps: TeamMessageDeps): unknown 
       + 'A full ledger is therefore not always terminal: when the units are held by IN-FLIGHT reservations, wait for them to settle (a failed send releases its unit); when they are all DELIVERED, the run\'s budget is spent and only team_delete and a fresh run remain. '
       + 'team_status.messageLedger shows delivered / inFlight / stalledInFlight / remaining, so this is visible rather than silent. '
       + 'A failed delivery that reached NO recipient releases the id, so you may retry that same correlationId; '
-      + 'a broadcast that reached SOME recipients keeps the id and must be re-sent under a NEW correlationId.',
+      // P5-T25（第七轮评审 MINOR-2）：部分失败后 id 是**已送达**（commit 过），
+      // 不是"保留预约"；补投指引必须点名"只补未收到的成员 + best-effort + 跨 id 重复"。
+      + 'a broadcast that reached SOME recipients is committed as delivered: those members must NOT be sent it again, so a follow-up send must be BEST-EFFORT, under a NEW correlationId, and addressed only to the members that did not receive it (the ones already reached would get the content twice).',
     parameters: {
       type: 'object',
       additionalProperties: false,
