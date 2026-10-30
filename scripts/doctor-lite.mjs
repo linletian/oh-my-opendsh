@@ -294,14 +294,14 @@ async function checkCordis(cordisPath) {
   )
 }
 
-// ── check 2b: cordis.yml mounts exactly the three plugin rows (P3-T3; P4-T3 +1) ─
+// ── check 2b: cordis.yml mounts exactly the four plugin rows (P3-T3; P4-T3 +1; P5-T3 +1)
 
 /**
  * P3-T3's mount assertion: the patch overlay must insert exactly the plugin
  * rows EXPECTED_INSERT_ROW_IDS names (two at P3-T3, three since P4-T3 mounted
- * omo-commands), in mount order. The COUNT is never restated here — it comes
- * from the shared constant, which scripts/verify-concerto-static.mjs's c11 also
- * reads. A NEW check rather than
+ * omo-commands, four since P5-T3 mounted omo-team), in mount order. The COUNT
+ * is never restated here — it comes from the shared constant, which
+ * scripts/verify-concerto-static.mjs's c11 also reads. A NEW check rather than
  * more conditions inside check 2: check 2 owns the P-8 parse question ("does
  * every top-level row use the insert form"), while this one owns "which plugins
  * are mounted" — the fact every sandbox boot site (scripts/cold-start.sh,
@@ -547,6 +547,131 @@ async function validateCompositionRows(nm, rows, imp) {
   return { checked, unchecked, skipped, failures }
 }
 
+/**
+ * P5-T14 (门 4) — the REPO's own plugin rows (root cordis.yml) are a second
+ * composition surface the preset sweep above never touches: the four
+ * `@oh-my-opendsh/*` rows are mounted from this workspace, not from dsh's
+ * node_modules, so their Configs could not be swept by `resolvePluginEntry`.
+ * This sweep closes that gap and moves omo-team from "not swept at all" to
+ * the VALIDATED face:
+ *
+ *   * every plugin row's package is imported from its own `exports['.']`
+ *     (Node 24 type-stripping, the same loader the real boot uses through the
+ *     installed copy — here the repo copy is the source of truth);
+ *   * a row whose package exports a `Config` is validated with
+ *     `new Schema(row.config ?? {})` — the identical constructor-validation
+ *     contract the preset sweep applies to the 26 installed rows, and the
+ *     same shape cordis validates through `~standard.validate` at mount
+ *     (omo-team/src/team/team-row-config.ts's header carries the two-arm
+ *     contract; this sweep is arm 2's live exercise);
+ *   * a row whose package exports NO `Config` is legal only if it is on the
+ *     explicit no-schema declaration list below AND carries no `config:` key
+ *     — an undeclared no-schema row, or a no-schema row that grew config,
+ *     fails loudly instead of riding the unchecked list quietly.
+ *
+ * omo-team is PINNED to the checked side (`REPO_ROWS_WITH_SCHEMA`): the day
+ * its `Config` export disappears, this check reddens — the schema is a mount
+ * contract, not a comment. The default it validates to is READ off the
+ * schema (`new Config({}).maxMembers`), never restated here.
+ */
+const REPO_ROWS_WITH_SCHEMA = ['omo-team']
+// v1 carries no row config, by ruling: omo-agents' config face is the roster
+// + model-routes rendered into the concerto preset (its rows live there and
+// ARE swept there); omo-hooks' and omo-commands' knobs are boot constants,
+// not row config. If one of them ever gains a Config export it moves to the
+// checked side automatically (the sweep derives, this list only declares the
+// absence it expects).
+const REPO_ROWS_NO_SCHEMA = ['omo-agents', 'omo-hooks', 'omo-commands']
+
+async function validateRepoPluginRows(yaml) {
+  const failures = []
+  const checked = []
+  const noSchema = []
+  let rows
+  try {
+    rows = yaml.load(readFileSync(join(REPO_ROOT, 'cordis.yml'), 'utf8'), {
+      schema: yaml.JSON_SCHEMA.extend(makeJsExprType(yaml)),
+    })
+  } catch (error) {
+    return { checked, noSchema, failures: [`root cordis.yml failed to parse: ${error.message}`] }
+  }
+  // The patch file's rows nest under `insert:` (the patch entry form — see
+  // cordis.yml's header), unlike the rendered preset whose groups nest under
+  // `config:`; flattenRows only knows the second shape, so the walk here
+  // covers both. The `- insert:` wrapper objects carry no `name` and fall
+  // out of the plugin filter naturally.
+  const flat = []
+  const walk = (node) => {
+    if (!Array.isArray(node)) return
+    for (const row of node) {
+      if (typeof row !== 'object' || row === null) continue
+      flat.push(row)
+      if (Array.isArray(row.insert)) walk(row.insert)
+      if (Array.isArray(row.config)) walk(row.config)
+    }
+  }
+  walk(rows)
+  const pluginRows = flat.filter((row) => typeof row?.name === 'string' && row.name.startsWith('@oh-my-opendsh/'))
+  for (const row of pluginRows) {
+    const id = String(row.id ?? row.name)
+    const pkgDir = join(REPO_ROOT, 'patches', 'omo-dsh', id)
+    let entry
+    try {
+      const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
+      const exported = typeof pkg.exports === 'string' ? pkg.exports : pkg.exports?.['.']
+      if (typeof exported !== 'string') {
+        failures.push(`${id}: package.json exports['.'] is missing — the row cannot resolve its entry`)
+        continue
+      }
+      entry = pathToFileURL(join(pkgDir, exported)).href
+    } catch (error) {
+      failures.push(`${id}: cannot resolve repo package entry — ${error.message}`)
+      continue
+    }
+    let mod
+    try {
+      mod = await import(entry)
+    } catch (error) {
+      failures.push(`${id}: import failed — ${String(error.message ?? error).slice(0, 160)}`)
+      continue
+    }
+    const Schema = mod.Config ?? mod.default?.Config
+    if (typeof Schema !== 'function') {
+      if (!REPO_ROWS_NO_SCHEMA.includes(id)) {
+        failures.push(`${id}: exports no Config schema and is not on the declared no-schema list — declare it (REPO_ROWS_NO_SCHEMA) or ship a Config`)
+        continue
+      }
+      if (row.config !== undefined) {
+        failures.push(`${id}: no-schema row carries a config: key — a config needs a schema to answer it`)
+        continue
+      }
+      noSchema.push(id)
+      continue
+    }
+    if (REPO_ROWS_NO_SCHEMA.includes(id)) {
+      failures.push(`${id}: declared no-schema but now exports a Config — move it to REPO_ROWS_WITH_SCHEMA`)
+      continue
+    }
+    try {
+      const validated = new Schema(row.config ?? {})
+      // Read the default OFF the schema — the message reports what the
+      // contract produced, never a hand-copied number.
+      checked.push(`${id}(maxMembers=${JSON.stringify(validated.maxMembers ?? null)})`)
+    } catch (error) {
+      failures.push(`${id}: ${error.name ?? 'Error'}: ${String(error.message ?? error).slice(0, 240)}`)
+    }
+  }
+  for (const requiredId of REPO_ROWS_WITH_SCHEMA) {
+    if (!checked.some((entry) => entry.startsWith(`${requiredId}(`))) {
+      failures.push(`${requiredId}: pinned to the validated face (REPO_ROWS_WITH_SCHEMA) but did not reach it — its Config export or its cordis.yml row is gone`)
+    }
+  }
+  if (pluginRows.length === 0) {
+    failures.push('root cordis.yml carries no @oh-my-opendsh/* plugin rows — the repo overlay itself is broken')
+  }
+  return { checked, noSchema, failures }
+}
+
 async function checkSubagentConfig(check1) {
   if (check1.status === 'fail' && check1.meta?.dshMissing === true) {
     return check(
@@ -618,6 +743,23 @@ async function checkSubagentConfig(check1) {
         [
           ...sweep.failures,
           'this is the exact schema cordis applies lazily at session composition — a broken row fails here instead of at first session',
+        ],
+      )
+    }
+    // P5-T14 (门 4): the repo's OWN plugin rows (root cordis.yml) ride the
+    // same validated face — omo-team's exported Config is constructed here with
+    // the row's config (absent → defaults), the three sibling packages are
+    // held to their declared no-schema ruling. See validateRepoPluginRows'
+    // header for the two-arm contract it exercises.
+    const repoSweep = await validateRepoPluginRows(yaml)
+    if (repoSweep.failures.length > 0) {
+      return check(
+        'subagent-config',
+        'fail',
+        `${String(repoSweep.failures.length)} repo plugin row(s) rejected on the root cordis.yml sweep`,
+        [
+          ...repoSweep.failures,
+          'root cordis.yml rows mount from this workspace — their Configs are the packages own exports, validated here with the same constructor contract cordis applies at mount',
         ],
       )
     }
@@ -740,7 +882,12 @@ async function checkSubagentConfig(check1) {
         + (sweep.unchecked.length === 0
           ? ''
           : `; unchecked (package exports no Config schema): ${sweep.unchecked.join(', ')}`)
-        + (sweep.skipped.length === 0 ? '' : `; skipped: ${sweep.skipped.join(', ')}`),
+        + (sweep.skipped.length === 0 ? '' : `; skipped: ${sweep.skipped.join(', ')}`)
+        // P5-T14: the repo-overlay half of this check's evidence — validated
+        // plugin rows (omo-team, with the default READ off its schema) and
+        // the declared no-schema siblings, both derived from the sweep, no
+        // hand-copied counts.
+        + `; repo plugin rows (root cordis.yml): validated=${repoSweep.checked.join(',') || 'none'} no-schema-by-declaration=${repoSweep.noSchema.join(',') || 'none'}`,
       sweep.unchecked.length === 0
         ? []
         : [`these rows carry no schema and were NOT verified: ${sweep.unchecked.join(', ')}`],

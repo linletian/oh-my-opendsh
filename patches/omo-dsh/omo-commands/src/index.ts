@@ -78,7 +78,7 @@ import {
   createUlwExecuteCommand,
 } from './commands/ulw-execute.ts'
 import {
-  HYPERPLAN_DESCRIPTION,
+  HYPERPLAN_DESCRIPTION_REGISTERED,
   createHyperplanCommand,
 } from './commands/hyperplan.ts'
 import {
@@ -205,7 +205,7 @@ export type CommandRegistrar = (
  * for what upstream declared, and `input` is omitted entirely when
  * `argumentHint` is `null` — which is what dsh means by "no input descriptor
  * advertised", and is exactly the upstream state of `remove-ai-slops`
- * (commands.ts:85-92 carries no `argumentHint`).
+ * (commands.ts:83-92 carries no `argumentHint`).
  *
  * NOTE — `ulw-plan` MUST NEVER BE REGISTERED HERE, by any task. Registering a
  * same-named command would shadow the `dsh-tool-skill` SKILL_GESTURE bridge
@@ -236,13 +236,14 @@ export const COMMAND_REGISTRARS: Record<string, CommandRegistrar> = {
   'ulw-execute': (ctx, entry) => {
     registerPortedCommand(ctx, entry, ULW_EXECUTE_DESCRIPTION, createUlwExecuteCommand())
   },
-  // P4-T14 — the DEGRADED hyperplan. `ctx`-free like the other three: it needs no
-  // service, and unlike `/ulw-execute` it is NOT an H-32 activation surface at all
-  // (its template carries no R-10 marker). It is a plain followup instruction that
-  // loads a vendored skill, so the roster-contract rewrite lives entirely in the
-  // template file and nothing has to cross package boundaries.
+  // P4-T14 — the hyperplan. P5-T13 起它**不再 ctx-free**：注册仍是一次性
+  // （description 用形态中立串，命令列表不许单向许诺），但 handler 拿到 ctx 后
+  // 每次调用现读 omo-team 的在场探测脸（`omoTeamHyperplanTeamFace`），在场渲染
+  // 完整对抗评审环、缺席渲染 P4 降级正文（`stop-continuation` 的 Q-5 惰性
+  // ctx.get 纪律逐字沿用；跨包零 import，服务名交叉等值由单测钉死）。它仍不是
+  // H-32 激活面（模板不产 R-10 marker），两形态的正文都住在模板文件里。
   hyperplan: (ctx, entry) => {
-    registerPortedCommand(ctx, entry, HYPERPLAN_DESCRIPTION, createHyperplanCommand())
+    registerPortedCommand(ctx, entry, HYPERPLAN_DESCRIPTION_REGISTERED, createHyperplanCommand(ctx))
   },
   // P4-T8 — the ONLY command that talks to another plugin, and the only entry that
   // passes `ctx` itself instead of a command module's factory: the handler resolves
@@ -257,8 +258,13 @@ export const COMMAND_REGISTRARS: Record<string, CommandRegistrar> = {
   handoff: (ctx, entry) => {
     registerPortedCommand(ctx, entry, HANDOFF_DESCRIPTION, createHandoffCommand())
   },
+  // P5-T13 — remove-ai-slops 同获在场切换：handler 每次调用现读
+  // `omoTeamSlopAddendumTeamFace`（与 hyperplan 同一枚快照的另一张脸，一行
+  // 一处置），在场拼 team-mode addendum、缺席渲染 P4 主段（降级路径逐字）。
+  // description 仍是上游逐字串（该条目从 P4 起就没有形态后缀——上游那句
+  // 不含 team-mode 许诺，无需后缀；注册与 frame 两面同串）。
   'remove-ai-slops': (ctx, entry) => {
-    registerPortedCommand(ctx, entry, REMOVE_AI_SLOPS_DESCRIPTION, createRemoveAiSlopsCommand())
+    registerPortedCommand(ctx, entry, REMOVE_AI_SLOPS_DESCRIPTION, createRemoveAiSlopsCommand(ctx))
   },
 }
 

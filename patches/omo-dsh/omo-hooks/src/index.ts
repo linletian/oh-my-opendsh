@@ -126,12 +126,16 @@ import {
   formatManifestValidationFailedLine,
 } from './boot-markers.ts'
 import {
+  OMO_TEAM_MEMBER_QUERY_SERVICE,
   STOP_CONTINUATION_GUARD_DISPOSED_EVENT,
   STOP_CONTINUATION_GUARD_ID,
   STOP_CONTINUATION_SERVICE,
   createStopContinuationGuard,
   handleSessionDisposed,
+  type StopContinuationAgentsLike,
   type StopContinuationJobsLike,
+  type StopContinuationSubagentsLike,
+  type StopContinuationTeamQueryLike,
 } from './services/stop-continuation-guard.ts'
 import { registerBashFileReadGuard } from './hooks/bash-file-read-guard.ts'
 import { registerTodoContinuationEnforcer } from './hooks/todo-continuation-enforcer.ts'
@@ -637,6 +641,17 @@ function provideStopContinuationGuard(ctx: HooksRegistrationContext): void {
     // a service that mounts after this fiber — or a profile that never mounts one —
     // is handled correctly in both directions. The H-11 deferred-get precedent.
     readJobs: () => readJobsService(ctx),
+    // P5-T9 · the team branch's three seams, SAME lazy discipline (and the same
+    // reason): omo-team publishes `omoTeamMemberQuery` on ITS own fiber, which
+    // may mount after this one — a handle frozen at apply() would either miss it
+    // forever or pretend a never-mounted profile has it. Cross-package honesty:
+    // the service NAME is the only thing this file knows about omo-team (the
+    // consumer-side spelling of the R-5 pair; the provider lives at
+    // omo-team/src/team/team-stop-continuation.ts and the two names' equality
+    // is pinned by tests/omo-hooks/stop-continuation-team.test.ts).
+    readTeamQuery: () => readTeamQueryService(ctx),
+    readSubagents: () => readSubagentsService(ctx),
+    readAgents: () => readAgentsService(ctx),
     log,
   })
   // REVERSIBILITY: both registrations are fiber-owned by construction, so nothing
@@ -662,4 +677,41 @@ function readJobsService(ctx: HooksRegistrationContext): StopContinuationJobsLik
   const candidate = jobs as Partial<StopContinuationJobsLike>
   if (typeof candidate.list !== 'function' || typeof candidate.kill !== 'function') return undefined
   return candidate as StopContinuationJobsLike
+}
+
+/**
+ * P5-T9 · 解析 omo-team 的只读成员查询服务（可选能力，`readJobsService` 的
+ * 同族镜像）：形状校验只点到 guard 消费为止（`liveMembersOfLead` 一枚方法）。
+ * `undefined` = omo-team 未挂载/服务未发布 = guard 的 team 分支打自己的降级
+ * NOTE，而不是错误——「有队就停」，没队/没面就如实报零（同一份契约的两半）。
+ */
+function readTeamQueryService(ctx: HooksRegistrationContext): StopContinuationTeamQueryLike | undefined {
+  const query = ctx.get?.(OMO_TEAM_MEMBER_QUERY_SERVICE)
+  if (typeof query !== 'object' || query === null) return undefined
+  const candidate = query as Partial<StopContinuationTeamQueryLike>
+  if (typeof candidate.liveMembersOfLead !== 'function') return undefined
+  return candidate as StopContinuationTeamQueryLike
+}
+
+/**
+ * P5-T9 · 解析原生 `subagents` 服务的 continuable 臂（guard 只消费这两枚；
+ * 形状校验同样只点到消费为止）。宿主核心服务，`ctx.get` 按名解析——与
+ * `jobs` 同一扇门，不声明 inject（guard 的读取发生在 stop() 时刻，全部服务
+ * 早已就位；apply 期抢依赖反而会把本纤 parked）。
+ */
+function readSubagentsService(ctx: HooksRegistrationContext): StopContinuationSubagentsLike | undefined {
+  const subagents = ctx.get?.('subagents')
+  if (typeof subagents !== 'object' || subagents === null) return undefined
+  const candidate = subagents as Partial<StopContinuationSubagentsLike>
+  if (typeof candidate.interrupt !== 'function' || typeof candidate.drainContinuableChildren !== 'function') return undefined
+  return candidate as StopContinuationSubagentsLike
+}
+
+/** P5-T9 · 解析活体 `agents` 注册表（guard 只在 stop() 时刻 `get` 一下 lead）。 */
+function readAgentsService(ctx: HooksRegistrationContext): StopContinuationAgentsLike | undefined {
+  const agents = ctx.get?.('agents')
+  if (typeof agents !== 'object' || agents === null) return undefined
+  const candidate = agents as Partial<StopContinuationAgentsLike>
+  if (typeof candidate.get !== 'function') return undefined
+  return candidate as StopContinuationAgentsLike
 }

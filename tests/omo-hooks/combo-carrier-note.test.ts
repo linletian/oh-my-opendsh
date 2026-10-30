@@ -78,6 +78,9 @@ function mainFacts(text: string): KeywordStepFacts {
     sessionOrigin: undefined,
     descriptor: { found: false, mode: undefined, persona: undefined, label: undefined },
     config: resolveConfig(),
+    // P5-T16（评审 MAJOR-4）：team 槽的在场闸。本文件只测 combo 载体注记，
+    // 但 facts 的键集是完整的（少一个键 = TS 红），故显式给出载体在场。
+    teamSurfacePresent: true,
   }
 }
 

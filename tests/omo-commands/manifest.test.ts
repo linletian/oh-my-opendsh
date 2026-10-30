@@ -282,7 +282,7 @@ describe('P4-T2 COMMAND_MANIFEST — spot checks (hard-coded against phase4-comm
     // 完整对抗评审环误当成本阶段的承诺。
     expect(entry?.effectSummary).toContain('team_create')
     expect(entry?.effectSummary).toContain('降级')
-    expect(entry?.e2eScenario).toBe('hyperplan-degraded-noted')
+    expect(entry?.e2eScenario).toBe('hyperplan-team-mode-full-ring')
   })
 
   it('④ stop-continuation is the C-05 row: template + the 3-file guard tree, no args', () => {
@@ -330,7 +330,8 @@ describe('P4-T2 COMMAND_MANIFEST — spot checks (hard-coded against phase4-comm
     // 上游 commands.ts 该条目无 argumentHint → null。
     expect(entry?.argumentHint).toBeNull()
     expect(entry?.agentBinding).toBeNull()
-    // D-03：team-mode addendum 段不移植（Phase 5）——摘要须保留这条边界。
+    // D-03 的终态：team-mode addendum 段 P4 不移植、P5-T13 在场时拼接——
+    // 摘要须始终点名这段 addendum（边界事实换形态，不许消失）。
     expect(entry?.effectSummary).toContain('team-mode addendum')
     expect(entry?.e2eScenario).toBe('remove-ai-slops-driven')
   })

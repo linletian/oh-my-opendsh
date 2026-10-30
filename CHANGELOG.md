@@ -2,6 +2,217 @@
 
 ## Unreleased
 
+### Phase 5 close-up (P5-T15, 2026-10) — weak-form settle pins + doctor-lite mutation evidence + notices truth
+
+- test(e2e): `settleReachedChildren` — the weak form `settleReached !== false` (pre-existing since
+  T5, flagged by the T14 review as always-passing: `undefined` rode through and `true` only echoed
+  the hook's boolean) is hardened to named settle evidence in BOTH team analyzers: strict equality
+  pins that the settle hook really ran and returned true (hook removed/renamed = red), and the
+  durable settle lines are re-read off the frozen final log — every member session carries a
+  `turn/end reason.kind='completed'` row, and `team-nested-create-denied` additionally re-pins the
+  lead's durable `teamRunId` tool/result row (the denial text never carries that substring, so the
+  two axes cannot collapse). Both scenarios green on the real host; all fabricated channels green.
+- test(gate): doctor-lite check 4's T14 repo-row arms got their mutation evidence — four legs
+  red→green (`config:` on a declared-no-schema row; `omo-team` Config export stripped →
+  `REPO_ROWS_WITH_SCHEMA` pin; `omo-team` cordis.yml row dropped → same pin, row-gone half;
+  `omo-agents` sprouting a Config → the declared-no-schema flip arm), restores sha256-verified
+  (`.omo/evidence/p5t15/mutation-gate4-doctor-lite.log`).
+- docs(notices): THIRD_PARTY_NOTICES.md team-core tally corrected against the manifest —
+  `verbatim` 37→**7** / `已修改` 7→**37** / `deviations` 13→**17**: the T8b import-wall completion
+  flipped 30 rows to `modified` (mechanical `.ts`/`/index.ts` specifier completion, semantically
+  zero-change, machine-proven) and the manifest flipped honestly then; the table never followed
+  until this re-read. All 47 rows now agree origin-for-origin with `VENDOR-MANIFEST.json`;
+  vendor-manifest drift + `verify-licenses` re-run green.
+- feat(manifest): the last six `pending` rows — `vendor-team-core-types` / `-member-parser` /
+  `-team-registry` / `-team-tasklist` / `-team-state-store` / `-closure` — flip to **`ported`**
+  under the refined flip rule (arbitration: the row's own semantics landed AND its named e2e
+  scenario is green — bytes vendored at T8a, consumption wired at T8b, `team-task-claim` green),
+  each with a per-row delivery note in `manifest.ts` naming its vendored paths, its consuming edge
+  and its scenario. Census `pending=0 / ported=22 / recorded=2`; `pending` STAYS in the vocabulary
+  (a roster without a starting state cannot declare "not yet"). The flip's other half lands in the
+  same commit: `src/team/team-core-vendor.ts`, the **per-row vendor integrity gate** — the
+  verification set is DERIVED from each row's own `upstreamSources` (prefix stripped onto the vendor
+  tree), every file is sha256-checked against `VENDOR-MANIFEST.json` at registration, any drift
+  throws by name so that row FAILS and the census stops short, and the verified facts publish as
+  six distinct read-only cordis faces. Six registrars, one per row, so the boot census reads the
+  honest `22/24`. The whole synchronisation net moves in this commit: `boot-markers.test.ts` (pinned
+  summary line + registry table + the six published faces), `manifest.test.ts` (split / counts /
+  spot pins + a new per-row block for ⑱–㉓), `drive.mjs` (census literals, the
+  `bootCensusTwentyTwoOfTwentyFour` verdict keys, fabricated fixtures carry the six registered
+  lines), `assert-team-probe-face.mjs` — ON the sync net too: its two fabricated census literals
+  move with the flip (`pending=6, ported=16 — 16/24` → `pending=0, ported=22 — 22/24`), named
+  here so no later review reads that edit as out of scope — and the probe's derived face re-checked.
+- test(gate): **c28 — the NOTICES mirror** (`verify-concerto-static.mjs`): THIRD_PARTY_NOTICES.md's
+  team-core table is compared with `VENDOR-MANIFEST.json` row-for-row, path-for-path,
+  origin-for-origin through a CLOSED named disposition vocabulary (`verbatim`/`已修改`/`本项目新增`
+  → `verbatim`/`modified`/`project-new`; an unmapped token FAILs, never skips), with contiguous
+  `P5-n` numbering, both directions (a notices row without a manifest row, and a manifest file no
+  row names, are both red), and every count the prose prints re-read against the derived tally
+  (6 prose anchors + the Totals line + the manifest's own `counts.{verbatim,modified,projectNew,total}`).
+  The arm exists because the drift is measured, not hypothetical: the table said `verbatim 37 /
+  已修改 7` while the manifest had honestly flipped to `7/37` at T8b, and c27 only ever checked the
+  vendor tree against ITSELF — four commits carried a NOTICE that misdescribed its own vendor tree.
+  Mutation leg: flipping one row's origin reddens c28 alone
+  (`.omo/evidence/p5t15/mutation-c28-notices.log`).
+- docs(notices): **the semantic-port table the task book required** — a new section
+  `Phase 5 omo-team semantic ports (the 9 ported files — c25's ported population)` lists, in the
+  Phase 4 per-command precedent's shape (DSH file ↔ upstream path at `v4.19.4` ↔ disposition),
+  the 9 ported `omo-team` files: `team/member-validator.ts` / `team/team-spec.ts` /
+  `team/team-state.ts` / `tools/team-create.ts` / `tools/team-delete.ts` / `tools/team-message.ts`
+  / `tools/team-shutdown.ts` / `tools/team-status.ts` / `tools/team-task.ts` — row material taken
+  verbatim from each file's own attribution header and the manifest's `upstreamSources[]`; the
+  table states it is the INDEX, not the authority (headers + manifest + Q1a/Q1b evidence hold the
+  per-file detail), and names the 11 DSH-native files + `manifest.ts` (INFRA) as deliberately
+  outside it — a false upstream attribution in a NOTICE is exactly what this file exists to
+  prevent. Placed after the prompts-team section, outside c28's team-core read window; c28
+  re-checked 47↔47 green. Grammar fix rode along: three vendor-table rows (P5-20/P5-36/P5-41)
+  had the T8b completion clause glued onto the prefix without a separator — semicolons added,
+  matching the other completion rows' house style (c28 reads only the first three cells; zero
+  mirror impact).
+- test(e2e): **review-round settle hardening + fabricated settle legs** — the two remaining
+  weak-form `settleReached !== false` checks (P5-T9's `team-teardown-no-orphans` and
+  `stop-continuation-team` analyzers) hardened with the same named-pin discipline: strict
+  `=== true` (hook removed/renamed/never-fired = red) plus durable re-pins off the frozen final
+  log — teardown re-reads the dormant signature through a hoisted named helper
+  (`closedByParentInterrupt`, the very yard `memberTurnsClosedByParentInterrupt` uses, so the two
+  pins cannot drift apart), stop-continuation re-reads the quiescence shape (`laneQuiescent`:
+  `turn/start == turn/end` and `ends ≥ 1` per lane, the settle hook's own rule) plus both
+  members' non-completed closures. Fabricated reverse legs added and pinned: `teamCreateSurfaceDefectCases`
+  grows 9→10 (`settle-hook-never-ran-undefined` — the weak form's exact hole, red ONLY on
+  `settleReachedChildren`), and `team-nested-create-denied`, which had NO fabricated self-test
+  at all, gains a GOOD fixture built on the analyzer's own extraction shapes plus a one-leg
+  defect list (count pinned 1) with the same undefined leg; counts, failure messages and the
+  SELF-TEST banners all moved together (`--self-test` green, both new legs named in the banner).
+  The third scenario rode along by arbitration (the review-round MAJOR fix round): the
+  self-reported residual — `team-shutdown-handshake`'s `settleReached`, once left as
+  "untouched, for the arbitrator's discretion" — was ruled IN and hardened with the same
+  discipline: strict `=== true` plus frozen-log re-pins of the tombstone pair (`"status":
+  "deleted"` + the named `is deleted` refusal) and the three-lane `laneQuiescent`, with the
+  scenario-specific semantics on the record (the teardown `aborted(parent)` dormant yard
+  CANNOT be borrowed here — measured at teardown both members are already idle with every
+  member `turn/end` completed; the interruption half is pinned independently by
+  `deleteInterruptedBothMembers`). The MAJOR race the arbitration named: a tombstone-only
+  settle froze while the scenario-declared tail (the native post-delete follow-up cold-waking
+  the analyst, whose receipt waking the lead's processing turn) could still be in flight —
+  measured 1-red-in-4 (lead turn 11 open 76ms before SIGTERM) — and of the two ruled fixes
+  the measurement chose quiescence-before-freeze: the deadline-at-hook-return half of ② is
+  unmeasurably narrow (instrumented run: the tail turn OPENS before the hook returns —
+  ...092222 open vs ...092546 return), and an event-cursor deadline would exempt every
+  post-refusal turn and hollow the pin; so `awaitTeamShutdownSettled` now holds `stopDsh`
+  (bounded) until all three lanes satisfy the analyzer's own yard AND the log snapshot stays
+  quiet for 2s — the frozen-face pin keeps full strength with zero exemptions, and an
+  unsettled tail reports itself red. `stop-continuation-team` audited for the same shape:
+  its hook already embeds quiescence + a 4s stability window, nothing to add. Evidence:
+  6 consecutive green handshake runs, 3 consecutive green stop runs, `--self-test` green
+  (`.omo/evidence/p5t15/race-fix-handshake-6runs.log`, `race-fix-stop-continuation-3runs.log`,
+  `race-probe-instrumented-run.log`).
+  Honest ledger stays: the real runs remain the primary evidence (the flip round's first
+  5-RED run is on the record); the fabricated legs are the no-retreat pin.
+- docs(evidence): RUN-SUMMARY corrections — the "coverage baseline's vendor row status column
+  stays as-is" claim was FALSE as written (`phase5-dev/phase5-team.md` carries no
+  `pending`/`ported` tokens at all: its column is the disposition enumeration, all terminal
+  since T1; the machine-readable row-status face is `manifest.ts`), rewritten to the fact; and
+  the supplement-② closure is now on the record — c26/c27 mutation legs were already closed at
+  P5-T14 (`.omo/evidence/p5t14/mutation-gate6.log`, legs C–I), the real gap was gate 4's
+  repo-row arms, filled by legs A–D this phase.
+- test(omo-commands): the Phase 4 per-command derivation in `commands.test.ts` read its table
+  with an UNBOUNDED slice (header → EOF), so any later table sharing the disposition vocabulary
+  rode the count — the new Phase 5 semantic-port table reddened it 5→14 on first vitest. Fixed
+  at the reader, not the notices: the slice is now BOUNDED at the next `##`/`###` heading
+  (c28's section discipline), the honest `semantic port only` phrasing in the new rows stays
+  exactly where the review required it. 78/78 green.
+
+### Phase 5 gate hardening (P5-T14, 2026-10) — relay/broadcast e2e + honest scenario rename + gates 4/6/8 extensions
+
+- rename(e2e): scenario `hyperplan-degraded-noted` → `hyperplan-team-mode-full-ring` — the sandbox
+  has mounted omo-team since T3, so the form that runs is the FULL adversarial ring; the old name
+  contradicted the fact and honest naming wins. Full-repo reference sync (omo-commands manifest row
+  + comment, `tests/omo-commands/manifest.test.ts` pin, THIRD_PARTY_NOTICES.md mapping, drive.mjs
+  scenario/script/analyze/self-test labels/banner); the coverage baseline is anchored by H-numbers,
+  not scenario names, so the baseline does NOT move (c14 arbitration note). The old name stays in
+  historical entries (this file's Phase 4 entry, phase4 task books — read-only archives).
+- test(e2e): `team-create-and-message` grew its relay/broadcast half — member→member delivery
+  relayed through the live lead (frame annotated `(relayed via lead)`, durable source still the
+  lead's `agent-message` kind) and lead-only wildcard broadcast (fan-out to both members under one
+  id, lead never receives its own), plus the member-side broadcast denial (`broadcast requires lead
+  role`, refused by name before any id is allocated — zero frames under its canary id); 11 new
+  named checks + 11 fabricated defect legs, each red ONLY on its own check; `dualLedgerDurable-
+  AcrossReboot` strengthened from substring-matching the serialized detail to reading the ledger
+  structurally (`processedMessageIds.length > 0` + both member names in `briefingInjectedMembers`).
+- feat(gate): omo-team now exports a plugin `Config` (`{ maxMembers?: number }`, default 8 = the
+  vendored `MAX_TEAM_MEMBERS`), consumed at team_create spec validation; doctor-lite check 4 gained
+  the repo's own `cordis.yml` plugin rows as a validated face (omo-team checked; the three sibling
+  packages declared no-schema BY DECLARATION with their refusal tested).
+- feat(gate): `verify-concerto-static.mjs` c25–c27 — omo-team source signature/coverage census,
+  manifest↔file-set pin, vendor existence + team-core subset terminal pin; the c14 arbitration
+  (phase5-team.md does not join COVERAGE_BASELINE_MDS) is codified as a live re-check + comment.
+- feat(gate): `run-proofs.sh` proof 8 — vendored team-core host-Node loadability (the T8b wall
+  ruling's regression net) + manifest integrity + state-machine resume shape.
+
+### Phase 5 landing (P5-T1 … P5-T13, 2026-10) — team-mode over startContinuable, fork (B)
+
+> Backfilled at the P5-T15 close-up: the phase's landing faces had no entry here except T14's.
+> One bullet per task, faces only — the task book (`docs/plans/phase5-dev/phase5-tasks.md`) and
+> `.omo/evidence/p5t*/` stay the detail authority. Historical entries untouched.
+
+- docs(research) T1: full team-face reconciliation Q-1…Q-8 on the pinned 0.2.0-rc.2 host —
+  upstream 12-tool census (read-only `git show`), activation probe, the Q-3 triple-seal chain
+  (per-member roster routing cannot close on the native spawn path), wake-canary PIN-OK 25/25;
+  **fork ruling (B)** (`.omo/evidence/p5t1/FORK.md`): omo-team self-owns the state machine and
+  creates members through `ctx.subagents.startContinuable`; the experimental team face is NOT
+  adopted (D18, shipped with T3).
+- feat T2: `@oh-my-opendsh/omo-team` package skeleton + `manifest.ts` as the single source of
+  truth (24 rows, four-value status vocabulary, `validateManifest` 12 checks); `typecheck:team`
+  joined `typecheck:libs`; license gate moved checked 56→57 with the workspace row.
+- feat T3: root `cordis.yml` gained the fourth `- insert:` row `id: omo-team` + the derived boot
+  marker line; the 3→4 count-coupling net moved ALL seven sites in one commit
+  (`EXPECTED_INSERT_ROW_IDS`, cordis-inserts.test, cold-start, drive, probe, smoke-real, header);
+  D18 + ROADMAP Phase 5 landed bilingually in the same commit.
+- feat T4: `member-validator.ts` + `team-spec.ts` as pure functions — the 11-seat terminal
+  matrix (allowlist {hephaestus, sisyphus-junior} + category aliases quick/deep), object/JSON
+  dual-arm inline spec, members 1..8, closed v1 shape, every refusal named.
+- feat T5: `team_create` — fork (B) execution face: in-memory state machine mirroring the upstream
+  RuntimeState shape, roster-seats trio (persona/toolFilter/route byte-checked against the persona
+  files), nested-create gate, first-failure rollback (failed→interrupt→drain), briefing injected
+  as its own frame (`omo-team-briefing`, never merged into the spawn prompt).
+- feat T6: `team_send_message` — lead↔member direct adjacent delivery, member↔member relayed
+  through the live lead (`(relayed via lead)`, durable carrier stays the lead's `agent-message`),
+  broadcast lead-only with named refusal, reservation-first dedup ledger (may-miss, never
+  double-deliver), 32 KB payload cap; full-segment e2e `team-create-and-message`.
+- feat T7: shutdown handshake (`team_request/approve/reject_shutdown`, incl. the fourth path —
+  the lead approving on a member's behalf) + `team_delete` (DELETABLE gate, force bypass,
+  interrupt-with-inbox-preserved, tombstone rows) + `team_status` aggregate; briefing injection
+  deduped to EXACTLY once per member.
+- vendor T8a: `patches/omo-dsh/vendor/team-core/` — the T2-arbitrated subset under the full
+  vendor playbook (`VENDOR-MANIFEST.json` per-file sha256 + `deviations[]`, prominent
+  modified-copy `NOTICE.md`, zod `^4.4.3` kept verbatim, strip-only rewrites for Node 24
+  type-stripping, 10 upstream tests carried via the `bun:test`→vitest alias).
+- feat T8b: the import-wall ruling executed — `.ts`/`/index.ts` completion across 34 files /
+  141 specifiers, semantically zero-change machine-proven (`prove-zero-semantic-change.mjs`; this
+  is what moved the manifest to 37 `modified` — see the T15 notices correction above);
+  `team_task_create/list/get/update` thin shells over the vendored tasklist; durable state-store
+  swap-in (restart resumes); the `@oh-my-opencode/team-core` workspace dependency edge registered.
+- test T9: e2e `team-teardown-no-orphans` (tombstone closure + `turn/end aborted(parent)` +
+  live-read descendants/jobs probes with the depth≥2 NEGATIVE canary) and
+  `stop-continuation-team`; the stop guard gained the team branch (`cascadeTeamMembers`:
+  per-member ancestor interrupt, one never-awaited drain, mutually exclusive marker tokens).
+- test T10: the (B)-form visibility half — drive catalog/claim-frame assertions (exactly two
+  continuable rows under verbatim `team:<run>:<name>` labels, wake-round seq anchors, handshake
+  frames at the lead) + the bidirectional probe face (`assert-team-probe-face.mjs`: present =
+  trio registration + boot-resume + `errors=0`; absent = named degradation pair, zero-marker
+  catch-all); 13 new checks each with a fabricated leg red ONLY on its own name.
+- (T11 was NOT triggered — the arbitration terminal ruled no landing; recorded for completeness.)
+- feat T12: the keyword-detector `team` slot wired — `TEAM_PATTERN` hit injects the vendored
+  `team.md` verbatim (`omo-team-keyword`), members structurally never released
+  (`SUBAGENT_ALLOWED_TYPES` stays team-free); new vendor package `prompts-team` (team.md + the
+  team-mode skill template, byte-pinned both directions; deviations N1/N9 registered, zero bytes
+  changed); e2e `team-keyword-mode`.
+- feat T13: hyperplan upgrade to the FULL adversarial ring + remove-ai-slops team-mode addendum,
+  switched by RUNTIME presence detection (`team-tool-presence.ts`, read per call, never cached at
+  apply; absent/mis-shaped/non-true all fall back byte-exact to the P4 degraded text); the N1
+  hollow-status bomb disarmed in the model-visible face; `team.md`'s opencode-carrier sentence
+  registered as the 5th `note` deviation (kept verbatim, the adaptation lives in the consumers).
+
 ### Phase 4.5 code landing (2026-10-06 … 2026-10-08) — declaration-face installer + D17 cutover + four review-fix rounds
 
 - feat(installer): `scripts/install-concerto.sh` rewritten to the declaration face — renders the preset

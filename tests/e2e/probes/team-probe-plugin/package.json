@@ -1,0 +1,11 @@
+{
+  "name": "@omo-e2e/team-probe-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "P5-T9 review-fix sandbox probe plugin: read-only descendant-tree + jobs-surface observation through native host services. Mounted only into the two T9 team scenarios via overlay insert rows; never leaves the sandbox.",
+  "license": "MIT OR SUL-1.0",
+  "exports": {
+    ".": "./index.js"
+  }
+}

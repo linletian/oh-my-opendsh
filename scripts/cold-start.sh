@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # scripts/cold-start.sh — sandboxed dsh cold-start smoke for the omo-agents
-# plugin (AC-1), the omo-hooks plugin (P3-T3) and the omo-commands plugin
-# (P4-T3). Creates a throwaway sandbox with HOME / XDG_CONFIG_HOME / DSH_HOME /
-# DSH_AGENTS_HOME redirected into it (the developer's real ~/.dsh and ~/.config
-# are never touched), installs ALL THREE packages into a fresh web profile (the
+# plugin (AC-1), the omo-hooks plugin (P3-T3), the omo-commands plugin
+# (P4-T3) and the omo-team plugin (P5-T3). Creates a throwaway sandbox with
+# HOME / XDG_CONFIG_HOME / DSH_HOME / DSH_AGENTS_HOME redirected
+# into it (the developer's real ~/.dsh and ~/.config
+# are never touched), installs ALL FOUR packages into a fresh web profile (the
 # root cordis.yml inserts one row per package — see its header), boots
 # `dsh --profile web --patch ./cordis.yml`, waits for the readiness line,
 # terminates with SIGTERM, and greps the captured log for the load markers
 # (`[omo-agents] loaded` / `[omo-hooks] loaded` / `[omo-commands] loaded` /
-# `[omo-commands] skills:`) and for plugin load errors. Exits 0 only if every
-# check is clean.
+# `[omo-team] loaded` / `[omo-commands] skills:`) and for plugin load errors.
+# Exits 0 only if every check is clean.
 #
 # Learned flags (P-8): `--profile <name>` is required; `--patch` is a ROOT
 # flag and must precede app flags (e.g. `--port`) — once the app's own flags
@@ -53,9 +54,10 @@ echo "cold-start: sandbox: $SANDBOX"
 echo "cold-start: dsh binary: $(command -v dsh)"
 dsh --version || fail "dsh --version failed"
 
-# Stage 0: fresh profile + install ALL THREE plugins into it (forwards to pnpm
-# in the sandbox profile dir; writes stay inside the sandbox). Three `plugin
-# add` calls (two since P3-T3, the third added by P4-T3): the cordis.yml overlay
+# Stage 0: fresh profile + install ALL FOUR plugins into it (forwards to pnpm
+# in the sandbox profile dir; writes stay inside the sandbox). Four `plugin
+# add` calls (two since P3-T3, the third added by P4-T3, the fourth by P5-T3):
+# the cordis.yml overlay
 # carries one insert row per package, so a profile missing any one of them cannot
 # compose the overlay at all — the boot fails naming THAT package's row.
 echo "cold-start: installing @oh-my-opendsh/omo-agents into sandbox profile '$PROFILE'"
@@ -70,6 +72,10 @@ echo "cold-start: installing @oh-my-opendsh/omo-commands into sandbox profile '$
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-commands" >>"$ADD_LOG" 2>&1 \
   || fail "dsh plugin add (omo-commands) failed (see $ADD_LOG)"
+echo "cold-start: installing @oh-my-opendsh/omo-team into sandbox profile '$PROFILE'"
+timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
+  "$REPO_ROOT/patches/omo-dsh/omo-team" >>"$ADD_LOG" 2>&1 \
+  || fail "dsh plugin add (omo-team) failed (see $ADD_LOG)"
 
 # Stage A: composition check (no boot). --dump-config prints the composed
 # tree and surfaces unmatched-patch warnings on stderr.
@@ -86,6 +92,10 @@ grep -q "name: '@oh-my-opendsh/omo-hooks'" "$DUMP_OUT" \
 # resolves (the composition-level half; the boot-marker grep below is the other).
 grep -q "name: '@oh-my-opendsh/omo-commands'" "$DUMP_OUT" \
   || fail "composed tree does not contain the omo-commands row (patch silently skipped?)"
+# P5-T3: and the fourth — the team surface only mounts when its row
+# resolves (same two halves: composition here, boot marker below).
+grep -q "name: '@oh-my-opendsh/omo-team'" "$DUMP_OUT" \
+  || fail "composed tree does not contain the omo-team row (patch silently skipped?)"
 # T14: both built-in LLM adapters our dual routing depends on (Q-3) must be
 # part of the composed tree — the composition-level half of the adapter gate
 # (the runtime-registration half lives in scripts/concerto-mode-probe.sh).
@@ -172,6 +182,15 @@ grep -q "\[omo-hooks\] loaded" "$BOOT_LOG" \
   || fail "omo-hooks load marker missing from boot log (hooks plugin never mounted?)"
 grep -q "\[omo-commands\] loaded" "$BOOT_LOG" \
   || fail "omo-commands load marker missing from boot log (command plugin never mounted?)"
+# P5-T3 adds the team half: `[omo-team] loaded: manifest <N> entries (pending=<n>,
+# ported=<n>, recorded=<n>) — <r>/<N> team surfaces registered`, where every
+# count is computed from TEAM_MANIFEST at boot (the line is assembled by
+# `formatLoadedSummaryLine` in patches/omo-dsh/omo-team/src/boot-markers.ts from
+# manifest.ts's derived half). Prefix-only grep again, same reason as above: the
+# full line is pinned by tests/omo-team/boot-markers.test.ts and re-derived by
+# scripts/concerto-mode-probe.sh.
+grep -q "\[omo-team\] loaded" "$BOOT_LOG" \
+  || fail "omo-team load marker missing from boot log (team plugin never mounted?)"
 # P4-T5: the skill delivery mechanism's own summary line. Prefix-only grep again
 # — the counts move as vendored skills change, and
 # scripts/concerto-mode-probe.sh is where the full line is pinned (derived from

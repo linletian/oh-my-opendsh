@@ -204,7 +204,7 @@ describe('P4-T3/T6/T8 the real mount: three commands register, the pending three
 
   it('registers the five ported commands with their measured descriptions and hints', () => {
     // `input.hint` comes from the manifest row's `argumentHint` (one fact, one
-    // place). `remove-ai-slops` has NO hint upstream (commands.ts:85-92) and so
+    // place). `remove-ai-slops` has NO hint upstream (commands.ts:83-92) and so
     // no `input` member at all — asserted as `undefined`, not as an empty string.
     const { context } = runLoop(COMMAND_MANIFEST, COMMAND_REGISTRARS)
     expect(context.registered.map((entry) => [entry.name, entry.hint])).toEqual([
@@ -216,13 +216,15 @@ describe('P4-T3/T6/T8 the real mount: three commands register, the pending three
     ])
     expect(context.registered.map((entry) => entry.description)).toEqual([
       // ulw-execute's and hyperplan's descriptions are upstream commands.ts:62/:110
-      // verbatim; hyperplan is the one whose description still promises team-mode,
-      // which its DEGRADED form does not provide — see templates/hyperplan.ts.
+      // verbatim as the PREFIX. hyperplan's SUFFIX changed at P5-T13: the ring now
+      // has two run-time forms (full team-mode ring while the team_* tools are live,
+      // DEGRADED roster-delegation form when they are not), so the REGISTERED string
+      // — written once at boot, read from the user-visible command list — states the
+      // SWITCH, never one side of it (HYPERPLAN_DESCRIPTION_REGISTERED). The degraded
+      // suffix string survives verbatim as the degraded-moment FRAME description
+      // (tests/omo-commands/hyperplan.test.ts pins it on the rendered frame).
       '(builtin) Start Atlas work session from Prometheus plan',
-      // MAJOR-1: upstream's sentence verbatim as the prefix, plus the degraded
-      // suffix. The registry must carry the SUFFIXED form — the user-visible command
-      // list is where an unsuffixed upstream promise would mislead.
-      '(builtin) Adversarial multi-agent planning via team-mode (5 hostile category members cross-critique, lead synthesizes) (DEGRADED here: no team-mode surface; adversarial roles run as roster delegations)',
+      '(builtin) Adversarial multi-agent planning via team-mode (5 hostile category members cross-critique, lead synthesizes) (ring form decided per invocation: the full team-mode ring while the team_* tools are live, the DEGRADED roster-delegation form when they are not)',
       '(builtin) Stop all continuation mechanisms (ralph loop, todo continuation, boulder) for this session',
       '(builtin) Create a detailed context summary for continuing work in a new session',
       '(builtin) Remove AI-generated code smells from branch changes and critically review the results',

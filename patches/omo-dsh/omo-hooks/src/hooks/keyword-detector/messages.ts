@@ -59,6 +59,7 @@ import {
   HYPERPLAN_PATTERN,
   HYPERPLAN_ULTRAWORK_PATTERN,
   ROSTER_REVIEWER_IDS,
+  TEAM_PATTERN,
   ULTRAWORK_PATTERN,
   UNMAPPED_REVIEWER_LITERALS,
   type InstructionTexts,
@@ -67,17 +68,28 @@ import {
   type KeywordType,
 } from './constants.ts'
 
-/** 两个 vendor 指令正文相对本模块的路径（P4-T4 的 shared-skills 包）。 */
+/** vendor 指令正文相对本模块的路径（P4-T4 的 shared-skills 包）。 */
 export const ULTRAWORK_SKILL_RELATIVE_PATH =
   '../../../../vendor/shared-skills/skills/ultrawork/SKILL.md'
 export const HYPERPLAN_SKILL_RELATIVE_PATH =
   '../../../../vendor/shared-skills/skills/hyperplan/SKILL.md'
+/**
+ * team 槽正文相对本模块的路径（P5-T12 的 prompts-team 包）。上游载体是
+ * `packages/prompts-core/prompts/mode/team.md`（经 `team/default.ts` 的
+ * `TEAM_MESSAGE` 引用），P5-T12 逐字 vendor 进 prompts-team 包后由这里
+ * 以同一读盘形态装载（同一 loader、同一 fail-loud 纪律）。
+ */
+export const TEAM_MD_RELATIVE_PATH =
+  '../../../../vendor/prompts-team/prompts/mode/team.md'
 
 /** 仓库相对路径（用于日志 + 单测断言；读盘走模块目录，不走仓库根）。 */
 export const ULTRAWORK_SKILL_REPO_PATH =
   'patches/omo-dsh/vendor/shared-skills/skills/ultrawork/SKILL.md'
 export const HYPERPLAN_SKILL_REPO_PATH =
   'patches/omo-dsh/vendor/shared-skills/skills/hyperplan/SKILL.md'
+/** team.md 的仓库相对路径（P5-T12；同一日志/断言用途）。 */
+export const TEAM_MD_REPO_PATH =
+  'patches/omo-dsh/vendor/prompts-team/prompts/mode/team.md'
 
 /** 本模块所在目录（`src/hooks/keyword-detector/`），由 import.meta.url 解析。 */
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
@@ -106,20 +118,29 @@ export function stripFrontmatter(text: string): string {
 }
 
 /**
- * Loads both vendored instruction bodies, once, at apply time.
+ * 加载三份 vendored 指令正文（ultrawork / hyperplan / team），一次性，apply 期。
  *
  * FAIL LOUD, NEVER IMPROVISE. A missing/unreadable vendor file returns a
  * failure result, and the listener then injects NOTHING and logs a named
  * NOTE. It never falls back to a hand-written substitute body: a silently
  * different instruction would be worse than no instruction, because the mode
  * would appear to arm while carrying text nobody reviewed.
+ *
+ * P5-T12：team.md 进同一 loader = **all-or-nothing 覆盖到第三份正文**——
+ * 半在场的 vendor 包是坏安装，诚实的启动姿态是「一个都不注入 + 具名 NOTE」，
+ * 不是 team 缺席时 ultrawork 照常武装。
  */
 export function loadInstructionTexts(read: ReadTextFile = defaultRead): LoadResult {
   const failures: LoadFailure[] = []
-  const bodies: Record<'ultrawork' | 'hyperplan', string> = { ultrawork: '', hyperplan: '' }
+  const bodies: Record<'ultrawork' | 'hyperplan' | 'team', string> = {
+    ultrawork: '',
+    hyperplan: '',
+    team: '',
+  }
   for (const [name, relativePath, repoPath] of [
     ['ultrawork', ULTRAWORK_SKILL_RELATIVE_PATH, ULTRAWORK_SKILL_REPO_PATH],
     ['hyperplan', HYPERPLAN_SKILL_RELATIVE_PATH, HYPERPLAN_SKILL_REPO_PATH],
+    ['team', TEAM_MD_RELATIVE_PATH, TEAM_MD_REPO_PATH],
   ] as const) {
     const absolute = resolve(MODULE_DIR, relativePath)
     if (!existsSync(absolute)) {
@@ -154,8 +175,10 @@ export function loadInstructionTexts(read: ReadTextFile = defaultRead): LoadResu
     texts: {
       ultrawork: bodies.ultrawork,
       hyperplan: bodies.hyperplan,
+      team: bodies.team,
       ultraworkPath: ULTRAWORK_SKILL_REPO_PATH,
       hyperplanPath: HYPERPLAN_SKILL_REPO_PATH,
+      teamPath: TEAM_MD_REPO_PATH,
     },
   }
 }
@@ -237,15 +260,84 @@ export function buildUltraworkMessage(deps: KeywordMessageDeps): string {
  * 根本不存在的 opencode 配置文件（P4-T1 已登记的配置面不一致，见
  * ../keyword-detector.ts 的 S-7）。
  */
+/**
+ * `hyperplan` 正文里那段 `team_create` 的**合规替换规格**（P5-T20 第四轮评审
+ * MAJOR-3）——逐字等于 `omo-commands/src/skills.ts` 的
+ * `HYPERPLAN_TEAM_SPEC_REPLACEMENT`（跨包禁 import，等值由交叉钉测试保证，
+ * 体例同 `OMO_TEAM_*` 服务名的 R-5 双拼写先例）。
+ *
+ * 为什么 keyword 面需要它：正文（vendored `hyperplan/SKILL.md`）的 Phase 1 让
+ * 模型 `team_create({ inline_spec: { name, description, members: [{kind, ...}] } })`
+ * ——`description` 与 `kind` 都是本仓 closed shape 的拒收字段，只「把 category
+ * 换成 quick/deep」不能让它通过解析。
+ */
+export const HYPERPLAN_TEAM_SPEC_REPLACEMENT = [
+  'team_create({ inline_spec: {',
+  '  "name": "hyperplan",',
+  '  "members": [',
+  '    { "name": "skeptic",    "category": "quick", "prompt": "<full Skeptic system prompt>" },',
+  '    { "name": "validator",  "category": "quick", "prompt": "<full Validator system prompt>" },',
+  '    { "name": "researcher", "category": "deep",  "prompt": "<full Researcher system prompt>" },',
+  '    { "name": "architect",  "category": "deep",  "prompt": "<full Architect system prompt>" },',
+  '    { "name": "creative",   "category": "quick", "prompt": "<full Creative system prompt>" }',
+  '  ]',
+  '} })',
+].join('\n')
+
 export const HYPERPLAN_CARRIER_NOTE = [
-  '[oh-my-opendsh] Carrier note: the opencode lead-team tools this workflow names',
-  '(`team_create`, `task_send`, `team_delete`) have NO equivalent in this deployment.',
-  'The nearest surface is DSH subagent dispatch: spawn the 5 members as 5 separate',
-  '`task(...)` subagent calls (categories `unspecified-low`, `unspecified-high`,',
-  '`deep`, `ultrabrain`, `artistry`; drop `deep` when the category does not resolve),',
-  "use each subagent's own session as the lane (there is no `team_run_id`: the five",
-  'returned session labels are your lane map), and treat a returned message as a',
-  '`task_send` reply. The round-3 handoff is the same `task(...)` dispatch the',
+  '[oh-my-opendsh] Carrier note: the body below is upstream\'s hyperplan text and names the',
+  'opencode lead-team tools (`team_create`, `task_send`, `team_delete`) and the opencode',
+  'category roster (`unspecified-low`, `unspecified-high`, `deep`, `ultrabrain`, `artistry`).',
+  '',
+  'IF THIS DEPLOYMENT HAS THE TEAM SURFACE (check your tool list), it is NOT the opencode',
+  'one. Translate the team calls:',
+  '  * `team_create` takes ONE argument: `inline_spec` (an object or a JSON string of one)',
+  '    whose members are `{"name":..., "category":"quick"|"deep", "prompt":...}`.',
+  '  * `task_send({to, team_run_id, message})` becomes',
+  '    `team_send_message(teamRunId=<id>, to=<member|"lead"|"*">, body=<text>)` — `body` is',
+  '    REQUIRED on this surface.',
+  '  * `team_run_id` becomes `teamRunId`.',
+  '  * The opencode categories do NOT resolve here — `quick` and `deep` are the only two',
+  '    member categories.',
+  '  * The `/hyperplan` command carries this deployment\'s adapted full adversarial ring.',
+
+  // P5-T20（第四轮评审 MAJOR-3）：**只说「换 category」不够**。正文里那段
+  // `team_create` spec 还带着 spec 级 `description` 与每个 member 的 `kind`——
+  // 本仓 closed shape 两枚都拒（`V1_UNSUPPORTED_FIELD`，先 description 后 kind），
+  // 所以 keyword 触发的 hyperplan 仍会在 Phase 1 直接失败。修法：把**整段 spec
+  // 换掉**。
+  '',
+  "REPLACE the inline spec printed in the body below with EXACTLY this one (the body's",
+  'spec is REJECTED by this parser: spec-level `description` and per-member `kind` are',
+  'closed-shape violations — `V1_UNSUPPORTED_FIELD`, first one then the other — and the',
+  'opencode categories do not resolve):',
+  '',
+  ...HYPERPLAN_TEAM_SPEC_REPLACEMENT.split('\n'),
+  '',
+  '',
+  // P5-T21（第五轮评审 MAJOR-3）：正文的 **HARD PRECONDITIONS** 段还有一条
+  // **STOP/Restart 死前置**——它要求 `team_create`/`task_send`/`team_delete`
+  // 三者齐备，否则 STOP 并告诉用户「Restart senpi without `--no-omo-task`」。
+  // 本部署字面上 `task_send` **恒不存在**（那是 upstream 拼写；本面是
+  // `team_send_message`），而 `--no-omo-task` 这个旗标与「重启 senpi」都没有。
+  // 命令路径的 `HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_SPLIT` 早就拆了这句，
+  // keyword 面此前漏了——于是模型可以照正文停下来、并把一条无效的重启指令
+  // 复述给用户。这里就地拆弹（与命令路径同一口径）。
+  'BEFORE you run the HARD PRECONDITIONS check in the body below, read its tool names',
+  'through this surface: the check asks for `task_send` (upstream spelling). IF the team_*',
+  'tools ARE in your tool list, the equivalent here is `team_send_message` and the literal',
+  'name `task_send` being absent is NOT a missing precondition. **never STOP on that check**',
+  'either way, and never recite its restart instruction: `--no-omo-task` does not exist here',
+  'and there is nothing to restart — the senpi restart line is dead. IF the team_* tools are',
+  'genuinely ABSENT, do not stop the plan: use the subagent-dispatch surface described at the',
+  'end of this note.',
+  '',
+  'IF the team_* tools are ABSENT in this session, the nearest surface is DSH subagent',
+  'dispatch: one delegation per member over this deployment\'s seats (explore, hephaestus,',
+  'oracle, librarian, plan-consultant, plan-reviewer, atlas, multimodal-looker,',
+  'sisyphus-junior, prometheus), each returned session being one lane — there is no `team_run_id`',
+  'then (the returned session labels are your lane map), and a returned',
+  'message being the reply. The round-3 handoff is the same delegation dispatch the',
   'ultrawork body describes. Everything else in the body below is verbatim.',
 ].join('\n')
 
@@ -309,6 +401,47 @@ export const ULTRAWORK_CARRIER_NOTE = [
   'is NOT a syntax error. What `-t` cannot do is choose the destination — it defers to the',
   'platform temporary dir. `-p <dir>` is the form that takes a directory (supported by both',
   'BSD and GNU), which is exactly what (1) needs; that is why (1) uses `-p`.',
+  '',
+  // P5-T19（第三轮评审 MAJOR-3）：ultrawork 正文里那段 "omo-senpi task + team tools"
+  // （`SKILL.md:373-393`）教的是 opencode 的 team 词汇——`category | subagent_type`
+  // （本面**拒** `subagent_type`，`SUBAGENT_TYPE_UNSUPPORTED`）、`task_send`、
+  // `team_run_id`、`task_create/task_list/...`（本面是 `team_task_*`）。上一轮只给
+  // 技能注册面加了注记，**keyword 注入面**没有——而 prose 命中 "ulw" 走的就是这条
+  // 路。这一段与 `omo-commands/src/skills.ts` 的 `TEAM_SURFACE_SHAPES_NOTE`
+  // **逐字相同**（跨包禁 import，等值由
+  // `tests/omo-commands/team-surface-consistency.test.ts` 的交叉钉保证）。
+  '(4) IF the team_* tools are in your tool list, THIS deployment\'s surface (not the opencode',
+  'one) is: `team_create` takes ONLY `inline_spec`',
+  '(`{ name, members: [{ name, category, prompt }] }` — spec level accepts ONLY `name`',
+  'and `members`, so NO `description`/`lead`/`leadAgentId`; a member accepts ONLY',
+  '`name`/`category`/`seat`/`prompt`, so NO `kind`/`subagent_type`); a member `category`',
+  'is exactly `quick` or `deep`; messages are',
+  '`team_send_message(teamRunId=<id>, to=<member|"lead"|"*">, body=<text>)` (`body` REQUIRED);',
+  'the task board is `team_task_create/team_task_list/team_task_update/team_task_get`',
+  '(NOT `task_create`/`task_list`/`task_update`/`task_get`); teardown is',
+  '`team_delete(teamRunId=<id>)`; there is NO `team_list`, NO on-disk team config',
+  '(`~/.omo/teams/**.json` is never read here), and `team_run_id` is spelled `teamRunId`.',
+].join('\n')
+
+/**
+ * ultrawork 注记里的 team 段——**逐字等于** `omo-commands/src/skills.ts` 的
+ * `TEAM_SURFACE_SHAPES_NOTE`（跨包禁 import；等值由交叉钉测试保证，R-5 双拼写
+ * 先例）。
+ */
+export const ULTRAWORK_TEAM_CARRIER_NOTE = [
+  // P5-T24：与 `omo-commands/src/skills.ts` 的 `TEAM_SURFACE_SHAPES_NOTE` **逐字相同**
+  // ——包括这条条件句（它会在 team 面缺席的会话里被注入，不许无条件断言在场）。
+  'IF the team_* tools are in your tool list, THIS deployment\'s surface (not the opencode',
+  'one) is: `team_create` takes ONLY `inline_spec`',
+  '(`{ name, members: [{ name, category, prompt }] }` — spec level accepts ONLY `name`',
+  'and `members`, so NO `description`/`lead`/`leadAgentId`; a member accepts ONLY',
+  '`name`/`category`/`seat`/`prompt`, so NO `kind`/`subagent_type`); a member `category`',
+  'is exactly `quick` or `deep`; messages are',
+  '`team_send_message(teamRunId=<id>, to=<member|"lead"|"*">, body=<text>)` (`body` REQUIRED);',
+  'the task board is `team_task_create/team_task_list/team_task_update/team_task_get`',
+  '(NOT `task_create`/`task_list`/`task_update`/`task_get`); teardown is',
+  '`team_delete(teamRunId=<id>)`; there is NO `team_list`, NO on-disk team config',
+  '(`~/.omo/teams/**.json` is never read here), and `team_run_id` is spelled `teamRunId`.',
 ].join('\n')
 
 /**
@@ -375,10 +508,80 @@ export function buildHyperplanUltraworkMessage(deps: KeywordMessageDeps): string
 }
 
 /**
- * 实际接线的关键词表。`team` 不在其中（枚举位预留，见 constants.ts 的
- * TEAM_PATTERN 处置注释）：type/pattern 常量在，消息工厂不在，于是它既不会
- * 命中也不会产出死指令。表放在本模块而非 constants.ts，是因为每个条目都要
- * 引用这里的 vendor 文案工厂，而 constants.ts 必须保持零 import。
+ * team 槽的**载体注记**（P5-T16 评审 MAJOR-4）——前置在 vendored 正文之前，
+ * 体例同 {@link ULTRAWORK_CARRIER_NOTE}：**正文逐字不动，差异写在正文之外**。
+ *
+ * 为什么必须有它（评审的实证）：vendored `team.md` 的**最后一句**是
+ * "If the team_* tools are absent, team_mode is disabled — tell the user to set
+ * team_mode.enabled=true and restart opencode."。本部署**没有** `team_mode.enabled`
+ * 这个配置键、没有对应配置文件、也没有"重启 opencode"这回事（本仓是 DSH；
+ * `omo-team` 的 row Config 只有 `{ maxMembers?: number }`）。逐字把这句送进
+ * 模型 = 把用户领向一个不存在的开关——**死指令**。
+ *
+ * 处置分两层（评审的两条建议都在这里落地）：
+ *   1. **在场闸**（在 keyword-detector.ts 的判定面）：载体不在场 ⇒ **不注入**
+ *      team 正文（降级为空串）——把 Phase 4 当初刻意不接线该槽的理由（"一个
+ *      没有等价载体的关键词命中后只会产出死指令"）补回来；
+ *   2. **载体注记**（本常量）：载体在场时正文照旧注入，但那句死链就地拆弹
+ *      ——把"存在配置开关"改写成"活着的 team_* 工具面就是开关"。
+ *
+ * 另外两条已登记 deviation（N1 空头终态 / N9 工具名漂移）同样逐字进模型，
+ * 按评审意见在注记里**就地拆弹**（vendor 正文保真不动，注记只声明差异）。
+ */
+export const TEAM_CARRIER_NOTE = [
+  '[oh-my-opendsh] Carrier note (team mode): three carrier-level differences from this',
+  'deployment, declared rather than rewritten — the protocol below is verbatim.',
+  '(1) THE SWITCH IS THE TOOL SURFACE, NOT A FLAG. The last sentence of the body below',
+  'points at `team_mode.enabled=true` and a host restart. This deployment has NEITHER:',
+  'there is no `team_mode.enabled` setting, no config file for it, and no host to',
+  'restart. The live `team_*` tool surface IS the switch — you received this body',
+  'because those tools are present in this session. If they are absent, team mode is',
+  'simply off and there is nothing to enable or restart.',
+  '(2) `delegate_task` IS NOT A TOOL NAME HERE. The body names it only to forbid',
+  'substituting ordinary delegation for team orchestration — that ban still holds,',
+  'whichever name this deployment\'s delegation tools use.',
+  '(3) `status:"failed"` IS NOT A TASK STATE HERE. This surface accepts exactly five',
+  'task statuses: `pending`, `claimed`, `in_progress`, `completed`, `deleted`. A task',
+  'that cannot succeed is settled `completed` with the failure reported to the lead in',
+  'the message body.',
+].join('\n')
+
+/**
+ * team 槽正文（P5-T12）= vendored `team.md` **逐字** + 一段**载体注记**（P5-T16）。
+ *
+ * 上游形状：`team/default.ts` 的 `TEAM_MESSAGE` 就是 `TEAM_MODE_PROMPT`
+ * （`prompts-core/prompts/mode/team.md` 全文，仅 `stripFinalLineFeed`），
+ * 没有 banner 包装、没有载体注记——与 ultrawork 侧同族（正文自带
+ * `[team-mode]` 标记行，本移植不再包第二层）。名册尾注同样**不挂**：
+ * team.md 不点名任何 reviewer 字面量（`momus`/`metis` 零出现），
+ * {@link needsRosterNote} 的收窄对它没有作用对象；它点名的 `delegate_task`
+ * 是**工具名漂移**（N9），登记在 vendor VENDOR-MANIFEST.json 的
+ * deviations[]，由运行期工具面自证——注记改写正文的每一条冲动都交给
+ * deviations 登记，不进正文。
+ *
+ * P5-T16（评审 MAJOR-4）的**一处形状变更**：正文**前置**一段载体注记
+ * （{@link TEAM_CARRIER_NOTE}），把 vendored 正文尾部那句指向本部署**不存在**
+ * 的配置开关与宿主重启的死链就地拆弹。**vendor 字节不动**（注记在正文之外，
+ * 与 ultrawork 侧同体例）；判别面是「在场闸」——载体不在场时**根本不注入**
+ * team 正文（keyword-detector.ts 的判定面），所以这段注记只会出现在
+ * 「team 工具确实在场」的时刻。
+ *
+ * 正文的 `team.md` 无 YAML frontmatter（实测首行即 `[team-mode]`），
+ * loader 的 stripFrontmatter 对它是 no-op；`.trim()` 剥尾部换行 = 上游
+ * `stripFinalLineFeed` 同形。
+ */
+export function buildTeamMessage(deps: KeywordMessageDeps): string {
+  return `${TEAM_CARRIER_NOTE}\n\n${deps.texts.team}`
+}
+
+/**
+ * 实际接线的关键词表（P5-T12 起四条目）。`team` 于 P5-T12 接线（此前是
+ * 枚举位预留，见 constants.ts 的 TEAM_PATTERN 注释）：type/pattern/消息
+ * 工厂三者齐备，正文 = vendored team.md 逐字。注入的 source kind 走
+ * `omo-team-keyword`（Q-8 A1），与其余三类共用的 `omo-keyword-detector`
+ * 分面（组装在 ../keyword-detector.ts）。表放在本模块而非 constants.ts，
+ * 是因为每个条目都要引用这里的 vendor 文案工厂，而 constants.ts 必须保持
+ * 零 import。
  */
 export const KEYWORD_DETECTORS: readonly KeywordDetectorSpec[] = [
   { type: 'ultrawork', pattern: ULTRAWORK_PATTERN, buildMessage: buildUltraworkMessage },
@@ -388,6 +591,7 @@ export const KEYWORD_DETECTORS: readonly KeywordDetectorSpec[] = [
     pattern: HYPERPLAN_ULTRAWORK_PATTERN,
     buildMessage: buildHyperplanUltraworkMessage,
   },
+  { type: 'team', pattern: TEAM_PATTERN, buildMessage: buildTeamMessage },
 ]
 
 /** 表里的类型集合（listener 的过滤谓词按它判定「合法类型」）。 */
@@ -396,5 +600,6 @@ export const WIRED_KEYWORD_TYPES: readonly KeywordType[] = KEYWORD_DETECTORS.map
 /** 仅供诊断：本次 load 读到的正文来源与体量。 */
 export function describeInstructionTexts(texts: InstructionTexts): string {
   return `ultrawork=${texts.ultraworkPath} (${texts.ultrawork.length} chars) + `
-    + `hyperplan=${texts.hyperplanPath} (${texts.hyperplan.length} chars)`
+    + `hyperplan=${texts.hyperplanPath} (${texts.hyperplan.length} chars) + `
+    + `team=${texts.teamPath} (${texts.team.length} chars)`
 }

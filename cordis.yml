@@ -9,23 +9,27 @@
 # ($DSH_HOME/profiles/<name>/), so the bare package name requires the package
 # to be installed into that profile (`dsh plugin --profile <name> add <dir>`).
 #
-# THREE insert rows since P4-T3 — one per plugin, in mount order. omo-agents owns
+# FOUR insert rows since P5-T3 — one per plugin, in mount order. omo-agents owns
 # the roster / persona / model-route / hard-blocks layer; omo-hooks owns the
 # Phase 3 behaviour-guardrail listeners (patches/omo-dsh/omo-hooks);
 # omo-commands owns the Phase 4 slash-command surface
-# (patches/omo-dsh/omo-commands). They are separate packages on purpose
+# (patches/omo-dsh/omo-commands); omo-team owns the Phase 5 team 组建/协调
+# semantics (patches/omo-dsh/omo-team — fork (B): self-owned team state machine
+# + member creation through ctx.subagents.startContinuable; the experimental
+# team bundle is NOT mounted, D18). They are separate packages on purpose
 # (plan §4.1: folding the hooks into omo-agents — or the commands into either —
-# would turn a roster plugin / guardrail plugin into a junk drawer), so a profile
-# must install ALL THREE (`dsh plugin --profile web add <dir>` three times —
+# would turn a roster plugin / guardrail plugin into a junk drawer; §4.2 says
+# the same of folding team semantics into any of them), so a profile
+# must install ALL FOUR (`dsh plugin --profile web add <dir>` four times —
 # scripts/cold-start.sh, tests/e2e/drive.mjs, scripts/concerto-mode-probe.sh,
 # scripts/smoke-real.mjs).
 # Measured (dsh 0.1.5-rc.1): a profile missing one package fails the whole boot
 # naming that package's own row — `plugin tree failed to load: failed to import
 # loader entry omo-hooks (@oh-my-opendsh/omo-hooks): Cannot find package …`
 # (ERR_MODULE_NOT_FOUND) — never a half-mounted overlay.
-# scripts/doctor-lite.mjs check `cordis-plugins` pins exactly these three ids.
+# scripts/doctor-lite.mjs check `cordis-plugins` pins exactly these four ids.
 #
-# ⚠️ COUNT COUPLING NET (2 → 3). Adding or removing a row here is not a
+# ⚠️ COUNT COUPLING NET (3 → 4). Adding or removing a row here is not a
 # one-file edit: every sandbox boot site installs one package per row, and three
 # places restate the list or its count — scripts/doctor-lite-core.ts
 # `EXPECTED_INSERT_ROW_IDS` (the single source the doctor check AND the static
@@ -61,3 +65,31 @@
 - insert:
     - id: omo-commands
       name: '@oh-my-opendsh/omo-commands'
+
+# P5-T3: the Phase 5 team surface, mounted as the FOURTH row (the 同步网 point
+# whose every other node moved in the same commit — see COUNT COUPLING NET
+# above). fork = (B) (.omo/evidence/p5t1/FORK.md): omo-team self-owns the team
+# state machine and creates members through ctx.subagents.startContinuable; the
+# experimental team bundle is NOT mounted — no `ctx.agentTeams`, no scoped team
+# tools (the Q-3 triple-seal chain proved per-member roster routing cannot close
+# on the native spawn path; D18 records the non-adoption). At mount the plugin
+# registers NOTHING yet — its registry is the deliberate empty-table skeleton
+# (P3-T3/P4-T3 precedent) — but it logs ONE line per boot: `[omo-team] loaded:
+# manifest <N> entries (pending=<n>, ported=<n>, recorded=<n>) — <r>/<N> team
+# surfaces registered`, which is what cold-start.sh / tests/e2e/drive.mjs /
+# scripts/smoke-real.mjs grep by prefix and scripts/concerto-mode-probe.sh
+# re-derives and pins whole-line.
+#
+# ⚠️ NO CENSUS NUMBERS HERE, AND THAT IS THE RULE — same discipline, same
+# reason as the omo-commands block above (whose pasted census went stale at the
+# first landed command and stayed stale). The invariant is only: the row-count
+# guard is `EXPECTED_TEAM_MANIFEST_COUNT` and the status vocabulary is
+# `TEAM_MANIFEST_STATUSES` (both patches/omo-dsh/omo-team/src/manifest.ts);
+# every number in that line is computed from TEAM_MANIFEST at boot and the line
+# is assembled by `formatLoadedSummaryLine`
+# (patches/omo-dsh/omo-team/src/boot-markers.ts). The authoritative values are
+# the plugin's own rendered line, pinned by tests/omo-team/boot-markers.test.ts
+# and re-derived in scripts/concerto-mode-probe.sh.
+- insert:
+    - id: omo-team
+      name: '@oh-my-opendsh/omo-team'

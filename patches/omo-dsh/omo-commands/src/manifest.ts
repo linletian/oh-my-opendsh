@@ -223,6 +223,15 @@ const MANIFEST_ROWS = [
   // 降级路径（hyperplan.ts:17：`team_*` 缺失时指引用户在 `~/.omo/omo.jsonc` 设
   // `team_mode.enabled` 并重启）——该路径指向 OMO 自己的配置面，移植时**按 DSH 现实
   // 重写为指引文案并记差异**（P4-T1 已记此更正）。完整对抗评审环 deferred → Phase 5。
+  // **P5-T13 接盘（双形态翻转）**：team_create 面已随 omo-team 挂载定型；本行
+  // 升级为**运行时双形态**——handler 每次调用现读 omo-team 的在场探测脸
+  // （`omoTeamHyperplanTeamFace`，跨包零 import，服务名交叉等值由单测钉死），
+  // 在场渲染完整对抗评审环（roster 契约按 live 词表 quick/deep + worker 席入队、
+  // 评审席队外委派，retry-without-that-member 规则逐条保留；N1 五值词表注记
+  // 进模型可见面），缺席渲染 P4 降级正文（降级路径不许死——T13 判定，反向覆盖
+  // = 单测探测缺席腿）。上游四枚 category 名**两形态都不进模型可见面**（在
+  // DSH 双双是死链）；上游 `team_mode.enabled` 兜底句仍不进正文（适配注记随
+  // prompts-team vendor deviations[] 登记，T13 仲裁增补）。
   {
     id: 'hyperplan',
     upstreamSources: [
@@ -232,8 +241,8 @@ const MANIFEST_ROWS = [
     argumentHint: '[planning-request]',
     agentBinding: null,
     effectSummary:
-      '对抗式多 agent 规划（降级形态：team_create 缺席，模板降级指引按 DSH 现实重写）',
-    e2eScenario: 'hyperplan-degraded-noted',
+      '对抗式多 agent 规划（P5-T13 双形态：team_* 工具面在场跑完整对抗评审环、team_create 等缺席时跑降级 roster 委派，运行时探测切换不硬编码）',
+    e2eScenario: 'hyperplan-team-mode-full-ring',
     // T14 翻转：handler + 模板 + 单测已落地（src/commands/hyperplan.ts、
     // src/templates/hyperplan.ts、tests/omo-commands/hyperplan.test.ts），e2e
     // 场景属 T15 —— 与另外四条已移植行**同款有意的例外**，理由逐字沿用。
@@ -242,6 +251,16 @@ const MANIFEST_ROWS = [
     // （`UPSTREAM_HYPERPLAN_DESCRIPTION`）+ 追加的降级后缀，二者不是一个字符串。
     // 该注册串同时是模型可见外框里的 Description 行 —— 理由见
     // src/commands/hyperplan.ts 的 MAJOR-1 注。
+    // **P5-T13 后缀改判**：两形态并存后，**注册串**换为形态中立后缀
+    // （`HYPERPLAN_DESCRIPTION_REGISTERED`，命令列表在 boot 时写死一次、不许
+    // 单向许诺）；**降级后缀原串**（`HYPERPLAN_DESCRIPTION`）逐字保留、降级
+    // 时刻进 frame Description 行；完整时刻进 `HYPERPLAN_FRAME_DESCRIPTION_FULL`。
+    // **P5-T14 翻名**：e2e 场景名 `hyperplan-degraded-noted` →
+    // `hyperplan-team-mode-full-ring`（诚实命名：沙箱里 omo-team 自 T3 起恒
+    // 在场，跑的是完整环，旧名与事实相反；T13 明写翻名超其授权，T14 任务书
+    // 取回）。覆盖基线 COVERAGE_BASELINE_MDS 按 H-号段行锚收录、不按场景名，
+    // 翻名不动基线（c14 仲裁注，verify-concerto-static.mjs）；场景断言已在
+    // drive.mjs 升级为完整形态断言。
     status: 'ported',
   },
   // C-05 → `/stop-continuation`（phase4-commands.md §1.1 C-05 行；H-34 接盘，原
@@ -332,6 +351,16 @@ const MANIFEST_ROWS = [
   // argumentHint 上游无 → null。
   // **不移植段已定案**（覆盖基线 §4 D-03）：`REMOVE_AI_SLOPS_TEAM_MODE_ADDENDUM`
   // 段的消费前提是 Team Mode，deferred → Phase 5（与 `/refactor` 的同名段同批）。
+  // **P5-T13 接盘（双形态翻转，D-03 的终态）**：addendum 已按 DSH 工具面移植
+  // （inline_spec 取代盘上 config、quick/deep 取代 category 臂与 subagent_type、
+  // 评审走 `plan-reviewer` roster 席队外委派、五值任务态 + N1 拆弹注记进
+  // 模型可见面）；handler 每次调用现读在场探测脸（`omoTeamSlopAddendumTeamFace`，
+  // 与 hyperplan 同一枚快照的另一张脸，跨包零 import、服务名交叉等值由单测
+  // 钉死），在场拼 addendum、缺席渲染主段（P4 行为逐字——降级路径不许死）。
+  // team.md 的 opencode 兜底句（"set team_mode.enabled=true and restart
+  // opencode"）在本部署无对应配置面——适配注记进 prompts-team vendor
+  // deviations[]（T13 仲裁增补，deviations 优先于 NOTICE-only），addendum 的
+  // MUST NOT 末条把「工具在场就是开关」写进模型可见面。
   {
     id: 'remove-ai-slops',
     upstreamSources: [
@@ -341,7 +370,7 @@ const MANIFEST_ROWS = [
     argumentHint: null,
     agentBinding: null,
     effectSummary:
-      '清除 AI 生成代码异味 + 批判性自评审（team-mode addendum 段不移植，Phase 5）',
+      '清除 AI 生成代码异味 + 批判性自评审（P5-T13 双形态：team_* 在场拼 team-mode addendum、缺席跑 Phase 1-4 主段，运行时探测切换）',
     e2eScenario: 'remove-ai-slops-driven',
     // T6 翻转，同 handoff 行的注记：代码 + 单测齐备，e2e 场景属 T7。
     status: 'ported',

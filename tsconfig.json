@@ -11,6 +11,7 @@
   "include": ["patches", "scripts", "tests", "vitest.config.ts"],
   "exclude": [
     "patches/omo-dsh/vendor/**/*.test.ts",
-    "patches/omo-dsh/vendor/shared-skills/**/*.ts"
+    "patches/omo-dsh/vendor/shared-skills/**/*.ts",
+    "patches/omo-dsh/vendor/prompts-team/**/*.ts"
   ]
 }

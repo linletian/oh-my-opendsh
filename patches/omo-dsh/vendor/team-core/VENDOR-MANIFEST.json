@@ -1,0 +1,665 @@
+{
+  "upstream": {
+    "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+    "tag": "v4.19.4",
+    "commit": "b072d279110bdda2c6ac2525d0d24dc54d16148a",
+    "path": "packages/team-core",
+    "license": "SUL-1.0 (repository root LICENSE.md; the package manifest carries no license field)"
+  },
+  "vendoredAt": "2026-10-10",
+  "package": {
+    "name": "@oh-my-opencode/team-core",
+    "version": "0.1.0",
+    "upstreamManifest": "packages/team-core/package.json",
+    "note": "Upstream package name kept unchanged as the provenance anchor (hashline-core precedent); the upstream description is kept verbatim even though this copy excludes the mailbox/worktree/layout-tmux surfaces the subset ruling carved out (see deviations[] exports-narrowed and the package NOTICE.md)."
+  },
+  "subset": {
+    "excludedUpstreamPaths": [
+      "packages/team-core/src/index.ts (root barrel: re-exports the three excluded directories)",
+      "packages/team-core/src/resolve-caller-team-lead.ts",
+      "packages/team-core/src/shell-quote.ts",
+      "packages/team-core/src/team-mailbox/** (D4 + scope guardrails)",
+      "packages/team-core/src/team-layout-tmux/** (D4 + scope guardrails)",
+      "packages/team-core/src/team-worktree/** (D4 + scope guardrails)",
+      "packages/team-core/src/team-state-store/reservation-reconciliation.ts (the only team-core file with a team-mailbox runtime dependency; `.delivering-` reservation reclaim not ported — T1 ruling)",
+      "packages/team-core/AGENTS.md (package documentation; not part of the T2-arbitrated 31-file implementation subset)"
+    ],
+    "testsNotCarried": [
+      {
+        "path": "src/team-registry/loader-member-name-normalization.test.ts",
+        "why": "imports ../resolve-caller-team-lead — outside the vendored subset; carrying the module would exceed the T2-arbitrated subset, rewriting the import would break byte fidelity"
+      },
+      {
+        "path": "src/team-registry/team-spec-input-normalizer.test.ts",
+        "why": "same: imports ../resolve-caller-team-lead — outside the vendored subset"
+      },
+      {
+        "path": "src/team-registry/paths.test.ts",
+        "why": "bun-only chai-proto matcher `toBeObject()` at upstream L189 — measured red under vitest (`Invalid Chai property: toBeObject`, 1 failed / 143 passed in the carried set on 2026-10-10); the bun:test→vitest alias (shim S-1) maps the module, not matcher names, and widening the vitest config with a matcher polyfill is outside this task's change surface; the paths module itself stays vendored verbatim"
+      },
+      {
+        "path": "src/team-state-store/resume.test.ts",
+        "why": "imports `mock` from bun:test — vitest exports no `mock` (measured: undefined), so the bun:test→vitest alias (shim S-1) cannot carry it; doubly, its 12 reservation/mailbox assertions test exactly the `.delivering-` reclaim semantics the T1 ruling did not port, which the vendored active-resume.ts deviation removes"
+      }
+    ],
+    "testFramework": "all 14 subset tests are bun:test imports; 10 run under this repo's vitest via the existing bun:test→vitest alias (shim S-1, measured green 137/137 across hashline-core + team-core on 2026-10-10) — they are carried byte-identical (D16 discipline: the root tsconfig vendor-test exclusion already covers vendor/**/*.test.ts generically and was NOT widened); team-tasklist/test-support.ts is carried verbatim as the test helper the five tasklist tests import"
+  },
+  "counts": {
+    "total": 47,
+    "verbatim": 7,
+    "modified": 37,
+    "projectNew": 3,
+    "upstreamImplementationFiles": 31,
+    "carriedTestFiles": 10,
+    "deviations": 17,
+    "deviationsByClass": {
+      "modification": 13,
+      "addition": 3,
+      "note": 1
+    }
+  },
+  "files": [
+    {
+      "path": "package.json",
+      "sha256": "383a7654564ce11067d7d9b118eb0a1c1a6ac9980c65553079cfeaf4be468b67",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/package.json",
+      "upstreamSha256": "29cdac6f8590da47658434310921ac4549b9f901b09df6d4fa7537906c4c582f"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "022ebfb88477ed80c0457a0fef115b1fabc0956d47aed634f5d917d9dcbeed43",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/tsconfig.json",
+      "upstreamSha256": "1ad96cd7e7dbe25581b6118da4e21ed58af6499dac8cc75d1a54bb2cc10d5bc1"
+    },
+    {
+      "path": "src/config.ts",
+      "sha256": "a08262710fea1ae79db00cb6f6f1828c37a88687f9b7ca8df36c6092b54e398a",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/logger.ts",
+      "sha256": "f7ac4fa02f23d2ba04c99148179c7c7bb1e6ea7085451f4f1988ea71b679f032",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/member-parser.ts",
+      "sha256": "17924266c3740462d9887cd2c6fa3561f8dbd486d469b67762f5502a23b9a760",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/member-parser.ts",
+      "upstreamSha256": "9650ae072f329871c228f034d79aa19c8b3de2d8c5e72bc04fed0ad10d3a4e14"
+    },
+    {
+      "path": "src/plain-record.ts",
+      "sha256": "a41fdc938f8236dbf9e232061fe0a6f87d090ba8bbbfa36e425b6f8247b4ab8c",
+      "origin": "project-new",
+      "note": "review-round header wording fix only (the only project-written *source* file; records are project-new, not source) — the ported upstream expression below the header is untouched; hash re-pinned to the current bytes"
+    },
+    {
+      "path": "src/session-client.ts",
+      "sha256": "8b58af6414529904996e66b1c3127328defd2532c67ca43332708a19d3f09489",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/team-registry/caller-team-lead.ts",
+      "sha256": "29d9671273255a20e397f8a57b3fdbaf9901dfda48f11878743ca67b81c2f5a0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/team-registry/index.ts",
+      "sha256": "8a8e6247d86d86c68ca0d122db6c76b80a076ab6495e12f8e24ea85d959d6d8e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/index.ts",
+      "upstreamSha256": "3d865f220587028317b638412726eb2e71d416273a7ff499bfc152e4911f36f2"
+    },
+    {
+      "path": "src/team-registry/loader.test.ts",
+      "sha256": "9338b096c5157791674a69cfe39fdc64ff0806f76eed0a96e3c3611c0b1ad36f",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/loader.test.ts",
+      "upstreamSha256": "c4ebcc36bb3604a3820f9a477dd5374fcfb6e5b5d0780cf7ba4a3c4a4a8fbaff"
+    },
+    {
+      "path": "src/team-registry/loader.ts",
+      "sha256": "33c45202d3419536039baa2a2fbbec6c03a67bb581434c7d9c744efd00c3ecb0",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/loader.ts",
+      "upstreamSha256": "03c102376577314f05f3d37b679261e5965528eddcb130ba65d18b428cc012a8"
+    },
+    {
+      "path": "src/team-registry/paths.ts",
+      "sha256": "5f27869f02eec06d98015cda44f68a3b7af7d2be953af7810da8d66d5a1722e0",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/paths.ts",
+      "upstreamSha256": "4ecd8282a8b254ec237a1b0442a94d4619cdabdc4057b6fc9a90e2d361ed64de"
+    },
+    {
+      "path": "src/team-registry/team-spec-input-normalizer.ts",
+      "sha256": "e0d8d0fa4dd6b8e510e911fee4bbb46f839507a54fd266677cda6d63f70fb0dd",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/team-spec-input-normalizer.ts",
+      "upstreamSha256": "8efe56bedb3f12966b9588815c0915fe4349f2db303992db4d76e51e8b1358e7"
+    },
+    {
+      "path": "src/team-registry/validator.test.ts",
+      "sha256": "b05cdb6aecd91be2dc1aa79dc86617d64af378a5ef744d46fad027cb07c29a0d",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/validator.test.ts",
+      "upstreamSha256": "091314441c92eba612a0eb04e23b9f25c57c7e33610f953efa04151e16b5fe25"
+    },
+    {
+      "path": "src/team-registry/validator.ts",
+      "sha256": "a815d85c03ab9f565da0fe320d564a66d812abd5c368a368bde7758cb2a63e0c",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-registry/validator.ts",
+      "upstreamSha256": "2645eabe3e6ec6054e526641fba4fe141ba8f1902f5b3cd5d76ebf5bae895186"
+    },
+    {
+      "path": "src/team-state-store/active-resume.ts",
+      "sha256": "5868faf5cc427319f1cbb41b6c755cc9c1c37b1bce9acb6da755038141c158e1",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/active-resume.ts",
+      "upstreamSha256": "57660b10521489a4a62b4a247ac4d6d154e47d6f71cd9bddb554a2e2ffeea65e"
+    },
+    {
+      "path": "src/team-state-store/creating-resume.ts",
+      "sha256": "d214274e5f4ac3b860c14d322985774d8a5e4a541e29fcdf0e206c8585962469",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/creating-resume.ts",
+      "upstreamSha256": "2a583f20a7b049f620c6c3f64c2ae6dbc78cf06d5dedb35ee775d7cfe5ff8cab"
+    },
+    {
+      "path": "src/team-state-store/deleting-resume.ts",
+      "sha256": "5b0a41295d8cfd52b910f6c9eff7b94ffaf6c65ed2235c704f4dda872fcf5720",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/deleting-resume.ts",
+      "upstreamSha256": "bdff3656c30466bf02050a4c38b1d6c032a4da8e5c064d1e5de15b2efb0e7c37"
+    },
+    {
+      "path": "src/team-state-store/error-normalization.ts",
+      "sha256": "678b11761e9d61cc7714e75d4d2ad48c7ed4980a71a3ba41418d397a4a0ebb14",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/team-state-store/index.ts",
+      "sha256": "c9ed478461bee830cd003be7ee897ea2c6f17a465e1eac7de167c9483d16edba",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/index.ts",
+      "upstreamSha256": "105ebf318cdc5fab61b7609d5765b978d2b1fe1aed41d1fc2515d964d827c8ab"
+    },
+    {
+      "path": "src/team-state-store/locks.test.ts",
+      "sha256": "14f8f0b61bd24d25e4c2454287fee0b18f6854781080f7fec872c0241b0c019d",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/locks.test.ts",
+      "upstreamSha256": "8e378fb016862cebb2e411d7c7e4304d0935664ea71be9b713e6ecb69adb09cd"
+    },
+    {
+      "path": "src/team-state-store/locks.ts",
+      "sha256": "4970590843d53376561e318808b587d35644a3fba00d94e6f10dee1a249ce88e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/locks.ts",
+      "upstreamSha256": "9c53a04e19c33406806d89c55ee79e431b750cfdf056bb35e5b91c26c7e96e16"
+    },
+    {
+      "path": "src/team-state-store/resume-report.ts",
+      "sha256": "5ce078e7e558f6ae01bac2471af9cc2fdb3d8c032af50b5655a15785128132f8",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/team-state-store/resume.ts",
+      "sha256": "e5820c4ca209d8036fc8c756fb14a52ff37ccae50d650e8929b42fb1f770d444",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/resume.ts",
+      "upstreamSha256": "85e646115b84a0338691066559f7bcf4b2b0e7b0dab63f5d10875ab657a25b8e"
+    },
+    {
+      "path": "src/team-state-store/runtime-cleanup.ts",
+      "sha256": "3539f084a48c972358989ead5b1706abe98bf5559173b120a7f9ff410845ebb2",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/runtime-cleanup.ts",
+      "upstreamSha256": "f5ce9e0768f0c89207f70c86791dcf8621c31f372c1be22b5bfd511b02b90d44"
+    },
+    {
+      "path": "src/team-state-store/session-liveness.ts",
+      "sha256": "60b8452854dd915d2272f36ce8cc3f1918504786333d657ed40966ea1a2808a9",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/session-liveness.ts",
+      "upstreamSha256": "3d6203f3d293e0c7802c5206b34c083d67a4061ff1c17c41b90854f8fefd2317"
+    },
+    {
+      "path": "src/team-state-store/store.test.ts",
+      "sha256": "e3d3c855f78384bf2b91989f628610bd70e52b7023b4ded35fd9468548b0767f",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/store.test.ts",
+      "upstreamSha256": "02617be548bb65fa117be825e41010bae84571143e887cc10a8996cd255cc5da"
+    },
+    {
+      "path": "src/team-state-store/store.ts",
+      "sha256": "f2a7b38fbcf06e8ee383cf231f0ecc06bcb7dcbe41d87d684eb65d37462a0ddc",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/store.ts",
+      "upstreamSha256": "29d44fa4e4bf12a669ec6459f0b209169756f92f6d5d184618c11edba6563440"
+    },
+    {
+      "path": "src/team-state-store/worker-resume-status.ts",
+      "sha256": "73f6c335d36a4618330059ac95b11780b5a12bb78ad8051b3a6288571b8e8d96",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-state-store/worker-resume-status.ts",
+      "upstreamSha256": "4c46dee99282afc8467a6964b46cee36bcfeabcb23bb7361d9f98680599f396b"
+    },
+    {
+      "path": "src/team-tasklist/claim.test.ts",
+      "sha256": "3297d38172b1e0a084ba4896fdaea5120619d37ffd5553886278ad6aead53f0d",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/claim.test.ts",
+      "upstreamSha256": "84946ee0dfe99ce602417a3cd98a8360d8db76383fd98ef3f7f8bec2a872a3e3"
+    },
+    {
+      "path": "src/team-tasklist/claim.ts",
+      "sha256": "b4e2affb13ebe1454c663901bf95172e9d380a4fb06fc924f619c4689d124e01",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/claim.ts",
+      "upstreamSha256": "603cbcf41e042e1f7a0de2ec5c134f89d5019370cba7f5277ef10a8d2e12419f"
+    },
+    {
+      "path": "src/team-tasklist/dependencies.test.ts",
+      "sha256": "afb64048c0af1bc6ee3854fc0164720f908019f6bf33e2227b3a732d9583705d",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/dependencies.test.ts",
+      "upstreamSha256": "4dc7a4d75980d522a1675db475d81b0432fdacb28bd54a14db62760957a77dc2"
+    },
+    {
+      "path": "src/team-tasklist/dependencies.ts",
+      "sha256": "2aff010e5359a7f1b3f3918c9212509db7a5efbc38bbe53ce26a1889a980736b",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/dependencies.ts",
+      "upstreamSha256": "f49f6ac874cac78b2b5718becce471a588678b6bbf1ba15031e32e62778b1e86"
+    },
+    {
+      "path": "src/team-tasklist/get.test.ts",
+      "sha256": "d3fe2c98df03d0dc0141a1e82e9d7ca9dd8f7d0cfd9eaf3c077340107c138841",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/get.test.ts",
+      "upstreamSha256": "1d372bc47bb838bf45dd810fb3551f9b12aa8db4f0f20d6de35cd24f476489a9"
+    },
+    {
+      "path": "src/team-tasklist/get.ts",
+      "sha256": "7bfa92c5f80bef71d0504f80f5e95d523a971f9d88883aab4f29aca2ca3893a7",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/get.ts",
+      "upstreamSha256": "bc063a9eebfec5ea0386afb5d67dfa62c9bf7cacda1e815f06e8435cce4139e3"
+    },
+    {
+      "path": "src/team-tasklist/index.ts",
+      "sha256": "42d699be838ae1ed78068dfde0b1e085c33de5b3aea1f176bf85751de4424145",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/index.ts",
+      "upstreamSha256": "fef04ec8909c83fa90412063697fb5f29a73489a5ca6852c699c4b0a978624db"
+    },
+    {
+      "path": "src/team-tasklist/list.test.ts",
+      "sha256": "25ae6ccd3bd18a4f95fe52118a6dbe2164d3a829db674a9fd313042bb689d732",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/list.test.ts",
+      "upstreamSha256": "5aeaada45c9645a24a75386cf3948060524f8783036bf6d1be2ec7dda658cb44"
+    },
+    {
+      "path": "src/team-tasklist/list.ts",
+      "sha256": "6691d83c39178356350d83413454f7b2a34cbac604fe104eb95b2ce5aedd6b3e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/list.ts",
+      "upstreamSha256": "de5d0eec138ed7f9997e08eaa061cea839573617da31346074adfa296e512f2c"
+    },
+    {
+      "path": "src/team-tasklist/store.test.ts",
+      "sha256": "71d7d3c0aba9165799ca81ee1c26b33082ab93825c75efe7a90c06d5588b9009",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/store.test.ts",
+      "upstreamSha256": "1e8e404087f31bd3ed249dd765a6095dc2eb305f7c251d882f894d689a887b93"
+    },
+    {
+      "path": "src/team-tasklist/store.ts",
+      "sha256": "b45c5a391294d15b2d580f0a1e0b547f88a765d36533f071f308a71954eb802e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/store.ts",
+      "upstreamSha256": "ff54bfe855e160523c1becfffb61a8f74537dc30af4960ca825ba57e4df85a51"
+    },
+    {
+      "path": "src/team-tasklist/test-support.ts",
+      "sha256": "cdb2a14128c3bcfe3c1942b63efb3138a6a1f410d2e039f2f005b00181437b0e",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/test-support.ts",
+      "upstreamSha256": "529388c9e9920d9817c268c86ec024512321f9ebc9f67091b6715d8740d640ec"
+    },
+    {
+      "path": "src/team-tasklist/update.test.ts",
+      "sha256": "8f90b2d0bcff85668211530055ec253e36f2bd65c4b10750a74e34120b5d2f1f",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/update.test.ts",
+      "upstreamSha256": "f50fd41df06a0ed658a16d2dcf633aaadc0ce32ff0dc019fa6ba23ddd9e4f066"
+    },
+    {
+      "path": "src/team-tasklist/update.ts",
+      "sha256": "e44b23a4061599c7a25acfb90afe19e46ae32b735a67a27e49c258b6462a4ddc",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/team-tasklist/update.ts",
+      "upstreamSha256": "ce433a265de968664f255fceb95ce7e1a7553a07edba05e0c17beb709448a8ac"
+    },
+    {
+      "path": "src/tolerant-fsync.ts",
+      "sha256": "5950a9900dfe7ad4a6132f4da17f54a8e4acbeeb138928acb8926b4c70995543",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/types.ts",
+      "sha256": "03a147bb056315d85ca01e7f874ed0bc54c9cd26903bca8d669318e6b92b5471",
+      "origin": "modified",
+      "upstreamPath": "packages/team-core/src/types.ts",
+      "upstreamSha256": "02efe749e145fd7221002936bfdd6bf22b008748ab8be08eca74a2d2e8f90e45"
+    },
+    {
+      "path": "NOTICE.md",
+      "sha256": "119c4a2f9b8963eed75c95e7550e104301d78923f443838175714a1745e34a0b",
+      "origin": "project-new",
+      "note": "review-round count fix only (three → four upstream test files not carried, per-file enumeration added); hash re-pinned to the current bytes. P5-T8b: dependency-range addendum added (zod ^4.4.3 declared upstream lives nowhere else; root pnpm-lock.yaml resolves zod@4.6.5; omo-team's workspace:* consumer edge lands in the same single lockfile); hash re-pinned to the current bytes"
+    },
+    {
+      "path": "VENDOR-MANIFEST.json",
+      "sha256": null,
+      "note": "self-referential; hash omitted",
+      "origin": "project-new"
+    }
+  ],
+  "deviations": [
+    {
+      "class": "modification",
+      "path": "package.json",
+      "kind": "fields-added",
+      "field": "license",
+      "value": "SUL-1.0",
+      "decision": "D15.1",
+      "additionalField": "scripts.test:vitest",
+      "additionalValue": "pnpm -w exec vitest run patches/omo-dsh/vendor/team-core",
+      "why": "Two additions, one entry: (1) verify-licenses scores a missing license field as MISSING/FAIL; upstream permission comes from the repository-root LICENSE.md (D15.1); (2) a test:vitest script is added so the vendored tests run under this repo's toolchain, while the upstream bun `test` script is retained. `dependencies.zod: ^4.4.3` is NOT an addition — it is the upstream team-core value kept verbatim (npm dependency, not a port of the zod validators; the S-10 narrowing boundary applies). All other fields not listed here are unchanged — the complete diff of this manifest against the upstream one at the pinned commit (field-by-field re-verified 2026-10-10) is exactly: `license` + `scripts.test:vitest` added (this entry), `exports` narrowed + top-level `types` removed (kind=exports-narrowed), `dependencies` narrowed (kind=dependencies-narrowed); `name` / `version` / `type` / `private` / `description` / `scripts.typecheck` / `scripts.test` / `sideEffects` are byte-identical to upstream."
+    },
+    {
+      "class": "modification",
+      "path": "package.json",
+      "kind": "exports-narrowed",
+      "removed": [
+        "`.`",
+        "`./team-mailbox`",
+        "`./team-worktree`",
+        "`./team-layout-tmux`",
+        "`types`"
+      ],
+      "decision": "D4",
+      "why": "the removed subpaths point at the deliberately-not-vendored surfaces (mailbox / layout-tmux / worktree) and at the root barrel src/index.ts, which re-exports exactly those three; keeping them would advertise loadable entry points whose files do not exist in this copy. `./config`, `./team-registry`, `./team-tasklist`, `./team-state-store` and the `./*` wildcard all resolve to vendored files. Upstream's bare `@oh-my-opencode/team-core` root imports have no consumer in this repo (verified by grep); T8b consumes the narrowed subpaths."
+    },
+    {
+      "class": "modification",
+      "path": "package.json",
+      "kind": "dependencies-narrowed",
+      "removed": [
+        "@oh-my-opencode/tmux-core",
+        "@oh-my-opencode/utils"
+      ],
+      "decision": "D4 + the external-dependency ruling (plain-record port)",
+      "why": "Both upstream values were `workspace:*`. (1) `@oh-my-opencode/tmux-core`: every upstream team-core import site of it lives inside `src/team-layout-tmux/**` (grep across the pinned commit: 8 sites in 6 files, all in that directory), which is deliberately not vendored (D4) — nothing in this copy imports the package. (2) `@oh-my-opencode/utils`: the vendored subset's only consumer was `team-state-store/store.ts:1` (`isPlainRecord`), now resolved by the in-package semantic port `src/plain-record.ts` — cross-referenced deviations entries #9 (src/team-state-store/store.ts, import-rewrite + strip-only-param-property-rewrite) and #10 (src/plain-record.ts, semantic-port); the remaining upstream consumers (`team-state-store/reservation-reconciliation.ts`, `team-mailbox/pending-delivery-recovery.ts`, `team-worktree/*`) all live on excluded paths. (3) Independently of consumers, both `workspace:*` specifiers are unresolvable in this repository: the pnpm workspace covers `patches/omo-dsh/*` + `patches/omo-dsh/vendor/*` only and carries neither package name — measured 2026-10-10, re-adding them in a scratch pnpm workspace fails install with `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND` (`\"@oh-my-opencode/tmux-core@workspace:*\" is in the dependencies but no package named ... is present in the workspace`); leaving them would make `pnpm install` fail here. `zod: ^4.4.3` is kept verbatim."
+    },
+    {
+      "class": "modification",
+      "path": "tsconfig.json",
+      "kind": "rewritten",
+      "why": "no bun-types in this repo; upstream lib/types replaced with the repo-root ES2022 + node shape, test files excluded (hashline-core precedent, byte-shape identical to that package's tsconfig)"
+    },
+    {
+      "class": "modification",
+      "path": "src/member-parser.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6",
+      "upstreamLines": "L1-10 (MemberValidationError)",
+      "why": "Node 24 type-stripping (strip-only mode) rejects TypeScript parameter properties; `public readonly memberName?` / `public readonly issue?` became declared fields + explicit assignments inside the constructor (the exact position TypeScript emits them, right after super()). Semantics equivalent at runtime, pinned by live checks rather than by the carried tests — no carried test constructs `MemberValidationError` (grep across the 10 carried tests: 0 construction sites, and no case reads these two fields; the `memberName` pin in loader.test.ts targets `TeamSpecValidationError`, a different class). Evidence: (1) tsc-emit position equivalence — parameter property → declared field + assignment immediately after `super()`, the exact position `tsc` emits the assignment; (2) strip-only live construction — under `node --experimental-strip-types` (v24.19.0) `new MemberValidationError('msg', 'lead', 'both-kinds')` keeps `memberName === 'lead'` and `issue === 'both-kinds'` (measured 2026-10-10)"
+    },
+    {
+      "class": "modification",
+      "path": "src/team-registry/validator.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6",
+      "upstreamLines": "L15-25 (TeamSpecValidationError)",
+      "why": "same T5 NOTES-6 constraint: `public readonly code` / `field` / `memberName` became declared fields + explicit post-super() assignments (tsc-emit position equivalence); pinned green under vitest: validator.test.ts asserts `toThrow(TeamSpecValidationError)` + message strings, and loader.test.ts `toMatchObject` pins the properties `code: \"INELIGIBLE_AGENT\"` / `field: \"subagent_type\"` / `memberName: \"lead\"` on the thrown instance (unlike member-parser.ts, this class IS constructed by the carried tests' code path)"
+    },
+    {
+      "class": "modification",
+      "path": "src/team-tasklist/claim.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6",
+      "upstreamLines": "L38-43 (BlockedByError)",
+      "why": "same T5 NOTES-6 constraint: `public readonly blockers` became a declared field + post-super() assignment (tsc-emit position equivalence). The carried claim.test.ts pins ONLY `toBeInstanceOf(BlockedByError)` (L57) — it does NOT read `err.blockers`, so the earlier '(asserts err.blockers)' wording was corrected in the review round; behavioral evidence attached separately: instrumented vitest probe against the real module constructs `new BlockedByError(['1'])` and asserts `blockers` deep-equals `['1']` (measured 2026-10-10; the probe file was deleted after the run — the vendored file set is unchanged)"
+    },
+    {
+      "class": "modification",
+      "path": "src/team-state-store/active-resume.ts",
+      "kind": "removals",
+      "decision": "T1 ruling (`.delivering-` reservation reclaim not ported)",
+      "removedUpstreamLines": [
+        "L2 `import { log } from \"../logger\"` (orphaned by the removal below)",
+        "L5 `import { reconcileStaleReservationsForMember } from \"./reservation-reconciliation\"` (the excluded module)",
+        "L12-36 helper `reconcileMemberReservations` (its only callee)",
+        "L56 the call `await reconcileMemberReservations(ctx, runtimeState, config, staleReservationTtlMs)`"
+      ],
+      "why": "team-state-store/reservation-reconciliation.ts is the only team-core file with a team-mailbox runtime dependency and is excluded from this subset (D4 + scope); the `.delivering-` reservation reclaim it implements is not ported (T1 ruling). The signature of resumeActiveTeam keeps its staleReservationTtlMs parameter — the verbatim caller resume.ts passes it (unused parameters are permitted; the API shape stays upstream-faithful)"
+    },
+    {
+      "class": "modification",
+      "path": "src/team-state-store/store.ts",
+      "kind": "import-rewrite + strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 / plain-record port",
+      "upstreamLines": "L1 (import), L25-30 (RuntimeStateError)",
+      "why": "Two changes, one file: (1) `import { isPlainRecord } from \"@oh-my-opencode/utils\"` now resolves to the in-package semantic port `../plain-record` (this was the vendored tree's only cross-package import; the dependency removal is registered in the package.json kind=dependencies-narrowed entry); (2) `public readonly code` became a declared field + post-super() assignment (T5 NOTES-6, tsc-emit position equivalence); store.test.ts pins the class under vitest (`rejects.toBeInstanceOf(RuntimeStateError)` at L136) and does not read `RuntimeStateError.code` (the only `.code` read in the file, L81, is on a Node `ErrnoException` — `nodeError.code === \"ENOENT\"` after a failed `stat` — not on this class) — construction-time preservation of `RuntimeStateError.code` confirmed by the same instrumented vitest probe (measured 2026-10-10)"
+    },
+    {
+      "class": "addition",
+      "path": "src/plain-record.ts",
+      "kind": "semantic-port",
+      "upstreamPath": "packages/utils/src/record-type-guard.ts",
+      "decision": "P5-T8a task book (external-dependency ruling)",
+      "why": "the isPlainRecord function, upstream expression byte-for-byte, with a // attribution header naming the upstream package and path; isRecord is deliberately NOT ported (its only team-core consumers — team-mailbox/pending-delivery-recovery.ts and team-state-store/reservation-reconciliation.ts — are outside this subset)"
+    },
+    {
+      "class": "addition",
+      "path": "NOTICE.md",
+      "kind": "project-notice",
+      "decision": "D15.3",
+      "why": "SUL-1.0 'Notices' requires a prominent notice in modified copies; this is the package-level notice"
+    },
+    {
+      "class": "addition",
+      "path": "VENDOR-MANIFEST.json",
+      "kind": "project-record",
+      "why": "this file: provenance + per-file sha256 + the deviation list"
+    },
+    {
+      "class": "note",
+      "path": "package.json",
+      "kind": "notes",
+      "field": "scripts.typecheck",
+      "decision": "hashline-core precedent (isomorphic)",
+      "why": "Explanatory note — no byte change: `typecheck: \"tsgo --noEmit -p tsconfig.json\"` is byte-identical to upstream and is retained in upstream shape as a drift reference (the hashline-core vendored copy keeps the same upstream shape — isomorphic precedent). This repository has no `tsgo` binary (measured 2026-10-10: `which tsgo` → not found), so executing this script here is red by construction; that is a known surface, not a regression. This package is NOT inside this repo's typecheck gate: the gate is the root `tsc --noEmit` + `typecheck:libs` (host/client/hooks/commands/team projects enumerated explicitly in the root package.json), and no root script or CI entry invokes `pnpm -r typecheck` (grep measured 2026-10-10)"
+    },
+    {
+      "class": "modification",
+      "path": "src/*.ts",
+      "kind": "esm-extension-completion",
+      "decision": "T8b arbitration ruling 2026-10-10 (path A) — docs/plans/phase5-dev/phase5-tasks.md P5-T8b arbitration note; evidence .omo/evidence/p5t1/t8b-vendor-import-wall/",
+      "files": [
+        {
+          "path": "src/types.ts",
+          "specifiers": 1
+        }
+      ],
+      "why": "Node 24 native type-stripping resolves NO extensionless relative specifier (ERR_MODULE_NOT_FOUND; host-level gold-standard probe measured RED at STOP, GREEN after completion — host-probe-boot-after-completion.log). Every extensionless relative specifier in this directory group gained its `.ts` (file form) or `/index.ts` (dir form) — a semantically-zero-change completion, machine-proven: diff-face lint (141 pairs, stripping the completion reproduces the pre-image byte-for-byte), upstream-blob equality for every file that was verbatim at registration, and base-commit equality for all affected files (deviation faces untouched) — prove-zero-semantic-change.mjs, PROOF: GREEN. Uniform rule across implementation AND test files (one grammar, no split shape). upstreamSha256 anchors stay pinned at the v4.19.4 blobs."
+    },
+    {
+      "class": "modification",
+      "path": "src/team-registry/*.ts",
+      "kind": "esm-extension-completion",
+      "decision": "T8b arbitration ruling 2026-10-10 (path A) — docs/plans/phase5-dev/phase5-tasks.md P5-T8b arbitration note; evidence .omo/evidence/p5t1/t8b-vendor-import-wall/",
+      "files": [
+        {
+          "path": "src/team-registry/index.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-registry/loader.test.ts",
+          "specifiers": 2
+        },
+        {
+          "path": "src/team-registry/loader.ts",
+          "specifiers": 10
+        },
+        {
+          "path": "src/team-registry/paths.ts",
+          "specifiers": 2
+        },
+        {
+          "path": "src/team-registry/team-spec-input-normalizer.ts",
+          "specifiers": 1
+        },
+        {
+          "path": "src/team-registry/validator.test.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-registry/validator.ts",
+          "specifiers": 2
+        }
+      ],
+      "why": "Node 24 native type-stripping resolves NO extensionless relative specifier (ERR_MODULE_NOT_FOUND; host-level gold-standard probe measured RED at STOP, GREEN after completion — host-probe-boot-after-completion.log). Every extensionless relative specifier in this directory group gained its `.ts` (file form) or `/index.ts` (dir form) — a semantically-zero-change completion, machine-proven: diff-face lint (141 pairs, stripping the completion reproduces the pre-image byte-for-byte), upstream-blob equality for every file that was verbatim at registration, and base-commit equality for all affected files (deviation faces untouched) — prove-zero-semantic-change.mjs, PROOF: GREEN. Uniform rule across implementation AND test files (one grammar, no split shape). upstreamSha256 anchors stay pinned at the v4.19.4 blobs."
+    },
+    {
+      "class": "modification",
+      "path": "src/team-state-store/*.ts",
+      "kind": "esm-extension-completion",
+      "decision": "T8b arbitration ruling 2026-10-10 (path A) — docs/plans/phase5-dev/phase5-tasks.md P5-T8b arbitration note; evidence .omo/evidence/p5t1/t8b-vendor-import-wall/",
+      "files": [
+        {
+          "path": "src/team-state-store/active-resume.ts",
+          "specifiers": 6
+        },
+        {
+          "path": "src/team-state-store/creating-resume.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-state-store/deleting-resume.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-state-store/index.ts",
+          "specifiers": 1
+        },
+        {
+          "path": "src/team-state-store/locks.test.ts",
+          "specifiers": 10
+        },
+        {
+          "path": "src/team-state-store/locks.ts",
+          "specifiers": 1
+        },
+        {
+          "path": "src/team-state-store/resume.ts",
+          "specifiers": 10
+        },
+        {
+          "path": "src/team-state-store/runtime-cleanup.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-state-store/session-liveness.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-state-store/store.test.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-state-store/store.ts",
+          "specifiers": 6
+        },
+        {
+          "path": "src/team-state-store/worker-resume-status.ts",
+          "specifiers": 2
+        }
+      ],
+      "why": "Node 24 native type-stripping resolves NO extensionless relative specifier (ERR_MODULE_NOT_FOUND; host-level gold-standard probe measured RED at STOP, GREEN after completion — host-probe-boot-after-completion.log). Every extensionless relative specifier in this directory group gained its `.ts` (file form) or `/index.ts` (dir form) — a semantically-zero-change completion, machine-proven: diff-face lint (141 pairs, stripping the completion reproduces the pre-image byte-for-byte), upstream-blob equality for every file that was verbatim at registration, and base-commit equality for all affected files (deviation faces untouched) — prove-zero-semantic-change.mjs, PROOF: GREEN. Uniform rule across implementation AND test files (one grammar, no split shape). upstreamSha256 anchors stay pinned at the v4.19.4 blobs."
+    },
+    {
+      "class": "modification",
+      "path": "src/team-tasklist/*.ts",
+      "kind": "esm-extension-completion",
+      "decision": "T8b arbitration ruling 2026-10-10 (path A) — docs/plans/phase5-dev/phase5-tasks.md P5-T8b arbitration note; evidence .omo/evidence/p5t1/t8b-vendor-import-wall/",
+      "files": [
+        {
+          "path": "src/team-tasklist/claim.test.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/claim.ts",
+          "specifiers": 8
+        },
+        {
+          "path": "src/team-tasklist/dependencies.test.ts",
+          "specifiers": 2
+        },
+        {
+          "path": "src/team-tasklist/dependencies.ts",
+          "specifiers": 1
+        },
+        {
+          "path": "src/team-tasklist/get.test.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-tasklist/get.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-tasklist/index.ts",
+          "specifiers": 6
+        },
+        {
+          "path": "src/team-tasklist/list.test.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/list.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/store.test.ts",
+          "specifiers": 3
+        },
+        {
+          "path": "src/team-tasklist/store.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/test-support.ts",
+          "specifiers": 4
+        },
+        {
+          "path": "src/team-tasklist/update.test.ts",
+          "specifiers": 5
+        },
+        {
+          "path": "src/team-tasklist/update.ts",
+          "specifiers": 7
+        }
+      ],
+      "why": "Node 24 native type-stripping resolves NO extensionless relative specifier (ERR_MODULE_NOT_FOUND; host-level gold-standard probe measured RED at STOP, GREEN after completion — host-probe-boot-after-completion.log). Every extensionless relative specifier in this directory group gained its `.ts` (file form) or `/index.ts` (dir form) — a semantically-zero-change completion, machine-proven: diff-face lint (141 pairs, stripping the completion reproduces the pre-image byte-for-byte), upstream-blob equality for every file that was verbatim at registration, and base-commit equality for all affected files (deviation faces untouched) — prove-zero-semantic-change.mjs, PROOF: GREEN. Uniform rule across implementation AND test files (one grammar, no split shape). upstreamSha256 anchors stay pinned at the v4.19.4 blobs."
+    }
+  ]
+}

@@ -1,0 +1,1100 @@
+// P5-T6 — team-message.ts 的结构化 mock 单测（消息工具层全错误族 + 投递面）。
+//
+// WHY A STRUCTURAL MOCK AND NOT A REAL HOST. The unit boundary is the tool's
+// decision surface: WHICH sender, WHICH target, WHICH frame, and whether the
+// native channel is touched at all (dedup must not touch it). The delivery
+// machinery itself (cold resume, spliced persistence) is the e2e scenario's
+// job (`team-create-and-message` full segment). Here every ctx.subagents.
+// sendMessage call is recorded field-by-field:
+//   * lead→member direct: sender == the live lead exec.agent, target == the
+//     member's childId, frame == ['Team message <id> from lead:', body];
+//   * member→lead direct: sender == the live member, target == leadSessionId;
+//   * member→member: the native channel has NO sibling edge — the tool layer
+//     relays through the LIVE lead resolved from the agents registry, and the
+//     frame says `(relayed via lead)`;
+//   * broadcast '*' is lead-only (verbatim 'broadcast requires lead role'),
+//     fan-out one native call per active member, the lead excluded;
+//   * same-id re-send is deduplicated WITHOUT touching the channel
+//     (deliveries stay one, the note carries the upstream词根);
+//   * every rejection is NAMED (unknown recipient / team missing / >32KB /
+//     not a participant / relay lead missing), never a silent swallow.
+//
+// The mock is dumb on purpose: it records, it does not simulate. A tool change
+// that re-delivers a duplicate, or delivers a sibling directly, shows up HERE
+// as a red assertion, not as a phantom green.
+//
+// The `.ts` extension in the import paths is load-bearing (Node 24 type-stripping).
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { describe, expect, it } from 'vitest'
+import { makeStore } from './support/ephemeral-store.ts'
+import {
+  TEAM_BROADCAST_RECIPIENT,
+  TEAM_MESSAGE_TOOL_KINDS,
+  TEAM_SEND_MESSAGE_TOOL_NAME,
+  TeamMessageError,
+  buildTeamMessageContent,
+  buildTeamMessageFramePrefix,
+  createTeamSendMessageDefinition,
+  executeTeamSendMessage,
+  registerTeamMessageSurface,
+  type TeamLiveAgents,
+  type TeamMessageSendChannel,
+} from '../../patches/omo-dsh/omo-team/src/tools/team-message.ts'
+import type { TeamAgent } from '../../patches/omo-dsh/omo-team/src/tools/team-create.ts'
+import {
+  TEAM_LEAD_SENTINEL,
+  TEAM_MESSAGE_PAYLOAD_MAX_BYTES,
+  TeamStateStore,
+} from '../../patches/omo-dsh/omo-team/src/team/team-state.ts'
+
+// ── mocks ─────────────────────────────────────────────────────────────────────
+
+interface RecordedSend {
+  senderId: string
+  targetSessionId: string
+  content: readonly { type: string; text: string }[]
+}
+
+interface MockSendChannel extends TeamMessageSendChannel {
+  sends: RecordedSend[]
+  /** targetSessionIds whose sendMessage rejects (the delivery-failure trigger set). */
+  failOn: Set<string>
+}
+
+function makeSendChannel(): MockSendChannel {
+  return {
+    sends: [],
+    failOn: new Set<string>(),
+    async sendMessage(sender, targetSessionId, content) {
+      this.sends.push({ senderId: sender.session.header.id, targetSessionId, content })
+      if (this.failOn.has(targetSessionId)) {
+        throw new Error(`mock: sendMessage rejected for target ${targetSessionId}`)
+      }
+      return `accepted-msg-${this.sends.length}`
+    },
+  }
+}
+
+interface MockLiveAgents extends TeamLiveAgents {
+  observed: string[]
+  /** test knob: drop/restore a session's liveness mid-test */
+  setLive(sessionId: string, value: boolean): void
+}
+
+function makeAgentsRegistry(liveIds: Iterable<string>): MockLiveAgents {
+  const live = new Set(liveIds)
+  return {
+    observed: [],
+    get(sessionId: string) {
+      this.observed.push(sessionId)
+      return live.has(sessionId) ? ({ session: { header: { id: sessionId } } } as unknown as TeamAgent) : undefined
+    },
+    setLive(sessionId: string, value: boolean) {
+      if (value) live.add(sessionId)
+      else live.delete(sessionId)
+    },
+  }
+}
+
+/** Await a rejection and narrow it to the named error family — the honest
+ *  counterpart of `.rejects.toMatchObject` where the assertion must read the
+ *  exact upstream-carried text off the error. */
+async function rejectionOf(promise: Promise<unknown>): Promise<TeamMessageError> {
+  try {
+    await promise
+  } catch (err) {
+    if (err instanceof TeamMessageError) return err
+    throw new Error(`expected a TeamMessageError, got: ${String(err)}`)
+  }
+  throw new Error('expected the call to reject — it resolved instead')
+}
+
+function makeAgent(sessionId: string): TeamAgent {
+  return {
+    session: { header: { id: sessionId } },
+    ctx: { tools: { register: (definition: unknown) => definition } },
+  } as unknown as TeamAgent
+}
+
+function execOf(agent: TeamAgent) {
+  return { agent, signal: new AbortController().signal }
+}
+
+interface TeamFixture {
+  store: TeamStateStore
+  teamRunId: string
+  leadSessionId: string
+  analystSessionId: string
+  builderSessionId: string
+}
+
+/** A real store seeded through the REAL create/activate path (no hand-built rows).
+ *  `suffix` namespaces the child ids so two teams on ONE store stay distinct. */
+async function seedTeam(store: TeamStateStore, leadSessionId = 'lead-session-1', suffix = '1'): Promise<TeamFixture> {
+  const analystSessionId = `child-analyst-${suffix}`
+  const builderSessionId = `child-builder-${suffix}`
+  const state = await store.create({
+    teamName: 'drive-team',
+    leadSessionId,
+    members: [
+      { name: 'analyst', seat: 'sisyphus-junior', childId: analystSessionId },
+      { name: 'builder', seat: 'hephaestus', childId: builderSessionId },
+    ],
+  })
+  await store.transition(state.teamRunId, 'active')
+  // Members become deliverable once running (pending is not a deliverable phase).
+  await store.setMemberPhase(state.teamRunId, 'analyst', 'running')
+  await store.setMemberPhase(state.teamRunId, 'builder', 'running')
+  return { store, teamRunId: state.teamRunId, leadSessionId, analystSessionId, builderSessionId }
+}
+
+function makeDeps(fixture: TeamFixture) {
+  const subagents = makeSendChannel()
+  const agents = makeAgentsRegistry([
+    fixture.leadSessionId,
+    fixture.analystSessionId,
+    fixture.builderSessionId,
+  ])
+  return { subagents, agents, store: fixture.store }
+}
+
+const CORRID_A = '11111111-2222-3333-4444-555555555555'
+const CORRID_B = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+
+// ── frame format ──────────────────────────────────────────────────────────────
+
+describe('P5-T6 frame format (native deliveryContent semantics, Q-8 B1)', async () => {
+  it('direct frame prefix is `Team message <id> from <name>:`', async () => {
+    expect(buildTeamMessageFramePrefix('msg-7', TEAM_LEAD_SENTINEL, false)).toBe('Team message msg-7 from lead:')
+    expect(buildTeamMessageFramePrefix('msg-7', 'analyst', false)).toBe('Team message msg-7 from analyst:')
+  })
+
+  it('relay frame names the sender AND the lead relay inside the same prefix', async () => {
+    expect(buildTeamMessageFramePrefix('msg-7', 'analyst', true)).toBe(
+      'Team message msg-7 from analyst (relayed via lead):',
+    )
+  })
+
+  it('content is the two-block frame: prefix block then body block', async () => {
+    const content = buildTeamMessageContent('msg-7', 'lead', 'hello analyst', false)
+    expect(content).toEqual([
+      { type: 'text', text: 'Team message msg-7 from lead:' },
+      { type: 'text', text: 'hello analyst' },
+    ])
+  })
+})
+
+// ── lead→member / member→lead direct ─────────────────────────────────────────
+
+describe('P5-T6 direct delivery (adjacent native channel)', async () => {
+  it('lead→member: sender is the live lead, target the member childId, frame verbatim', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    const result = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'STATUS: report structure', correlationId: CORRID_A },
+      execOf(lead),
+      deps,
+    )
+
+    expect(result.delivered).toBe(true)
+    expect(result.deduplicated).toBe(false)
+    expect(result.messageId).toBe(CORRID_A)
+    expect(result.kind).toBe('message')
+    expect(deps.subagents.sends).toHaveLength(1)
+    const send = deps.subagents.sends[0]!
+    expect(send.senderId).toBe(fixture.leadSessionId)
+    expect(send.targetSessionId).toBe(fixture.analystSessionId)
+    expect(send.content[0]!.text).toBe(`Team message ${CORRID_A} from ${TEAM_LEAD_SENTINEL}:`)
+    expect(send.content[1]!.text).toBe('STATUS: report structure')
+    // residentAtSend: the registry saw the member live before the send.
+    expect(result.deliveries[0]!.residentAtSend).toBe(true)
+    expect(result.deliveries[0]!.relayed).toBe(false)
+  })
+
+  it('member→lead: sender is the live member, target the lead session', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const analyst = makeAgent(fixture.analystSessionId)
+
+    const result = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_LEAD_SENTINEL, body: 'structure summarized', correlationId: CORRID_B },
+      execOf(analyst),
+      deps,
+    )
+
+    expect(result.delivered).toBe(true)
+    const send = deps.subagents.sends[0]!
+    expect(send.senderId).toBe(fixture.analystSessionId)
+    expect(send.targetSessionId).toBe(fixture.leadSessionId)
+    expect(send.content[0]!.text).toBe(`Team message ${CORRID_B} from analyst:`)
+    // member→lead is NOT a relay — the native sendToParent edge is adjacency.
+    expect(result.deliveries[0]!.relayed).toBe(false)
+  })
+
+  it('announcement kind rides the same frame; the kind lands on the result', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    const result = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'builder', body: 'freeze window starts', kind: 'announcement' },
+      execOf(lead),
+      deps,
+    )
+
+    expect(result.kind).toBe('announcement')
+    // The frame prefix stays the upstream form — kind does NOT leak into it.
+    expect(deps.subagents.sends[0]!.content[0]!.text).toBe(`Team message ${result.messageId} from ${TEAM_LEAD_SENTINEL}:`)
+    // messageId fell back to a generated UUID (no correlationId given).
+    expect(result.messageId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+  })
+})
+
+// ── member→member lead relay ──────────────────────────────────────────────────
+
+describe('P5-T6 member↔member: no native sibling edge → lead relay', async () => {
+  it('relay delivery: sender is the LIVE LEAD, frame names from + relay', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const analyst = makeAgent(fixture.analystSessionId)
+
+    const result = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'builder', body: 'use the summarized map', correlationId: CORRID_A },
+      execOf(analyst),
+      deps,
+    )
+
+    expect(result.delivered).toBe(true)
+    expect(deps.subagents.sends).toHaveLength(1)
+    const send = deps.subagents.sends[0]!
+    // The native channel authorizes the delivery through the live lead — the
+    // relay authority — not the calling member (adjacency rule).
+    expect(send.senderId).toBe(fixture.leadSessionId)
+    expect(send.targetSessionId).toBe(fixture.builderSessionId)
+    expect(send.content[0]!.text).toBe(`Team message ${CORRID_A} from analyst (relayed via ${TEAM_LEAD_SENTINEL}):`)
+    expect(result.deliveries[0]!.relayed).toBe(true)
+    // Live-registry resolution TIMING, pinned via the mock's `observed`
+    // trail: the lead is resolved EXACTLY ONCE at recipient-resolution time
+    // and REUSED in the delivery loop (target.relaySender) — the loop must
+    // NOT re-resolve across the await (that re-opened the lead-eviction
+    // window; review T6-2). A re-resolving implementation surfaces here as
+    // [lead, lead, builder], not as a phantom green.
+    expect(deps.agents.observed).toEqual([fixture.leadSessionId, fixture.builderSessionId])
+  })
+
+  it('relay without a live lead is a NAMED refusal, never a silent sibling send', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    deps.agents.setLive(fixture.leadSessionId, false)
+    const analyst = makeAgent(fixture.analystSessionId)
+
+    await expect(
+      executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'builder', body: 'x' }, execOf(analyst), deps),
+    ).rejects.toMatchObject({ code: 'RELAY_LEAD_NOT_LIVE', name: 'TeamMessageError' })
+    // Nothing reached the channel, and the dedup ledger is empty (attempt ≠ delivery).
+    expect(deps.subagents.sends).toHaveLength(0)
+    expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(false)
+  })
+})
+
+// ── broadcast (lead-only) ─────────────────────────────────────────────────────
+
+describe('P5-T6 broadcast: lead-only discipline, fan-out per member', async () => {
+  it('member broadcast is refused with the upstream verbatim text', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const analyst = makeAgent(fixture.analystSessionId)
+
+    const err = await rejectionOf(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'anyone?' }, execOf(analyst), deps,
+    ))
+    expect(err).toBeInstanceOf(TeamMessageError)
+    expect(err.message).toBe('broadcast requires lead role')
+    expect(err.code).toBe('BROADCAST_NOT_PERMITTED')
+    expect(deps.subagents.sends).toHaveLength(0)
+  })
+
+  it('lead broadcast fans out one send per member, lead excluded, same frame id', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    const result = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'stand down', correlationId: CORRID_B },
+      execOf(lead),
+      deps,
+    )
+
+    expect(deps.subagents.sends.map((s) => s.targetSessionId)).toEqual([
+      fixture.analystSessionId,
+      fixture.builderSessionId,
+    ])
+    for (const send of deps.subagents.sends) {
+      expect(send.senderId).toBe(fixture.leadSessionId)
+      expect(send.content[0]!.text).toBe(`Team message ${CORRID_B} from ${TEAM_LEAD_SENTINEL}:`)
+    }
+    expect(result.deliveries.map((d) => d.to)).toEqual(['analyst', 'builder'])
+    expect(result.note).toContain('broadcast')
+  })
+
+  it('broadcast partial failure bubbles NAMED and COMMITS the id as delivered (宁漏不重)', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    deps.subagents.failOn.add(fixture.builderSessionId)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    const err = await rejectionOf(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_A }, execOf(lead), deps,
+    ))
+    expect(err.code).toBe('DELIVERY_FAILED')
+    expect(err.message).toContain('builder')
+    // analyst got it once; the channel was called for builder and rejected —
+    // two channel CALLS, ONE accepted delivery.
+    expect(deps.subagents.sends.map((s) => s.targetSessionId)).toEqual([
+      fixture.analystSessionId,
+      fixture.builderSessionId,
+    ])
+    // P5-T25（第七轮 MINOR-2）：部分送达后调的是 **commit**，所以这个 id 在
+    // **已送达**账里（不是"保留预约"）。旧标题与旧错误文本都说成了 reservation。
+    expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(true)
+    // 错误文本必须与实际账本状态一致，且补投指引点名"只补未收到的成员 + best-effort"。
+    expect(err.message).toContain('COMMITTED AS DELIVERED')
+    expect(err.message).not.toContain('keeps the reservation')
+    expect(err.message).toContain('did NOT receive it')
+    expect(err.message).toContain('BEST-EFFORT')
+    expect(err.message).toContain('under a NEW correlationId')
+  })
+
+  it('broadcast partial failure names the member AND counts what landed first', async () => {
+    // THREE-member team on the real create path (the count is live, not a
+    // constant — a two-member fixture can only ever print 0/1 by construction
+    // of the failure slot; here the fan-out order analyst→builder→courier
+    // fails at the SECOND member, so `(1 delivered before failure)` is the
+    // deliveries.length snapshot the file header diff段 promises 已投计数).
+    const store = makeStore()
+    const state = await store.create({
+      teamName: 'count-team',
+      leadSessionId: 'lead-session-9',
+      members: [
+        { name: 'analyst', seat: 'sisyphus-junior', childId: 'child-analyst-9' },
+        { name: 'builder', seat: 'hephaestus', childId: 'child-builder-9' },
+        { name: 'courier', seat: 'hephaestus', childId: 'child-courier-9' },
+      ],
+    })
+    await store.transition(state.teamRunId, 'active')
+    await store.setMemberPhase(state.teamRunId, 'analyst', 'running')
+    await store.setMemberPhase(state.teamRunId, 'builder', 'running')
+    await store.setMemberPhase(state.teamRunId, 'courier', 'running')
+    const subagents = makeSendChannel()
+    subagents.failOn.add('child-builder-9') // the SECOND member in fan-out order
+    const agents = makeAgentsRegistry([
+      'lead-session-9',
+      'child-analyst-9',
+      'child-builder-9',
+      'child-courier-9',
+    ])
+    const lead = makeAgent('lead-session-9')
+
+    const err = await rejectionOf(executeTeamSendMessage(
+      { teamRunId: state.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_B },
+      execOf(lead),
+      { subagents, agents, store },
+    ))
+
+    expect(err.code).toBe('DELIVERY_FAILED')
+    // 点名成员——失败的正是扇出第二席 builder…
+    expect(err.message).toContain(`broadcast member 'builder'`)
+    // …与已投计数——失败点前 analyst 一人落地，N 是实况不是摆设。
+    expect(err.message).toContain('(1 delivered before failure)')
+    // The count matches the channel trail: analyst accepted, builder rejected,
+    // courier never attempted (the loop aborts at the first failure).
+    expect(subagents.sends.map((s) => s.targetSessionId)).toEqual([
+      'child-analyst-9',
+      'child-builder-9',
+    ])
+    // 宁漏不重 unchanged: the ledger keeps the whole-message id.
+    expect(store.hasDeliveredMessage(state.teamRunId, CORRID_B)).toBe(true)
+  })
+
+  it('P5-T16 (MAJOR-2) a broadcast that reached NOBODY releases the reservation (same id may retry)', async () => {
+    // 评审 MAJOR-2 的核心腿：**首个成员即失败** ⇒ deliveries 为空 ⇒ 一个成员
+    // 都没收到。此时把 correlationId 烧在去重账里 = 整条广播静默消失，而模型
+    // 最自然的动作就是拿同一个 id 重试（工具描述还写着「Re-sending the same
+    // correlationId is deduplicated」）——旧行为会把它变成
+    // `deduplicated:true, delivered:false, deliveries:[]`，读起来像「已经发过了」。
+    //
+    // 更正：零投递 ⇒ 退账（同 id 可重试）；部分投递 ⇒ 仍不退（宁漏不重）。
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    deps.subagents.failOn.add(fixture.analystSessionId) // 扇出**第一**席就失败
+    const lead = makeAgent(fixture.leadSessionId)
+
+    const err = await rejectionOf(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_A }, execOf(lead), deps,
+    ))
+    expect(err.code).toBe('DELIVERY_FAILED')
+    expect(err.message).toContain('(0 delivered before failure)')
+    expect(err.message).toContain('ROLLED BACK')
+    // 账已退：同 id 可再投。
+    expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(false)
+
+    deps.subagents.failOn.clear()
+    const retry = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_A }, execOf(lead), deps,
+    )
+    expect(retry.delivered).toBe(true)
+    expect(retry.deduplicated).toBe(false)
+    expect(retry.deliveries.map((d) => d.to)).toEqual(['analyst', 'builder'])
+  })
+
+  it('P5-T16 (MAJOR-2) a FULL ledger refuses a new id — and the refusal never evicts an older one', async () => {
+    // 评审点名的联合回归腿之一：「满载＋单投失败」。
+    // 满载 ⇒ 具名拒收（不裁剪）⇒ 工具层译成本工具的错误族（响亮、可恢复：
+    // （P5-T19：**别**再把它说成「换新 correlationId 即可继续」——满载是终端
+    //  预算，换 id 不改变账长；真实恢复只有拆队重建）。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    // 造一个**小**上限的 store（同一个 base_dir ⇒ 同一份落盘账）。
+    const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 2 })
+    await capped.rebuildIndexes() // 同一 base_dir 上的新实例：从磁盘重建镜像
+    for (const id of ['m-aaa', 'm-bbb']) {
+      // 满载判据读**已送达**账 ⇒ 必须确认送达（P5-T19 后预约与送达分账）；
+      // P5-T20 起 commit 必须携带该次预约的 token。
+      const reserved = await capped.reserveMessageDelivery(fixture.teamRunId, id)
+      if (reserved.state !== 'reserved') throw new Error(`expected reserved for ${id}, got ${reserved.state}`)
+      await capped.commitMessageDelivery(fixture.teamRunId, id, reserved.token)
+    }
+    const cappedDeps = { ...deps, store: capped }
+    const lead = makeAgent(fixture.leadSessionId)
+    await expect(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A },
+      execOf(lead),
+      cappedDeps,
+    )).rejects.toMatchObject({ code: 'MESSAGE_LEDGER_FULL' })
+    // 旧的两条**一条不少**（没有裁剪）。
+    expect(capped.get(fixture.teamRunId)!.processedMessageIds).toEqual(['m-aaa', 'm-bbb'])
+    // 工具**没有**投递（拒收发生在预约之前）。
+    expect(deps.subagents.sends).toHaveLength(0)
+  })
+
+  it('P5-T16 (MAJOR-2) a FULL ledger + a FAILED broadcast keeps every recorded id (nothing evicted)', async () => {
+    // 评审点名的联合回归腿之二：「满载＋广播零投递」。
+    // 第一轮的滚动窗口在这里会：预约（挤掉最旧）→ 零投递失败 → 退账 ⇒ **最旧的
+    // 那条永久消失**。更正后的行为：满载即拒收（不预约、不投递、不裁剪）。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 2 })
+    await capped.rebuildIndexes() // 同一 base_dir 上的新实例：从磁盘重建镜像
+    for (const id of ['m-aaa', 'm-bbb']) {
+      // 满载判据读**已送达**账 ⇒ 必须确认送达（P5-T19 后预约与送达分账）；
+      // P5-T20 起 commit 必须携带该次预约的 token。
+      const reserved = await capped.reserveMessageDelivery(fixture.teamRunId, id)
+      if (reserved.state !== 'reserved') throw new Error(`expected reserved for ${id}, got ${reserved.state}`)
+      await capped.commitMessageDelivery(fixture.teamRunId, id, reserved.token)
+    }
+    const cappedDeps = { ...deps, store: capped }
+    const lead = makeAgent(fixture.leadSessionId)
+    await expect(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_A },
+      execOf(lead),
+      cappedDeps,
+    )).rejects.toMatchObject({ code: 'MESSAGE_LEDGER_FULL' })
+    expect(capped.get(fixture.teamRunId)!.processedMessageIds).toEqual(['m-aaa', 'm-bbb'])
+    expect(deps.subagents.sends).toHaveLength(0)
+  })
+
+  it('P5-T19 (MAJOR-1) a HUNG first send makes the concurrent same-id return IN-FLIGHT, never "already delivered"', async () => {
+    // 第三轮评审 MAJOR-1 的核心腿：**并发同 ID + 首投挂起**。
+    // 旧实现把预约当已送达 ⇒ B 立刻收到 `deduplicated:true` + note
+    // "...was already delivered..."，而 A 还在投、甚至可能失败 ⇒ **零送达却
+    // 宣称已交付**。现在 B 读到的是 `in-flight`：`delivered:false,
+    // deduplicated:false, inFlight:true`，note 明说本调用什么都没投。
+    const fixture = await seedTeam(makeStore())
+    const lead = makeAgent(fixture.leadSessionId)
+
+    // A 的通道：第一次 sendMessage **挂起**（由测试手动放行）。
+    let releaseFirst: (() => void) | undefined
+    let firstSettled: (() => void) | undefined
+    const firstSettling = new Promise<void>((resolve) => { firstSettled = resolve })
+    const hangingChannel = {
+      sends: [] as string[],
+      failOn: new Set<string>(),
+      async sendMessage(_sender: TeamAgent, targetSessionId: string) {
+        this.sends.push(targetSessionId)
+        const index = this.sends.length
+        if (index === 1) {
+          await new Promise<void>((resolve) => { releaseFirst = resolve })
+          firstSettled?.()
+        }
+        return `accepted-${index}`
+      },
+    }
+    const depsA = { subagents: hangingChannel, agents: makeAgentsRegistry([fixture.leadSessionId, fixture.analystSessionId]), store: fixture.store }
+
+    // ① A 发起首投（立即挂起在 sendMessage 内）。
+    const aPromise = executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsA as never,
+    )
+    // 等到 A 真的进了 sendMessage（预约已落盘）。
+    for (let i = 0; i < 200 && hangingChannel.sends.length === 0; i += 1) await new Promise((r) => setTimeout(r, 5))
+    expect(hangingChannel.sends).toHaveLength(1)
+
+    // ② B（**另一个 store 实例**，同一 base_dir）用同 ID —— 必须是 in-flight。
+    const storeB = new TeamStateStore(depsA.store.config)
+    await storeB.rebuildIndexes()
+    const depsB = { ...depsA, store: storeB }
+    const bResult = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsB as never,
+    )
+    expect(bResult.inFlight).toBe(true)
+    expect(bResult.delivered).toBe(false)
+    expect(bResult.deduplicated).toBe(false)
+    expect(bResult.note).not.toContain('was already delivered')
+    expect(bResult.note).toContain('IN FLIGHT')
+    expect(bResult.deliveries).toEqual([])
+    // B 一次原生投递都没发。
+    expect(hangingChannel.sends).toHaveLength(1)
+
+    // ③ 放行 A ⇒ A 成功并**确认送达** ⇒ 账上出现该 id。
+    releaseFirst?.()
+    await firstSettling
+    const aResult = await aPromise
+    expect(aResult.delivered).toBe(true)
+    // 镜像按进程缓存（跨进程真相在 sidecar 上）——重读一次才能看到 A 的 commit。
+    await storeB.rebuildIndexes()
+    expect(storeB.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(true)
+    // ④ 此时同 ID 才是**真重复**。
+    const cResult = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsB as never,
+    )
+    expect(cResult.deduplicated).toBe(true)
+    expect(cResult.inFlight).toBe(false)
+  })
+
+  it('P5-T19 (MAJOR-1) a HUNG first send that then FAILS leaves nothing behind — the retry really delivers', async () => {
+    // 第三轮评审 MAJOR-1 的第二条腿（首投挂起后**失败**）：旧实现在这里会
+    // 退账到空账，而 B 早已被告知「已交付」⇒ 零送达 + 双份谎言。现在：
+    // A 失败 ⇒ 在途清空、已送达仍空；B 重试拿到预约并真正投出去。
+    const fixture = await seedTeam(makeStore())
+    const lead = makeAgent(fixture.leadSessionId)
+    let releaseFirst: (() => void) | undefined
+    let firstSettled: (() => void) | undefined
+    const firstSettling = new Promise<void>((resolve) => { firstSettled = resolve })
+    const channel = {
+      sends: [] as string[],
+      failFirst: true,
+      async sendMessage(_sender: TeamAgent, targetSessionId: string) {
+        this.sends.push(targetSessionId)
+        const index = this.sends.length
+        if (index === 1) {
+          await new Promise<void>((resolve) => { releaseFirst = resolve })
+          firstSettled?.()
+          throw new Error('mock: first send failed after the suspend')
+        }
+        return `accepted-${index}`
+      },
+    }
+    const depsA = { subagents: channel, agents: makeAgentsRegistry([fixture.leadSessionId, fixture.analystSessionId]), store: fixture.store }
+    const aPromise = executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsA as never,
+    )
+    for (let i = 0; i < 200 && channel.sends.length === 0; i += 1) await new Promise((r) => setTimeout(r, 5))
+    const storeB = new TeamStateStore(depsA.store.config)
+    await storeB.rebuildIndexes()
+    const depsB = { ...depsA, store: storeB }
+    const bResult = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsB as never,
+    )
+    expect(bResult.inFlight).toBe(true)
+    // A 失败（退账只碰在途行）。
+    releaseFirst?.()
+    await firstSettling
+    await expect(aPromise).rejects.toMatchObject({ code: 'DELIVERY_FAILED' })
+    expect(storeB.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(false)
+    // B 重试：拿到预约并真的投出去（不是「已交付」的假象）。
+    const retry = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), depsB as never,
+    )
+    expect(retry.delivered).toBe(true)
+    expect(retry.inFlight).toBe(false)
+    expect(storeB.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(true)
+  })
+
+  it('P5-T20 (MAJOR-1) two DIFFERENT ids in flight cannot both pass a cap of 1', async () => {
+    // 第四轮评审 MAJOR-1 的真实投递腿：cap=1 时 A（不同 ID）已进在途，B 的预约
+    // 必须被拒（旧实现只看已送达 ⇒ B 也能 reserved，随后两条都 commit ⇒ 超帽）。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    const capped = new TeamStateStore({ ...deps.store.config, max_messages_per_run: 1 })
+    await capped.rebuildIndexes()
+    // A：一个**挂起**的投递（预约已落盘、还没 commit）。
+    let releaseFirst: (() => void) | undefined
+    const channel = {
+      sends: [] as string[],
+      async sendMessage(_sender: TeamAgent, targetSessionId: string) {
+        this.sends.push(targetSessionId)
+        if (this.sends.length === 1) await new Promise<void>((resolve) => { releaseFirst = resolve })
+        return 'accepted'
+      },
+    }
+    const cappedDeps = { ...deps, store: capped, subagents: channel }
+    const lead = makeAgent(fixture.leadSessionId)
+    const aPromise = executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), cappedDeps as never,
+    )
+    for (let i = 0; i < 200 && channel.sends.length === 0; i += 1) await new Promise((r) => setTimeout(r, 5))
+    expect(channel.sends).toHaveLength(1)
+    // B：**不同** ID ⇒ 满载（在途计入 cap）⇒ 具名拒收。
+    await expect(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'y', correlationId: CORRID_B }, execOf(lead), cappedDeps as never,
+    )).rejects.toMatchObject({ code: 'MESSAGE_LEDGER_FULL' })
+    expect(channel.sends).toHaveLength(1)
+    releaseFirst?.()
+    const aResult = await aPromise
+    expect(aResult.delivered).toBe(true)
+    await capped.rebuildIndexes()
+    expect(capped.get(fixture.teamRunId)!.processedMessageIds).toEqual([CORRID_A])
+  })
+
+  it('P5-T21 (MAJOR-1) a hung owner past the TTL is QUARANTINED — no second native send for that correlationId', async () => {
+    // 第五轮评审 MAJOR-1 的原始复现（它用 executeTeamSendMessage 实测到
+    // `nativeSendCalls = 2`）：A 挂起在 sendMessage 里 → 把 A 的 at 改到 TTL 之外
+    // → B 用**同一** correlationId。上一版 B 会拿到新 token 并**再发一帧**；现在
+    // B 拿到 quarantined：**不发帧**、不宣称已交付。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    let releaseFirst: (() => void) | undefined
+    const channel = {
+      sends: [] as string[],
+      async sendMessage(_sender: TeamAgent, targetSessionId: string) {
+        this.sends.push(targetSessionId)
+        if (this.sends.length === 1) await new Promise<void>((resolve) => { releaseFirst = resolve })
+        return 'accepted'
+      },
+    }
+    const toolDeps = { ...deps, subagents: channel }
+    const lead = makeAgent(fixture.leadSessionId)
+    const aPromise = executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), toolDeps as never,
+    )
+    for (let i = 0; i < 200 && channel.sends.length === 0; i += 1) await new Promise((r) => setTimeout(r, 5))
+    expect(channel.sends).toHaveLength(1)
+    // 把 A 的在途行改到 TTL 之外（模拟"挂起"）。
+    const ledgerPath = join(String(store.config.base_dir), 'runtime', fixture.teamRunId, 'omo-team-extensions.json')
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
+    // B：**同一** correlationId ⇒ quarantined，且**没有**第二次原生投递。
+    const bResult = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), toolDeps as never,
+    )
+    expect(bResult.quarantined).toBe(true)
+    expect(bResult.delivered).toBe(false)
+    expect(bResult.inFlight).toBe(false)
+    expect(bResult.deduplicated).toBe(false)
+    expect(bResult.note).toContain('QUARANTINED')
+    expect(bResult.note).not.toContain('was already delivered')
+    // P5-T23（第六轮评审 MINOR-3）：**不许**把换新 id 说成"保证送达"。实际保证是
+    // 「同 ID 防重 + 可能漏投 + 跨 ID 可能重复」，措辞必须是 best-effort。
+    expect(bResult.note).toContain('BEST-EFFORT, not a guarantee')
+    expect(bResult.note).toContain('will arrive a second time')
+    expect(bResult.note).toContain('Only re-send new-ID if losing this message is worse than duplicating it')
+    expect(bResult.note).not.toContain('delivery guarantee, re-send')
+    expect(channel.sends).toHaveLength(1)
+    // 放行 A：它自己那帧落地并 commit。
+    releaseFirst?.()
+    const aResult = await aPromise
+    expect(aResult.delivered).toBe(true)
+    // 总原生投递次数恰 1 —— 同一 correlationId 没有被物理重复投递。
+    expect(channel.sends).toHaveLength(1)
+  })
+
+  it('P5-T22 (自查残余 b) a QUARANTINED id also blocks the BROADCAST path (zero fan-out)', async () => {
+    // 残余 b：quarantine 此前只有单投腿。广播与单投共享同一次 `reserve`，所以
+    // 行为**应当**一致——但"应当"不是证据。这里对广播路径取同样的证：拿到
+    // quarantined ⇒ 一帧都不许扇出，且不得宣称任何投递。
+    const store = makeStore()
+    const fixture = await seedTeam(store)
+    const deps = await makeDeps(fixture)
+    // 造一条**停滞**在途行（直接预约后把 at 改到 TTL 之外）。
+    const reserved = await store.reserveMessageDelivery(fixture.teamRunId, CORRID_A)
+    if (reserved.state !== 'reserved') throw new Error('expected reserved')
+    const ledgerPath = join(String(store.config.base_dir), 'runtime', fixture.teamRunId, 'omo-team-extensions.json')
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { inFlightMessages: { id: string, at: number, token: string }[] }
+    ledger.inFlightMessages = ledger.inFlightMessages.map((row) => ({ ...row, at: Date.now() - 10 * 60 * 1000 }))
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
+    const lead = makeAgent(fixture.leadSessionId)
+    const result = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: TEAM_BROADCAST_RECIPIENT, body: 'x', correlationId: CORRID_A },
+      execOf(lead),
+      deps as never,
+    )
+    expect(result.quarantined).toBe(true)
+    expect(result.delivered).toBe(false)
+    expect(result.deduplicated).toBe(false)
+    expect(result.inFlight).toBe(false)
+    expect(result.deliveries).toEqual([])
+    // **零扇出**：一次原生投递都没发生。
+    expect(deps.subagents.sends).toHaveLength(0)
+  })
+
+  it('single-target delivery failure COMPENSATES the reservation (retry may deliver)', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    deps.subagents.failOn.add(fixture.analystSessionId)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    await expect(
+      executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), deps),
+    ).rejects.toMatchObject({ code: 'DELIVERY_FAILED' })
+    expect(deps.store.hasDeliveredMessage(fixture.teamRunId, CORRID_A)).toBe(false)
+
+    // The same id now goes through (the message was never delivered).
+    deps.subagents.failOn.clear()
+    const retry = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A }, execOf(lead), deps,
+    )
+    expect(retry.delivered).toBe(true)
+  })
+})
+
+// ── R-6 dedup ─────────────────────────────────────────────────────────────────
+
+describe('P5-T6 R-6: same-id re-send dedup (DuplicateMessageIdError semantics)', async () => {
+  it('second send with the same correlationId: no channel call, dedup note', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    const first = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'first', correlationId: CORRID_A }, execOf(lead), deps,
+    )
+    const second = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'first again', correlationId: CORRID_A }, execOf(lead), deps,
+    )
+
+    expect(first.delivered).toBe(true)
+    expect(second.delivered).toBe(false)
+    expect(second.deduplicated).toBe(true)
+    expect(second.deliveries).toEqual([])
+    expect(second.note).toContain('duplicate message id')
+    expect(second.note).toContain(CORRID_A)
+    // ONE native call total — the recipient cannot receive it twice.
+    expect(deps.subagents.sends).toHaveLength(1)
+  })
+
+  it('a DIFFERENT correlationId is a different message (no false dedup)', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    await executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'a', correlationId: CORRID_A }, execOf(lead), deps)
+    const second = await executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'b', correlationId: CORRID_B }, execOf(lead), deps)
+    expect(second.delivered).toBe(true)
+    expect(deps.subagents.sends).toHaveLength(2)
+  })
+
+  it('ledger is per team: the same id on another team is a fresh message', async () => {
+    const store = makeStore()
+    const fixtureA = await seedTeam(store)
+    const fixtureB = await seedTeam(store, 'lead-session-2', '2')
+    const subagents = makeSendChannel()
+    const lead = makeAgent(fixtureA.leadSessionId)
+
+    await executeTeamSendMessage(
+      { teamRunId: fixtureA.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A },
+      execOf(lead),
+      { subagents, agents: makeAgentsRegistry([fixtureA.leadSessionId, fixtureA.analystSessionId]), store },
+    )
+    const otherLead = makeAgent(fixtureB.leadSessionId)
+    const second = await executeTeamSendMessage(
+      { teamRunId: fixtureB.teamRunId, to: 'analyst', body: 'x', correlationId: CORRID_A },
+      execOf(otherLead),
+      { subagents, agents: makeAgentsRegistry([fixtureB.leadSessionId, fixtureB.analystSessionId]), store },
+    )
+    expect(second.delivered).toBe(true)
+    expect(second.teamRunId).toBe(fixtureB.teamRunId)
+    expect(subagents.sends).toHaveLength(2)
+  })
+
+  it('empty-string correlationId preprocesses to absent (upstream zod verbatim)', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    const first = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: '' }, execOf(lead), deps,
+    )
+    const second = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: '' }, execOf(lead), deps,
+    )
+    // Two generated UUIDs — empty string never collides into a false dedup.
+    expect(first.delivered).toBe(true)
+    expect(second.delivered).toBe(true)
+    expect(first.messageId).not.toBe(second.messageId)
+  })
+})
+
+// ── named rejections (error families) ─────────────────────────────────────────
+
+describe('P5-T6 named error families (send.ts semantics, non-verbatim except where pinned)', async () => {
+  it('unknown recipient: the upstream `unknown or inactive team recipient` text', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    const err = await rejectionOf(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'ghost', body: 'x' }, execOf(lead), deps,
+    ))
+    expect(err.message).toBe('unknown or inactive team recipient: ghost')
+    expect(err.code).toBe('INVALID_RECIPIENT')
+  })
+
+  it('inactive member (terminal phase) is refused the same named way', async () => {
+    const fixture = await seedTeam(makeStore())
+    // Drive the member row to a non-deliverable phase through the real API.
+    await fixture.store.setMemberPhase(fixture.teamRunId, 'analyst', 'completed')
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+
+    await expect(
+      executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'x' }, execOf(lead), deps),
+    ).rejects.toMatchObject({ code: 'INVALID_RECIPIENT', message: 'unknown or inactive team recipient: analyst' })
+  })
+
+  it('team missing: named TEAM_NOT_FOUND', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+    await expect(
+      executeTeamSendMessage({ teamRunId: 'no-such-run', to: 'analyst', body: 'x' }, execOf(lead), deps),
+    ).rejects.toMatchObject({ code: 'TEAM_NOT_FOUND' })
+  })
+
+  it('deleting team refuses delivery (TeamDeletingError semantics)', async () => {
+    const fixture = await seedTeam(makeStore())
+    await fixture.store.transition(fixture.teamRunId, 'shutdown_requested')
+    await fixture.store.transition(fixture.teamRunId, 'deleting')
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+    const err = await rejectionOf(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x' }, execOf(lead), deps,
+    ))
+    expect(err.message).toBe('team is deleting')
+    expect(err.code).toBe('TEAM_DELETING')
+  })
+
+  it('payload over 32768 bytes: PayloadTooLargeError semantics with the upstream text', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+    const oversized = 'x'.repeat(TEAM_MESSAGE_PAYLOAD_MAX_BYTES + 1)
+
+    const err = await rejectionOf(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: oversized }, execOf(lead), deps,
+    ))
+    expect(err.code).toBe('PAYLOAD_TOO_LARGE')
+    expect(err.message).toContain('payload exceeds 32 KB')
+    expect(err.message).toContain('message_payload_max_bytes=32768')
+    expect(deps.subagents.sends).toHaveLength(0)
+
+    // The boundary itself passes: exactly 32768 bytes is legal (default cap).
+    const exact = await executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x'.repeat(TEAM_MESSAGE_PAYLOAD_MAX_BYTES) }, execOf(lead), deps,
+    )
+    expect(exact.delivered).toBe(true)
+  })
+
+  it('non-participant caller: the upstream gating text', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const stranger = makeAgent('stranger-session')
+    const err = await rejectionOf(executeTeamSendMessage(
+      { teamRunId: fixture.teamRunId, to: 'analyst', body: 'x' }, execOf(stranger), deps,
+    ))
+    expect(err.message).toBe(
+      `team-mode tool ${TEAM_SEND_MESSAGE_TOOL_NAME} denied: not a participant of team ${fixture.teamRunId}`,
+    )
+    expect(err.code).toBe('NOT_PARTICIPANT')
+  })
+
+  it('a member of team A cannot message into team B (participation must match)', async () => {
+    const store = makeStore()
+    const fixtureA = await seedTeam(store)
+    // team B needs a DIFFERENT lead — one session leads at most one live run
+    // (the nested gate's storage half, ALREADY_PARTICIPANT).
+    const fixtureB = await seedTeam(store, 'lead-session-2', '2')
+    const subagents = makeSendChannel()
+    const analystOfA = makeAgent(fixtureA.analystSessionId)
+    await expect(
+      executeTeamSendMessage(
+        { teamRunId: fixtureB.teamRunId, to: 'analyst', body: 'x' },
+        execOf(analystOfA),
+        { subagents, agents: makeAgentsRegistry([fixtureB.leadSessionId, fixtureB.analystSessionId]), store },
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_PARTICIPANT' })
+    expect(subagents.sends).toHaveLength(0)
+  })
+
+  it('correlationId must be a UUID (the upstream task-ID admonition enforced)', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+    await expect(
+      executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', correlationId: 'task-1' }, execOf(lead), deps),
+    ).rejects.toMatchObject({ code: 'INVALID_CORRELATION_ID' })
+  })
+
+  it('unknown kind is refused against the MESSAGE_TOOL_KINDS vocabulary', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+    await expect(
+      executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'x', kind: 'shutdown_request' }, execOf(lead), deps),
+    ).rejects.toMatchObject({ code: 'UNKNOWN_KIND' })
+    expect(TEAM_MESSAGE_TOOL_KINDS).toEqual(['message', 'announcement'])
+  })
+
+  it('lead messaging itself is refused as the non-edge it is', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    const lead = makeAgent(fixture.leadSessionId)
+    await expect(
+      executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: TEAM_LEAD_SENTINEL, body: 'dear me' }, execOf(lead), deps),
+    ).rejects.toMatchObject({ code: 'SELF_DELIVERY_NOT_ADJACENT' })
+  })
+
+  it('missing exec.agent is loud, never a silent no-op', async () => {
+    const fixture = await seedTeam(makeStore())
+    const deps = await makeDeps(fixture)
+    await expect(
+      executeTeamSendMessage({ teamRunId: fixture.teamRunId, to: 'analyst', body: 'x' }, { signal: new AbortController().signal }, deps),
+    ).rejects.toMatchObject({ code: 'CALLER_MISSING' })
+  })
+})
+
+// ── surface dispatch (both faces, UNIVERSAL roster semantics) ─────────────────
+
+describe('P5-T6 registerTeamMessageSurface — lead AND member faces', async () => {
+  interface CapturedListener {
+    listener: (payload: { agent: TeamAgent }) => unknown
+  }
+
+  function makeCtx() {
+    const captured: CapturedListener[] = []
+    return {
+      captured,
+      on(_event: 'agent/created', listener: (payload: { agent: TeamAgent }) => unknown) {
+        captured.push({ listener })
+        return () => {}
+      },
+    }
+  }
+
+  /** An agent whose header shape matches its role — children carry
+   *  origin:'subagent' + parentSession, exactly as the host stamps them (the
+   *  dispatch reads origin/parentSession first, participation second). */
+  function makeRegisteringAgent(sessionId: string, parentSessionId?: string) {
+    const registered: unknown[] = []
+    const agent = {
+      session: {
+        header: {
+          id: sessionId,
+          ...(parentSessionId === undefined ? {} : { origin: 'subagent', parentSession: parentSessionId }),
+        },
+      },
+      ctx: { tools: { register: (definition: unknown) => { registered.push(definition); return definition } } },
+    } as unknown as TeamAgent
+    return { agent, registered }
+  }
+
+  function namesOf(registered: unknown[]): string[] {
+    return registered.map((def) => (def as { name: string }).name)
+  }
+
+  it('root session: the message tool lands on the lead face', async () => {
+    const fixture = await seedTeam(makeStore())
+    const ctx = makeCtx()
+    registerTeamMessageSurface(ctx, makeDeps(fixture))
+    const { agent, registered } = makeRegisteringAgent(fixture.leadSessionId)
+    ctx.captured[0]!.listener({ agent })
+    expect(namesOf(registered)).toEqual([TEAM_SEND_MESSAGE_TOOL_NAME])
+  })
+
+  it('team-member child: the message tool lands on the member face', async () => {
+    const fixture = await seedTeam(makeStore())
+    const ctx = makeCtx()
+    registerTeamMessageSurface(ctx, makeDeps(fixture))
+    const { agent, registered } = makeRegisteringAgent(fixture.analystSessionId, fixture.leadSessionId)
+    ctx.captured[0]!.listener({ agent })
+    expect(namesOf(registered)).toEqual([TEAM_SEND_MESSAGE_TOOL_NAME])
+  })
+
+  it('NON-team child gets NOTHING (the structural absence half)', async () => {
+    const fixture = await seedTeam(makeStore())
+    const ctx = makeCtx()
+    registerTeamMessageSurface(ctx, makeDeps(fixture))
+    const { agent, registered } = makeRegisteringAgent('unrelated-child', fixture.leadSessionId)
+    ctx.captured[0]!.listener({ agent })
+    expect(namesOf(registered)).toEqual([])
+  })
+
+  it('member face is gated by team status like team-create (terminal states install nothing)', async () => {
+    const fixture = await seedTeam(makeStore())
+    await fixture.store.transition(fixture.teamRunId, 'shutdown_requested')
+    await fixture.store.transition(fixture.teamRunId, 'deleting')
+    const ctx = makeCtx()
+    registerTeamMessageSurface(ctx, makeDeps(fixture))
+    const { agent, registered } = makeRegisteringAgent(fixture.analystSessionId, fixture.leadSessionId)
+    ctx.captured[0]!.listener({ agent })
+    expect(namesOf(registered)).toEqual([])
+  })
+
+  it('the disposer is handed back (subscription unwind, no late installs)', async () => {
+    const fixture = await seedTeam(makeStore())
+    const ctx = makeCtx()
+    const dispose = registerTeamMessageSurface(ctx, makeDeps(fixture))
+    expect(ctx.captured).toHaveLength(1)
+    dispose()
+    expect(ctx.captured).toHaveLength(1)
+  })
+})
+
+// ── definition shape (upstream zod mirror on the JSON-Schema face) ────────────
+
+describe('P5-T6 tool definition mirrors the upstream zod shape (Q1a §2.6)', async () => {
+  it('parameters: teamRunId/to/body required; kind enum; correlationId documented verbatim', async () => {
+    const fixture = await seedTeam(makeStore())
+    const definition = createTeamSendMessageDefinition(makeDeps(fixture)) as {
+      name: string
+      description: string
+      parameters: {
+        type: string
+        required: string[]
+        properties: Record<string, { type?: string; enum?: string[]; minLength?: number; description?: string }>
+      }
+      output: { schema: unknown; render: (a: unknown, v: unknown) => unknown[] }
+      execute: unknown
+    }
+    expect(definition.name).toBe(TEAM_SEND_MESSAGE_TOOL_NAME)
+    expect(definition.parameters.type).toBe('object')
+    expect(definition.parameters.required).toEqual(['teamRunId', 'to', 'body'])
+    expect(definition.parameters.properties.teamRunId!.minLength).toBe(1)
+    expect(definition.parameters.properties.kind!.enum).toEqual(['message', 'announcement'])
+    // The upstream describe texts ride verbatim (messaging.ts :47/:50).
+    expect(definition.parameters.properties.to!.description).toBe('Recipient name or * for broadcast.')
+    expect(definition.parameters.properties.correlationId!.description).toContain('Do not use task IDs like')
+    expect(typeof definition.output.render).toBe('function')
+    expect(typeof definition.execute).toBe('function')
+    const rendered = definition.output.render({}, { teamRunId: 'x' })
+    expect(rendered).toEqual([{ type: 'text', text: JSON.stringify({ teamRunId: 'x' }) }])
+  })
+})

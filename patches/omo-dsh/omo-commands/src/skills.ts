@@ -547,6 +547,204 @@ export function scanVendorSkills(
 }
 
 /**
+ * P5-T16（第二轮评审 MAJOR-4）：**消费侧的 team 面适配注记**。
+ *
+ * 问题：vendored `shared-skills` 里有两枚技能的正文带着**与本部署的 team 工具面
+ * 不兼容**的 Team Mode 分支——Phase 5 之前那句「shared-skills 文本与本仓工具面
+ * 一致，无需改写」是**假的**（评审逐条复核后驳回）：
+ *
+ *   * `refactor` 的 Phase 5.1-T（`refactor-squad` 队）：调 `team_list`（本部署
+ *     无此工具）、写 `~/.omo/teams/refactor-squad/config.json`（本部署**没有**
+ *     盘上 team config 面）、用 `team_create(teamName=...)`（本面只收
+ *     `inline_spec`）、用 `category: "unspecified-low"`（本面只有
+ *     `quick`/`deep`）、多次调缺必填参数的 `team_task_update(status=...)`。
+ *   * `hyperplan` 的 Phase 1（`team_create` + OMO category + `task_send` +
+ *     `team_run_id`）：category 在本部署**解析不出来**，`task_send` / `team_run_id`
+ *     这两个拼写在本部署**不存在**。
+ *
+ * 处置（评审建议的第一半「在消费侧完成适配」）：**vendor 字节不动**（vendor
+ * 树保持对冻结 tag 的逐字忠实），在**注册给模型的那份正文**前置一段载体注记，
+ * 把差异就地讲清——体例同 `ULTRAWORK_CARRIER_NOTE` / `TEAM_CARRIER_NOTE`。
+ * `refactor` 的处置是评审建议的第二半「未完成前**强制走 legacy 路径**」：
+ * 它的 Team 分支没有被适配，所以注记直接判它走 Phase 5.1-L。
+ *
+ * **按名登记，不按模式扫**（门 6 c26 的「named, not pattern-matched」同款纪律）：
+ * 一枚新技能若也带 team 分支，它的注记必须显式登记在这里——漏登记 = 该技能的
+ * 不兼容正文原样进模型面。
+ */
+/**
+ * 本部署 team 面的**真实形状**（P5-T19 第三轮评审 MAJOR-3/MAJOR-4 的共享片段）。
+ *
+ * 一份文本、三处消费（refactor / hyperplan / ultrawork 的技能注记）；与 omo-hooks
+ * 的 `ULTRAWORK_TEAM_CARRIER_NOTE` **逐字相同**——那一份在另一个包（跨包禁 import），
+ * 等值由 `tests/omo-commands/team-surface-consistency.test.ts` 的交叉钉保证，
+ * 体例同 `OMO_TEAM_*` 服务名的 R-5 双拼写先例。
+ */
+export const TEAM_SURFACE_SHAPES_NOTE = [
+  // P5-T24：**条件句**（第六轮 MINOR-1 的同类漏网）。这条 note 也会在 team 面
+  // **缺席**的会话里被注入（skill 随时可加载、keyword 只过滤 type='team'），
+  // 所以不能无条件断言「surface 在这里」。
+  'IF the team_* tools are in your tool list, THIS deployment\'s surface (not the opencode',
+  'one) is: `team_create` takes ONLY `inline_spec`',
+  '(`{ name, members: [{ name, category, prompt }] }` — spec level accepts ONLY `name`',
+  'and `members`, so NO `description`/`lead`/`leadAgentId`; a member accepts ONLY',
+  '`name`/`category`/`seat`/`prompt`, so NO `kind`/`subagent_type`); a member `category`',
+  'is exactly `quick` or `deep`; messages are',
+  '`team_send_message(teamRunId=<id>, to=<member|"lead"|"*">, body=<text>)` (`body` REQUIRED);',
+  'the task board is `team_task_create/team_task_list/team_task_update/team_task_get`',
+  '(NOT `task_create`/`task_list`/`task_update`/`task_get`); teardown is',
+  '`team_delete(teamRunId=<id>)`; there is NO `team_list`, NO on-disk team config',
+  '(`~/.omo/teams/**.json` is never read here), and `team_run_id` is spelled `teamRunId`.',
+].join('\n')
+
+/**
+ * `hyperplan` 技能体里那段 `team_create` 的**合规替换规格**（P5-T19 第三轮评审
+ * MAJOR-4）。
+ *
+ * 评审的实测：vendored `SKILL.md:223-235` 的 spec 带 spec 级 `description` 与每个
+ * member 的 `kind`——本仓 `parseTeamSpec` 的 closed shape 两枚都拒
+ * （`V1_UNSUPPORTED_FIELD`，`TEAM_SPEC_UNSUPPORTED_UPSTREAM_FIELDS_V1` 含
+ * `description`，`TEAM_MEMBER_UNSUPPORTED_UPSTREAM_FIELDS_V1` 含 `kind`）。上一轮
+ * 的注记只翻译 category / 消息工具名 / `teamRunId`，**没有说这两个字段要删**——于是
+ * 模型按注记换成 quick/deep 之后，`team_create` 仍然在 Phase 1 被拒。
+ *
+ * 这份常量给出**可直接抄的完整规格**（两个被拒字段已删、category 已映射），
+ * 消费侧三处引用它：本文件的 `hyperplan` 技能注记、`templates/hyperplan.ts` 的
+ * FULL roster 契约。`tests/omo-commands/team-surface-consistency.test.ts` 用它跑
+ * **真实** `parseTeamSpec`，证明"照抄就能过"。
+ */
+export const HYPERPLAN_TEAM_SPEC_REPLACEMENT = [
+  'team_create({ inline_spec: {',
+  '  "name": "hyperplan",',
+  '  "members": [',
+  '    { "name": "skeptic",    "category": "quick", "prompt": "<full Skeptic system prompt>" },',
+  '    { "name": "validator",  "category": "quick", "prompt": "<full Validator system prompt>" },',
+  '    { "name": "researcher", "category": "deep",  "prompt": "<full Researcher system prompt>" },',
+  '    { "name": "architect",  "category": "deep",  "prompt": "<full Architect system prompt>" },',
+  '    { "name": "creative",   "category": "quick", "prompt": "<full Creative system prompt>" }',
+  '  ]',
+  '} })',
+].join('\n')
+
+/**
+ * 消费侧的 team 面适配注记（P5-T19 第三轮评审 MAJOR-2/3/4 扩容）。
+ *
+ * 背景（上一轮）：vendored `shared-skills` 里带 team 分支的技能与本部署的工具面
+ * 不兼容；处置是**消费侧**前置注记（vendor 字节不动）。
+ *
+ * 本轮补三件事：
+ *   ① **`debugging` 漏了**——它的 team 路径不在顶层 `SKILL.md`，而在
+ *      `references/methodology/02-investigate.md` 的 Path A（写盘上
+ *      `~/.omo/teams/debug-squad/config.json`、spec 带 `lead`/`kind`、广播缺
+ *      `teamRunId`/`body`）。上一轮的反向门只扫顶层 SKILL.md，所以漏了它。
+ *      处置：注记**强制走 Path B**（异步委派），并点名 Path A 的三处不兼容。
+ *   ② **`ultrawork` 漏了**——它的 team 指南（`SKILL.md:373-393`）教
+ *      `category | subagent_type`（本面拒 `subagent_type`）、`task_send`、
+ *      `team_run_id`、`task_create/task_list/...`（本面是 `team_task_*`）。
+ *   ③ **`hyperplan` 的注记不够**——只翻译词汇，没删 `description`/`kind`，
+ *      照抄仍然被 `parseTeamSpec` 拒。现在直接给**合规替换规格**。
+ *
+ * **按名登记，不按模式扫**（门 6 c26 的同款纪律）：一枚新技能若也带 team 分支，
+ * 它的注记必须显式登记在这里——反向门（`team-surface-consistency` 测试）会扫
+ * **顶层 SKILL.md + references/\*\*.md**，漏登记即红。
+ */
+export const VENDOR_SKILL_TEAM_ADAPTATION_NOTES: Readonly<Record<string, string>> = {
+  refactor: [
+    '[oh-my-opendsh] Carrier note (refactor skill): the Team Mode branch in this skill',
+    '(Phase 5.1-T, the `refactor-squad` team) is NOT adapted to this deployment — run the',
+    'LEGACY path (Phase 5.1-L) instead. If the Phase 5 dispatch decision selects the Team',
+    'path, take the legacy branch here. Why (the upstream branch names surfaces this',
+    'deployment does not have):',
+    '  * `team_list` — no such tool here.',
+    '  * `~/.omo/teams/refactor-squad/config.json` — this deployment has NO on-disk team',
+    '    config; a team is created through `team_create` with an inline spec.',
+    '  * calling `team_create` with a `teamName` field — this surface takes ONE argument:',
+    '    `inline_spec` (an object or a JSON string of one).',
+    '  * `category: "unspecified-low"` — the member categories here are exactly `quick`',
+    '    and `deep`.',
+    '  * calling `team_task_update` with only `status` — the required arguments are',
+    '    `teamRunId`, `taskId`',
+    '    and `status`.',
+    '',
+    TEAM_SURFACE_SHAPES_NOTE,
+    '',
+    'Everything below this note is upstream\'s text unchanged.',
+  ].join('\n'),
+  hyperplan: [
+    '[oh-my-opendsh] Carrier note (hyperplan skill): the body below is upstream\'s text and',
+    'names the opencode team vocabulary. IF this session has the team_* tools (check your',
+    'tool list), their surface is NOT the opencode one.',
+    '',
+    TEAM_SURFACE_SHAPES_NOTE,
+    '',
+    // P5-T25（第七轮评审 MAJOR）：**第三个消费面**。`/hyperplan` 命令与 keyword 注入
+    // 都已拆弹，但**直接 `skill(name="hyperplan")` 加载**的注册正文只给了 spec
+    // replacement + absent fallback——正文的 HARD PRECONDITIONS 仍会把字面
+    // `task_send` 缺席解释成"任务组件被禁用" ⇒ STOP + 让用户 `Restart senpi
+    // without --no-omo-task`（该旗标与"重启 senpi"在本部署都不存在）。
+    'BEFORE you run the HARD PRECONDITIONS check in the body below, read its tool names',
+    'through this surface: the check asks for `task_send` (upstream spelling). IF the team_*',
+    'tools ARE in your tool list, the equivalent here is `team_send_message` and the literal',
+    'name `task_send` being absent is NOT a missing precondition. **never STOP on that check**',
+    'either way, and never recite its restart instruction: `--no-omo-task` does not exist here',
+    'and there is nothing to restart — the senpi restart line is dead. IF the team_* tools are',
+    'genuinely ABSENT, do not stop the plan: use DSH subagent dispatch (one delegation per',
+    'member) as described below.',
+    '',
+    'REPLACE the inline spec printed in the body below with EXACTLY this one (the body\'s',
+    'spec is REJECTED by this parser: spec-level `description` and per-member `kind` are',
+    'closed-shape violations — `V1_UNSUPPORTED_FIELD`, first one then the other — and the',
+    'opencode categories do not resolve):',
+    '',
+    HYPERPLAN_TEAM_SPEC_REPLACEMENT,
+    '',
+    'Then translate the rest: `task_send` becomes `team_send_message(teamRunId, to, body)`,',
+    '`team_run_id` becomes `teamRunId`. If the team_* tools are ABSENT in this session, the',
+    'nearest surface is DSH subagent dispatch (one delegation per member); everything below',
+    'this note is upstream\'s text unchanged.',
+  ].join('\n'),
+  debugging: [
+    '[oh-my-opendsh] Carrier note (debugging skill): the Phase 3 team path',
+    '(`references/methodology/02-investigate.md`, "Path A: Team mode ENABLED") is NOT',
+    'adapted to this deployment — when you reach Phase 3, take **Path B (async subagents)**',
+    'instead, even though the team_* tools may be present. Why Path A fails here:',
+    '  * it writes `~/.omo/teams/debug-squad/config.json` — this deployment has NO on-disk',
+    '    team config; a team is created through `team_create` with an inline spec.',
+    '  * its spec carries `lead` (spec level) and `kind` (per member) — both are',
+    '    closed-shape violations here (`V1_UNSUPPORTED_FIELD`).',
+    '  * its broadcast `team_send_message` call carries only `to="*"` — the REQUIRED',
+    '    `teamRunId` and `body` are missing.',
+    '  * its `category: "deep"` members are fine, but the lead must be the creating',
+    '    session — this surface has no `lead` field.',
+    '',
+    TEAM_SURFACE_SHAPES_NOTE,
+    '',
+    'Everything below this note is upstream\'s text unchanged.',
+  ].join('\n'),
+  ultrawork: [
+    '[oh-my-opendsh] Carrier note (ultrawork skill): the "omo-senpi task + team tools"',
+    'section below is upstream\'s text and names the opencode vocabulary. IF this session has',
+    'the team_* tools (check your tool list), their surface is NOT the opencode one —',
+    'translate that section:',
+    '  * `task_send` is `team_send_message` here; `team_run_id` is `teamRunId`.',
+    '  * the shared task board is `team_task_create` / `team_task_list` /',
+    '    `team_task_update` / `team_task_get` — NOT `task_create` / `task_list` /',
+    '    `task_update` / `task_get`.',
+    '  * a member may NOT take `subagent_type` on this surface (it is refused by name,',
+    '    `SUBAGENT_TYPE_UNSUPPORTED`); use `category` (`quick` or `deep`) or `seat`.',
+    '',
+    TEAM_SURFACE_SHAPES_NOTE,
+    '',
+    'Everything below this note is upstream\'s text unchanged.',
+  ].join('\n'),
+}
+
+/** 一枚技能要不要前置它的 team 面适配注记（按名登记）。 */
+export function teamAdaptationNoteFor(skillName: string): string | undefined {
+  return VENDOR_SKILL_TEAM_ADAPTATION_NOTES[skillName]
+}
+
+/**
  * The registration handed to `ctx.skills.register`, built from a parsed
  * document. `invocation` is deliberately ABSENT: dsh defaults it to
  * model+user invocable (lib/index.js:203-206), and the `ulw-plan` row's
@@ -569,7 +767,12 @@ export function toSkillRegistration(entry: VendorSkillEntry): {
     description: document.description,
     ...document.whenToUse !== undefined ? { whenToUse: document.whenToUse } : {},
     ...document.metadata !== undefined ? { metadata: document.metadata } : {},
-    content: document.content,
+    // P5-T16 (MAJOR-4): 前置该技能的 team 面适配注记（vendor 字节不动——
+    // 注记在**注册给模型的那份正文**之外的前置位，与 ultrawork/hyperplan 的
+    // 载体注记同体例）。
+    content: teamAdaptationNoteFor(document.name) === undefined
+      ? document.content
+      : `${teamAdaptationNoteFor(document.name)}\n\n---\n\n${document.content}`,
     // Absolute path of the SKILL.md itself, so the model can resolve a
     // relative reference (`references/…`) against its own directory.
     path: entry.path,

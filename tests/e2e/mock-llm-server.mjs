@@ -211,7 +211,21 @@ export async function startMockLlmServer({ script, host = "127.0.0.1" }) {
       }
       const index = cursors.get(role) ?? 0;
       cursors.set(role, index + 1);
-      const step = steps[Math.min(index, steps.length - 1)];
+      const rawStep = steps[Math.min(index, steps.length - 1)];
+      // P5-T6 context capture: a lane step may spell a runtime value the
+      // scenario cannot know at script-authoring time (team_run_ids are born
+      // at runtime inside team_create) as {{teamRunId}}; the value is read
+      // OUT of THIS request's body — exactly what a real model would copy
+      // from its own context (the team_create tool result, or an injected
+      // briefing frame). A placeholder with no capturable source fails LOUD
+      // (500): a silently-unreplaced token would replay nonsense arguments.
+      let step;
+      try {
+        step = materializeStep(rawStep, body);
+      } catch (captureErr) {
+        sendError(response, 500, `mock-llm: ${captureErr.message}`, "mock_capture_failed");
+        return;
+      }
       if (isMessagesRequest(body, request.url)) {
         modeCounts.messages += 1;
         // One stderr line per Messages request: the driver runs this server
@@ -259,6 +273,93 @@ export async function startMockLlmServer({ script, host = "127.0.0.1" }) {
         server.close(() => resolve());
       }),
   };
+}
+
+/**
+ * P5-T6 CONTEXT CAPTURE — `{{teamRunId}}` in tool-call arguments.
+ *
+ * WHY THIS EXISTS (and why it is not a general templating engine). The
+ * team scenarios drive `team_send_message` from a lane script, but the tool's
+ * `teamRunId` is a runtime UUID born inside `team_create` — no author-time
+ * script can name it. A REAL model copies the value out of its own context;
+ * this is the mock's honest counterpart: the value is read OUT OF THE
+ * REQUEST BODY THE LANE IS ANSWERING (a tool-result row carrying
+ * `"teamRunId":"<uuid>"`, or the injected briefing frame that names the same
+ * value), never from a counter, a constant, or the environment. LAST match
+ * wins — the freshest team_run_id in the history is the live one.
+ *
+ * Rule:
+ *  * tokens are replaced ONLY inside tool_call / tool_calls arguments
+ *    (recursively through string values); text steps replay verbatim —
+ *    laundering a text turn through a capture would hide authoring mistakes;
+ *  * a token with NO capturable source in the body throws — the handler turns
+ *    that into a 500 (`mock_capture_failed`), never a literal-token replay.
+ *
+ * @param {Record<string, unknown>} body the request being answered
+ * @returns {string|undefined} the captured teamRunId, or undefined if absent
+ */
+function captureTeamRunId(body) {
+  // Walk every string in the parsed body (messages content, tool results,
+  // system rows — anywhere the value may ride as text) and keep the LAST
+  // `"teamRunId":"<uuid>"` occurrence, the freshest copy the model would see.
+  const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+  const pattern = new RegExp(`"teamRunId":"(${UUID})"`, "g");
+  let found;
+  const scan = (value) => {
+    if (typeof value === "string") {
+      for (const match of value.matchAll(pattern)) found = match[1];
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) scan(item);
+      return;
+    }
+    if (value !== null && typeof value === "object") {
+      for (const nested of Object.values(value)) scan(nested);
+    }
+  };
+  scan(body);
+  return found;
+}
+
+/**
+ * Materialize one step: substitute `{{teamRunId}}` inside tool-call argument
+ * strings with the value captured from the request body. Non-tool steps pass
+ * through untouched. Throws on an unsatisfiable placeholder (loud, never a
+ * literal-token replay — an unreplaced `{{teamRunId}}` would reach the tool
+ * as an unknown team and read like a scenario bug the suite cannot diagnose).
+ *
+ * @param {object} step the authored MockStep
+ * @param {Record<string, unknown>} body the request being answered
+ * @returns {object} the step to replay (same object when nothing changed)
+ */
+function materializeStep(step, body) {
+  if (step.type !== "tool_call" && step.type !== "tool_calls") return step;
+  const calls = step.type === "tool_calls" ? step.calls : [step];
+  let captured; // undefined = no placeholder seen yet; null = seen, capture failed
+  const substitute = (value) => {
+    if (typeof value === "string") {
+      if (!value.includes("{{teamRunId}}")) return value;
+      if (captured === undefined) captured = captureTeamRunId(body) ?? null;
+      if (captured === null) {
+        throw new Error(
+          "step asks for {{teamRunId}} but this request body carries no \"teamRunId\":\"<uuid>\" to copy — the lane is messaging before any team_run_id reached its context",
+        );
+      }
+      return value.replaceAll("{{teamRunId}}", captured);
+    }
+    if (Array.isArray(value)) return value.map(substitute);
+    if (value !== null && typeof value === "object") {
+      const out = {};
+      for (const [key, nested] of Object.entries(value)) out[key] = substitute(nested);
+      return out;
+    }
+    return value;
+  };
+  if (step.type === "tool_call") {
+    return { ...step, arguments: substitute(step.arguments ?? {}) };
+  }
+  return { ...step, calls: calls.map((call) => ({ ...call, arguments: substitute(call.arguments ?? {}) })) };
 }
 
 /**

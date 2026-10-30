@@ -1,0 +1,15 @@
+{
+  "name": "@oh-my-opencode/prompts-team",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Vendored team-mode prompt surfaces from OMO: the keyword-detector's team-slot instruction text (prompts-core/prompts/mode/team.md) and the lead run-protocol skill template (skills-loader-core skills/team-mode.ts).",
+  "license": "SUL-1.0",
+  "files": [
+    "NOTICE.md",
+    "VENDOR-MANIFEST.json",
+    "prompts",
+    "src"
+  ],
+  "sideEffects": false
+}

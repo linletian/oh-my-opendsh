@@ -1,0 +1,567 @@
+// tests/omo-commands/team-surface-consistency.test.ts — P5-T16 第二轮评审 MAJOR-3/MAJOR-4：
+// **模型可见的调用示例 ↔ 实际工具 required schema** 的一致性门。
+//
+// 问题（本轮评审抓出）：FULL 形态的模板里教模型的三处调用**照写必失败**——
+//   1. `team_send_message(teamRunId=<id>, to="*", kind="announcement")` 缺必填
+//      `body` ⇒ 工具抛 `BODY_REQUIRED`；
+//   2. `team_send_message(to="lead")` 缺 `teamRunId` 与 `body` ⇒
+//      `TEAM_RUN_ID_REQUIRED` / `BODY_REQUIRED`；
+//   3. `team_task_update(status="completed")` 缺 `teamRunId` 与 `taskId` ⇒
+//      `TEAM_RUN_ID_REQUIRED` / `TASK_ID_INVALID`。
+// 模板是**模型可见面**：照着写的每一次调用都被工具拒——广播、成员汇报、任务
+// 结算三条主路径全断（remove-ai-slops 的任务未结算还会卡住后面的清空与清理
+// 闭环）。
+//
+// 这条门把「示例」与「schema」绑在一起：**模板里出现的每一个
+// `team_xxx(...)` 调用示例，都必须点名该工具的全部必填参数**。以后任何人
+// 改工具的 required 集、或在模板里加一个新示例而漏参数，这里立刻红。
+//
+// 跨包纪律：测试允许同时 import 两侧（生产代码零跨包 import 不受影响）——
+// omo-commands 的模板与 omo-team 的工具 schema 各属一包，等值只能靠这道
+// 交叉钉（与 `hyperplan-team-upgrade.test.ts` 的 R-5 交叉钉同族）。
+
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { describe, expect, it } from 'vitest'
+
+import {
+  HYPERPLAN_TEAM_MODE_GUIDANCE,
+  HYPERPLAN_COMMAND_TEMPLATE_FULL,
+} from '../../patches/omo-dsh/omo-commands/src/templates/hyperplan.ts'
+import {
+  REMOVE_AI_SLOPS_COMMAND_TEMPLATE_FULL,
+  REMOVE_AI_SLOPS_TEAM_MODE_ADDENDUM,
+} from '../../patches/omo-dsh/omo-commands/src/templates/remove-ai-slops.ts'
+import { createTeamSendMessageDefinition } from '../../patches/omo-dsh/omo-team/src/tools/team-message.ts'
+import {
+  HYPERPLAN_TEAM_SPEC_REPLACEMENT,
+  TEAM_SURFACE_SHAPES_NOTE,
+  VENDOR_SKILL_TEAM_ADAPTATION_NOTES,
+  teamAdaptationNoteFor,
+  readVendorSkillDocument,
+  toSkillRegistration,
+} from '../../patches/omo-dsh/omo-commands/src/skills.ts'
+import {
+  HYPERPLAN_CARRIER_NOTE,
+  HYPERPLAN_TEAM_SPEC_REPLACEMENT as HYPERPLAN_TEAM_SPEC_REPLACEMENT_HOOKS,
+  TEAM_CARRIER_NOTE,
+  ULTRAWORK_CARRIER_NOTE,
+  ULTRAWORK_TEAM_CARRIER_NOTE,
+  buildHyperplanMessage,
+  loadInstructionTexts,
+} from '../../patches/omo-dsh/omo-hooks/src/hooks/keyword-detector/messages.ts'
+import { parseTeamSpec } from '../../patches/omo-dsh/omo-team/src/team/team-spec.ts'
+import { registerTeamTaskSurface } from '../../patches/omo-dsh/omo-team/src/tools/team-task.ts'
+import { registerTeamCreateSurface } from '../../patches/omo-dsh/omo-team/src/tools/team-create.ts'
+import { registerTeamDeleteSurface } from '../../patches/omo-dsh/omo-team/src/tools/team-delete.ts'
+import { registerTeamStatusSurface } from '../../patches/omo-dsh/omo-team/src/tools/team-status.ts'
+import {
+  registerTeamApproveShutdownSurface,
+  registerTeamRejectShutdownSurface,
+  registerTeamShutdownRequestSurface,
+} from '../../patches/omo-dsh/omo-team/src/tools/team-shutdown.ts'
+import { registerTeamMessageSurface } from '../../patches/omo-dsh/omo-team/src/tools/team-message.ts'
+
+/** 真实的 vendored 正文（与 keyword 注入面读的是同一份盘上字节）。 */
+const VENDOR_SKILLS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../patches/omo-dsh/vendor/shared-skills/skills')
+
+const loadedTexts = loadInstructionTexts()
+if (!loadedTexts.ok) throw new Error(`vendored instruction texts unavailable: ${JSON.stringify(loadedTexts.failures)}`)
+const KEYWORD_TEXTS = loadedTexts.texts
+
+interface CapturedTool {
+  readonly name: string
+  readonly required: readonly string[]
+}
+
+/** 假 agent：捕获装上来的工具定义（只取 name + parameters.required）。 */
+function makeCapturingAgent(captured: CapturedTool[]): {
+  readonly session: { readonly header: { readonly id: string } }
+  readonly ctx: { readonly tools: { register: (def: unknown) => unknown } }
+  readonly inject: () => void
+} {
+  return {
+    session: { header: { id: 'lead-session-1' } },
+    ctx: {
+      tools: {
+        register: (def: unknown) => {
+          const typed = def as { name: string, parameters?: { required?: readonly string[] } }
+          captured.push({ name: typed.name, required: typed.parameters?.required ?? [] })
+          return {}
+        },
+      },
+    },
+    inject: () => undefined,
+  }
+}
+
+/** 装一遍所有 team 工具面，拿到每枚工具的 required 集。 */
+function captureToolSchemas(): Map<string, readonly string[]> {
+  const captured: CapturedTool[] = []
+  const ctx = {
+    on: (_event: 'agent/created', listener: (payload: { agent: unknown }) => unknown) => {
+      listener({ agent: makeCapturingAgent(captured) })
+      return () => undefined
+    },
+  }
+  const store = {
+    participationOfMember: () => undefined,
+    get: () => undefined,
+    listTasks: async () => [],
+  } as never
+  const deps = { subagents: {} as never, agents: { get: () => undefined }, store }
+  registerTeamMessageSurface(ctx as never, deps as never)
+  for (const toolName of ['team_task_create', 'team_task_list', 'team_task_get', 'team_task_update']) {
+    registerTeamTaskSurface(ctx as never, deps as never, toolName)
+  }
+  // P5-T19（第三轮评审 MINOR-4）：把**其余 team 工具**也收进来——上一轮只捕获
+  // 五件，注释却宣称 "every ..."; `team_create` / `team_delete` / `team_status` /
+  // 关停三件套的 required 集因此从未被比过。
+  const moreCaptured: CapturedTool[] = []
+  const moreCtx = {
+    on: (_event: 'agent/created', listener: (payload: { agent: unknown }) => unknown) => {
+      listener({ agent: makeCapturingAgent(moreCaptured) })
+      return () => undefined
+    },
+  }
+  registerTeamCreateSurface(moreCtx as never, { subagents: {} as never, store } as never)
+  registerTeamDeleteSurface(moreCtx as never, { subagents: {} as never, agents: { get: () => undefined }, store } as never)
+  registerTeamStatusSurface(moreCtx as never, { store, agents: { get: () => undefined } } as never)
+  registerTeamShutdownRequestSurface(moreCtx as never, { subagents: {} as never, agents: { get: () => undefined }, store } as never)
+  registerTeamApproveShutdownSurface(moreCtx as never, { subagents: {} as never, agents: { get: () => undefined }, store } as never)
+  registerTeamRejectShutdownSurface(moreCtx as never, { subagents: {} as never, agents: { get: () => undefined }, store } as never)
+  for (const row of moreCaptured) captured.push(row)
+  // `team_send_message` 的定义不经 agent/created 装配（它在 lead/member 面上
+  // 各自注册），这里直接读定义函数——同一个事实源。
+  const messageDef = createTeamSendMessageDefinition(deps as never) as {
+    name: string
+    parameters: { required: readonly string[] }
+  }
+  captured.push({ name: messageDef.name, required: messageDef.parameters.required })
+  const byName = new Map<string, readonly string[]>()
+  for (const row of captured) byName.set(row.name, row.required)
+  return byName
+}
+
+/**
+ * 一个 `team_xxx(...)` 调用示例里点名的参数名。
+ *
+ * 两种调用形态都要认：`fn(arg=value, ...)` 与**对象字面量** `fn({ arg: value })`
+ * （`HYPERPLAN_TEAM_SPEC_REPLACEMENT` 与 slops addendum 用的是后者）。
+ */
+function exampleArgNames(call: string): string[] {
+  const inner = call.slice(call.indexOf('(') + 1, call.lastIndexOf(')'))
+  // 三种写法都认：`arg=value`、`{ arg: value }`、以及**纯签名** `fn(a, b, c)`
+  // （纯签名本身就是"点名必填参数"的最短写法，不该被判成残调用）。
+  const names: string[] = []
+  for (const part of inner.split(',')) {
+    const trimmed = part.trim()
+    const assigned = /([A-Za-z_][A-Za-z0-9_]*)\s*[:=]/.exec(trimmed)
+    if (assigned !== null) {
+      names.push(assigned[1])
+      continue
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) names.push(trimmed)
+  }
+  return names
+}
+
+/** 文本里所有 `team_xxx(...)` 调用示例（逐个捕获）。 */
+function callExamples(text: string): string[] {
+  const found: string[] = []
+  const pattern = /team_[a-z_]+\([^)]*\)/g
+  for (const match of text.matchAll(pattern)) found.push(match[0])
+  return found
+}
+
+/**
+ * 本仓**所有**模型可见文本（P5-T19 第三轮评审 MINOR-4：上一轮只列四个模板，
+ * 注释却宣称 "every model-visible"——现在把命令模板、技能注记、keyword 注记
+ * 全部收进来，声明与覆盖对齐）。
+ */
+const MODEL_VISIBLE_TEMPLATES: readonly { readonly label: string, readonly text: string }[] = [
+  { label: 'hyperplan FULL template', text: HYPERPLAN_COMMAND_TEMPLATE_FULL },
+  { label: 'hyperplan team-mode guidance', text: HYPERPLAN_TEAM_MODE_GUIDANCE },
+  { label: 'remove-ai-slops FULL template', text: REMOVE_AI_SLOPS_COMMAND_TEMPLATE_FULL },
+  { label: 'remove-ai-slops team addendum', text: REMOVE_AI_SLOPS_TEAM_MODE_ADDENDUM },
+  // 技能注册面的适配注记（MAJOR-2/3/4 的产物：它们自己也在教调用形状）。
+  ...Object.entries(VENDOR_SKILL_TEAM_ADAPTATION_NOTES)
+    .map(([skill, text]) => ({ label: `skill adaptation note: ${skill}`, text })),
+  // keyword 注入面的注记（omo-hooks）。
+  { label: 'keyword note: team', text: TEAM_CARRIER_NOTE },
+  { label: 'keyword note: ultrawork', text: ULTRAWORK_CARRIER_NOTE },
+  { label: 'keyword note: hyperplan', text: HYPERPLAN_CARRIER_NOTE },
+]
+
+describe('P5-T16 (MAJOR-3) 模型可见调用示例 ↔ 工具 required schema', () => {
+  const schemas = captureToolSchemas()
+
+  it('the capture really saw the team tool surface (non-vacuous)', () => {
+    expect(schemas.size).toBeGreaterThanOrEqual(11)
+    expect(schemas.get('team_send_message')).toEqual(['teamRunId', 'to', 'body'])
+    expect(schemas.get('team_task_update')).toEqual(['teamRunId', 'taskId', 'status'])
+  })
+
+  it('every model-visible team_* call example names ALL of that tool\'s required parameters', () => {
+    const problems: string[] = []
+    let checked = 0
+    for (const { label, text } of MODEL_VISIBLE_TEMPLATES) {
+      for (const call of callExamples(text)) {
+        const toolName = call.slice(0, call.indexOf('('))
+        const required = schemas.get(toolName)
+        if (required === undefined) continue // 不是本仓的 team 工具（散文提及）
+        checked += 1
+        const named = exampleArgNames(call)
+        const missing = required.filter((param) => !named.includes(param))
+        if (missing.length > 0) {
+          problems.push(`${label}: \`${call}\` is missing required param(s): ${missing.join(', ')}`)
+        }
+      }
+    }
+    // 非真空：模板里确实有 team_* 调用示例被这条门读到。
+    expect(checked).toBeGreaterThan(0)
+    expect(problems).toEqual([])
+  })
+
+  it('the three examples the review named are present AND complete', () => {
+    // 正面钉：评审点名的三处，逐条落到模板里且参数齐。
+    const hyperplan = HYPERPLAN_TEAM_MODE_GUIDANCE
+    expect(hyperplan).toContain('team_send_message(teamRunId=<id>, to="*", kind="announcement", body=')
+    expect(hyperplan).toContain('team_send_message(teamRunId=<id>, to="lead", body=')
+    const slops = REMOVE_AI_SLOPS_TEAM_MODE_ADDENDUM
+    expect(slops).toContain('team_task_update(teamRunId=<id>, taskId=')
+    expect(slops).toContain('status="completed"')
+  })
+})
+
+describe('P5-T16 (MAJOR-4) vendored skill 的 team 面适配注记（消费侧，vendor 字节不动）', () => {
+  it('refactor 的注册正文前置适配注记，并强制走 legacy 路径', () => {
+    const note = teamAdaptationNoteFor('refactor')
+    expect(note).toBeDefined()
+    expect(note).toContain('run the')
+    expect(note).toContain('LEGACY path (Phase 5.1-L)')
+    expect(note).toContain('`team_list`')
+    expect(note).toContain('`inline_spec`')
+    expect(note).toContain('`quick`')
+    expect(note).toContain('`deep`')
+    expect(note).toContain('`teamRunId`')
+    // 注册面：注记在正文**之前**（模型先读到它）。
+    const entry = {
+      document: {
+        name: 'refactor',
+        description: 'd',
+        content: 'BODY',
+      },
+      path: '/tmp/refactor/SKILL.md',
+    } as never
+    const registration = toSkillRegistration(entry)
+    expect(registration.content.startsWith(teamAdaptationNoteFor('refactor')!)).toBe(true)
+    expect(registration.content).toContain('BODY')
+  })
+
+  it('hyperplan 的注册正文前置词汇翻译注记', () => {
+    const note = teamAdaptationNoteFor('hyperplan')
+    expect(note).toBeDefined()
+    expect(note).toContain('team_send_message(teamRunId=<id>')
+    expect(note).toContain('`team_run_id` becomes `teamRunId`')
+    expect(note).toContain('a member `category`')
+    expect(note).toContain('is exactly `quick` or `deep`')
+    expect(note).toContain('REPLACE the inline spec printed in the body below')
+  })
+
+  it('未被登记的技能不前置任何注记（默认逐字）', () => {
+    // 用一枚**真的**没有 team 内容的技能（`git-master`），不是 `debugging`——
+    // P5-T19（第三轮评审 MINOR）：上一轮这里拿 `debugging` 当「无注记」的例子，
+    // 而它其实有 team 路径（在 references 里）⇒ 等于把**遗漏**钉成了预期行为。
+    expect(teamAdaptationNoteFor('git-master')).toBeUndefined()
+    const entry = {
+      document: { name: 'git-master', description: 'd', content: 'BODY' },
+      path: '/tmp/git-master/SKILL.md',
+    } as never
+    expect(toSkillRegistration(entry).content).toBe('BODY')
+  })
+
+  it('门：任何带 team 调用的 vendored 技能（含 references/）都必须登记适配注记', () => {
+    // P5-T19（第三轮评审 MINOR-4）：上一轮的反向门只扫**顶层 SKILL.md**，正则也只认
+    // 少数带括号的 `team_xxx(` ——于是 `debugging`（team 路径在
+    // `references/methodology/02-investigate.md`）与 `ultrawork`（`task_send` /
+    // `team_run_id` 拼写）都被漏掉了。本轮：**递归扫 SKILL.md + references/**`,
+    // 检测面扩到 team 工具调用、`task_send(`、`team_run_id`、盘上 team config 路径。
+    const skillsDir = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../patches/omo-dsh/vendor/shared-skills/skills',
+    )
+    // 检测面：team 工具调用 / `task_send(` / `team_run_id` / 盘上 team config 路径。
+    // （JS 没有 `x` 标志 ⇒ 用数组 join 拼，保持可读。）
+    const TEAM_MARKER = new RegExp([
+      '\\bteam_(?:create|delete|list|send_message|task_create|task_list|task_update|task_get|status|shutdown_request|approve_shutdown|reject_shutdown)\\s*\\(',
+      '\\btask_send\\s*\\(',
+      '\\bteam_run_id\\b',
+      '~\\/\\.omo\\/teams\\/',
+    ].join('|'))
+    /** 递归收集一枚技能目录下所有 .md（SKILL.md + references/**）。 */
+    const collectMarkdown = (dir: string, out: string[] = []): string[] => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) collectMarkdown(full, out)
+        else if (entry.name.endsWith('.md')) out.push(full)
+      }
+      return out
+    }
+    const offenders: string[] = []
+    const hits: string[] = []
+    for (const skill of readdirSync(skillsDir, { withFileTypes: true })) {
+      if (!skill.isDirectory()) continue
+      const files = collectMarkdown(join(skillsDir, skill.name))
+      if (!files.some((file) => TEAM_MARKER.test(readFileSync(file, 'utf8')))) continue
+      hits.push(skill.name)
+      if (teamAdaptationNoteFor(skill.name) === undefined) offenders.push(skill.name)
+    }
+    expect(offenders).toEqual([])
+    // **非真空**：扫描确实命中了四枚带 team 内容的技能（不是"什么都没匹配到"）。
+    expect(hits.sort()).toEqual(['debugging', 'hyperplan', 'refactor', 'ultrawork'])
+    // 注记表是**超集**约束（不是 exact-set）：将来正确新增第五枚注记不该误红，
+    // 但上面四枚必须都在。
+    for (const skill of hits) {
+      expect(Object.keys(VENDOR_SKILL_TEAM_ADAPTATION_NOTES), skill).toContain(skill)
+    }
+  })
+
+  it('P5-T19 (MAJOR-4) 替换规格**真的能过** parseTeamSpec（上游原样 spec 过不了）', () => {
+    // 评审的实测：vendored spec 先以 `V1_UNSUPPORTED_FIELD` 拒 `description`、
+    // 再拒 member 的 `kind`。替换规格必须是**可直接抄**的合规形状。
+    const spec = {
+      name: 'hyperplan',
+      members: [
+        { name: 'skeptic', category: 'quick', prompt: 'p' },
+        { name: 'validator', category: 'quick', prompt: 'p' },
+        { name: 'researcher', category: 'deep', prompt: 'p' },
+        { name: 'architect', category: 'deep', prompt: 'p' },
+        { name: 'creative', category: 'quick', prompt: 'p' },
+      ],
+    }
+    const parsed = parseTeamSpec(JSON.stringify(spec))
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.spec.members).toHaveLength(5)
+    // 上游原样形状**必须**继续被拒（证明这条腿不是空转）。
+    const upstream = parseTeamSpec(JSON.stringify({
+      ...spec,
+      description: 'Adversarial planning team for cross-critique debate.',
+      members: spec.members.map((member) => ({ kind: 'category', ...member })),
+    }))
+    expect(upstream.ok).toBe(false)
+    if (upstream.ok) return
+    expect(upstream.code).toBe('V1_UNSUPPORTED_FIELD')
+    // 只删 description（保留 kind）⇒ 仍被拒（评审的第二段实测）。
+    const halfFixed = parseTeamSpec(JSON.stringify({
+      ...spec,
+      members: spec.members.map((member) => ({ kind: 'category', ...member })),
+    }))
+    expect(halfFixed.ok).toBe(false)
+    if (halfFixed.ok) return
+    expect(halfFixed.code).toBe('V1_UNSUPPORTED_FIELD')
+  })
+
+  it('P5-T20 (MAJOR-3) 真实的 buildHyperplanMessage 输出自带合规替换规格，且它真的能过解析', () => {
+    // 第四轮评审 MAJOR-3：技能注册面与命令路径都给了 replacement，但 **keyword
+    // 注入面**（omo-hooks 的 HYPERPLAN_CARRIER_NOTE）只翻译了 category ——
+    // 实际注入的正文里 spec 仍带 spec 级 `description` 与 member 级 `kind`，
+    // Phase 1 照样被 `parseTeamSpec` 拒。这条腿直接对**实际构建出来的消息**取证，
+    // 不对常量取证。
+    const message = buildHyperplanMessage({ texts: KEYWORD_TEXTS, agentName: 'sisyphus' })
+    // ① replacement 在场，且带明确的「替换整段 spec」指令。
+    expect(message).toContain('REPLACE the inline spec printed in the body below')
+    expect(message).toContain('spec-level `description` and per-member `kind`')
+    expect(message).toContain(HYPERPLAN_TEAM_SPEC_REPLACEMENT_HOOKS)
+    // ② 从**消息正文**里抠出那段 replacement（不是从常量），跑真实解析器。
+    // replacement 用的是 **JSON 形态**的 spec（引号键），所以这里抠出来的就是
+    // 一段合法 JSON —— 也正是模型该原样传给 `inline_spec` 的东西。
+    const start = message.indexOf('team_create({ inline_spec: {')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const specStart = message.indexOf('{', message.indexOf('inline_spec:', start))
+    const end = message.indexOf('} })', specStart)
+    expect(end).toBeGreaterThan(specStart)
+    const json = message.slice(specStart, end + 1)
+    const parsed = parseTeamSpec(json)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.spec.members).toHaveLength(5)
+    // ③ 反向腿：上游原样（description + kind）仍被拒，证明这条腿不是空转。
+    const upstream = parseTeamSpec(JSON.stringify({
+      name: 'hyperplan',
+      description: 'Adversarial planning team for cross-critique debate.',
+      members: [
+        { kind: 'category', name: 'skeptic', category: 'quick', prompt: 'p' },
+        { kind: 'category', name: 'validator', category: 'quick', prompt: 'p' },
+      ],
+    }))
+    expect(upstream.ok).toBe(false)
+    if (upstream.ok) return
+    expect(upstream.code).toBe('V1_UNSUPPORTED_FIELD')
+  })
+
+  it('P5-T21 (MAJOR-3) the injected hyperplan message DEFUSES the STOP/Restart precondition', () => {
+    // 第五轮评审 MAJOR-3：正文的 HARD PRECONDITIONS 要求 `team_create`/`task_send`/
+    // `team_delete` 齐备，否则 STOP 并让用户「Restart senpi without --no-omo-task」。
+    // 本部署 `task_send` 字面恒不存在、`--no-omo-task` 与「重启 senpi」都不存在
+    // ⇒ 不拆弹时模型可以照正文停下来、并把一条无效的重启指令复述给用户。
+    const message = buildHyperplanMessage({ texts: KEYWORD_TEXTS, agentName: 'sisyphus' })
+    // ① 拆弹句在场。
+    expect(message).toContain('never STOP on that check')
+    expect(message).toContain('the senpi restart line is dead')
+    expect(message).toContain('`--no-omo-task` does not exist here')
+    // P5-T23（第六轮评审 MINOR-1）：**条件句**——noteam / 工具注册失败时这条
+    // note 仍会被注入（keyword-detector 只过滤 type='team'，不过滤 hyperplan），
+    // 所以不许无条件断言 "team_send_message IS in your tool list"。
+    expect(message).not.toContain('it IS in your tool list')
+    expect(message).toContain('IF the team_*')
+    expect(message).toContain('genuinely ABSENT')
+    // ② 它必须在**正文之前**（模型先读到它，才可能拦下那次 STOP）。
+    const bodyStart = message.indexOf('Before starting, verify:')
+    expect(bodyStart).toBeGreaterThanOrEqual(0)
+    expect(message.indexOf('never STOP on that check')).toBeLessThan(bodyStart)
+    expect(message.indexOf('the senpi restart line is dead')).toBeLessThan(bodyStart)
+    // ③ 命令路径的同一句仍然在（两侧口径一致，不是只补了 keyword 面）。
+    expect(HYPERPLAN_TEAM_MODE_GUIDANCE).toContain('never STOP on that check')
+    expect(HYPERPLAN_TEAM_MODE_GUIDANCE).toContain('the senpi restart line is dead')
+  })
+
+  // ── P5-T25（第七轮评审）：把「按名字改一处」升级成「按判据扫全部面」 ──────
+  //
+  // 第七轮抓到的四件事有同一个形状：**同一个缺陷在 N 个消费面上，评审点名哪个我
+  // 就修哪个**。所以这一节不再逐条钉，而是先把「面」显式枚举出来，再对每个面套
+  // 同一组判据。新加一个面而忘了适配 ⇒ 这里直接红。
+  const buildRegistrationBody = (skillDir: string): string => toSkillRegistration(
+    readVendorSkillDocument(join(VENDOR_SKILLS_DIR, skillDir, 'SKILL.md'), skillDir),
+  ).content
+
+  it('P5-T25 (MAJOR) EVERY surface that carries the hyperplan body defuses the STOP/Restart precondition', () => {
+    // 三个消费面：① /hyperplan 命令 FULL；② keyword 注入；③ **直接 skill 加载**。
+    // 第七轮 MAJOR 指的就是 ③：只补了 replacement + absent fallback，没有拆弹，
+    // 于是正文的 HARD PRECONDITIONS 仍会让模型 STOP 并复述一条无效重启指令。
+    // 每个面自报"是否携带 upstream 正文"：携带者必须**在正文之前**拆弹；不携带者
+    // （命令模板用的是本部署自带的完整环）也必须自带同一组拆弹句。
+    const surfaces: readonly { readonly label: string, readonly text: string, readonly carriesBody: boolean }[] = [
+      { label: '/hyperplan command FULL', text: HYPERPLAN_COMMAND_TEMPLATE_FULL, carriesBody: false },
+      { label: '/hyperplan team-mode guidance', text: HYPERPLAN_TEAM_MODE_GUIDANCE, carriesBody: false },
+      { label: 'keyword injection (buildHyperplanMessage)', text: buildHyperplanMessage({ texts: KEYWORD_TEXTS, agentName: 'sisyphus' }), carriesBody: true },
+      { label: 'skill registration (skill(name="hyperplan"))', text: buildRegistrationBody('hyperplan'), carriesBody: true },
+    ]
+    expect(surfaces).toHaveLength(4)
+    expect(surfaces.filter((surface) => surface.carriesBody)).toHaveLength(2)
+    for (const surface of surfaces) {
+      const stop = surface.text.indexOf('never STOP on that check')
+      const dead = surface.text.indexOf('the senpi restart line is dead')
+      expect(stop, `${surface.label}: never-STOP defusal`).toBeGreaterThanOrEqual(0)
+      expect(dead, `${surface.label}: restart-is-dead defusal`).toBeGreaterThanOrEqual(0)
+      if (!surface.carriesBody) continue
+      // 携带 upstream 正文的面：拆弹必须在正文**之前**，且正文确实在场。
+      const body = surface.text.indexOf('Before starting, verify:')
+      expect(body, `${surface.label}: carries the upstream body`).toBeGreaterThanOrEqual(0)
+      expect(stop, `${surface.label}: defusal must precede the body`).toBeLessThan(body)
+      expect(dead, `${surface.label}: defusal must precede the body`).toBeLessThan(body)
+    }
+  })
+
+  it('P5-T26 every carrier-note / full-template export in the tree has a REGISTERED disposition', () => {
+    // 第七轮的核心教训：**面清单是手维护的**——只要有人新增一个注记/模板而没登记，
+    // 上面两道门就看不见它，下一轮评审就会再抓到一个"第 N 个消费面"。
+    // 这条门把"清单"变成**从源码发现**：树里每个 carrier-note / FULL 模板导出，
+    // 必须在下面这张表里有明确处置（由门检查 / 或明确是读者向文档、不进模型面）。
+    const DISPOSITIONS: ReadonlyMap<string, 'gated' | 'documentation-only'> = new Map([
+      // ── 由上面的门检查（模型可见） ──────────────────────────────────────────
+      ['HYPERPLAN_CARRIER_NOTE', 'gated'], // hooks 侧（本文件以 hooks 的为准）
+      ['ULTRAWORK_CARRIER_NOTE', 'gated'],
+      ['ULTRAWORK_TEAM_CARRIER_NOTE', 'gated'],
+      ['TEAM_CARRIER_NOTE', 'gated'],
+      ['HYPERPLAN_COMMAND_TEMPLATE_FULL', 'gated'],
+      ['REMOVE_AI_SLOPS_COMMAND_TEMPLATE_FULL', 'gated'],
+      // ── 读者向文档，不进模型面（逐条记录为何不进） ──────────────────────────
+      ['HANDOFF_CARRIER_NOTE', 'documentation-only'], // 读者向：解释 handoff 语义移植的差异
+      ['STOP_CONTINUATION_CARRIER_NOTE', 'documentation-only'],
+      ['REMOVE_AI_SLOPS_CARRIER_NOTE', 'documentation-only'],
+      ['REMOVE_AI_SLOPS_CARRIER_NOTE_P5', 'documentation-only'],
+      ['ULW_EXECUTE_CARRIER_NOTE', 'documentation-only'],
+    ])
+    const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../patches/omo-dsh')
+    const PACKAGES = ['omo-commands', 'omo-hooks', 'omo-team']
+    const discovered = new Map<string, string[]>()
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) { walk(full); continue }
+        if (!entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) continue
+        const text = readFileSync(full, 'utf8')
+        for (const match of text.matchAll(/export const ([A-Z][A-Z0-9_]+)\s*(?::[^=]*)?=/g)) {
+          const name = match[1]!
+          if (!/(?:CARRIER_NOTE(?:_P\d+)?|COMMAND_TEMPLATE_FULL)$/.test(name)) continue
+          const list = discovered.get(name) ?? []
+          list.push(full.slice(ROOT.length + 1))
+          discovered.set(name, list)
+        }
+      }
+    }
+    for (const pkg of PACKAGES) walk(join(ROOT, pkg, 'src'))
+    // 非真空：确实发现了一组面（发现不到 = 正则失效，不是"没有面"）。
+    expect(discovered.size).toBeGreaterThanOrEqual(10)
+    // 每个被发现的面都必须有处置；缺失的逐个点名（-- 而不是一个空数组）。
+    const unregistered = [...discovered.keys()].filter((name) => !DISPOSITIONS.has(name))
+    expect(unregistered).toEqual([])
+    // 处置表里不许有"僵尸条目"（登记了但源码里已不存在）——那会让清单慢慢失真。
+    const stale = [...DISPOSITIONS.keys()].filter((name) => !discovered.has(name))
+    expect(stale).toEqual([])
+    // 由门检查的那一档必须有实质数量（防止有人把所有条目改成 documentation-only）。
+    const gated = [...DISPOSITIONS.values()].filter((d) => d === 'gated')
+    expect(gated.length).toBeGreaterThanOrEqual(6)
+  })
+
+  it('P5-T25 (MINOR-1) NO model-visible surface makes an UNCONDITIONAL team-surface-presence claim', () => {
+    // 第六轮 MINOR-1 / 第七轮 MINOR-1 是同一类错误的两次出现：只要有一条 note 说
+    // "本部署有 team 面"，而该 note 在 team 面**缺席**时也会注入（keyword 闸只过滤
+    // type='team'；skill 随时可加载），这句话就是假的。
+    //
+    // 判据：禁止无条件句式；允许的写法必须以 `IF` 引出。
+    const unconditional: readonly RegExp[] = [
+      /HAS a team surface/i,
+      /TEAM SURFACE HERE/,
+      /has a team surface, but it is not/i,
+    ]
+    const surfaces: readonly { readonly label: string, readonly text: string }[] = [
+      ...MODEL_VISIBLE_TEMPLATES,
+      // 四个技能注册面（实际注册正文，不是注记常量）。
+      ...['hyperplan', 'ultrawork', 'refactor', 'debugging']
+        .map((dir) => ({ label: `skill registration body: ${dir}`, text: buildRegistrationBody(dir) })),
+    ]
+    expect(surfaces.length).toBeGreaterThanOrEqual(12)
+    const offenders: string[] = []
+    for (const surface of surfaces) {
+      for (const pattern of unconditional) {
+        if (pattern.test(surface.text)) offenders.push(`${surface.label} matches ${pattern}`)
+      }
+    }
+    expect(offenders).toEqual([])
+    // 非真空：确实有面在讲"在场"，而且它们是条件句。
+    const mentionsPresence = surfaces.filter((s) =>
+      /team_\*\* tools|team_\* tools|team surface/i.test(s.text))
+    expect(mentionsPresence.length).toBeGreaterThanOrEqual(8)
+    const conditional = surfaces.filter((s) => s.text.includes('IF '))
+    expect(conditional.length).toBeGreaterThanOrEqual(8)
+  })
+
+  it('P5-T20 (MAJOR-3) the two packages carry the SAME replacement spec, byte for byte', () => {
+    // 跨包禁 import：两份各持一份，等值靠这道钉（R-5 先例）。
+    expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT_HOOKS).toBe(HYPERPLAN_TEAM_SPEC_REPLACEMENT)
+  })
+
+  it('P5-T19 (MAJOR-3) 跨包 team 形状声明逐字相同（R-5 双拼写先例）', () => {
+    // omo-commands 与 omo-hooks 各持一份（跨包禁 import），等值靠这道钉。
+    expect(ULTRAWORK_TEAM_CARRIER_NOTE).toBe(TEAM_SURFACE_SHAPES_NOTE)
+    // 替换规格必须点名两个被拒字段（否则模型不知道该删什么）。
+    expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT).toContain('"category": "quick"')
+    expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT).not.toContain('description')
+    expect(HYPERPLAN_TEAM_SPEC_REPLACEMENT).not.toContain('kind:')
+  })
+})

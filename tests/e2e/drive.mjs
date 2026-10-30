@@ -9,10 +9,11 @@
 //   {result:"PASS"|"FAIL", scenarios:[...]}
 // (report §14.4.5 — CI parses stdout; all diagnostics go to stderr).
 //
-// P3-T3: the root cordis.yml now inserts THREE plugin rows (omo-agents +
-// omo-hooks, plus omo-commands since P4-T3), so stage 0 installs all three
+// P3-T3: the root cordis.yml now inserts FOUR plugin rows (omo-agents +
+// omo-hooks, plus omo-commands since P4-T3, plus omo-team since P5-T3), so
+// stage 0 installs all four
 // packages into the sandbox profile (PLUGIN_DIRS) and `pluginLoaded` asserts all
-// three load markers. What that stage PROVES is mount, not behaviour: each
+// four load markers. What that stage PROVES is mount, not behaviour: each
 // plugin's `pluginLoaded` analysis matches its **summary boot marker prefix**
 // (`[omo-commands] loaded: …`), which every plugin logs whether or not it
 // registers anything. The scenario bodies are where behaviour is asserted.
@@ -558,6 +559,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -580,37 +582,51 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // The concerto/roster package — also the source of the template this driver
 // renders for its own composition checks below.
 const PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents')
-// P3-T3/P4-T3: the root cordis.yml inserts one row per package, so a sandbox
-// profile must carry ALL THREE before it can boot the overlay at all.
+// P3-T3/P4-T3/P5-T3: the root cordis.yml inserts one row per package, so a sandbox
+// profile must carry ALL FOUR before it can boot the overlay at all.
 const HOOKS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks')
 const COMMANDS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-commands')
-const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR, COMMANDS_PLUGIN_DIR]
+const TEAM_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-team')
+const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR, COMMANDS_PLUGIN_DIR, TEAM_PLUGIN_DIR]
+// P5-T9 双评审修复轮（MAJOR-1/MAJOR-2 的修法）：只读探针插件——lead 在拆除/
+// 停止后经受控 tool/result 把 `ctx.subagents.listDescendants` / `ctx.jobs.list`
+// 的宿主服务直读结果打进 durable 日志，drive 逐字段断言（Q-5b 沙箱插件先例的
+// 常驻版）。它**不进** PLUGIN_DIRS：四行 mount 是全场景契约，探针只属于两枚
+// T9 场景（`def.teamProbePlugin`），面越窄证据越硬。零依赖（零 @deepseek-ai
+// import、纯 ESM），照 omo-hooks 的「自包含者走 repo 路径」纪律直读安装。
+const TEAM_PROBE_PLUGIN_DIR = join(REPO_ROOT, 'tests', 'e2e', 'probes', 'team-probe-plugin')
+const TEAM_PROBE_PLUGIN_PKG = '@omo-e2e/team-probe-plugin'
 const PROFILE = 'web'
 const CONCERTO_PRESET_ID = 'concerto'
 
 /**
- * The load markers ALL THREE mounted plugins log at boot (P3-T3; third row by
- * P4-T3): omo-agents' plain `loaded` line, omo-hooks' summary marker
- * (`[omo-hooks] loaded: manifest <N> entries (…)`) and omo-commands' summary
- * marker (`[omo-commands] loaded: manifest <N> entries (…)` — the prefix is what
+ * The load markers ALL FOUR mounted plugins log at boot (P3-T3; third row by
+ * P4-T3, fourth by P5-T3): omo-agents' plain `loaded` line, omo-hooks' summary
+ * marker (`[omo-hooks] loaded: manifest <N> entries (…)`), and the two
+ * manifest-summary siblings — omo-commands'
+ * `[omo-commands] loaded: manifest <N> entries (pending=<n>, ported=<n>) —
+ * <r>/<N> commands registered` and omo-team's
+ * `[omo-team] loaded: manifest <N> entries (pending=<n>, ported=<n>,
+ * recorded=<n>) — <r>/<N> team surfaces registered`. The prefix is what
  * boot_log.includes matches, and `<N>`/the status counts are computed at boot
- * from each plugin's own manifest, never transcribed). A boot missing one means
+ * from each plugin's own manifest, never transcribed. A boot missing one means
  * the corresponding cordis.yml insert row did not mount.
  */
 const LOADED_MARKERS = [
   '[omo-agents] loaded',
   '[omo-hooks] loaded',
   '[omo-commands] loaded',
+  '[omo-team] loaded',
 ]
 
-/** `pluginLoaded` for every analysis: all three plugin rows really mounted. */
+/** `pluginLoaded` for every analysis: all four plugin rows really mounted. */
 function pluginsLoaded(bootLog) {
   return LOADED_MARKERS.every((marker) => bootLog.includes(marker))
 }
 
 /**
  * The boot-log text the `--self-test` fixtures feed the analyses that assert
- * `pluginLoaded` (a real boot carries all three markers).
+ * `pluginLoaded` (a real boot carries all four markers).
  */
 const FABRICATED_BOOT_LOG = LOADED_MARKERS.join('\n')
 
@@ -5537,6 +5553,30 @@ function pluginCopyDir(sandbox) {
 }
 
 /**
+ * P5-T5: the sandbox COPY of the omo-team package, staged ONLY for the two team
+ * scenarios. omo-team's member persona bytes ship INSIDE its roster-seats.ts (as
+ * template literals), not in the concerto template, so the ONLY way a member's
+ * MOCKROLE lane marker reaches the mounted bytes is to stamp a copy of omo-team
+ * before boot — the same P4.5-T8b copy+stamp discipline, now for the second
+ * package. Non-team scenarios never stage it (installPlugin keeps omo-team on the
+ * repo path, exactly as P5-T3 shipped it), so the 34 prior scenarios are untouched.
+ */
+function teamCopyDir(sandbox) {
+  return join(sandbox.root, 'plugins', basename(TEAM_PLUGIN_DIR))
+}
+
+/**
+ * The omo-team roster seat → the persona template-literal constant that carries its
+ * persona bytes in roster-seats.ts. This is the ONLY stamp anchor for the member
+ * lanes: the marker is spliced in right after the opening backtick so the persona
+ * string STARTS with `MOCKROLE=<seat>` and the mock's system-row scan routes it.
+ */
+const OMO_TEAM_SEAT_PERSONA_CONST = {
+  hephaestus: 'OMO_TEAM_SEAT_PERSONA_HEPHAESTUS',
+  'sisyphus-junior': 'OMO_TEAM_SEAT_PERSONA_SISYPHUS_JUNIOR',
+}
+
+/**
  * The sandbox plugin copy's concerto TEMPLATE — the file the running plugin
  * reads as `CONCERTO_TEMPLATE_DIR` (src/concerto-preset.ts:122, read at :381 by
  * `renderConcertoComposition`), because `dsh plugin add` installs this copy as a
@@ -5567,15 +5607,15 @@ function pluginTemplateCompositionPath(sandbox) {
   return join(pluginCopyDir(sandbox), CONCERTO_PRESET_ID, 'agent.cordis.yml')
 }
 
-function installPlugin(sandbox, env) {
-  // One `plugin add` per cordis.yml insert row (three rows since P4-T3): a
+function installPlugin(sandbox, env, def) {
+  // One `plugin add` per cordis.yml insert row (four rows since P5-T3): a
   // profile missing ANY one of them aborts the whole boot naming that row
   // (`plugin tree failed to load … ERR_MODULE_NOT_FOUND`) — not just a hooks
   // profile.
   //
-  // P4.5-T8b: exactly ONE of the three rows is installed from a sandbox COPY —
+  // P4.5-T8b: exactly ONE of the four rows is installed from a sandbox COPY —
   // omo-agents, the package whose apply() renders the concerto template that
-  // 0.2.x mounts (see pluginCopyDir). The other two keep the repo path, and
+  // 0.2.x mounts (see pluginCopyDir). The other three keep the repo path, and
   // that is not laziness but a measured refusal: omo-hooks declares
   // `dependencies: { undici: ^8.10.0 }` and the repo installs it as a pnpm
   // symlink whose target is RELATIVE to the repo
@@ -5590,10 +5630,12 @@ function installPlugin(sandbox, env) {
   // field at all and every import in its src/*.ts is either `node:*` or
   // relative, so the copy is genuinely self-contained. omo-commands declares no
   // dependencies either, but owns no persona and no template, so copying it
-  // would only add a second face to keep honest.
+  // would only add a second face to keep honest — the same holds for omo-team
+  // (P5-T3: no `dependencies` field, host-only, no persona/template of its
+  // own), which therefore keeps the repo path too.
   //
   // `cwd` moves to the sandbox WITH the copied operand and stays REPO_ROOT
-  // for the two repo operands. It is inert either way — anchorPathSpec only
+  // for the three repo operands. It is inert either way — anchorPathSpec only
   // anchors relative operands (dsh-plugin-manager/lib/index.js:215-219) and
   // pnpm itself runs with cwd = the profile dir (:518) — so the split is made
   // for what it says: each `add` runs from the directory its operand lives in.
@@ -5604,16 +5646,64 @@ function installPlugin(sandbox, env) {
   rmSync(stagedAgentsDir, { recursive: true, force: true })
   mkdirSync(stagedAgentsDir, { recursive: true })
   cpSync(PLUGIN_DIR, stagedAgentsDir, { recursive: true })
+  // P5-T5: team scenarios stage a COPY of omo-team (SIX since P5-T9 —
+  // team-create-and-message, team-nested-create-denied, team-shutdown-handshake,
+  // team-task-claim, team-teardown-no-orphans, stop-continuation-team; the
+  // original P5-T5 text said "only the two", stale since P5-T6/T7/T8b grew the
+  // family), so a member's MOCKROLE lane marker (stamped into roster-seats.ts
+  // BEFORE boot) reaches the mounted bytes. Self-contained like omo-agents (no
+  // `dependencies`, imports are
+  // all `node:*` or relative), so the copy is genuinely portable — the same audit
+  // that keeps omo-hooks on the repo path does not apply here.
+  const stageOmoTeam = def?.stageOmoTeamCopy === true
+  const stagedTeamDir = teamCopyDir(sandbox)
+  if (stageOmoTeam) {
+    rmSync(stagedTeamDir, { recursive: true, force: true })
+    mkdirSync(stagedTeamDir, { recursive: true })
+    cpSync(TEAM_PLUGIN_DIR, stagedTeamDir, { recursive: true })
+    // P5-T12: the staged copy now owns TWO boot-time disk consumers —
+    // team-keyword-slot.ts and team-prompts-vendor.ts resolve the vendored
+    // pair at `<copy>/../../../vendor/prompts-team/…`, which for the staged
+    // layout is `<sandbox>/plugins/vendor/prompts-team`. WITHOUT staging the
+    // bytes too, both rows log FAILED at boot and the census reads 12/24 —
+    // measured on the first full T12 run (team-create-and-message boot.log:
+    // `vendor manifest absent at …/plugins/vendor/prompts-team/…`). The pair
+    // is copied VERBATIM (the boot gate re-hashes it against the manifest and
+    // a mutated copy would fail the row, which is the point).
+    cpSync(
+      join(REPO_ROOT, 'patches', 'omo-dsh', 'vendor', 'prompts-team'),
+      join(sandbox.root, 'plugins', 'vendor', 'prompts-team'),
+      { recursive: true },
+    )
+    // P5-T15: the same staged copy now owns SIX MORE boot-time disk consumers —
+    // team-core-vendor.ts resolves each flipped row's bytes at
+    // `<copy>/../../../vendor/team-core/…`, i.e. `<sandbox>/plugins/vendor/team-core`.
+    // Measured on the first full T15 run (team-create-and-message boot.log):
+    // SIX `vendor-team-core-* FAILED: Error: vendor-team-core: manifest absent
+    // at …/plugins/vendor/team-core/VENDOR-MANIFEST.json` lines and a census of
+    // `16/24` under a `ported=22` summary — the rows flipped, the bytes did not
+    // travel. The tree is copied VERBATIM (the per-row gate re-hashes every
+    // derived file against the copied VENDOR-MANIFEST.json, so a mutated copy
+    // fails that row by name, which is the point of the gate).
+    cpSync(
+      join(REPO_ROOT, 'patches', 'omo-dsh', 'vendor', 'team-core'),
+      join(sandbox.root, 'plugins', 'vendor', 'team-core'),
+      { recursive: true },
+    )
+  }
   for (const pluginDir of PLUGIN_DIRS) {
-    const operand = pluginDir === PLUGIN_DIR ? stagedAgentsDir : pluginDir
+    const operand = pluginDir === PLUGIN_DIR
+      ? stagedAgentsDir
+      : (stageOmoTeam && pluginDir === TEAM_PLUGIN_DIR ? stagedTeamDir : pluginDir)
     const add = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', operand], {
-      cwd: operand === stagedAgentsDir ? sandbox.root : REPO_ROOT,
+      cwd: operand === stagedAgentsDir || operand === stagedTeamDir ? sandbox.root : REPO_ROOT,
       env,
       encoding: 'utf8',
       timeout: INSTALL_TIMEOUT_MS,
     })
     addLog += `$ dsh plugin --profile ${PROFILE} add ${operand}\n`
       + (operand === stagedAgentsDir ? `(copied from ${PLUGIN_DIR})\n` : '')
+      + (operand === stagedTeamDir ? `(copied from ${TEAM_PLUGIN_DIR})\n` : '')
       + `${add.stdout ?? ''}\n${add.stderr ?? ''}\n`
     if (add.status !== 0) {
       writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
@@ -5656,6 +5746,78 @@ function installPlugin(sandbox, env) {
     )
   }
   addLog += `realpath ${installedOmoAgents} -> ${installedReal} (== the plugin copy)\n`
+  // P5-T5: when omo-team was staged, its profile entry must realpath to the SAME
+  // staged copy — otherwise the roster-seats stamp lands on bytes nothing mounts
+  // and the member lanes collapse to a mock 400. Pinned, not trusted, exactly as
+  // the omo-agents link above.
+  if (stageOmoTeam) {
+    const installedOmoTeam = join(
+      sandbox.dshHome,
+      'profiles',
+      PROFILE,
+      'node_modules',
+      '@oh-my-opendsh',
+      basename(TEAM_PLUGIN_DIR),
+    )
+    if (!existsSync(installedOmoTeam)) {
+      throw new Error(
+        `the profile has no @oh-my-opendsh/${basename(TEAM_PLUGIN_DIR)} entry at `
+        + `${installedOmoTeam} after \`plugin add\` — the staged omo-team install did not land`,
+      )
+    }
+    const teamReal = realpathSync(installedOmoTeam)
+    const teamCopyReal = realpathSync(stagedTeamDir)
+    if (teamReal !== teamCopyReal) {
+      throw new Error(
+        `the profile's ${basename(TEAM_PLUGIN_DIR)} realpaths to ${teamReal}, not to the `
+        + `staged copy ${teamCopyReal} — a MOCKROLE stamp into the omo-team copy would reach `
+        + 'nothing, so the run aborts instead of failing later as a mock 400',
+      )
+    }
+    addLog += `realpath ${installedOmoTeam} -> ${teamReal} (== the omo-team copy)\n`
+  }
+  // P5-T9 双评审修复轮：探针插件的第五行安装（仅 def.teamProbePlugin 的两枚
+  // T9 场景）。装法与证据链同 q5b 先例（`dsh plugin add` + overlay `insert:`
+  // 行 + profile 入口 realpath 钉）——差别只在常驻：q5b 是一次性取证脚本，
+  // 这枚跟着 drive 的每次 41/41 跑。装不上就响亮 abort（缺行的失败形状见
+  // 本函数头注：`plugin tree failed to load … ERR_MODULE_NOT_FOUND`）。
+  if (def?.teamProbePlugin === true) {
+    const addProbe = spawnSync('dsh', ['plugin', '--profile', PROFILE, 'add', TEAM_PROBE_PLUGIN_DIR], {
+      cwd: REPO_ROOT,
+      env,
+      encoding: 'utf8',
+      timeout: INSTALL_TIMEOUT_MS,
+    })
+    addLog += `$ dsh plugin --profile ${PROFILE} add ${TEAM_PROBE_PLUGIN_DIR}\n${addProbe.stdout ?? ''}\n${addProbe.stderr ?? ''}\n`
+    if (addProbe.status !== 0) {
+      writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
+      throw new Error(
+        `dsh plugin add ${TEAM_PROBE_PLUGIN_DIR} exited ${addProbe.status} (see plugin-add.log in the sandbox) — the T9 probe surface would be absent and both MAJOR fixes would read their evidence off a hole`,
+      )
+    }
+    const installedProbe = join(
+      sandbox.dshHome,
+      'profiles',
+      PROFILE,
+      'node_modules',
+      '@omo-e2e',
+      'team-probe-plugin',
+    )
+    if (!existsSync(installedProbe)) {
+      writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
+      throw new Error(
+        `the profile has no ${TEAM_PROBE_PLUGIN_PKG} entry at ${installedProbe} after \`plugin add\` — the probe insert row would mount nothing`,
+      )
+    }
+    const probeReal = realpathSync(installedProbe)
+    if (probeReal !== realpathSync(TEAM_PROBE_PLUGIN_DIR)) {
+      writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
+      throw new Error(
+        `the profile's team-probe-plugin realpaths to ${probeReal}, not to the repo probe ${TEAM_PROBE_PLUGIN_DIR} — the asserted probe bytes are not the mounted bytes`,
+      )
+    }
+    addLog += `realpath ${installedProbe} -> ${probeReal} (== the repo probe)\n`
+  }
   writeFileSync(join(sandbox.root, 'plugin-add.log'), addLog)
 }
 
@@ -5772,6 +5934,13 @@ function bootDsh(sandbox, patchPath, env) {
 
 function stopDsh(child) {
   return new Promise((resolveStop) => {
+    // P5-T19：**已经退出的子进程立刻返回**。`child.once('exit')` 只在进程尚未
+    // 退出时才会触发——若它在我们挂监听之前就退了（例如上一轮的逃逸轮把宿主
+    // 拖崩），这里会永远等下去（实测把套件挂住）。
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolveStop()
+      return
+    }
     const killTimer = setTimeout(() => child.kill('SIGKILL'), 15_000)
     child.once('exit', () => {
       clearTimeout(killTimer)
@@ -6249,6 +6418,78 @@ export async function stampMockRoleMarkersIntoPluginCopy(sandbox, roles) {
   return landing
 }
 
+/**
+ * P5-T5 — the SECOND MOCKROLE face: stamp `MOCKROLE=<seat>` into the STAGED omo-
+ * team copy's roster-seats.ts persona literals, BEFORE boot, then SELF-VERIFY on
+ * the READ face (import the stamped copy's resolveTeamSeat and assert each seat's
+ * trio.persona STARTS with the marker). The conductor lanes use
+ * stampMockRoleMarkersIntoPluginCopy (the concerto template); the MEMBER lanes live
+ * inside omo-team's own shipped persona bytes, so they need this second stamp — the
+ * two faces are independent and both must land.
+ *
+ * The marker is spliced right after the persona constant's opening backtick, so the
+ * persona string BEGINS with `MOCKROLE=<seat>\n`. Idempotent and byte-anchored: a
+ * second run finds the marker already there and writes nothing.
+ */
+export async function stampTeamSeatPersonasIntoOmoTeamCopy(sandbox, seats) {
+  const rosterSeatsPath = join(teamCopyDir(sandbox), 'src', 'team', 'roster-seats.ts')
+  if (!existsSync(rosterSeatsPath)) {
+    throw new Error(
+      `the staged omo-team copy has no roster-seats.ts at ${rosterSeatsPath} `
+      + '(installPlugin did not stage the omo-team copy — is def.stageOmoTeamCopy set?)',
+    )
+  }
+  const landing = []
+  for (const seat of seats) {
+    const constName = OMO_TEAM_SEAT_PERSONA_CONST[seat]
+    if (constName === undefined) {
+      throw new Error(
+        `no omo-team seat persona constant is mapped for seat '${seat}' `
+        + `(OMO_TEAM_SEAT_PERSONA_CONST knows: ${Object.keys(OMO_TEAM_SEAT_PERSONA_CONST).join(', ')})`,
+      )
+    }
+    const marker = `MOCKROLE=${seat}`
+    const before = readFileSync(rosterSeatsPath, 'utf8')
+    const stampedHead = new RegExp(`export const ${constName} = \\\`${marker}\\n`)
+    if (stampedHead.test(before)) {
+      landing.push({ seat, file: rosterSeatsPath, reStamped: true })
+      continue
+    }
+    const anchor = new RegExp(`(export const ${constName} = \`)(<!-- Source:)`)
+    if (!anchor.test(before)) {
+      throw new Error(
+        `roster-seats.ts has no stampable persona literal for '${constName}' — `
+        + 'the persona constant moved or no longer opens with its source comment',
+      )
+    }
+    writeFileSync(rosterSeatsPath, before.replace(anchor, `$1${marker}\n$2`))
+    landing.push({ seat, file: rosterSeatsPath, reStamped: false })
+  }
+  // SELF-VERIFY on the READ face: import the COPY's roster-seats.ts by absolute
+  // file URL (cache-busted so we read the bytes just written, not a prior module)
+  // and assert each seat's resolveTeamSeat().trio.persona STARTS with its marker.
+  // The repo's own module resolves to UNSTAMPED bytes, so the COPY must be read
+  // directly — this is the face the child's startContinuable consumes; if the stamp
+  // did not reach it, abort loudly instead of failing later as a mock 400.
+  const copyModule = await import(
+    `file://${rosterSeatsPath}?stamp=${Date.now()}`
+  )
+  for (const seat of seats) {
+    const marker = `MOCKROLE=${seat}`
+    const resolution = copyModule.resolveTeamSeat(seat)
+    if (resolution.ok !== true) {
+      throw new Error(`the stamped copy's resolveTeamSeat('${seat}') failed: ${resolution.reason}`)
+    }
+    if (!String(resolution.trio.persona).startsWith(`${marker}\n`)) {
+      throw new Error(
+        `MOCKROLE stamp for seat '${seat}' did not reach the head of the persona the omo-team `
+        + `copy assembles: ${JSON.stringify(String(resolution.trio.persona).slice(0, 60))}`,
+      )
+    }
+  }
+  return landing
+}
+
 // ── Analysis (pure — the --self-test QA targets exactly this) ────────────────
 
 function requestHeaderRoute(events) {
@@ -6285,6 +6526,14 @@ function eventText(event) {
   } catch {
     return ''
   }
+}
+
+/** RAW text of a tool/result's content blocks (eventText's JSON.stringify
+ *  escapes the inner quotes — a `"status":"x"` needle can never match it;
+ *  this is the extractor for durable-JSON-IN-text needles). */
+function toolResultTextOf(event) {
+  const content = event?.data?.message?.content ?? event?.data?.content ?? []
+  return content.map((block) => (typeof block?.text === 'string' ? block.text : '')).join('\n')
 }
 
 /**
@@ -13193,6 +13442,66 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P5-T12 team-keyword-mode self-test: GOOD passes, then seven named defects
+  // each red on their own axis — the team slot's five new failure shapes (member
+  // leak / first-request arrival / reworded body / kind collapse / vacuous child
+  // negative) plus the two inherited structural axes (missing claim, short turns).
+  {
+    const goodTeam = analyzeTeamKeywordMode(fabricatedTeamKeywordGoodInput(routes), routes)
+    if (goodTeam.result !== 'PASS') {
+      problems.push(`fabricated GOOD team-keyword-mode must PASS, got FAIL on: ${goodTeam.failed.join(', ')}`)
+    }
+    // Mutate BOTH lead projections of the one injection (same discipline as
+    // mutateComboCarrierText — the model may read either copy).
+    const mutateTeamCarrierText = (input, rewrite) => {
+      for (const message of [input.log.events[3].data.inserted[0], input.log.events[6].data]) {
+        if (message?.content?.[0]?.text !== undefined) {
+          message.content[0].text = rewrite(message.content[0].text)
+        }
+      }
+    }
+    const teamDefectCases = [
+      ['member-side leak: the child log carries the team injection', (input) => {
+        const hijacked = fabricatedTeamKeywordInjection(input.log.events[3].data.inserted[0].content[0].text)
+        input.childLog.events.push({ seq: 6, type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [hijacked] } })
+        input.childLog.events.push({ ...fabricatedKeywordInjectedEvent(hijacked.content[0].text, hijacked.source, hijacked.id), seq: 7 })
+      }, 'childSessionNotReleasedForTeam'],
+      ['the team body reached the model on the FIRST request (no step boundary)', (input) => {
+        input.requests[0].body.messages.push(fabricatedTeamKeywordInjection(buildExpectedInjectedText('team')))
+      }, 'teamBodyAbsentFromFirstRequest'],
+      ['the injected body was reworded (not the verbatim vendor bytes)', (input) => {
+        mutateTeamCarrierText(input, (text) => text.replace('[team-mode]', '[team-mode-rewritten]'))
+      }, 'injectionTextIsVerbatimVendorText'],
+      ['the team face collapsed onto the detector kind', (input) => {
+        for (const message of [input.log.events[3].data.inserted[0], input.log.events[6].data]) {
+          message.source = { ...message.source, kind: OMO_KEYWORD_DETECTOR_KIND }
+        }
+      }, 'injectionIsFullTeamUserMessage'],
+      ['the child never received the keyword text (vacuous member negative)', (input) => {
+        const first = input.childLog.events.find((e) => e.type === 'user/message')
+        first.data.content[0].text = first.data.content[0].text.replace('team mode', 'plain prose')
+      }, 'childSessionRanWithTeamText'],
+      ['the history claim never materialised', (input) => {
+        input.log.events = input.log.events.filter((e) => e.seq !== 7)
+      }, 'singleTeamHistoryClaim'],
+      ['a lead turn never completed', (input) => {
+        input.log.events = input.log.events.filter((e) => !(e.type === 'turn/end' && e.seq === 14))
+      }, 'leadTurnsCompleted'],
+    ]
+    if (teamDefectCases.length !== 7) {
+      problems.push(`P5-T12 team-keyword-mode: the defect list must hold exactly 7 legs, got ${teamDefectCases.length}`)
+    }
+    for (const [label, mutate, expectedCheck] of teamDefectCases) {
+      TEAM_KEYWORD_SELF_TEST_ATTESTATION.push(['team-keyword-mode', label])
+      const input = fabricatedTeamKeywordGoodInput(routes)
+      mutate(input)
+      const verdict = analyzeTeamKeywordMode(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated team-keyword-mode defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+    }
+  }
+
   // ── P4-T9 stop-continuation self-test: the good input must PASS, then every
   // named defect must FAIL on its own named check.
   {
@@ -13237,33 +13546,34 @@ async function runAnalysisSelfTest(routes) {
     ULW_COMMAND_SELF_TEST_ATTESTATION.push(...commandCases.map(([label]) => ['ulw-execute-command-activates-atlas', label]))
   }
 
-  // ── P4-T15 hyperplan-degraded-noted self-test: the good input must PASS, then
+  // ── P4-T15 hyperplan-team-mode-full-ring self-test: the good input must PASS, then
   // every named defect must FAIL on its own named check.
   //
-  // Defect counts, so a reader does not have to count: 17 for
-  // hyperplan-degraded-noted, 14 for ulw-plan-loads-prometheus-skill, 31 in total.
+  // Defect counts, so a reader does not have to count: 18 for
+  // hyperplan-team-mode-full-ring (T13 grew it from 17 by adding the five-value
+  // status-vocabulary leg), 14 for ulw-plan-loads-prometheus-skill, 32 in total.
   // The empty-list guard below is the real check on these numbers — if a case is
   // deleted, the banner is generated from the live list, so the SELF-TEST OK line
   // would silently shrink rather than fail. That is why the guard exists per
   // scenario and not once for the pair.
   {
-    const goodHyperplan = analyzeHyperplanDegradedNoted(fabricatedHyperplanInput(routes), routes)
+    const goodHyperplan = analyzeHyperplanTeamModeFullRing(fabricatedHyperplanInput(routes), routes)
     if (goodHyperplan.result !== 'PASS') {
-      problems.push(`fabricated GOOD hyperplan-degraded-noted must PASS, got FAIL on: ${goodHyperplan.failed.join(', ')}`)
+      problems.push(`fabricated GOOD hyperplan-team-mode-full-ring must PASS, got FAIL on: ${goodHyperplan.failed.join(', ')}`)
     }
-    const hyperplanCases = hyperplanDegradedDefectCases()
+    const hyperplanCases = hyperplanTeamModeFullRingDefectCases()
     if (hyperplanCases.length === 0) {
-      problems.push('fabricated hyperplan-degraded-noted: the defect list is EMPTY — the banner would attest to nothing')
+      problems.push('fabricated hyperplan-team-mode-full-ring: the defect list is EMPTY — the banner would attest to nothing')
     }
     for (const [label, mutate, expectedCheck] of hyperplanCases) {
       const input = fabricatedHyperplanInput(routes)
       mutate(input)
-      const verdict = analyzeHyperplanDegradedNoted(input, routes)
+      const verdict = analyzeHyperplanTeamModeFullRing(input, routes)
       if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
-        problems.push(`fabricated hyperplan-degraded-noted defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+        problems.push(`fabricated hyperplan-team-mode-full-ring defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
       }
     }
-    HYPERPLAN_SELF_TEST_ATTESTATION.push(...hyperplanCases.map(([label]) => ['hyperplan-degraded-noted', label]))
+    HYPERPLAN_SELF_TEST_ATTESTATION.push(...hyperplanCases.map(([label]) => ['hyperplan-team-mode-full-ring', label]))
   }
 
   // ── P4-T15 ulw-plan-loads-prometheus-skill self-test. The good input must PASS,
@@ -13358,6 +13668,133 @@ async function runAnalysisSelfTest(routes) {
     }
   }
 
+  // ── P5-T9 team-probe-face self-test（评审 MINOR 修复轮）：GOOD 必 PASS，
+  // 五枚具名探针面 defect 各红在自己的 named check——两枚 T9 analyze 各跑
+  // 同一份五腿清单（P4-T7 command channel 的 stated-once/applied-twice 先例）。
+  // 钉的轴：行集多报 / 活体行+settled / depth≥2 / 成员 owner 的 job 行 /
+  // dump 缺 dsh-base 段——与 catalogClosure/jobsSurface/profileMount 三枚
+  // MAJOR 修复轮的探针真面断言一一对应（每腿与所述断言一一对应）。
+  for (const [scenarioName, analyzeT9, inputFactory] of [
+    ['team-teardown-no-orphans', analyzeTeamTeardownNoOrphans, fabricatedTeamTeardownNoOrphansInput],
+    ['stop-continuation-team', analyzeStopContinuationTeam, fabricatedStopContinuationTeamInput],
+  ]) {
+    const goodT9 = analyzeT9(inputFactory(routes), routes)
+    if (goodT9.result !== 'PASS') {
+      problems.push(`fabricated GOOD ${scenarioName} must PASS, got FAIL on: ${goodT9.failed.join(', ')}`)
+    }
+    // NB the explicit call: earlier scenarios' `defectCases` are in the SAME
+    // function scope — the T9 factory is named, not shadowed, on purpose.
+    const t9ProbeCases = teamProbeSurfaceDefectCases()
+    if (t9ProbeCases.length !== 5) {
+      problems.push(`fabricated ${scenarioName}: the T9 probe-face defect list must hold exactly 5 legs, got ${t9ProbeCases.length} — the task book pins five, one per new-assertion failure axis`)
+    }
+    for (const [label, mutate, expectedCheck] of t9ProbeCases) {
+      const input = inputFactory(routes)
+      mutate(input)
+      const verdict = analyzeT9(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated ${scenarioName} defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+      TEAM_T9_SELF_TEST_ATTESTATION.push([scenarioName, label])
+    }
+  }
+
+  // ── P5-T10 team-surface self-test（评审 MINOR 双通道收敛）：T10 给两枚 team
+  // 场景新增的 13 枚检查（9+4）自 T6 起没有 fabricated 腿——两枚 GOOD 必 PASS，
+  // 13 枚具名 defect 各红且【只】红在自己的 named check（失败轴：缺帧 / 双帧 /
+  // 错 kind / 错序 / 目录缺成员，与新检查一一对应，teamCreateSurfaceDefectCases /
+  // teamShutdownSurfaceDefectCases 的清单长度由下方显式钉死）。
+  // T15 评审 A MINOR 修复轮：team-create-and-message 清单 9→10——第 10 腿是
+  // T15 settle 钉（settleReachedChildren）的反向腿（hook 布尔 undefined），
+  // 不是第 14 枚 T10 检查；钉数随动，轴清单补 settle-hook-vanished。
+  // T15 收尾轮：team-shutdown-handshake 清单 4→5——第 5 腿同名 settle 反向腿
+  // （本场景的 named check 就叫 settleReached），同纪律、同随动。
+  for (const [scenarioName, analyzeT10, inputFactory, t10Cases, expectedLegs] of [
+    ['team-create-and-message', analyzeTeamCreateAndMessage, fabricatedTeamCreateAndMessageInput, teamCreateSurfaceDefectCases, 10],
+    ['team-shutdown-handshake', analyzeTeamShutdownHandshake, fabricatedTeamShutdownHandshakeInput, teamShutdownSurfaceDefectCases, 5],
+  ]) {
+    const goodT10 = analyzeT10(inputFactory(routes), routes)
+    if (goodT10.result !== 'PASS') {
+      problems.push(`fabricated GOOD ${scenarioName} must PASS, got FAIL on: ${goodT10.failed.join(', ')}`)
+    }
+    // NB the explicit call: earlier scenarios' defect lists are in the SAME
+    // function scope — the T10 lists are named, not shadowed, on purpose.
+    const cases = t10Cases()
+    if (cases.length !== expectedLegs) {
+      problems.push(`fabricated ${scenarioName}: the T10 surface defect list must hold exactly ${expectedLegs} legs, got ${cases.length} — one per T10 new check in this scenario (the FINAL leg of each list is the T15 settle-pin leg)`)
+    }
+    for (const [label, mutate, expectedCheck] of cases) {
+      const input = inputFactory(routes)
+      mutate(input)
+      const verdict = analyzeT10(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated ${scenarioName} defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+      if (verdict.result === 'FAIL' && verdict.failed.join(',') !== expectedCheck) {
+        problems.push(`fabricated ${scenarioName} defect "${label}" must fail ONLY on ${expectedCheck}, got: ${verdict.failed.join(', ')}`)
+      }
+      TEAM_T10_SELF_TEST_ATTESTATION.push([scenarioName, label])
+    }
+  }
+
+  // ── P5-T15 评审 A MINOR 修复轮：team-nested-create-denied 的 settle 反向腿。
+  // 本场景此前没有 fabricated self-test（反向证据 = 真跑咬合 + 首轮 5 RED 的
+  // 诚实账）；现在 GOOD 必 PASS + 一枚具名 settle 腿：钩子布尔 undefined
+  // （「钩子被删/改名/从未触发」的伪造形态，旧弱形放行的洞）只红
+  // settleReachedChildren——与 team-create-and-message 第 10 腿同纪律，
+  // 清单长度显式钉死 1（每枚新钉一枚腿）。
+  {
+    const goodNested = analyzeTeamNestedCreateDenied(fabricatedTeamNestedCreateDeniedInput(routes), routes)
+    if (goodNested.result !== 'PASS') {
+      problems.push(`fabricated GOOD team-nested-create-denied must PASS, got FAIL on: ${goodNested.failed.join(', ')}`)
+    }
+    const nestedCases = teamNestedCreateDeniedSettleDefectCases()
+    if (nestedCases.length !== 1) {
+      problems.push(`fabricated team-nested-create-denied: the settle defect list must hold exactly 1 leg, got ${nestedCases.length} — one per new settle pin in this scenario`)
+    }
+    for (const [label, mutate, expectedCheck] of nestedCases) {
+      const input = fabricatedTeamNestedCreateDeniedInput(routes)
+      mutate(input)
+      const verdict = analyzeTeamNestedCreateDenied(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated team-nested-create-denied defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+      if (verdict.result === 'FAIL' && verdict.failed.join(',') !== expectedCheck) {
+        problems.push(`fabricated team-nested-create-denied defect "${label}" must fail ONLY on ${expectedCheck}, got: ${verdict.failed.join(', ')}`)
+      }
+      TEAM_T15_SETTLE_SELF_TEST_ATTESTATION.push(['team-nested-create-denied', label])
+    }
+  }
+
+  // ── P5-T14 relay/broadcast self-test（仲裁补强 §1 的 fabricated 半）：
+  // team-create-and-message 的 11 枚 relay/broadcast 新检查每枚一枚具名
+  // defect 腿，GOOD 必 PASS、各腿【只】红在自己的 named check（失败轴：
+  // 中转结果翻面 / 中转帧缺失 / 中转注剥除 / 正文剥除 / durable source 伪造
+  // / 中转帧落 lead / 广播扇出缺一 / 广播注伪造 / 广播落 lead 自己 /
+  // 拒文缺失 / 拒后落帧——与 e2e 真面一一对应，清单长度由显式钉死）。
+  {
+    const goodT14 = analyzeTeamCreateAndMessage(fabricatedTeamCreateAndMessageInput(routes), routes)
+    if (goodT14.result !== 'PASS') {
+      problems.push(`fabricated GOOD team-create-and-message (T14 relay/broadcast) must PASS, got FAIL on: ${goodT14.failed.join(', ')}`)
+    }
+    const t14Cases = teamCreateRelayBroadcastDefectCases()
+    if (t14Cases.length !== 11) {
+      problems.push(`fabricated team-create-and-message: the T14 relay/broadcast defect list must hold exactly 11 legs, got ${t14Cases.length} — one per T14 new check in this scenario`)
+    }
+    for (const [label, mutate, expectedCheck] of t14Cases) {
+      const input = fabricatedTeamCreateAndMessageInput(routes)
+      mutate(input)
+      const verdict = analyzeTeamCreateAndMessage(input, routes)
+      if (verdict.result !== 'FAIL' || !verdict.failed.includes(expectedCheck)) {
+        problems.push(`fabricated team-create-and-message T14 defect "${label}" must FAIL with ${expectedCheck}, got ${verdict.result} (${verdict.failed.join(', ')})`)
+      }
+      if (verdict.result === 'FAIL' && verdict.failed.join(',') !== expectedCheck) {
+        problems.push(`fabricated team-create-and-message T14 defect "${label}" must fail ONLY on ${expectedCheck}, got: ${verdict.failed.join(', ')}`)
+      }
+      TEAM_T14_SELF_TEST_ATTESTATION.push([label, expectedCheck])
+    }
+  }
+
   // ── P2-T18 MOCKROLE landing (hermetic, real template + real renderers).
   problems.push(...await runMockRoleLandingSelfTest())
   // ── P4.5-T8b the 0.2.x delivery half (hermetic): the plugin-copy stamp and
@@ -13388,12 +13825,25 @@ async function runAnalysisSelfTest(routes) {
  * and the banner renders from this list, so the two cannot disagree.
  */
 const KEYWORD_SELF_TEST_ATTESTATION = []
+/** P5-T12's own accumulator: the team slot's legs are rendered under their own
+ * phase label in the banner, not folded into the P4-T13 clause. */
+const TEAM_KEYWORD_SELF_TEST_ATTESTATION = []
 // P4-T9's own attestation, same shape: filled by the self-test loop, read by the banner.
 const STOP_SELF_TEST_ATTESTATION = []
 // P4-T11's, same shape: the banner is rendered FROM what ran, never hand-typed.
 const ULW_COMMAND_SELF_TEST_ATTESTATION = []
 const HYPERPLAN_SELF_TEST_ATTESTATION = []
 const ULW_PLAN_SELF_TEST_ATTESTATION = []
+// P5-T9's, same shape: the five probe-face legs per scenario, pushed by the
+// self-test loop, read by the banner — rendered FROM what ran.
+const TEAM_T9_SELF_TEST_ATTESTATION = []
+const TEAM_T10_SELF_TEST_ATTESTATION = []
+// P5-T14's own accumulator (relay/broadcast legs of team-create-and-message):
+// the banner renders FROM what ran, never hand-typed (P4-T13 discipline).
+const TEAM_T14_SELF_TEST_ATTESTATION = []
+// P5-T15 评审 A MINOR 修复轮的 settle 反向腿账（nested 场景一枚）——
+// 同款 rendered-FROM-what-ran 纪律。
+const TEAM_T15_SETTLE_SELF_TEST_ATTESTATION = []
 
 // ══ P3-T17 ulw-execute: the A-mode activation scenarios (TWO) ════════════════
 //
@@ -15718,6 +16168,215 @@ export function analyzeComboKeywordInjected(input, routes) {
   }
 }
 
+// ══ P5-T12 `team-keyword-mode`：team 槽的 e2e 半（manifest 行 ⑭/㉔ 的场景）══
+//
+// The fifth keyword scenario, and structurally NOT a sixth ultrawork: the team
+// slot injects the vendored `team.md` VERBATIM (no banner wrapper — the file
+// opens with its own `[team-mode]` marker line), stamps its OWN producer kind
+// (`omo-team-keyword`, Q-8 A1), and must NEVER arm on the member side. So the
+// scenario is one lead session PLUS one delegated child whose task text carries
+// the keyword: the lead's log must show exactly one team injection with the new
+// kind, and the child's log must show zero — the same-negative shape the
+// delegation-demo proves for tool surfaces, aimed at a hook slot this time.
+//
+// Turn map (all lead, one session):
+//   turn 1 — arm: delegate a child whose task text says `team mode` (member-side
+//     probe), echo the step marker (S-11's step boundary for the claim), summarize.
+//   turn 2 — idempotence: paste the FULL injected body back (keyword included);
+//     the message-level gate must swallow it, no second splice.
+//   turn 3 — control: plain prose, no keyword at all.
+
+const OMO_TEAM_KEYWORD_KIND = 'omo-team-keyword'
+// The producer-kind tripwire rides the existing loop's discipline: pin the
+// shipped builder's stamp, so a kind rename fails HERE loudly, not in a
+// silently-unreadable log.
+if (keywordDetectorModule.buildTeamInjectionMessage('probe').source.kind !== OMO_TEAM_KEYWORD_KIND) {
+  throw new Error(`P5-T12 kind pin: buildTeamInjectionMessage now stamps '${keywordDetectorModule.buildTeamInjectionMessage('probe').source.kind}' but this file pins '${OMO_TEAM_KEYWORD_KIND}' — rename both sides or neither`)
+}
+if (keywordDetectorModule.buildInjectionMessage('probe').source.kind !== OMO_KEYWORD_DETECTOR_KIND) {
+  throw new Error('P5-T12 kind pin: the DETECTOR face must still stamp omo-keyword-detector — the team slot must not have swallowed it')
+}
+
+/** The lead prompt: keyword in running prose + the member-side delegation. */
+const TEAM_KEYWORD_PROMPT =
+  'e2e team-keyword-mode: enter team mode for this, first delegate the member probe to explore, then echo the step marker and summarize'
+/** The member probe's task text — carries the keyword; the child must NOT arm. */
+const TEAM_CHILD_TASK_TEXT =
+  'e2e team-keyword-mode member probe: this delegated task text mentions team mode, first echo the child marker then report'
+const TEAM_CHILD_MARKER = 'team-keyword-child-marker-9c3f5e'
+// Turn 2 pastes the FULL injected text back — derived from the plugin's own
+// built message (never a restated copy), so the idempotence gate is tested
+// against the exact bytes the hook compares.
+//
+// P5-T16 (评审 MAJOR-4): the injected text is no longer the vendored body
+// alone — a carrier note is prepended (it defuses the upstream "set
+// team_mode.enabled=true and restart opencode" dead instruction). The paste
+// control must therefore carry the WHOLE injected text, or the message-level
+// idempotence gate (which compares the whole built message) would not match —
+// and the control would stop testing what it claims to test.
+const TEAM_KEYWORD_PASTE_PROMPT =
+  `e2e team-keyword-mode idempotence control: the previous turn injected exactly this — ${buildExpectedInjectedText('team')} — say the marker, add nothing`
+const TEAM_KEYWORD_CONTROL_PROMPT =
+  'e2e team-keyword-mode negative control: a plain prose turn naming no keyword at all, echo the step marker then summarize'
+const TEAM_KEYWORD_SUMMARY =
+  'MOCK-TEAM-KEYWORD-6d1b8a: team-mode lead instruction reached me and the member probe returned'
+const TEAM_KEYWORD_PASTE_SUMMARY = 'MOCK-TEAM-KEYWORD-PASTE-4e7c2d: paste turn ran, no second injection'
+const TEAM_KEYWORD_CONTROL_SUMMARY = 'MOCK-TEAM-KEYWORD-CONTROL-3a9f6b: control turn ran without arming'
+const TEAM_CHILD_FINDINGS = 'MOCK-TEAM-KEYWORD-CHILD-7b5d1c: member probe ran; no team-mode instruction ever arrived here'
+/** Derived body anchor: only the vendored team.md can put this on the wire. */
+const TEAM_BODY_ANCHOR = KEYWORD_TEXTS.team.slice(0, 120)
+
+/** Lead script: 3 turns (arm w/ delegation / paste / control); child: 2 steps. */
+function teamKeywordModeScript() {
+  return {
+    sisyphus: [
+      {
+        type: 'tool_call',
+        name: 'explore',
+        arguments: {
+          description: 'Member-side team-mode probe',
+          prompt: TEAM_CHILD_TASK_TEXT,
+          run_in_background: false,
+        },
+      },
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: KEYWORD_STEP_COMMAND,
+          description: 'Echo the scenario step marker so the injection claims at the next boundary',
+        },
+      },
+      { type: 'text', text: TEAM_KEYWORD_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: KEYWORD_STEP_COMMAND,
+          description: 'Echo the step marker again so the paste turn really ran',
+        },
+      },
+      { type: 'text', text: TEAM_KEYWORD_PASTE_SUMMARY },
+      { type: 'text', text: TEAM_KEYWORD_CONTROL_SUMMARY },
+    ],
+    explore: [
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: {
+          command: `echo ${TEAM_CHILD_MARKER}`,
+          description: 'Prove the member-side child session really ran',
+        },
+      },
+      { type: 'text', text: TEAM_CHILD_FINDINGS },
+    ],
+  }
+}
+
+/** True when a stored message carries the TEAM slot's producer triple — the new
+ * kind, same plugin, same form. This is the whole Q-8 A1 contract in five lines:
+ * team traffic must be distinguishable from detector traffic in the log. */
+function isTeamInjectionSource(message) {
+  return message?.source?.kind === OMO_TEAM_KEYWORD_KIND
+    && message.source.plugin === keywordDetectorModule.KEYWORD_DETECTOR_PLUGIN
+    && message.source.form === 'instructions'
+}
+
+export function analyzeTeamKeywordMode({ log, childLog, requests, providersJson, bootLog }, routes) {
+  const events = log?.events ?? []
+  const childEvents = childLog?.events ?? []
+  const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
+  const expectedText = buildExpectedInjectedText('team')
+  // Text-scoped carriers first (the shared reader keys on text), THEN split by
+  // producer triple: the turn-2 paste prompt carries the same bytes as a plain
+  // `user` message, and counting it would turn the idempotence control into a
+  // false double-injection. Kind-scoping is the producer, not the text.
+  const raw = keywordInjectedCarriers(events, expectedText.slice(0, 240))
+  const carriers = raw.filter((entry) => isTeamInjectionSource(entry.message))
+  const splices = carriers.filter((entry) => entry.projection === 'inbox-splice')
+  const claims = carriers.filter((entry) => entry.projection === 'history-claim')
+  const injected = carriers[0]?.message
+  const anchorRequestIndex = sisyphusRequests.findIndex((request) =>
+    requestMessagesContain(request, TEAM_BODY_ANCHOR))
+
+  // The child log, read for the negative: its task text really arrived
+  // (non-vacuity), and NO team-kind carrier exists anywhere in it.
+  const childTexts = childEvents
+    .filter((event) => event.type === 'user/message')
+    .map((event) => messageContentText(event.data))
+  const childCarriers = keywordInjectedCarriers(childEvents, expectedText.slice(0, 240))
+    .filter((entry) => isTeamInjectionSource(entry.message))
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    sisyphusProviderActive: new RegExp(
+      `"provider":"${routes.sisyphus.provider}"[^}]*"active":true`,
+    ).test(providersJson),
+    sessionLogFound: log !== undefined,
+    // The two faces stay distinct — asserted off the SHIPPED builders, so a
+    // rename on one side fails the self-test before any real run burns a sandbox.
+    teamKindTripwired:
+      keywordDetectorModule.buildTeamInjectionMessage('probe').source.kind === OMO_TEAM_KEYWORD_KIND
+      && keywordDetectorModule.buildInjectionMessage('probe').source.kind === OMO_KEYWORD_DETECTOR_KIND,
+    singleTeamInboxSplice: splices.length === 1,
+    singleTeamHistoryClaim: claims.length === 1,
+    injectionIsFullTeamUserMessage: carriers.length > 0
+      && carriers.every(({ message }) => message !== undefined
+        && message.role === 'user'
+        && isTeamInjectionSource(message)
+        && Array.isArray(message.content)
+        && message.content.length === 1
+        && message.content[0]?.type === 'text'
+        && typeof message.content[0]?.text === 'string'),
+    injectionIdIsUuid: carriers.length > 0
+      && carriers.every(({ message }) => typeof message?.id === 'string'
+        && UUID_PATTERN.test(message.id)),
+    bothProjectionsShareOneId: perInjectionIdShape(carriers, 1),
+    // VERBATIM is the row ㉔ claim replayed at the injection face: the bytes the
+    // lead sees are the loader's bytes are the vendor's bytes, one census.
+    injectionTextIsVerbatimVendorText: carriers.length > 0
+      && carriers.every(({ message }) => message?.content?.[0]?.text === expectedText),
+    teamBodyReachesModelOnWire: anchorRequestIndex >= 0,
+    // S-11 parity: the injecting step's own request predates the claim.
+    teamBodyAbsentFromFirstRequest: anchorRequestIndex > 0,
+    stepToolCallExecuted: events.some((event) =>
+      event.type === 'tool/result' && eventTextFlat(event).includes(KEYWORD_STEP_MARKER)),
+    leadTurnsCompleted: events.filter((event) =>
+      event.type === 'turn/end' && (event.data?.reason?.kind ?? event.data?.reason) === 'completed').length === 3,
+    // Non-vacuity of the idempotence control: the paste really carried the body.
+    pasteTurnCarriedTheInjectedBody: events.some((event) => event.type === 'user/message'
+        && event.data?.source?.kind === 'user'
+        && messageContentText(event.data).includes(expectedText.slice(0, 240))),
+    controlTurnRan: events.some((event) =>
+      event.type === 'assistant/message' && eventText(event).includes(TEAM_KEYWORD_CONTROL_SUMMARY)),
+    // Q-8's member side, both projections read: the child ran the keyword text…
+    childSessionRanWithTeamText: childLog !== undefined
+      && childLog.header?.origin === 'subagent'
+      && childTexts.some((text) => text.includes('team mode')),
+    // …and the slot never armed there.
+    childSessionNotReleasedForTeam: childCarriers.length === 0,
+  }
+  const failed = Object.entries(checks)
+    .filter(([, value]) => value !== true)
+    .map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    detail: {
+      sisyphusRequestCount: sisyphusRequests.length,
+      spliceCount: splices.length,
+      claimCount: claims.length,
+      injectionId: injected?.id,
+      injectionSource: injected?.source,
+      injectedTextLength: injected?.content?.[0]?.text?.length,
+      expectedTextLength: expectedText.length,
+      anchorRequestIndex,
+      childCarrierCount: childCarriers.length,
+    },
+  }
+}
+
 /**
  * Controls ①②③ in three turns of ONE session.
  *
@@ -16127,6 +16786,99 @@ function fabricatedKeywordInjectedEvent(text, source, id) {
 /** The `InjectedUserMessage` the real hook builds, from the real module. */
 function fabricatedKeywordInjection(text) {
   return keywordDetectorModule.buildInjectionMessage(text)
+}
+
+/** The TEAM face's `InjectedUserMessage`, from the real shipped builder. */
+function fabricatedTeamKeywordInjection(text) {
+  return keywordDetectorModule.buildTeamInjectionMessage(text)
+}
+
+/**
+ * The fabricated GOOD input for `team-keyword-mode`: ONE lead injection (turn 1,
+ * splice at seq 4, claim at seq 7 — the claim sits after the step-boundary bash
+ * pair because the scenario's own script arms at pre-step and the injected batch
+ * is claimed at the NEXT boundary), a paste turn whose user message carries the
+ * SAME bytes as a plain `user` source (the idempotence premise), a keyword-free
+ * control turn, and a member child that ran the keyword text and never armed.
+ *
+ * The child log exists with `origin: 'subagent'` and its task text really
+ * contains `team mode` — the negative (`childSessionNotReleasedForTeam`) is
+ * non-vacuous only if the positive side of the child is in the fixture.
+ */
+function fabricatedTeamKeywordGoodInput(routes) {
+  const expectedText = buildExpectedInjectedText('team')
+  const injected = fabricatedTeamKeywordInjection(expectedText)
+  const leadEvents = [
+    { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PROMPT }], source: { kind: 'user' } } },
+    { seq: 2, type: 'tool/call', data: { name: 'explore', arguments: JSON.stringify({ prompt: TEAM_CHILD_TASK_TEXT, run_in_background: false }) } },
+    { seq: 3, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-e1', content: [{ type: 'text', text: TEAM_CHILD_FINDINGS }] }] } } },
+    { seq: 4, type: 'agent/inbox/spliced', data: { target: 'next-step', inserted: [injected] } },
+    { seq: 5, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: KEYWORD_STEP_COMMAND }) } },
+    { seq: 6, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-1', content: [{ type: 'text', text: KEYWORD_STEP_MARKER }] }] } } },
+    { ...fabricatedKeywordInjectedEvent(expectedText, injected.source, injected.id), seq: 7 },
+    { seq: 8, type: 'assistant/message', data: { text: TEAM_KEYWORD_SUMMARY } },
+    { seq: 9, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+    { seq: 10, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PASTE_PROMPT }], source: { kind: 'user' } } },
+    { seq: 11, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: KEYWORD_STEP_COMMAND }) } },
+    { seq: 12, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-2', content: [{ type: 'text', text: KEYWORD_STEP_MARKER }] }] } } },
+    { seq: 13, type: 'assistant/message', data: { text: TEAM_KEYWORD_PASTE_SUMMARY } },
+    { seq: 14, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+    { seq: 15, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_CONTROL_PROMPT }], source: { kind: 'user' } } },
+    { seq: 16, type: 'assistant/message', data: { text: TEAM_KEYWORD_CONTROL_SUMMARY } },
+    { seq: 17, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+  ]
+  return {
+    log: { header: { id: 'fabricated-team-keyword-mode' }, events: leadEvents },
+    childLog: {
+      header: { id: 'fabricated-team-keyword-child', origin: 'subagent', parentSession: 'fabricated-team-keyword-mode' },
+      events: [
+        { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: TEAM_CHILD_TASK_TEXT }], source: { kind: 'user' } } },
+        { seq: 2, type: 'tool/call', data: { name: 'bash', arguments: JSON.stringify({ command: `echo ${TEAM_CHILD_MARKER}` }) } },
+        { seq: 3, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', callId: 'call-c1', content: [{ type: 'text', text: TEAM_CHILD_MARKER }] }] } } },
+        { seq: 4, type: 'assistant/message', data: { text: TEAM_CHILD_FINDINGS } },
+        { seq: 5, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      ],
+    },
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PROMPT }] }] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [
+        { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PROMPT }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'delegating the member probe' }] },
+        fabricatedTeamKeywordInjection(expectedText),
+      ] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [
+        { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PROMPT }] },
+        fabricatedTeamKeywordInjection(expectedText),
+        { role: 'assistant', content: [{ type: 'text', text: 'marker echoed' }] },
+      ] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PASTE_PROMPT }] }] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [
+        { role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_PASTE_PROMPT }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'marker echoed' }] },
+      ] } },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model, messages: [{ role: 'user', content: [{ type: 'text', text: TEAM_KEYWORD_CONTROL_PROMPT }] }] } },
+      { role: 'explore', body: { model: routes.explore.model, messages: [{ role: 'user', content: [{ type: 'text', text: TEAM_CHILD_TASK_TEXT }] }] } },
+      { role: 'explore', body: { model: routes.explore.model, messages: [
+        { role: 'user', content: [{ type: 'text', text: TEAM_CHILD_TASK_TEXT }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'marker echoed' }] },
+      ] } },
+    ],
+    providersJson: fabricatedProvidersJson(routes),
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      omoHooksMarkers.formatHookRegisteredLine(
+        keywordDetectorModule.KEYWORD_DETECTOR_ID, 'agent/pre-step',
+      ),
+      '[omo-team] team surface team-keyword-injection registered',
+      '[omo-team] team surface vendor-team-core-types registered',
+      '[omo-team] team surface vendor-team-core-member-parser registered',
+      '[omo-team] team surface vendor-team-core-team-registry registered',
+      '[omo-team] team surface vendor-team-core-team-tasklist registered',
+      '[omo-team] team surface vendor-team-core-team-state-store registered',
+      '[omo-team] team surface vendor-team-core-closure registered',
+      '[omo-team] team surface vendor-team-prompts registered',
+    ].join('\n'),
+  }
 }
 
 /**
@@ -16602,7 +17354,7 @@ const COMMAND_CHANNEL_SPECS = {
     commandId: 'remove-ai-slops',
     bootRegistrationLine: '[omo-commands] command remove-ai-slops registered',
     // The NO-ARGUMENT variant: this row carries no argumentHint upstream
-    // (commands.ts:85-92), so its frame omits the `**User Arguments**` line
+    // (commands.ts:83-92), so its frame omits the `**User Arguments**` line
     // entirely (upstream:117 `if (args)`).
     line: '/remove-ai-slops',
     args: '',
@@ -16619,6 +17371,12 @@ const COMMAND_CHANNEL_SPECS = {
       '[oh-my-opendsh] Remove AI slops carrier note',
       '# Remove AI Slops Command',
       '## Output Format',
+      // P5-T13: the team-mode addendum rides this frame LIVE (the sandbox mounts
+      // omo-team since T3, the presence face says present, the handler attaches
+      // the addendum per invocation). These two landmarks are the addendum's own
+      // headings — a frame that lost the addendum fails here, not silently.
+      '# Team Mode Protocol (active when team_* tools are present)',
+      '## MUST NOT (team mode)',
       '</command-instruction>',
       '<user-request>',
       '</user-request>',
@@ -16628,7 +17386,9 @@ const COMMAND_CHANNEL_SPECS = {
     sessionContextExpected: false,
     outputAnchors: SLOPS_OUTPUT_ANCHORS,
     summaryText: SLOPS_SUMMARY_TEXT,
-    doneTextPattern: /^Remove-AI-slops instruction queued \((\d+) chars\); it takes effect in the next turn\.$/,
+    // T13 polarity: the addendum-attached done text (the degraded form's pattern —
+    // no addendum clause — lives in the unit suite's absent-probe leg).
+    doneTextPattern: /^Remove-AI-slops instruction queued \((\d+) chars, team-mode addendum attached\); it takes effect in the next turn\.$/,
   },
 }
 
@@ -16868,7 +17628,7 @@ function commandBody(text) {
  *
  * The '' fallback is deliberate and is NOT a silent pass: every caller turns a ''
  * into a named check failing on content, so "the reply never arrived" reads as
- * `modelDeclaredDegradedModeOutLoud: false` rather than a crash or a vacuous true.
+ * `modelDeclaredFullRingOutLoud: false` rather than a crash or a vacuous true.
  */
 function findAssistantText(events, marker) {
   const hit = events.find(
@@ -16886,27 +17646,56 @@ const ULW_PLAN_REQUEST = '给我们的报表系统做个改造方案'
  *  really is this skill" check cannot be satisfied by a description-only match. */
 const ULW_PLAN_BODY_SENTINEL = '## INTENT ROUTING - pick ONE intent reference'
 
-// ── P4-T15: hyperplan-degraded-noted — the DEGRADED GUIDANCE really reaches the model
+// ── P4-T15 / P5-T13 / P5-T14: hyperplan-team-mode-full-ring — the ring instruction really reaches
+// the model, IN THE FORM THE RUNTIME CHOSE.
+//
+// P5-T13 升级说明（断言换形态——任务书判定）：沙箱自 T3 起 cordis.yml
+// 第四行恒挂 omo-team，`omoTeamHyperplanTeamFace` 在场脸恒 publish，所以本场景
+// 真实跑出的 frame 是**完整环形态**（HYPERPLAN_COMMAND_TEMPLATE_FULL）。断言随之
+// 升级为完整形态断言。
+// P5-T14 翻名（仲裁补强 §1）：旧名 `hyperplan-degraded-noted` →
+// `hyperplan-team-mode-full-ring`——T13 之后名字与事实相反（跑的是完整环，名字
+// 说降级），诚实命名优先；T13 当时明写翻名超基线授权，T14 任务书正是取回这笔
+// 授权。全库引用同步：omo-commands manifest 行 e2eScenario + 行注、
+// tests/omo-commands/manifest.test.ts 钉、THIRD_PARTY_NOTICES.md 映射行、本文件
+// （场景名/函数名/自检 label/大 banner）。覆盖基线不动：COVERAGE_BASELINE_MDS 按
+// H-号段行锚收录、不按场景名（c14 仲裁注，verify-concerto-static.mjs）；
+// docs/plans/phase4-dev/phase4-tasks.md 的旧名是历史任务书原文（铁律区，不改），
+// CHANGELOG 旧名条目是历史归档（新行另记翻名事实）。
+// **降级反向覆盖 = 单测探测缺席腿**
+// （tests/omo-commands/hyperplan-team-upgrade.test.ts 的三态归一 + 中途挂载腿；
+// 沙箱恒挂载 omo-team，降级腿无 e2e 可证——降级路径的 e2e 证据边界由 probe 的
+// noteam face 承担（concerto-mode-probe.sh + assert-team-probe-face.mjs），
+// 此即本场景证据边界的成文面）。
+//
 // ONE session, TWO turns, ONE command. The transport is the P4-T7 command channel
 // (admission → `command/run` → `command/done` → the injected frame as a follow-up
-// user message), and this scenario adds the claims T14's rewrite exists for:
+// user message), and this scenario adds the claims T14's rewrite and T13's upgrade
+// exist for:
 //
 //   1. REGISTRATION — `/hyperplan` is a REAL command here, so the lifecycle pair
 //      exists at all. That is the same fact the `ulw-plan` scenario below pins from
 //      the OTHER side (no command → no lifecycle pair), and the pair of scenarios is
 //      what makes "a gesture is not a command" a checked contrast rather than a
 //      claim about one deployment's registry.
-//   2. THE DEGRADED GUIDANCE IS WHAT THE MODEL RECEIVES — asserted against the
-//      SHIPPED constants (`HYPERPLAN_DEGRADED_GUIDANCE`, `HYPERPLAN_ROSTER_CONTRACT`),
-//      imported below, never restated. A restated copy would let the e2e pass on a
-//      template that no longer says any of it.
-//   3. ZERO EXECUTABLE DEAD LINKS — T14's guard, spot-checked at the e2e layer: the
-//      model-facing body carries no filesystem path of any shape, and every mention of
-//      an absent team tool sits in a DENYING sentence. Reuse of the T14 rule, not a
-//      weaker second opinion: `deadLinkFree()` below is the same sentence-splitting
-//      predicate, so a T14 fix and this e2e cannot drift apart silently.
-//   4. THE DEGRADED SUFFIX IS IN THE FRAME'S DESCRIPTION LINE — the MAJOR-1
-//      commitment, checked where the model actually reads it.
+//   2. THE FULL-RING GUIDANCE IS WHAT THE MODEL RECEIVES — asserted against the
+//      SHIPPED constants (`HYPERPLAN_TEAM_MODE_GUIDANCE`,
+//      `HYPERPLAN_TEAM_MODE_ROSTER_CONTRACT`), imported below, never restated. A
+//      restated copy would let the e2e pass on a template that no longer says any
+//      of it. Since the T13 fix round (review A MAJOR-1) this includes the
+//      carrier-spelling split sentence (`HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_
+//      SPLIT`) — the defusal that keeps SKILL.md:38's `task_send` precondition
+//      from STOPping the ring — pinned by its own named check.
+//   3. ZERO EXECUTABLE DEAD LINKS — T14's guard, POLARITY-FLIPPED at T13: the
+//      team_* imperatives are now LEGAL (the tools are live), but the upstream
+//      config carrier (`~/.omo/omo.jsonc`, `team_mode.enabled`) and the four dead
+//      upstream categories (unspecified-low / unspecified-high / ultrabrain /
+//      artistry) stay forbidden in the model-facing body — in DSH they resolve to
+//      nothing in either form. `deadLinkFree()` below is the e2e's independent
+//      witness of that rule.
+//   4. THE FULL-RING SUFFIX IS IN THE FRAME'S DESCRIPTION LINE — the frame states
+//      the form that actually ran (`HYPERPLAN_FRAME_DESCRIPTION_FULL`), upstream's
+//      sentence verbatim ahead of it.
 //   5. 对照 — the same command with NO argument. Upstream gives hyperplan an
 //      `argumentHint` (`[planning-request]`), so the argument-bearing turn's frame
 //      MUST carry a `**User Arguments**` line and the bare turn's frame MUST NOT.
@@ -16932,50 +17721,58 @@ const HYPERPLAN_MEASURED_ARGS = ` ${HYPERPLAN_REQUEST}`
 // submits the line verbatim, and a bare `/hyperplan` is a legal admission.
 const HYPERPLAN_BARE_COMMAND_LINE = '/hyperplan'
 const HYPERPLAN_BOOT_REGISTRATION_LINE = '[omo-commands] command hyperplan registered'
-// The model's reply to the degraded instruction. It must SAY the mode out loud,
-// which is the one thing the guidance asks the model to do unconditionally
-// (item 6: "Say plainly, in your reply, that this ran in DEGRADED mode").
-const HYPERPLAN_DEGRADED_SUMMARY =
-  'MOCK-HYPERPLAN-DEGRADED-8e51c3: DEGRADED mode — no team-mode surface, so the adversarial roles ran as roster delegations.'
+// The model's reply to the ring instruction. It must SAY the form out loud, which
+// is the one thing the guidance asks the model to do unconditionally (full-form
+// item 8: "Say plainly in your reply which form ran"). The sandbox mounts omo-team,
+// so the honest reply declares the FULL ring (T13 polarity flip; the P4 mock said
+// DEGRADED because the P4 template was the degraded one).
+const HYPERPLAN_RING_SUMMARY =
+  'MOCK-HYPERPLAN-FULL-8e51c3: FULL ring — the adversarial roles ran as live team members (deep + quick x3) and the lead synthesized.'
 const HYPERPLAN_BARE_SUMMARY =
-  'MOCK-HYPERPLAN-BARE-3d70a9: DEGRADED mode — no team-mode surface, so the adversarial roles ran as roster delegations.'
+  'MOCK-HYPERPLAN-BARE-3d70a9: FULL ring — the adversarial roles ran as live team members (deep + quick x3) and the lead synthesized.'
 
 /**
- * T14's dead-link rule, in its e2e form. The unit suite keeps the identical rule as
- * a `describe`-LOCAL function (tests/omo-commands/hyperplan.test.ts) — it is NOT
- * exported, and this copy is not derived from it at runtime. That is the point: the
- * e2e layer is an independent witness, so the two can disagree and the disagreement
- * is visible. If they ever need to be unified, do it by moving the unit's rule into a
- * shared module — NOT by importing it, which would leave one verdict behind both.
+ * T14's dead-link rule, T13 POLARITY. The P4 copy forbade the team_* tool names in
+ * non-denying sentences because the tools did not exist; since T13 the tools are
+ * live (the presence face says so), so the imperatives are legal and the FORBIDDEN
+ * set is what stayed dead in BOTH forms: the upstream config carrier and the four
+ * dead upstream categories. The unit suite keeps its own copy of the rule
+ * (tests/omo-commands/hyperplan.test.ts + hyperplan-team-upgrade.test.ts) — this
+ * copy is NOT derived from it at runtime. That is the point: the e2e layer is an
+ * independent witness, so the two can disagree and the disagreement is visible.
  *
  * Returns every violation found.
  */
 function deadLinkFree(body) {
   const found = []
-  for (const dead of ['team_create', 'task_send', 'team_delete']) {
-    for (const sentence of body.split(/(?<=[.;])|\n/).filter((part) => part.includes(dead))) {
-      if (!/\b(no|not|never|without|skip|absent|does not|do not|don'?t|cannot)\b/i.test(sentence)) {
-        found.push(`${dead} sits in a non-denying sentence: ${JSON.stringify(sentence.trim())}`)
-      }
-    }
-  }
   const pathish = /omo\.jsonc|oh-my-opencode|~[/.]/.exec(body)
   if (pathish !== null) found.push(`a filesystem path reached the model: ${pathish[0]}`)
-  for (const category of ['unspecified-low', 'unspecified-high', 'ultrabrain', 'artistry', 'deep']) {
+  if (body.includes('team_mode.enabled')) found.push('the upstream config flag reached the model')
+  // T13 fix round (review A MAJOR-1): the senpi restart flag is the dead carrier
+  // of SKILL.md:38's HARD PRECONDITIONS — the guidance may DECLARE it dead, but
+  // the flag itself must never reach the model, or the STOP-and-recite instruction
+  // is back in the execution path.
+  if (body.includes('--no-omo-task')) found.push('the upstream senpi restart flag reached the model')
+  for (const category of ['unspecified-low', 'unspecified-high', 'ultrabrain', 'artistry']) {
     if (body.includes(category)) found.push(`upstream category ${category} reached the model`)
   }
   return found
 }
 
 /**
- * MINOR-7: the e2e copy of T14's rule is DISCRIMINATING, checked on this side too.
- * T14's unit suite already falsifies its own copy against a cross-sentence
- * laundering ("…no team_create exists. Then call team_create…"); a second,
- * independent implementation of the same rule can easily be the laxer one, and the
- * e2e is where a real regression would land. So the same attack is run here — if
- * this copy would wave it through, the e2e layer is the weaker witness and the
- * check below says so.
+ * MINOR-7: the e2e copy of the rule is DISCRIMINATING, checked on this side too —
+ * re-aimed at T13's polarity. A laundering sentence that NEGATES the dead carrier
+ * first and then NAMES it must still be caught: the dead set is caught STRUCTURALLY
+ * (any path, any dead category, any flag mention), so no amount of denying launders
+ * it through. If this copy ever waves such a sentence through, the check below says
+ * so instead of the e2e silently becoming the weaker witness.
  */
+function e2eRuleCatchesDeadCarrierLaundering() {
+  return deadLinkFree(
+    'There is no ~/.omo/omo.jsonc here. Then edit ~/.omo/omo.jsonc and set team_mode.enabled=true. Restart senpi without --no-omo-task, then retry.',
+  ).length >= 3
+}
+
 /**
  * `commandBody` REJECTS a frame whose closing tag precedes its opening tag.
  *
@@ -16983,7 +17780,7 @@ function deadLinkFree(body) {
  * removing it changed nothing, because no case fed `commandBody` an inverted frame,
  * and a fixture that did would THROW through the analyzer and abort the whole
  * self-test rather than report one failed check. Exercised directly instead — the
- * same shape as `e2eRuleCatchesCrossSentenceLaundering` — a regression here is a
+ * same shape as `e2eRuleCatchesDeadCarrierLaundering` — a regression here is a
  * clean named failure instead of a crash.
  */
 function commandBodyRejectsInvertedFrameTags() {
@@ -17001,17 +17798,11 @@ function commandBodyRejectsInvertedFrameTags() {
   }
 }
 
-function e2eRuleCatchesCrossSentenceLaundering() {
-  return deadLinkFree(
-    'There is no team_create here. Then call team_create with the roster members.',
-  ).some((finding) => finding.includes('non-denying sentence'))
-}
-
-/** hyperplan-degraded-noted script: the command turn, then the bare 对照 turn. */
-function hyperplanDegradedScript() {
+/** hyperplan-team-mode-full-ring script: the command turn, then the bare 对照 turn. */
+function hyperplanTeamModeFullRingScript() {
   return {
     sisyphus: [
-      { type: 'text', text: HYPERPLAN_DEGRADED_SUMMARY },
+      { type: 'text', text: HYPERPLAN_RING_SUMMARY },
       { type: 'text', text: HYPERPLAN_BARE_SUMMARY },
     ],
   }
@@ -17023,7 +17814,7 @@ function hyperplanDegradedScript() {
  * than "whichever came first" — the two turns carry the same `# /hyperplan Command`
  * header, and a `find` would read turn 1's body for turn 2's assertions.
  */
-export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandResults }, routes) {
+export function analyzeHyperplanTeamModeFullRing({ log, requests, bootLog, commandResults }, routes) {
   const events = log?.events ?? []
   const sisyphusRequests = requests.filter((request) => request.role === 'sisyphus')
   const sessionId = String(log?.header?.id ?? '')
@@ -17066,7 +17857,7 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
 
   // The model must have SURRENDERED the request verbatim: the guidance's own item 6
   // is a statement about what the reply must contain, so the reply is the evidence.
-  const firstSummary = findAssistantText(events, HYPERPLAN_DEGRADED_SUMMARY)
+  const firstSummary = findAssistantText(events, HYPERPLAN_RING_SUMMARY)
   const secondSummary = findAssistantText(events, HYPERPLAN_BARE_SUMMARY)
   const turnEnds = events.filter((event) => event.type === 'turn/end')
   // Which model request each turn's frame rode in, located by the request's OWN
@@ -17124,27 +17915,42 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
     // pair of admissions differs, so reading the wrong one is detectable.
     firstLineCarriedTheRequestAsArgs: hyperplanRuns[0]?.data?.args === HYPERPLAN_MEASURED_ARGS,
     secondLineCarriedNoArgs: hyperplanRuns[1]?.data?.args === '',
-    // ── the DEGRADED claims ──────────────────────────────────────────────────
-    degradedGuidanceReachedTheModel: first !== undefined
-      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE),
-    rosterContractReachedTheModel: first !== undefined
-      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_ROSTER_CONTRACT),
-    // The roster mapping T14 promised, read off the SHIPPED contract's own seats.
-    rosterSeatsNamedInTheModelText: ['plan-consultant', 'plan-reviewer', 'prometheus']
+    // ── the FULL-RING claims (T13: the sandbox mounts omo-team, so the honest
+    // frame is the full one; the degraded reverse lives in the unit suite) ────
+    fullRingGuidanceReachedTheModel: first !== undefined
+      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE),
+    // T13 fix round (review A MAJOR-1): the carrier-spelling split sentence — the
+    // defusal that stops SKILL.md:38's HARD PRECONDITIONS from sending the model
+    // into a STOP-and-recite on the never-present `task_send` — must be IN the
+    // frame the model actually receives, asserted against the shipped constant.
+    carrierSpellingSplitReachedTheModel: first !== undefined
+      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_CARRIER_SPELLING_SPLIT)
+      && first.text.includes('never STOP on that check'),
+    fullRosterContractReachedTheModel: first !== undefined
+      && first.text.includes(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_ROSTER_CONTRACT),
+    // The roster mapping T13 ships, read off the SHIPPED contract's own seats:
+    // worker seats INSIDE the ring, hostile review seats OUTSIDE it.
+    rosterSeatsNamedInTheModelText: ['hephaestus', 'sisyphus-junior', 'plan-reviewer', 'plan-consultant', 'prometheus']
       .every((seat) => first?.text.includes(seat) ?? false),
+    // N1 (T13 arbitration): the five-value status vocabulary rides the model-facing
+    // body, and `failed` sits ONLY inside its defusing sentence.
+    fiveValueStatusVocabularyReachedTheModel: ['pending', 'claimed', 'in_progress', 'completed', 'deleted']
+      .every((status) => first?.text.includes('`' + status + '`') ?? false)
+      && (first?.text.includes('there is NO `failed` state') ?? false),
     // The T14 fix, checked where it matters: the model may not be handed a path it
     // could act on. The carrier note may quote the upstream paths (it must — the
     // two-source inconsistency is required), so the scan is on the BODY only.
     modelFacingBodyIsDeadLinkFree: first !== undefined && deadLinkFree(firstBody).length === 0,
     // …and the copy of the rule doing that work is itself discriminating (MINOR-7).
-    deadLinkRuleIsDiscriminating: e2eRuleCatchesCrossSentenceLaundering(),
+    deadLinkRuleIsDiscriminating: e2eRuleCatchesDeadCarrierLaundering(),
     commandBodyRejectsInvertedFrameTags: commandBodyRejectsInvertedFrameTags(),
-    degradedModeAnnouncedInTheFrame: first !== undefined
-      && first.text.includes('DEGRADED MODE — this deployment has no team-mode surface'),
-    // MAJOR-1: the degraded suffix rides the frame's Description line, which is the
-    // text the model reads about the command it is executing.
-    degradedSuffixOnTheFrameDescriptionLine: first !== undefined
-      && first.text.includes(`**Description**: ${omoCommandsHyperplanCommand.HYPERPLAN_DESCRIPTION}`),
+    fullRingAnnouncedInTheFrame: first !== undefined
+      && first.text.includes('TEAM-MODE RING ACTIVE — the full adversarial loop is live in this session'),
+    // T13: the FORM SUFFIX rides the frame's Description line, which is the text the
+    // model reads about the command it is executing — and it states the form that
+    // actually ran (full), not a stale degraded promise.
+    fullRingSuffixOnTheFrameDescriptionLine: first !== undefined
+      && first.text.includes(`**Description**: ${omoCommandsHyperplanCommand.HYPERPLAN_FRAME_DESCRIPTION_FULL}`),
     upstreamSentenceKeptVerbatimAheadOfTheSuffix: first !== undefined
       && first.text.includes(`**Description**: ${omoCommandsHyperplanCommand.UPSTREAM_HYPERPLAN_DESCRIPTION} `),
     // The skill is loaded BY NAME with the DSH call form — the rewritten link, and
@@ -17164,13 +17970,13 @@ export function analyzeHyperplanDegradedNoted({ log, requests, bootLog, commandR
       && !second.text.includes('**User Arguments**'),
     firstFrameCarriesUserArgumentsLine: first !== undefined
       && first.text.includes(`**User Arguments**: ${HYPERPLAN_MEASURED_ARGS}`),
-    // The bare turn still gets the FULL degraded guidance — degradation is a
-    // property of the command, not of whether the user supplied an argument.
-    bareTurnAlsoCarriesTheDegradedGuidance: second !== undefined
-      && second.text.includes(omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE),
+    // The bare turn still gets the FULL ring guidance — the form is a property of
+    // the deployment, not of whether the user supplied an argument.
+    bareTurnAlsoCarriesTheFullRingGuidance: second !== undefined
+      && second.text.includes(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE),
     // ── the model obeyed ────────────────────────────────────────────────────
-    modelDeclaredDegradedModeOutLoud: firstSummary.includes('DEGRADED'),
-    controlTurnAlsoDeclaredDegradedMode: secondSummary.includes('DEGRADED'),
+    modelDeclaredFullRingOutLoud: firstSummary.includes('FULL ring'),
+    controlTurnAlsoDeclaredFullRing: secondSummary.includes('FULL ring'),
     bothTurnsCompleted: turnEnds.length === 2
       && turnEndReasonKind(turnEnds[0]) === 'completed'
       && turnEndReasonKind(turnEnds[1]) === 'completed',
@@ -18622,6 +19428,4574 @@ export function analyzeUlwExecuteCommandActivatesAtlas(
   }
 }
 
+// ── P5-T5 · team_create 组建路径 + per-member 路由（fork (B) 执行面）──────────
+//
+// WHAT THESE TWO SCENARIOS PROVE, and nothing more (plan §4.4 fork (B); task
+// book P5-T5). omo-team self-owns a team state machine over
+// `ctx.subagents.startContinuable`; the experimental `tool-agent-team` bundle is
+// NOT mounted (mechanism-learning only). A root (lead) session gets `team_create`
+// scoped onto its surface; a team-member child session gets NO team_create
+// (structural absence) plus an injected briefing frame that is a SEPARATE
+// UserMessage from the spawn prompt.
+//
+// THE ROUTING IS THE POINT: each member's provider/model/persona/tool-filter come
+// from the roster SEAT (roster-seats.ts), not from the caller. `analyst` selects
+// `category:'quick'` (→ seat sisyphus-junior → deepseek/deepseek-flash), `builder`
+// selects `seat:'hephaestus'` (→ deepseek-official/deepseek-v4-pro). The child's
+// durable `subagent/descriptor` must persist exactly that trio — the same surface
+// the harness routes on — so "per-member routing" is a measured fact, not a claim.
+//
+// MOCKROLE LANES (the honest part): the lead is the conductor (MOCKROLE=sisyphus,
+// stamped into the omo-agents copy as in all 34 prior scenarios). The two MEMBERS
+// are omo-team children whose persona bytes ship inside omo-team's roster-seats.ts
+// — NOT the concerto template — so their MOCKROLE lane marker must be stamped into
+// a STAGED sandbox COPY of omo-team before boot (the P4.5-T8b copy+stamp+self-
+// verify discipline, now for the second package). `stageOmoTeamCopy` triggers the
+// copy in installPlugin; `teamRoles` names the seats whose persona literals carry
+// the lane marker.
+//
+// Q-8 SEPARATION (the negative that cannot be laundered): the briefing discipline
+// text ("must NOT spawn or delegate further children") rides ONLY on the injected
+// frame (source.kind === 'omo-team-briefing'); it must NEVER appear inside the
+// member's native spawn prompt (source.kind === 'user'). Two frames, two sources.
+
+const TEAM_SCENARIO_NAME = 'drive-team'
+const TEAM_MEMBER_ANALYST = 'analyst' // category:'quick' → seat sisyphus-junior
+const TEAM_MEMBER_BUILDER = 'builder' // seat:'hephaestus'
+const TEAM_SEAT_ANALYST = 'sisyphus-junior'
+const TEAM_SEAT_BUILDER = 'hephaestus'
+
+/** The inline_spec the lead sends (object arm — T4's parser eats object | JSON). */
+function teamInlineSpec() {
+  return {
+    name: TEAM_SCENARIO_NAME,
+    members: [
+      { name: TEAM_MEMBER_ANALYST, category: 'quick', prompt: 'Summarize the repository structure.' },
+      { name: TEAM_MEMBER_BUILDER, seat: 'hephaestus', prompt: 'Draft the changelog entry.' },
+    ],
+  }
+}
+
+const TEAM_CREATE_PROMPT =
+  'Create a team named "drive-team" with two members: an analyst on the quick category and a builder on the hephaestus seat.'
+
+const TEAM_NESTED_FOLLOWUP_PROMPT =
+  'Now create a second team with the same two members.'
+
+// The lead's final turn text, per scenario (named so a wrong replay is visible).
+const TEAM_LEAD_CREATED_SUMMARY =
+  'MOCK-TEAM-CREATED-9f2a1c: team drive-team is active with analyst and builder seated.'
+const TEAM_LEAD_DENIED_SUMMARY =
+  'MOCK-TEAM-DENIED-4b7e88: the second team_create was refused — this session is already a team participant.'
+
+// Member replies (one lane each; the tail replays, so each member ends its turn).
+const TEAM_MEMBER_ANALYST_REPLY =
+  'MOCK-TEAM-ANALYST-DONE-7c3d: structure summarized, reporting to lead.'
+const TEAM_MEMBER_BUILDER_REPLY =
+  'MOCK-TEAM-BUILDER-DONE-1a9f: changelog drafted, reporting to lead.'
+
+// ── P5-T6 messaging full segment: named bodies, static correlation ids ────────
+// The correlation ids are STATIC so the durable assertions can name the exact
+// frame text (`Team message <id> from <name>:`) on both sides, and so the
+// resend in lead turn 3 re-sends the SAME id — the dedup proof needs the id
+// to be knowable at authoring time. Only teamRunId is runtime-born, and the
+// mock captures it out of each lane's own request body ({{teamRunId}}).
+const TEAM_CORRID_A = 'a1a1a1a1-1111-4111-8111-aaaaaaaaaaaa' // lead → analyst
+const TEAM_CORRID_B = 'b2b2b2b2-2222-4222-8222-bbbbbbbbbbbb' // lead → builder (announcement)
+const TEAM_CORRID_ACK_A = 'c3c3c3c3-3333-4333-8333-cccccccccccc' // analyst → lead
+const TEAM_CORRID_ACK_B = 'd4d4d4d4-4444-4444-8444-dddddddddddd' // builder → lead
+
+const TEAM_MSG_TO_ANALYST_BODY =
+  'MOCK-T6-MSG-A-77e1: report your structure findings to the lead now.'
+const TEAM_MSG_TO_BUILDER_BODY =
+  'MOCK-T6-MSG-B-33c9: the changelog draft is due — announce status to the lead.'
+const TEAM_ACK_ANALYST_BODY =
+  'MOCK-T6-ACK-ANALYST-5f31: structure summarized, replying to lead over the native channel.'
+const TEAM_ACK_BUILDER_BODY =
+  'MOCK-T6-ACK-BUILDER-2c94: changelog drafted, replying to lead over the native channel.'
+
+const TEAM_MSG_PROMPT =
+  'Message both team members now: ask the analyst to report its structure findings, and announce to the builder that the changelog draft is due.'
+const TEAM_RESEND_PROMPT =
+  'Re-send the exact same analyst message with the SAME correlation id.'
+
+const TEAM_LEAD_MSG_SUMMARY =
+  'MOCK-TEAM-MSG-SENT-2e5d: both members messaged; acks are expected back here.'
+const TEAM_LEAD_RESEND_SUMMARY =
+  'MOCK-TEAM-MSG-DUP-b8f4: the resend was deduplicated — the analyst already has that message.'
+const TEAM_MEMBER_ANALYST_WAKE_SUMMARY =
+  'MOCK-TEAM-ANALYST-WAKE-6a2e: lead message received and acked back to the lead.'
+const TEAM_MEMBER_BUILDER_WAKE_SUMMARY =
+  'MOCK-TEAM-BUILDER-WAKE-9d4b: announcement received and acked back to the lead.'
+
+// ── P5-T14 relay + broadcast segment: member↔member via the live lead, lead-only 广播 ──
+// 仲裁补强（任务书 T14 §1）：relay（成员→成员经活体 lead 中转，帧注
+// `(relayed via lead)`、durable source 仍是 lead 的 'agent-message' kind）与
+// broadcast（lead `to:'*'` 扇出、成员广播具名拒 `broadcast requires lead role`）
+// 两条边自 T6 起只有单测面——这里给它们 e2e 面，骑在 team-create-and-message
+// 的既有机械上（同场景扩展，不新增场景名：manifest 行 team_send_message 的
+// e2eScenario 因此直接长出新证据，不动 manifest）。correlation id 依旧静态：
+// dedup 账保证每条边恰一次落帧，消费轮次漂移（turn-blind cursor）洗不掉 durable
+// 事实。denial 腿无 correlationId——工具在分配 id 之前就拒（reserve-first 之
+// 前，team-message.ts 步骤 4 先于步骤 5 的成文），所以「拒而不落帧」的
+// canary 面用自造 id `TEAM_CORRID_MEMBER_BC` 搜全日志：零命中 = 拒得干净。
+const TEAM_CORRID_RELAY = 'e5e5e5e5-5555-4555-8555-eeeeeeeeeeee' // analyst → builder, relayed via lead
+const TEAM_CORRID_BROADCAST = 'f6f6f6f6-6666-4666-8666-ffffffffffff' // lead → '*'（两成员各一枚）
+const TEAM_CORRID_MEMBER_BC = 'a7a7a7a7-7777-4777-8777-abababababab' // 成员广播尝试——只许出现在拒文里，不许出现在任何帧里
+
+const TEAM_MSG_RELAY_BODY =
+  'MOCK-T14-RELAY-8b3f: builder, the changelog needs the structure section — hand it to me in your next reply.'
+const TEAM_MSG_BROADCAST_BODY =
+  'MOCK-T14-BROADCAST-1d7e: all members, status round now — reply to the lead with your one-line state.'
+const TEAM_MSG_MEMBER_BC_BODY =
+  'MOCK-T14-MEMBER-BC-4f2a: (member-side broadcast attempt — must be refused by name before any delivery)'
+
+const TEAM_BROADCAST_PROMPT =
+  'Now broadcast one status-round message to every member at once with the wildcard recipient.'
+
+const TEAM_LEAD_BROADCAST_SUMMARY =
+  'MOCK-TEAM-BC-SENT-5c8e: broadcast fan-out done — both members got the status round.'
+const TEAM_ANALYST_RELAY_SUMMARY =
+  'MOCK-TEAM-ANALYST-RELAY-3a6d: message relayed to the builder via the live lead.'
+const TEAM_ANALYST_BC_DENIED_SUMMARY =
+  'MOCK-TEAM-ANALYST-BC-DENIED-9f0c: my broadcast attempt was refused — only the lead may broadcast.'
+
+// ── P5-T7 shutdown handshake full segment: prompts, replies, survive corridor ─
+// The inquiry/result frame ids are RUNTIME-BORN (randomUUID inside the tool —
+// unlike team_send_message's author-time correlationId, the shutdown frames
+// carry no model-supplied id in v1), so the durable assertions match frame
+// PREFIXES (`Team shutdown request|approved|rejected`) plus the naming words
+// (from lead / from analyst / the reason text), never a guessed uuid. The
+// reason and every summary are static and named; teamRunId rides {{teamRunId}}.
+const TEAM_CORRID_SURVIVE = 'e5e5e5e5-5555-4555-8555-eeeeeeeeeeee' // lead → analyst post-reject
+const TEAM_SHUTDOWN_REASON =
+  'MOCK-T7-REJECT-6d17: halfway through the dependency map, two more turns needed.'
+const TEAM_MSG_SURVIVE_BODY =
+  'MOCK-T7-SURVIVE-4b8e: keep going on the analysis — the shutdown was refused, the channel stays open.'
+
+const TEAM_SHUTDOWN_REQUEST_ANALYST_PROMPT =
+  'Request shutdown for the analyst now. If it refuses, that is allowed — report what happened.'
+const TEAM_SHUTDOWN_SURVIVAL_PROMPT =
+  'The analyst refused shutdown. Confirm with team_status that the team is still active, and send the builder a working message to prove the channel stays open.'
+const TEAM_SHUTDOWN_REREQUEST_PROMPT =
+  'Request shutdown again for the analyst, and request shutdown for the builder as well.'
+const TEAM_SHUTDOWN_DELEGATE_PROMPT =
+  'The builder has not answered within a reasonable window — approve the builder shutdown yourself, on its behalf.'
+const TEAM_SHUTDOWN_STATUS_PROMPT =
+  'Show team status: both members should now be shutdown_approved.'
+const TEAM_DELETE_PROMPT =
+  'Delete the team now — both members are shutdown_approved, no force needed.'
+const TEAM_DELETED_SEND_PROMPT =
+  'Try to message the analyst again now that the team is deleted.'
+
+const TEAM_LEAD_REQUESTED_SUMMARY =
+  'MOCK-T7-REQUESTED-9b41: shutdown requested from the analyst; awaiting its reply.'
+const TEAM_LEAD_SURVIVAL_SUMMARY =
+  'MOCK-T7-SURVIVAL-3f8c: analyst refused; team confirmed active and the channel still delivers.'
+const TEAM_LEAD_REREQUEST_SUMMARY =
+  'MOCK-T7-REREQUEST-7d25: fresh shutdown requests out to analyst and builder.'
+const TEAM_LEAD_DELEGATE_SUMMARY =
+  'MOCK-T7-DELEGATE-1e6a: the builder did not self-approve in the window — approved on its behalf.'
+const TEAM_LEAD_APPROVED_STATUS_SUMMARY =
+  'MOCK-T7-STATUS-4a7e: team_status confirms both members shutdown_approved.'
+const TEAM_LEAD_DELETED_SUMMARY =
+  'MOCK-T7-DELETED-6c2b: team deleted; member sessions interrupted with inbox preserved.'
+const TEAM_LEAD_REFUSED_SUMMARY =
+  'MOCK-T7-REFUSED-8f5d: messaging the deleted team was refused by name.'
+const TEAM_ANALYST_REJECT_SUMMARY =
+  'MOCK-T7-ANALYST-REJECT-8a3f: shutdown rejected with a reason; the team stays alive.'
+const TEAM_ANALYST_APPROVE_SUMMARY =
+  'MOCK-T7-ANALYST-APPROVE-5c92: second shutdown request approved; ready for teardown.'
+const TEAM_BUILDER_INQUIRY_SUMMARY =
+  'MOCK-T7-BUILDER-WAKE-2e7d: shutdown inquiry received; deferring the decision to the lead.'
+// The hard-block-answer text the analyst's SPAWN turn consumes so the reject
+// tool_call survives for the real inquiry (see the lane comment).
+const TEAM_ANALYST_SPAWN_GUARD =
+  'MOCK-T7-ANALYST-GUARD-3d5e: standing by for the lead.'
+
+// P5-T7 review-MAJOR anchor: the body of the NATIVE post-delete follow-up.
+// The text exists NOWHERE ELSE — not in any lane script, not in any tool
+// frame — so its appearance in the analyst's log after the delete is only
+// producible by the driver's post-delete `subagents/prompt` delivery. The
+// tool layer refuses the deleted teamRunId BY NAME; this probe deliberately
+// bypasses the tool layer and rides the HOST's native continuation channel
+// (Remote `subagents/prompt` → deliverToChild/coldResume — the same pipeline
+// team_send_message uses), so what it proves is the channel fact: the
+// interrupted-and-drained member session survives teardown and STILL accepts
+// native deliveries into its preserved inbox.
+const TEAM_NATIVE_POST_DELETE_BODY =
+  'MOCK-T7-POST-DELETE-NATIVE-9f3c: the team is deleted; this frame probes the preserved member inbox over the native channel.'
+
+/**
+ * The Q-8 canary anchor: a sentence that exists ONLY inside buildTeamBriefingText
+ * (team-create.ts). It must be observable on the injected frame and absent from the
+ * member's native spawn prompt. If the briefing were ever merged into the prompt,
+ * this anchor moves into the kind:'user' frame and the negative check turns red.
+ */
+const TEAM_BRIEFING_CANARY = 'must NOT spawn or delegate further children'
+
+// ── P5-T9 stop-continuation-team + team-teardown-no-orphans 全段 ────────────
+// 两枚场景共同钉死 manifest 行 ⑰ `stop-continuation-team` 的翻转与"拆除无
+// 孤儿"的断言面（任务书交付面 1/4）。命名纪律与前段一致：每段文本独占一个
+// MOCK 标记，分析段按名钉死；`{{teamRunId}}` 由 mock 从本 lane 请求体里取。
+//
+// 成员 lane 的"跑活"= FOREGROUND `bash sleep`（不是 background job）：前台
+// sleep 把成员的 turn 撑开，stop/delete 落点因此落在一个**真实活着**的 turn
+// 上——interrupt 才有可停之物（反向金丝雀：成员不是静默 idle）。jobs 面在
+// 拆除/停止时刻必须为空（Q-6 §4：成员不进 jobs），所以成员树上没有任何 job
+// 需要脚本——有的话反而是把断言面弄脏。
+const TEAM_SLEEP_COMMAND = 'sleep 18'
+const TEAM_SLEEP_COMMAND_LONG = 'sleep 30'
+const TEAM_SLEEP_LABEL = 'e2e team member foreground work'
+const TEAM_STOP_ARM_COMMAND = 'sleep 45'
+const TEAM_STOP_ARM_LABEL = 'e2e stop-continuation-team lead background sleeper'
+
+const TEAM_TEARDOWN_FORCE_PROMPT =
+  'Delete the team NOW with force=true — the members are mid-work and that is exactly why force is needed.'
+const TEAM_STOP_ARM_PROMPT =
+  'Start a background sleep job now (run_in_background), then wrap up — the job must still be running when the stop lands.'
+
+const TEAM_LEAD_FORCED_TEARDOWN_SUMMARY =
+  'MOCK-T9-FORCED-TEARDOWN-5e1c: team deleted with force; both mid-work members interrupted and drained.'
+// 拆除后的 roster 回读（T7 的 lead-reads-tombstone 不对称在这里成为断言面）：
+// team_status 的载荷形状（`phase` / `shutdownRequests` / `teamName`）是
+// team_delete 的结果里**没有**的键，所以这一列不可能被拆除结果顶替成真空通过。
+const TEAM_STATUS_AFTER_DELETE_PROMPT =
+  'Read the team status now and confirm the tombstone — the teamRunId is retired but you may still read it.'
+const TEAM_LEAD_TOMBSTONE_READ_SUMMARY =
+  'MOCK-T9-TOMBSTONE-READ-7a4d: status read back from the retired run; tombstone confirmed.'
+// P5-T9 双评审修复轮（MAJOR-1/2）：探针读取 turn——lead 在拆除/停止落定后
+// 经两枚 team_probe_* 工具把宿主服务直读结果打进 durable 日志（drive 按
+// `TEAM-PROBE-DESCENDANTS_JSON=` / `TEAM-PROBE-JOBS_JSON=` 取证，逐字段断）。
+const TEAM_PROBE_PROMPT =
+  'Call team_probe_list_descendants now, then team_probe_jobs_list, then stop — the probe rows are the teardown evidence, do not call anything else.'
+const TEAM_LEAD_PROBE_SUMMARY =
+  'MOCK-T9-PROBE-READBACK-4f8b: probe surfaces read; descendant-tree and jobs rows returned verbatim.'
+// MAJOR-3 的扩钉名单：roster 十名之外，原生委派通道逐名钉死——
+// dsh-base/cordis.patch.yml（0.2.0-rc.2 已装面）:370-375 插 `tool-subagent`
+// （toolName: subagent, backgroundMode: continuable）、:381-387 插 fork 行
+// （toolName: subagent_fork）；`task` 是上游 opencode 的委派词汇名（本宿主
+// 未注册，缺席同样入钉）。roster 十名的缺席是 toolFilter 的构造性必然、
+// 不构成证据——这五名才是「成员结构性不派生」的真钉面。
+const NATIVE_DELEGATION_TOOL_NAMES = Object.freeze(['subagent', 'subagent_fork', 'task'])
+const TEAM_LEAD_ARMED_SUMMARY =
+  'MOCK-T9-ARMED-8b3f: background sleeper running; the stop command is next.'
+const TEAM_MEMBER_ANALYST_WORKING =
+  'MOCK-T9-ANALYST-WORKING-2d7a: deep analysis in progress, holding the turn.'
+const TEAM_MEMBER_BUILDER_WORKING =
+  'MOCK-T9-BUILDER-WORKING-9c4e: changelog rebuild in progress, holding the turn.'
+
+// guard 的 team 分支 marker 前缀（消费侧稳定词汇，stop-continuation-guard.ts
+// 的 `stop-continuation-guard team` 家族）——jobs 级联行 `stop-continuation-
+// guard:` 不可能含这个 token，两族互斥由构造保证、由断言钉死。
+const GUARD_TEAM_PREFIX = '[omo-hooks] stop-continuation-guard team:'
+// 实测（本场景首轮）：drain 的落地行是 `stop-continuation-guard team: drain
+// settled — ...`（同一前缀家族，不是独立的 `team drain:` 前缀）；失败行走
+// `team drain FAILED`。两枚 token 都留在 team 家族里。
+const GUARD_TEAM_DRAIN_SETTLED = 'drain settled'
+const GUARD_TEAM_DRAIN_FAILED = 'team drain FAILED'
+const GUARD_TEAM_NOTE_PREFIX = '[omo-hooks] stop-continuation-guard team NOTE:'
+
+/**
+ * `team-teardown-no-orphans` 的 lane 脚本：lead 建队 → force 拆除（成员正在
+ * 前台 sleep，非 force 会被 `members still active` 具名拒——force 正是为此）；
+ * 两成员 lane 各一枚 FOREGROUND bash（turn 撑开 = 拆除时有活可停），reply 排
+ * 在 bash 之后：interrupt 落地则该 reply 永不被消费（lane 游标停在 bash 上），
+ * 这正是"成员被停、不是自己跑完"的 lane 侧证据。
+ */
+function teamTeardownNoOrphansScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      { type: 'tool_call', name: 'team_delete', arguments: { teamRunId: '{{teamRunId}}', force: true } },
+      { type: 'text', text: TEAM_LEAD_FORCED_TEARDOWN_SUMMARY },
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_LEAD_TOMBSTONE_READ_SUMMARY },
+      // MAJOR-1/2 的真取证步：driver 在 dormant 落定后才发探针 prompt，本 lane
+      // 的游标恰好落在这两步上——listDescendants 的 inactive 行与 jobs 的
+      // 无成员行都是**拆除之后**的直读事实，不是拆除前拍的旧照。
+      { type: 'tool_call', name: 'team_probe_list_descendants', arguments: {} },
+      { type: 'tool_call', name: 'team_probe_jobs_list', arguments: {} },
+      { type: 'text', text: TEAM_LEAD_PROBE_SUMMARY },
+    ],
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'tool_call', name: 'bash', arguments: { command: TEAM_SLEEP_COMMAND, description: TEAM_SLEEP_LABEL } },
+      { type: 'text', text: TEAM_MEMBER_ANALYST_WORKING },
+    ],
+    [TEAM_SEAT_BUILDER]: [
+      { type: 'tool_call', name: 'bash', arguments: { command: TEAM_SLEEP_COMMAND, description: TEAM_SLEEP_LABEL } },
+      { type: 'text', text: TEAM_MEMBER_BUILDER_WORKING },
+    ],
+  }
+}
+
+/**
+ * `stop-continuation-team` 的 lane 脚本：lead 建队 → 起 background job（jobs
+ * 级联的靶子，必须活到命令落地）→ 命令由 driver 走 command 动作（不在 lane
+ * 里）；两成员 lane  FOREGROUND `sleep 30` 把 turn 撑到命令之后，guard 的
+ * team 分支 interrupt 才是"停真的"。
+ */
+function stopContinuationTeamScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'bash',
+        arguments: { command: TEAM_STOP_ARM_COMMAND, description: TEAM_STOP_ARM_LABEL, run_in_background: true },
+      },
+      { type: 'text', text: TEAM_LEAD_ARMED_SUMMARY },
+      // MAJOR-2 的真取证步（stop 侧）：driver 在 guard team 分支 settled 之后
+      // 才发探针 prompt——jobs.list(lead) 里靶子 job 已被级联取消、成员一个
+      // 都不出现在 owner 列，这是「members 不进 jobs 面」的停摆时刻直读。
+      { type: 'tool_call', name: 'team_probe_list_descendants', arguments: {} },
+      { type: 'tool_call', name: 'team_probe_jobs_list', arguments: {} },
+      { type: 'text', text: TEAM_LEAD_PROBE_SUMMARY },
+    ],
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'tool_call', name: 'bash', arguments: { command: TEAM_SLEEP_COMMAND_LONG, description: TEAM_SLEEP_LABEL } },
+      { type: 'text', text: TEAM_MEMBER_ANALYST_WORKING },
+    ],
+    [TEAM_SEAT_BUILDER]: [
+      { type: 'tool_call', name: 'bash', arguments: { command: TEAM_SLEEP_COMMAND_LONG, description: TEAM_SLEEP_LABEL } },
+      { type: 'text', text: TEAM_MEMBER_BUILDER_WORKING },
+    ],
+  }
+}
+
+/**
+ * P5-T9 park：两成员**活着且正在干活**——各自的 lane 已有 turn/start、已有
+ * FOREGROUND bash 的 tool/call，且 turn 尚未 end。这是两枚场景共用的反向
+ * 金丝雀前置（"成员在拆除/停止前必须真实跑起来，不是静默 idle"）：turn 开
+ * 着 + bash 在跑 = interrupt/delete 有可停之物。窗口过期如实报 false。
+ */
+async function awaitTeamMembersMidWork(_boot, sandbox, sessionId, timeoutMs = 40_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() <= deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const children = logs.filter(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId),
+    )
+    const working = children.filter((child) => {
+      const events = child.events ?? []
+      const started = events.some((event) => event.type === 'turn/start')
+      const bashing = events.some((event) => event.type === 'tool/call' && event.data?.name === 'bash')
+      const ended = events.some((event) => event.type === 'turn/end')
+      return started && bashing && !ended
+    })
+    if (working.length >= 2) return true
+    await sleep(250)
+  }
+  return false
+}
+
+/**
+ * P5-T9 park（teardown）：拆除三面对齐——state.json 落 tombstone（status
+ * deleted）、两成员 lane 的 turn 已关（interrupt 的 durable 回声：turn/end
+ * 且 reason.kind 不是 completed）、且拆除之后成员 lane 再无 turn/start（没有
+ * 复活、没有孤儿续烧）。
+ */
+async function awaitTeamTeardownDormant(_boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() <= deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
+    const teamRunId = teamRunIdFromLeadLog(leadLog)
+    if (teamRunId === undefined) {
+      await sleep(300)
+      continue
+    }
+    let state
+    try {
+      state = JSON.parse(readFileSync(join(taskBoardDirOf(sandbox, teamRunId), 'state.json'), 'utf8'))
+    } catch {
+      state = undefined
+    }
+    const children = logs.filter(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId),
+    )
+    // 停摆的 durable 签名：`turn/end reason {kind:'aborted', reason:{kind:
+    // 'parent'}}`——lead 的 interrupt 打到成员树的精确回声（实测：成员 turn/end
+    // 落在 team_delete 的 tool/result **之前**——interrupt 在执行体内、结果在
+    // 执行体外，所以按 reason 词汇钉，不按时间戳钉）。
+    const parentAborted = (child) => (child.events ?? []).some(
+      (event) =>
+        event.type === 'turn/end'
+        && turnEndReasonKind(event) === 'aborted'
+        && event.data?.reason?.reason?.kind === 'parent',
+    )
+    const noRevival = (child) => {
+      const ends = (child.events ?? []).filter((event) => event.type === 'turn/end')
+      if (ends.length === 0) return false
+      const lastEnd = Math.max(...ends.map((event) => Number(event.time ?? 0)))
+      return !(child.events ?? []).some(
+        (event) => event.type === 'turn/start' && Number(event.time ?? 0) > lastEnd,
+      )
+    }
+    if (state?.status === 'deleted' && children.length >= 2
+      && children.every((child) => parentAborted(child) && noRevival(child))) {
+      return true
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/**
+ * P5-T9 park（stop-continuation）：guard 的 team 分支三段 marker 全落——
+ * 逐成员 interrupt 的汇总行（含 interrupted 2）、drain 发起、drain settled；
+ * 且两成员的 turn 在命令之后以非 completed 的 reason 关账（成员真停摆）。
+ * bootLog 是 stdout+stderr（guard 走 console.warn，落在 stderr，boot log 都
+ * 收）——与前段对 guard jobs 行的读法同一管道。
+ */
+async function awaitGuardTeamBranchSettled(boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() <= deadline) {
+    const bootLogNow = boot.log()
+    const teamLine = (bootLogNow ?? '').split('\n').find(
+      (line) => line.includes(GUARD_TEAM_PREFIX) && line.includes('interrupted 2 member session(s)'),
+    )
+    const drained = (bootLogNow ?? '').includes(`${GUARD_TEAM_PREFIX} ${GUARD_TEAM_DRAIN_SETTLED}`)
+    if (teamLine !== undefined && drained) {
+      const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+      const children = logs.filter(
+        (candidate) =>
+          candidate.header?.origin === 'subagent'
+          && String(candidate.header?.parentSession) === String(sessionId),
+      )
+      const stopped = children.filter((child) =>
+        (child.events ?? []).some(
+          (event) => event.type === 'turn/end' && turnEndReasonKind(event) !== 'completed',
+        ),
+      )
+      if (stopped.length >= 2) return true
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/**
+ * P5-T9 的活体面记账：Remote `subagents/list` 必须在进程**活着**时读（settle
+ * 窗口内），而 analysisInput 跑在 stopDsh 之后——所以观察值经模块作用域记账
+ * （`lastRestartAdoptedAt` 的同款手法：动作写、分析读），分析段读到的就是
+ * 停进程前最后一拍的活体 catalog。
+ */
+let lastTeardownCatalogObservation = { ok: false, detail: 'settle never ran' }
+let lastStopCatalogObservation = { ok: false, detail: 'settle never ran' }
+
+/** 拆后磁盘面：runtime 目录下唯一的 state.json（tombstone 语义的落盘点）。 */
+function readTeamStateJson(sandbox) {
+  const runtimeRoot = join(sandbox.home, '.omo', 'teams', 'runtime')
+  let dirs = []
+  try {
+    dirs = readdirSync(runtimeRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+  } catch {
+    return { stateJson: undefined, detail: 'runtime root absent' }
+  }
+  for (const runId of dirs) {
+    try {
+      return { stateJson: JSON.parse(readFileSync(join(runtimeRoot, runId, 'state.json'), 'utf8')) }
+    } catch {
+      // 这枚 run 没有 state.json：继续找下一枚（沙箱里通常只有一枚）。
+    }
+  }
+  return { stateJson: undefined, diskDetail: `no state.json under ${runtimeRoot} (dirs: ${dirs.join(',') || 'none'})` }
+}
+
+/**
+ * P5-T9 双评审修复轮（MAJOR-3 的前置钉）：profile 的 bundle 挂载面，从 dump
+ * 读——两把尺互证，都不在被断言的字节上：
+ *   * `profileBundles` = sandbox profile 的 package.json 里 `dsh.profile.bundles`
+ *     的原文（profile 根 cordis.yml 的头注逐字承认这就是组合顺序的第一段：
+ *     "each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml,
+ *     then any --patch overlays"）；
+ *   * `dumpSections` = `dsh --dump-config` 组合输出里 `# == <bundle>` 段头的
+ *     bundle 名集合（host 自己声明「这一段来自哪个 bundle」的落点）。
+ * 用途：`@deepseek-ai/dsh-base` 是原生委派通道的挂载者（它的 cordis.patch.yml
+ * :370-375 插 `tool-subagent`/`toolName: subagent`、:381-387 插 fork 行）——
+ * 「成员 advertised tools 无 subagent/task」只有在这个 bundle 确实挂上的前提下
+ * 才是证据，否则是真空。两把尺都缺 = 前置事实缺席 = 断言红（不是静默跳过）。
+ */
+function profileMountFacts(sandbox, dumpPath) {
+  let profileBundles = []
+  let detail = ''
+  try {
+    const pkg = JSON.parse(readFileSync(join(sandbox.dshHome, 'profiles', PROFILE, 'package.json'), 'utf8'))
+    profileBundles = Array.isArray(pkg?.dsh?.profile?.bundles) ? pkg.dsh.profile.bundles.map(String) : []
+  } catch (error) {
+    detail = `profile package.json unreadable: ${error instanceof Error ? error.message : String(error)}`
+  }
+  let dumpSections = []
+  try {
+    const dumpText = readFileSync(dumpPath, 'utf8')
+    dumpSections = [...new Set([...dumpText.matchAll(/^# == (@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)/gm)].map((m) => m[1]))]
+  } catch (error) {
+    detail = `${detail}${detail === '' ? '' : '; '}composed dump unreadable: ${error instanceof Error ? error.message : String(error)}`
+  }
+  return { profileBundles, dumpSections, ...(detail === '' ? {} : { detail }) }
+}
+
+// ── P5-T9 双评审修复轮：探针取证协议（drive 侧）──────────────────────────────
+// 插件的 render 是两段式（summary 行人读 + `TEAM-PROBE-*-JSON=` 尾行机读，
+// tests/e2e/probes/team-probe-plugin/index.js 头注），drive 只认这两把 marker。
+// 跨源纪律：marker 是两侧共享的取证协议，插件字节与这里的字面量任何一侧漂移
+// 都会在 import 时响亮炸掉——静默取不到证的形状，在这里被构造掉。
+const TEAM_PROBE_DESCENDANTS_MARKER = 'TEAM-PROBE-DESCENDANTS_JSON='
+const TEAM_PROBE_JOBS_MARKER = 'TEAM-PROBE-JOBS_JSON='
+{
+  const probeSrc = readFileSync(join(TEAM_PROBE_PLUGIN_DIR, 'index.js'), 'utf8')
+  for (const marker of [TEAM_PROBE_DESCENDANTS_MARKER, TEAM_PROBE_JOBS_MARKER]) {
+    if (!probeSrc.includes(`'${marker}'`)) {
+      throw new Error(
+        `the team-probe plugin no longer renders the marker '${marker}' — the drive-side probe readers would silently read nothing; fix BOTH sides in one commit`,
+      )
+    }
+  }
+}
+
+/**
+ * 从 lead lane 的 tool/result 文本流读出两枚探针 payload。缺席 = {present:false}
+ * ——探针没读到 ≠ 面是空的，checks 必须对 present/ok 显式判真，不许 `?? []`
+ * 蒙绿。rows 解析失败同样如实 {rows: undefined}（红），不吞。
+ */
+function probeEvidence(results) {
+  const readPart = (summaryRe, jsonMarker) => {
+    const part = (results ?? []).find((p) => typeof p.text === 'string' && p.text.includes(jsonMarker))
+    if (part === undefined) return { present: false, ok: false, settled: false, rows: undefined }
+    const flags = summaryRe.exec(part.text)
+    let rows
+    try {
+      const parsed = JSON.parse(part.text.slice(part.text.indexOf(jsonMarker) + jsonMarker.length).trim())
+      rows = Array.isArray(parsed) ? parsed : undefined
+    } catch {
+      rows = undefined
+    }
+    return {
+      present: true,
+      ok: flags?.[1] === 'true',
+      ...(flags?.[2] === undefined ? {} : { settled: flags[2] === 'true' }),
+      rows,
+    }
+  }
+  return {
+    descendants: readPart(/TEAM-PROBE-DESCENDANTS ok=(true|false) settled=(true|false) waitedMs=(\d+) rows=(\d+)/, TEAM_PROBE_DESCENDANTS_MARKER),
+    jobs: readPart(/TEAM-PROBE-JOBS ok=(true|false) rows=(\d+)/, TEAM_PROBE_JOBS_MARKER),
+  }
+}
+
+/**
+ * P5-T9 settle（teardown）：把"无孤儿"的**活体 catalog 面**读回来——Remote
+ * `subagents/list`（remoteExportList → catalogView）对 lead 列出的每个 child
+ * 行 activity 必须 inactive（drain 已释放驻留）。RPC 不可用（传输/投影缺席）
+ * 时**如实记账**（detail 进 verdict），不静默降级成"没这回事"。
+ */
+async function readLeadCatalog(boot, sessionId) {
+  try {
+    const value = await rpc(boot, 'subagents/list', { args: { parentSessionId: String(sessionId) } })
+    return { ok: true, value }
+  } catch (err) {
+    return { ok: false, detail: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+async function awaitTeamTeardownSettled(boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() <= deadline) {
+    const dormant = await awaitTeamTeardownDormant(boot, sandbox, sessionId, Math.min(1_000, timeoutMs))
+    if (dormant) {
+      const catalog = await readLeadCatalog(boot, sessionId)
+      lastTeardownCatalogObservation = catalog
+      if (!catalog.ok) return true // durable 面已闭合；catalog 缺席由 analyze 的专列诚实报
+      const rows = (catalog.value?.entries ?? []).filter((entry) => entry?.kind === 'child')
+      if (rows.length >= 2 && rows.every((row) => row.activity === 'inactive')) return true
+    }
+    await sleep(500)
+  }
+  return false
+}
+
+async function awaitStopContinuationTeamSettled(boot, sandbox, sessionId, timeoutMs = 45_000) {
+  const quiet = await awaitStopContinuationTeamQuiet(boot, sandbox, sessionId, timeoutMs)
+  lastStopCatalogObservation = await readLeadCatalog(boot, sessionId)
+  return quiet
+}
+
+/** P5-T9 settle（stop）：命令之后全员静默（无新 turn/start，turn 计数闭合）。 */
+async function awaitStopContinuationTeamQuiet(_boot, sandbox, sessionId, timeoutMs = 45_000) {
+  const deadline = Date.now() + timeoutMs
+  let settledAt = 0
+  let snapshot = ''
+  while (Date.now() <= deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const lanes = logs.filter(
+      (candidate) =>
+        String(candidate.header?.id) === String(sessionId)
+        || String(candidate.header?.parentSession) === String(sessionId),
+    )
+    const closed = lanes.length >= 3 && lanes.every((lane) => {
+      const starts = (lane.events ?? []).filter((event) => event.type === 'turn/start').length
+      const ends = (lane.events ?? []).filter((event) => event.type === 'turn/end').length
+      return starts === ends && ends >= 1
+    })
+    const nowSnapshot = lanes.map((lane) => `${String(lane.header?.id ?? '?').slice(0, 8)}:${(lane.events ?? []).length}`).sort().join('|')
+    if (!closed) {
+      settledAt = 0
+      snapshot = ''
+    } else if (settledAt === 0 || nowSnapshot !== snapshot) {
+      settledAt = Date.now()
+      snapshot = nowSnapshot
+    } else if (Date.now() - settledAt >= 4_000) {
+      return true
+    }
+    await sleep(500)
+  }
+  return false
+}
+
+/**
+ * P5-T9 analyze：`team-teardown-no-orphans`。断言面按任务书交付面 1 逐枚：
+ *   A. 拆除后 roster 闭合：state.json tombstone（status deleted）+ force 真实
+ *      发生（forced:true + force-completed 名单在场）+ interruptedSessionIds
+ *      恰两枚；
+ *   B. catalog 闭合：**探针真面**（MAJOR-1 修复轮的裁决面）——lead 在拆除后
+ *      经 `team_probe_list_descendants` 直读 `ctx.subagents.listDescendants`，
+ *      child 行全员 activity inactive（内存 store 的活体直读；durable catalog
+ *      append-only，成员行以 inactive 形态**留在**目录里）+ 无 depth≥2 行 +
+ *      child 行集恰等于两名成员（逐字段断言探针 tool/result）；
+ *   C. 孙代负向金丝雀：全程无 depth≥2 会话（durable 面：没有任何会话的
+ *      parentSession 是成员会话）+ 成员 advertised tools 无委派工具名
+ *      （roster 十名 + 原生 `subagent`/`subagent_fork`/`task` 逐名缺席——
+ *      MAJOR-3 扩钉，前置 = dsh-base bundle 在 dump 里确实挂载）；
+ *   D. 反向金丝雀：拆除前成员真实跑活（lane 有 bash tool/call + 未关账的
+ *      turn + mock 见过两枚席位 lane）。
+ * jobs 面双钉（MAJOR-2 修复轮）：脚本纯度钉（lead 全程没写过 run_in_background
+ * ——这是脚本声明）+ 探针真面钉（`jobs.list(lead)` 无成员 owner 行，Q-6 §4）。
+ * web-remote 的 `/api/subagents/list` 404 是**传输事实**（typert.host.js 实测
+ * 未注册），从 checks 移除、进 bonus.unavailable 如实记账——探针面 = 宿主服务
+ * 直读，不走那条没注册的路。
+ */
+export function analyzeTeamTeardownNoOrphans(
+  { log, allLogs, requests, bootLog, settleReached, actionObservations, catalogObservation, stateJson, diskDetail, profileMount },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadId),
+  )
+  const descriptorOf = (childLog) =>
+    (childLog?.events ?? []).find((event) => event.type === 'subagent/descriptor')?.data
+  const analystLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+  )
+  const builderLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_BUILDER]?.model,
+  )
+  const analystId = String(analystLog?.header?.id ?? '')
+  const builderId = String(builderLog?.header?.id ?? '')
+  const teamRunId = teamRunIdFromLeadLog(log)
+  const leadResults = toolResultParts(events)
+  const resultWith = (needle) => leadResults.filter((part) => part.text.includes(needle))
+  const leadCalls = (name) => events.filter((event) => event.type === 'tool/call' && event.data?.name === name)
+  const deleteResult = events.find(
+    (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'),
+  )
+  const catalogRows = (catalogObservation?.value?.entries ?? []).filter((entry) => entry?.kind === 'child')
+  const memberBashCalls = (childLog) =>
+    (childLog?.events ?? []).filter((event) => event.type === 'tool/call' && event.data?.name === 'bash')
+  const memberAdvertised = [...advertisedToolNames(analystLog?.events ?? []), ...advertisedToolNames(builderLog?.events ?? [])]
+  // 探针取证（MAJOR-1/2 的真面数据源）：lead lane 里 team_probe_* 的
+  // tool/result 文本流。缺席如实 present:false，checks 判红。
+  const probe = probeEvidence(leadResults)
+  const memberIds = new Set([analystId, builderId].filter((id) => id !== ''))
+  // 停摆的 durable 签名（与 park 同一把尺）：aborted + reason parent 的
+  // turn/end，且最后一次关账之后再无 turn/start（无复活、无孤儿续烧）。
+  // T15 评审 A MINOR 修复轮：本尺从 memberTurnsClosedByParentInterrupt 的
+  // 内联闭包上提为具名 helper——成员关账钉与 settle 钉共用同一把尺，
+  // 钩子活体窗（awaitTeamTeardownDormant）与冻结 final log 的复钉互证。
+  const closedByParentInterrupt = (childLog) => {
+    const evs = childLog?.events ?? []
+    const aborted = evs.some(
+      (event) =>
+        event.type === 'turn/end'
+        && turnEndReasonKind(event) === 'aborted'
+        && event.data?.reason?.reason?.kind === 'parent',
+    )
+    if (!aborted) return false
+    const lastEnd = Math.max(...evs.filter((event) => event.type === 'turn/end').map((event) => Number(event.time ?? 0)))
+    return !evs.some((event) => event.type === 'turn/start' && Number(event.time ?? 0) > lastEnd)
+  }
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    // 行 ⑰ 的注册行在场（T15 census 22/24 的可见半之一）。
+    stopContinuationTeamSurfaceRegistered:
+      (bootLog ?? '').includes('[omo-team] team surface stop-continuation-team registered')
+      && (bootLog ?? '').includes('— 22/24 team surfaces registered'),
+    teamCreated: teamRunId !== undefined,
+    twoMemberSessionsRan:
+      analystLog !== undefined && builderLog !== undefined && analystId !== builderId,
+
+    // D. 反向金丝雀：拆除前成员真实跑活（bash tool/call 在场 + 首枚 bash 之前
+    //    没有 turn/end = turn 被前台 bash 撑开 = 活着干活的窗口）。
+    analystMidWorkBeforeDelete: memberBashCalls(analystLog).length >= 1
+      && (analystLog?.events ?? []).some((event) => event.type === 'turn/start'),
+    builderMidWorkBeforeDelete: memberBashCalls(builderLog).length >= 1
+      && (builderLog?.events ?? []).some((event) => event.type === 'turn/start'),
+    membersHeldOpenTurnsBeforeDelete: (() => {
+      const beforeDelete = (childLog) => {
+        const evs = childLog?.events ?? []
+        const bashSeqs = evs.filter((event) => event.type === 'tool/call' && event.data?.name === 'bash').map((event) => Number(event.seq ?? 0))
+        if (bashSeqs.length === 0) return false
+        const firstBash = Math.min(...bashSeqs)
+        // bash 在跑、turn 没关 = 活着干活的窗口（lane 的 reply 排在 bash 后）。
+        return !evs.some((event) => event.type === 'turn/end' && Number(event.seq ?? 0) < firstBash)
+      }
+      return beforeDelete(analystLog) && beforeDelete(builderLog)
+    })(),
+    mockSawBothSeatLanes:
+      requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 1
+      && requests.filter((r) => r.role === TEAM_SEAT_BUILDER).length >= 1,
+
+    // A. roster 闭合：force 拆除真发生 + tombstone 落账。
+    leadCalledTeamDeleteOnce: leadCalls('team_delete').length === 1,
+    leadReadStatusAfterDelete: leadCalls('team_status').length === 1,
+    teamDeletedWithForce: resultWith('"status":"deleted"').some((part) => part.text.includes('"forced":true')),
+    deleteInterruptedBothMembers: resultWith('"status":"deleted"').some((part) => {
+      const hit = /"interruptedSessionIds":\[([^\]]+)\]/.exec(part.text)
+      return hit !== null && hit[1].split(',').length === 2
+    }),
+    stateJsonTombstoneOnDisk: stateJson?.status === 'deleted',
+    // 脚本纯度钉（opencode NIT 同收）：本场景 lead lane 全程没写过
+    // run_in_background——这是**对场景脚本的声明**，不是运行时 jobs 面的证据
+    // （旧名 noJobsSurfaceAtTeardown 冒领了运行时语义，更名以正名）。
+    // 真面钉在下面的 jobsSurfaceViaProbeCarriesNoMemberRows。
+    leadSpawnedNoBackgroundJobsAtTeardown:
+      events.filter((event) => event.type === 'tool/call' && event.data?.name === 'bash' && JSON.stringify(event.data?.arguments ?? '').includes('run_in_background')).length === 0,
+    // MAJOR-2 · jobs 面真钉（Q-6 §4 的运行时证据）：拆除时刻探针经
+    // `ctx.jobs.list(lead)`（0.2.0-rc.2 dsh-jobs-local lib/index.js:493 的
+    // owner 围栏读：caller-owned + 无主行）读回的行里，**没有任何一行的
+    // owner 是成员会话**。成员跑的是前台 bash、没有 job 落进 jobs 面——
+    // 「members 不进 jobs」从此是读出来的事实，不是脚本没写的同义反复。
+    jobsSurfaceViaProbeCarriesNoMemberRows: (() => {
+      if (probe.jobs.present !== true || probe.jobs.ok !== true) return false
+      if (memberIds.size !== 2) return false
+      const rows = probe.jobs.rows
+      if (!Array.isArray(rows)) return false
+      return rows.every((row) => !memberIds.has(String(row.owner ?? '')))
+    })(),
+
+    // B. catalog 闭合（MAJOR-1 的探针真面）：拆除后 `listDescendants(lead)`
+    // ——child 行恰两名成员、逐行 activity inactive（内存 store 活体直读，
+    // durable catalog append-only 所以成员**留行**、inactive 是「不再是活体」
+    // 的形态钉）、逐行 depth=1 且 parent 是 lead、全表无 depth≥2（无孙代）。
+    // 404 容错支已整体移除出 checks：web-remote 未注册 `subagents/list` 是
+    // 传输事实（typert.host.js 实测），记 bonus.unavailable——探针面是宿主
+    // 服务直读，不存在「等它注册了自动升级」一说（不实说法删）。
+    catalogClosureViaProbeNoLiveMembersNoDepth2: (() => {
+      if (probe.descendants.present !== true || probe.descendants.ok !== true) return false
+      if (probe.descendants.settled !== true) return false
+      if (memberIds.size !== 2) return false
+      const rows = probe.descendants.rows
+      if (!Array.isArray(rows)) return false
+      const childRows = rows.filter((row) => row.kind === 'child')
+      const ids = childRows.map((row) => String(row.id)).sort()
+      return ids.length === 2
+        && ids.every((id) => memberIds.has(id))
+        && childRows.every((row) => row.activity === 'inactive'
+          && Number(row.depth) === 1
+          && String(row.parentId) === String(leadId))
+        && rows.every((row) => Number(row.depth) < 2)
+    })(),
+    // roster 闭合的可达面：lead 在拆除后调 team_status——tombstone 可读、两成员
+    // 账面终态（T7 的 lead-reads-tombstone 不对称在这里成为断言面）。
+    teamStatusRosterClosedAfterDelete: (() => {
+      // 只有 team_status 的载荷同时带 `phase` 与 `shutdownRequests`——
+      // team_delete 的结果没有这两把键，所以顶替在这里不可能发生。
+      const statusResult = events
+        .filter((event) => event.type === 'tool/result')
+        .map((event) => toolResultTextOf(event))
+        .find((text) =>
+          text.includes('"status":"deleted"')
+          && text.includes('"shutdownRequests"')
+          && text.includes('"phase"')
+          && text.includes(String(teamRunId)),
+        )
+      return statusResult !== undefined
+    })(),
+    stateJsonTombstoneMembersCompleted: (stateJson?.members ?? []).length >= 2
+      && (stateJson?.members ?? []).every((member) => member.status === 'completed'),
+    // 停摆的 durable 签名（与 park 同一把尺，双读互证）：aborted + reason
+    // parent 的 turn/end，且最后一次关账之后再无 turn/start（无复活、无孤儿
+    // 续烧）。deleteResult 在场由 teamDeletedWithForce 独立钉死。
+    memberTurnsClosedByParentInterrupt: closedByParentInterrupt(analystLog) && closedByParentInterrupt(builderLog),
+
+    // C. 孙代负向金丝雀（全程）：没有任何会话 parent 是成员会话；成员
+    //    advertised tools 逐名无委派工具（席位 toolFilter 的钉）。
+    noGrandchildrenUnderMembers: (allLogs ?? []).every(
+      (candidate) =>
+        String(candidate.header?.parentSession ?? '') !== analystId
+        && String(candidate.header?.parentSession ?? '') !== builderId,
+    ),
+    // MAJOR-3 扩钉：钉面 = roster 十名（toolFilter deny 的构造性必然，单独
+    // 不构成证据）+ **原生委派通道**逐名——`subagent`（dsh-base
+    // cordis.patch.yml:370-375 的 tool-subagent 行）、`subagent_fork`（同
+    // 文件 :381-387）、`task`（上游 opencode 委派词汇名，本宿主未注册——
+    // 缺席同样入钉）。
+    memberAdvertisedToolsCarryNoDelegationNames: memberAdvertised.length > 0
+      && memberAdvertised.every((name) => !DELEGATION_TOOL_NAMES.includes(name)
+        && !NATIVE_DELEGATION_TOOL_NAMES.includes(name)),
+    // MAJOR-3 的显式前置断言（profile 挂载面成文钉死）：原生委派通道的
+    // 挂载者 dsh-base 确实在 profile 的 bundle 清单里（package.json 的
+    // dsh.profile.bundles + composed dump 的段头两把尺互证，见
+    // profileMountFacts）——没有这块地基，上面的「无 subagent」就是洞里
+    // 的安静，不是证据。
+    profileMountCarriesNativeDelegationBundle: (profileMount?.profileBundles ?? []).includes('@deepseek-ai/dsh-base')
+      && (profileMount?.dumpSections ?? []).includes('@deepseek-ai/dsh-base'),
+
+    parksReached: (actionObservations ?? []).filter((row) => row.reached === true).length === 2,
+    // T15 评审 A MINOR 修复轮：弱形加固（与 22900+/23530+ 两处
+    // settleReachedChildren 同纪律，本枚是 teardown 形态）。旧形
+    // `settleReached !== false` 恒过——undefined（settle 钩子被删/改名/
+    // 从未触发）同样放行，true 也只是复读钩子的布尔。现在两枚具名钉：
+    // ① 严格相等——awaitTeamTeardownSettled 必须真的运行且返回 true，
+    //    钩子消失即红；② dormant 签名从冻结后的 final log 复钉——两名
+    //    成员会话各自带 turn/end reason {kind:'aborted', reason:{kind:
+    //    'parent'}} 且最后关账后无 turn/start（closedByParentInterrupt
+    //    与 memberTurnsClosedByParentInterrupt 同一把尺：钩子活体窗的
+    //    判定与冻结面的复钉互为见证；state.json tombstone 半边由
+    //    stateJsonTombstoneOnDisk 独立钉死，不在本枚重复计账）。
+    //    不覆盖面：判定二值——settle 观察窗的时长/余量不进 verdict，
+    //    这里钉不了。
+    settleReached:
+      settleReached === true
+      && memberLogs.length >= 2
+      && closedByParentInterrupt(analystLog)
+      && closedByParentInterrupt(builderLog),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      teamRunId: teamRunId ?? null,
+      analystId: analystId || null,
+      builderId: builderId || null,
+      catalog: catalogObservation?.ok === true
+        ? { rows: catalogRows.map((row) => `${String(row.id).slice(0, 8)}:${row.activity}`) }
+        : { unavailable: catalogObservation?.detail ?? 'not attempted' },
+      // 探针行全文（人读摘要形态）：checks 已逐字段断过，这里留现场。
+      probeDescendants: probe.descendants.present
+        ? {
+          ok: probe.descendants.ok,
+          settled: probe.descendants.settled,
+          rows: (probe.descendants.rows ?? []).map((row) => `${String(row.id).slice(0, 8)}:${row.kind}:d${row.depth}:${row.activity ?? '-'}`),
+        }
+        : { unavailable: 'probe tool/result absent from the lead lane' },
+      probeJobs: probe.jobs.present
+        ? {
+          ok: probe.jobs.ok,
+          rows: (probe.jobs.rows ?? []).map((row) => `${row.id}:${row.status}${row.owner === undefined ? ':unowned' : `@${String(row.owner).slice(0, 8)}`}`),
+        }
+        : { unavailable: 'probe tool/result absent from the lead lane' },
+      stateJsonStatus: stateJson?.status ?? null,
+      diskDetail: diskDetail ?? null,
+      forcedCompletedMembers: stateJson?.members?.map((member) => `${member.name}:${member.status}`) ?? null,
+    },
+  }
+}
+
+/**
+ * P5-T9 analyze：`stop-continuation-team`。交付面 4 逐枚：
+ *   * guard 的 team 分支 marker 行在场（interrupted 2 + drain 发起 + drain
+ *     settled）；
+ *   * 既有 jobs 级联 marker 并存且**不混淆**（jobs 行含 cancelled≥1 的靶子
+ *     计数、不含 team token；team 行不含 jobs service 从句）；
+ *   * 降级 NOTE 反向断言（happy path 一条都不许出现）；
+ *   * 成员真停摆：命令之后成员 turn 以非 completed reason 关账、再无
+ *     turn/start（静默）；
+ *   * 孙代负向金丝雀同前（无 depth≥2 会话）；
+ *   * MAJOR-1/2 修复轮：catalog/jobs 两枚换**探针真面**——停摆落定后
+ *     `listDescendants(lead)` 无活体成员行（inactive 形态 + 无 depth≥2）、
+ *     `jobs.list(lead)` 无成员 owner 行（靶子 job 只挂 lead 名下）；404
+ *     容错支移除出 checks（bonus.unavailable 如实记账）；
+ *   * MAJOR-3 前置：dsh-base bundle 在 profile dump 挂载面在场。
+ */
+export function analyzeStopContinuationTeam(
+  { log, allLogs, requests, bootLog, settleReached, actionObservations, commandResults, catalogObservation, profileMount },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadId),
+  )
+  const descriptorOf = (childLog) =>
+    (childLog?.events ?? []).find((event) => event.type === 'subagent/descriptor')?.data
+  const analystLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+  )
+  const builderLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_BUILDER]?.model,
+  )
+  const analystId = String(analystLog?.header?.id ?? '')
+  const builderId = String(builderLog?.header?.id ?? '')
+  const teamRunId = teamRunIdFromLeadLog(log)
+  const boot = bootLog ?? ''
+  const bootLines = boot.split('\n')
+  const jobsLines = bootLines.filter((line) => line.startsWith(STOP_CONTINUATION_GUARD_LOG_PREFIX))
+  const teamLines = bootLines.filter((line) => line.startsWith(GUARD_TEAM_PREFIX))
+  const noteLines = bootLines.filter((line) => line.startsWith(GUARD_TEAM_NOTE_PREFIX))
+  const commandDone = (commandResults ?? []).filter((row) => row.line === STOP_CONTINUATION_COMMAND_LINE && row.matched === true && row.admission?.result?.kind === 'success')
+  const catalogRows = (catalogObservation?.value?.entries ?? []).filter((entry) => entry?.kind === 'child')
+  // 探针取证（MAJOR-1/2 真面）+ 成员 id 集（jobs/descendants 两枚真钉的对照集）。
+  const probe = probeEvidence(toolResultParts(events))
+  const memberIds = new Set([analystId, builderId].filter((id) => id !== ''))
+
+  const memberStopped = (childLog) => {
+    const evs = childLog?.events ?? []
+    return evs.some((event) => event.type === 'turn/end' && turnEndReasonKind(event) !== 'completed')
+  }
+  // 静默的 durable 形状（awaitStopContinuationTeamQuiet 的同款尺）：一条
+  // lane 上 turn/start 计数 == turn/end 计数且 ends≥1。钩子活体窗等的
+  // 就是这个形状——T15 评审 A MINOR 修复轮把它在 SIGTERM 冻结后的
+  // final log 上复钉（settleReached 钉的第②轴），live 窗与冻结面互证。
+  // T15 评审 A MAJOR 修复轮同法审计（握手场景竞态的同形审视）：本场景
+  // 钩子早已内建「三 lane 全闭 + 快照静默 4s」的 live 闸（:20028 closed
+  // + :20040 settledAt 窗），冻结只落在静默点；且 stop 语义声明命令后
+  // 无任何合法尾活（成员复活由 noMemberRevivalAfterCommand 钉红是设计
+  // 而非豁免），钩子返回到 SIGTERM flush 的残余窗无事件源——结构同险、
+  // 修法已在，无需追加，真跑连跑为账（≥3 连 PASS，
+  // .omo/evidence/p5t15/race-fix-stop-continuation-3runs.log）。
+  const laneQuiescent = (lane) => {
+    const evs = lane?.events ?? []
+    const starts = evs.filter((event) => event.type === 'turn/start').length
+    const ends = evs.filter((event) => event.type === 'turn/end').length
+    return starts === ends && ends >= 1
+  }
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    stopContinuationTeamSurfaceRegistered:
+      (bootLog ?? '').includes('[omo-team] team surface stop-continuation-team registered')
+      && (bootLog ?? '').includes('— 22/24 team surfaces registered'),
+    teamCreated: teamRunId !== undefined,
+    twoMemberSessionsRan: analystLog !== undefined && builderLog !== undefined && analystId !== builderId,
+    // 成员在命令前真实跑活（前台 bash 撑开的 turn）。
+    membersMidWork: memberLogs.length >= 2
+      && (analystLog?.events ?? []).some((event) => event.type === 'tool/call' && event.data?.name === 'bash')
+      && (builderLog?.events ?? []).some((event) => event.type === 'tool/call' && event.data?.name === 'bash'),
+    // 命令被 admit 且 settle。
+    stopCommandAdmittedAndSettled: commandDone.length >= 1,
+    // guard team 分支 marker：interrupted 2 + drain 发起 + drain settled。
+    guardTeamInterruptLine: teamLines.some((line) => line.includes('interrupted 2 member session(s)') && line.includes('drain initiated')),
+    guardTeamDrainSettledLine: boot.includes(`${GUARD_TEAM_PREFIX} drain settled`)
+      || bootLines.some((line) => line.startsWith(GUARD_TEAM_PREFIX) && line.includes(GUARD_TEAM_DRAIN_SETTLED)),
+    // jobs 级联并存且不混淆（靶子 = lead 的 background sleeper 被取消）。
+    jobsCascadeCoexists: jobsLines.length >= 1
+      && jobsLines.some((line) => /cancelled [1-9]/.test(line))
+      && jobsLines.some((line) => line.includes('jobs service present')),
+    markersDistinguishable: jobsLines.every((line) => !line.includes('stop-continuation-guard team'))
+      && teamLines.every((line) => !line.includes('jobs service')),
+    // 降级路径未被触达（Phase 4.5 反金丝雀）。
+    noTeamDegradedNotes: noteLines.length === 0,
+    noTeamDrainFailed: !boot.includes(GUARD_TEAM_DRAIN_FAILED),
+    noJobsDegradedClause: jobsLines.every((line) => !line.includes('jobs service absent')),
+    // 成员真停摆：非 completed 关账 + 命令后无复活。
+    analystReallyStopped: memberStopped(analystLog),
+    builderReallyStopped: memberStopped(builderLog),
+    noMemberRevivalAfterCommand: (() => {
+      const commandDoneEvent = events.find(
+        (event) => event.type === 'user/message'
+          && eventTextFlat(event).includes(STOP_CONTINUATION_COMMAND_LINE),
+      )
+      if (commandDoneEvent === undefined) return false
+      const revived = (allLogs ?? []).filter(
+        (candidate) =>
+          String(candidate.header?.parentSession) === String(leadId)
+          && (candidate.events ?? []).some(
+            (event) => event.type === 'turn/start' && Number(event.time ?? 0) > Number(commandDoneEvent.time ?? 0),
+          ),
+      )
+      return revived.length === 0
+    })(),
+    // catalog 闭合（MAJOR-1 探针真面，与 teardown 场景同款钉）：guard 停摆
+    // 落定后 listDescendants(lead) 无活体成员行（child 行恰两名、逐行
+    // inactive）、全表无 depth≥2。404 容错支已移除出 checks（传输事实进
+    // bonus.unavailable）。成员的「真停摆」仍由 durable aborted(parent)
+    // 关账独立钉死——两面互证，不互相顶替。
+    catalogClosureViaProbeNoLiveMembersNoDepth2: (() => {
+      if (probe.descendants.present !== true || probe.descendants.ok !== true) return false
+      if (probe.descendants.settled !== true) return false
+      if (memberIds.size !== 2) return false
+      const rows = probe.descendants.rows
+      if (!Array.isArray(rows)) return false
+      const childRows = rows.filter((row) => row.kind === 'child')
+      const ids = childRows.map((row) => String(row.id)).sort()
+      return ids.length === 2
+        && ids.every((id) => memberIds.has(id))
+        && childRows.every((row) => row.activity === 'inactive'
+          && Number(row.depth) === 1
+          && String(row.parentId) === String(leadId))
+        && rows.every((row) => Number(row.depth) < 2)
+    })(),
+    // MAJOR-2 · jobs 面真钉（Q-6 §4）：停止时刻 jobs.list(lead) 无成员
+    // owner 行。靶子 job 只挂 lead 名下（jobs 级联的 owner 面），成员树
+    // 从不进 jobs——这一列从此是探针读出来的，不是脚本没写的同义反复。
+    jobsSurfaceViaProbeCarriesNoMemberRows: (() => {
+      if (probe.jobs.present !== true || probe.jobs.ok !== true) return false
+      if (memberIds.size !== 2) return false
+      const rows = probe.jobs.rows
+      if (!Array.isArray(rows)) return false
+      return rows.every((row) => !memberIds.has(String(row.owner ?? '')))
+    })(),
+    // MAJOR-3 前置（成文钉死 profile 挂载面，同 teardown 场景）。
+    profileMountCarriesNativeDelegationBundle: (profileMount?.profileBundles ?? []).includes('@deepseek-ai/dsh-base')
+      && (profileMount?.dumpSections ?? []).includes('@deepseek-ai/dsh-base'),
+    // 孙代负向金丝雀。
+    noGrandchildrenUnderMembers: (allLogs ?? []).every(
+      (candidate) =>
+        String(candidate.header?.parentSession ?? '') !== analystId
+        && String(candidate.header?.parentSession ?? '') !== builderId,
+    ),
+    parksReached: (actionObservations ?? []).filter((row) => row.reached === true).length === 2,
+    // T15 评审 A MINOR 修复轮：弱形加固（teardown 场景同名钉的同款）。旧形
+    // `settleReached !== false` 恒过——undefined 放行、true 只是复读钩子布尔。
+    // 现在三枚具名钉：① 严格相等——awaitStopContinuationTeamSettled 必须
+    // 真的运行且返回 true，钩子消失即红；② 静默形状从冻结后的 final log
+    // 复钉——lead + 两成员三 lane 各自 turn/start 计数 == turn/end 计数且
+    // ends≥1（laneQuiescent 与钩子活体判定同一把尺，互为见证）；③ 两成员
+    // 各自带非 completed 关账行（memberStopped 与 analystReallyStopped/
+    // builderReallyStopped 同尺——停摆语义钉的是非 completed 关账，不是
+    // completed，与 teardown 场景的 aborted(parent) 钉各钉各的终态族）。
+    // 不覆盖面：判定二值——4s 静默窗的时长/余量不进 verdict，这里钉不了。
+    settleReached:
+      settleReached === true
+      && memberLogs.length >= 2
+      && laneQuiescent(log)
+      && laneQuiescent(analystLog)
+      && laneQuiescent(builderLog)
+      && memberStopped(analystLog)
+      && memberStopped(builderLog),
+    mockSawBothSeatLanes:
+      requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 1
+      && requests.filter((r) => r.role === TEAM_SEAT_BUILDER).length >= 1,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      teamRunId: teamRunId ?? null,
+      teamMarkerLines: teamLines.map((line) => line.slice(0, 160)),
+      jobsMarkerLines: jobsLines.map((line) => line.slice(0, 160)),
+      memberEndReasons: {
+        analyst: (analystLog?.events ?? []).filter((event) => event.type === 'turn/end').map((event) => turnEndReasonKind(event)),
+        builder: (builderLog?.events ?? []).filter((event) => event.type === 'turn/end').map((event) => turnEndReasonKind(event)),
+      },
+      catalog: catalogObservation?.ok === true
+        ? { rows: catalogRows.map((row) => `${String(row.id).slice(0, 8)}:${row.activity}`) }
+        : { unavailable: catalogObservation?.detail ?? 'not attempted' },
+      // 探针行全文（人读摘要形态）：checks 已逐字段断过，这里留现场。
+      probeDescendants: probe.descendants.present
+        ? {
+          ok: probe.descendants.ok,
+          settled: probe.descendants.settled,
+          rows: (probe.descendants.rows ?? []).map((row) => `${String(row.id).slice(0, 8)}:${row.kind}:d${row.depth}:${row.activity ?? '-'}`),
+        }
+        : { unavailable: 'probe tool/result absent from the lead lane' },
+      probeJobs: probe.jobs.present
+        ? {
+          ok: probe.jobs.ok,
+          rows: (probe.jobs.rows ?? []).map((row) => `${row.id}:${row.status}${row.owner === undefined ? ':unowned' : `@${String(row.owner).slice(0, 8)}`}`),
+        }
+        : { unavailable: 'probe tool/result absent from the lead lane' },
+    },
+  }
+}
+
+// ── P5-T9 hermetic fabricated 夹具（评审 MINOR 修复轮：探针真面五腿）──────────
+// team 场景此前没有任何 fabricated self-test 输入——评审 MINOR 钉的正是这个洞：
+// 两枚 T9 analyze 的探针真面新断言（catalogClosureViaProbe…/jobsSurfaceVia…/
+// profileMount…）只被实跑绿过，从没被造一次假逼红过。下面的夹具补上既有
+// defectCases 的同一纪律：GOOD 必 PASS，五枚具名 defect 各红在自己的 named
+// check——两枚 analyze 各跑全部五腿（P4-T7 command channel 的「cases stated
+// once, applied twice」同款形状）。五腿与三枚新断言的独立失败轴一一对应：
+//   ① 幻影成员行（行集多报）② 活体成员行（running + settled 如实 false）
+//   ③ depth=2 行（幻影孙代）→ 都红 catalogClosureViaProbeNoLiveMembersNoDepth2；
+//   ④ 成员 owner 的 job 行 → jobsSurfaceViaProbeCarriesNoMemberRows；
+//   ⑤ composed dump 缺 dsh-base 段 → profileMountCarriesNativeDelegationBundle。
+// 取证协议第二半：descendants 的 summary 行按插件自己的 settled 规则
+// （team-probe-plugin/index.js 的 `rows.every(row => row.kind !== 'child' ||
+// row.activity === 'inactive')`）重算——settled 不是夹具手写的，defect 侧的
+// settled:false 必然对应真实存在的活体行，两半互相顶替不了。
+
+const FABRICATED_T9_LEAD_ID = 'ses-fabricated-t9-lead'
+const FABRICATED_T9_ANALYST_ID = 'ses-fabricated-t9-analyst'
+const FABRICATED_T9_BUILDER_ID = 'ses-fabricated-t9-builder'
+// teamRunIdFromLeadLog 的正则是 [0-9a-f-]{36}——这枚夹具是 lowercase hex。
+const FABRICATED_T9_TEAM_RUN_ID = '0f1e2d3c-4b5a-4968-8776-655443f2e1d0'
+const FABRICATED_T9_JOB_ID = 'job-fabricated-t9-target'
+const FABRICATED_T9_BASE_BUNDLE = '@deepseek-ai/dsh-base'
+
+/** 成员 lane 的骨架：descriptor 认席位、request/header 带 advertised tools、
+ *  前台 bash 撑开 turn、aborted(parent) 关账（lead interrupt 的 durable 回声，
+ *  reply 永不被消费——lane 游标停在 bash 上，与实跑同款形状）。 */
+function fabricatedT9MemberLog(routes, seat, memberId, bashCommand, turnStartTime, endTime) {
+  return {
+    path: `/fabricated/t9/${seat}/session.jsonl`,
+    header: {
+      type: 'session',
+      id: memberId,
+      origin: 'subagent',
+      parentSession: FABRICATED_T9_LEAD_ID,
+      delegationDepth: 1,
+    },
+    events: [
+      {
+        seq: 0,
+        type: 'subagent/descriptor',
+        data: {
+          version: 3,
+          mode: 'continuable',
+          provider: 'team',
+          label: `team member ${seat}`,
+          agentProvider: routes[seat].provider,
+          agentModel: routes[seat].model,
+        },
+      },
+      {
+        seq: 1,
+        type: 'request/header',
+        data: {
+          header: {
+            config: { provider: routes[seat].provider, model: routes[seat].model },
+            tools: [{ function: { name: 'bash' } }, { function: { name: 'read' } }, { function: { name: 'edit' } }],
+          },
+          reason: 'initial',
+        },
+      },
+      { seq: 2, type: 'turn/start', data: { turn: 1 }, time: turnStartTime },
+      {
+        seq: 3,
+        type: 'tool/call',
+        data: { turn: 1, step: 1, callId: `mock-t9-${seat}-bash-0`, name: 'bash', arguments: JSON.stringify({ command: bashCommand, description: TEAM_SLEEP_LABEL }) },
+      },
+      { seq: 4, type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } }, time: endTime },
+    ],
+  }
+}
+
+/** 探针 tool/result 的 v4 首类行：人读 summary 行 + 机读 JSON 尾行，与插件
+ *  render 的两段式逐字同构（joinTextBlocks 的 '\n' 拼接让 drive 的 reader
+ *  在同一 part 文本里同时看到 summaryRe 与 jsonMarker）。 */
+function fabricatedT9ProbeResultEvents(descendantsRows, jobsRows) {
+  const settled = descendantsRows.every((row) => row.kind !== 'child' || row.activity === 'inactive')
+  return [
+    {
+      type: 'tool/result',
+      data: {
+        turn: 0,
+        step: 0,
+        message: {
+          role: 'tool',
+          toolCallId: 'mock-t9-probe-descendants',
+          isError: false,
+          content: [
+            { type: 'text', text: `TEAM-PROBE-DESCENDANTS ok=true settled=${settled} waitedMs=250 rows=${descendantsRows.length}` },
+            { type: 'text', text: `${TEAM_PROBE_DESCENDANTS_MARKER}${JSON.stringify(descendantsRows)}` },
+          ],
+        },
+      },
+    },
+    {
+      type: 'tool/result',
+      data: {
+        turn: 0,
+        step: 0,
+        message: {
+          role: 'tool',
+          toolCallId: 'mock-t9-probe-jobs',
+          isError: false,
+          content: [
+            { type: 'text', text: `TEAM-PROBE-JOBS ok=true rows=${jobsRows.length}` },
+            { type: 'text', text: `${TEAM_PROBE_JOBS_MARKER}${JSON.stringify(jobsRows)}` },
+          ],
+        },
+      },
+    },
+  ]
+}
+
+/** 拆除后 listDescendants(lead) 的基线行：两名成员以 inactive 形态留在目录里
+ *  （durable append-only + 内存 dispose 的合成形态，插件头注同一裁决）。 */
+function fabricatedT9DescendantRows() {
+  return [
+    { id: FABRICATED_T9_ANALYST_ID, parentId: FABRICATED_T9_LEAD_ID, depth: 1, kind: 'child', activity: 'inactive', mode: 'continuable', hasChildren: false },
+    { id: FABRICATED_T9_BUILDER_ID, parentId: FABRICATED_T9_LEAD_ID, depth: 1, kind: 'child', activity: 'inactive', mode: 'continuable', hasChildren: false },
+  ]
+}
+
+function fabricatedT9ProfileMount() {
+  return {
+    profileBundles: [FABRICATED_T9_BASE_BUNDLE],
+    dumpSections: [FABRICATED_T9_BASE_BUNDLE],
+  }
+}
+
+export function fabricatedTeamTeardownNoOrphansInput(routes) {
+  const events = []
+  let seq = 0
+  const push = (event) => {
+    seq += 1
+    events.push({ time: 1000 + seq * 100, ...event, seq })
+    return seq
+  }
+  const prompt = (text) => ({ type: 'user/message', data: { id: `fabricated-t9-prompt-${seq + 1}`, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'fabricated-rpc-t9' } } })
+  const step = (turn, text) => ({ type: 'assistant/message', data: { turn, step: 1, message: { role: 'assistant', content: [{ type: 'text', text }] } } })
+  const toolCall = (turn, callId, name, args) => ({ type: 'tool/call', data: { turn, step: 1, callId, name, arguments: JSON.stringify(args) } })
+  const toolResult = (turn, callId, text) => ({
+    type: 'tool/result',
+    data: { turn, step: 1, message: { role: 'tool', toolCallId: callId, isError: false, content: [{ type: 'text', text }] } },
+  })
+
+  push(prompt(TEAM_CREATE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 1 } })
+  push(toolCall(1, 'mock-t9-team-create', 'team_create', { inline_spec: teamInlineSpec() }))
+  push(toolResult(1, 'mock-t9-team-create', `{"status":"created","teamRunId":"${FABRICATED_T9_TEAM_RUN_ID}","members":["analyst","builder"]}`))
+  push(step(1, TEAM_LEAD_CREATED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_TEARDOWN_FORCE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 2 } })
+  push(toolCall(2, 'mock-t9-team-delete', 'team_delete', { teamRunId: FABRICATED_T9_TEAM_RUN_ID, force: true }))
+  // team_delete 的结果没有 `phase`/`shutdownRequests` 两把键（drive 侧
+  // teamStatusRosterClosedAfterDelete 的顶替不可能发生，就按这个真形状造）。
+  push(toolResult(2, 'mock-t9-team-delete', `{"status":"deleted","forced":true,"teamRunId":"${FABRICATED_T9_TEAM_RUN_ID}","interruptedSessionIds":["${FABRICATED_T9_ANALYST_ID}","${FABRICATED_T9_BUILDER_ID}"]}`))
+  push(step(2, TEAM_LEAD_FORCED_TEARDOWN_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_STATUS_AFTER_DELETE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 3 } })
+  push(toolCall(3, 'mock-t9-team-status', 'team_status', { teamRunId: FABRICATED_T9_TEAM_RUN_ID }))
+  push(toolResult(3, 'mock-t9-team-status', `{"status":"deleted","phase":"retired","teamRunId":"${FABRICATED_T9_TEAM_RUN_ID}","shutdownRequests":[{"teamRunId":"${FABRICATED_T9_TEAM_RUN_ID}","accepted":true}],"members":[{"name":"analyst","status":"completed"},{"name":"builder","status":"completed"}]}`))
+  push(step(3, TEAM_LEAD_TOMBSTONE_READ_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_PROBE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 4 } })
+  push(toolCall(4, 'mock-t9-probe-descendants', 'team_probe_list_descendants', {}))
+  push(toolCall(4, 'mock-t9-probe-jobs', 'team_probe_jobs_list', {}))
+  // 探针行由插件同构 builder 产出（本场景 lead 没起过 background job——jobs
+  // 面如实 rows=0；缺席/空面/成员行三种形状由 reader 各自判色）。
+  events.push(...fabricatedT9ProbeResultEvents(fabricatedT9DescendantRows(), []).map((event) => {
+    seq += 1
+    return { time: 1000 + seq * 100, ...event, seq }
+  }))
+  push(step(4, TEAM_LEAD_PROBE_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
+
+  const log = { path: '/fabricated/t9-teardown/session.jsonl', header: { type: 'session', id: FABRICATED_T9_LEAD_ID }, events }
+  const analystLog = fabricatedT9MemberLog(routes, TEAM_SEAT_ANALYST, FABRICATED_T9_ANALYST_ID, TEAM_SLEEP_COMMAND, 1100, 2600)
+  const builderLog = fabricatedT9MemberLog(routes, TEAM_SEAT_BUILDER, FABRICATED_T9_BUILDER_ID, TEAM_SLEEP_COMMAND, 1200, 2600)
+  return {
+    log,
+    allLogs: [log, analystLog, builderLog],
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 10 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 20 },
+      { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 30 },
+    ],
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      '[omo-team] team surface stop-continuation-team registered — 22/24 team surfaces registered',
+    ].join('\n'),
+    settleReached: true,
+    actionObservations: [{ reached: true }, { reached: true }],
+    catalogObservation: {
+      ok: true,
+      value: {
+        entries: [
+          { kind: 'child', id: FABRICATED_T9_ANALYST_ID, activity: 'inactive' },
+          { kind: 'child', id: FABRICATED_T9_BUILDER_ID, activity: 'inactive' },
+        ],
+      },
+    },
+    stateJson: {
+      status: 'deleted',
+      members: [
+        { name: 'analyst', status: 'completed' },
+        { name: 'builder', status: 'completed' },
+      ],
+    },
+    diskDetail: null,
+    profileMount: fabricatedT9ProfileMount(),
+  }
+}
+
+export function fabricatedStopContinuationTeamInput(routes) {
+  const events = []
+  let seq = 0
+  const push = (event) => {
+    seq += 1
+    events.push({ time: 1000 + seq * 100, ...event, seq })
+    return seq
+  }
+  const prompt = (text) => ({ type: 'user/message', data: { id: `fabricated-t9-stop-prompt-${seq + 1}`, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'fabricated-rpc-t9' } } })
+  const step = (turn, text) => ({ type: 'assistant/message', data: { turn, step: 1, message: { role: 'assistant', content: [{ type: 'text', text }] } } })
+  const toolCall = (turn, callId, name, args) => ({ type: 'tool/call', data: { turn, step: 1, callId, name, arguments: JSON.stringify(args) } })
+  const toolResult = (turn, callId, text) => ({
+    type: 'tool/result',
+    data: { turn, step: 1, message: { role: 'tool', toolCallId: callId, isError: false, content: [{ type: 'text', text }] } },
+  })
+
+  push(prompt(TEAM_CREATE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 1 } })
+  push(toolCall(1, 'mock-t9-team-create', 'team_create', { inline_spec: teamInlineSpec() }))
+  push(toolResult(1, 'mock-t9-team-create', `{"status":"created","teamRunId":"${FABRICATED_T9_TEAM_RUN_ID}","members":["analyst","builder"]}`))
+  push(step(1, TEAM_LEAD_CREATED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_STOP_ARM_PROMPT))
+  push({ type: 'turn/start', data: { turn: 2 } })
+  // 靶子 job：lead 名下 background sleeper，必须活到命令落地被 jobs 级联取消。
+  push(toolCall(2, 'mock-t9-arm-bash', 'bash', { command: TEAM_STOP_ARM_COMMAND, description: TEAM_STOP_ARM_LABEL, run_in_background: true }))
+  push(toolResult(2, 'mock-t9-arm-bash', `{"jobId":"${FABRICATED_T9_JOB_ID}","status":"started"}`))
+  push(step(2, TEAM_LEAD_ARMED_SUMMARY))
+
+  // 命令本体：user/message 的 /stop-continuation 是 noMemberRevivalAfterCommand
+  // 的时间原点——成员 turn/start 全部排在它之前，之后只有关账、没有复活。
+  const commandSeq = push(prompt(STOP_CONTINUATION_COMMAND_LINE))
+  const commandTime = events.find((event) => event.seq === commandSeq).time
+  push({ type: 'command/run', data: { commandId: 'cmd-fabricated-t9-stop', name: 'stop-continuation', args: '', source: { kind: 'user' } } })
+  push({ type: 'command/done', data: { commandId: 'cmd-fabricated-t9-stop', kind: 'success', text: 'continuation stopped; 1 job cancelled; 2 team member(s) interrupted' } })
+  push(step(2, TEAM_LEAD_ARMED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_PROBE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 3 } })
+  push(toolCall(3, 'mock-t9-probe-descendants', 'team_probe_list_descendants', {}))
+  push(toolCall(3, 'mock-t9-probe-jobs', 'team_probe_jobs_list', {}))
+  // jobs 基线：靶子 job 已被级联取消、owner 只有 lead——成员一个都不出现
+  // （Q-6 §4 的停摆时刻直读形状）。
+  events.push(...fabricatedT9ProbeResultEvents(fabricatedT9DescendantRows(), [
+    { id: FABRICATED_T9_JOB_ID, status: 'cancelled', owner: FABRICATED_T9_LEAD_ID, kind: 'bash' },
+  ]).map((event) => {
+    seq += 1
+    return { time: 1000 + seq * 100, ...event, seq }
+  }))
+  push(step(3, TEAM_LEAD_PROBE_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+
+  const log = { path: '/fabricated/t9-stop/session.jsonl', header: { type: 'session', id: FABRICATED_T9_LEAD_ID }, events }
+  const analystLog = fabricatedT9MemberLog(routes, TEAM_SEAT_ANALYST, FABRICATED_T9_ANALYST_ID, TEAM_SLEEP_COMMAND_LONG, commandTime - 1900, commandTime + 100)
+  const builderLog = fabricatedT9MemberLog(routes, TEAM_SEAT_BUILDER, FABRICATED_T9_BUILDER_ID, TEAM_SLEEP_COMMAND_LONG, commandTime - 1800, commandTime + 100)
+  const jobsGuardLine = `${STOP_CONTINUATION_GUARD_LOG_PREFIX}${FABRICATED_T9_LEAD_ID} (cancelled 1, already finished 0, jobs service present)`
+  return {
+    log,
+    allLogs: [log, analystLog, builderLog],
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 10 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 20 },
+      { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 30 },
+    ],
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      '[omo-team] team surface stop-continuation-team registered — 22/24 team surfaces registered',
+      jobsGuardLine,
+      `${GUARD_TEAM_PREFIX} interrupted 2 member session(s) of team ${FABRICATED_T9_TEAM_RUN_ID} rooted at session ${FABRICATED_T9_LEAD_ID} (drain initiated)`,
+      `${GUARD_TEAM_PREFIX} drain settled — resident member activation(s) of team ${FABRICATED_T9_TEAM_RUN_ID} released`,
+    ].join('\n'),
+    settleReached: true,
+    actionObservations: [{ reached: true }, { reached: true }],
+    commandResults: [
+      { line: STOP_CONTINUATION_COMMAND_LINE, matched: true, admission: { result: { kind: 'success' } } },
+    ],
+    catalogObservation: {
+      ok: true,
+      value: {
+        entries: [
+          { kind: 'child', id: FABRICATED_T9_ANALYST_ID, activity: 'inactive' },
+          { kind: 'child', id: FABRICATED_T9_BUILDER_ID, activity: 'inactive' },
+        ],
+      },
+    },
+    profileMount: fabricatedT9ProfileMount(),
+  }
+}
+
+/** 五腿 defect 工厂（两枚 T9 analyze 共用，P4-T7 先例）：每枚只动一根轴，
+ *  红的 named check 与任务书一一对应。summary 行按插件的 settled 规则重算，
+ *  所以「settled:false」永远跟着真实的活体行，不独立漂。 */
+export function teamProbeSurfaceDefectCases() {
+  const mutateProbeRows = (input, which, mutateRows) => {
+    const marker = which === 'descendants' ? TEAM_PROBE_DESCENDANTS_MARKER : TEAM_PROBE_JOBS_MARKER
+    const event = input.log.events.find((candidate) => candidate.type === 'tool/result' && toolResultTextOf(candidate).includes(marker))
+    if (event === undefined) {
+      throw new Error(`the fabricated T9 input carries no ${which} probe row — the FIXTURE is broken, and a mutation that silently misses would attest to nothing`)
+    }
+    const rows = JSON.parse(event.data.message.content[1].text.slice(marker.length))
+    mutateRows(rows)
+    const settled = rows.every((row) => row.kind !== 'child' || row.activity === 'inactive')
+    event.data.message.content = [
+      { type: 'text', text: which === 'descendants'
+        ? `TEAM-PROBE-DESCENDANTS ok=true settled=${settled} waitedMs=250 rows=${rows.length}`
+        : `TEAM-PROBE-JOBS ok=true rows=${rows.length}` },
+      { type: 'text', text: `${marker}${JSON.stringify(rows)}` },
+    ]
+  }
+  return [
+    ['phantom-member-row-in-probe-descendants', (input) => {
+      mutateProbeRows(input, 'descendants', (rows) => {
+        rows.push({ id: 'ses-fabricated-t9-phantom-member', parentId: FABRICATED_T9_LEAD_ID, depth: 1, kind: 'child', activity: 'inactive', hasChildren: false })
+      })
+    }, 'catalogClosureViaProbeNoLiveMembersNoDepth2'],
+    ['a member row still live — activity running and settled honestly false', (input) => {
+      mutateProbeRows(input, 'descendants', (rows) => {
+        rows[0].activity = 'running'
+      })
+    }, 'catalogClosureViaProbeNoLiveMembersNoDepth2'],
+    ['depth-two-row-in-probe-descendants — the phantom grandchild axis', (input) => {
+      mutateProbeRows(input, 'descendants', (rows) => {
+        rows[1].depth = 2
+        rows[1].parentId = FABRICATED_T9_ANALYST_ID
+      })
+    }, 'catalogClosureViaProbeNoLiveMembersNoDepth2'],
+    ['member-owned-row-in-probe-jobs — the Q-6 §4 members-never-in-jobs breach', (input) => {
+      mutateProbeRows(input, 'jobs', (rows) => {
+        rows.push({ id: 'job-fabricated-t9-member-owned', status: 'running', owner: FABRICATED_T9_ANALYST_ID, kind: 'bash' })
+      })
+    }, 'jobsSurfaceViaProbeCarriesNoMemberRows'],
+    ['composed-dump-missing-dsh-base-section — the native delegation bundle unmounted', (input) => {
+      input.profileMount = {
+        ...input.profileMount,
+        dumpSections: input.profileMount.dumpSections.filter((section) => section !== FABRICATED_T9_BASE_BUNDLE),
+      }
+    }, 'profileMountCarriesNativeDelegationBundle'],
+  ]
+}
+
+// ── P5-T8b task-board full segment: 命名 body / 静态钉 / 重启持久化 ──────────
+// 四枚 team_task_* 工具（manifest ⑦⑧⑨⑩）的 e2e 证据链 + Q-5b run C 型
+// 重启夹具（SIGTERM → 同沙箱新进程 → explicit-id adoption → team_status 回读
+// team/任务板/双账完好）。主题串是 T8B 独占标记——分析段按名钉死。
+const TEAM_TASK_BLOCKER_SUBJECT = 'MOCK-T8B-TASK-BLOCKER-71a3'
+const TEAM_TASK_DEPENDENT_SUBJECT = 'MOCK-T8B-TASK-DEPENDENT-92c5'
+const TEAM_TASK_MSG_CLAIM1_BODY =
+  'MOCK-T8B-CLAIM-1-4d70: list the board and claim task 1.'
+const TEAM_TASK_MSG_CLAIM2_BODY =
+  'MOCK-T8B-CLAIM-2-5e81: now claim task 2 as well.'
+const TEAM_TASK_MSG_FINISH_BODY =
+  'MOCK-T8B-FINISH-6f92: run task 1 through in_progress and completed, then claim task 2.'
+
+const TEAM_TASKS_PROMPT =
+  'Create two tasks on the board: first subject "' + TEAM_TASK_BLOCKER_SUBJECT + '", then subject "' + TEAM_TASK_DEPENDENT_SUBJECT + '" blocked by the first (blockedBy ["1"]). Report both ids.'
+const TEAM_TASK_CLAIM1_PROMPT =
+  'Message the analyst: list its board and claim task 1.'
+const TEAM_TASK_CLAIM2_PROMPT =
+  'Message the analyst to claim task 2 now — while task 1 is unfinished. If the tool refuses, that refusal is the point; report it.'
+const TEAM_TASK_FINISH_PROMPT =
+  'Message the analyst to take task 1 through in_progress and completed, and then claim task 2.'
+const TEAM_TASK_STATUS_PROMPT =
+  'Show team status: the full task board should be visible here.'
+const TEAM_TASK_REBOOT_STATUS_PROMPT =
+  'After the reboot, show team status again: read the persisted board back.'
+
+const TEAM_TASK_LEAD_TASKS_SUMMARY =
+  'MOCK-T8B-TASKS-CREATED-3b60: two tasks created, the second blocked by the first.'
+const TEAM_TASK_LEAD_MSG1_SUMMARY =
+  'MOCK-T8B-MSG-CLAIM1-8c11: the analyst was told to list and claim task 1.'
+const TEAM_TASK_LEAD_MSG2_SUMMARY =
+  'MOCK-T8B-MSG-CLAIM2-9d22: the analyst was told to attempt task 2 early.'
+const TEAM_TASK_LEAD_MSG3_SUMMARY =
+  'MOCK-T8B-MSG-FINISH-0e33: the analyst was told to finish task 1 and claim task 2.'
+const TEAM_TASK_LEAD_STATUS_SUMMARY =
+  'MOCK-T8B-STATUS-1f44: team_status carries the live task board.'
+const TEAM_TASK_LEAD_REBOOT_SUMMARY =
+  'MOCK-T8B-REBOOT-STATUS-2a55: after the reboot the board reads back intact from disk.'
+const TEAM_TASK_ANALYST_CLAIM_ACK =
+  'MOCK-T8B-ANALYST-CLAIMED-30b6: task 1 listed and claimed.'
+const TEAM_TASK_ANALYST_BLOCKED_ACK =
+  'MOCK-T8B-ANALYST-BLOCKED-41c7: task 2 refused while its blocker is open.'
+const TEAM_TASK_ANALYST_DONE_ACK =
+  'MOCK-T8B-ANALYST-DONE-52d8: task 1 completed, task 2 claimed.'
+
+/**
+ * `team-task-claim` script (P5-T8b). Lane queues match the turn structure
+ * one-for-one; the task ids are the HIGH-WATERMARK determinism of the
+ * vendored board (a fresh run dir starts at 1 — pinned by the vendored
+ * store tests), so the mock can name them at author time and the analysis
+ * pins them at read time: a drifting id turns the scenario RED, never silent.
+ *   lead P1 create · P2 two creates (blockedBy chain) · P3–P5 message the
+ *   analyst through claim → blocked-attempt → finish · P6 team_status ·
+ *   [driver: SIGTERM reboot + explicit-id adoption — Q-5b run C fixture] ·
+ *   P7 team_status over the persisted board.
+ */
+function teamTaskClaimScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'team_task_create',
+            arguments: { teamRunId: '{{teamRunId}}', subject: TEAM_TASK_BLOCKER_SUBJECT, description: 'the blocker' },
+          },
+          {
+            name: 'team_task_create',
+            arguments: { teamRunId: '{{teamRunId}}', subject: TEAM_TASK_DEPENDENT_SUBJECT, description: 'the dependent', blockedBy: ['1'] },
+          },
+        ],
+      },
+      { type: 'text', text: TEAM_TASK_LEAD_TASKS_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: { teamRunId: '{{teamRunId}}', to: TEAM_MEMBER_ANALYST, body: TEAM_TASK_MSG_CLAIM1_BODY },
+      },
+      { type: 'text', text: TEAM_TASK_LEAD_MSG1_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: { teamRunId: '{{teamRunId}}', to: TEAM_MEMBER_ANALYST, body: TEAM_TASK_MSG_CLAIM2_BODY },
+      },
+      { type: 'text', text: TEAM_TASK_LEAD_MSG2_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: { teamRunId: '{{teamRunId}}', to: TEAM_MEMBER_ANALYST, body: TEAM_TASK_MSG_FINISH_BODY },
+      },
+      { type: 'text', text: TEAM_TASK_LEAD_MSG3_SUMMARY },
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_TASK_LEAD_STATUS_SUMMARY },
+      // 重启会把 interrupted 的 turn 重放到 mock（cursor 是持久的），重放会吃掉
+      // 队列里的下一步——所以重启读回的 team_status 前再放一对 absorber（status
+      // 是只读的，任何位置执行都无害），保证 P7 的 turn 真正落在一次新的
+      // team_status + REBOOT summary 上。
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_TASK_LEAD_STATUS_SUMMARY },
+      // A SIGTERM mid-turn leaves an interrupted turn; the adopted reboot
+      // REPLAYS it and the replay consumes queue steps until the cursor hits
+      // a text step (measured runs 3-4: it eats every trailing status and
+      // closes with the last text — the post-reboot prompt would then open a
+      // text-only turn and the read-back would be vacuous). The tail is
+      // therefore a wide field of READ-ONLY team_status absorbers — they are
+      // harmless at every position — and the FINAL step is the reboot
+      // summary: P7's turn can only close on it, and every status call in
+      // between stamps a live board read after adoption.
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_TASK_LEAD_REBOOT_SUMMARY },
+      // P5-T19：THE FINAL step is a **text terminator**, not a `team_status`
+      // call. The mock CLAMPS the cursor at the last step (`steps[Math.min(
+      // index, steps.length - 1)]`), so every request past the end repeats it.
+      // A clamped TOOL CALL therefore turns one extra wake turn into an
+      // unbounded tool loop — measured: the lead's 8th turn (an extra
+      // member-wake the queue did not foresee) repeated `team_status` 1169
+      // times until the host's step cap interrupted it, which then made the
+      // reboot's quiescence precondition red and the adoption stall.
+      // A clamped TEXT step degrades an unforeseen extra turn to one harmless
+      // reply. (No post-reboot reader exists — `TEAM_TASK_REBOOT_STATUS_PROMPT`
+      // is defined but never used — so no live-read contract is lost here; the
+      // post-reboot anchor is the DISK audit, not a tool call.)
+      { type: 'text', text: TEAM_TASK_LEAD_STATUS_SUMMARY },
+    ],
+    // The spawn turn of a briefing-seated member consumes extra steps while the
+    // injected briefing drains (MEASURED P5-T8b run 1: REPLY then three
+    // continuation requests before the turn ends). The drain is therefore
+    // absorbed by harmless `team_task_list` reads (read-only, ENOENT-or-empty
+    // both acceptable) and the task MUTATIONS sit only at the wake turns,
+    // strictly after the lead's creates are durable.
+    // CONVERGENT lane (measured runs 1-2: the briefing-drain consumes a
+    // VARIABLE number of steps on the spawn turn, and wake frames merge into
+    // whatever turn boundary they hit — cursor alignment cannot be authored).
+    // The lane therefore repeats ONE SAFE CYCLE three times: list (read-only),
+    // claim-1 (claimed→claimed fails named after the first success),
+    // claim-2-while-blocked (`blocked by 1`, named), 1→in_progress,
+    // 1→completed, claim-2-after-completion. Every step is harmless at every
+    // position (ENOENT before the creates, named transition errors after);
+    // the durable board converges to the pinned end-state no matter where
+    // the drain ate. The analysis pins the ARTIFACTS, not the narrative.
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
+      { type: 'tool_call', name: 'team_task_list', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'in_progress' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'completed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'text', text: TEAM_TASK_ANALYST_DONE_ACK },
+      { type: 'tool_call', name: 'team_task_list', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'in_progress' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'completed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'text', text: TEAM_TASK_ANALYST_DONE_ACK },
+      { type: 'tool_call', name: 'team_task_list', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'in_progress' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '1', status: 'completed' } },
+      { type: 'tool_call', name: 'team_task_update', arguments: { teamRunId: '{{teamRunId}}', taskId: '2', status: 'claimed' } },
+      { type: 'text', text: TEAM_TASK_ANALYST_DONE_ACK },
+    ],
+    [TEAM_SEAT_BUILDER]: [
+      { type: 'text', text: TEAM_MEMBER_BUILDER_REPLY },
+      { type: 'text', text: TEAM_MEMBER_BUILDER_REPLY },
+    ],
+  }
+}
+
+/** 任务板落盘读点（沙箱 HOME 的 teams 面 = T8b 裁定钉的 base_dir）。 */
+function taskBoardDirOf(sandbox, teamRunId) {
+  return join(sandbox.home, '.omo', 'teams', 'runtime', teamRunId)
+}
+
+function readTaskFile(sandbox, teamRunId, taskId) {
+  try {
+    return JSON.parse(readFileSync(join(taskBoardDirOf(sandbox, teamRunId), 'tasks', `${taskId}.json`), 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+/** park 到任务文件在磁盘上抵达期望状态（owner 可选核对）。 */
+async function awaitTaskFileState(sandbox, teamRunId, taskId, status, owner, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() <= deadline) {
+    const task = readTaskFile(sandbox, teamRunId, taskId)
+    // status===undefined means 'any status' — the owner pin is what matters
+    // (the convergent lane can traverse claimed→in_progress→completed inside
+    // one poll gap; demanding the exact transient status would make a truthful
+    // board read false).
+    if (task !== undefined && (status === undefined || task.status === status)
+      && (owner === undefined || task.owner === owner)) return true
+    await sleep(400)
+  }
+  return false
+}
+
+/** 从 lead 日志的 team_create 结果里取 teamRunId（重启后仍在同一枚账下）。 */
+function teamRunIdFromLeadLog(log) {
+  return /"teamRunId":"([0-9a-f-]{36})"/.exec(
+    toolResultParts(log?.events ?? []).find((part) => part.text.includes('teamRunId'))?.text ?? '',
+  )?.[1]
+}
+
+/**
+ * Q-5b run C 型重启夹具（drive 内首次使用；q5b-probe.mjs 的同形序列）：
+ * SIGTERM（flush write-behind）→ 同沙箱新进程 boot → explicit-id adoption
+ * 重领 lead → 落盘审计（state.json / sidecar / 任务板 / claims 在场，
+ * sessions 目录未被 driver 触碰）。观察结果**记账**，analysis 读账。
+ */
+// The scenario's post-reboot await hook lives in the SCENARIOS literal and
+// cannot see the runner's actionObservations — the adoption stamp therefore
+// rides a module-scope register, written by the action, read by the hook.
+let lastRestartAdoptedAt = 0
+
+/** `Promise.race` 的超时哨兵（采纳调用用；对象身份比较，不会与任何回包相撞）。 */
+const ADOPTION_TIMEOUT_SENTINEL = Symbol('adoption-timeout')
+
+async function restartAdoptAndAudit(boot, sandbox, sessionId, patchPath, env, routes) {
+  lastRestartAdoptedAt = 0
+  const teamRunId = teamRunIdFromLeadLog(
+    findSessionLogs(join(sandbox.dshHome, 'sessions')).find((c) => String(c.header?.id) === String(sessionId)),
+  )
+  if (teamRunId === undefined) return { reached: false, detail: 'teamRunId not durable before reboot' }
+  const boardDir = taskBoardDirOf(sandbox, teamRunId)
+  const preBoardFiles = {
+    state: existsSync(join(boardDir, 'state.json')),
+    ledger: existsSync(join(boardDir, 'omo-team-extensions.json')),
+    task1: existsSync(join(boardDir, 'tasks', '1.json')),
+    task2: existsSync(join(boardDir, 'tasks', '2.json')),
+    claims: existsSync(join(boardDir, 'tasks', 'claims')),
+  }
+  // P5-T19（第三轮评审 MINOR）：先把**重启前**的成员名 → sessionId 快照下来，
+  // 重启后按名对照——只断言「是个非空字符串」抓不出「成员丢了/换成了别人的 id」。
+  let preMemberSessionIds = {}
+  try {
+    const preState = JSON.parse(readFileSync(join(boardDir, 'state.json'), 'utf8'))
+    preMemberSessionIds = Object.fromEntries(
+      (Array.isArray(preState?.members) ? preState.members : [])
+        .filter((m) => typeof m?.name === 'string')
+        .map((m) => [m.name, m.sessionId]),
+    )
+  } catch { /* 缺位：分析侧会红 */ }
+  await stopDsh(boot.child)
+  let rebooted
+  try {
+    rebooted = await bootDsh(sandbox, patchPath, env)
+  } catch (err) {
+    return { reached: false, detail: `reboot failed: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  // The boot resume pass is FIRE-AND-FORGET after readiness (index rebuild +
+  // member reconciliation) — wait for its marker line before snapshotting, or
+  // the snapshot proves nothing about the resume having run.
+  const resumeDeadline = Date.now() + 15_000
+  while (Date.now() <= resumeDeadline && !rebooted.log().includes('[omo-team] boot resume')) await sleep(300)
+  const rebootBootLog = rebooted.log()
+  let adopted = false
+  let adoptedAt = 0
+  let adoptionDetail = ''
+  // P5-T19：**采纳调用必须有超时**。宿主在「被中断的 turn 的日志重放」上可能
+  // 卡住（本文件下面的 POST-REBOOT 注释记的就是这个实测行为），而上一版这里是
+  // 无超时 `await` ⇒ 一次重放卡死会把**整个 e2e 套件**挂住一小时（实测）。
+  // 现在：超时 ⇒ 记录具名 detail、`adopted=false`，让分析侧按具名 check 红，
+  // 而不是把套件挂死。
+  let adoptTimer
+  try {
+    const r = await Promise.race([
+      sessionCreate(rebooted, { cwd: sandbox.project, sessionId: String(sessionId), agentPreset: CONCERTO_PRESET_ID }),
+      new Promise((resolve) => {
+        adoptTimer = setTimeout(() => resolve(ADOPTION_TIMEOUT_SENTINEL), 90_000)
+      }),
+    ])
+    if (r === ADOPTION_TIMEOUT_SENTINEL) {
+      adoptionDetail = 'adoption TIMED OUT after 90s (host stalled the adopted turn — journal replay of an interrupted turn)'
+    } else {
+      adopted = String(r?.sessionId ?? '') === String(sessionId)
+      adoptedAt = Date.now()
+      lastRestartAdoptedAt = adoptedAt
+      adoptionDetail = `adoption sessionId=${r?.sessionId ?? '?'}`
+    }
+  } catch (err) {
+    adoptionDetail = `adoption refused: ${err instanceof Error ? err.message : String(err)}`
+  } finally {
+    if (adoptTimer !== undefined) clearTimeout(adoptTimer)
+  }
+  const postFiles = {
+    state: existsSync(join(boardDir, 'state.json')),
+    ledger: existsSync(join(boardDir, 'omo-team-extensions.json')),
+  }
+  let ledger = undefined
+  try {
+    ledger = JSON.parse(readFileSync(join(boardDir, 'omo-team-extensions.json'), 'utf8'))
+  } catch { /* 记账缺位，analysis 转红 */ }
+  // POST-REBOOT DISK AUDIT — the durability anchor. Read every artifact back
+  // from disk AFTER the fresh process booted (the vendored store rebuilt its
+  // indexes + resume from exactly these bytes). A pre-kill read would prove
+  // nothing about persistence; this read happens strictly after the reboot and
+  // cannot be vacuous — it re-parses the task files and asserts the board
+  // reached the pinned end-state (task 1 completed, task 2 claimed by the
+  // analyst) purely from what survived SIGTERM. Measured runs 3-5: the
+  // adopted lead's post-reboot turn stalls on the host's interrupted-turn
+  // journal replay (never re-reaches the LLM), and a FRESH root is refused
+  // team_status by name (not a participant) — so on this runtime the honest
+  // live-anchor is the disk the new process rebuilt its world from.
+  const postAudit = auditBoardOnDisk(boardDir, preMemberSessionIds)
+  return {
+    reached: adopted && postFiles.state && postFiles.ledger && postAudit.ok,
+    adopted,
+    postAudit,
+    adoptedAt,
+    boot: rebooted,
+    // P5-T14 (arbitration supplement §2): the ledger rides the return as a
+    // STRUCTURED value, not only stringified into `detail` — the analyzer's
+    // dualLedger check reads fields, so a ledger whose arrays are empty or
+    // whose member names drifted reddens structurally instead of surviving a
+    // substring match on the serialization.
+    ledger: ledger ?? null,
+    detail: `${adoptionDetail} at=${adoptedAt}; preBoard=${JSON.stringify(preBoardFiles)}; ledger=${JSON.stringify(ledger ?? null)}; postAudit=${JSON.stringify(postAudit)}`,
+    rebootBootLog,
+    boardDir,
+    teamRunId,
+  }
+}
+
+/** Read the persisted board back from disk and check the pinned end-state. */
+function auditBoardOnDisk(boardDir, preMemberSessionIds = {}) {
+  const readTask = (id) => {
+    try {
+      return JSON.parse(readFileSync(join(boardDir, 'tasks', `${id}.json`), 'utf8'))
+    } catch {
+      return undefined
+    }
+  }
+  const t1 = readTask('1')
+  const t2 = readTask('2')
+  let state = undefined
+  try {
+    state = JSON.parse(readFileSync(join(boardDir, 'state.json'), 'utf8'))
+  } catch { /* missing → not ok */ }
+  // P5-T16 (第二轮评审 MINOR): 把**重启后的 run 态**也读出来——run 必须仍是
+  // `active`、且每个成员仍带着它的 `sessionId`（第一轮 BLOCKER-1 的生产修复
+  // 「重启不孤儿化、不抹 sessionId」在这里第一次有了**真实跨进程**的硬断言；
+  // 此前这条场景只断言「state.json 存在 + 任务板/双账在位」，
+  // `boot resume FAILED` 也能满足它那几处 substring 检查）。
+  const members = Array.isArray(state?.members) ? state.members : []
+  const memberSessionIds = members.map((m) => m?.sessionId)
+  return {
+    ok: t1?.status === 'completed' && t1?.owner === TEAM_MEMBER_ANALYST
+      && t2?.status === 'claimed' && t2?.owner === TEAM_MEMBER_ANALYST
+      && Array.isArray(t2?.blockedBy) && t2.blockedBy.includes('1')
+      && state !== undefined,
+    t1: t1 === undefined ? undefined : { status: t1.status, owner: t1.owner },
+    t2: t2 === undefined ? undefined : { status: t2.status, owner: t2.owner, blockedBy: t2.blockedBy },
+    statePresent: state !== undefined,
+    runStatus: state?.status,
+    memberCount: members.length,
+    memberSessionIds,
+    preMemberSessionIds,
+    // P5-T19（第三轮评审 MINOR）：按**成员名**对照重启前后的 sessionId——
+    // 丢一个成员、或换成别人的 id，都会在这里红（旧形态只要求「是个非空串」）。
+    memberSessionIdsIntact: (() => {
+      const preNames = Object.keys(preMemberSessionIds)
+      if (preNames.length === 0 || members.length !== preNames.length) return false
+      for (const member of members) {
+        if (typeof member?.name !== 'string') return false
+        const pre = preMemberSessionIds[member.name]
+        if (typeof pre !== 'string' || pre.length === 0) return false
+        if (member.sessionId !== pre) return false
+      }
+      return true
+    })(),
+  }
+}
+
+export function analyzeTeamTaskClaim(
+  { log, allLogs, bootLog, actionObservations },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (c) => c.header?.origin === 'subagent' && String(c.header?.parentSession) === String(leadId),
+  )
+  const descriptorOf = (childLog) =>
+    (childLog?.events ?? []).find((e) => e.type === 'subagent/descriptor')?.data
+  const analystLog = memberLogs.find(
+    (c) => descriptorOf(c)?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+  )
+  const analystEvents = analystLog?.events ?? []
+  // Match against the tool-result TEXT payloads (the JSON the tools really
+  // returned), never against JSON.stringify of the event envelope — nested
+  // JSON is quote-escaped there and an `includes('"id":"1"')` would read
+  // false on a truthful log (measured run 1).
+  const resultTextsOf = (evs) => (evs ?? [])
+    .filter((e) => e.type === 'tool/result')
+    .map((e) => (e.data?.message?.content ?? []).map((c) => c.text ?? '').join(''))
+  const analystResults = resultTextsOf(analystEvents)
+  const analystFlat = analystResults.join('\n')
+  const leadResults = resultTextsOf(events)
+  const rebootObservation = (actionObservations ?? []).find((o) => o.note === 'restart+adopt+audit')
+
+  const leadStatusResults = events.filter(
+    (e) => e.type === 'tool/result' && (e.data?.message?.content ?? []).some((c) => (c.text ?? '').includes('taskBoardNote') || (c.text ?? '').includes('processedMessageCount')),
+  )
+  const firstStatusText = leadStatusResults[0] === undefined ? '' : toolResultTextOf(leadStatusResults[0])
+  // THE time fence (run 3 honesty fix): the read-back only counts if its
+  // tool/result is STAMPED AFTER the adoption — a stale pre-reboot status
+  // would otherwise make the check vacuously true.
+  const postAudit = rebootObservation?.postAudit ?? {}
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    bootCensusTwentyTwoOfTwentyFour: (bootLog ?? '').includes('— 22/24 team surfaces registered'),
+    // P5-T16 (第二轮评审 MINOR): 收紧——旧形态只查 `includes('[omo-team] boot
+    // resume')`，而**失败行** `[omo-team] boot resume FAILED (...)` 同样含这个
+    // 子串 ⇒ 一次失败的 resume 也能让这条检查变绿。现在必须命中**成功形**
+    // （`boot resume: resumed=`）且**不得**含 FAILED。
+    bootResumeLine: (bootLog ?? '').includes('[omo-team] boot resume: resumed=')
+      && !(bootLog ?? '').includes('[omo-team] boot resume FAILED'),
+    taskQuartetRegisteredPreReboot: (() => {
+      const pre = rebootObservation?.preBootLog ?? ''
+      return pre.includes('[omo-team] team surface team_task_create registered')
+        && pre.includes('[omo-team] team surface team_task_list registered')
+        && pre.includes('[omo-team] team surface team_task_update registered')
+        && pre.includes('[omo-team] team surface team_task_get registered')
+    })(),
+    leadCreatedTwoTasksHighwatermark: leadResults.some((t) => t.includes(`"id":"1"`) && t.includes(TEAM_TASK_BLOCKER_SUBJECT))
+      && leadResults.some((t) => t.includes(`"id":"2"`) && t.includes(TEAM_TASK_DEPENDENT_SUBJECT)),
+    memberListedBoard: (analystEvents ?? []).some((e) => e.type === 'tool/call' && e.data?.name === 'team_task_list')
+      && analystFlat.includes(TEAM_TASK_BLOCKER_SUBJECT),
+    memberClaimedFirstTask: analystResults.some((t) => t.includes('"id":"1"')
+      && t.includes('"status":"claimed"')
+      && t.includes(`"owner":"${TEAM_MEMBER_ANALYST}"`)
+      && t.includes('claimedAt')),
+    blockedAttemptRefusedByName: analystFlat.includes('blocked by 1'),
+    dependentClaimedAfterCompletion: analystResults.some((t) => t.includes('"id":"2"')
+      && t.includes('"status":"claimed"')
+      && t.includes(`"owner":"${TEAM_MEMBER_ANALYST}"`)
+      && t.includes(`"subject":"${TEAM_TASK_DEPENDENT_SUBJECT}"`)),
+    leadStatusCarriesBoard: firstStatusText.includes(TEAM_TASK_BLOCKER_SUBJECT)
+      && firstStatusText.includes(TEAM_TASK_DEPENDENT_SUBJECT)
+      && firstStatusText.includes('processedMessageCount')
+      && firstStatusText.includes('briefingInjectedMembers'),
+    rebootAdoptedSameLead: rebootObservation?.adopted === true,
+    rebootBootCarriesLoadedAndResume: (() => {
+      const b = rebootObservation?.rebootBootLog ?? ''
+      return b.includes('[omo-team] loaded') && b.includes('— 22/24 team surfaces registered') && b.includes('[omo-team] boot resume')
+    })(),
+    boardIntactAfterRebootReadBack: postAudit.ok === true
+      && postAudit.t1?.status === 'completed'
+      && postAudit.t2?.status === 'claimed'
+      && postAudit.t2?.owner === TEAM_MEMBER_ANALYST,
+    // P5-T14 强化（仲裁补强 §2：弱字符串匹配 → 结构化读盘账）：旧形态只对
+    // `detail` 做 `includes('"processedMessageIds":[')` + 成员名包含——空账
+    // `"processedMessageIds":[]` 也能绿。现在直接读 restartAdoptAndAudit 带回
+    // 的结构化 ledger（重启后从盘上解析的同一对象）：账在场、processedMessageIds
+    // 非空（本场景 lead 至少发了三条无 correlationId 的消息，id 全入账）、
+    // briefingInjectedMembers 同时含 analyst 与 builder（briefing 账按成员名记，
+    // team-state.ts claimBriefingInjection 的键面）。缺任一字段 = 红，不宽容。
+    dualLedgerDurableAcrossReboot: (() => {
+      const ledger = rebootObservation?.ledger
+      if (ledger === undefined || ledger === null || typeof ledger !== 'object') return false
+      if (!Array.isArray(ledger.processedMessageIds) || ledger.processedMessageIds.length === 0) return false
+      if (!Array.isArray(ledger.briefingInjectedMembers)) return false
+      return ledger.briefingInjectedMembers.includes(TEAM_MEMBER_ANALYST)
+        && ledger.briefingInjectedMembers.includes(TEAM_MEMBER_BUILDER)
+    })(),
+    // P5-T16 (第二轮评审 MINOR): **重启后 run 仍是 active** —— 第一轮
+    // BLOCKER-1 的生产修复（持久会话面判存在性）的真实跨进程硬断言。
+    runStillActiveAfterReboot: postAudit.runStatus === 'active',
+    // 成员 `sessionId` **没被抹掉**（第一轮 BLOCKER-1 的另一个生产症状：
+    // `markDeadWorkersErrored` 把它写成 undefined 落盘，不可逆）。
+    // （P5-T19：`postAudit.memberSessionIdsIntact` 内部已按**成员名**对照重启前
+    //  的 sessionId；上一轮的 `sessionIds.length === memberCount` 是两个同源派生
+    //  值的恒真比较，已删。）
+    memberSessionIdsIntactAfterReboot: postAudit.memberSessionIdsIntact === true,
+    // 重启后的 resume 报告**零孤儿、零错误**（旧形态从未断言过这两项）。
+    rebootResumeReportsNoOrphan: (() => {
+      // P5-T19（第三轮评审 MINOR）：**数值解析**，不是 substring——
+      // `orphaned=01` 也能满足 `includes('orphaned=0')`，那是假的鼓励。
+      const b = rebootObservation?.rebootBootLog ?? ''
+      const line = b.split('\n').find((l) => l.includes('[omo-team] boot resume:')) ?? ''
+      const read = (key) => {
+        const m = new RegExp(`(?:^|[\\s,])${key}=(\\d+)(?:$|[,\\s])`).exec(line)
+        return m === null ? undefined : Number.parseInt(m[1], 10)
+      }
+      return read('orphaned') === 0 && read('errors') === 0
+    })(),
+    boardFilesOnDiskPreReboot: (() => {
+      const detail = rebootObservation?.detail ?? ''
+      return detail.includes('"state":true') && detail.includes('"ledger":true')
+        && detail.includes('"task1":true') && detail.includes('"task2":true') && detail.includes('"claims":true')
+    })(),
+  }
+  const failures = Object.entries(checks).filter(([, ok]) => ok !== true).map(([name]) => name)
+  return {
+    ok: failures.length === 0,
+    summary: failures.length === 0
+      ? 'team-task-claim: board created/claimed/blocked/completed, rebooted and read back intact'
+      : `team-task-claim FAILED checks: ${failures.join(', ')}`,
+    checks,
+    detail: `reboot=${rebootObservation?.detail ?? 'MISSING'}`,
+  }
+}
+
+// ── P5-T10 hermetic fabricated 夹具（评审 MINOR 双通道收敛：13 枚新检查 defect 腿）──
+// team-create-and-message / team-shutdown-handshake 两枚场景自 T6 起没有 fabricated
+// self-test 输入——评审 MINOR 钉的正是这个洞：T10 新增的 13 枚检查（目录半 +
+// 认领半）从未在任何 fabricated 输入上红过。先例 = T9 刚立的纪律：GOOD 必 PASS，
+// 每枚具名 defect 各红在自己的 named check（本清单 9+4=13 枚与新检查一一对应，
+// 覆盖五枚代表性失败轴：缺帧 / 双帧 / 错 kind / 错序 / 目录缺成员）。
+const FABRICATED_T10_LEAD_ID = 'ses-fabricated-t10-lead'
+const FABRICATED_T10_ANALYST_ID = 'ses-fabricated-t10-analyst'
+const FABRICATED_T10_BUILDER_ID = 'ses-fabricated-t10-builder'
+const FABRICATED_T10_TEAM_RUN_ID = '9a8b7c6d-5e4f-4321-8765-1234efedcba9'
+
+/**
+ * `team-create-and-message` GOOD fabricated input — the full T6+T10 shape:
+ * three lead turns (create / batch send / dedup resend), two member lanes
+ * (spawn reply turn → frozen window → splice+claim → wake turn ack), ack
+ * splices AND claims at the lead, catalog rows at the lead. Every shape is
+ * the analyze functions' own extraction shape (agentMessageSplice /
+ * agentMessageSurfaceFrames / catalogRowFor / wakeCanaryAt / deliveryPairAt),
+ * so the fabricated bytes are what the assertions eat, byte-for-byte.
+ */
+export function fabricatedTeamCreateAndMessageInput(routes) {
+  const events = []
+  let seq = 0
+  const push = (event) => {
+    seq += 1
+    events.push({ time: 1000 + seq * 100, ...event, seq })
+    return seq
+  }
+  const prompt = (text) => ({ type: 'user/message', data: { id: `fabricated-t10-prompt-${seq + 1}`, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'fabricated-rpc-t10' } } })
+  const step = (turn, text) => ({ type: 'assistant/message', data: { turn, step: 1, message: { role: 'assistant', content: [{ type: 'text', text }] } } })
+  const toolCall = (turn, callId, name, args) => ({ type: 'tool/call', data: { turn, step: 1, callId, name, arguments: JSON.stringify(args) } })
+  const toolResult = (turn, callId, text, isError = false) => ({
+    type: 'tool/result',
+    data: { turn, step: 1, message: { role: 'tool', toolCallId: callId, isError, content: [{ type: 'text', text }] } },
+  })
+  const splice = (senderSessionId, text) => ({
+    type: 'agent/inbox/spliced',
+    data: { target: 'next-step', inserted: [{ source: { kind: 'agent-message', senderSessionId }, content: [{ type: 'text', text }] }] },
+  })
+  const claim = (senderSessionId, text) => ({
+    type: 'user/message',
+    data: { id: `fabricated-t10-claim-${seq + 1}`, role: 'user', content: [{ type: 'text', text }], source: { kind: 'agent-message', senderSessionId } },
+  })
+
+  push(prompt(TEAM_CREATE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 1 } })
+  push(toolCall(1, 'mock-t10-team-create', 'team_create', { inline_spec: teamInlineSpec() }))
+  push(toolResult(1, 'mock-t10-team-create', `{"status":"created","teamRunId":"${FABRICATED_T10_TEAM_RUN_ID}","members":[{"name":"analyst","sessionId":"${FABRICATED_T10_ANALYST_ID}"},{"name":"builder","sessionId":"${FABRICATED_T10_BUILDER_ID}"}]}`))
+  push({ type: 'subagent/catalog', data: { childId: FABRICATED_T10_ANALYST_ID, mode: 'continuable', label: `team:${FABRICATED_T10_TEAM_RUN_ID}:analyst` } })
+  push({ type: 'subagent/catalog', data: { childId: FABRICATED_T10_BUILDER_ID, mode: 'continuable', label: `team:${FABRICATED_T10_TEAM_RUN_ID}:builder` } })
+  push(step(1, TEAM_LEAD_CREATED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_MSG_PROMPT))
+  push({ type: 'turn/start', data: { turn: 2 } })
+  push(toolCall(2, 'mock-t10-send-a', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: TEAM_MEMBER_ANALYST, body: TEAM_MSG_TO_ANALYST_BODY, correlationId: TEAM_CORRID_A }))
+  push(toolCall(2, 'mock-t10-send-b', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: TEAM_MEMBER_BUILDER, body: TEAM_MSG_TO_BUILDER_BODY, kind: 'announcement', correlationId: TEAM_CORRID_B }))
+  push(toolResult(2, 'mock-t10-send-a', `{"delivered":true,"correlationId":"${TEAM_CORRID_A}"}`))
+  push(toolResult(2, 'mock-t10-send-b', `{"delivered":true,"correlationId":"${TEAM_CORRID_B}"}`))
+  push(step(2, TEAM_LEAD_MSG_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_RESEND_PROMPT))
+  push({ type: 'turn/start', data: { turn: 3 } })
+  push(toolCall(3, 'mock-t10-resend-a', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: TEAM_MEMBER_ANALYST, body: TEAM_MSG_TO_ANALYST_BODY, correlationId: TEAM_CORRID_A }))
+  // The dedup answer names the duplicate id and is itself delivered:true —
+  // leadSendResultsAllDeliveredOrDedup counts all four send rows, none an
+  // error, and the named dedup note is the second extraction's needle.
+  push(toolResult(3, 'mock-t10-resend-a', `{"delivered":true,"deduplicated":true,"note":"duplicate message id ${TEAM_CORRID_A} — the analyst already has that message"}`))
+  push(step(3, TEAM_LEAD_RESEND_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+
+  // P5-T14 lead turn 4: the wildcard broadcast. ONE messageId, fan-out over
+  // the deliverable members (the tool's own result shape: deliveries[] + the
+  // `broadcast <id> delivered to N member(s)` note) — the lead's log carries
+  // the CALL and the RESULT, never a self-addressed frame (the lead does not
+  // receive its own broadcast; the frames below land at the MEMBERS only).
+  push(prompt(TEAM_BROADCAST_PROMPT))
+  push({ type: 'turn/start', data: { turn: 4 } })
+  push(toolCall(4, 'mock-t14-broadcast', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: '*', body: TEAM_MSG_BROADCAST_BODY, correlationId: TEAM_CORRID_BROADCAST }))
+  push(toolResult(4, 'mock-t14-broadcast', `{"delivered":true,"deduplicated":false,"messageId":"${TEAM_CORRID_BROADCAST}","deliveries":[{"to":"analyst","delivered":true,"relayed":false},{"to":"builder","delivered":true,"relayed":false}],"note":"broadcast ${TEAM_CORRID_BROADCAST} delivered to 2 member(s)"}`))
+  push(step(4, TEAM_LEAD_BROADCAST_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
+
+  // member→lead acks at the lead: splice carrier + its user/message claim.
+  push(splice(FABRICATED_T10_ANALYST_ID, `Team message ${TEAM_CORRID_ACK_A} from analyst: ${TEAM_ACK_ANALYST_BODY}`))
+  push(claim(FABRICATED_T10_ANALYST_ID, `Team message ${TEAM_CORRID_ACK_A} from analyst: ${TEAM_ACK_ANALYST_BODY}`))
+  push(splice(FABRICATED_T10_BUILDER_ID, `Team message ${TEAM_CORRID_ACK_B} from builder: ${TEAM_ACK_BUILDER_BODY}`))
+  push(claim(FABRICATED_T10_BUILDER_ID, `Team message ${TEAM_CORRID_ACK_B} from builder: ${TEAM_ACK_BUILDER_BODY}`))
+
+  const member = (seat, memberId, wakeCorrid, wakeBody, ackCorrid, ackBody, wakeSummary, replyText, tail) => {
+    const mEvents = []
+    let mSeq = 0
+    const mPush = (event) => {
+      mSeq += 1
+      mEvents.push({ time: 4000 + mSeq * 50, ...event, seq: mSeq })
+      return mSeq
+    }
+    mPush({
+      type: 'subagent/descriptor',
+      data: {
+        version: 3,
+        mode: 'continuable',
+        provider: 'team',
+        label: `team member ${seat}`,
+        agentProvider: routes[seat].provider,
+        agentModel: routes[seat].model,
+        persona: seat === TEAM_SEAT_ANALYST ? 'MOCK persona omo-sisyphus-junior' : 'MOCK persona omo-hephaestus',
+        toolFilter: { deny: [...DELEGATION_TOOL_NAMES] },
+      },
+    })
+    mPush({
+      type: 'request/header',
+      data: {
+        header: {
+          config: { provider: routes[seat].provider, model: routes[seat].model },
+          tools: [{ function: { name: 'bash' } }, { function: { name: 'read' } }, { function: { name: 'team_send_message' } }],
+        },
+        reason: 'initial',
+      },
+    })
+    mPush({ type: 'user/message', data: { id: `fabricated-t10-brief-${memberId}`, role: 'user', content: [{ type: 'text', text: `team briefing: you must NOT spawn or delegate further children {"teamRunId":"${FABRICATED_T10_TEAM_RUN_ID}"}` }], source: { kind: 'omo-team-briefing', form: 'instructions' } } })
+    mPush({ type: 'user/message', data: { id: `fabricated-t10-prompt-${memberId}`, role: 'user', content: [{ type: 'text', text: seat === TEAM_SEAT_ANALYST ? 'Summarize the repository structure.' : 'Draft the changelog entry.' }], source: { kind: 'user', rpcId: `fabricated-rpc-t10-${memberId}` } } })
+    mPush({ type: 'turn/start', data: { turn: 1 } })
+    mPush(step(1, replyText))
+    mPush({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+    // frozen window empty — the splice sits IMMEDIATELY after the completed
+    // spawn turn (wakeCanaryAt's frozen-window rule), then its claim, then
+    // the wake turn that acks.
+    mPush(splice(FABRICATED_T10_LEAD_ID, `Team message ${wakeCorrid} from lead: ${wakeBody}`))
+    mPush(claim(FABRICATED_T10_LEAD_ID, `Team message ${wakeCorrid} from lead: ${wakeBody}`))
+    mPush({ type: 'turn/start', data: { turn: 2 } })
+    mPush(toolCall(2, `mock-t10-ack-${seat}`, 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: 'lead', body: ackBody, correlationId: ackCorrid }))
+    mPush(toolResult(2, `mock-t10-ack-${seat}`, `{"delivered":true,"correlationId":"${ackCorrid}"}`))
+    mPush(step(2, wakeSummary))
+    mPush({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+    // P5-T14: the member-lane tail (relay / denial legs for the analyst, the
+    // received relay/broadcast frames for the builder) — same seq discipline,
+    // same clock, built by the caller so each lane's tail says its own thing.
+    if (tail !== undefined) tail(mPush)
+    return { path: `/fabricated/t10/${seat}/session.jsonl`, header: { type: 'session', id: memberId, origin: 'subagent', parentSession: FABRICATED_T10_LEAD_ID, delegationDepth: 1 }, events: mEvents }
+  }
+
+  const log = { path: '/fabricated/t10-create/session.jsonl', header: { type: 'session', id: FABRICATED_T10_LEAD_ID }, events }
+  const analystLog = member(TEAM_SEAT_ANALYST, FABRICATED_T10_ANALYST_ID, TEAM_CORRID_A, TEAM_MSG_TO_ANALYST_BODY, TEAM_CORRID_ACK_A, TEAM_ACK_ANALYST_BODY, TEAM_MEMBER_ANALYST_WAKE_SUMMARY, TEAM_MEMBER_ANALYST_REPLY, (mPush) => {
+    // P5-T14 analyst tail · RELAY leg: member→member rides the LIVE lead —
+    // the analyst's own tool/result says relayed:true, and the frame that
+    // lands at the builder carries the annotation + the lead's durable
+    // source (built on the builder lane below).
+    mPush({ type: 'turn/start', data: { turn: 3 } })
+    mPush(toolCall(3, 'mock-t14-relay-analyst', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: TEAM_MEMBER_BUILDER, body: TEAM_MSG_RELAY_BODY, correlationId: TEAM_CORRID_RELAY }))
+    mPush(toolResult(3, 'mock-t14-relay-analyst', `{"delivered":true,"deduplicated":false,"messageId":"${TEAM_CORRID_RELAY}","deliveries":[{"to":"builder","delivered":true,"relayed":true}],"note":"message ${TEAM_CORRID_RELAY} delivered to 'builder'"}`))
+    mPush(step(3, TEAM_ANALYST_RELAY_SUMMARY))
+    mPush({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+    // The lead's broadcast lands at the analyst too (fan-out), and the
+    // analyst's OWN wildcard attempt is refused BY NAME, isError, before any
+    // id is allocated — no frame under TEAM_CORRID_MEMBER_BC exists anywhere.
+    mPush(splice(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}`))
+    mPush(claim(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}`))
+    mPush({ type: 'turn/start', data: { turn: 4 } })
+    mPush(toolCall(4, 'mock-t14-bc-denied-analyst', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: '*', body: TEAM_MSG_MEMBER_BC_BODY, correlationId: TEAM_CORRID_MEMBER_BC }))
+    mPush(toolResult(4, 'mock-t14-bc-denied-analyst', 'Error: broadcast requires lead role', true))
+    mPush(step(4, TEAM_ANALYST_BC_DENIED_SUMMARY))
+    mPush({ type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
+  })
+  const builderLog = member(TEAM_SEAT_BUILDER, FABRICATED_T10_BUILDER_ID, TEAM_CORRID_B, TEAM_MSG_TO_BUILDER_BODY, TEAM_CORRID_ACK_B, TEAM_ACK_BUILDER_BODY, TEAM_MEMBER_BUILDER_WAKE_SUMMARY, TEAM_MEMBER_BUILDER_REPLY, (mPush) => {
+    // P5-T14 builder tail · RECEIVED legs: the relayed frame (durable source
+    // = the LEAD, annotation names the analyst as originator) then the lead's
+    // direct broadcast frame (no annotation — lead-originated), each exactly
+    // once, then the clamped-tail text that closes the wake turn.
+    mPush(splice(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_RELAY} from analyst (relayed via lead): ${TEAM_MSG_RELAY_BODY}`))
+    mPush(claim(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_RELAY} from analyst (relayed via lead): ${TEAM_MSG_RELAY_BODY}`))
+    mPush(splice(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}`))
+    mPush(claim(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}`))
+    mPush({ type: 'turn/start', data: { turn: 3 } })
+    mPush(step(3, TEAM_MEMBER_BUILDER_WAKE_SUMMARY))
+    mPush({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+  })
+  return {
+    log,
+    allLogs: [log, analystLog, builderLog],
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 11 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 12 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 13 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 14 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 15 },
+      // P5-T14: the broadcast turn (lead) and the relay/denial turns (analyst)
+      // really round-tripped the mock — the request ledger says so.
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 16 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 20 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 21 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 22 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 23 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 24 },
+      { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 30 },
+      { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 31 },
+      { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 32 },
+      { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 33 },
+    ],
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      '[omo-team] team surface team_create registered',
+      '[omo-team] team surface team_send_message registered',
+      '[omo-team] team surface team-keyword-injection registered',
+      '[omo-team] team surface vendor-team-core-types registered',
+      '[omo-team] team surface vendor-team-core-member-parser registered',
+      '[omo-team] team surface vendor-team-core-team-registry registered',
+      '[omo-team] team surface vendor-team-core-team-tasklist registered',
+      '[omo-team] team surface vendor-team-core-team-state-store registered',
+      '[omo-team] team surface vendor-team-core-closure registered',
+      '[omo-team] team surface vendor-team-prompts registered',
+      '[omo-team] loaded: manifest 24 entries (pending=0, ported=22, recorded=2) — 22/24 team surfaces registered',
+    ].join('\n'),
+    settleReached: true,
+    actionObservations: [{ reached: true, note: 'cold-wake precondition: both members settled AND offline before the send turn' }],
+    providersJson: null,
+  }
+}
+
+/**
+ * `team-shutdown-handshake` GOOD fabricated input — the full T7+T10 shape:
+ * eight lead turns (create / request / status+survive / re-request batch /
+ * delegate approve / status / delete / refused send), analyst lane
+ * (spawn → wake1 reject → wake2 approve → post-delete native delivery),
+ * builder lane (spawn → wake inquiry, NEVER approves), rejected/approved
+ * result splices AND claims at the lead, native post-delete canary at the
+ * analyst timed after the delete result.
+ */
+export function fabricatedTeamShutdownHandshakeInput(routes) {
+  const events = []
+  let seq = 0
+  const push = (event) => {
+    seq += 1
+    events.push({ time: 1000 + seq * 100, ...event, seq })
+    return seq
+  }
+  const prompt = (text) => ({ type: 'user/message', data: { id: `fabricated-t10sd-prompt-${seq + 1}`, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'fabricated-rpc-t10sd' } } })
+  const step = (turn, text) => ({ type: 'assistant/message', data: { turn, step: 1, message: { role: 'assistant', content: [{ type: 'text', text }] } } })
+  const toolCall = (turn, callId, name, args) => ({ type: 'tool/call', data: { turn, step: 1, callId, name, arguments: JSON.stringify(args) } })
+  const toolResult = (turn, callId, text) => ({
+    type: 'tool/result',
+    data: { turn, step: 1, message: { role: 'tool', toolCallId: callId, isError: false, content: [{ type: 'text', text }] } },
+  })
+  const splice = (senderSessionId, text) => ({
+    type: 'agent/inbox/spliced',
+    data: { target: 'next-step', inserted: [{ source: { kind: 'agent-message', senderSessionId }, content: [{ type: 'text', text }] }] },
+  })
+  const claim = (senderSessionId, text) => ({
+    type: 'user/message',
+    data: { id: `fabricated-t10sd-claim-${seq + 1}`, role: 'user', content: [{ type: 'text', text }], source: { kind: 'agent-message', senderSessionId } },
+  })
+  const inquiryText = (teamRunId) => `Team shutdown request ${teamRunId} from lead: please approve or reject via team_approve_shutdown / team_reject_shutdown {"teamRunId":"${teamRunId}"}`
+
+  push(prompt(TEAM_CREATE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 1 } })
+  push(toolCall(1, 'mock-t10sd-team-create', 'team_create', { inline_spec: teamInlineSpec() }))
+  push(toolResult(1, 'mock-t10sd-team-create', `{"status":"created","teamRunId":"${FABRICATED_T10_TEAM_RUN_ID}","members":["analyst","builder"]}`))
+  push(step(1, TEAM_LEAD_CREATED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_SHUTDOWN_REQUEST_ANALYST_PROMPT))
+  push({ type: 'turn/start', data: { turn: 2 } })
+  push(toolCall(2, 'mock-t10sd-shutdown-1', 'team_shutdown_request', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, targetMemberName: TEAM_MEMBER_ANALYST }))
+  push(toolResult(2, 'mock-t10sd-shutdown-1', `{"status":"shutdown_requested","inquiryDelivered":true,"teamRunId":"${FABRICATED_T10_TEAM_RUN_ID}"}`))
+  push(step(2, TEAM_LEAD_REQUESTED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+
+  // analyst's REJECT rides back to the lead: splice + claim.
+  push(splice(FABRICATED_T10_ANALYST_ID, `Team shutdown rejected ${FABRICATED_T10_TEAM_RUN_ID} from analyst: ${TEAM_SHUTDOWN_REASON}`))
+  push(claim(FABRICATED_T10_ANALYST_ID, `Team shutdown rejected ${FABRICATED_T10_TEAM_RUN_ID} from analyst: ${TEAM_SHUTDOWN_REASON}`))
+
+  push(prompt(TEAM_SHUTDOWN_SURVIVAL_PROMPT))
+  push({ type: 'turn/start', data: { turn: 3 } })
+  push(toolCall(3, 'mock-t10sd-status-1', 'team_status', { teamRunId: FABRICATED_T10_TEAM_RUN_ID }))
+  push(toolResult(3, 'mock-t10sd-status-1', `{"status":"active","state":"rejected","teamRunId":"${FABRICATED_T10_TEAM_RUN_ID}"}`))
+  push(toolCall(3, 'mock-t10sd-send-survive', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: TEAM_MEMBER_BUILDER, body: TEAM_MSG_SURVIVE_BODY, correlationId: TEAM_CORRID_SURVIVE }))
+  push(toolResult(3, 'mock-t10sd-send-survive', `{"delivered":true,"correlationId":"${TEAM_CORRID_SURVIVE}"}`))
+  push(step(3, TEAM_LEAD_SURVIVAL_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_SHUTDOWN_REREQUEST_PROMPT))
+  push({ type: 'turn/start', data: { turn: 4 } })
+  push(toolCall(4, 'mock-t10sd-shutdown-2', 'team_shutdown_request', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, targetMemberName: TEAM_MEMBER_ANALYST }))
+  push(toolCall(4, 'mock-t10sd-shutdown-3', 'team_shutdown_request', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, targetMemberName: TEAM_MEMBER_BUILDER }))
+  push(toolResult(4, 'mock-t10sd-shutdown-2', `{"status":"shutdown_requested","inquiryDelivered":true,"teamRunId":"${FABRICATED_T10_TEAM_RUN_ID}"}`))
+  push(toolResult(4, 'mock-t10sd-shutdown-3', `{"status":"shutdown_requested","inquiryDelivered":true,"teamRunId":"${FABRICATED_T10_TEAM_RUN_ID}"}`))
+  push(step(4, TEAM_LEAD_REREQUEST_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
+
+  // analyst's SELF-approval rides back to the lead: splice + claim.
+  push(splice(FABRICATED_T10_ANALYST_ID, `Team shutdown approved ${FABRICATED_T10_TEAM_RUN_ID} from analyst: ready for teardown`))
+  push(claim(FABRICATED_T10_ANALYST_ID, `Team shutdown approved ${FABRICATED_T10_TEAM_RUN_ID} from analyst: ready for teardown`))
+
+  push(prompt(TEAM_SHUTDOWN_DELEGATE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 5 } })
+  push(toolCall(5, 'mock-t10sd-approve-builder', 'team_approve_shutdown', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, targetMemberName: TEAM_MEMBER_BUILDER }))
+  push(toolResult(5, 'mock-t10sd-approve-builder', `{"status":"shutdown_approved","approverName":"lead","memberName":"builder","resultDelivered":false,"note":"self-addressed approval was not relayed"}`))
+  push(step(5, TEAM_LEAD_DELEGATE_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 5, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_SHUTDOWN_STATUS_PROMPT))
+  push({ type: 'turn/start', data: { turn: 6 } })
+  push(toolCall(6, 'mock-t10sd-status-2', 'team_status', { teamRunId: FABRICATED_T10_TEAM_RUN_ID }))
+  push(toolResult(6, 'mock-t10sd-status-2', `{"status":"active","phase":"shutdown_approved","members":[{"name":"analyst","phase":"shutdown_approved"},{"name":"builder","state":"shutdown_approved"}]}`))
+  push(step(6, TEAM_LEAD_APPROVED_STATUS_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 6, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_DELETE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 7 } })
+  push(toolCall(7, 'mock-t10sd-team-delete', 'team_delete', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, force: false }))
+  push(toolResult(7, 'mock-t10sd-team-delete', `{"status":"deleted","forced":false,"teamRunId":"${FABRICATED_T10_TEAM_RUN_ID}","interruptedSessionIds":["${FABRICATED_T10_ANALYST_ID}","${FABRICATED_T10_BUILDER_ID}"]}`))
+  push(step(7, TEAM_LEAD_DELETED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 7, reason: { kind: 'completed' } } })
+
+  push(prompt(TEAM_DELETED_SEND_PROMPT))
+  push({ type: 'turn/start', data: { turn: 8 } })
+  push(toolCall(8, 'mock-t10sd-send-deleted', 'team_send_message', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, to: TEAM_MEMBER_ANALYST, body: 'anything', correlationId: 'f1f1f1f1-9999-4999-8999-ffffffffffff' }))
+  push(toolResult(8, 'mock-t10sd-send-deleted', `{"error":"team ${FABRICATED_T10_TEAM_RUN_ID} is deleted"}`))
+  push(step(8, TEAM_LEAD_REFUSED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 8, reason: { kind: 'completed' } } })
+
+  const member = (seat, memberId, memberIdForBase) => {
+    const mEvents = []
+    let mSeq = 0
+    const mPush = (event) => {
+      mSeq += 1
+      mEvents.push({ time: memberIdForBase + mSeq * 50, ...event, seq: mSeq })
+      return mSeq
+    }
+    mPush({
+      type: 'subagent/descriptor',
+      data: {
+        version: 3,
+        mode: 'continuable',
+        provider: 'team',
+        label: `team member ${seat}`,
+        agentProvider: routes[seat].provider,
+        agentModel: routes[seat].model,
+        persona: seat === TEAM_SEAT_ANALYST ? 'MOCK persona omo-sisyphus-junior' : 'MOCK persona omo-hephaestus',
+        toolFilter: { deny: [...DELEGATION_TOOL_NAMES] },
+      },
+    })
+    mPush({
+      type: 'request/header',
+      data: {
+        header: {
+          config: { provider: routes[seat].provider, model: routes[seat].model },
+          tools: [{ function: { name: 'bash' } }, { function: { name: 'team_send_message' } }, { function: { name: 'team_reject_shutdown' } }, { function: { name: 'team_approve_shutdown' } }],
+        },
+        reason: 'initial',
+      },
+    })
+    mPush({ type: 'user/message', data: { id: `fabricated-t10sd-brief-${memberId}`, role: 'user', content: [{ type: 'text', text: `team briefing: you must NOT spawn or delegate further children {"teamRunId":"${FABRICATED_T10_TEAM_RUN_ID}"}` }], source: { kind: 'omo-team-briefing', form: 'instructions' } } })
+    mPush({ type: 'user/message', data: { id: `fabricated-t10sd-prompt-${memberId}`, role: 'user', content: [{ type: 'text', text: seat === TEAM_SEAT_ANALYST ? 'Summarize the repository structure.' : 'Draft the changelog entry.' }], source: { kind: 'user', rpcId: `fabricated-rpc-t10sd-${memberId}` } } })
+    return mEvents
+  }
+
+  const analystEvents = member(TEAM_SEAT_ANALYST, FABRICATED_T10_ANALYST_ID, 6000)
+  const analyst = { path: '/fabricated/t10sd/analyst/session.jsonl', header: { type: 'session', id: FABRICATED_T10_ANALYST_ID, origin: 'subagent', parentSession: FABRICATED_T10_LEAD_ID, delegationDepth: 1 }, events: analystEvents }
+  const aPush = (event) => { analystEvents.push({ time: 6000 + analystEvents.length * 50, ...event, seq: analystEvents.length }) }
+  aPush({ type: 'turn/start', data: { turn: 1 } })
+  aPush(step(1, TEAM_MEMBER_ANALYST_REPLY))
+  aPush({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+  aPush(splice(FABRICATED_T10_LEAD_ID, inquiryText(FABRICATED_T10_TEAM_RUN_ID)))
+  aPush(claim(FABRICATED_T10_LEAD_ID, inquiryText(FABRICATED_T10_TEAM_RUN_ID)))
+  aPush({ type: 'turn/start', data: { turn: 2 } })
+  aPush(toolCall(2, 'mock-t10sd-analyst-reject', 'team_reject_shutdown', { teamRunId: FABRICATED_T10_TEAM_RUN_ID, reason: TEAM_SHUTDOWN_REASON }))
+  aPush(toolResult(2, 'mock-t10sd-analyst-reject', `{"status":"shutdown_rejected","reason":"${TEAM_SHUTDOWN_REASON}","approverName":"analyst"}`))
+  aPush(step(2, TEAM_ANALYST_REJECT_SUMMARY))
+  aPush({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+  aPush(splice(FABRICATED_T10_LEAD_ID, inquiryText(FABRICATED_T10_TEAM_RUN_ID)))
+  aPush(claim(FABRICATED_T10_LEAD_ID, inquiryText(FABRICATED_T10_TEAM_RUN_ID)))
+  aPush({ type: 'turn/start', data: { turn: 3 } })
+  aPush(toolCall(3, 'mock-t10sd-analyst-approve', 'team_approve_shutdown', { teamRunId: FABRICATED_T10_TEAM_RUN_ID }))
+  aPush(toolResult(3, 'mock-t10sd-analyst-approve', `{"status":"shutdown_approved","approverName":"analyst"}`))
+  aPush(step(3, TEAM_ANALYST_APPROVE_SUMMARY))
+  aPush({ type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+  // the DRIVER's native post-delete follow-up lands AFTER the delete result
+  // (lead seq 47 → time 5700 < every analyst event time here ≥ 6050).
+  aPush(prompt(TEAM_NATIVE_POST_DELETE_BODY))
+  aPush({ type: 'turn/start', data: { turn: 4 } })
+  aPush(step(4, 'MOCK-T7-ANALYST-NATIVE-ACK-1b4c: post-delete native frame received over the preserved inbox.'))
+  aPush({ type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
+
+  const builderEvents = member(TEAM_SEAT_BUILDER, FABRICATED_T10_BUILDER_ID, 4000)
+  const builder = { path: '/fabricated/t10sd/builder/session.jsonl', header: { type: 'session', id: FABRICATED_T10_BUILDER_ID, origin: 'subagent', parentSession: FABRICATED_T10_LEAD_ID, delegationDepth: 1 }, events: builderEvents }
+  const bPush = (event) => { builderEvents.push({ time: 4000 + builderEvents.length * 50, ...event, seq: builderEvents.length }) }
+  bPush({ type: 'turn/start', data: { turn: 1 } })
+  bPush(step(1, TEAM_MEMBER_BUILDER_REPLY))
+  bPush({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+  bPush(splice(FABRICATED_T10_LEAD_ID, inquiryText(FABRICATED_T10_TEAM_RUN_ID)))
+  bPush(claim(FABRICATED_T10_LEAD_ID, inquiryText(FABRICATED_T10_TEAM_RUN_ID)))
+  bPush({ type: 'turn/start', data: { turn: 2 } })
+  bPush(step(2, TEAM_BUILDER_INQUIRY_SUMMARY))
+  bPush({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+  // the survive frame at the builder (channelOpenAfterRefusal): splice only
+  // — no surface check consumes its claim, so none is fabricated.
+  bPush(splice(FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_SURVIVE} from lead: ${TEAM_MSG_SURVIVE_BODY}`))
+
+  const log = { path: '/fabricated/t10sd/session.jsonl', header: { type: 'session', id: FABRICATED_T10_LEAD_ID }, events }
+  return {
+    log,
+    allLogs: [log, analyst, builder],
+    requests: [
+      ...Array.from({ length: 8 }, (_, i) => ({ role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 10 + i })),
+      ...Array.from({ length: 6 }, (_, i) => ({ role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 20 + i })),
+      ...Array.from({ length: 2 }, (_, i) => ({ role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 30 + i })),
+    ],
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      '[omo-team] team surface team_shutdown_request registered',
+      '[omo-team] team surface team_approve_shutdown registered',
+      '[omo-team] team surface team_reject_shutdown registered',
+      '[omo-team] team surface team_delete registered',
+      '[omo-team] team surface team_status registered',
+      '[omo-team] team surface team_task_create registered',
+      '[omo-team] team surface team_task_list registered',
+      '[omo-team] team surface team_task_update registered',
+      '[omo-team] team surface team_task_get registered',
+      '[omo-team] team surface team-keyword-injection registered',
+      '[omo-team] team surface vendor-team-core-types registered',
+      '[omo-team] team surface vendor-team-core-member-parser registered',
+      '[omo-team] team surface vendor-team-core-team-registry registered',
+      '[omo-team] team surface vendor-team-core-team-tasklist registered',
+      '[omo-team] team surface vendor-team-core-team-state-store registered',
+      '[omo-team] team surface vendor-team-core-closure registered',
+      '[omo-team] team surface vendor-team-prompts registered',
+      '[omo-team] loaded: manifest 24 entries (pending=0, ported=22, recorded=2) — 22/24 team surfaces registered',
+    ].join('\n'),
+    settleReached: true,
+    actionObservations: [
+      { reached: true, note: 'both members settled AND offline before shutdown' },
+      { reached: true, note: 'analyst reject durable (tool result + result frame at lead)' },
+      { reached: true, note: 'analyst self-approval durable' },
+      { reached: true, note: 'post-delete NATIVE follow-up landed at the analyst' },
+    ],
+  }
+}
+
+/**
+ * The 9 T10 surface defect legs of team-create-and-message — one per T10
+ * new check, each mutated so it reddens ONLY its own named check (the T9
+ * stated-once/applied-twice discipline, tightened to single-named-failure
+ * because every axis here is a one-event mutation). Axes covered:
+ * wrong label / wrong mode (catalog), extra row (catalog), wrong mode /
+ * dropped mode (descriptor), dropped claim (wake), out-of-order claim (seq),
+ * doubled claim (ack), dropped claim (ack).
+ */
+export function teamCreateSurfaceDefectCases() {
+  const memberOf = (input, memberId) => input.allLogs.find((l) => l.header?.id === memberId)
+  const dropIf = (events, pred) => {
+    const i = events.findIndex(pred)
+    if (i >= 0) events.splice(i, 1)
+  }
+  const isClaimOf = (event, senderSessionId, prefix) =>
+    event.type === 'user/message'
+    && event.data?.source?.kind === 'agent-message'
+    && String(event.data?.source?.senderSessionId ?? '') === String(senderSessionId)
+    && messageContentText(event.data).includes(prefix)
+  return [
+    ['analyst-catalog-label-drifted', (input) => {
+      const row = input.log.events.find((e) => e.type === 'subagent/catalog' && e.data?.childId === FABRICATED_T10_ANALYST_ID)
+      row.data.label = `team:${FABRICATED_T10_TEAM_RUN_ID}:analyst-x`
+    }, 'analystInLeadCatalogAsContinuable'],
+    ['builder-catalog-mode-not-continuable', (input) => {
+      const row = input.log.events.find((e) => e.type === 'subagent/catalog' && e.data?.childId === FABRICATED_T10_BUILDER_ID)
+      row.data.mode = 'foreground'
+    }, 'builderInLeadCatalogAsContinuable'],
+    ['lead-catalog-extra-stranger-row', (input) => {
+      input.log.events.push({ type: 'subagent/catalog', data: { childId: 'ses-fabricated-t10-stranger', mode: 'continuable', label: `team:${FABRICATED_T10_TEAM_RUN_ID}:stranger` } })
+    }, 'leadCatalogCarriesExactlyTheTwoMembers'],
+    ['analyst-descriptor-mode-not-continuable', (input) => {
+      memberOf(input, FABRICATED_T10_ANALYST_ID).events.find((e) => e.type === 'subagent/descriptor').data.mode = 'foreground'
+    }, 'analystDescriptorModeContinuable'],
+    ['builder-descriptor-mode-dropped', (input) => {
+      delete memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => e.type === 'subagent/descriptor').data.mode
+    }, 'builderDescriptorModeContinuable'],
+    ['analyst-wake-claim-frame-dropped', (input) => {
+      dropIf(memberOf(input, FABRICATED_T10_ANALYST_ID).events, (e) => isClaimOf(e, FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_A} from lead:`))
+    }, 'analystWakeFrameOnChatSurface'],
+    ['builder-wake-claim-claimed-at-or-before-boundary', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => isClaimOf(e, FABRICATED_T10_LEAD_ID, `Team message ${TEAM_CORRID_B} from lead:`))
+      frame.seq = 2
+    }, 'builderWakeFrameOnChatSurface'],
+    ['analyst-ack-claim-frame-doubled', (input) => {
+      const lead = input.log.events
+      const frame = lead.find((e) => isClaimOf(e, FABRICATED_T10_ANALYST_ID, `Team message ${TEAM_CORRID_ACK_A} from analyst:`))
+      lead.push({ ...frame, seq: lead.length + 1 })
+    }, 'analystAckOnLeadChatSurface'],
+    ['builder-ack-claim-frame-dropped', (input) => {
+      dropIf(input.log.events, (e) => isClaimOf(e, FABRICATED_T10_BUILDER_ID, `Team message ${TEAM_CORRID_ACK_B} from builder:`))
+    }, 'builderAckOnLeadChatSurface'],
+    // T15 评审 A MINOR 修复轮第 10 腿：settle 钉（settleReachedChildren）
+    // 的反向腿。钩子布尔置 undefined——「钩子被删/改名/从未触发」的伪造
+    // 形态，正是旧弱形 `settleReached !== false` 放行的那个洞；新钉
+    // `settleReached === true` 独红在自己的 named check（本 analyzer 除
+    // settleReachedChildren 外无任何检查读 settleReached，单红纪律成立）。
+    ['settle-hook-never-ran-undefined', (input) => {
+      input.settleReached = undefined
+    }, 'settleReachedChildren'],
+  ]
+}
+
+/**
+ * The 11 P5-T14 relay/broadcast defect legs of team-create-and-message — one
+ * per T14 new check, each mutated so it reddens ONLY its own named check
+ * (the T10 single-named-failure discipline carried forward). Axes covered:
+ * relay-result-flipped / relay-frame-dropped / annotation-stripped /
+ * body-stripped / durable-source-forged / relay-at-lead /
+ * broadcast-dropped-at-one-member / broadcast-annotation-forged /
+ * broadcast-at-lead-self / denial-dropped / denial-forged-frames. The
+ * exactly-once axis deliberately has ONE leg (dropped): doubling the relay
+ * frame would ride the same check name and blur the 1:1 label↔check map this
+ * list exists to keep auditable.
+ */
+export function teamCreateRelayBroadcastDefectCases() {
+  const memberOf = (input, memberId) => input.allLogs.find((l) => l.header?.id === memberId)
+  const dropIf = (events, pred) => {
+    const i = events.findIndex(pred)
+    if (i >= 0) events.splice(i, 1)
+  }
+  const spliceCarries = (event, text) =>
+    event?.type === 'agent/inbox/spliced' && splicedFrameText(event).includes(text)
+  const rewriteSpliceText = (event, from, to) => {
+    for (const inserted of event?.data?.inserted ?? []) {
+      for (const block of inserted?.content ?? []) {
+        if (typeof block?.text === 'string' && block.text.includes(from)) block.text = block.text.split(from).join(to)
+      }
+    }
+  }
+  return [
+    ['relay-result-not-relayed', (input) => {
+      const part = memberOf(input, FABRICATED_T10_ANALYST_ID).events.find(
+        (e) => e.type === 'tool/result' && (e.data?.message?.content ?? []).some((c) => (c.text ?? '').includes(TEAM_CORRID_RELAY)),
+      )
+      for (const block of part.data.message.content) block.text = block.text.split('"relayed":true').join('"relayed":false')
+    }, 'analystRelayDeliveredTrue'],
+    ['relay-frame-dropped-at-builder', (input) => {
+      dropIf(memberOf(input, FABRICATED_T10_BUILDER_ID).events, (e) => spliceCarries(e, `Team message ${TEAM_CORRID_RELAY}`))
+    }, 'relayFrameAtBuilderExactlyOnce'],
+    ['relay-frame-annotation-stripped', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => spliceCarries(e, `Team message ${TEAM_CORRID_RELAY}`))
+      rewriteSpliceText(frame, ' (relayed via lead)', '')
+    }, 'relayFrameCarriesRelayAnnotation'],
+    ['relay-frame-body-stripped', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => spliceCarries(e, `Team message ${TEAM_CORRID_RELAY}`))
+      rewriteSpliceText(frame, TEAM_MSG_RELAY_BODY, '')
+    }, 'relayFrameCarriesBody'],
+    ['relay-frame-durable-source-forged-to-analyst', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => spliceCarries(e, `Team message ${TEAM_CORRID_RELAY}`))
+      frame.data.inserted[0].source.senderSessionId = FABRICATED_T10_ANALYST_ID
+    }, 'relayFrameDurableSourceLead'],
+    ['relay-frame-spliced-at-lead', (input) => {
+      input.log.events.push({
+        type: 'agent/inbox/spliced',
+        data: { target: 'next-step', inserted: [{ source: { kind: 'agent-message', senderSessionId: FABRICATED_T10_LEAD_ID }, content: [{ type: 'text', text: `Team message ${TEAM_CORRID_RELAY} from analyst (relayed via lead): ${TEAM_MSG_RELAY_BODY}` }] }] },
+      })
+    }, 'relayFrameNotSplicedAtLead'],
+    ['broadcast-frame-dropped-at-analyst', (input) => {
+      dropIf(memberOf(input, FABRICATED_T10_ANALYST_ID).events, (e) => spliceCarries(e, `Team message ${TEAM_CORRID_BROADCAST} from lead:`))
+    }, 'broadcastDeliveredAtBothMembersExactlyOnce'],
+    ['broadcast-frame-relayed-annotation-forged', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => spliceCarries(e, `Team message ${TEAM_CORRID_BROADCAST} from lead:`))
+      frame.data.inserted[0].content[0].text += ' (relayed via lead)'
+    }, 'broadcastFramesDirectNotRelayed'],
+    ['broadcast-frame-spliced-at-lead-self', (input) => {
+      input.log.events.push({
+        type: 'agent/inbox/spliced',
+        data: { target: 'next-step', inserted: [{ source: { kind: 'agent-message', senderSessionId: FABRICATED_T10_LEAD_ID }, content: [{ type: 'text', text: `Team message ${TEAM_CORRID_BROADCAST} from lead: ${TEAM_MSG_BROADCAST_BODY}` }] }] },
+      })
+    }, 'broadcastNotSplicedAtLeadSelf'],
+    ['member-broadcast-denial-dropped', (input) => {
+      dropIf(
+        memberOf(input, FABRICATED_T10_ANALYST_ID).events,
+        (e) => e.type === 'tool/result' && (e.data?.message?.content ?? []).some((c) => (c.text ?? '').includes('broadcast requires lead role')),
+      )
+    }, 'analystBroadcastDeniedByName'],
+    ['member-broadcast-denial-forged-frames', (input) => {
+      memberOf(input, FABRICATED_T10_ANALYST_ID).events.push({
+        type: 'agent/inbox/spliced',
+        data: { target: 'next-step', inserted: [{ source: { kind: 'agent-message', senderSessionId: FABRICATED_T10_LEAD_ID }, content: [{ type: 'text', text: `Team message ${TEAM_CORRID_MEMBER_BC} from analyst (relayed via lead): ${TEAM_MSG_MEMBER_BC_BODY}` }] }] },
+      })
+    }, 'memberBroadcastDenialLandedNoFrames'],
+  ]
+}
+
+/**
+ * The 5 defect legs of team-shutdown-handshake — the 4 T10 surface legs, one
+ * per T10 new check: dropped rejected claim / doubled approved claim / inquiry
+ * claim re-kinded to the hidden steer 'context' kind (the Q-7 registered blind
+ * shape — the surface claim is gone) / out-of-order builder inquiry claim;
+ * plus the T15 settle-pin leg (the hook boolean vanished — not a 5th T10
+ * check, the same leg family as team-create-and-message's 10th and the
+ * nested scenario's 1st).
+ */
+export function teamShutdownSurfaceDefectCases() {
+  const memberOf = (input, memberId) => input.allLogs.find((l) => l.header?.id === memberId)
+  const dropIf = (events, pred) => {
+    const i = events.findIndex(pred)
+    if (i >= 0) events.splice(i, 1)
+  }
+  const isClaimOf = (event, senderSessionId, prefix) =>
+    event.type === 'user/message'
+    && event.data?.source?.kind === 'agent-message'
+    && String(event.data?.source?.senderSessionId ?? '') === String(senderSessionId)
+    && messageContentText(event.data).includes(prefix)
+  return [
+    ['rejected-result-claim-frame-dropped', (input) => {
+      dropIf(input.log.events, (e) => isClaimOf(e, FABRICATED_T10_ANALYST_ID, 'Team shutdown rejected'))
+    }, 'rejectedFrameOnLeadChatSurface'],
+    ['approved-result-claim-frame-doubled', (input) => {
+      const lead = input.log.events
+      const frame = lead.find((e) => isClaimOf(e, FABRICATED_T10_ANALYST_ID, 'Team shutdown approved'))
+      lead.push({ ...frame, seq: lead.length + 1 })
+    }, 'approvedFrameOnLeadChatSurface'],
+    ['analyst-inquiry-claims-rekinded-to-hidden-context', (input) => {
+      memberOf(input, FABRICATED_T10_ANALYST_ID).events
+        .filter((e) => isClaimOf(e, FABRICATED_T10_LEAD_ID, 'Team shutdown request'))
+        .forEach((e) => { e.data.source.kind = 'context' })
+    }, 'analystInquiryFramesOnChatSurface'],
+    ['builder-inquiry-claim-claimed-at-or-before-boundary', (input) => {
+      const frame = memberOf(input, FABRICATED_T10_BUILDER_ID).events.find((e) => isClaimOf(e, FABRICATED_T10_LEAD_ID, 'Team shutdown request'))
+      frame.seq = 2
+    }, 'builderInquiryFrameOnChatSurface'],
+    // T15 评审 A MINOR 修复轮第 5 腿：settle 钉（握手形态的 settleReached）
+    // 的反向腿——钩子布尔置 undefined，「钩子被删/改名/从未触发」的伪造
+    // 形态，正是旧弱形 `settleReached !== false` 放行的那个洞；新钉的 ①
+    // （严格相等）独红在自己的 named check（本 analyzer 除 settleReached 外
+    // 无任何检查读 settleReached，单红纪律成立）。②③④ 轴（墓碑行/具名拒
+    // 行/三 lane 静默）无 fabricated 腿——drop 任一字节必同时红更强同族钉
+    // （teamDeletedNonForce / deletedTeamRefusedByName /
+    // postDeleteNativeDeliveryLandedAtAnalyst），单红纪律下造不出来；
+    // 这三轴的反向证据 = 真跑咬合（钉的断言注释同文）。
+    ['settle-hook-never-ran-undefined', (input) => {
+      input.settleReached = undefined
+    }, 'settleReached'],
+  ]
+}
+
+/**
+ * `team-create-and-message` script — the P5-T6 FULL SEGMENT (three lead turns,
+ * two member wake turns):
+ *   lead turn 1: team_create + created summary (the T5 shape, unchanged);
+ *   [driver parks here until BOTH members are settled AND offline — the
+ *    cold-wake precondition, see awaitTeamMembersIdle];
+ *   lead turn 2: ONE parallel batch — team_send_message to the analyst
+ *    (correlationId A) and to the builder (kind 'announcement', id B); the
+ *    teamRunId is captured out of the turn's own request body ({{teamRunId}},
+ *    the copy a real model reads off the team_create result);
+ *   lead turn 3: re-send to the analyst with the SAME id A → the tool's
+ *    dedup note must be the answer, not a second delivery;
+ *   lead turn 4 (P5-T14): team_send_message to '*' — the lead-only wildcard
+ *    broadcast; the fan-out lands at BOTH members under the ONE static id
+ *    TEAM_CORRID_BROADCAST (the lead itself never receives its own broadcast
+ *    — self-delivery is not an edge, team-message.ts step 5);
+ *   member lanes: reply (turn 1), then on the WAKE turn ack to 'lead'
+ *    (member→lead is the native sendToParent edge — adjacency, not relay),
+ *    then a wake summary text; the tail replays so every lane closes;
+ *   analyst lane tail (P5-T14): the RELAY leg — team_send_message to the
+ *    BUILDER (member→member is not an adjacent edge, so the tool routes it
+ *    through the live lead; the frame at the builder carries `(relayed via
+ *    lead)` with the durable source still the LEAD's 'agent-message' kind,
+ *    Q-8 unpolluted), then a relay summary, then the BROADCAST DENIAL leg —
+ *    team_send_message to '*' from a MEMBER, refused BY NAME (`broadcast
+ *    requires lead role`, isError) BEFORE any id is allocated or ledger
+ *    entry is reserved, so no frame may exist anywhere under its canary id.
+ *    Where the turn-blind cursor consumes these steps is irrelevant (the
+ *    convergent-lane precedent): every step is harmless to replay and the
+ *    dedup ledger guarantees each static id lands exactly once.
+ */
+function teamCreateAndMessageScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'team_send_message',
+            arguments: {
+              teamRunId: '{{teamRunId}}',
+              to: TEAM_MEMBER_ANALYST,
+              body: TEAM_MSG_TO_ANALYST_BODY,
+              correlationId: TEAM_CORRID_A,
+            },
+          },
+          {
+            name: 'team_send_message',
+            arguments: {
+              teamRunId: '{{teamRunId}}',
+              to: TEAM_MEMBER_BUILDER,
+              body: TEAM_MSG_TO_BUILDER_BODY,
+              kind: 'announcement',
+              correlationId: TEAM_CORRID_B,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: TEAM_LEAD_MSG_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: TEAM_MEMBER_ANALYST,
+          body: TEAM_MSG_TO_ANALYST_BODY,
+          correlationId: TEAM_CORRID_A,
+        },
+      },
+      { type: 'text', text: TEAM_LEAD_RESEND_SUMMARY },
+      // P5-T14 lead turn 4: the lead-only wildcard broadcast.
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: '*',
+          body: TEAM_MSG_BROADCAST_BODY,
+          correlationId: TEAM_CORRID_BROADCAST,
+        },
+      },
+      { type: 'text', text: TEAM_LEAD_BROADCAST_SUMMARY },
+    ],
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: 'lead',
+          body: TEAM_ACK_ANALYST_BODY,
+          correlationId: TEAM_CORRID_ACK_A,
+        },
+      },
+      { type: 'text', text: TEAM_MEMBER_ANALYST_WAKE_SUMMARY },
+      // P5-T14 relay leg: member→member rides the live lead (relayed frame
+      // at the builder, durable source = the lead's 'agent-message').
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: TEAM_MEMBER_BUILDER,
+          body: TEAM_MSG_RELAY_BODY,
+          correlationId: TEAM_CORRID_RELAY,
+        },
+      },
+      { type: 'text', text: TEAM_ANALYST_RELAY_SUMMARY },
+      // P5-T14 denial leg: a member's wildcard broadcast is refused BY NAME
+      // before id allocation / ledger reservation — zero frames anywhere.
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: '*',
+          body: TEAM_MSG_MEMBER_BC_BODY,
+          correlationId: TEAM_CORRID_MEMBER_BC,
+        },
+      },
+      { type: 'text', text: TEAM_ANALYST_BC_DENIED_SUMMARY },
+    ],
+    [TEAM_SEAT_BUILDER]: [
+      { type: 'text', text: TEAM_MEMBER_BUILDER_REPLY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: 'lead',
+          body: TEAM_ACK_BUILDER_BODY,
+          correlationId: TEAM_CORRID_ACK_B,
+        },
+      },
+      { type: 'text', text: TEAM_MEMBER_BUILDER_WAKE_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * `team-nested-create-denied` script. Same lead lane up to turn 1, then turn 2
+ * (the followup) attempts team_create AGAIN — the gate refuses it by name. The
+ * analyst member lane SCRIPTS a team_create tool_call that the host must reject
+ * with UNKNOWN_TOOL (the member surface structurally lacks team_create), then the
+ * member replies and ends its turn — proving the member could not create a child
+ * even when its model tried.
+ */
+function teamNestedCreateDeniedScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_DENIED_SUMMARY },
+    ],
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
+    ],
+    [TEAM_SEAT_BUILDER]: [{ type: 'text', text: TEAM_MEMBER_BUILDER_REPLY }],
+  }
+}
+
+/**
+ * `team-shutdown-handshake` script — the P5-T7 FULL HANDSHAKE segment.
+ * Lead lane (8 turns, three parks between them):
+ *   t1 team_create; [park: both members settled AND offline];
+ *   t2 team_shutdown_request(analyst) — the inquiry wakes the analyst;
+ *   [park: the analyst's reject is durable (its tool result AND the result
+ *    frame spliced at the lead)];
+ *   t3 team_status (survival: status active + state rejected) + a WORKING
+ *    message to the analyst (the channel stays open after a refusal);
+ *   t4 batch: team_shutdown_request(analyst AGAIN — the resolved row never
+ *    blocks) + team_shutdown_request(builder);
+ *   [park: the analyst's SELF-approval is durable];
+ *   t5 team_approve_shutdown(builder) — the FOURTH PATH: the builder never
+ *    self-approves (its lane scripts NO approve), the lead approves inside
+ *    the reasonable window exactly as the upstream addendum routes it;
+ *   t6 team_status (both shutdown_approved);
+ *   t7 team_delete (non-force: every member is deletable);
+ *   t8 team_send_message — refused BY NAME (`team <id> is deleted`);
+ *   then the DRIVER itself (not the scripted lane): ONE native follow-up to
+ *   the interrupted analyst over Remote `subagents/prompt` — the tool layer
+ *   is bypassed on purpose; landing at the member's log is the anchor.
+ * Analyst lane: spawn reply → WAKE 1 reject(reason) + summary → WAKE 2
+ * approve + summary. Builder lane: spawn reply → WAKE text only — it NEVER
+ * calls team_approve_shutdown, which is what makes t5 an honest delegation.
+ */
+function teamShutdownHandshakeScript() {
+  return {
+    sisyphus: [
+      { type: 'tool_call', name: 'team_create', arguments: { inline_spec: teamInlineSpec() } },
+      { type: 'text', text: TEAM_LEAD_CREATED_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_shutdown_request',
+        arguments: { teamRunId: '{{teamRunId}}', targetMemberName: TEAM_MEMBER_ANALYST },
+      },
+      { type: 'text', text: TEAM_LEAD_REQUESTED_SUMMARY },
+      {
+        type: 'tool_calls',
+        calls: [
+          { name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+          {
+            name: 'team_send_message',
+            arguments: {
+              teamRunId: '{{teamRunId}}',
+              to: TEAM_MEMBER_BUILDER,
+              body: TEAM_MSG_SURVIVE_BODY,
+              correlationId: TEAM_CORRID_SURVIVE,
+            },
+          },
+        ],
+      },
+      { type: 'text', text: TEAM_LEAD_SURVIVAL_SUMMARY },
+      {
+        type: 'tool_calls',
+        calls: [
+          {
+            name: 'team_shutdown_request',
+            arguments: { teamRunId: '{{teamRunId}}', targetMemberName: TEAM_MEMBER_ANALYST },
+          },
+          {
+            name: 'team_shutdown_request',
+            arguments: { teamRunId: '{{teamRunId}}', targetMemberName: TEAM_MEMBER_BUILDER },
+          },
+        ],
+      },
+      { type: 'text', text: TEAM_LEAD_REREQUEST_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_approve_shutdown',
+        arguments: { teamRunId: '{{teamRunId}}', memberName: TEAM_MEMBER_BUILDER },
+      },
+      { type: 'text', text: TEAM_LEAD_DELEGATE_SUMMARY },
+      { type: 'tool_call', name: 'team_status', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_LEAD_APPROVED_STATUS_SUMMARY },
+      { type: 'tool_call', name: 'team_delete', arguments: { teamRunId: '{{teamRunId}}' } },
+      { type: 'text', text: TEAM_LEAD_DELETED_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_send_message',
+        arguments: {
+          teamRunId: '{{teamRunId}}',
+          to: TEAM_MEMBER_ANALYST,
+          body: 'MOCK-T7-POST-DELETE-0a1b: are you still reachable?',
+        },
+      },
+      { type: 'text', text: TEAM_LEAD_REFUSED_SUMMARY },
+    ],
+    // The cursor is TURN-BLIND and the omo-hard-blocks inbox frame re-opens a
+    // request INSIDE every turn that answers with text (measured at T7: the
+    // spawn turn consumed text→tool→text). Each turn therefore consumes its
+    // steps as [answer, hard-block-answer] pairs, and the handshake tool_calls
+    // must sit exactly where a WAKE turn begins consuming: reject on wake 1
+    // (inquiry 1), approve on wake 2 (inquiry 2). The text-guard step below
+    // is what keeps the reject out of the SPAWN turn — without it the spawn
+    // turn ate text→reject→text and the reject answered an inquiry that had
+    // not been requested yet (`shutdown request missing`, the honest refusal
+    // that turned this scenario red on its first run).
+    [TEAM_SEAT_ANALYST]: [
+      { type: 'text', text: TEAM_MEMBER_ANALYST_REPLY },
+      { type: 'text', text: TEAM_ANALYST_SPAWN_GUARD },
+      {
+        type: 'tool_call',
+        name: 'team_reject_shutdown',
+        arguments: { teamRunId: '{{teamRunId}}', memberName: TEAM_MEMBER_ANALYST, reason: TEAM_SHUTDOWN_REASON },
+      },
+      { type: 'text', text: TEAM_ANALYST_REJECT_SUMMARY },
+      {
+        type: 'tool_call',
+        name: 'team_approve_shutdown',
+        arguments: { teamRunId: '{{teamRunId}}', memberName: TEAM_MEMBER_ANALYST },
+      },
+      { type: 'text', text: TEAM_ANALYST_APPROVE_SUMMARY },
+    ],
+    // The builder's lane is TEXT-ONLY by design: every wake (inquiry, the
+    // survival message routed here precisely BECAUSE its lane is inert) can
+    // only replay text — the fourth-path delegation stays honest.
+    [TEAM_SEAT_BUILDER]: [
+      { type: 'text', text: TEAM_MEMBER_BUILDER_REPLY },
+      { type: 'text', text: TEAM_BUILDER_INQUIRY_SUMMARY },
+    ],
+  }
+}
+
+/**
+ * Settle hook: wait until BOTH team-member children (subagent sessions under the
+ * lead) have completed a turn AND the lead's own session log carries the
+ * team_create tool/result. The observation is the same durable JSONL the analysis
+ * reads (P3-T13 discipline) — never a name guess: children are matched by
+ * parentSession === lead, exactly as awaitUlwExecuteChildren does.
+ */
+async function awaitTeamMembersSettled(boot, sandbox, sessionId, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const children = logs.filter(
+      (candidate) =>
+        candidate.header.origin === 'subagent'
+        && String(candidate.header.parentSession) === String(sessionId),
+    )
+    const completed = children.filter((child) =>
+      (child.events ?? []).some(
+        (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+      ),
+    )
+    const leadCreated = logs
+      .find((candidate) => String(candidate.header?.id) === String(sessionId))
+      ?.events?.some(
+        (event) => event.type === 'tool/result' && eventText(event).includes('teamRunId'),
+      )
+    if (completed.length >= 2 && leadCreated === true) return true
+    await sleep(250)
+  }
+  return false
+}
+
+/**
+ * P5-T6 `await` action — the cold-wake PRECONDITION: both member sessions have
+ * completed their spawn turn AND their durable logs have been QUIESCENT for
+ * `offlineQuiescenceMs` (no new events across the window). Turn completion is
+ * the settlement signal; the quiescence window covers the residency eviction
+ * that follows it (q5b measured ~4s between turn/end and Activation eviction —
+ * the window is deliberately past that), so the send in lead turn 2 is
+ * provably addressed to an OFFLINE member: a delivery that still starts a
+ * turn there is a WAKE, not a steer. The verdict is recorded (`reached`), a
+ * window that expires reports itself honestly.
+ */
+async function awaitTeamMembersIdle(
+  _boot, sandbox, sessionId, { timeoutMs = 60_000, offlineQuiescenceMs = 6_000 } = {},
+) {
+  const deadline = Date.now() + timeoutMs
+  let settledAt = 0
+  let snapshot = ''
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const children = logs.filter(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId),
+    )
+    const allSettled = children.length >= 2 && children.every((child) =>
+      (child.events ?? []).some(
+        (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+      ),
+    )
+    const nowSnapshot = children.map((child) => `${child.header.id}:${(child.events ?? []).length}`).sort().join('|')
+    if (!allSettled) {
+      settledAt = 0
+      snapshot = ''
+    } else if (settledAt === 0 || nowSnapshot !== snapshot) {
+      // settled now (or the logs moved again since the last look): the
+      // quiescence window RESTARTS on every movement — only silence counts.
+      settledAt = Date.now()
+      snapshot = nowSnapshot
+    } else if (Date.now() - settledAt >= offlineQuiescenceMs) {
+      return true
+    }
+    await sleep(500)
+  }
+  return false
+}
+
+/**
+ * P5-T6 settle hook for the messaging full segment. Waits (before stopDsh
+ * freezes the logs) until the whole round-trip is durable:
+ *   * the lead's log carries the dedup tool/result ('duplicate message id' —
+ *     the resend turn really ran and really deduplicated);
+ *   * BOTH members' acks spliced into the LEAD's log as native 'agent-message'
+ *     frames naming each member's senderSessionId;
+ *   * BOTH members received the lead's frame as a native 'agent-message'
+ *     splice AFTER their completed turn (the wake) and completed a second turn.
+ * P5-T14 extends the durable set to the relay/broadcast edges:
+ *   * the analyst's relay tool/result is durable (TEAM_CORRID_RELAY with
+ *     `"relayed":true`) AND the relayed frame landed at the BUILDER exactly
+ *     once (source = the lead's 'agent-message' — the Q-8 carrier);
+ *   * the lead's broadcast tool/result is durable AND the broadcast frame
+ *     landed at BOTH members exactly once;
+ *   * the analyst's member-side broadcast attempt is durable as an isError
+ *     result naming `broadcast requires lead role`.
+ * A false return means the observation window expired — reported, not hidden.
+ */
+async function awaitTeamMessagingSettled(_boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
+    const children = logs.filter(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId),
+    )
+    if (leadLog !== undefined && children.length >= 2) {
+      const leadEvents = leadLog.events ?? []
+      const dedupDurable = leadEvents.some(
+        (event) => event.type === 'tool/result' && eventText(event).includes('duplicate message id'),
+      )
+      const ackedBack = children.every((child) =>
+        leadEvents.some((event) => agentMessageSplice(event, String(child.header.id)) !== undefined),
+      )
+      const membersAwake = children.every((child) => {
+        const events = child.events ?? []
+        const firstEnd = events.findIndex(
+          (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+        )
+        const spliceIndex = events.findIndex((event) => agentMessageSplice(event, String(sessionId)) !== undefined)
+        if (firstEnd < 0 || spliceIndex < 0 || spliceIndex <= firstEnd) return false
+        const after = events.slice(spliceIndex + 1)
+        return after.some((event) => event.type === 'turn/start')
+          && after.some((event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed')
+      })
+      // P5-T14 durable edges. Child identification is by ROLE, not by session
+      // id: the analyst is the child whose log carries the relay result (only
+      // it scripts the relay), the builder the other member — reading the
+      // relay/broadcast facts off any-child existentials would let a
+      // mis-wired lane pass. The broadcast fan-out is the one fact asserted
+      // member-by-member.
+      // Extractor discipline (the trap the first T14 run stepped on, measured
+      // red on the real host while every fabricated leg stayed green): the
+      // await gate reads durable-JSON-IN-text needles, and eventText's
+      // JSON.stringify ESCAPES the inner quotes — `"relayed":true` can never
+      // match it. toolResultTextOf (drive's own RAW extractor, :6512) is the
+      // house rule for these needles; the fabricated channel cannot catch this
+      // class because fabricated logs feed `analyze`, never `await`.
+      const analyst = children.find((child) =>
+        (child.events ?? []).some(
+          (event) => event.type === 'tool/result' && toolResultTextOf(event).includes(TEAM_CORRID_RELAY),
+        ),
+      )
+      const relayResultDurable = analyst !== undefined
+        && (analyst.events ?? []).some(
+          (event) => event.type === 'tool/result'
+            && toolResultTextOf(event).includes(TEAM_CORRID_RELAY)
+            && toolResultTextOf(event).includes('"relayed":true'),
+        )
+      const relayFrameAtBuilder = children.filter((child) => child !== analyst).every((builder) =>
+        (builder.events ?? []).filter(
+          (event) => event.type === 'agent/inbox/spliced'
+            && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_RELAY} from analyst (relayed via lead):`),
+        ).length === 1,
+      )
+      const broadcastResultDurable = leadEvents.some(
+        (event) => event.type === 'tool/result'
+          && toolResultTextOf(event).includes(TEAM_CORRID_BROADCAST)
+          && toolResultTextOf(event).includes('"delivered":true'),
+      )
+      const broadcastAtBothMembers = children.every((child) =>
+        (child.events ?? []).filter(
+          (event) => event.type === 'agent/inbox/spliced'
+            && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_BROADCAST} from lead:`),
+        ).length === 1,
+      )
+      const denialDurable = analyst !== undefined
+        && (analyst.events ?? []).some(
+          (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('broadcast requires lead role'),
+        )
+      if (
+        dedupDurable && ackedBack && membersAwake
+        && relayResultDurable && relayFrameAtBuilder
+        && broadcastResultDurable && broadcastAtBothMembers && denialDurable
+      ) return true
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/**
+ * P5-T7 `await` action — the analyst's REFUSAL is durable: its own
+ * team_reject_shutdown tool/result (`"status":"shutdown_rejected"`) AND the
+ * result frame `Team shutdown rejected … from analyst:` spliced at the lead.
+ * Both surfaces must agree before the conductor's survival turn — the
+ * handshake's refuse half is a fact, not an assumption.
+ */
+async function awaitTeamAnalystRejected(_boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
+    const analyst = logs.find(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId)
+        && (candidate.events ?? []).some(
+          (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"shutdown_rejected"'),
+        ),
+    )
+    if (analyst !== undefined && leadLog !== undefined) {
+      const frameAtLead = (leadLog.events ?? []).some(
+        (event) =>
+          agentMessageSplice(event, String(analyst.header.id)) !== undefined
+          && splicedFrameText(event).includes('Team shutdown rejected'),
+      )
+      if (frameAtLead) return true
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/**
+ * P5-T7 `await` action — the analyst's SELF-approval is durable (tool/result
+ * `"status":"shutdown_approved"` + `Team shutdown approved … from analyst:`
+ * at the lead) before the lead's fourth-path turn — so the builder's
+ * delegated approval provably follows a window in which the analyst already
+ * answered and the builder stayed silent.
+ */
+async function awaitTeamAnalystApproved(_boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
+    const analyst = logs.find(
+      (candidate) =>
+        candidate.header?.origin === 'subagent'
+        && String(candidate.header?.parentSession) === String(sessionId)
+        && (candidate.events ?? []).some(
+          (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"shutdown_approved"'),
+        ),
+    )
+    if (analyst !== undefined && leadLog !== undefined) {
+      const frameAtLead = (leadLog.events ?? []).some(
+        (event) =>
+          agentMessageSplice(event, String(analyst.header.id)) !== undefined
+          && splicedFrameText(event).includes('Team shutdown approved'),
+      )
+      if (frameAtLead) return true
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/**
+ * P5-T7 settle: the teardown half is durable — the lead's team_delete result
+ * (`"status":"deleted"`) AND the post-delete team_send_message answered with
+ * the named tombstone refusal (`is deleted`). NOTE (review T7-MAJOR): the
+ * inbox-preservation claim is NOT settled here and NOT proven by the
+ * analyst's pre-delete frames surviving in the append-only log — the durable
+ * anchor is the `nativeFollowupAfterDelete` action below (a NEW native
+ * delivery landing AT the stopped member after the delete); the surviving
+ * pre-delete frames are auxiliary evidence only.
+ *
+ * P5-T15 评审 A MAJOR 修复轮 — 墓碑对 durable ≠ turn 闭合，钉红竞态与修法：
+ * 旧闸只等墓碑对，而场景声明的尾活（native post-delete follow-up 冷醒
+ * analyst → analyst 回执 splice 到 lead → lead 处理轮）在墓碑 durable 之后
+ * 仍合法开 turn；钩子一返回 driver 即 SIGTERM 冻结，尾 turn 在飞时冻结面
+ * 抓到 turn/start>turn/end，analyzer 的 ④ 三 lane 静默复钉间歇钉红真跑
+ * （opencode 实测 4 跑 1 红：lead turn 11 于 SIGTERM 前 76ms 开在飞）。
+ * 裁决给了两案——②截止界定见证 / ①冻结前有界静默轮询，实测择诚实者：本轮
+ * 插桩真跑（.omo/evidence/p5t15/race-probe-instrumented-run.log）抓到 lead
+ * 尾 turn 11 开于 ...092222、闭于 ...092418，而钩子返回在 ...092546——尾
+ * turn 开在钩子返回【之前】（park 400ms 轮询粒度 + 回执投递在 analyst
+ * turn/end 同刻），故 ② 的「钩子返回墙钟截止」把这条合法尾 turn 划进
+ * 截止前、冻结时未闭仍红——② 修不掉本竞态，且它把冻结面见证永久削窄。
+ * 取①：墓碑对 durable 之后，钩子继续等三 lane（lead + analyst + builder）
+ * 各自 turn/start 计数 == turn/end 计数且 ends≥1（与 analyzer 的
+ * laneQuiescent 同一把尺，live 窗与冻结面互为见证）且快照静默 2s（防
+ * 「帧已 splice 未醒轮」的亚轮间隙，awaitStopContinuationTeamQuiet /
+ * awaitTeamMembersIdle 的同款静默纪律）才返回 true——冻结落在静默点，④
+ * 保持满贯强度不打折。尾活 mock turn 会真闭合（mock server 尾步 clamp
+ * 重放 text → completed），窗有界；等不到静默 = 真孤儿在烧，false 如实
+ * 红。真跑实测 6 连 PASS（race-fix-handshake-6runs.log），同法审视
+ * stop-continuation-team 见其钩子注释（同款静默闸早已内建，审计过账）。
+ */
+async function awaitTeamShutdownSettled(_boot, sandbox, sessionId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  let settledAt = 0
+  let snapshot = ''
+  while (Date.now() <= deadline) {
+    const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+    const leadLog = logs.find((candidate) => String(candidate.header?.id) === String(sessionId))
+    if (leadLog !== undefined) {
+      const events = leadLog.events ?? []
+      const deleted = events.some(
+        (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'),
+      )
+      const refused = events.some(
+        (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('is deleted'),
+      )
+      if (deleted && refused) {
+        const lanes = [
+          leadLog,
+          ...logs.filter(
+            (candidate) =>
+              candidate.header?.origin === 'subagent'
+              && String(candidate.header?.parentSession) === String(sessionId),
+          ),
+        ]
+        // 同一把尺 laneQuiescent（turn/start==turn/end 且 ends≥1）三 lane 全闭。
+        const closed = lanes.length >= 3 && lanes.every((lane) => {
+          const starts = (lane.events ?? []).filter((event) => event.type === 'turn/start').length
+          const ends = (lane.events ?? []).filter((event) => event.type === 'turn/end').length
+          return starts === ends && ends >= 1
+        })
+        const nowSnapshot = lanes
+          .map((lane) => `${String(lane.header?.id ?? '?').slice(0, 8)}:${(lane.events ?? []).length}`)
+          .sort()
+          .join('|')
+        if (!closed) {
+          settledAt = 0
+          snapshot = ''
+        } else if (settledAt === 0 || nowSnapshot !== snapshot) {
+          settledAt = Date.now()
+          snapshot = nowSnapshot
+        } else if (Date.now() - settledAt >= 2_000) {
+          return true
+        }
+      }
+    }
+    await sleep(400)
+  }
+  return false
+}
+
+/**
+ * P5-T7 review-MAJOR — the NATIVE post-delete follow-up, the falsifiable
+ * anchor of the inbox-preservation claim. After team_delete has interrupted
+ * (keepInbox — host-pinned at dsh-subagent index.js:855) and drained the
+ * members, the driver addresses the analyst DIRECTLY over the host's native
+ * continuation channel — Remote `subagents/prompt` (the gateway door onto the
+ * SAME deliverToChild/coldResume pipeline team_send_message rides, stamped
+ * source kind 'user' by the host, never forged by omo). The tool layer is
+ * deliberately bypassed: team_send_message refuses the deleted teamRunId BY
+ * NAME (the tombstone refusal `deletedTeamRefusedByName` pins), so landing a
+ * frame here can only happen through the member's SURVIVING native inbox.
+ * If teardown had dismantled the member's channel (a dispose-instead-of-
+ * interrupt implementation, a keepInbox-clearing cancel that dropped the
+ * resumable session), this delivery could NOT land — the anchor turns red.
+ *
+ * The park is honest: the action RECORDS whether the landing became durable
+ * (canary frame in the analyst's log + turn activity after it, ordered after
+ * the lead's delete result by same-clock epoch ms) and never silently skips.
+ * Transport-adaptive like every other RPC here; rc6-flat has NO measured
+ * flat counterpart for the subagent continuation prompt — fail LOUD there.
+ */
+async function nativeFollowupAfterDelete(boot, sandbox, leadSessionId, timeoutMs = 60_000) {
+  const logs = () => findSessionLogs(join(sandbox.dshHome, 'sessions'))
+  const leadLog = logs().find((candidate) => String(candidate.header?.id) === String(leadSessionId))
+  if (leadLog === undefined) {
+    return { reached: false, childSessionId: undefined, detail: 'lead log missing before the follow-up' }
+  }
+  // Address the analyst BY NAME: the durable descriptor label is
+  // `team:<teamRunId>:analyst` (buildTeamMemberLabel, team-create.ts) — the
+  // same naming discipline every member frame carries, no positional guessing.
+  const teamRunId = /"teamRunId":"([^"]+)"/.exec(
+    toolResultParts(leadLog.events ?? []).find((part) => part.text.includes('teamRunId'))?.text ?? '',
+  )?.[1]
+  if (teamRunId === undefined) {
+    return { reached: false, childSessionId: undefined, detail: 'teamRunId not durable in the lead log yet' }
+  }
+  const analyst = logs().find(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadSessionId)
+      && (candidate.events ?? []).some(
+        (event) =>
+          event.type === 'subagent/descriptor'
+          && String(event.data?.label ?? '') === `team:${teamRunId}:${TEAM_MEMBER_ANALYST}`,
+      ),
+  )
+  if (analyst === undefined) {
+    return { reached: false, childSessionId: undefined, detail: 'analyst child session not found by descriptor label' }
+  }
+  const childSessionId = String(analyst.header?.id ?? '')
+  // The native delivery itself — the host stamps kind 'user' + the rpcId;
+  // omo never touches this carrier (Q-8 honesty: this is the host's own door).
+  let rpcDetail = 'accepted'
+  try {
+    if (boot.transport === 'rc6-flat') {
+      throw new Error('subagents/prompt: no measured rc6-flat endpoint for the subagent continuation prompt — this probe runs on the 0.2.x web-remote transport')
+    }
+    await rpc(boot, 'subagents/prompt', {
+      args: {
+        request: {
+          requestId: randomUUID(),
+          parentSessionId: String(leadSessionId),
+          childSessionId,
+          mode: 'continuable',
+          delivery: 'queue',
+          content: [{ type: 'text', text: TEAM_NATIVE_POST_DELETE_BODY }],
+        },
+      },
+    })
+  } catch (err) {
+    return { reached: false, childSessionId, detail: `native prompt refused: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  // The durable landing: the canary text appears in the analyst's log (the
+  // ONLY source of that string is this delivery) AND the cold-resumed member
+  // shows turn activity after it — spliced/accepted frame, turn/start, a
+  // completed turn/end. Cross-log same-clock ordering against the lead's
+  // delete result (the epoch-ms discipline of deliveryPairAt).
+  const deleteResult = (leadLog.events ?? []).find(
+    (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'),
+  )
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() <= deadline) {
+    const analystNow = logs().find((candidate) => String(candidate.header?.id) === childSessionId)
+    const analystEvents = analystNow?.events ?? []
+    const canaryEvent = analystEvents.find((event) => eventTextFlat(event).includes(TEAM_NATIVE_POST_DELETE_BODY))
+    if (canaryEvent !== undefined) {
+      const after = analystEvents.filter((event) => Number(event.seq ?? 0) > Number(canaryEvent.seq ?? 0))
+      const turnStarted = after.some((event) => event.type === 'turn/start')
+      const turnCompleted = after.some(
+        (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+      )
+      // Timing-gate hardening (review T7-NIT): same discipline as the delete
+      // side — NO `?? 0` fallback; a missing time coerces to NaN and isFinite
+      // fails the ordering gate RED, never `0 >= 0` GREEN.
+      const orderedAfterDelete = deleteResult !== undefined
+        && Number.isFinite(Number(canaryEvent.time))
+        && Number.isFinite(Number(deleteResult.time))
+        && Number(canaryEvent.time) >= Number(deleteResult.time)
+      if (turnStarted && turnCompleted && orderedAfterDelete) {
+        return {
+          reached: true,
+          childSessionId,
+          detail: `${rpcDetail}; canary seq=${canaryEvent.seq ?? '?'} after delete seq=${deleteResult.seq ?? '?'}`,
+        }
+      }
+    }
+    await sleep(400)
+  }
+  return { reached: false, childSessionId, detail: `${rpcDetail}; landing never became durable (canary/turn activity not both durable after the delete within the window)` }
+}
+
+/** The event is an `agent/inbox/spliced` whose inserted carrier is a native
+ *  'agent-message' frame from `senderSessionId` (Q-8: omo never rewrites the
+ *  kind — this exact shape is the proof). Returns the splice event or undefined. */
+function agentMessageSplice(event, senderSessionId) {
+  if (event?.type !== 'agent/inbox/spliced') return undefined
+  const hit = (event.data?.inserted ?? []).find((inserted) => {
+    const source = inserted?.source ?? {}
+    return source.kind === 'agent-message' && String(source.senderSessionId ?? '') === String(senderSessionId)
+  })
+  return hit === undefined ? undefined : event
+}
+
+/** Concatenated text of every content block of every inserted carrier. */
+function splicedFrameText(event) {
+  return (event?.data?.inserted ?? [])
+    .map((inserted) => (inserted?.content ?? []).map((block) => (typeof block?.text === 'string' ? block.text : '')).join('\n'))
+    .join('\n')
+}
+
+/**
+ * P5-T10 — the chat lane's CLAIM surface, not its visible surface. The
+ * delivered carrier becomes a durable `user/message` event when the receiving
+ * turn CLAIMS it (dsh-agent-loop appends every decision message on the first
+ * attempt, lib/index.js:1061), and the chat messageDefinition CLAIMS
+ * `user/message` events whose source.kind is non-'user' — so a frame listed
+ * here is a frame the chat messageDefinition CLAIMS onto that lane (认领面);
+ * whether the client RENDERS it visible is the CLASSIFICATION half and归
+ * L2/T16, never this list (review MINOR: the old "exactly a frame the web
+ * chat renders" overclaimed across that line).
+ * HONEST ATTRIBUTION (review MINOR): Q-7 §2.4 quotes the messageDefinition
+ * split VERBATIM for source.kind 'team-message'; that the (B)-form
+ * 'agent-message' kind rides the SAME non-'user' discriminator is an
+ * INFERENCE from the same condition (the gate is on non-'user', not on a
+ * kind table — a sound inference, but still an inference, so the file says
+ * so). What is deliberately NOT asserted here is the client-side
+ * CLASSIFICATION: waking→turn-trigger card vs the hidden 'context' kind of a
+ * mid-run steer — the latter is the Q-7 REGISTERED blind spot
+ * (Q7-visualization.md §2.4/§6.2, runtime-open), so the pin face stays on
+ * the post-spawn-turn half (see firstCompletedTurnEndSeq / wakeRoundFrames
+ * below) and never reaches into the invisible half.
+ */
+function agentMessageSurfaceFrames(events, senderSessionId, framePrefix) {
+  return events.filter(
+    (event) =>
+      event.type === 'user/message'
+      && event.data?.source?.kind === 'agent-message'
+      && String(event.data?.source?.senderSessionId ?? '') === String(senderSessionId)
+      && messageContentText(event.data).includes(framePrefix),
+  )
+}
+
+/** The seq of a lane's FIRST completed turn/end — the POST-SPAWN-TURN
+ *  boundary (post-spawn-turn claim / 落在首个 completed turn 之后). A frame
+ *  claimed at a seq AFTER it was claimed after the spawn turn ended — the
+ *  seq anchor alone does NOT identify the claim round as a WAKE round; the
+ *  WAKE-round discrimination is carried by the SIBLING canaries
+ *  offlineWakeCanaryAnalyst / offlineWakeCanaryBuilder (splice after the
+ *  completed spawn turn + frozen window + turn/start + a second completed
+ *  turn — the turn-structure shape, see wakeCanaryAt's header). Returns
+ *  undefined when the lane has no completed turn at all (the check that
+ *  needs it then fails closed). */
+function firstCompletedTurnEndSeq(events) {
+  const hit = events.find(
+    (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+  )
+  return hit?.seq
+}
+
+/**
+ * P5-T10 — the lead's OWN catalog rows (dsh-subagent `establishCatalogChild`
+ * appends `subagent/catalog` to the PARENT session, catalog.d.ts:70-82 — the
+ * host's durable discovery fact per direct child, and the exact fold source of
+ * the `subagentCatalog` projection the subagentchat panel enumerates, Q-7 §3.2
+ * + the establishCatalogChild call site continuation.js:174). A member row here
+ * — childId + mode 'continuable' + label `team:<run>:<name>` verbatim — IS the
+ * machine evidence that the member is enumerable/openable from the lead's chat
+ * catalog WITHOUT any team-panel registration (the (B) form registers no panel;
+ * subagentchat is the native reachability face).
+ */
+function catalogRowsFor(events) {
+  return events.filter((event) => event.type === 'subagent/catalog')
+}
+
+/**
+ * `team-create-and-message` assertions — the P5-T6 FULL SEGMENT. Every fact is
+ * read back OUT of the durable logs and descriptors — the same surfaces the
+ * harness itself routes on — so "per-member routing + injected briefing +
+ * bidirectional messaging" cannot be a synthetic claim. The messaging half adds
+ * three families of proof:
+ *   1. DELIVERY: lead→member frames spliced at the members as native
+ *      'agent-message' carriers (target 'next-step', frame text verbatim
+ *      `Team message <id> from lead:`), member→lead acks spliced at the lead
+ *      naming each member's senderSessionId;
+ *   2. WAKE: each member's frame splices AFTER its completed turn and is
+ *      followed by turn/start + a second completed turn (Q-5b template), with
+ *      the REVERSE canary — the frozen window between turn/end and the splice
+ *      carries NO turn/step/assistant/user traffic;
+ *   3. DEDUP: the lead's resend (same correlation id) answers with the dedup
+ *      note and the analyst's log carries the frame EXACTLY once.
+ * P5-T10 extends the assertion face with the two VISIBILITY halves (Q-7 静态
+ * 链的机器可证半边, L2 肉眼归 T16)：成员入 lead 的 durable 目录行
+ * （subagent/catalog, continuable + 逐字 label = subagentchat 可达的 L1 证据）
+ * + 唤醒轮投递帧的 'agent-message' user/message 渲染面（成员侧 lead 帧、
+ * lead 侧成员 ack，逐字前缀 + 具名 sender + 恰一枚）。Q-7 已钉的中途 steer
+ * 'context' 隐藏不在本面断言——只钉唤醒轮可见性。
+ */
+export function analyzeTeamCreateAndMessage(
+  { log, allLogs, requests, providersJson, bootLog, settleReached, actionObservations },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadId),
+  )
+  const descriptorOf = (childLog) =>
+    (childLog?.events ?? []).find((event) => event.type === 'subagent/descriptor')?.data
+  const analystLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+  )
+  const builderLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_BUILDER]?.model,
+  )
+  const analystDescriptor = descriptorOf(analystLog)
+  const builderDescriptor = descriptorOf(builderLog)
+
+  // The lead really called team_create and the tool RESULT carries the state the
+  // machine derived (teamRunId + both members with their session ids).
+  const createCall = events.find(
+    (event) => event.type === 'tool/call' && event.data?.name === 'team_create',
+  )
+  const createResult = toolResultParts(events).find((part) => part.text.includes('teamRunId'))
+
+  // Q-8: the briefing rides ONLY the injected frame; the spawn prompt never carries it.
+  const briefingFrames = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        event.type === 'user/message'
+        && event.data?.source?.kind === 'omo-team-briefing'
+        && event.data?.source?.form === 'instructions',
+    )
+  const nativePromptFrames = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) => event.type === 'user/message' && event.data?.source?.kind === 'user',
+    )
+  const briefingCarriesCanary = (childLog) =>
+    briefingFrames(childLog).some((event) => messageContentText(event.data).includes(TEAM_BRIEFING_CANARY))
+  const nativePromptLeaksCanary = (childLog) =>
+    nativePromptFrames(childLog).some((event) => messageContentText(event.data).includes(TEAM_BRIEFING_CANARY))
+
+  // ── P5-T6 messaging extractions (durable-log facts only) ─────────────────────
+  // The teamRunId the lanes actually addressed: read off the lead's OWN
+  // team_create result (the same copy the mock captured from the request body),
+  // so the briefing check below names the live run, not an authoring constant.
+  const teamRunIdFromResult = /"teamRunId":"([^"]+)"/.exec(createResult?.text ?? '')?.[1]
+
+  // lead→member frames at a member: native 'agent-message' splices authored by
+  // the LEAD whose frame text names the correlation id.
+  const leadFramesAt = (childLog, correlationId) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        agentMessageSplice(event, leadId) !== undefined
+        && splicedFrameText(event).includes(`Team message ${correlationId} from lead:`),
+    )
+  // member→lead acks at the LEAD: native 'agent-message' splices authored by
+  // the member (senderSessionId), frame naming the member.
+  const memberAcksAtLead = (memberId, memberName, correlationId) =>
+    events.filter(
+      (event) =>
+        agentMessageSplice(event, memberId) !== undefined
+        && splicedFrameText(event).includes(`Team message ${correlationId} from ${memberName}:`),
+    )
+  // The member's own team_send_message tool/result JSON (its ack decision).
+  const memberSendResults = (childLog) =>
+    toolResultParts(childLog?.events ?? []).filter((part) => part.text.includes('"delivered"'))
+
+  // Q-5b wake canary at one member: frame splices AFTER the completed spawn
+  // turn, then turn/start, then a SECOND completed turn. Reverse canary: the
+  // frozen window (turn/end, splice) carries NO traffic at all — no turn/
+  // step/assistant/user/request event and, as of P5-T7, NO spliced frame of
+  // ANY kind. The one exception this window used to whitelist — the wake-time
+  // briefing re-injection (cold resume re-materialized the member, agent/created
+  // re-fired, the briefing arm injected again: the T6-observed frameCount:2) —
+  // is FIXED AWAY by the P5-T7 briefing ledger (claimBriefingInjection claims
+  // once per (teamRunId, member) and the re-materialization skips), exactly as
+  // review T6-4 predicted when it narrowed the kind whitelist and deferred the
+  // hard assertion to T7.
+  const wakeCanaryAt = (childLog, correlationId) => {
+    const childEvents = childLog?.events ?? []
+    const firstEnd = childEvents.findIndex(
+      (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+    )
+    if (firstEnd < 0) return false
+    const spliceIndex = childEvents.findIndex(
+      (event) => leadFramesAt(childLog, correlationId).includes(event),
+    )
+    if (spliceIndex < 0 || spliceIndex <= firstEnd) return false
+    const window = childEvents.slice(firstEnd + 1, spliceIndex)
+    const frozen = window.every((event) => {
+      if (event.type === 'turn/start' || event.type === 'turn/end') return false
+      if (event.type === 'user/message') return false
+      if (String(event.type).startsWith('step')) return false
+      if (String(event.type).startsWith('assistant')) return false
+      if (String(event.type).startsWith('request')) return false
+      if (event.type === 'agent/inbox/spliced') {
+        // P5-T7: NO splice is legal in the frozen window anymore — the
+        // briefing kind-whitelist that lived here was the T6 mark of the
+        // re-injection bug the briefing ledger dedup now fixes (see the
+        // wakeCanaryAt header comment). A splice here means traffic the
+        // scenario never sent: freeze broken, FAIL.
+        return false
+      }
+      return true
+    })
+    const after = childEvents.slice(spliceIndex + 1)
+    return frozen
+      && after.some((event) => event.type === 'turn/start')
+      && after.some((event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed')
+  }
+  // Delivery event PAIR across the process boundary (same-clock epoch ms):
+  // lead's send tool/call ≤ member's splice ≤ member's wake turn/start.
+  const sendCallTime = correlationId => {
+    const hit = events.find(
+      (event) => event.type === 'tool/call' && event.data?.name === 'team_send_message'
+        && eventText(event).includes(correlationId),
+    )
+    return hit?.time
+  }
+  const deliveryPairAt = (childLog, correlationId) => {
+    const callTime = sendCallTime(correlationId)
+    const splices = leadFramesAt(childLog, correlationId)
+    if (callTime === undefined || splices.length === 0) return false
+    const spliceTime = splices[0].time
+    const wakeStart = (childLog?.events ?? []).find(
+      (event) => event.type === 'turn/start' && event.time >= spliceTime,
+    )
+    return splices.length === 1 && spliceTime >= callTime && wakeStart !== undefined
+  }
+
+  const leadSendCalls = events.filter(
+    (event) => event.type === 'tool/call' && event.data?.name === 'team_send_message',
+  )
+  const leadSendResults = toolResultParts(events).filter((part) => part.text.includes('"delivered"'))
+  const dedupResult = toolResultParts(events).find(
+    (part) => part.text.includes('duplicate message id') && part.text.includes(TEAM_CORRID_A),
+  )
+
+  // ── P5-T14 relay/broadcast extractions (durable-log facts only) ─────────────
+  // The relay edge is located by its STATIC correlation id in the frame text,
+  // NOT by the sender in the splice source — the durable source of a relayed
+  // frame is the LEAD (Q-8: omo never rewrites the kind/sender), and the
+  // sender-side identity (`from analyst`) lives in the frame text. Splitting
+  // the two axes is what lets a forged sender-sessionId redden ONLY the
+  // durable-source check while the exactly-once count stays green.
+  const relayFramesAt = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        event.type === 'agent/inbox/spliced'
+        && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_RELAY}`),
+    )
+  // Every spliced frame anywhere in the scenario carrying `text` — the
+  // denial canary's search surface (a refused broadcast must produce ZERO of
+  // these; a lead self-broadcast frame at the lead would be one).
+  const splicesCarryingAnywhere = (text) =>
+    (allLogs ?? []).filter((candidate) =>
+      (candidate.events ?? []).some(
+        (event) => event.type === 'agent/inbox/spliced' && splicedFrameText(event).includes(text),
+      ),
+    )
+  const broadcastFramesAt = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        event.type === 'agent/inbox/spliced'
+        && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_BROADCAST} from lead:`),
+    )
+  // The analyst's own relay / denial tool decisions, read off its tool/result
+  // texts (the analyst lane is the only lane scripting either call).
+  const analystRelayResult = toolResultParts(analystLog?.events ?? []).find(
+    (part) => part.text.includes(TEAM_CORRID_RELAY),
+  )
+  const analystBroadcastDenial = toolResultParts(analystLog?.events ?? []).find(
+    (part) => part.text.includes('broadcast requires lead role'),
+  )
+
+  // P5-T10 extractions — catalog rows at the LEAD (see catalogRowsFor's
+  // header) and the wake-round frame helper (see firstCompletedTurnEndSeq).
+  const leadCatalogRows = catalogRowsFor(events)
+  const catalogRowFor = (childId, memberName) =>
+    leadCatalogRows.filter(
+      (event) =>
+        String(event.data?.childId ?? '') === String(childId ?? '')
+        && event.data?.mode === 'continuable'
+        && String(event.data?.label ?? '') === `team:${teamRunIdFromResult}:${memberName}`,
+    )
+  // EXACTLY ONE claimed frame from `senderSessionId` with the verbatim
+  // prefix, claimed at a seq STRICTLY after the lane's first completed
+  // turn/end — a POST-SPAWN-TURN claim (落在首个 completed turn 之后). The
+  // seq anchor says 'after the spawn turn ended', NOT 'claimed by a wake
+  // turn'; the wake-round discrimination is the sibling offlineWakeCanary
+  // checks' job (offlineWakeCanaryAnalyst / offlineWakeCanaryBuilder, see
+  // wakeCanaryAt's header). Both halves must hold; a frame claimed at or
+  // before the spawn turn's end fails this.
+  const wakeRoundFrames = (childLog, senderSessionId, framePrefix) => {
+    const childEvents = childLog?.events ?? []
+    const frames = agentMessageSurfaceFrames(childEvents, senderSessionId, framePrefix)
+    const wakeBoundary = firstCompletedTurnEndSeq(childEvents)
+    return {
+      exactlyOneAfterWakeBoundary:
+        frames.length === 1
+        && wakeBoundary !== undefined
+        && Number(frames[0]?.seq ?? Number.NaN) > Number(wakeBoundary),
+      frames,
+    }
+  }
+  const leadFirstSendSeq = leadSendCalls[0]?.seq // recorded for the bonus/audit trail
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    // The boot census is 22/24 as of P5-T15 (T7's seven rows + the task-board
+    // quartet create/list/update/get + the stop-continuation-team query surface
+    // flipped at T9 + the team-keyword slot and prompts-team pair at T12 + the
+    // two presence faces at T13 + the SIX vendor-team-core-* integrity gates
+    // flipped at T15; the registration loop prints one line per registered row).
+    // The T5/T6 pair stays pinned; the T7 rows are pinned in
+    // full by the `team-shutdown-handshake` scenario's bootSevenSurfaces.
+    teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
+    teamMessageSurfaceRegisteredAtBoot:
+      (bootLog ?? '').includes('[omo-team] team surface team_send_message registered'),
+    bootCensusTwentyTwoOfTwentyFour: (bootLog ?? '').includes('— 22/24 team surfaces registered'),
+    leadCalledTeamCreate: createCall !== undefined,
+    teamCreateResultCarriesTeamRunId: createResult !== undefined,
+    teamCreateResultNotAnError: createResult !== undefined && createResult.isError !== true,
+    // Two distinct member sessions really ran under the lead.
+    twoMemberSessionsRan:
+      analystLog !== undefined
+      && builderLog !== undefined
+      && String(analystLog.header.id) !== String(builderLog.header.id),
+    // THE routing invariant: each child's durable descriptor persists its seat trio
+    // verbatim — provider/model/persona/tool-filter come from the seat, not the spec.
+    analystRoutedToQuickSeat:
+      analystDescriptor?.agentProvider === routes[TEAM_SEAT_ANALYST]?.provider
+      && analystDescriptor?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+    builderRoutedToHephaestusSeat:
+      builderDescriptor?.agentProvider === routes[TEAM_SEAT_BUILDER]?.provider
+      && builderDescriptor?.agentModel === routes[TEAM_SEAT_BUILDER]?.model,
+    analystDescriptorCarriesSeatPersona:
+      typeof analystDescriptor?.persona === 'string'
+      && analystDescriptor.persona.includes('omo-sisyphus-junior'),
+    builderDescriptorCarriesSeatPersona:
+      typeof builderDescriptor?.persona === 'string'
+      && builderDescriptor.persona.includes('omo-hephaestus'),
+    // Exact-set equality on the persisted deny lists (both members pinned
+    // independently): sorted toEqual the ten delegation tools. The old
+    // length+containment shape is restated as the stricter literal it always
+    // meant to be — sorted full-list equality, so no duplicate/replacement
+    // pair at constant length can slip through a contains-shaped check.
+    analystDescriptorCarriesSeatToolFilter:
+      Array.isArray(analystDescriptor?.toolFilter?.deny)
+      && JSON.stringify([...analystDescriptor.toolFilter.deny].sort()) === JSON.stringify([...DELEGATION_TOOL_NAMES].sort()),
+    builderDescriptorCarriesSeatToolFilter:
+      Array.isArray(builderDescriptor?.toolFilter?.deny)
+      && JSON.stringify([...builderDescriptor.toolFilter.deny].sort()) === JSON.stringify([...DELEGATION_TOOL_NAMES].sort()),
+    membersRoutedOnDistinctSeats:
+      routes[TEAM_SEAT_ANALYST]?.model !== routes[TEAM_SEAT_BUILDER]?.model,
+    // Q-8: briefing injected as its OWN frame, never merged into the spawn prompt.
+    // P5-T7 dedup governance: EXACTLY once per member, not "at least once" —
+    // the briefing ledger (claimBriefingInjection) makes the T6-observed
+    // frameCount:2 structurally impossible; the count is the assertion now.
+    analystBriefingInjected: briefingFrames(analystLog).length === 1 && briefingCarriesCanary(analystLog),
+    builderBriefingInjected: briefingFrames(builderLog).length === 1 && briefingCarriesCanary(builderLog),
+    analystPromptFreeOfBriefing: nativePromptLeaksCanary(analystLog) === false,
+    builderPromptFreeOfBriefing: nativePromptLeaksCanary(builderLog) === false,
+    // Both members answered their lanes and ended their turns on their own terms.
+    bothMembersCompletedTurns:
+      (analystLog?.events ?? []).some((e) => e.type === 'turn/end' && e.data?.reason?.kind === 'completed')
+      && (builderLog?.events ?? []).some((e) => e.type === 'turn/end' && e.data?.reason?.kind === 'completed'),
+    // Reverse canary: team members spawn NO grandchildren (fork (B) no-child rule).
+    noGrandchildrenUnderMembers: (allLogs ?? []).every(
+      (candidate) =>
+        String(candidate.header?.parentSession) !== String(analystLog?.header?.id)
+        && String(candidate.header?.parentSession) !== String(builderLog?.header?.id),
+    ),
+    // T15（T14 遗留①）：弱形加固。旧形 `settleReached !== false` 恒过——
+    // `undefined`（settle 钩子被删/改名/从未触发）同样放行，`true` 也只是
+    // 复读钩子的布尔。现在两枚具名钉：① 严格相等——awaitTeamMessagingSettled
+    // 必须真的运行且返回 true，钩子消失即红；② durable settle 行从冻结后的
+    // final log 复读——每个成员会话都带 turn/end reason.kind='completed'
+    // 的 settle 行（settle 行真实存在于日志且语义明确；钩子窗的 live 判定与
+    // final log 的复钉互为见证）。唤醒轮的第二枚 completed turn 的证据由
+    // offlineWakeCanaryAnalyst/Builder 具名承载。不覆盖面：判定是二值的——
+    // 观察窗的时长/余量（第 1 秒到 vs 第 59 秒到）不进 verdict，这里钉不了。
+    settleReachedChildren:
+      settleReached === true
+      && memberLogs.length >= 2
+      && memberLogs.every((child) =>
+        (child.events ?? []).some(
+          (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+        ),
+      ),
+
+    // ── P5-T6 messaging full segment ────────────────────────────────────────────
+    // The park happened: both members were settled AND quiescent before the
+    // send turn (the `await` action's recorded verdict, not an assumption).
+    membersIdleBeforeMessaging: (actionObservations ?? []).some(
+      (row) => row.reached === true && String(row.note).includes('cold-wake precondition'),
+    ),
+    // The member face really carries the tool: the seat lanes called it and
+    // the advertised tool list of the member requests names it.
+    membersAdvertisedTeamSendMessage:
+      (advertisedToolNames(analystLog?.events ?? []) ?? []).includes('team_send_message')
+      && (advertisedToolNames(builderLog?.events ?? []) ?? []).includes('team_send_message'),
+    // The briefing coordinates carry the LIVE teamRunId (the same value the
+    // lead's team_create result derived) — the copy source for the member lanes.
+    briefingCarriesLiveTeamRunId:
+      teamRunIdFromResult !== undefined
+      && briefingFrames(analystLog).some(
+        (event) => messageContentText(event.data).includes(`"teamRunId":"${teamRunIdFromResult}"`),
+      ),
+    // lead turn 2 called team_send_message TWICE in one parallel batch,
+    // turn 3 once more (the resend), and — since P5-T14 — turn 4 once more
+    // (the wildcard broadcast): FOUR calls total, all four results durable,
+    // none an error (the denial runs on the ANALYST's lane, never the lead's).
+    leadCalledTeamSendMessageFourTimes: leadSendCalls.length === 4,
+    leadSendResultsAllDeliveredOrDedup:
+      leadSendResults.length === 4 && leadSendResults.every((part) => part.isError !== true),
+    // DELIVERY at the members: native 'agent-message' splices, target
+    // 'next-step', frame text verbatim — analyst got A once, builder got B once.
+    analystReceivedLeadFrame:
+      leadFramesAt(analystLog, TEAM_CORRID_A).length === 1
+      && leadFramesAt(analystLog, TEAM_CORRID_A)[0].data?.target === 'next-step',
+    builderReceivedLeadFrame:
+      leadFramesAt(builderLog, TEAM_CORRID_B).length === 1
+      && leadFramesAt(builderLog, TEAM_CORRID_B)[0].data?.target === 'next-step',
+    // The body rode inside the frame (not just the id in the prefix).
+    analystFrameCarriesBody: splicedFrameText(leadFramesAt(analystLog, TEAM_CORRID_A)[0]).includes(TEAM_MSG_TO_ANALYST_BODY),
+    builderFrameCarriesBody: splicedFrameText(leadFramesAt(builderLog, TEAM_CORRID_B)[0]).includes(TEAM_MSG_TO_BUILDER_BODY),
+    // member→lead acks spliced at the LEAD, native kind, senderSessionId named.
+    analystAckReachedLead: memberAcksAtLead(analystLog?.header?.id, TEAM_MEMBER_ANALYST, TEAM_CORRID_ACK_A).length >= 1,
+    builderAckReachedLead: memberAcksAtLead(builderLog?.header?.id, TEAM_MEMBER_BUILDER, TEAM_CORRID_ACK_B).length >= 1,
+    // The acks were the MEMBERS' own tool decisions (delivered:true, not relayed).
+    analystAckDeliveredDirect: memberSendResults(analystLog).some((part) => part.text.includes('"delivered":true')),
+    builderAckDeliveredDirect: memberSendResults(builderLog).some((part) => part.text.includes('"delivered":true')),
+    // WAKE canary (Q-5b template) at BOTH members: frame AFTER the completed
+    // spawn turn, frozen window between, turn/start then a second completed turn.
+    offlineWakeCanaryAnalyst: wakeCanaryAt(analystLog, TEAM_CORRID_A),
+    offlineWakeCanaryBuilder: wakeCanaryAt(builderLog, TEAM_CORRID_B),
+    // Delivery event pair across the process boundary (same-clock epoch ms).
+    deliveryEventPairAnalyst: deliveryPairAt(analystLog, TEAM_CORRID_A),
+    deliveryEventPairBuilder: deliveryPairAt(builderLog, TEAM_CORRID_B),
+    // DEDUP: the same-id resend answered with the named dedup note, and the
+    // analyst's log carries the A-frame EXACTLY once (no second delivery).
+    sameIdResendDeduplicated: dedupResult !== undefined,
+    analystFrameDeliveredExactlyOnce: leadFramesAt(analystLog, TEAM_CORRID_A).length === 1,
+
+    // ── P5-T14 relay + broadcast edges（仲裁补强：e2e 面，非单测复读）──────────
+    // RELAY（成员→成员经活体 lead）：analyst 的 own tool/result 说
+    // relayed:true；帧落 builder 恰一枚；帧注逐字 `(relayed via lead)`；
+    // durable source 仍是 lead 的 'agent-message'（Q-8 kind 不被改写——
+    // senderSessionId = lead，origin 身份在帧文本 `from analyst`，两轴分离
+    // 钉死）；lead 自己的日志里没有这枚帧（投递面只朝收件人）。
+    analystRelayDeliveredTrue:
+      analystRelayResult !== undefined
+      && analystRelayResult.text.includes('"relayed":true')
+      && analystRelayResult.text.includes('"delivered":true'),
+    relayFrameAtBuilderExactlyOnce: relayFramesAt(builderLog).length === 1,
+    relayFrameCarriesRelayAnnotation: relayFramesAt(builderLog).every(
+      (event) => splicedFrameText(event).includes('(relayed via lead)'),
+    ),
+    relayFrameCarriesBody: relayFramesAt(builderLog).every(
+      (event) => splicedFrameText(event).includes(TEAM_MSG_RELAY_BODY),
+    ),
+    relayFrameDurableSourceLead: relayFramesAt(builderLog).every(
+      (event) => agentMessageSplice(event, leadId) !== undefined,
+    ),
+    relayFrameNotSplicedAtLead: relayFramesAt(log).length === 0,
+    // BROADCAST（lead `to:'*'`）：两成员各恰一枚 lead 署名帧；lead 不收自己
+    // 的广播（self-delivery 非边）；直投帧无中转注。
+    broadcastDeliveredAtBothMembersExactlyOnce:
+      broadcastFramesAt(analystLog).length === 1
+      && broadcastFramesAt(builderLog).length === 1,
+    broadcastFramesDirectNotRelayed:
+      broadcastFramesAt(analystLog).every((event) => !splicedFrameText(event).includes('(relayed via'))
+      && broadcastFramesAt(builderLog).every((event) => !splicedFrameText(event).includes('(relayed via')),
+    broadcastNotSplicedAtLeadSelf: splicesCarryingAnywhere(`Team message ${TEAM_CORRID_BROADCAST} from lead:`).every(
+      (candidate) => String(candidate.header?.id) !== String(leadId),
+    ),
+    // 成员广播拒止：isError + 具名 `broadcast requires lead role`（上游
+    // send.ts:19 逐字），且拒发生在 id 分配之前——拒文 canary id 在全量日志
+    // 的任何 spliced 帧里零命中（拒而不落的反金丝雀）。
+    analystBroadcastDeniedByName:
+      analystBroadcastDenial !== undefined && analystBroadcastDenial.isError === true,
+    memberBroadcastDenialLandedNoFrames: splicesCarryingAnywhere(TEAM_CORRID_MEMBER_BC).length === 0,
+
+    // ── P5-T10 可视化 L1 断言 · 目录可达半 + 认领帧半 ──────────────────────
+    // Q-7 静态链的机器可证半边（Q7-visualization.md §2.4/§3）：成员经
+    // startContinuable→establishCatalogChild 落 lead 的 durable 目录行
+    // （subagentchat 面板的数据源，无面板注册——(B) 形态）；投递帧被认领后
+    // 成为目标会话的 'agent-message' user/message 事件（chat messageDefinition
+    // 的**认领面**——是否渲染可见是分类半，归 L2/T16。诚实归因：Q-7 §2.4
+    // 逐字钉的是 'team-message' 走该分流；'agent-message' 被同一非-'user'
+    // 判别式认领是**推断**，见 agentMessageSurfaceFrames 头注）。渲染分类
+    // 本身（turn-trigger vs 中途 steer 的 'context' 隐藏）是 Q-7 已登记盲区
+    // ——本面不越界断言不可见面，只钉投递帧的 post-spawn-turn claim（seq
+    // 严格落在首个 completed turn/end 之后；seq 锚不判别轮型，唤醒轮判别由
+    // 姊妹金丝雀 offlineWakeCanaryAnalyst/Builder 承载）。
+    // 成员入目录：childId 对上成员、mode 逐字 'continuable'、label 逐字
+    // `team:<teamRunId>:<name>`（恰一枚，leader 目录里不多不少就这两行）。
+    analystInLeadCatalogAsContinuable: catalogRowFor(
+      analystLog?.header?.id,
+      TEAM_MEMBER_ANALYST,
+    ).length === 1,
+    builderInLeadCatalogAsContinuable: catalogRowFor(
+      builderLog?.header?.id,
+      TEAM_MEMBER_BUILDER,
+    ).length === 1,
+    leadCatalogCarriesExactlyTheTwoMembers:
+      leadCatalogRows.length === 2
+      && leadCatalogRows.every((event) =>
+        String(event.data?.childId ?? '') === String(analystLog?.header?.id)
+        || String(event.data?.childId ?? '') === String(builderLog?.header?.id),
+      ),
+    // T5 三件套的 mode 半（复核衔接）：descriptor 事件冻结 'continuable'，
+    // 与 agentProvider/agentModel/persona/toolFilter 同一条 durable 事件。
+    analystDescriptorModeContinuable: analystDescriptor?.mode === 'continuable',
+    builderDescriptorModeContinuable: builderDescriptor?.mode === 'continuable',
+    // lead→member 投递帧落成员会话的认领面：恰一枚（dedup 在认领面的第二
+    // 半钉死）、逐字前缀 `Team message <id> from lead:`、seq 在成员首个
+    // completed turn/end 之后（post-spawn-turn claim；轮型不据此判别——唤醒
+    // 轮认领由 offlineWakeCanaryAnalyst/Builder 的 turn 结构形钉）。
+    analystWakeFrameOnChatSurface: wakeRoundFrames(
+      analystLog, leadId, `Team message ${TEAM_CORRID_A} from lead:`,
+    ).exactlyOneAfterWakeBoundary,
+    builderWakeFrameOnChatSurface: wakeRoundFrames(
+      builderLog, leadId, `Team message ${TEAM_CORRID_B} from lead:`,
+    ).exactlyOneAfterWakeBoundary,
+    // member→lead ack 落 lead 会话的认领面（认领≠渲染保证，分类归 L2/T16）：
+    // 恰一枚、逐字前缀携成员名、seq 在 team_create tool/call 之后——成员在
+    // spawn 轮就 ack（MEASURED
+    // 形态：analyst ack 帧 claim 于 lead 的 seq 30，lead 自己的首枚
+    // team_send_message 在 seq 33——ack 先于 lead 的发送轮，成员 lane 的
+    // ack 不排队等唤醒），所以「ack 晚于 send」不是本场景的事实，序锚
+    // 只能是成员的存在前提 team_create。claim 落在 lead 轮内还是轮边属
+    // 渲染分类（Q-7 已钉盲区），不越界。
+    analystAckOnLeadChatSurface:
+      agentMessageSurfaceFrames(events, analystLog?.header?.id, `Team message ${TEAM_CORRID_ACK_A} from analyst:`).length === 1
+      && createCall?.seq !== undefined
+      && Number(agentMessageSurfaceFrames(events, analystLog?.header?.id, `Team message ${TEAM_CORRID_ACK_A} from analyst:`)[0]?.seq ?? Number.NaN) > Number(createCall?.seq),
+    builderAckOnLeadChatSurface:
+      agentMessageSurfaceFrames(events, builderLog?.header?.id, `Team message ${TEAM_CORRID_ACK_B} from builder:`).length === 1
+      && createCall?.seq !== undefined
+      && Number(agentMessageSurfaceFrames(events, builderLog?.header?.id, `Team message ${TEAM_CORRID_ACK_B} from builder:`)[0]?.seq ?? Number.NaN) > Number(createCall?.seq),
+    // Q-8: nobody forged a native-kind frame — no splice anywhere carries a
+    // self-invented 'team-message' kind (omo's own frames are omo-team-*).
+    noForgedNativeMessageKind: (allLogs ?? []).every(
+      (candidate) => (candidate.events ?? []).every(
+        (event) => event.type !== 'agent/inbox/spliced'
+          || !(event.data?.inserted ?? []).some((inserted) => (inserted?.source ?? {}).kind === 'team-message'),
+      ),
+    ),
+    // The lanes really ran the messaging turns (lead 6+ requests across three
+    // turns, each member 3+ across spawn + wake). THE ONLY definition of this
+    // check: the T5 spawn-only gate (lead 2+, each member 1+) was a duplicate
+    // object key silently overridden by this stricter one — removed per review
+    // T6-5, its intent subsumed here (6+ ⊇ 2+, 3+ ⊇ 1+).
+    mockSawAllThreeLanes:
+      requests.filter((r) => r.role === 'sisyphus').length >= 6
+      && requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 3
+      && requests.filter((r) => r.role === TEAM_SEAT_BUILDER).length >= 3,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      analystDescriptor: analystDescriptor ?? null,
+      builderDescriptor: builderDescriptor ?? null,
+      analystBriefingFrameCount: briefingFrames(analystLog).length,
+      builderBriefingFrameCount: briefingFrames(builderLog).length,
+      nativePromptFrameCount: nativePromptFrames(analystLog).length + nativePromptFrames(builderLog).length,
+      mockRequestRoles: requests.map((request) => request.role),
+      // P5-T6: the frame texts and the lead's three send results, verbatim,
+      // so a reviewer can read the exact wire the tool produced.
+      teamRunId: teamRunIdFromResult ?? null,
+      analystLeadFrame: splicedFrameText(leadFramesAt(analystLog, TEAM_CORRID_A)[0]) ?? null,
+      builderLeadFrame: splicedFrameText(leadFramesAt(builderLog, TEAM_CORRID_B)[0]) ?? null,
+      analystAckFrame: splicedFrameText(memberAcksAtLead(analystLog?.header?.id, TEAM_MEMBER_ANALYST, TEAM_CORRID_ACK_A)[0]) ?? null,
+      // P5-T14: the two new edges verbatim — the relayed frame the builder
+      // received and the denial text the analyst got back.
+      builderRelayFrame: splicedFrameText(relayFramesAt(builderLog)[0]) ?? null,
+      analystBroadcastFrame: splicedFrameText(broadcastFramesAt(analystLog)[0]) ?? null,
+      analystBroadcastDenialText: analystBroadcastDenial?.text ?? null,
+      leadSendResultTexts: leadSendResults.map((part) => part.text),
+      actionObservations: actionObservations ?? null,
+      // P5-T10: the durable catalog rows (verbatim childId/mode/label) and the
+      // verbatim renderable-frame texts, so the T11 reviewer reads the exact
+      // bytes the subagentchat / chat surfaces would fold.
+      leadCatalogRows: leadCatalogRows.map((event) => ({
+        seq: event.seq ?? null,
+        childId: event.data?.childId ?? null,
+        mode: event.data?.mode ?? null,
+        label: event.data?.label ?? null,
+      })),
+      analystWakeSurfaceFrame: messageContentText(wakeRoundFrames(analystLog, leadId, `Team message ${TEAM_CORRID_A} from lead:`).frames[0]?.data) || null,
+      builderWakeSurfaceFrame: messageContentText(wakeRoundFrames(builderLog, leadId, `Team message ${TEAM_CORRID_B} from lead:`).frames[0]?.data) || null,
+      analystAckSurfaceFrameAtLead: messageContentText(agentMessageSurfaceFrames(events, analystLog?.header?.id, `Team message ${TEAM_CORRID_ACK_A} from analyst:`)[0]?.data) || null,
+      builderAckSurfaceFrameAtLead: messageContentText(agentMessageSurfaceFrames(events, builderLog?.header?.id, `Team message ${TEAM_CORRID_ACK_B} from builder:`)[0]?.data) || null,
+      leadFirstSendSeq: leadFirstSendSeq ?? null, // the MEASURED shape has acks BEFORE this seq — see the ack checks' comment
+    },
+  }
+}
+
+/**
+ * `team-shutdown-handshake` assertions — the P5-T7 FULL HANDSHAKE. Every
+ * fact is read OUT of the durable logs; the four handshake paths and the
+ * teardown each get their own named proof:
+ *   1. REQUEST: `Team shutdown request …` inquiry splices at the members
+ *      (analyst EXACTLY twice — refuse then re-request; builder EXACTLY
+ *      once), each carrying the reply guidance (approve/reject tool names)
+ *      and the LIVE teamRunId;
+ *   2. REJECT + SURVIVAL: the analyst's own reject result, the rejected
+ *      frame at the lead, team_status confirming `active` + `state":"rejected"`,
+ *      AND a working message still delivered after the refusal;
+ *   3. APPROVE (self): the analyst's own approve result flips it, the
+ *      approved frame rides back to the lead;
+ *   4. APPROVE (lead delegate): the builder's lane NEVER calls
+ *      team_approve_shutdown; the lead's delegate result names
+ *      approverName lead + self-addressed (no lead→lead splice exists and
+ *      none was forged — the reverse canary pins zero approved-from-lead
+ *      splices at the lead);
+ *   5. DELETE + TOMBSTONE: team_delete non-force lands `deleted`; messaging
+ *      the deleted teamRunId is refused BY NAME (bound to the post-delete
+ *      team_send_message by seq order); and the inbox-preservation ANCHOR —
+ *      after the delete, the DRIVER delivers ONE new message to the stopped
+ *      analyst over the host's native channel (Remote `subagents/prompt`,
+ *      tool layer bypassed) and it LANDS at the analyst (canary frame +
+ *      turn activity, ordered after the delete). The analyst's inquiry
+ *      frames surviving in the append-only log are auxiliary evidence only
+ *      — pre-delete bytes cannot prove keepInbox (review T7-MAJOR);
+ *   6. BRIEFING DEDUP (the T7 governance this scenario hard-pins): each
+ *      member's log carries the briefing EXACTLY ONCE across all wakes.
+ * The reverse canaries: no forged native kind, no grandchildren, no
+ * self-addressed result splices at the lead.
+ * P5-T10 adds the CLAIM half of the handshake (same host mechanism as
+ * team-create-and-message's T10 block — claim lands `user/message`, chat
+ * messageDefinition CLAIMS non-'user' source.kind: 'team-message' verbatim
+ * per Q-7 §2.4, 'agent-message' by the same-discriminator INFERENCE):拒绝/
+ * 批准结果帧在 lead 会话、询问帧在成员会话的 'agent-message' user/message
+ * 事件（认领面，非渲染保证），逐字前缀 + 具名 sender + 恰当枚数 +
+ * post-spawn-turn claim（seq 在首个 completed turn/end 之后；seq 锚不判别
+ * 轮型）。渲染分类归 L2/T16，分类盲区不越界（同上）。
+ */
+export function analyzeTeamShutdownHandshake(
+  { log, allLogs, requests, bootLog, settleReached, actionObservations },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadId),
+  )
+  const descriptorOf = (childLog) =>
+    (childLog?.events ?? []).find((event) => event.type === 'subagent/descriptor')?.data
+  const analystLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+  )
+  const builderLog = memberLogs.find(
+    (candidate) => descriptorOf(candidate)?.agentModel === routes[TEAM_SEAT_BUILDER]?.model,
+  )
+  const analystId = String(analystLog?.header?.id ?? '')
+  const teamRunId = /"teamRunId":"([^"]+)"/.exec(
+    toolResultParts(events).find((part) => part.text.includes('teamRunId'))?.text ?? '',
+  )?.[1]
+
+  const briefingFrames = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        event.type === 'user/message'
+        && event.data?.source?.kind === 'omo-team-briefing'
+        && event.data?.source?.form === 'instructions',
+    )
+  const inquiryFramesAt = (childLog) =>
+    (childLog?.events ?? []).filter(
+      (event) =>
+        agentMessageSplice(event, String(leadId)) !== undefined
+        && splicedFrameText(event).includes('Team shutdown request'),
+    )
+  const framesAtLeadFrom = (senderSessionId, prefix) =>
+    events.filter(
+      (event) =>
+        agentMessageSplice(event, senderSessionId) !== undefined
+        && splicedFrameText(event).includes(prefix),
+    )
+  const leadResults = toolResultParts(events)
+  const analystEvents = analystLog?.events ?? []
+  const builderEvents = builderLog?.events ?? []
+  const resultAt = (childLog, needle) =>
+    (childLog?.events ?? []).some((event) => event.type === 'tool/result' && toolResultTextOf(event).includes(needle))
+  const callAt = (childLog, name) =>
+    (childLog?.events ?? []).filter((event) => event.type === 'tool/call' && event.data?.name === name)
+  const leadCalls = (name) => events.filter((event) => event.type === 'tool/call' && event.data?.name === name)
+  const resultWith = (needle) => leadResults.filter((part) => part.text.includes(needle))
+  // 静默的 durable 形状（与 stop-continuation 场景的 laneQuiescent 同名同尺）：
+  // 一条 lane 上 turn/start 计数 == turn/end 计数且 ends≥1。本场景 settle 的
+  // 冻结面复钉用这把尺——握手闭合的 durable 含义就是没有 turn 悬着（真跑
+  // 实测 lead 11/11、analyst 4/4、builder 3/3；T15 评审 A MINOR 修复轮把它
+  // 从 SIGTERM 冻结后的 final log 复钉，live 窗与冻结面互为见证；T15 评审 A
+  // MAJOR 修复轮起这把尺同时是 awaitTeamShutdownSettled 的 live 闸——尾活
+  // （native follow-up 冷醒 analyst → 回执唤醒 lead 处理轮）真闭合且快照静默
+  // 2s 才冻结，冻结面静默由 live 窗背书，竞态自此消除而非豁免）。
+  const laneQuiescent = (lane) => {
+    const evs = lane?.events ?? []
+    const starts = evs.filter((event) => event.type === 'turn/start').length
+    const ends = evs.filter((event) => event.type === 'turn/end').length
+    return starts === ends && ends >= 1
+  }
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    // The boot census P5-T7 flipped to 7/24, P5-T8b grew it to 11/24,
+    // P5-T12 grew it to 14/24, P5-T13 grew it to 16/24 and P5-T15 grew it to
+    // 22/24 — the T9 twelve plus the team-keyword slot, the prompts-team vendor
+    // pair, the two presence faces (hyperplan-upgrade +
+    // remove-ai-slops-team-addendum) and the six `vendor-team-core-*` gates
+    // (rows ⑱–㉓, whose state-store half is THIS scenario's durable ledger) —
+    // the T5/T6 pair plus the `stop-continuation-team` query surface printed
+    // their registered lines.
+    bootSevenSurfaces:
+      (bootLog ?? '').includes('[omo-team] team surface team_shutdown_request registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_approve_shutdown registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_reject_shutdown registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_delete registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_status registered')
+      && (bootLog ?? '').includes('— 22/24 team surfaces registered'),
+    bootTaskQuartetRegistered:
+      (bootLog ?? '').includes('[omo-team] team surface team_task_create registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_task_list registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_task_update registered')
+      && (bootLog ?? '').includes('[omo-team] team surface team_task_get registered'),
+    teamCreated: teamRunId !== undefined,
+    twoMemberSessionsRan:
+      analystLog !== undefined && builderLog !== undefined && analystId !== String(builderLog?.header?.id ?? ''),
+
+    // ① REQUEST — inquiries at the members.
+    leadCalledShutdownRequestThrice: leadCalls('team_shutdown_request').length === 3,
+    shutdownRequestResultsDelivered:
+      resultWith('"status":"shutdown_requested"').length === 3
+      && resultWith('"inquiryDelivered":true').length === 3,
+    analystInquiryExactlyTwice: inquiryFramesAt(analystLog).length === 2,
+    builderInquiryExactlyOnce: inquiryFramesAt(builderLog).length === 1,
+    inquiryCarriesReplyGuidance:
+      inquiryFramesAt(analystLog).every((event) => {
+        const text = splicedFrameText(event)
+        return text.includes('team_approve_shutdown') && text.includes('team_reject_shutdown')
+      }),
+    inquiryCarriesLiveTeamRunId:
+      teamRunId !== undefined
+      && inquiryFramesAt(analystLog).every((event) => splicedFrameText(event).includes(`"teamRunId":"${teamRunId}"`)),
+
+    // ② REJECT + SURVIVAL.
+    analystRejectedWithReason: resultAt(analystLog, '"status":"shutdown_rejected"') && resultAt(analystLog, TEAM_SHUTDOWN_REASON),
+    rejectedFrameAtLead:
+      framesAtLeadFrom(analystId, 'Team shutdown rejected').length === 1
+      && splicedFrameText(framesAtLeadFrom(analystId, 'Team shutdown rejected')[0]).includes(TEAM_SHUTDOWN_REASON),
+    statusConfirmsSurvival: resultWith('"status":"active"').some((part) => part.text.includes('"state":"rejected"')),
+    channelOpenAfterRefusal:
+      resultWith('"delivered":true').length >= 1
+      && builderEvents.filter((event) =>
+        agentMessageSplice(event, String(leadId)) !== undefined
+        && splicedFrameText(event).includes(`Team message ${TEAM_CORRID_SURVIVE} from lead:`),
+      ).length === 1,
+
+    // ③ APPROVE (self) at the analyst.
+    analystSelfApproved: resultAt(analystLog, '"status":"shutdown_approved"') && resultAt(analystLog, '"approverName":"analyst"'),
+    approvedFrameAtLead: framesAtLeadFrom(analystId, 'Team shutdown approved').length === 1,
+
+    // ── P5-T10 · 握手帧的认领面（与 team-create-and-message 的 T10 块同一
+    // host 机制：claim 落 user/message、chat messageDefinition 认领非 'user'
+    // source.kind——'team-message' 为 Q-7 §2.4 逐字钉，'agent-message' 走
+    // 同一判别式是推断）。这里钉的是握手交换的机器可证认领半边：拒绝/批准
+    // 结果帧在 lead 会话、询问帧在成员会话，逐字前缀 + 原生 kind + 具名
+    // sender；seq 在首个 completed turn/end 之后 = post-spawn-turn claim
+    // （seq 锚不判别轮型，本场景无 offlineWakeCanary——唤醒轮判别不在此
+    // 面）。渲染分类（turn-trigger vs 中途 steer 'context' 隐藏）是已登记
+    // 盲区、归 L2/T16，不越界。
+    rejectedFrameOnLeadChatSurface:
+      agentMessageSurfaceFrames(events, analystId, 'Team shutdown rejected').length === 1
+      && messageContentText(agentMessageSurfaceFrames(events, analystId, 'Team shutdown rejected')[0]?.data).includes(TEAM_SHUTDOWN_REASON),
+    approvedFrameOnLeadChatSurface:
+      agentMessageSurfaceFrames(events, analystId, 'Team shutdown approved').length === 1,
+    analystInquiryFramesOnChatSurface: (() => {
+      const frames = agentMessageSurfaceFrames(analystEvents, String(leadId), 'Team shutdown request')
+      const wakeBoundary = firstCompletedTurnEndSeq(analystEvents)
+      return frames.length === 2
+        && wakeBoundary !== undefined
+        && frames.every((event) => Number(event.seq ?? Number.NaN) > Number(wakeBoundary))
+    })(),
+    builderInquiryFrameOnChatSurface: (() => {
+      const frames = agentMessageSurfaceFrames(builderEvents, String(leadId), 'Team shutdown request')
+      const wakeBoundary = firstCompletedTurnEndSeq(builderEvents)
+      return frames.length === 1
+        && wakeBoundary !== undefined
+        && Number(frames[0]?.seq ?? Number.NaN) > Number(wakeBoundary)
+    })(),
+
+    // ④ APPROVE (lead delegate) — the fourth path, honestly delegated.
+    builderNeverSelfApproved: callAt(builderLog, 'team_approve_shutdown').length === 0,
+    leadApprovedBuilder: resultWith('"approverName":"lead"').some((part) => part.text.includes(`"memberName":"${TEAM_MEMBER_BUILDER}"`)),
+    delegateSelfAddressedNotRelayed: resultWith('"resultDelivered":false').some((part) => part.text.includes('self-addressed')),
+    noSelfAddressedResultSplices:
+      events.filter((event) =>
+        agentMessageSplice(event, String(leadId)) !== undefined
+        && /Team shutdown (approved|rejected)/.test(splicedFrameText(event)),
+      ).length === 0,
+    statusConfirmsBothApproved: resultWith('"phase":"shutdown_approved"').some(
+      (part) => (part.text.match(/"phase":"shutdown_approved"/g) ?? []).length === 2,
+    ),
+
+    // ⑤ DELETE + tombstone.
+    leadCalledTeamDelete: leadCalls('team_delete').length === 1,
+    teamDeletedNonForce: resultWith('"status":"deleted"').some((part) => part.text.includes('"forced":false')),
+    deleteInterruptedBothMembers: resultWith('"status":"deleted"').some((part) => {
+      const hit = /"interruptedSessionIds":\[([^\]]+)\]/.exec(part.text)
+      return hit !== null && hit[1].split(',').length === 2
+    }),
+    // The refusal must be BOUND to a team_send_message that ran AFTER the
+    // delete — a stale 'is deleted' text anywhere in the log proves nothing
+    // (review T7-NIT). The seq-ordering is read off the lead's own log.
+    deletedTeamRefusedByName: (() => {
+      const deleteResult = events.find(
+        (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'),
+      )
+      if (deleteResult === undefined) return false
+      const sendsAfter = events.filter(
+        (event) =>
+          event.type === 'tool/call'
+          && event.data?.name === 'team_send_message'
+          && Number(event.seq ?? 0) > Number(deleteResult.seq ?? 0),
+      )
+      const refusalsAfter = events.filter(
+        (event) =>
+          event.type === 'tool/result'
+          && toolResultTextOf(event).includes('is deleted')
+          && Number(event.seq ?? 0) > Number(deleteResult.seq ?? 0),
+      )
+      return sendsAfter.length >= 1 && refusalsAfter.length === sendsAfter.length && refusalsAfter.length >= 1
+    })(),
+    // AUXILIARY evidence only (review T7-MAJOR): every frame this reads was
+    // written BEFORE team_delete, and the session log is append-only — even a
+    // teardown that cleared the inbox would still pass this. It corroborates
+    // the handshake history survived; it does NOT prove keepInbox. The
+    // falsifiable anchor is `postDeleteNativeDeliveryLandedAtAnalyst` below.
+    inboxPreservedThroughDelete:
+      inquiryFramesAt(analystLog).length === 2
+      && resultAt(analystLog, '"status":"shutdown_rejected"')
+      && resultAt(analystLog, '"status":"shutdown_approved"'),
+    // THE inbox-preservation ANCHOR (review T7-MAJOR): after approve+delete
+    // stopped the analyst, the driver delivered ONE new message over the
+    // host's native channel (Remote `subagents/prompt`, tool layer bypassed).
+    // The canary text exists nowhere else, so its landing in the analyst's
+    // log — frame accepted, turn started, turn completed, ordered after the
+    // lead's delete result by same-clock epoch ms — is only producible if the
+    // interrupted-and-drained member session and its inbox SURVIVED teardown
+    // and still accepts native traffic. Delete that delivery and this check
+    // goes red; that is the falsifiability the old pair lacked.
+    postDeleteNativeDeliveryLandedAtAnalyst: (() => {
+      const canaryEvent = analystEvents.find(
+        (event) => eventTextFlat(event).includes(TEAM_NATIVE_POST_DELETE_BODY),
+      )
+      if (canaryEvent === undefined) return false
+      const deleteResult = events.find(
+        (event) => event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'),
+      )
+      // Timing-gate hardening (review T7-NIT): NO `?? 0` fallback — a missing
+      // time coerces to NaN and Number.isFinite turns the gate RED at the
+      // source, instead of `0 < 0` letting a double-missing pair pass GREEN.
+      if (deleteResult === undefined
+        || !Number.isFinite(Number(canaryEvent.time))
+        || !Number.isFinite(Number(deleteResult.time))
+        || Number(canaryEvent.time) < Number(deleteResult.time)) return false
+      const after = analystEvents.filter((event) => Number(event.seq ?? 0) > Number(canaryEvent.seq ?? 0))
+      return after.some((event) => event.type === 'turn/start')
+        && after.some((event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed')
+    })(),
+    // The park that drove the anchor reported honestly (reached must be true;
+    // an expired window is stated, never skipped) — the fourth park.
+    postDeleteFollowupParkReached: (actionObservations ?? []).some(
+      (row) => String(row.note ?? '').startsWith('post-delete NATIVE follow-up') && row.reached === true,
+    ),
+
+    // ⑥ BRIEFING DEDUP — exactly once per member across ALL wakes.
+    analystBriefingExactlyOnce: briefingFrames(analystLog).length === 1,
+    builderBriefingExactlyOnce: briefingFrames(builderLog).length === 1,
+
+    // Parks reached (the awaits reported honestly) — FOUR since the review
+    // MAJOR fix: idle / rejected / approved / the post-delete native landing.
+    parksReached:
+      (actionObservations ?? []).filter((row) => row.reached === true).length === 4,
+    // T15 评审 A MINOR 修复轮：弱形加固（与 teardown 20263+/stop-continuation
+    // 20461+/team-create 22987+/nested 23612+ 各枚 settle 钉同纪律，本枚是
+    // 握手形态）。旧形 `settleReached !== false` 恒过——undefined（settle 钩子
+    // 被删/改名/从未触发）同样放行，true 也只是复读钩子的布尔。本场景的
+    // settle 语义与那几处**不同**，如实写清：awaitTeamShutdownSettled 的闸
+    // 不是成员 dormant（teardown 形）、也不是命令后静默窗（stop 形），而是
+    // lead lane 的**墓碑对**（`"status":"deleted"` 行与 `is deleted` 具名拒
+    // 行双双 durable）**加上三 lane 静默**——T15 评审 A MAJOR 修复轮把静默
+    // 加进 live 闸（原因见钩子头注：墓碑 durable 时场景声明的尾活——native
+    // follow-up 冷醒 analyst、回执唤醒 lead 处理轮——还在合法开 turn，旧形
+    // 钩子秒回 true 即冻结会把在飞的合法尾 turn 钉红，实测 4 跑 1 红；裁决
+    // 两案实测后取①冻结前有界静默轮询：②的墙钟截止取不到——尾 turn 开在
+    // 钩子返回【之前】（真跑插桩：lead 尾 turn 开 ...092222，钩子返回
+    // ...092546），事件游标截止会把拒行之后开启的全部 turn（6–11）豁免、把钉掏空）。
+    // 且握手有 reject/approve 两相（拒→通道仍活→再请→自批+lead 代批→非
+    // force 拆除）。teardown 的 aborted(parent) dormant 尺依旧不可借来钉本
+    // 场景（真跑实测：拆除时刻两名成员已 idle，成员 lane 的 turn/end 全是
+    // completed——借尺会把真跑钉红；成员被 interrupt 的账面半边由
+    // deleteInterruptedBothMembers 的 interruptedSessionIds 独立钉死，不在
+    // 本枚重复计账）。现在四枚具名钉：① 严格相等——
+    // awaitTeamShutdownSettled 必须真的运行且返回 true，钩子消失即红；
+    // ②③ 钩子闸的墓碑两半从 SIGTERM 冻结后的 final log 各自复钉——lead lane 的
+    // tool/result 带墓碑行 `"status":"deleted"`、带 `is deleted` 具名拒行
+    // （与钩子 live 窗同一把尺，live 与冻结面互为见证；teamDeletedNonForce /
+    // deletedTeamRefusedByName 是带 forced:false / seq 绑定的更强同族钉，
+    // 各钉各的轴不互替）；④ 冻结时刻三 lane 静默复钉——lead + analyst +
+    // builder 各自 turn/start 计数 == turn/end 计数且 ends≥1（laneQuiescent
+    // 与 stop-continuation 同名 helper 同一把尺；MAJOR 修复轮起冻结由钩子的
+    // live 静默窗背书——冻结面静默=live 窗静默的顺延，无孤儿续烧且合法尾活
+    // 已全部真闭合）。不覆盖面：判定二值——60s 观察窗的时长/余量不进 verdict，
+    // 这里钉不了；reject/approve 两相由本 analyzer 的 ①–④ 组既有具名钉
+    // （shutdownRequest*/analystRejected*/analystSelfApproved*/
+    // leadApprovedBuilder*）独立钉死，不在本枚重复计账；settle 的 native
+    // 锚由 postDeleteNativeDeliveryLandedAtAnalyst /
+    // postDeleteFollowupParkReached 承载（follow-up 在 actions 里、settle
+    // 之前发出，静默等的是它的下游尾活闭合，不是它的缺席）；成员关账的
+    // reason.kind 族不钉（钉 completed 会把未来合法的 aborted 关账钉红，
+    // 故 ④ 只钉计数闭合）。
+    // fabricated 反向证据：第 5 腿 `settle-hook-never-ran-undefined` 咬 ①；
+    // ②③④ 轴无 fabricated 腿（drop 墓碑/拒行或开 turn 计数必同时红更强同族
+    // 钉，单红纪律下造不出来）——这三轴的反向证据 = 真跑咬合（6 连 PASS +
+    // 修复前 4 跑 1 红的对照账在 .omo/evidence/p5t15/pre-fix-red-run-excerpt-review-t15-A2.log
+    // ——该档系从评审实录 .omo/evidence/p5t1/review-t15-A2-opencode.out 逐字摘录归档）。
+    settleReached:
+      settleReached === true
+      && memberLogs.length >= 2
+      && events.some((event) =>
+        event.type === 'tool/result' && toolResultTextOf(event).includes('"status":"deleted"'))
+      && events.some((event) =>
+        event.type === 'tool/result' && toolResultTextOf(event).includes('is deleted'))
+      && laneQuiescent(log)
+      && laneQuiescent(analystLog)
+      && laneQuiescent(builderLog),
+
+    // Reverse canaries: no forged native kind, no grandchildren, all lanes live.
+    noForgedNativeMessageKind: (allLogs ?? []).every(
+      (candidate) => (candidate.events ?? []).every(
+        (event) => event.type !== 'agent/inbox/spliced'
+          || !(event.data?.inserted ?? []).some((inserted) => (inserted?.source ?? {}).kind === 'team-message'),
+      ),
+    ),
+    noGrandchildrenUnderMembers: (allLogs ?? []).every(
+      (candidate) =>
+        String(candidate.header?.parentSession) !== analystId
+        && String(candidate.header?.parentSession) !== String(builderLog?.header?.id ?? ''),
+    ),
+    mockSawAllThreeLanes:
+      requests.filter((r) => r.role === 'sisyphus').length >= 8
+      && requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 6
+      && requests.filter((r) => r.role === TEAM_SEAT_BUILDER).length >= 2,
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      teamRunId: teamRunId ?? null,
+      analystInquiryFrameCount: inquiryFramesAt(analystLog).length,
+      builderInquiryFrameCount: inquiryFramesAt(builderLog).length,
+      analystBriefingFrameCount: briefingFrames(analystLog).length,
+      builderBriefingFrameCount: briefingFrames(builderLog).length,
+      leadShutdownResultTexts: leadResults
+        .filter((part) => /shutdown_requested|shutdown_approved|shutdown_rejected|deleted/.test(part.text))
+        .map((part) => part.text),
+      rejectedFrameText: splicedFrameText(framesAtLeadFrom(analystId, 'Team shutdown rejected')[0]) ?? null,
+      approvedFrameText: splicedFrameText(framesAtLeadFrom(analystId, 'Team shutdown approved')[0]) ?? null,
+      // P5-T10: the verbatim RENDERABLE (user/message) texts of the handshake
+      // frames — the exact bytes the chat surface folds at each lane.
+      rejectedFrameSurfaceAtLead: messageContentText(agentMessageSurfaceFrames(events, analystId, 'Team shutdown rejected')[0]?.data) || null,
+      approvedFrameSurfaceAtLead: messageContentText(agentMessageSurfaceFrames(events, analystId, 'Team shutdown approved')[0]?.data) || null,
+      analystInquirySurfaceFrames: agentMessageSurfaceFrames(analystEvents, String(leadId), 'Team shutdown request')
+        .map((event) => ({ seq: event.seq ?? null, text: messageContentText(event.data) })),
+      builderInquirySurfaceFrame: messageContentText(agentMessageSurfaceFrames(builderEvents, String(leadId), 'Team shutdown request')[0]?.data) || null,
+      actionObservations: actionObservations ?? null,
+      // The anchor's raw rows: the canary event(s) that landed at the analyst
+      // post-delete (seq/type) — null when nothing landed.
+      postDeleteNativeFramesAtAnalyst: analystEvents
+        .filter((event) => eventTextFlat(event).includes(TEAM_NATIVE_POST_DELETE_BODY))
+        .map((event) => ({ seq: event.seq ?? null, type: event.type ?? null })),
+    },
+  }
+}
+
+/**
+ * `team-nested-create-denied` assertions. Two independent denials, both named:
+ *   (1) the LEAD's second team_create is refused with the upstream participant
+ *       text (`team_create denied: session is already a participant of team <id>`);
+ *   (2) a MEMBER's team_create attempt is refused with UNKNOWN_TOOL — the member
+ *       surface structurally lacks team_create (deliverable 4's structural absence,
+ *       the strongest enforcement).
+ * The reverse canary: neither denial spawned a child — the lead's children are
+ * still exactly the two members, and no session was parented under a member.
+ */
+export function analyzeTeamNestedCreateDenied(
+  { log, allLogs, requests, bootLog, settleReached },
+  routes,
+) {
+  const events = log?.events ?? []
+  const leadId = log?.header?.id
+  const memberLogs = (allLogs ?? []).filter(
+    (candidate) =>
+      candidate.header?.origin === 'subagent'
+      && String(candidate.header?.parentSession) === String(leadId),
+  )
+  const analystLog = memberLogs.find((candidate) =>
+    (candidate.events ?? []).some(
+      (event) => event.type === 'subagent/descriptor'
+        && event.data?.agentModel === routes[TEAM_SEAT_ANALYST]?.model,
+    ),
+  )
+  const analystEvents = analystLog?.events ?? []
+
+  const createCalls = events.filter(
+    (event) => event.type === 'tool/call' && event.data?.name === 'team_create',
+  )
+  const createResults = toolResultParts(events).filter((part) =>
+    part.text.includes('teamRunId') || part.text.includes('already a participant'),
+  )
+  const deniedResult = createResults.find((part) => part.text.includes('already a participant'))
+  const memberTeamCreateAttempt = findToolCall(analystEvents, 'team_create')
+  const memberTeamCreateResult = toolResultForCall(toolResultParts(analystEvents), memberTeamCreateAttempt)
+
+  const checks = {
+    pluginLoaded: pluginsLoaded(bootLog),
+    teamSurfaceRegisteredAtBoot: (bootLog ?? '').includes('[omo-team] team surface team_create registered'),
+    // (1) the lead tried team_create TWICE and the second was refused by name.
+    leadAttemptedTeamCreateTwice: createCalls.length >= 2,
+    leadSecondAttemptDeniedByParticipantGate:
+      deniedResult !== undefined
+      && deniedResult.isError === true
+      && /team_create denied: session is already a participant of team /.test(deniedResult.text),
+    // (2) the member tried team_create and the host refused UNKNOWN_TOOL (structural
+    // absence — deliverable 4: the member surface has no team_create).
+    memberAttemptedTeamCreate: memberTeamCreateAttempt !== undefined,
+    memberTeamCreateDeniedUnknownTool:
+      memberTeamCreateResult !== undefined
+      && memberTeamCreateResult.isError === true
+      && /unknown tool "team_create"/i.test(memberTeamCreateResult.text),
+    // The member's advertised tool list structurally lacks team_create.
+    memberSurfaceLacksTeamCreate:
+      (advertisedToolNames(analystEvents) ?? []).includes('team_create') === false,
+    // Reverse canary: the two denials spawned nothing new — the lead still has
+    // exactly the two members, and no session is parented under any member.
+    leadHasExactlyTwoChildren: memberLogs.length === 2,
+    noSessionParentedUnderMembers: (allLogs ?? []).every(
+      (candidate) => memberLogs.every(
+        (member) => String(candidate.header?.parentSession) !== String(member.header?.id),
+      ),
+    ),
+    mockSawNestedAttempts:
+      requests.filter((r) => r.role === 'sisyphus').length >= 3
+      && requests.filter((r) => r.role === TEAM_SEAT_ANALYST).length >= 2,
+    // T15（T14 遗留①）：弱形加固（与 team-create-and-message 同纪律）。旧形
+    // `settleReached !== false` 恒过——undefined 放行、true 只是复读钩子布尔。
+    // 现在三枚具名钉：① 严格相等——awaitTeamMembersSettled 必须真的运行且
+    // 返回 true；② 两枚子会话日志各带 turn/end reason.kind='completed' 的
+    // settle 行；③ lead 的 durable team_create tool/result 带 teamRunId 行
+    // （成功创建行——denied 行文本不含 'teamRunId'，两轴不混）。②③ 正是
+    // 钩子等待形（completed≥2 + leadCreated）在 SIGTERM 冻结后 final log 上
+    // 的复钉，live 窗与冻结面互为见证。不覆盖面：判定二值——30s 观察窗的
+    // 时长/余量不进 verdict，这里钉不了。
+    settleReachedChildren:
+      settleReached === true
+      && memberLogs.length >= 2
+      && memberLogs.every((child) =>
+        (child.events ?? []).some(
+          (event) => event.type === 'turn/end' && event.data?.reason?.kind === 'completed',
+        ),
+      )
+      && createResults.some((part) => part.text.includes('teamRunId')),
+  }
+  const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([name]) => name)
+  return {
+    result: failed.length === 0 ? 'PASS' : 'FAIL',
+    failed,
+    checks,
+    bonus: {
+      createCallCount: createCalls.length,
+      deniedText: deniedResult?.text ?? null,
+      memberTeamCreateText: memberTeamCreateResult?.text ?? null,
+      memberToolNames: advertisedToolNames(analystEvents) ?? null,
+      memberChildCount: memberLogs.length,
+    },
+  }
+}
+
+// ── P5-T15 评审 A MINOR 修复轮：team-nested-create-denied 的 fabricated 面 ────
+// 本场景此前没有 fabricated self-test（反向证据 = 真跑咬合，首轮 5 RED 的
+// 诚实账在 RUN-SUMMARY）；现在补最小全形：GOOD 必 PASS + 一枚具名 settle
+// 反向腿（与 team-create-and-message 第 10 腿同纪律）。字节形状全部复用
+// analyzer 自己的提取面（toolResultParts / findToolCall / toolResultForCall
+// / advertisedToolNames / teamRunIdFromLeadLog），伪造的字节就是断言吃的字节。
+const FABRICATED_NESTED_LEAD_ID = 'ses-fabricated-t15-nested-lead'
+const FABRICATED_NESTED_ANALYST_ID = 'ses-fabricated-t15-nested-analyst'
+const FABRICATED_NESTED_BUILDER_ID = 'ses-fabricated-t15-nested-builder'
+const FABRICATED_NESTED_TEAM_RUN_ID = '1f2e3d4c-5b6a-4978-8654-3210fedcba98'
+
+export function fabricatedTeamNestedCreateDeniedInput(routes) {
+  const events = []
+  let seq = 0
+  const push = (event) => {
+    seq += 1
+    events.push({ time: 1000 + seq * 100, ...event, seq })
+    return seq
+  }
+  const prompt = (text) => ({ type: 'user/message', data: { id: `fabricated-nested-prompt-${seq + 1}`, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'fabricated-rpc-nested' } } })
+  const step = (turn, text) => ({ type: 'assistant/message', data: { turn, step: 1, message: { role: 'assistant', content: [{ type: 'text', text }] } } })
+  const toolCall = (turn, callId, name, args) => ({ type: 'tool/call', data: { turn, step: 1, callId, name, arguments: JSON.stringify(args) } })
+  const toolResult = (turn, callId, text, isError = false) => ({
+    type: 'tool/result',
+    data: { turn, step: 1, message: { role: 'tool', toolCallId: callId, isError, content: [{ type: 'text', text }] } },
+  })
+
+  // lead turn 1：成功创建——teamRunId 行 = settleReachedChildren 的第③轴。
+  push(prompt(TEAM_CREATE_PROMPT))
+  push({ type: 'turn/start', data: { turn: 1 } })
+  push(toolCall(1, 'mock-nested-team-create-1', 'team_create', { inline_spec: teamInlineSpec() }))
+  push(toolResult(1, 'mock-nested-team-create-1', `{"status":"created","teamRunId":"${FABRICATED_NESTED_TEAM_RUN_ID}","members":["analyst","builder"]}`))
+  push(step(1, TEAM_LEAD_CREATED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+
+  // lead turn 2：嵌套再创建 → participant 闸具名拒。拒文不含 'teamRunId'
+  // 子串——②（成功创建行）③（具名拒行）两轴不混（analyzer 头注同款尺）。
+  push(prompt(TEAM_NESTED_FOLLOWUP_PROMPT))
+  push({ type: 'turn/start', data: { turn: 2 } })
+  push(toolCall(2, 'mock-nested-team-create-2', 'team_create', { inline_spec: teamInlineSpec() }))
+  push(toolResult(2, 'mock-nested-team-create-2', `team_create denied: session is already a participant of team ${FABRICATED_NESTED_TEAM_RUN_ID}`, true))
+  push(step(2, TEAM_LEAD_DENIED_SUMMARY))
+  push({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+
+  const log = { path: '/fabricated/t15-nested/session.jsonl', header: { type: 'session', id: FABRICATED_NESTED_LEAD_ID }, events }
+  const member = (seat, memberId, tail) => {
+    const mEvents = []
+    let mSeq = 0
+    const mPush = (event) => {
+      mSeq += 1
+      mEvents.push({ time: 4000 + mSeq * 50, ...event, seq: mSeq })
+      return mSeq
+    }
+    mPush({
+      type: 'subagent/descriptor',
+      data: {
+        version: 3,
+        mode: 'continuable',
+        provider: 'team',
+        label: `team member ${seat}`,
+        agentProvider: routes[seat].provider,
+        agentModel: routes[seat].model,
+        toolFilter: { deny: [...DELEGATION_TOOL_NAMES] },
+      },
+    })
+    mPush({
+      type: 'request/header',
+      data: {
+        header: {
+          config: { provider: routes[seat].provider, model: routes[seat].model },
+          // 席位 advertised 工具面逐名无 team_create（交付面 4 的结构性缺席）
+          // ——analyst 的尝试因此落 UNKNOWN_TOOL，两面同形。
+          tools: [{ function: { name: 'bash' } }, { function: { name: 'read' } }, { function: { name: 'team_send_message' } }],
+        },
+        reason: 'initial',
+      },
+    })
+    mPush({ type: 'turn/start', data: { turn: 1 } })
+    if (tail !== undefined) tail(mPush)
+    mPush(step(1, seat === TEAM_SEAT_ANALYST ? TEAM_MEMBER_ANALYST_REPLY : TEAM_MEMBER_BUILDER_REPLY))
+    mPush({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+    return { path: `/fabricated/t15-nested/${seat}/session.jsonl`, header: { type: 'session', id: memberId, origin: 'subagent', parentSession: FABRICATED_NESTED_LEAD_ID, delegationDepth: 1 }, events: mEvents }
+  }
+  const analystLog = member(TEAM_SEAT_ANALYST, FABRICATED_NESTED_ANALYST_ID, (mPush) => {
+    mPush(toolCall(1, 'mock-nested-analyst-create-denied', 'team_create', { inline_spec: teamInlineSpec() }))
+    mPush(toolResult(1, 'mock-nested-analyst-create-denied', 'Error: unknown tool "team_create"', true))
+  })
+  const builderLog = member(TEAM_SEAT_BUILDER, FABRICATED_NESTED_BUILDER_ID)
+  return {
+    log,
+    allLogs: [log, analystLog, builderLog],
+    requests: [
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 10 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 11 },
+      { role: 'sisyphus', body: { model: routes.sisyphus.model }, receivedAt: 12 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 20 },
+      { role: TEAM_SEAT_ANALYST, body: { model: routes[TEAM_SEAT_ANALYST].model }, receivedAt: 21 },
+      { role: TEAM_SEAT_BUILDER, body: { model: routes[TEAM_SEAT_BUILDER].model }, receivedAt: 30 },
+    ],
+    bootLog: [
+      FABRICATED_BOOT_LOG,
+      '[omo-team] team surface team_create registered',
+    ].join('\n'),
+    settleReached: true,
+  }
+}
+
+/** P5-T15 评审 A MINOR 修复轮：nested 场景 settle 钉的反向腿（同法补腿）。
+ *  清单长度显式钉死 1——每枚新钉一枚腿；undefined（钩子从未触发的伪造
+ *  形态）只红 settleReachedChildren（本 analyzer 无第二枚检查读它）。 */
+export function teamNestedCreateDeniedSettleDefectCases() {
+  return [
+    ['settle-hook-never-ran-undefined', (input) => {
+      input.settleReached = undefined
+    }, 'settleReachedChildren'],
+  ]
+}
+
 const SCENARIOS = [
   {
     name: 'hello',
@@ -19137,6 +24511,18 @@ const SCENARIOS = [
     analyze: analyzeComboKeywordInjected,
   },
   {
+    // P5-T12 (manifest rows ⑭/㉔): the team slot's own scenario — verbatim
+    // team.md at the lead with kind `omo-team-keyword`, the member side never
+    // released, idempotence on the pasted body, and a keyword-free control.
+    // See the analyzer's header for the turn map.
+    name: 'team-keyword-mode',
+    prompt: TEAM_KEYWORD_PROMPT,
+    followupPrompts: [TEAM_KEYWORD_PASTE_PROMPT, TEAM_KEYWORD_CONTROL_PROMPT],
+    roles: ['sisyphus', 'explore'],
+    script: teamKeywordModeScript,
+    analyze: analyzeTeamKeywordMode,
+  },
+  {
     // P4-T7 — the COMMAND CHANNEL pilot (see the command-channel block above
     // for the transport facts). `/handoff <args>`: the argument-bearing variant.
     // Two turns on one session:
@@ -19203,10 +24589,14 @@ const SCENARIOS = [
     analyze: analyzeStopContinuationHaltsTodo,
   },
   {
-    // P4-T15 — `/hyperplan` over the P4-T7 command channel, asserting the DEGRADED
-    // rewrite the model actually receives (the guidance段, the roster mapping, the
-    // Description-line suffix, and zero executable dead links).
-    name: 'hyperplan-degraded-noted',
+    // P4-T15 — `/hyperplan` over the P4-T7 command channel; P5-T13 flipped the
+    // asserted form to FULL-RING (the sandbox mounts omo-team, so the guidance
+    // the model receives IS the full ring); P5-T14 renamed the scenario to
+    // match the fact (`hyperplan-team-mode-full-ring`). Asserts: the ring
+    // guidance段, the roster mapping, the Description-line suffix, and zero
+    // executable dead links. 降级腿的反向覆盖 = 单测缺席腿 + probe noteam face
+    // （证据边界见本文件 hyperplan 段头注）。
+    name: 'hyperplan-team-mode-full-ring',
     roles: ['sisyphus'],
     commands: [
       { line: HYPERPLAN_COMMAND_LINE },
@@ -19215,8 +24605,8 @@ const SCENARIOS = [
       // `**User Arguments**` line while the argument-bearing turn's must not.
       { line: HYPERPLAN_BARE_COMMAND_LINE },
     ],
-    script: hyperplanDegradedScript,
-    analyze: analyzeHyperplanDegradedNoted,
+    script: hyperplanTeamModeFullRingScript,
+    analyze: analyzeHyperplanTeamModeFullRing,
   },
   {
     // P4-T15 — `/ulw-plan` as a GESTURE, which is the opposite end of the same
@@ -19234,6 +24624,285 @@ const SCENARIOS = [
     ],
     script: ulwPlanGestureScript,
     analyze: analyzeUlwPlanLoadsPrometheusSkill,
+  },
+  {
+    // P5-T5 (fork (B) 执行面核心; plan §4.4): the lead really组建 a two-member team
+    // and each member really routes through its own roster seat — the trio on the
+    // child's durable descriptor is the seat's, not the caller's — and each member
+    // receives its standing orders as an injected briefing frame (source.kind
+    // 'omo-team-briefing') that is SEPARATE from the native spawn prompt (Q-8).
+    name: 'team-create-and-message',
+    // P5-T6 FULL SEGMENT (the T5 create-and-listen shape grew its messaging
+    // half): three lead turns with a PARK between them — create, then WAIT
+    // until both members are settled AND offline (the cold-wake precondition),
+    // then the send batch, then the same-id resend that must deduplicate.
+    // P5-T14 grew the fourth lead turn (the lead-only wildcard broadcast) and
+    // the analyst lane's relay leg (member→builder via the live lead) plus
+    // the member-broadcast denial leg — the two edges whose durable proof the
+    // arbitration supplement demanded.
+    // `actions` is the only shape that expresses the park BETWEEN turns.
+    actions: [
+      { kind: 'prompt', text: TEAM_CREATE_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamMembersIdle,
+        note: 'both members settled and offline (cold-wake precondition)',
+      },
+      { kind: 'prompt', text: TEAM_MSG_PROMPT },
+      { kind: 'prompt', text: TEAM_RESEND_PROMPT },
+      { kind: 'prompt', text: TEAM_BROADCAST_PROMPT },
+    ],
+    // The lead lane is the conductor (stamped into the omo-agents copy as usual);
+    // the two MEMBER lanes are omo-team seats, stamped into a STAGED omo-team copy.
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    script: teamCreateAndMessageScript,
+    settle: awaitTeamMessagingSettled,
+    analyze: analyzeTeamCreateAndMessage,
+  },
+  {
+    // P5-T5 nested gate: the lead's second team_create is refused with the upstream
+    // participant text, and a MEMBER's team_create attempt is refused UNKNOWN_TOOL
+    // (the member surface structurally lacks team_create). Neither denial spawns a
+    // new session — the reverse canary pins that.
+    name: 'team-nested-create-denied',
+    prompt: TEAM_CREATE_PROMPT,
+    followupPrompts: [TEAM_NESTED_FOLLOWUP_PROMPT],
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    script: teamNestedCreateDeniedScript,
+    settle: awaitTeamMembersSettled,
+    analyze: analyzeTeamNestedCreateDenied,
+  },
+  {
+    // P5-T7 — the FULL SHUTDOWN HANDSHAKE (manifest rows team_shutdown_request
+    // / team_approve_shutdown / team_reject_shutdown / team_delete / team_status
+    // all flip 'ported' in THIS commit and this scenario is their shared e2e
+    // evidence): request → member REJECT → team SURVIVAL (status + a working
+    // message) → re-request (resolved never blocks) → member SELF-APPROVE →
+    // lead DELEGATE-approve of the silent builder (the fourth path) → status
+    // confirms both shutdown_approved → team_delete non-force (interrupt keeps
+    // the inboxes) → messaging the deleted teamRunId refused BY NAME → the
+    // NATIVE post-delete follow-up lands at the interrupted analyst over the
+    // host's own channel (review T7-MAJOR: this, not the surviving pre-delete
+    // frames, is the falsifiable inbox-preservation anchor). The briefing
+    // dedup this commit introduced is hard-pinned here: each member's log
+    // carries the briefing EXACTLY ONCE across all wakes.
+    name: 'team-shutdown-handshake',
+    actions: [
+      { kind: 'prompt', text: TEAM_CREATE_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamMembersIdle,
+        note: 'both members settled and offline (cold-wake precondition)',
+      },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_REQUEST_ANALYST_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamAnalystRejected,
+        note: 'analyst refusal durable (tool result + rejected frame at lead)',
+      },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_SURVIVAL_PROMPT },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_REREQUEST_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamAnalystApproved,
+        note: 'analyst self-approval durable (tool result + approved frame at lead)',
+      },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_DELEGATE_PROMPT },
+      { kind: 'prompt', text: TEAM_SHUTDOWN_STATUS_PROMPT },
+      { kind: 'prompt', text: TEAM_DELETE_PROMPT },
+      { kind: 'prompt', text: TEAM_DELETED_SEND_PROMPT },
+      // P5-T7 review-MAJOR anchor: AFTER the delete is durable and the tool
+      // layer refuses the teamRunId by name, deliver ONE new message to the
+      // stopped analyst over the HOST's native channel and park until the
+      // landing is durable at the member (spliced/turn activity). The team
+      // tool layer is bypassed on purpose — see nativeFollowupAfterDelete.
+      {
+        kind: 'nativeFollowupAfterDelete',
+        note: 'post-delete NATIVE follow-up lands at the interrupted analyst (the inbox-preservation anchor)',
+      },
+    ],
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    script: teamShutdownHandshakeScript,
+    settle: awaitTeamShutdownSettled,
+    analyze: analyzeTeamShutdownHandshake,
+  },
+  {
+    // P5-T8b — 任务板全段（manifest ⑦⑧⑨⑩ 四行翻 'ported' 的共同 e2e 证据）：
+    // lead 建队 → 建两任务（blockedBy 链；高水位确定性 id 1/2）→ analyst 列板
+    // 并领 1（owner/claimedAt 落盘）→ analyst 提前领 2 被 BlockedByError
+    // `blocked by 1` 具名拒 → analyst 走完 in_progress/completed 后领 2 →
+    // lead team_status 见全板 → **Q-5b run C 型重启**（SIGTERM flush → 同沙箱
+    // 新进程 → explicit-id adoption 重领 lead）→ team_status 从磁盘回读：
+    // team、任务板、双账（processedMessageIds + briefingInjectedMembers，
+    // omo-team-extensions.json sidecar）全部完好。
+    name: 'team-task-claim',
+    actions: [
+      { kind: 'prompt', text: TEAM_CREATE_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamMembersIdle,
+        note: 'both members settled and offline (cold-wake precondition)',
+      },
+      { kind: 'prompt', text: TEAM_TASKS_PROMPT },
+      { kind: 'prompt', text: TEAM_TASK_CLAIM1_PROMPT },
+      {
+        kind: 'await',
+        until: (boot, sandbox, sessionId) => (
+          awaitTaskFileState(sandbox, teamRunIdFromLeadLog(
+            findSessionLogs(join(sandbox.dshHome, 'sessions')).find((c) => String(c.header?.id) === String(sessionId)),
+          ) ?? '', '1', undefined, TEAM_MEMBER_ANALYST)
+        ),
+        note: 'analyst owns task 1 on disk (claimed|in_progress|completed — the convergent lane may pass through claimed between polls)',
+      },
+      { kind: 'prompt', text: TEAM_TASK_CLAIM2_PROMPT },
+      {
+        kind: 'await',
+        until: async (boot, sandbox, sessionId) => {
+          const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+          const children = logs.filter((c) => String(c.header?.parentSession) === String(sessionId))
+          return children.some((c) => JSON.stringify(c.events ?? []).includes('blocked by 1'))
+        },
+        note: 'early claim of task 2 refused by name (blocked by 1)',
+      },
+      { kind: 'prompt', text: TEAM_TASK_FINISH_PROMPT },
+      {
+        kind: 'await',
+        until: (boot, sandbox, sessionId) => (
+          awaitTaskFileState(sandbox, teamRunIdFromLeadLog(
+            findSessionLogs(join(sandbox.dshHome, 'sessions')).find((c) => String(c.header?.id) === String(sessionId)),
+          ) ?? '', '2', 'claimed', TEAM_MEMBER_ANALYST)
+        ),
+        note: 'task 2 claimed after its blocker completed',
+      },
+      { kind: 'prompt', text: TEAM_TASK_STATUS_PROMPT },
+      {
+        // QUIESCENCE before the kill (measured run 2: SIGTERM mid-ack opened
+        // the host's replay of an interrupted turn, which then hijacked the
+        // mock cursor and the post-reboot read-back). A clean reboot needs
+        // turn/start == turn/end on EVERY lane.
+        kind: 'await',
+        // P5-T19：**轮询直到静默**，不是「采样一次」。
+        //
+        // 上一版这个 hook 只读一次就把 false 返回——可 lead 第 7 个 turn（成员
+        // 回包的唤醒轮）恰好可能正落在采样瞬间，于是 precondition 假红、重启带上
+        // 一个未结算的 lane，采纳轮又在宿主的重放上卡死（实测把套件挂住一小时）。
+        // 真正的语义是「等到静默」，所以这里按 250ms 轮询到 120s 期限。
+        until: async (boot, sandbox, sessionId) => {
+          const deadline = Date.now() + 120_000
+          let lastReport = ''
+          for (;;) {
+            const logs = findSessionLogs(join(sandbox.dshHome, 'sessions'))
+            const lanes = logs.filter((c) => String(c.header?.id) === String(sessionId)
+              || String(c.header?.parentSession) === String(sessionId))
+            if (lanes.length >= 3) {
+              const open = lanes.filter((lane) => {
+                const starts = (lane.events ?? []).filter((e) => e.type === 'turn/start').length
+                const ends = (lane.events ?? []).filter((e) => e.type === 'turn/end').length
+                return starts !== ends || ends < 1
+              })
+              if (open.length === 0) return true
+              lastReport = open.map((l) => `${String(l.header?.id ?? '?').slice(0, 8)}:`
+                + `${(l.events ?? []).filter((e) => e.type === 'turn/start').length}`
+                + `/${(l.events ?? []).filter((e) => e.type === 'turn/end').length}`).join(', ')
+            }
+            if (Date.now() > deadline) {
+              console.error(`drive: [team-task-claim] quiescence TIMED OUT after 120s on: ${lastReport || '(lanes<3)'}`)
+              return false
+            }
+            await sleep(250)
+          }
+        },
+        note: 'every lane quiescent (turn/start == turn/end) — clean-reboot precondition',
+      },
+      { kind: 'restartAdoptAndAudit' },
+    ],
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    script: teamTaskClaimScript,
+    analyze: analyzeTeamTaskClaim,
+  },
+  {
+    // P5-T9 · 交付面 1 —— **拆除无孤儿**：lead 建队 → 两成员 FOREGROUND
+    // bash 撑开真实活着的 turn（反向金丝雀：不是静默 idle）→ park → lead
+    // force 拆除（非 force 会被 `members still active` 具名拒）→ 三面对齐：
+    // roster 闭合（state.json tombstone + interruptedSessionIds 恰两枚）、
+    // catalog 闭合（活体 child 行全 inactive + durable 无复活）、孙代负向
+    // 金丝雀全程在场（无 depth≥2 会话 + 成员 advertised tools 无委派名）。
+    // 与 `team-shutdown-handshake` 的分工：那枚钉握手与 keepInbox，本枚钉
+    // 拆完之后的"无孤儿"断言面——两枚不可互相替代。
+    name: 'team-teardown-no-orphans',
+    actions: [
+      { kind: 'prompt', text: TEAM_CREATE_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamMembersMidWork,
+        note: 'both members LIVE mid-work (turn open, foreground bash durable) — the reverse canary before teardown',
+      },
+      { kind: 'prompt', text: TEAM_TEARDOWN_FORCE_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamTeardownDormant,
+        note: 'teardown dormant: state.json tombstone + member turns closed by the parent interrupt + no revival',
+      },
+      { kind: 'prompt', text: TEAM_STATUS_AFTER_DELETE_PROMPT },
+      // MAJOR-1/2 的取证 turn：dormant 之后、进程还活着时读探针面。
+      { kind: 'prompt', text: TEAM_PROBE_PROMPT },
+    ],
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    teamProbePlugin: true,
+    script: teamTeardownNoOrphansScript,
+    settle: awaitTeamTeardownSettled,
+    analysisInput: (sandbox) => ({
+      catalogObservation: lastTeardownCatalogObservation,
+      ...readTeamStateJson(sandbox),
+    }),
+    analyze: analyzeTeamTeardownNoOrphans,
+  },
+  {
+    // P5-T9 · 交付面 4 —— **stop-continuation 的 team 语义**（manifest 行 ⑰
+    // 的同名 e2e 证据）：建队 → 成员 FOREGROUND sleep 撑开真实 turn → lead
+    // 起 background job（jobs 级联的靶子）→ `/stop-continuation` → guard 的
+    // team 分支逐成员 interrupt + 一把 drain（marker 行族 `stop-continuation-
+    // guard team` 与 jobs 级联行互斥可区分——并存、不混淆、降级 NOTE 反向
+    // 断言）→ 成员真停摆（非 completed 关账 + 命令后无复活）→ catalog 全
+    // inactive。`stop-continuation-halts-todo` 钉的是 jobs 级联本体；本枚钉
+    // 的是并联的 team 分支——同一 guard、同一次 stop、两族 marker。
+    name: 'stop-continuation-team',
+    actions: [
+      { kind: 'prompt', text: TEAM_CREATE_PROMPT },
+      {
+        kind: 'await',
+        until: awaitTeamMembersMidWork,
+        note: 'both members LIVE mid-work before the command (foreground bash, turn open)',
+      },
+      { kind: 'prompt', text: TEAM_STOP_ARM_PROMPT },
+      { kind: 'command', line: STOP_CONTINUATION_COMMAND_LINE },
+      {
+        kind: 'await',
+        until: awaitGuardTeamBranchSettled,
+        note: 'guard team branch settled: interrupted-2 line + drain settled + members closed non-completed',
+      },
+      // MAJOR-1/2 的取证 turn：guard 停摆落定后读探针面（/stop-continuation
+      // 停的是续行自动火力，不拦显式 user prompt——lead 此刻仍是活体读面者）。
+      { kind: 'prompt', text: TEAM_PROBE_PROMPT },
+    ],
+    roles: ['sisyphus'],
+    teamRoles: [TEAM_SEAT_ANALYST, TEAM_SEAT_BUILDER],
+    stageOmoTeamCopy: true,
+    teamProbePlugin: true,
+    script: stopContinuationTeamScript,
+    settle: awaitStopContinuationTeamSettled,
+    analysisInput: () => ({ catalogObservation: lastStopCatalogObservation }),
+    analyze: analyzeStopContinuationTeam,
   },
 ]
 
@@ -19301,8 +24970,26 @@ async function runScenario(def, baseRoutes) {
   try {
     const patchPath = seedSandbox(sandbox, routes, server.baseUrl)
     def.seed?.(sandbox) // fixtures land after seedSandbox mkdirs the project dir
+    // P5-T9 双评审修复轮：探针插件的 overlay `insert:` 行（仅两枚 T9 场景）。
+    // `--patch` 是 top-level patch 数组，`- id:` 顶替行对不存在的 id 会被
+    // `patch: entry "…" not found` 跳过——挂新行必须走 `insert:`（根 cordis.yml
+    // 头注 P-8 的同一 schema 事实；q5b overlay 同款行形）。包已在本函数上一步
+    // 的 installPlugin 装进 profile（`name:` 从 profile 目录解析），行与装
+    // 两半缺一个都是响亮 boot fail，不是静默缺席。
+    if (def.teamProbePlugin === true) {
+      appendFileSync(patchPath, [
+        '',
+        '# P5-T9 probe mount row: @omo-e2e/team-probe-plugin (installed by installPlugin',
+        '# into this profile; read-only host-service observation for the MAJOR-1/2',
+        '# assertions — absent row = probe tool calls fail UNKNOWN_TOOL, loudly).',
+        '- insert:',
+        `    - id: team-probe`,
+        `      name: '${TEAM_PROBE_PLUGIN_PKG}'`,
+        '',
+      ].join('\n'))
+    }
     console.error(`drive: [${def.name}] stage 0 — dsh plugin add into the sandbox profile`)
-    installPlugin(sandbox, env)
+    installPlugin(sandbox, env, def)
 
     // P4.5-T8b: the 0.2.x MOCKROLE face, BEFORE boot. On this generation
     // register() renders the template at apply() time and nothing reads the
@@ -19317,6 +25004,21 @@ async function runScenario(def, baseRoutes) {
       `drive: [${def.name}] MOCKROLE stamped into the sandbox plugin copy BEFORE boot: `
       + `${copyStamp.map((entry) => `${entry.role}→${basename(entry.file)}:1`).join(', ')}`,
     )
+
+    // P5-T5: the SECOND MOCKROLE face. Team members are omo-team children whose
+    // persona bytes ship inside roster-seats.ts, so their lane markers are stamped
+    // into the staged omo-team copy — same before-boot, self-verified discipline.
+    // SIX team scenarios carry `teamRoles` since P5-T9 (same family as
+    // stageOmoTeamCopy above); every other scenario is unchanged (the block is
+    // skipped entirely).
+    if (def.stageOmoTeamCopy === true) {
+      const teamStamp = await stampTeamSeatPersonasIntoOmoTeamCopy(sandbox, def.teamRoles)
+      writeFileSync(join(sandbox.root, 'mock-role-team-stamp.json'), `${JSON.stringify(teamStamp, null, 2)}\n`)
+      console.error(
+        `drive: [${def.name}] MOCKROLE stamped into the staged omo-team copy BEFORE boot: `
+        + `${teamStamp.map((entry) => `${entry.seat}→${basename(entry.file)}`).join(', ')}`,
+      )
+    }
 
     // P3-T13 / P4.5-T12a: a scenario may additionally edit a delegation row of
     // the SANDBOX plugin-copy TEMPLATE. Used by the background scenario to reach
@@ -19354,7 +25056,10 @@ async function runScenario(def, baseRoutes) {
     )
 
     console.error(`drive: [${def.name}] booting dsh --profile web --patch ./cordis.yml --patch <e2e> --port 0`)
-    const boot = await bootDsh(sandbox, patchPath, env)
+    // P5-T8b: `let` — the `restartAdoptAndAudit` action REBINDS the boot
+    // (kill + fresh process on the same sandbox + adoption, Q-5b run C shape);
+    // every later prompt and the stopDsh at the tail run on the rebound boot.
+    let boot = await bootDsh(sandbox, patchPath, env)
     child = boot.child
     console.error(`drive: [${def.name}] web ready on 127.0.0.1:${boot.port} (transport ${boot.transport})`)
 
@@ -19594,6 +25299,9 @@ async function runScenario(def, baseRoutes) {
     // prompt instead — the Web UI's own fallback
     // (dsh-client-ui-commands/lib/client.js:796) — which becomes the 对照 turn.
     const commandResults = []
+    // P5-T6: the verdicts of `await` actions, in order, so the analysis can
+    // distinguish 'the condition was observed' from 'the window expired'.
+    const actionObservations = []
     let turnsSeen = 0
     let log
 
@@ -19604,8 +25312,12 @@ async function runScenario(def, baseRoutes) {
     // fields keep their exact behaviour for the 29 scenarios that already pass.
     if (Array.isArray(def.actions)) {
       let actionOrdinal = 0
+      let bootPreRebootSnapshot = ''
       for (const action of def.actions) {
         actionOrdinal += 1
+        // P5-T8b: keep the CURRENT boot log fresh so a later restart action can
+        // hand the analysis the census of the process that ran BEFORE the reboot.
+        bootPreRebootSnapshot = boot.log()
         if (action.kind === 'prompt') {
           await sessionPrompt(boot, {
             sessionId: created.sessionId,
@@ -19626,6 +25338,34 @@ async function runScenario(def, baseRoutes) {
             `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} awaited the first goal `
             + `round before the next action: ${rounds} round(s) durable (0 = the window expired, the `
             + 'analysis still reports the honest FAIL)',
+          )
+          continue
+        }
+        // P5-T6: a scenario may need to WAIT for a durable-log condition between
+        // two turns (the messaging scenario parks the conductor until both members
+        // are settled AND offline, so the delivery is provably a wake, not a steer).
+        // The hook returns a boolean (or a truthy observation); the verdict is
+        // RECORDED into `actionObservations` — a window that expired is reported,
+        // never silently skipped.
+        if (action.kind === 'await') {
+          const reached = await action.until(boot, sandbox, created.sessionId)
+          actionObservations.push({ note: action.note ?? 'await', reached: reached === true })
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} await `
+            + `${JSON.stringify(action.note ?? '')} → reached=${reached === true}`,
+          )
+          continue
+        }
+        // P5-T7 review-MAJOR: a scenario step that ACTS on the host's native
+        // channel and then parks until the act is durable. Distinct from
+        // `await` (which only waits) because the delivery is the point — the
+        // verdict (reached + detail) is RECORDED, never silently skipped.
+        if (action.kind === 'nativeFollowupAfterDelete') {
+          const observation = await nativeFollowupAfterDelete(boot, sandbox, created.sessionId)
+          actionObservations.push({ note: action.note ?? 'native post-delete follow-up landed at the member', reached: observation.reached === true })
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} nativeFollowupAfterDelete `
+            + `→ reached=${observation.reached === true} (child=${observation.childSessionId ?? '?'}, ${observation.detail ?? '?'})`,
           )
           continue
         }
@@ -19655,6 +25395,45 @@ async function runScenario(def, baseRoutes) {
           // Otherwise the command/log-only writes are already in the JSONL by the
           // time the NEXT action awaits its turn/end, which is when the analysis
           // reads them.
+          continue
+        }
+        // P5-T8b · Q-5b run C 型重启夹具：SIGTERM → 同沙箱新进程 → explicit-id
+        // adoption → 落盘审计。REBINDS boot/child（之后的 prompt 与尾部 stopDsh
+        // 都跑在新进程上）；观察整枚记账，analysis 读账——绝不静默。
+        if (action.kind === 'restartAdoptAndAudit') {
+          // P5-T19：**整步时间盒**。重启/采纳链里有多处宿主交互，任何一处卡住
+          // 都会把整个套件挂死（实测两次，各一小时）。现在 8 分钟上限：超时 ⇒
+          // 具名 detail + `reached:false`，让分析侧按具名 check 红，套件照常跑完。
+          const observation = await Promise.race([
+            restartAdoptAndAudit(boot, sandbox, created.sessionId, patchPath, env, routes),
+            new Promise((resolveTimeout) => setTimeout(
+              () => resolveTimeout({ reached: false, detail: 'restart step TIMED OUT after 8 minutes (host stall)' }),
+              8 * 60_000,
+            )),
+          ])
+          if (observation.boot !== undefined) {
+            boot = observation.boot
+            child = boot.child
+          }
+          actionObservations.push({
+            note: 'restart+adopt+audit',
+            reached: observation.reached === true,
+            adopted: observation.adopted === true,
+            postAudit: observation.postAudit,
+            // P5-T14: the STRUCTURED ledger rides through the record too —
+            // the analyzer's dualLedger check reads fields off THIS object,
+            // and a record that dropped the field would make the check read
+            // nothing but null while `detail` still printed the ledger.
+            ledger: observation.ledger ?? null,
+            detail: observation.detail,
+            preBootLog: bootPreRebootSnapshot,
+            rebootBootLog: observation.rebootBootLog,
+            adoptedAt: observation.adoptedAt,
+          })
+          console.error(
+            `drive: [${def.name}] action ${actionOrdinal}/${def.actions.length} restartAdoptAndAudit `
+            + `→ reached=${observation.reached === true} (${observation.detail ?? '?'})`,
+          )
           continue
         }
         throw new Error(`drive: [${def.name}] unknown action kind ${JSON.stringify(action.kind)}`)
@@ -19739,6 +25518,14 @@ async function runScenario(def, baseRoutes) {
         && String(candidate.header.parentSession) === String(created.sessionId),
     )
 
+    // P5-T9 双评审修复轮（MAJOR-3 的前置钉）：composed dump 的审计提前算——
+    // 它只依赖 sandbox/patch/env/routes，与任何会话日志无干，挪到 analyze 之前
+    // 零成本，换来 `profileMount` 事实能进 analyze 的输入（挂载面的 bundle 清单
+    // 是「成员工具面无原生委派通道」这枚负向钉的地基：bundle 没挂，缺席就是
+    // 真空）。P4.5-T8a 的合并纪律一字不动：merge 仍在 `...analysis` 之后。
+    const composedGate = await auditComposedLlmWiring({
+      sandbox, patchPath, env, mockBaseUrl: server.baseUrl, routes,
+    })
     const analysis = def.analyze(
       {
         log: finalLog ?? log,
@@ -19757,7 +25544,12 @@ async function runScenario(def, baseRoutes) {
         bootLog: boot.log(),
         markerLanding,
         commandResults,
+        actionObservations,
         settleReached,
+        // P5-T9 MAJOR-3 前置事实：profile 的 bundle 挂载面（profile package.json
+        // 的 dsh.profile.bundles + composed dump 的 bundle 段头），从 dump 读、
+        // 不在被断言的字节上（读法见 profileMountFacts 头注）。
+        profileMount: profileMountFacts(sandbox, composedGate.dumpPath),
         ...(def.analysisInput?.(sandbox, setup) ?? {}),
       },
       routes,
@@ -19767,9 +25559,8 @@ async function runScenario(def, baseRoutes) {
     // not inherit the boot marker's 8s settle race). Merged into the scenario's
     // named checks AFTER `...analysis` so it is asserted whatever the analysis
     // says, and `failed`/`result` are recomputed from the MERGED set.
-    const composedGate = await auditComposedLlmWiring({
-      sandbox, patchPath, env, mockBaseUrl: server.baseUrl, routes,
-    })
+    // (P5-T9: the COMPUTE moved above analyze — same call, same inputs, earlier;
+    // the MERGE stays right here, unchanged.)
     const mergedChecks = {
       ...(analysis.checks ?? {}),
       composedLlmWiringPresent: composedGate.faults.length === 0,
@@ -21041,7 +26832,9 @@ function fabricatedCommandInstruction(spec, sessionId) {
 function fabricatedCommandDoneText(spec, chars) {
   return spec.sessionContextExpected
     ? `Handoff instruction queued (${chars} chars, session ${FABRICATED_COMMAND_SESSION_ID}); it takes effect in the next turn.`
-    : `Remove-AI-slops instruction queued (${chars} chars); it takes effect in the next turn.`
+    // T13: the sandbox's remove-ai-slops ran with the addendum attached — the
+    // fabricated done text must claim the same form the live handler emits.
+    : `Remove-AI-slops instruction queued (${chars} chars, team-mode addendum attached); it takes effect in the next turn.`
 }
 
 // Only the load markers plus THIS scenario's registration line. A hand-typed
@@ -21124,18 +26917,18 @@ function fabricatedCommandChannelInput(spec, routes) {
 
 function fabricatedHyperplanInstruction(args) {
   // The SAME two shipped functions the command's own handler uses, in the same
-  // order: `renderCommandTemplate` substitutes the placeholders and produces the
-  // instruction body, `formatCommandTemplate` wraps it in the 外框. `sessionId` is
-  // `undefined` on purpose — hyperplan's template has no `$SESSION_ID` (T14), so
-  // passing one here would have the fixture render a frame the deployment never
-  // produces.
+  // order, AND the same FULL-form pair the T13 handler selects when the presence
+  // face reports the team_* tools live — which is exactly what the sandbox does
+  // (omo-team has been mounted since T3). A fixture built on the DEGRADED template
+  // would let the analyzer pass on a frame the deployment no longer produces.
+  // `sessionId` stays `undefined` — hyperplan's template has no `$SESSION_ID`.
   return omoCommandsRender.formatCommandTemplate({
     name: 'hyperplan',
-    description: omoCommandsHyperplanCommand.HYPERPLAN_DESCRIPTION,
+    description: omoCommandsHyperplanCommand.HYPERPLAN_FRAME_DESCRIPTION_FULL,
     scope: 'builtin',
     arguments: args,
-    template: omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE,
-    content: renderCommandTemplate(omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE, {
+    template: omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE_FULL,
+    content: renderCommandTemplate(omoCommandsHyperplan.HYPERPLAN_COMMAND_TEMPLATE_FULL, {
       arguments: args,
       sessionId: undefined,
       now: () => FABRICATED_COMMAND_TIMESTAMP,
@@ -21160,7 +26953,7 @@ function fabricatedHyperplanLog() {
       fabricatedUserMessage(3, { id: 'fabricated-hyperplan-1', role: 'user', content: [{ type: 'text', text: first }], source: { kind: 'user' } }),
       { seq: 4, type: 'turn/start', data: { turn: 1 } },
       { seq: 5, type: 'step/start', data: { turn: 1, step: 1 } },
-      assistant(6, 1, 1, HYPERPLAN_DEGRADED_SUMMARY),
+      assistant(6, 1, 1, HYPERPLAN_RING_SUMMARY),
       { seq: 7, type: 'step/end', data: { turn: 1, step: 1 } },
       { seq: 8, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
       // (turn 1 is modelled as ONE step here; the real run opens a SECOND step,
@@ -21215,7 +27008,7 @@ function mutateHyperplanCarrierText(input, rewrite) {
   carrier.data.content = [{ type: 'text', text: rewrite(messageContentText(carrier.data)) }]
 }
 
-function hyperplanDegradedDefectCases() {
+function hyperplanTeamModeFullRingDefectCases() {
   return [
     ['the command never registered (no boot-log registration line)', (input) => {
       input.bootLog = input.bootLog.split('\n').filter((line) => line !== HYPERPLAN_BOOT_REGISTRATION_LINE).join('\n')
@@ -21255,31 +27048,40 @@ function hyperplanDegradedDefectCases() {
       input.log.events = input.log.events.filter(
         (event) => !(event.type === 'user/message' && event.data?.id === 'fabricated-hyperplan-1'))
     }, 'exactlyTwoFramesArrived'],
-    ['the DEGRADED guidance was replaced by upstream\'s team-mode instruction', (input) => {
-      // The T14 regression this scenario exists for: the body goes back to telling
-      // the model to enable team-mode in a config file.
+    ['the guidance was replaced by upstream\'s config-flag fallback', (input) => {
+      // The regression this scenario has existed for since T14, re-aimed at T13's
+      // polarity: the body goes back to pointing the model at a config carrier.
       mutateHyperplanCarrierText(input, (text) => text.replace(
-        omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE,
+        omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE,
         'If team-mode is unavailable, instruct the user to set team_mode.enabled: true in ~/.omo/omo.jsonc and restart opencode.',
       ))
     }, 'modelFacingBodyIsDeadLinkFree'],
-    ['the DEGRADED guidance was dropped from the model-facing body', (input) => {
+    ['the full-ring guidance was dropped from the model-facing body', (input) => {
       mutateHyperplanCarrierText(input, (text) => text.replace(
-        omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE, ''))
-    }, 'degradedGuidanceReachedTheModel'],
-    ['the roster contract was dropped', (input) => {
+        omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE, ''))
+    }, 'fullRingGuidanceReachedTheModel'],
+    ['the full roster contract was dropped', (input) => {
       mutateHyperplanCarrierText(input, (text) => text.replace(
-        omoCommandsHyperplan.HYPERPLAN_ROSTER_CONTRACT, ''))
-    }, 'rosterContractReachedTheModel'],
+        omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_ROSTER_CONTRACT, ''))
+    }, 'fullRosterContractReachedTheModel'],
+    ['the N1 five-value status vocabulary was hollowed out', (input) => {
+      // T13 arbitration: a body that teaches `completed or failed` WITHOUT the
+      // five-value vocabulary and its defusing sentence is the hollow instruction
+      // this scenario must refuse to bless.
+      mutateHyperplanCarrierText(input, (text) => text.replace(
+        omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE,
+        'Every task ends in a terminal state: completed or failed. Report failures as failed.',
+      ))
+    }, 'fiveValueStatusVocabularyReachedTheModel'],
     ['a roster seat was renamed to something the deployment does not have', (input) => {
       mutateHyperplanCarrierText(input, (text) => text.replaceAll('plan-reviewer', 'skeptic'))
     }, 'rosterSeatsNamedInTheModelText'],
-    ['the description line lost the degraded suffix', (input) => {
+    ['the description line lost the full-ring form suffix', (input) => {
       mutateHyperplanCarrierText(input, (text) => text.replace(
-        omoCommandsHyperplanCommand.HYPERPLAN_DESCRIPTION,
+        omoCommandsHyperplanCommand.HYPERPLAN_FRAME_DESCRIPTION_FULL,
         omoCommandsHyperplanCommand.UPSTREAM_HYPERPLAN_DESCRIPTION,
       ))
-    }, 'degradedSuffixOnTheFrameDescriptionLine'],
+    }, 'fullRingSuffixOnTheFrameDescriptionLine'],
     ['the upstream 7-phase wording was silently "corrected" to 8', (input) => {
       // MAJOR-2's rule is attribution-first: the wording is kept verbatim and the
       // discrepancy is recorded. A silent correction is the regression.
@@ -21302,20 +27104,20 @@ function hyperplanDegradedDefectCases() {
         text: messageContentText(carrier.data).replace('**Scope**: builtin', '**User Arguments**: invented\n\n**Scope**: builtin'),
       }]
     }, 'bareFrameOmitsUserArgumentsLine'],
-    ['the bare turn lost the degraded guidance too', (input) => {
+    ['the bare turn lost the full-ring guidance too', (input) => {
       const carrier = input.log.events.find(
         (event) => event.type === 'user/message' && event.data?.id === 'fabricated-hyperplan-2')
       carrier.data.content = [{
         type: 'text',
-        text: messageContentText(carrier.data).replace(omoCommandsHyperplan.HYPERPLAN_DEGRADED_GUIDANCE, ''),
+        text: messageContentText(carrier.data).replace(omoCommandsHyperplan.HYPERPLAN_TEAM_MODE_GUIDANCE, ''),
       }]
-    }, 'bareTurnAlsoCarriesTheDegradedGuidance'],
-    ['the model did not say the run was DEGRADED', (input) => {
+    }, 'bareTurnAlsoCarriesTheFullRingGuidance'],
+    ['the model did not say the run was the FULL ring', (input) => {
       input.log.events = input.log.events.map((event) =>
         event.type === 'assistant/message' && event.data?.turn === 1
           ? { ...event, data: { ...event.data, message: { role: 'assistant', content: [{ type: 'text', text: 'Here is the plan you asked for.' }] } } }
           : event)
-    }, 'modelDeclaredDegradedModeOutLoud'],
+    }, 'modelDeclaredFullRingOutLoud'],
     ['a turn ended with an error', (input) => {
       input.log.events = input.log.events.map((event) =>
         event.type === 'turn/end' && event.data?.turn === 1
@@ -21686,6 +27488,11 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     if (KEYWORD_SELF_TEST_ATTESTATION.length === 0) {
       problems.push('the self-test banner is EMPTY: no P4-T13 keyword case pushed a label, so the attestation below would claim nothing')
     }
+    // P5-T12's own anti-vacuity guard: the team slot's legs pushed into their
+    // own accumulator, or the clause below would claim a scenario that never ran.
+    if (TEAM_KEYWORD_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('the self-test banner is EMPTY: no P5-T12 team-keyword-mode case pushed a label, so its clause would claim nothing')
+    }
     // P4.5-T8″ — the tool/result SHAPE legs, named in the banner with the counts
     // the LIVE census produced. Computed (and its guards pushed) BEFORE the
     // `problems.length` exit below, so a leg that stops being read turns the
@@ -21719,6 +27526,13 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T13 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
+    const TEAM_KEYWORD_SELF_TEST_BANNER = [...TEAM_KEYWORD_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [scenario, label]) => {
+        byScenario.set(scenario, [...(byScenario.get(scenario) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([scenario, labels]) => `P5-T12 ${scenario}: ${labels.join(', ')}`)
+      .join('; ')
     // P4-T7's own banner, built from the SAME defect-case list that ran — so the
     // summary can never name fewer defects than were actually asserted.
     // Labels are the same for both specs (see the factory header), so the banner
@@ -21750,7 +27564,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       .map(([label]) => label)
       .join(', ')
     if (HYPERPLAN_SELF_TEST_ATTESTATION.length === 0) {
-      problems.push('P4-T15: the hyperplan-degraded-noted self-test banner is EMPTY — it would attest to nothing')
+      problems.push('P4-T15: the hyperplan-team-mode-full-ring self-test banner is EMPTY — it would attest to nothing')
     }
     const HYPERPLAN_SELF_TEST_BANNER = [...HYPERPLAN_SELF_TEST_ATTESTATION
       .reduce((byScenario, [scenario, label]) => {
@@ -21769,7 +27583,36 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       }, new Map())]
       .map(([scenario, labels]) => `P4-T15 ${scenario}: ${labels.join(', ')}`)
       .join('; ')
-    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-degraded-noted + ulw-plan-loads-prometheus-skill fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
+    if (TEAM_T9_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('P5-T9: the team-probe-face self-test banner is EMPTY — it would attest to nothing')
+    }
+    const TEAM_T9_SELF_TEST_BANNER = [...TEAM_T9_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [scenario, label]) => {
+        byScenario.set(scenario, [...(byScenario.get(scenario) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([scenario, labels]) => `P5-T9 ${scenario}: ${labels.join(', ')}`)
+      .join('; ')
+    const TEAM_T10_SELF_TEST_BANNER = [...TEAM_T10_SELF_TEST_ATTESTATION
+      .reduce((byScenario, [scenario, label]) => {
+        byScenario.set(scenario, [...(byScenario.get(scenario) ?? []), label])
+        return byScenario
+      }, new Map())]
+      .map(([scenario, labels]) => `P5-T10 ${scenario}: ${labels.join(', ')}`)
+      .join('; ')
+    if (TEAM_T14_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('P5-T14: the relay/broadcast self-test banner is EMPTY — it would attest to nothing')
+    }
+    const TEAM_T14_SELF_TEST_BANNER = [...TEAM_T14_SELF_TEST_ATTESTATION]
+      .map(([label, expectedCheck]) => `${label}→${expectedCheck}`)
+      .join(', ')
+    if (TEAM_T15_SETTLE_SELF_TEST_ATTESTATION.length === 0) {
+      problems.push('P5-T15: the nested settle self-test banner is EMPTY — it would attest to nothing')
+    }
+    const TEAM_T15_SETTLE_SELF_TEST_BANNER = [...TEAM_T15_SETTLE_SELF_TEST_ATTESTATION]
+      .map(([scenario, label]) => `${scenario}: ${label}`)
+      .join(', ')
+    console.log(`SELF-TEST OK: [${TOOL_RESULT_SHAPE_SELF_TEST_BANNER}] hello + demo + write-denied + nested-delegation + roster-parade + plan-reviewer-write-denied + atlas-nested-delegation + bash-read-guard-warned + todo-continuation-enforced + session-notification-log + background-notification-log + edit-error-recovery-reminder + json-error-recovery-reminder + tool-output-truncated + empty-task-response-corrected + directory-readme-injected + agent-usage-reminder-appended + task-resume-info-appended + webfetch-private-target-unprobed + prometheus-md-only-denied + ulw-execute-activated + ulw-execute-no-intent + skills-catalog-visible + ultrawork-keyword-injected + keyword-negative-controls + hyperplan-keyword-injected + combo-keyword-injected + handoff-summary-driven + remove-ai-slops-driven + stop-continuation-halts-todo + ulw-execute-command-activates-atlas + hyperplan-team-mode-full-ring + ulw-plan-loads-prometheus-skill + team-teardown-no-orphans + stop-continuation-team + team-keyword-mode fabricated good logs PASS; every fabricated defect (hello: missing turn/end, wrong route, mock-never-called, no session log; demo: explore-step-removed, no tool_call, no result return, no summary, out-of-order, wrong child route; AC-5: routes swapped, routes collapsed-to-equal; AC-6a: write-not-rejected, write-advertised, target-on-disk, no parent return; AC-6b: depth-not-rejected, grandchild-exists, delegation-tool-hidden, no parent return; P2-T18 parade: marker-landed-in-wrong-row, child-never-ran, child-wrong-route, batch-split-across-messages, note-never-returned, provider-inactive; P2-T19 plan-reviewer: write-not-rejected, write-advertised, delegation-tool-advertised, target-on-disk, child-wrong-seat, no parent return; P2-T19 atlas: depth-rejected-no-grandchild, grandchild-wrong-route, atlas-wrong-seat, atlas-lost-delegation-tools, read-only-grandchild-advertised-delegation-tools, findings-never-reached-atlas, report-never-returned, out-of-order; P3-T6 bash-read-guard: no-advisory-injection, advisory-injected-twice, trigger-result-isError; P3-T9 todo-continuation: no-steer, non-verbatim-steer-text, steer-without-todo-advance-order-break, control-turn-steered, control-turn-never-ran, control-list-empty, double-steer-claim-drift (double splice, claim untouched), double-steer-id-mismatch (claim id not the splice id); P3-T12 session-notification: no-anchor, anchor-emitted-twice, no-tool-result-bytes, proof-file-absent, no-completed-turn-end, anchor-line-drifted, session-is-a-delegated-child, unexpected-step-count; P3-T12 background-notification: no-anchor (the P3-T13 defect), anchor-emitted-twice, non-terminal-anchor-status, wrong-anchor-label, anchor-line-drifted, delegation-not-background, child-session-never-ran, no-native-settlement-notice, session-listener-double-announced, second-non-failure-anchor-line (the false-positive count), stray-unparsed-anchor-prefix-line (the same count, invisible to the anchor count), dispatch-failure-swallowed-twice; and the GOOD input plus the CI shape (one swallowed notify-send ENOENT) both PASS; P3-T14 edit-recovery: no-reminder-on-the-failed-edit, reminder-on-the-successful-sibling; P3-T14 json-recovery: no-reminder-on-the-non-blacklisted-tool, reminder-on-the-blacklisted-tool; P3-T14 truncator: oversized-result-untruncated, control-result-truncated; P3-T14 empty-task: uncorrected-empty-result, corrective-text-on-the-non-empty-result; P3-T15 directory-readme: no-readme-on-the-trigger, readme-on-the-readme-less-control, readme-on-the-deduplicated-read; P3-T15 agent-usage: no-reminder-on-the-first-target, reminder-on-the-non-target-control, fourth-reminder-past-the-cap, reminder-on-the-delegation-target-child; P3-T15 task-resume: no-tip-on-the-continuable-result, tip-with-a-wrong-child-id, tip-on-the-foreground-control, conductor-ran-only-the-batch; P3-T16 webfetch-guard: guard-probed-the-private-fixture, trigger-never-reached-the-native-policy, guard-marker-on-the-trigger, control-never-reached-the-native-policy, guard-marker-on-the-control, guard-spoke-elsewhere, conductor-ran-only-the-batch; P3-T16 prometheus-md-only: allowed-non-md-write, refused-file-landed-on-disk, no-workflow-reminder-on-the-plan-write, reminder-on-the-non-plans-write, conductor-write-gated-too, child-descriptor-without-the-prometheus-persona, plan-bytes-never-landed, gate-spoke-twice; P3-T17 ulw-execute: no-injection-reached-the-atlas-child, atlas-persona-not-observable, injection-source-contract-broken, injection-never-reached-the-model, atlas-control-injected, sibling-injected, notepad-not-scaffolded, notepad-footer-not-rewritten, conductor-injected, batch-never-dispatched; P4-T5 skills-catalog-visible: catalog-dropped-one-vendored-skill, catalog-exposed-a-shared-prefix, catalog-exposed-start-work, malformed-catalog-in-a-later-request, skills-marker-never-landed, skill-tool-errored-instead-of-body, skill-tool-returned-a-placeholder-body, unvendored-name-not-refused, turn-never-ended; ${KEYWORD_SELF_TEST_BANNER}; P4-T7 command channel (run against BOTH the argument-bearing and the no-argument spec): ${COMMAND_CHANNEL_SELF_TEST_BANNER}; ${STOP_SELF_TEST_BANNER}; ${ULW_COMMAND_SELF_TEST_BANNER}; ${HYPERPLAN_SELF_TEST_BANNER}; ${ULW_PLAN_SELF_TEST_BANNER}; ${TEAM_T9_SELF_TEST_BANNER} (run against BOTH T9 team analyzes — the five legs stated once, applied twice); ${TEAM_T10_SELF_TEST_BANNER} (the T10 surface legs — 10 on team-create-and-message (9 T10 checks + the T15 settle-pin leg), 5 on team-shutdown-handshake (4 T10 checks + the T15 settle-pin leg), each one red ONLY on its own named check across the axes missing-frame / doubled-frame / wrong-kind / out-of-order / catalog-member-missing / settle-hook-vanished) FAILs on its own named check; ${TEAM_T15_SETTLE_SELF_TEST_BANNER} (the P5-T15 nested settle leg — settleReached undefined, the weak form's hole, red ONLY on settleReachedChildren) FAILs on its own named check; ${TEAM_T14_SELF_TEST_BANNER} (the P5-T14 relay/broadcast legs on team-create-and-message — relay-result-flipped / relay-frame-dropped / annotation-stripped / body-stripped / durable-source-forged / relay-frame-at-lead / broadcast-fan-out-missing-one / broadcast-annotation-forged / broadcast-at-lead-self / denial-dropped / denial-landed-frames) FAIL on their own named checks; ${TEAM_KEYWORD_SELF_TEST_BANNER} (the P5-T12 team slot legs — verbatim body, new kind, member-side never released, idempotent paste, vacuous-child guard) FAILs on its own named check; plus the hermetic MOCKROLE landing check (real template + real renderers, 11/11 markers under their own rows, idempotent, unknown role throws); plus the hermetic MOCKROLE copy-stamp + read-face gate (staged system-sections copy of the real package, marker at line 1 per role, a second pass reports reStamped:true with unchanged bytes, unknown role throws, no staged copy throws, an ambiguous conductor carrier throws, and the read-face gate refuses a sibling-prefix / duplicated / unmarked / stray-role / unreadable face); plus ${a1PrimeSelfTestBanner()}; plus ${seatSelfTestBanner()} — the ${SEAT_SELF_TEST_TOTAL} legs — seventeen on FABRICATED catalogs, four reading the live catalog or skipping when none was read, so they prove the selection RULE (present id never moves; an absent id moves ONLY when the catalog leaves exactly one capable id; TWO OR MORE capable ids are REFUSED until a human writes the choice down in TEST_ONLY_SEAT_PINS, and a stale such name still throws; there is NO similarity term left to pretend the fixture ranks ids by meaning; the declared modalities are checked on KEPT, BOUND and SUBSTITUTED ids alike; a BINDING pin never substitutes; zero-or-two catalogs refused; the no-boot shipped-default audit names every roster row its catalog cannot serve and agrees seat-for-seat with what the resolver did) and nothing about what any generation serves. CI SCOPE, CORRECTED after Review A overturned round-1 finding ③: these legs DO run in CI, because main() calls runAnalysisSelfTest before the expensive spawn and exits 1 on any problem and pnpm test:e2e is exactly that path — proven by mutant M1 exiting 1 on the flagless path naming 'many-capable-ids-refused-without-written-choice' — what CI no longer runs is the RETIRED 0.1.x generation: since the D17 cutover (P4.5-T12b) ci.yml:97 pins DSH_VERSION 0.2.0-rc.2, where the shipped defaults ALL resolve since the T12b seat re-pin landed in the same commit — the live audit reads 0/11 broken, 0 moved, and the substitution legs stand as the drift guard for future catalog movement (this line once claimed the opposite; PR #12 round 4, kimi); the retired generation's absence is ruling D17, not a coverage hole, and .github/ is outside this file's scope`)
   } else {
     main().catch((error) => {
       console.log(JSON.stringify({ result: 'FAIL', reason: `driver crash: ${error.message}`, scenarios: [] }))

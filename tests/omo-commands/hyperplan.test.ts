@@ -325,6 +325,38 @@ describe('P4-T14 ③ team references are ZERO hardcoded dead links', () => {
   })
 })
 
+describe('P5-T13 修复轮（评审 A MINOR）— carrier note 无重复条目', () => {
+  // HYPERPLAN_CARRIER_NOTE 的条目 4/5/6 曾逐字重复两遍（P4-T14 遗留，git log -S
+  // 实证 @97faf6f），且夹着 "5a." 错序编号。已去重并重排连续编号。守卫三腿：
+  // 编号连续、无字母后缀、条目标题唯一——任何一份重复段回潮都当场红。
+  it('编号从 1 连续、无字母后缀（5a. 型编号漂移即红）', () => {
+    const numbered = [...HYPERPLAN_CARRIER_NOTE.matchAll(/^(\d+)([a-z]*)\. /gm)]
+    expect(numbered.length, 'note has no numbered items at all').toBeGreaterThan(5)
+    expect(numbered.map((m) => Number(m[1])), 'item numbers must run consecutively from 1')
+      .toEqual(numbered.map((_, i) => i + 1))
+    expect(numbered.every((m) => m[2] === ''), 'letter-suffixed numbering (5a.) is drift')
+      .toBe(true)
+  })
+
+  it('没有任何条目标题出现两次（逐字重复段回潮即红）', () => {
+    const titles = HYPERPLAN_CARRIER_NOTE.split('\n')
+      .filter((line) => /^\d+\.\s/.test(line))
+      .map((line) => line.replace(/^\d+\.\s+/, '').slice(0, 45))
+    expect(new Set(titles).size, 'a carrier-note item appears twice — dedupe again')
+      .toBe(titles.length)
+  })
+
+  it('去重不删内容：五个成员名/两条路径/7-phase 登记全部还在（各恰一份）', () => {
+    // 反向钉：dedupe 删的必须是重复副本而不是登记本身。
+    for (const anchor of ['NO TEAM-MODE', '7-PHASE', 'SKILL CALL FORM REWRITTEN', 'VERBATIM PRESERVED', 'Adversarial Provenance']) {
+      const hits = HYPERPLAN_CARRIER_NOTE.split(anchor).length - 1
+      expect(hits, `${anchor} must ride the note exactly once`).toBe(1)
+    }
+    expect(HYPERPLAN_CARRIER_NOTE).toContain('~/.omo/omo.jsonc')
+    expect(HYPERPLAN_CARRIER_NOTE).toContain('~/.config/opencode/oh-my-opencode.jsonc')
+  })
+})
+
 describe('P4-T14 the upstream inconsistencies are recorded, not silently resolved', () => {
   it('(A) both conflicting config paths are recorded in the note', () => {
     // A reviewer must be able to SEE that upstream disagrees with itself here.
@@ -365,9 +397,14 @@ describe('P4-T14 rendering: this template needs NO session id (the opposite of u
 })
 
 describe('P4-T14 the handler queues exactly one user message (T6 injection precedent)', () => {
+  // P5-T13: the factory's first parameter is the PRESENCE face (the T13
+  // switch), the clock moved to second. Passing `undefined` here means "no
+  // presence service on this host" — the DEGRADED branch — which is exactly
+  // what these P4 legs assert, so the degraded path stays green at the
+  // call-shape level too (the T13 ruling: the upgrade must not kill it).
   it('follows up once and reports the degraded mode in its reply', () => {
     const { value, queued } = invocation('plan the auth rewrite', 'session-xyz')
-    const result = createHyperplanCommand(clock).handler(value)
+    const result = createHyperplanCommand(undefined, clock).handler(value)
     expect(queued).toHaveLength(1)
     expect(queued[0]).toBe(renderHyperplanInstruction(value, clock))
     expect(result.kind).toBe('success')
@@ -377,7 +414,7 @@ describe('P4-T14 the handler queues exactly one user message (T6 injection prece
 
   it('queues the message with a falsy session id too (no session dependency)', () => {
     const { value, queued } = invocation('x', '')
-    const result = createHyperplanCommand(clock).handler(value)
+    const result = createHyperplanCommand(undefined, clock).handler(value)
     expect(queued).toHaveLength(1)
     expect(result.kind).toBe('success')
   })
