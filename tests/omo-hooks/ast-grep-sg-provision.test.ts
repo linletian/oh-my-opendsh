@@ -42,6 +42,7 @@ import {
 } from '../../patches/omo-dsh/omo-hooks/src/hooks/ast-grep-sg-provision.ts'
 import { sgBinaryName } from '../../patches/omo-dsh/omo-hooks/src/ast-grep/sg-manifest.ts'
 import { HOOK_MANIFEST } from '../../patches/omo-dsh/omo-hooks/src/manifest.ts'
+import { collectModuleSpecifiers } from '../../scripts/ast-grep-module-specifiers.mjs'
 
 const SKILL_DIR = fileURLToPath(new URL('../../patches/omo-dsh/vendor/shared-skills/skills/ast-grep', import.meta.url))
 
@@ -260,10 +261,11 @@ describe('the provisioning barrel is live at runtime, not just on disk', () => {
   })
 
   it('the barrel is the only door: the hook source names no deeper module', () => {
-    // Pairs with c29 ③, from the test side: if a future edit re-points the hook
-    // at a single module, the seam stops being one door and this goes red with it.
-    const hookSrc = readFileSync(fileURLToPath(new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ast-grep-sg-provision.ts', import.meta.url)), 'utf8')
-    expect(hookSrc).toContain("from '../ast-grep/index.ts'")
-    expect(hookSrc).not.toMatch(/from '\.\.\/ast-grep\/(sg-resolver|sg-provisioner|sg-manifest|install-script|types)\.ts'/)
+    // Pairs with c29 ③, from the test side: either quote style, static or
+    // side-effect imports, and dynamic import() are all module-reaching faces.
+    const hookPath = fileURLToPath(new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ast-grep-sg-provision.ts', import.meta.url))
+    const { moduleSpecifiers } = collectModuleSpecifiers(hookPath)
+    expect(moduleSpecifiers).toContain('../ast-grep/index.ts')
+    expect(moduleSpecifiers.filter((specifier) => specifier.startsWith('../ast-grep/') && specifier !== '../ast-grep/index.ts')).toEqual([])
   })
 })

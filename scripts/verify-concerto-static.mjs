@@ -146,6 +146,7 @@ import { REPO_ROOT, loadYamlDialect, resolveDshNodeModules } from './doctor-lite
 // c11 复用 doctor-lite-core 自己的挂载序期望，而不是在本文件重抄插件清单
 // （理由见 c11 块：引用同一事实源，另加 doctor-lite 2b 未覆盖的顶层 insert 行数断言）。
 import { EXPECTED_INSERT_ROW_IDS, DSH_BUNDLED_INSERT_ROW_NAMES, collectInsertRowIds } from './doctor-lite-core.ts'
+import { collectModuleSpecifiers } from './ast-grep-module-specifiers.mjs'
 
 const PATCH_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents-current')
 const AGENT_YML = join(PATCH_DIR, 'preset', 'agent.cordis.yml')
@@ -2197,15 +2198,27 @@ async function run() {
   //   ④c upstreamTestFiles 全集臂：同法，显式 5 项常量多重集（hook 1 + 供给层
   //      4；ARBITRATION-r2 A-R2-NIT-2 补——④ 的 5 只是数量）。
   //   ⑤ NOTICES 镜像：THIRD_PARTY_NOTICES.md 的 `src/ast-grep/ 供给层 = N files`
-  //      必须等于磁盘实测；⑤b 再把逐文件表的 derived 路径与磁盘、上游路径与
-  //      manifest 双向对账，处置列只接受 semantic port only + 可选注记。
+  //      必须等于磁盘实测；⑤b 再把逐文件表的 derived 路径与磁盘双向对账，
+  //      上游路径逐行等于 upstreamByDerived，并与 manifest 双向对账；处置列只接受
+  //      semantic port only + 可选注记。
   if (hooksManifest === null) {
     results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', false,
       'manifest.ts could not be imported — the provisioning-layer cross-check would be vacuous'))
   } else try {
     const problems = []
     const layerFiles = collectTsFiles(AST_GREP_DIR)
-    const wantLayer = ['index.ts', 'install-script.ts', 'sg-manifest.ts', 'sg-provisioner.ts', 'sg-resolver.ts', 'types.ts']
+    // ONE authored per-file attribution contract feeds the filesystem roster,
+    // the manifest's expected upstream multiset, and each NOTICES row below.
+    // In particular, sg-resolver has a second semantic source (whichOnPath).
+    const upstreamByDerived = new Map([
+      ['src/ast-grep/index.ts', ['packages/utils/src/ast-grep/index.ts']],
+      ['src/ast-grep/install-script.ts', ['packages/utils/src/ast-grep/install-script.ts']],
+      ['src/ast-grep/sg-manifest.ts', ['packages/utils/src/ast-grep/sg-manifest.ts']],
+      ['src/ast-grep/sg-provisioner.ts', ['packages/utils/src/ast-grep/sg-provisioner.ts']],
+      ['src/ast-grep/sg-resolver.ts', ['packages/utils/src/ast-grep/sg-resolver.ts', 'packages/utils/src/runtime/which.ts']],
+      ['src/ast-grep/types.ts', ['packages/utils/src/ast-grep/types.ts']],
+    ])
+    const wantLayer = [...upstreamByDerived.keys()].map((derived) => derived.slice('src/ast-grep/'.length))
     const missingLayer = wantLayer.filter((rel) => !layerFiles.includes(rel))
     const extraLayer = layerFiles.filter((rel) => !wantLayer.includes(rel))
     if (missingLayer.length > 0) problems.push(`provisioning layer files missing: ${missingLayer.join(', ')}`)
@@ -2216,10 +2229,13 @@ async function run() {
       if (!header.includes('v4.19.4')) problems.push(`${rel}: signature header omits the frozen baseline tag v4.19.4`)
       if (!PORT_DECLARATIONS.some((word) => header.includes(word))) problems.push(`${rel}: signature header carries no port declaration`)
     }
-    const hookSrc = readFileSync(join(HOOKS_DIR, 'ast-grep-sg-provision.ts'), 'utf8')
-    if (!hookSrc.includes("from '../ast-grep/index.ts'")) problems.push('the hook does not import the provisioning barrel ../ast-grep/index.ts — the single-import seam is broken')
+    // TypeScript's full AST excludes comments and distinguishes strings from
+    // syntax. The barrel is required on the static face; the deeper-module ban
+    // covers static import/re-export, side-effect import, and dynamic import().
+    const { staticSpecifiers: hookStaticSpecifiers, moduleSpecifiers: hookModuleSpecifiers } = collectModuleSpecifiers(join(HOOKS_DIR, 'ast-grep-sg-provision.ts'))
+    if (!hookStaticSpecifiers.includes('../ast-grep/index.ts')) problems.push('the hook does not import the provisioning barrel ../ast-grep/index.ts — the single-import seam is broken')
     for (const deeper of wantLayer.filter((rel) => rel !== 'index.ts').map((rel) => `../ast-grep/${rel}`)) {
-      if (hookSrc.includes(`from '${deeper}'`)) problems.push(`the hook reaches deeper than the barrel (${deeper}) — half-survival through a renamed module becomes possible`)
+      if (hookModuleSpecifiers.includes(deeper)) problems.push(`the hook reaches deeper than the barrel (${deeper}) — half-survival through a renamed module becomes possible`)
     }
     // ①b **barrel 多重集臂**（ARBITRATION-r1 B-MINOR-1，r3 B-MINOR-3 强化）：barrel
     // 的 re-export 说明符**多重集**必须恰等于显式名册去掉 index.ts 自身（名册与磁盘
@@ -2308,13 +2324,7 @@ async function run() {
       const wantUpstream = [
         'packages/omo-opencode/src/hooks/ast-grep-sg-provision/hook.ts',
         'packages/omo-opencode/src/hooks/ast-grep-sg-provision/index.ts',
-        'packages/utils/src/ast-grep/index.ts',
-        'packages/utils/src/ast-grep/types.ts',
-        'packages/utils/src/ast-grep/sg-manifest.ts',
-        'packages/utils/src/ast-grep/sg-resolver.ts',
-        'packages/utils/src/ast-grep/sg-provisioner.ts',
-        'packages/utils/src/ast-grep/install-script.ts',
-        'packages/utils/src/runtime/which.ts',
+        ...[...upstreamByDerived.values()].flat(),
       ]
       const gotUpstream = [...row.upstreamFiles].sort()
       const wantUpstreamSorted = [...wantUpstream].sort()
@@ -2381,6 +2391,12 @@ async function run() {
         // actual upstream source in this table is a packages/**/*.ts path.
         .filter((path) => path.includes('/') || path.endsWith('.ts'))
       if (upstreamPaths.length === 0) problems.push(`${noticeRow.derived}: the upstream-source cell names no backtick-quoted path`)
+      const expectedUpstreamPaths = upstreamByDerived.get(noticeRow.derived) ?? []
+      const missingRowSources = expectedUpstreamPaths.filter((path) => !upstreamPaths.includes(path))
+      const extraRowSources = upstreamPaths.filter((path) => !expectedUpstreamPaths.includes(path))
+      if (missingRowSources.length > 0) problems.push(`${noticeRow.derived}: the row no longer attributes its own upstream source(s): ${missingRowSources.join(', ')}`)
+      if (extraRowSources.length > 0) problems.push(`${noticeRow.derived}: the row attributes source(s) belonging to another derived file: ${extraRowSources.join(', ')}`)
+      if (upstreamPaths.length !== expectedUpstreamPaths.length) problems.push(`${noticeRow.derived}: the row has ${upstreamPaths.length} upstream path(s), its per-file contract has ${expectedUpstreamPaths.length} — duplicates cannot hide behind a set comparison`)
       for (const upstreamPath of upstreamPaths) {
         noticedUpstream.add(upstreamPath)
         if (!declaredUpstream.has(upstreamPath)) problems.push(`${noticeRow.derived}: NOTICES names ${upstreamPath}, which the manifest row's upstreamFiles does not declare`)
@@ -2391,7 +2407,10 @@ async function run() {
       if (!noticedDerived.has(derived)) problems.push(`provisioning file ${derived} has no per-file NOTICES row`)
     }
     for (const upstreamPath of declaredUpstream) {
-      if (upstreamPath.startsWith('packages/utils/src/ast-grep/') && !noticedUpstream.has(upstreamPath)) {
+      // This table owns every packages/utils source in the ported unit, not just
+      // the same-named ast-grep files: runtime/which.ts is attributed on the
+      // sg-resolver row and must participate in reverse coverage too.
+      if (upstreamPath.startsWith('packages/utils/') && !noticedUpstream.has(upstreamPath)) {
         problems.push(`the manifest row declares ${upstreamPath}, which no ast-grep NOTICES row names`)
       }
     }
@@ -2399,7 +2418,7 @@ async function run() {
     results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', problems.length === 0,
       problems.length > 0
         ? problems.join('; ')
-        : `${layerFiles.length} provisioning files ↔ explicit roster ↔ barrel re-export MULTISET equal to the ${wantBarrel.length} roster members (no duplicate, no escaping specifier) ↔ row arithmetic (9+5) ↔ upstreamFiles multiset-equal to the 9 named paths ↔ upstreamTestFiles multiset-equal to the 5 named seeds ↔ barrel-only hook import derived from that same roster ↔ barrel IMPORTED LIVE, 4 seam symbols present ↔ barrel namespace ⊆ union of the ${wantBarrel.length} member modules' exports ↔ NOTICES count + ${noticeRows.length} per-file rows mirrored both ways against disk + manifest, with a closed disposition vocabulary`))
+        : `${layerFiles.length} provisioning files ↔ explicit roster ↔ barrel re-export MULTISET equal to the ${wantBarrel.length} roster members (no duplicate, no escaping specifier) ↔ row arithmetic (9+5) ↔ upstreamFiles multiset-equal to the 9 named paths ↔ upstreamTestFiles multiset-equal to the 5 named seeds ↔ barrel-only hook import derived from that same roster, all quote styles + dynamic import ↔ barrel IMPORTED LIVE, 4 seam symbols present ↔ barrel namespace ⊆ union of the ${wantBarrel.length} member modules' exports ↔ NOTICES count + ${noticeRows.length} per-file rows, each row's upstream multiset equal to its derived-file contract, with all packages/utils sources reverse-covered and a closed disposition vocabulary`))
   } catch (e) {
     results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', false,
       `the provisioning-layer cross-check could not run: ${String(e.message ?? e)}`))
