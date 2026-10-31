@@ -103,7 +103,7 @@ OMO 是一个经过一年多实战检验的高质量 harness，其设计哲学�
 - `dsh-tool-todo` → OMO Todo Enforcer（`packages/todo/*`）
 - `dsh-subagent` + `dsh-subagent-fork-in-process` + `dsh-subagent-spawn-in-process` + `dsh-tool-subagent*` → OMO Team Mode（`packages/subagent/*`，包括 `subagent-acp` / `subagent-codex` / `subagent-claude-code` / `subagent-dsh-sdk`）
 - `dsh-terminal` + `dsh-tool-terminal` + `dsh-bash-local` → OMO tmux + bash 集成（`packages/terminal/*`）
-- `dsh-lsp` + `dsh-lsp-stdio` + `dsh-tool-lsp` → OMO LSP（`packages/lsp/*`）
+- `dsh-lsp` + `dsh-lsp-stdio` + `dsh-tool-lsp` → OMO LSP（`packages/lsp/*`）——**【实施期订正（P6-T1 实测）】**：`dsh-lsp` / `dsh-lsp-stdio` / `dsh-tool-lsp` **在安装树不存在**（本机 dsh 0.2.0-rc.2 安装树亲验，三包皆无目录）；实际挂载 = **`dsh-mcp-client` + vendored `lsp-core`**（fork L = (L-B)，D20，经 cordis.yml 第 5 插行 `omo-lsp`）。原行保留为研究期原案，不删。
 - `dsh-fs` + `dsh-fs-local` + `dsh-fs-sandbox` + `dsh-fs-observation-policy` + `dsh-tool-fs` + `dsh-tool-str-replace-editor` + `dsh-tool-fs-search` → OMO 文件系统工具（`packages/fs/*`，含 `str-replace-editor` 直接对应 hashline 的位置）
 - `dsh-shell` + `dsh-shell-env` + `dsh-bash-sandbox` + `dsh-pwsh-sandbox` + `dsh-tool-bash` + `dsh-tool-pwsh` → OMO bash 工具（`packages/shell/*`，注意 OMO 有专门的 `git-bash-mcp` 处理 Windows）
 - `dsh-sandbox-local` + `dsh-sandbox-policy` + `dsh-user-approval` + `dsh-permission-presets` → OMO 审批
@@ -216,7 +216,7 @@ OMO 的 11 个 agent 实际是"system prompt + 工具集 + 委派策略 + 模型
 | `ast-grep-mcp` | 用 `dsh-mcp-client` 直接挂 stdio 进程 |
 | `git-bash-mcp` | 同上 |
 | `codegraph` | 同上 |
-| `exa` / `context7` / `grep_app` (web) | `dsh-web-search-exa` 等价 + `dsh-web` |
+| `exa` / `context7` / `grep_app` (web) | `dsh-web-search-exa` 等价 + `dsh-web`——**【实施期订正（P6-T1 实测）】**：`dsh-web-search-exa` 在本报告名单内但**实装缺席**（安装树亲验无此包，同名单里的 `dsh-web-search-perplexity` 亦无）；实装形态 = **`dsh-web-search-deepseek` + `dsh-web` + `dsh-web-fetch-http` + `dsh-tool-web`**（T8 native-adopt：deepseek 搜索后端 + http 抓取 + 模型面工具；web 面无 fork——`FORKS.md` §4）。exa / context7 / grep_app = **recorded-difference**，且**覆盖缺口具名**：context7 的库文档解析（`resolve-library-id` / `query-docs`）与 grep_app 的 GitHub 代码搜索**不是**通用 web 搜索的严格子集。 |
 
 **评估：MCP 全部可移植。** OMO 已经有 `mcp-stdio-core` 和 `mcp-client-core`，与 DSH 的 mcp 包层叠在一起几乎零摩擦。
 

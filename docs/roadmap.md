@@ -94,7 +94,7 @@ Delivered: `hashline-core` (`@oh-my-opencode/hashline-core` @ v4.19.4, commit `b
 
 ### Phase 6 — MCPs & editing
 
-- **Goal**: LSP (via `dsh-lsp`), ast-grep (upstream's living direction), web search/fetch (DSH built-ins), and the editing model decision: hashline (`hashline-core`, vendored in Phase 1) vs DSH `str-replace-editor` — decide per principle #1 with an A/B evidence note.
+- **Goal**: LSP (**mounted through the dsh-bundled `@deepseek-ai/dsh-mcp-client` over the vendored `lsp-core` engine** — `dsh-lsp` does not exist in the install tree, nail-tested at P6-T1/T4, the native-first check recorded; fork L = (L-B), D20), ast-grep (upstream's living direction = the **optionality** of an MCP-shaped selective lift, nail-tested at P6-T1 F-2: no ast-grep MCP package exists under `packages/` inside the frozen v4.19.4 baseline, so that shape is **available rather than required**; **ruled = (G-A) semantic port of the hook + provisioning layer, D21**; (G-B), the MCP-surface overlay, is recorded as a "future consideration" difference whose burden of proof sits on the overlay), web search/fetch (DSH built-ins), and the editing model decision: hashline (`hashline-core`, vendored in Phase 1) vs the DSH editing face — decide per principle #1 with an A/B evidence note (**ruled = (E-A) native face, D19**; `str-replace-editor` is in the install tree but unmounted per P6-T1, so the comparison baseline is the mounted `dsh-tool-fs` edit).
 - **Explicitly excluded**: codegraph (deleted upstream, §16.2).
 - **Exit criteria**: each chosen capability demonstrably used by an agent in a scripted scenario.
 

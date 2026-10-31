@@ -9,7 +9,7 @@
 # ($DSH_HOME/profiles/<name>/), so the bare package name requires the package
 # to be installed into that profile (`dsh plugin --profile <name> add <dir>`).
 #
-# FOUR insert rows since P5-T3 — one per plugin, in mount order. omo-agents owns
+# FIVE insert rows since P6-T4 — one per plugin, in mount order. omo-agents owns
 # the roster / persona / model-route / hard-blocks layer; omo-hooks owns the
 # Phase 3 behaviour-guardrail listeners (patches/omo-dsh/omo-hooks);
 # omo-commands owns the Phase 4 slash-command surface
@@ -20,22 +20,30 @@
 # (plan §4.1: folding the hooks into omo-agents — or the commands into either —
 # would turn a roster plugin / guardrail plugin into a junk drawer; §4.2 says
 # the same of folding team semantics into any of them), so a profile
-# must install ALL FOUR (`dsh plugin --profile web add <dir>` four times —
-# scripts/cold-start.sh, tests/e2e/drive.mjs, scripts/concerto-mode-probe.sh,
-# scripts/smoke-real.mjs).
+# must install ALL FOUR omo-* packages (`dsh plugin --profile web add <dir>`
+# four times — scripts/cold-start.sh, tests/e2e/drive.mjs,
+# scripts/concerto-mode-probe.sh, scripts/smoke-real.mjs). The FIFTH row is
+# different in kind: `@deepseek-ai/dsh-mcp-client` is a dsh-bundled plugin and
+# resolves from the dsh install tree — NO profile install (measured:
+# p6t1-probe installed only its observer, the mcp-client rows booted anyway;
+# .omo/evidence/p6t1/mcp-client-probe/run.sh:151 installs exactly ONE plugin).
 # Measured (dsh 0.1.5-rc.1): a profile missing one package fails the whole boot
 # naming that package's own row — `plugin tree failed to load: failed to import
 # loader entry omo-hooks (@oh-my-opendsh/omo-hooks): Cannot find package …`
 # (ERR_MODULE_NOT_FOUND) — never a half-mounted overlay.
-# scripts/doctor-lite.mjs check `cordis-plugins` pins exactly these four ids.
+# scripts/doctor-lite.mjs check `cordis-plugins` pins exactly these five ids.
 #
-# ⚠️ COUNT COUPLING NET (3 → 4). Adding or removing a row here is not a
-# one-file edit: every sandbox boot site installs one package per row, and three
-# places restate the list or its count — scripts/doctor-lite-core.ts
+# ⚠️ COUNT COUPLING NET (4 → 5). Adding or removing a row here is not a
+# one-file edit: every sandbox boot site installs one package per OMO-* row,
+# and three places restate the list or its count — scripts/doctor-lite-core.ts
 # `EXPECTED_INSERT_ROW_IDS` (the single source the doctor check AND the static
 # gate's c11 both read), tests/omo-hooks/cordis-inserts.test.ts (hand-transcribed
 # pin) and this header. Miss one and the failure is a red gate, not a silent
-# skip — which is the point of the net.
+# skip — which is the point of the net. The install lists in
+# cold-start.sh / drive.mjs / concerto-mode-probe.sh / smoke-real.mjs stay at
+# FOUR `dsh plugin add` calls: the fifth row's plugin is dsh-bundled and needs
+# no profile install (probe evidence above), so the net's boot-site nodes moved
+# in comments only — the row count they install never did.
 
 - insert:
     - id: omo-agents
@@ -93,3 +101,55 @@
 - insert:
     - id: omo-team
       name: '@oh-my-opendsh/omo-team'
+
+# P6-T4: the vendored LSP engine, mounted as the FIFTH row through the
+# dsh-bundled MCP client (fork = (L-B), .omo/evidence/p6t1/FORKS.md §2.6 —
+# the narrowed vendor face; the thin server is the project-written
+# patches/omo-dsh/vendor/lsp-core/src/cli.ts). `name` needs NO profile
+# install (dsh-bundled, probe-proven — see the header). The config shape is
+# the dsh-mcp-client Config schema (transport stdio; serverName unique across
+# rows — 'lsp' is measured booting with this row). `command`/`cwd` are `!!js`
+# expressions evaluated by the dsh config loader IN THE DSH PROCESS at
+# interpolation time (cordis-plugin-loader `interpolate(ctx, config)`; the
+# `!!js` dialect is the repo's existing one — scripts/concerto-mode-probe.sh
+# loads the same JsExpr type tag; real precedents: the installed dsh-mcp-client
+# README's minimal-config example `GITHUB_TOKEN: !!js process.env.GITHUB_TOKEN`
+# (README.md:43 of the install tree) and patches/omo-dsh/omo-agents-current/
+# preset/agent.cordis.yml:104,108 `disabled: !!js process.platform === 'win32'`):
+# execPath is the node that boots dsh (v24, native type-stripping — the
+# face-probe runtime, .omo/evidence/p6t4/), and cwd pins the child's working
+# directory to the dsh process's cwd, which every boot site of this repo cd's
+# to the REPO ROOT before booting (cold-start.sh `cd "$REPO_ROOT"`; drive.mjs
+# / smoke-real.mjs / concerto-mode-probe.sh spawn from the repo root) — so
+# the RELATIVE args path resolves identically at every boot site, and the
+# repo stays clone-and-run.
+# ⚠️ The same contract cuts the other way: a boot from a NON-repo-root cwd
+# makes this row SILENTLY absent (failOnStartupError:false — the child cannot
+# find cli.ts, the boot survives, zero LSP tools); the relative-args +
+# `!!js process.cwd()` pair REQUIRES repo-root boots at the four named sites.
+#
+# failOnStartupError: FALSE, decided not defaulted — the honest failure shape
+# for a best-effort tool surface: a missing/broken LSP server must NOT kill
+# the boot (measured S4 semantics: the row logs loudly, the plugin keeps the
+# connection slot, the harness boots; true would instead reject the whole entry
+# activation, S4b, for a tool that is optional by nature). What observes the
+# ABSENCE of this row, named precisely: the cold-start.sh boot-log grep for
+# the stdio child's own `[lsp-mcp] stdio server starting` announcement (the
+# runtime-absence gate — the child's stderr is inherited into the boot log),
+# the compose-time grep at cold-start.sh:112 (`grep -q "name:
+# '@deepseek-ai/dsh-mcp-client'"` — composition presence only, no runtime
+# claim), and the live face-probe (.omo/evidence/p6t4/face-probe/ —
+# real dsh-mcp-client, 8 mcp__lsp__* tools, execute round-trip). tests/e2e/
+# drive.mjs does NOT assert mcp__lsp__* markers today — the absent-canary
+# lands with P6-T5 (TODO anchor in tests/e2e/drive.mjs).
+- insert:
+    - id: omo-lsp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: lsp
+        transport: stdio
+        command: !!js process.execPath
+        args:
+          - patches/omo-dsh/vendor/lsp-core/src/cli.ts
+        cwd: !!js process.cwd()
+        failOnStartupError: false

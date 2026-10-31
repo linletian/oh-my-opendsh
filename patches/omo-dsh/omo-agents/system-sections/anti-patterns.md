@@ -14,3 +14,4 @@ slightly softer — named bad habits that must stop, but stated as categories.
 - **Background Tasks**: Polling `background_output` on running tasks - end response and wait for notification
 - **Delegation Duplication**: Delegating exploration to explore/librarian and then manually doing the same search yourself
 - **Oracle**: Delivering answer without collecting Oracle results
+- **Over-Broad Replace**: reaching for `replace_all` after an ambiguous-match refusal — widen `old_string` to the one site you mean; if the instruction names no occurrence, choose it from the instruction's own context and **report** which site you chose; never replace the whole span

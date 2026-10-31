@@ -17,7 +17,7 @@
 //
 //   summary   "[omo-hooks] loaded: manifest <N> entries (pre-step=<n>,
 //              pre-execute=<n>, post-execute=<n>, turn-stopping=<n>,
-//              session/event=<n>, status=<n>)"
+//              session/event=<n>, status=<n>, session-created=<n>)"
 //             — exactly ONE line, logged once per apply() AFTER the manifest
 //               validated. `<N>` is the manifest length and every `<n>` is a
 //               per-event count DERIVED from the manifest (never hard-coded);
@@ -62,8 +62,11 @@ export function describeError(err: unknown): string {
 /**
  * The summary line's fields, in log order: the human label paired with the DSH
  * event it counts. The `HookEvent` type makes a typo'd event a compile error
- * here before any runtime check, and the six rows cover MANIFEST_EVENTS
+ * here before any runtime check, and the seven rows cover MANIFEST_EVENTS
  * exactly — the label vocabulary is what the probe's summary grep reads.
+ * P6-T6 appended the seventh field (`session-created`) when the roster gained
+ * its first `session/created` row; registration.test.ts ③ pins the full list
+ * on the test side so the two vocabularies cannot drift apart.
  */
 export const SUMMARY_EVENT_FIELDS: readonly { readonly label: string; readonly event: HookEvent }[] = [
   { label: 'pre-step', event: 'agent/pre-step' },
@@ -72,6 +75,7 @@ export const SUMMARY_EVENT_FIELDS: readonly { readonly label: string; readonly e
   { label: 'turn-stopping', event: 'agent/turn-stopping' },
   { label: 'session/event', event: 'session/event' },
   { label: 'status', event: 'agent/status' },
+  { label: 'session-created', event: 'session/created' },
 ]
 
 /**

@@ -16,7 +16,7 @@
 
 ## 编号约定
 
-- **D#**（D1–D18）：已确认决策
+- **D#**（D1–D21）：已确认决策（上方索引表止于 D17；D18–D21 为底部登记条目，判某条缺席前请先查文件底部）
 - **R#**（R1–R6）：风险处置决策（接受现状 / 暂不处理）
 - **O#**（O1–O8）：开放维度（其中 O1 / O2 / O4 / O6 / O7 / O8 已转为决策）
 - 引用格式：`决策文档 D7` / `decisions.md D7`
@@ -179,6 +179,80 @@
 - **2026-10-06**：**D17 确认**（放弃 DSH 0.1.x 兼容，目标运行时收敛为 0.2.x+）。业主裁定逐字：「v0.1.5 不用兼容可以放弃掉，现在只需要适配 v0.2.x 以上」。触发源：Phase 4.5 WP-4 开工前的仲裁者一手可行性探针——门 3（`tests/e2e/drive.mjs`）在本机 0.2.0-rc.2 上**跑得动**（沙箱真 boot、read-face 校验器 `READ-FACE PASS`、session 建出且日志头自报 `"version":4`），**但红 9 条断言且全部属于「explore 席没起来」的链**，会话日志里 `tool/call` / `tool/result` **零条**；根因一手钉死于 0.2.x **删掉 `settings.yaml` 这个配置面**——`dsh-settings/lib/index.js:343-362` 的补导入由 `:339-341` 的 `ctx.root.loader.await().then(...)` 触发，**晚于** `omo-agents` 在自己 `apply()` 期的 route provider 判定；首启后 `settings.yaml` 被 `rename` 成 `settings.yaml.imported`（`:350-351`）且导入**确实成功**（三行配置出现在 `profiles/web/cordis.patch.yml`），只是**晚了**。反证决定性：同一沙箱**再启一次**，该 marker 整行消失。⇒ 该断裂与 D7「pin minor」机制无关，是 0.2.x 单侧的运行时事实，但它使「双模护栏」的成本被重新估价，于是业主直接收窄了支持面。**对阶段计划的连带修订**（仲裁者同批完成，见 `docs/plans/phase4.5-dev/`）：新增切片 **P4.5-T8a**（把 LLM 接线种进 profile patch overlay，Q-8 的硬前置）；T10 重心加权重排（门 3 / 门 8 从「迁移重心」升为「翻转前置」）；T11 改写为 **T11′**（0.2.x 单运行时全链，0.1.5 侧降级为防回归信号）；**T12 与 T13 拆成同一 PR 下的两个 commit**——翻转 commit 承载退出标准 (f)，死路径删除随 T13 交付。**D7 本身未被推翻**：pin 仍走 minor 级、仍只经 `scripts/bump-dsh.sh` 显式翻转。**登记的代价（不美化）**：计划书 §4.1 选双模的三条理由中第 3 条（「双模探针构成『0.1.5 上没有静默退化』的证据」）在本决策后**失去价值**；净收益只有范围收窄，净成本是翻转前的双模维护 + 翻转后的删除规模。原始件 `.omo/evidence/p45t8/ARBITRATION-feasibility-probe.md`。
 
 - **2026-10-09**：**D18 确认**（Team Mode 实现面：**不采用 DSH experimental team 四包**，omo-team 自建于 `ctx.subagents.startContinuable` + 原生 inbox/sendMessage，team-core harness-neutral 子集按 D14/D15/D16 vendor）。触发源：Phase 5 P5-T1 的 Q-2/Q-3 阻断性钉测（dsh 0.2.0-rc.2 真实沙箱 boot，双正典 run）。**激活侧全绿**（Q-2 5/5 PASS：bundle 挂载、`ctx.agentTeams` 在场、`spawn_teammate` 组队、`team/message/queued→delivered` 事件对、jsonl 持久化前提）——不采用的原因**不在激活，在成员路由**：验收不变量「成员 descriptor 的 `agentProvider`/`agentModel`/`persona`/`toolFilter` = 名册路由值」（ROADMAP Phase 5「按 category 模型/技能」的字面要求）在 `spawnTeammate` 通道**结构性不可达**，三重封死链逐字在册——① 工具 schema 无 provider 参数（模型逐字传的 provider 被静默丢弃，`dsh-experimental-tool-agent-team/lib/index.js:245-266,:290`）；② `SpawnTeammateRequest` 无三件套字段、provider 仅字符串（`dsh-experimental-agent-team/lib/types/types.d.ts:139-146`、`:557`）；③ `spawnAdmitted` 硬编码 `startContinuable request:{prompt,parent}`（`agent-team/lib/index.js:573-582`）。替代接缝全灭：包装 provider 在 continuable 通道唯一参与点 `prepareContinuable({sessionId,parent,signal})→{seed?}` 非注入点；`agentTeams` 公开 API 无外部子女 admission 接口（spawnTeammate 唯一入场口）；修复面在上游包内（pin 领域，D7 不动）。**自建路基同批实证为绿**：raw `startContinuable` 携三件套 → descriptor 逐字承载名册值 + mock 实效（模型/persona/工具面三验）。**连带**：组合零改动（不挂 bundle → 无 scoped 遮蔽，concerto 模板 12 行序列/静态门/census 不动）；D18 不改变 D7（pin 不动、不追 rc 线）；experimental 面包仍以 pin 件在场，仅不被本仓组合挂载——若上游后续版本补上三件套透传（最小 3 点：types 增字段 / spawnAdmitted 透传 / 工具 schema 增参），本决策可按 D7 刻意升级机制重开。原始件 `.omo/evidence/p5t1/FORK.md`、`q3/Q3-provider-adapter.md`。
+
+- **2026-10-13**：**D19 确认**（编辑模型 fork E = **(E-A)：采用 DSH 原生编辑面**（`dsh-tool-fs` edit），被否臂 **(E-B)**（hashline 工具面）不移植，`hashline-core` 维持 vendored-unconsumed 并成文在册；上游 `hashline-read-enhancer`（S-15）以「原生覆盖」闭环，`hashline-edit-diff-enhancer`（S-14）以「上游孤儿件 + 原生等价」记差异）。触发源：ROADMAP Phase 6 明文要求的 **A/B 证据台架**（P6-T2，`.omo/evidence/p6t2/`）——双臂真实沙箱 boot、固定脚本化政策、七失败类逐类数据 + 三突变自证红 + 全程 read-back sha256 字节比对。**实测结论**：七类夹具双臂最终字节全部正确（**静默错写率 0/0**）；原生面六类可判失败全有逐字机判错误与内嵌恢复指引（`FS_AMBIGUOUS_EDIT`/`FS_STALE_VERSION`/`FS_NOT_OBSERVED`/`FS_EDIT_NOT_FOUND`/`must differ`），且原生版本 CAS 在写路径同守双臂（parity 实证）；平均恢复轮数 **A 1.50 < B 1.67**。唯一结构性差异 = F-e 类**检测保证**（hashline 面陈旧锚 `HASH_MISMATCH` 响亮终拒、文件不变 vs 原生面漂移无感）——但原生面的「无感」在内容唯一时不产生错字节（实证），其错写面 = 歧义（已被 `FS_AMBIGUOUS_EDIT` 覆盖），该差异是纵深防御属性、未在任何夹具转化为正确性差异。**未测量面（诚实登记）**：台架脚本政策机械构成完美 old_string，测不到 hashline 针对的模型级串复写错误类——此优势可能真实存在，但本阶段无证据，裁定纪律（只认证据）下不作移植理由。**成本面对账**：移植 = 5 实现件 + 配置门 + enhancer 钩 + 同步网，对上游自身默认 OFF 的实验件（`oh-my-opencode-config.ts:60` 注释逐字），为零实测正确性收益付此成本违反原生优先纪律。**复审触发条件**（任一成立即重审）：① live-model 真实会话中原生 edit 串复写/锚定失败类遥测；② 持 key 环境 model-in-loop 重跑台架测出构成层分化；③ DSH 原生 edit 面语义退化（pin 升级带走 CAS/唯一性约束）。台架可单行复跑（`bash .omo/evidence/p6t2/rig/run.sh`），重审成本一次复跑。**连带**：`str_replace_editor`（ROADMAP 点名比对对象）经 P6-T1 钉测为「在树未挂载的文档化可选加装件」，不入 A/B 臂（`FORKS.md` §0-3），本决策的比对基线 = 实际挂载的原生面；D19 不改变 D7/D14（pin 与 vendor 纪律不动，hashline-core vendor 件及其 NOTICES/manifest 原样保留）。原始件 `.omo/evidence/p6t1/FORKS.md` §1（终裁 §1.7）、`.omo/evidence/p6t2/DATA.md`。
+
+- **2026-10-13**：**D20 确认**（LSP 能力面 fork L = **(L-B) 窄化**：vendor OMO `lsp-core` + `mcp-stdio-core` 两包，薄 server 面为本项目新增 `src/cli.ts`，经 dsh 自带 `@deepseek-ai/dsh-mcp-client` 以 stdio 挂载（cordis.yml 第 5 插行 `omo-lsp`），并对 vendored `mcp.ts` 施加现代协议字段偏离）。触发源：ROADMAP Phase 6 的 LSP fork（`dsh-lsp` 经 P6-T1 实测在 dsh 0.2.0-rc.2 安装树**不存在**——原生优先检查留痕，vendored + 原生 MCP 客户端挂载是空集上的路径）。裁定书 = `.omo/evidence/p6t1/FORKS.md` §2.6（**(L-A)** 新包原生注册的落选点逐条在册：插行成本相同、桥接稳健性白得（重连退避/命名稳定/原子代际钉测实证）、新包四件套门成本、post-edit 记差异可接受、modern 字段增补无墙；而 **(L-C)** 的排除是**另一条论证、不是成本比较**——(L-C) 义为「纯记差异 / defer」（§2.1），此处 defer 无据：LSP 在 ROADMAP Phase 6 目标句具名、退出标准要求脚本化场景中被 agent 真实使用、钉测已证挂载路径全通（§2.4 第 1/2 条）——无硬墙，故 defer 无据）。**落地条款**：① vendor 两包 @ v4.19.4（lsp-core 65 非测试 .ts + 1 .mjs fixture；21 枚 bun:test 套件登记排除；mcp-stdio-core 6 src——`transport.test.ts` 携带跑绿 4/4、`server.test.ts` 以 jest fake-timers 实测理由排除）；② 扩展名墙全量改写 + 五面机械证明（`.omo/evidence/p6t4/vendor-import-wall/`，73/73 过 strip-only 解析、反向面逐字节还原上游）；③ 参数属性重写 14 构造子/9 文件（T5 NOTES-6 先例族，偏离登记）；④ **modern 时代字段偏离**——`server/discover` 应答（supportedVersions/capabilities/诚实缓存值）+ 按进程 era 跟踪（`_meta` 信封）+ resultType 三件套：不偏离的代价 = 永久静默 legacy 降级（P6-T1 钉测 §1 实测），`initialize` 回显语义保持上游逐字；⑤ 挂载行 = `command: !!js process.execPath` + 相对 args + `cwd: !!js process.cwd()`（仓根 boot 契约，四处 boot 站点逐一实证）+ `failOnStartupError:false`（S4/S4b 实测取舍，cold-start.sh 新增 `[lsp-mcp]` boot grep 作运行时缺席门）；⑥ 计数耦合网 4→5 全点位同 commit（cordis.yml 头注/`EXPECTED_INSERT_ROW_IDS`/`cordis-inserts.test.ts`/c11/c15/cold-start + 四处 boot 站注释；新增 `DSH_BUNDLED_INSERT_ROW_NAMES` 声明式例外——例外是数据不是放松的规则，双向断言在案）；⑦ doctor-lite 新增 dsh-bundled 行 zod Config 校验臂（正向 `validated=omo-lsp(serverName="lsp")`、反向非法 serverName/ghost key 均实测 FAIL）；⑧ mount-row pin 测试（`tests/omo-lsp/mount-row.test.ts`，变异实测会红）。**合规**：SUL-1.0 双包登记沿 hashline-core 先例（NOTICES 镜像 P6-1..71 / P6S-1..11 与 manifest 双向钉）；MIT `@code-yeongyu/lsp-tools-mcp` **不 vendor**，cli.ts 语义参照的署名条目在 THIRD_PARTY_NOTICES——名称门新案不成立。**实测**：face-probe 19 检查全绿（`.omo/evidence/p6t4/face-probe/`——8 个 `mcp__lsp__*` 在场、era=MODERN（sibling/session 双 pid 实证 `_meta` 跟踪）、execute 往返 `Configured LSP servers: 42`）；冷启动真 boot 含 `[lsp-mcp] stdio server starting pid=…`（三次独立复现）；门全绿（typecheck exit 0 / vitest **94f/2084t**（+4f/+28t 全来自本任务）/ doctor 5 行 / licenses checked 61→64 violations 0 / static 37/37 / docs 10/10 / vendor-manifest 454 无漂移 / cold-start PASS / e2e 41 场景与门 8 proofs 随提交前 ci-local 全链复核）。**双评审记录**：轮 1 双 APPROVE（opencode 1 MAJOR + 4 MINOR + 6 NIT；mcode 3 MINOR + 1 NIT）→ 仲裁台账 `.omo/evidence/p6t4/ARBITRATION-r1.md`（8 采纳全亲验）→ 修复轮 → 轮 2 **双 APPROVE 残留 ≤NIT**（mcode 的 FIX-3 负向腿 nit 由仲裁员亲测 `serverName:"lsp!"` → exit 1 闭环）。**连带**：post-edit 记差异（随引擎携带、内部消费、不接钩缝）；lsp-daemon 记差异（in-process manager 自洽，跨进程常驻产品在本仓形态无存在理由）；不改变 D7/D14/D15/D16/D18/D19。**重开条件**：① dsh 原生出现 LSP 宿主包且能力面覆盖（原生优先重裁）；② (L-B) 窄面实测缺口（如 21 枚测试确需携带）；③ 上游 lsp-core 现代字段原生实现落地（本偏离退役回 verbatim）。原始件 `.omo/evidence/p6t4/`（墙证明/face-probe/drafts/评审件/仲裁台账）。
+
+- **2026-10-26**：**D21 确认**（ast-grep 能力面 fork G = **(G-A) 单落地**：语义移植上游钩 + `packages/utils/src/ast-grep/` 供给层；MCP 形态叠加（G-B）记「未来考虑」差异条目，**不建**）。**触发源**：ROADMAP Phase 6 的 ast-grep fork，退出标准是「每个入选能力在脚本化场景中被 agent 真实使用」——而上游的「活方向」指的是 MCP 形态 selective lift 的**可选性**（F-2 在册：可选，从未是必须）。**裁定书**：`.omo/evidence/p6t1/FORKS.md` §2.7（2026-10-13 盖章；证据 = §3 实测 + §2.4 钉测第 1 条——该条钉住「N 个 server 需 N 条插行、双插行干净共存」，故 (L-B) 与 (G-B) 同落会把同步网定价推到 4→5→6）。**措辞差注记（评审 NIT-1，因授权链条必须可查故必写）**：D14 表行逐字授权的是「fixes」，而**能力级**授权锚在 `docs/decisions.md:118`（D14 条款 4「selective targeted lifts」）加 ROADMAP 的「定向搬运」行（`docs/roadmap_zh-CN.md:20`）；裁定书以带日期的补注承载该锚（2026-10-26，`FORKS.md` §2.7——写本条目时补入，此前裁定书既未具名「定向搬运」亦未具名条款 4），两者措辞之间的落差在此登记，不抹平。**落地条款**：① S-16 `ast-grep-sg-provision` = `manifest.ts` 第 16 条（`EXPECTED_HOOK_COUNT = 16`，实测；行数是**派生**的，不是抄的），H-37 预分号**在册但不作行标识符**——manifest 行无此标识符字段，字符串 H-37 仅存活于注释（四处：`manifest.ts` 两处 + 其测试两处——**前三处声明「预分号在册、不烧号」这条规则，第四处解释机读锚串所指**，并不声明该规则）；号本身活在 FORKS.md §0-2；② 钩壳 + **6 件**供给层 `src/ast-grep/`（`types.ts`、`sg-manifest.ts`、`sg-resolver.ts`、`sg-provisioner.ts`、`install-script.ts`、`index.ts`），逐件自带署名头；③ **sha256 pin 0.43.0，四 slug 逐字**——`SG_PINNED_VERSION` 与上游四组 hash/URL 逐字节相同——配手写 zip 解包、`chmod 755` 与原子 rename；④ **resolver 三闸依序**：`OMO_AST_GREP_SG_PATH` env → runtimeDir → PATH，`ast-grep` 优先于 `sg`，且 bare `sg` 只有当它自己的 `--version` 输出含 `ast-grep` 字样才接受（Linux 自带一个不相干的 `sg`）；provision 失败 = **响亮具名 marker** + 结构化指引，**永不**打断 session/boot；⑤ **D9 Windows 减项逐条**：win32 两 slug（上游 hash 仍具名于文件头，使删除可审计）、`sg.exe`、win32 normalize 分支、`install.ps1`、`pwsh`、`powershell.exe`——整族缺席；⑥ **bunWhich 减项**：`Bun.which` 快径删除、纯 PATH 扫描以 `whichOnPath` 内联，其 drive-letter 臂登记在案——DSH 跑 Node 24 type-stripping，运行时无 Bun；⑦ **双来源裁定**：钩层 provision 路径为权威（有 sha256 校验），vendored 技能自带 `install.sh`（无校验和）保留为技能的文档与回退路径，两者 `targetDir` 约定同源；⑧ **hermetic 封网**：e2e/CI 以 committed `tests/e2e/fixtures/fake-sg.sh` 在 resolver 第一闸短路，经 `drive.mjs` 的 `scenarioEnv` 作**全局 floor** 导出（可按场景覆盖，T7 确实覆盖），`scripts/smoke-real.mjs` 以 `??=` 同款 floor 承接——MAJOR-1 实测：封网前**每次** boot 都真从 GitHub 下载 8.1MB，`.partial`  artefact 两次复现（`.omo/evidence/p6t6/ARBITRATION-r1.md`）。**实测**：e2e 双场景。正腿 `ast-grep-sg-via-bash` 走技能指导 → bash 起 bare `sg` → 富 fake `sg` → 匹配字节骑链回会话日志，由**三读者**独立回读（一个 double 亲读自己的副本、driver 自写 scanner 亲读原件、pin 不读任何文件）。反向金丝雀 `ast-grep-sg-absent-named-failure` 在钩面断 PROVISION FAILED + 派生指引，在 agent 面中性化 PATH 使未命中在**任何宿主**都是 exit 127 的一致形态，并 hermetic 断零 `.partial`、零可执行位。门态：typecheck exit 0 · vitest **100 文件 / 2125 测试** · doctor 5 行 · licenses `checked=66` violations 0（61→66，每步在 THIRD_PARTY_NOTICES 有对应）· static **38/38** · docs 10/10 · 门 3 **48/48**（T7 时 45/45）· ci-local **8/8** · probe 组合面 **10/10**。**双评审记录——两流分开、共八轮**（两个落地件是被分开评审的，合并叙述会把「谁否了什么」写错）：**流一 T5+T6（钩 + 供给层 + LSP e2e）**——R1：A 双 APPROVE、B **T6 REJECT**（B-MAJOR-1：e2e 每次 boot 真触发 GitHub 下载 8.1MB，且 NOTICES 的「never in tests, never in CI」为假声明——此即 hermetic 封网的起源）；R2：A 双 APPROVE、B **T6 REJECT**（B-R2-MAJOR-1：c29 的 barrel 臂是纯文本正则，注释掉一行 export 即可绕过，绕过后钩子静默死掉而全仓无门可红）；R3：**双 APPROVE**（仅余 MINOR）；R4：**双 APPROVE**（B 结语明言「均为文案级，无需重开评审」），修复后残留归零。台账 `.omo/evidence/p6t5/` 与 `.omo/evidence/p6t6/`——**同一流的两处归档，逐轮 sha256 亲验逐字节相同**。**流二 T7（ast-grep e2e 双场景）**——R1：双 APPROVE（B 虽通过但携 10 MINOR + 5 NIT）；R2：A APPROVE、B **REJECT**（修复面 2 MINOR + 4 NIT：fake-sg double 的路径/位置轴裸栈、`--json` 形态收窄、杂散 `.fake-sg-calls.log` 污染证据腿）；R3：A **APPROVE 零发现**、B **REJECT**（B-MAJOR-1：可执行 sg 的具名抛落在 runScenario 的 try **之外**，整轮 e2e driver 崩溃、已累积裁决一并丢失——一条正腿的 PASS 从记录里消失）；R4：双 APPROVE。台账 `.omo/evidence/p6t7/`。**连带**：上游 `install-ast-grep-sg.ts` 两件 CLI 安装器 = **recorded-difference**——它们是委托技能脚本的委托壳，自身不含平台矩阵（矩阵活在 `packages/utils/src/ast-grep/sg-manifest.ts`），而 CLI 安装入口语义不属于本阶段四腿消费面；(G-B) 立为「未来考虑」差异条目，**举证责任在叠加面**——schema 化参数、错误码、超时与 MCP 命名面，对照 23 件闭包、多一条插行、以及 v5 版本偏斜（v5-only `resolveSgBinarySync` 与 v4 pin 的关系须先成文才可 lift）；`ast-grep` 技能 = native-adopt + provisioning 衔接（钩层权威、技能 `install.sh` 保留为回退）；`grep_app` / `context7` / `exa` = **覆盖缺口具名的 recorded-difference**：DSH 内建 web 搜索/抓取覆盖通例，但 context7 的「库文档解析」（`resolve-library-id` / `query-docs`）与 grep_app 的 GitHub 代码搜索**不是**通用 web 搜索的严格子集——故 OMO librarian 提示词引用的三个 MCP 工具名在 DSH 面无逐一同名等价，功能替代 = 内建 web 搜索/抓取 + librarian 席保留 web 可达（W-7 席位差集已证）。**D7 / D14 / D19 / D20 不变。**重开条件**：① dsh 原生出现覆盖能力面的 ast-grep MCP 宿主包（原生优先重裁）；② 实测出 bash/skill 面的真实使用摩擦——即 (G-B) 的复审触发器；③ 上游 v5 的 8 个实现件与 v4 pin 的关系成文后，lift 逐件带署名推进，循既有先例。
+
+---
+
+- **2026-10-27**：**D19 复审触发条件 ① 成立**（编辑模型 fork E）。触发源＝L2-1 arm A 的真实模型会话（真实模型
+  `studio2207` / `Qwen3.8-Flash-Next-oQ4e-mtp`），任务 `fa` / 失败类 **F-a（歧义匹配类）**：原生面**响亮拒绝**
+  ——`Error: old_string matched 2 times in "…/fa.txt"; provide a more specific old_string or set replace_all to
+  true`——随后模型升级用 `replace_all: true` **把两处全写**，而台架卡片自身的消歧恢复（`armA.recovery.old_string`，
+  以第二行上下文加宽锚点）本应**只动一处**。**这不是静默错写**：工具响亮拒绝、模型对错误与升级双双如实自述、
+  写下的每个字节都是卡片自己的 `new_string` 文本。**(E-A) 在静默错写轴上维持**——原生面每一类可判失败都产出了
+  逐字的机判错误与内嵌恢复指引。**过界应用是真实的模型行为风险，据此在册登记**。**fork E 复审重开**，评估范围
+  =（i）提示层缓解：歧义拒绝后模型应当**消歧（加宽锚点）而非诉诸 `replace_all`**；（ii）该风险是否改变 **(E-A)**
+  的成本-收益结论。**权重注记**：F-a 的歧义是**卡片内置**的（`old_string` 在夹具中本就按设计出现两次），故这与
+  D19「未测量面（诚实登记）」条款留开的**自发型模型级串复写**错误类**不完全同类**——它是另一种模型级失败形态
+  （响亮拒绝后的过宽升级），本案例不给满权重。证据：`.omo/evidence/p6-l2-edit-ab/D19-trigger1-evidence.md`
+  （untracked 证据树——本条目才是 tracked 权威面记录，依「tracked 文档为权威」约定）。
+
+- **2026-10-27**：**D19 fork E 复审结案——(E-A) 维持，不改判。** 触发条件①仍为**成立**，其性质是真实的
+  **过界应用**模型行为风险，与静默错写**不同类**。
+  **语义亲读源**：`replace_all` 是真·全文替换——`applyLiteralEdit` 未置该标志即抛 `FS_AMBIGUOUS_EDIT`
+  （`@deepseek-ai/dsh-fs-local/lib/index.js:704`），置位后执行 `content.split(old).join(new)`（`:706`）；
+  不存在「仅首个匹配」模式，故工具完全按文档执行，**非工具正确性缺陷**。
+  **协议层发现（使本案降权）**：卡片自身的消歧锚 `armA.recovery.old_string` **从未送达模型**——以**权威
+  session JSONL（95 条）**，为准，3 条 `user/message` 均无 `armA.recovery` 载荷；`replace_all` 在**用户指令流中
+  完全不出现**（模型仅从 rec 12 的工具 schema（逐字 = `dsh-tool-fs:695`）与拒绝文案得知该参数）；`return false`
+  出现在 **4 条 `tool/result` 读取记录中——4 处不同出现，JSONL 原始子串命中 7 次**（rec 26×2 / 71×2 / 80×2 / 89×1——**0-based**；JSONL 行 27/72/81/90，全为 `tool/result`），从未作为指令出现。模型收到的重试指令只有通用一句
+  （"try once more using the file's current real content"），而拒绝文案把 `set replace_all to true` 列为
+  **同等并列、无意图限定**的 remedy。要产出 `expected/a-fa.txt` 必须选中 `beta()` 那一处——这是指令**从未言明**
+  的偏好；台架之所以对上，只因人类已把该歧义预解进卡片。字节差恰为**多一处（第 2 行）**，所写每字节均为卡内
+  `new_string`。摘要归档 `.omo/evidence/p6-l2-edit-ab/armA-session-log-digest.md`。
+  **成本-收益**：A/B 轴（静默错写 0/0；每类可判失败均产出逐字机判错误并内嵌恢复指引）**未被触碰**——拒绝是
+  响亮的，模型读了并照做了（**可以说过于痛快，但指引通道确实起了作用**），且模型如实自述错误与升级。
+  **指引路径发现（已更正）**：在环的 remedy 指引**只有一条**——工具拒绝文案将两个 remedy 并列
+  （`dsh-fs-local:704`）——外加一条通用重试指令；另有两面**本可**消歧却**缺席**：我方
+  `edit-error-recovery.ts` **未装载未触发**（L2-1 跑的是**纯 DSH 默认 agent**：rec 8 系统提示零 omo persona
+  内容，rec 12 暴露 26 个标准工具且零 omo 工具，95 条记录中 `EDIT ERROR`/`IMMEDIATE ACTION`/`APOLOGIZE` 命中
+  全为 0；其触发表对该类的**匹配能力**成立（`:152`/`:162`），但「在此路径触发过」为假——且即便装载，追加的也只是
+  类无关提醒（`:175-186`）），以及卡片扣住了它的消歧锚。故过界应用**近乎由真正在环的指引所预测**，权重应落在
+  **指引设计而非模型可靠性**。拒绝文案位于 **dsh 包，不属本仓修改面**。**推论**：L2-1 从未演练本产品的已配置
+  agent 面——这是该证据自身的固有限制。
+  **采纳的缓解（A，落地三处——仅在仓内工作树；到达已安装 preset 需发布 + tag 移动 + 重装，live 线在 apply 时取源
+  改动）**：反模式条 **Over-Broad Replace**——歧义拒绝后应加宽 `old_string` 到你真正要改
+  的那一处；**若指令未指名哪一处，按指令给出的上下文判定并报告你所选的位置，不得整片替换**——写入源
+  `patches/omo-dsh/omo-agents/system-sections/anti-patterns.md` **及** `patches/omo-dsh/omo-agents-current/
+  preset/agent.cordis.yml` 的两段渲染块（因 `scripts/install-concerto.sh:1014` 直接 curl 该渲染副本，且无脚本
+  再生成它）；三处已验去缩进后逐字相同。
+  **B——上游建议，三处**：`replace_all` 参数描述加 when-to-set 规则（`dsh-tool-fs:695`）；拒绝文案加意图限定
+  （`dsh-fs-local:704`）；**成功**文案（`dsh-tool-fs:660-661`）在 `replace_all` 时附「已全局替换 N 处，若只需
+  其一请改用更具体锚点」（模型曾逐字引用该成功文案，故它是活跃 nudge 面，非装饰）。
+  **C——记为后续**：`edit-error-recovery.ts` 内按类路由是我方修改面内最贴决策点的修法，但该提醒块是**被单测
+  钉死的逐字上游移植**（`:171-173`）；缓办，与 B 同批作耐久修法。**D——拒**：preset 内 persona 散文本身就是
+  `system-sections/*.md` 的渲染副本，A 已落在唯一真源，D 只是重复。**E——拒**：对 `replace_all` 要求显式确认
+  会破坏合法全局改名且不成比例。**F——耐久记录**：耐久权威 = `docs/decisions.md` 与 `docs/decisions_zh-CN.md`
+  的 **tracked** 双语条目；`.omo/evidence/p6t1/FORKS.md` §1.7 是 **untracked 裁定书注记**（仓根**不存在**
+  `FORKS.md`），不具耐久权威。残余风险为建议级缓解、非消除，且可接受，因该失败形态**响亮且评审可见**。
+  **触发集修订——§1.7（`FORKS.md:110`）的复审触发集按下列文字修订（① 权重收窄；原 ②③ 保留不变；
+  新增一条，编号 ④）：**
+
+  *编号说明：原拟新增 ②，但 §1.7 既有 ②（model-in-loop 重跑测出构成层分化）与 ③（DSH 原生 edit 面
+  语义退化），再称 ② 将发生编号冲突，且在落入 **tracked** 条目时有静默顶掉 ③ 之虞；故新增条编号为 **④**——内容
+  与指示一致，此处明示偏离而非静默改号。**原 ②／③ 依原文保留不变，本条为新增 ④.***
+  > ① 真实会话证据（live-model 使用中原生 edit 的串复写/锚定失败类遥测）——**其中歧义须为自发（非卡片/台架内置）
+  > 方可给满权重；卡片内置歧义按半权计**。
+  > ④ 任何 model-in-loop 重跑**必须**在下列二者中取一：把消歧锚点随指令**送达模型**，**或**把「模型在无发生位置
+  > 选择器时自行解歧」列为**独立计分类**单独记分——否则该歧义属台架伪影，不得读作模型不可靠。
+  **④ 采为注记而非台架改动**，理由：该伪影靠*申明*规则即在每次重跑处被消除，散文式二选一协议零成本、不触碰
+  任何冻结 fixture；若实现为计分则要为一个新类新增计分、新增 expected、新增门断言，去服务一个经本次复审后
+  **卡片内置、半权**的案例——其不成比例与缓办 C 的同一理由。若将来真需要拆分，计分归属该次重跑的责任人彼时定。
+  证据：`.omo/evidence/p6t11/D19-REVIEW.md`、`.omo/evidence/p6-l2-edit-ab/armA-session-log-digest.md`。
 
 ---
 

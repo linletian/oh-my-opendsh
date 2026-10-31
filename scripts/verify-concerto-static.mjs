@@ -21,7 +21,16 @@
 //   c06 installer passes bash -n
 //   c07 installer TAG pin equals .omo/compat.yaml tag_alias
 //   c08 preset.yml identity (name + description non-empty)
-//   c09 persona shadow      (hard-blocks + anti-patterns in both personas)
+//   c09 persona shadow      (hard-blocks section present, PLUS the anti-pattern
+//       SECTION compared VERBATIM against the single source of truth
+//       system-sections/anti-patterns.md at every persona site of the shipped
+//       preset: its `- **Category**:` bullets bullet for bullet AND its whole
+//       non-bullet body — the prose above the list — line for line, in order,
+//       de-indented only, bidirectionally. Upgraded in FIX-C09 from the
+//       inclusion-only arm `text.includes('## Anti-Patterns')`, which could not
+//       see a dropped bullet or a changed word; the body-level arm and the
+//       source-side dash SHAPE guard landed in FIX-C09-R2 (review B MAJOR-1 /
+//       its B11 + B12 legs); see D19-REVIEW §3 行 A 尾注 + §5c ⑤)
 //   c10 live path roster integrity (P2-T15; generalized into per-class
 //       assertion records by P2-T20 — the template under
 //       patches/omo-dsh/omo-agents/, still the build/e2e/cold-start load
@@ -37,7 +46,8 @@
 //       from roster.ts + the renderer's sentinel naming, never restated.)
 //   c11 root cordis.yml mounts EXACTLY the plugin insert rows (P3-T19; two at
 //       P3-T3 — omo-agents + omo-hooks; three since P4-T3 — plus omo-commands;
-//       four since P5-T3 — plus omo-team, mount order). The list is read from
+//       four since P5-T3 — plus omo-team; five since P6-T4 — plus omo-lsp,
+//       mount order). The list is read from
 //       doctor-lite-core's shared constant, never restated here.
 //   c12 every src/hooks/**/*.ts implementation file carries the plan §4.9
 //       signature header (upstream tag-relative path + @ v4.19.4 + the
@@ -45,10 +55,12 @@
 //   c13 the manifest id set and the src/hooks/ file set agree in BOTH
 //       directions; the ulw-execute/ submodule directory belongs to the
 //       `ulw-execute` id and is never a separate entry
-//   c15 every cordis.yml insert row RESOLVES to a real, distinct published
-//       package (c11 pins the ids/order/names; c15 adds that each row's `name`
+//   c15 every cordis.yml insert row RESOLVES to a real, distinct package
+//       (c11 pins the ids/order/names; c15 adds that each row's `name`
 //       really resolves — via the package.json `name` of some package under
-//       patches/omo-dsh/ — and that no two rows land on one package. There is NO
+//       patches/omo-dsh/ for @oh-my-opendsh/* rows, or from the INSTALLED
+//       dsh's node_modules for the dsh-bundled @deepseek-ai/* rows (omo-lsp,
+//       P6-T4) — and that no two rows land on one package. There is NO
 //       `path` key: dsh resolves an insert row by `name` as a Node module
 //       specifier from the profile directory)
 //   c16 every omo-commands src/**/*.ts file carries the signature header
@@ -107,6 +119,13 @@
 //       said verbatim 37 / 已修改 7 while the manifest had honestly flipped to
 //       verbatim 7 / modified 37 at T8b, and no gate in this file could see it —
 //       c27 checks the vendor tree against ITSELF, never against the notices.
+//   c29 the ast-grep provisioning layer (P6-T6): src/ast-grep/ is the roster's
+//       first NON-hook module directory — c12/c13 scan src/hooks/ only, so
+//       without this record the whole provisioning side of the ast-grep-sg-
+//       provision port unit (file set, signature headers, the barrel seam, the
+//       manifest row's file arithmetic, and the NOTICES count + per-file table
+//       mirrors) would drift unwatched. Same exclusion discipline as src/services/: it
+//       never joins the c13 numbers; it gets its own counter instead.
 //
 // The record COUNT appears nowhere in this file or in ci-local.sh / ci.yml: the
 // script derives its own total and prints `N/N PASS`, so there is no copy to go
@@ -123,10 +142,11 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, relative, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { REPO_ROOT, loadYamlDialect } from './doctor-lite.mjs'
+import { REPO_ROOT, loadYamlDialect, resolveDshNodeModules } from './doctor-lite.mjs'
 // c11 复用 doctor-lite-core 自己的挂载序期望，而不是在本文件重抄插件清单
 // （理由见 c11 块：引用同一事实源，另加 doctor-lite 2b 未覆盖的顶层 insert 行数断言）。
-import { EXPECTED_INSERT_ROW_IDS, collectInsertRowIds } from './doctor-lite-core.ts'
+import { EXPECTED_INSERT_ROW_IDS, DSH_BUNDLED_INSERT_ROW_NAMES, collectInsertRowIds } from './doctor-lite-core.ts'
+import { collectModuleSpecifiers } from './ast-grep-module-specifiers.mjs'
 
 const PATCH_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents-current')
 const AGENT_YML = join(PATCH_DIR, 'preset', 'agent.cordis.yml')
@@ -135,11 +155,27 @@ const PLUGIN_JS = join(PATCH_DIR, 'concerto-plugin.host.js')
 const INSTALL_SH = join(REPO_ROOT, 'scripts', 'install-concerto.sh')
 const COMPAT_YML = join(REPO_ROOT, '.omo', 'compat.yaml')
 
+// ── FIX-C09 (D19-REVIEW §3 行 A 尾注 / §5c ⑤): c09 的真源面 ────────────────────
+// `omo-agents/system-sections/anti-patterns.md` 是这段 prose 的**唯一真源**
+// （`omo-agents/src/system-prompt.ts:16-21` 的不变量：the persona that boots IS
+// this builder's output, so no second artifact can drift）。而上面那个 AGENT_YML
+// (`omo-agents-current/`) 是**手工维护的第二工件**：`scripts/install-concerto.sh:1014`
+// 直接 curl 它，`scripts/` 内没有任何脚本再生成它（D19-REVIEW §3 行 A 亲验）。
+// 所以「第二工件不得漂移」这条不变量在本仓里**没有结构性保证**，只能由门守着——
+// 旧 c09 只做 `text.includes('## Anti-Patterns')`，删一条 bullet、改一个词都看不见，
+// c09 绿**不是**同步的证据。下面的逐字 bullet 集比对就是把这道门补上。
+const SYSTEM_SECTIONS_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents', 'system-sections')
+const ANTI_PATTERNS_MD = join(SYSTEM_SECTIONS_DIR, 'anti-patterns.md')
+
 // P3-T19 c12–c14：omo-hooks 源码树、它的 manifest、以及 manifest 必须与之
 // 一致的「人读」覆盖基线文档。
 const HOOKS_SRC = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks', 'src')
 const HOOKS_DIR = join(HOOKS_SRC, 'hooks')
 const HOOKS_MANIFEST_TS = join(HOOKS_SRC, 'manifest.ts')
+// P6-T6 c29：ast-grep 供给层——roster 第一个挂在 listener 旁边的**非 hook 模块目录**。
+// 它与 src/services/ 同一口径：不在 src/hooks/，因此 c12/c13 的任何臂都看不见它；
+// c29 是它唯一的漂移探测器（文件集、署名头、接线、NOTICES 计数镜像）。
+const AST_GREP_DIR = join(HOOKS_SRC, 'ast-grep')
 
 /**
  * c14 的覆盖基线 —— **两文档并集**（P4-T12 演进，见 c14 的实现处注释）。
@@ -343,6 +379,218 @@ function flatten(rows) {
   return out
 }
 
+// ── FIX-C09: c09 的逐字比对机构 ────────────────────────────────────────────────
+// 三条设计约束，都是为了让这道门**只会因真实漂移而红**：
+//   1. **切块按标题行，绝不写死行号**——`-current/preset/agent.cordis.yml` 是
+//      手工维护的归档，行号天然会位移（D19 那轮就位移过一次）；锚在标题上，
+//      位移不打红门，内容漂移才打。
+//   2. **归一化只剥行首空白**——缩进 0（源 markdown）/ 6（conductor block scalar）
+//      / 10（explore block scalar）是 YAML 排版差异，不是内容差异；column 0 之后
+//      的正文一个字符都不改，逐字节比。
+//   3. **同一标题出现的每一块都比对**——复制一份第二块（无论源侧还是副本侧）都
+//      必须同样逐字，否则那块未比对的副本就是静默漂移面。
+const POLICY_HEADING_ANTI_PATTERNS = '## Anti-Patterns (BLOCKING violations)'
+
+/** ATX 标题行（行首至多 3 空格才是标题；block scalar 里的更深缩进不是）。 */
+const ATX_HEADING_RE = /^ {0,3}#{1,6}\s/
+
+/**
+ * Every slice of `text` sitting under a line whose TRIMMED content equals
+ * `heading`, running to the next ATX heading (or end of text). Returns `[]`
+ * when the heading never appears — the caller FAILs on empty, never skips.
+ *
+ * FIX-C09-R2 (评审 B NIT-3) — an ASYMMETRY, documented and NOT changed here:
+ * the START match is trim-equality (any indentation of the section's own
+ * heading is accepted), while the END match is the ATX rule `^ {0,3}#{1,6}\s`
+ * (a heading indented 4+ spaces is NOT a heading). So a deeply-indented later
+ * heading would end no slice, and the slice would run to the end of the text.
+ * That is unreachable under today's premise, which the shipped archive holds:
+ * every persona here arrives through a YAML block scalar, and the parser
+ * removes the block's indentation indent, so every heading inside a rendered
+ * persona sits at column 0 — matching both rules alike. If a future renderer
+ * ever keeps indentation inside its strings, re-open this: the slices would
+ * then swallow everything below the section and the body comparison would
+ * report a divergence the fix has to locate in the renderer, not in the prose.
+ */
+function slicePolicySections(text, heading) {
+  const lines = String(text ?? '').split('\n')
+  const blocks = []
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== heading) continue
+    let end = lines.length
+    for (let j = i + 1; j < lines.length; j++) {
+      if (ATX_HEADING_RE.test(lines[j])) { end = j; break }
+    }
+    blocks.push(lines.slice(i + 1, end))
+  }
+  return blocks
+}
+
+/** `- **Category**: description` — the ONE canonical bullet shape of this section. */
+const POLICY_BULLET_RE = /^-\s*\*\*[^*]+\*\*:/
+
+/**
+ * A line that OPENS a dash list (`- …`, `-` alone, `-\t…`). Every bullet of
+ * this section must additionally match POLICY_BULLET_RE; a line that matches
+ * THIS one and not that one is shape drift. FIX-C09-R2 (评审 B 的 B12 腿实证过
+ * 这个洞): the bullet arms only ever LOOK at canonical bullets, so a line of
+ * shape `- Warning: …` added to the source is invisible to them — it is in no
+ * bullet set on either side, so both sides still "match". Without a shape guard
+ * such a line is silently dropped from every comparison, which is exactly the
+ * quiet surface this gate exists to close, so the source side FAILs on it.
+ */
+const POLICY_DASH_ITEM_RE = /^-(?:\s|\t|$)/
+
+/** `- **Category**: description` bullet lines, DE-INDENTED only (see above). */
+function policyBullets(bodyLines) {
+  return (bodyLines ?? [])
+    .map((line) => line.replace(/^[ \t]+/, ''))
+    .filter((line) => POLICY_BULLET_RE.test(line))
+}
+
+/**
+ * FIX-C09-R2 (评审 B MAJOR-1，方案 (a)) — the COMPLEMENT of policyBullets:
+ * every remaining line of a section body, DE-INDENTED only, IN ORDER. That is
+ * the section's prose (the "Wording gradient: …" paragraph today) plus any dash
+ * line that is not a canonical bullet. Before this round c09 compared the
+ * bullet SETS only, so rewording, reflowing or deleting the prose left the
+ * bullets untouched and the gate green (评审 B 的 B11 腿). The two arms now
+ * partition the body with no line left unwatched: a line is either a canonical
+ * bullet (comparePolicyBullets) or part of this rest (comparePolicyBody).
+ *
+ * ONE extra normalization beyond de-indent, stated here because it is the only
+ * one: BLANK LINES AT THE VERY END OF THE BODY are trimmed from BOTH sides.
+ * The source markdown file ends with a newline (so its split leaves one trailing
+ * empty line) while the shipped personas carry `|-` block scalars, whose strip
+ * chomping removes exactly that empty line — a container property, not content
+ * (亲验：the only difference between the source and either persona today was
+ * that trailing empty line).
+ *
+ * FIX-C09-R3 (评审 B MINOR-1) — the order of these two passes IS the contract,
+ * and R2 had it backwards. R2 filtered the bullets out FIRST and trimmed the
+ * tail SECOND, which dragged the blank line SEPARATING the prose from the first
+ * bullet down to the end of the sequence and trimmed it away there. Consequence,
+ * measured by 评审 B: a source that gains that one separator line against copies
+ * that never moved stayed GREEN — the drift was swallowed by the normalization
+ * that is supposed to be the only permitted one. Trimming the BODY first (so
+ * the tail trim can only ever reach the EOF empty line, because the last element
+ * it meets is a bullet) and filtering the bullets SECOND puts that separator
+ * back inside the compared sequence, where it belongs: it is paragraph structure,
+ * not container layout. Blank lines INSIDE the prose keep participating exactly as
+ * before; a trailing empty line at EOF stays permitted on the source side alone,
+ * because that is the one difference YAML strip chomping erases.
+ */
+function policyBodyRest(bodyLines) {
+  const body = (bodyLines ?? []).map((line) => line.replace(/^[ \t]+/, ''))
+  while (body.length > 0 && body[body.length - 1] === '') body.pop()
+  return body.filter((line) => !POLICY_BULLET_RE.test(line))
+}
+
+/**
+ * Body-level verbatim comparison (FIX-C09-R2): the source's non-bullet lines
+ * against one rendered block's, byte for byte and in order. Reports the FIRST
+ * divergence only — located by non-bullet body line number, then named: a
+ * length difference quotes the substantive line(s) that are missing or extra
+ * (blank lines aside, so an empty paragraph separator is never reported as
+ * "the dropped line"), and an equal-length difference reuses the same
+ * EXPECTED/ACTUAL character window the bullet arm uses. The FAIL banner thus
+ * reads like the existing c09 output instead of dumping two whole sections.
+ */
+function comparePolicyBody(wantRest, gotRest, site, blockIndex, blockTotal) {
+  if (wantRest.join('\n') === gotRest.join('\n')) return []
+  const where = blockTotal > 1 ? `${site} — Anti-Patterns block ${blockIndex + 1}/${blockTotal}` : site
+  const n = Math.max(wantRest.length, gotRest.length)
+  let i = 0
+  while (i < n && (wantRest[i] ?? null) === (gotRest[i] ?? null)) i++
+  const head = `${where}: the NON-BULLET body (prose, plus any dash line outside the canonical "- **Category**:" shape) under its "${POLICY_HEADING_ANTI_PATTERNS}" heading is NOT verbatim against the single source of truth ${relative(REPO_ROOT, ANTI_PATTERNS_MD)} — first difference at non-bullet body line ${i + 1} (source ${wantRest.length} line(s), copy ${gotRest.length})`
+  // The RAW slice is what every test in this function reads; JSON.stringify runs
+  // ONLY at display time (FIX-C09-R3, 评审 B MINOR-2 — see the extra branch).
+  const substantive = (lines, from) => lines.slice(from).filter((l) => l !== '').slice(0, 3)
+  const quoted = (lines) => lines.map((l) => JSON.stringify(l))
+  const shapeClause = (lines) => (lines.some((l) => POLICY_DASH_ITEM_RE.test(l))
+    ? ' — and the copy renders it as a NON-CANONICAL dash line, outside the "- **Category**: description" shape this section is allowed to hold' : '')
+  if (gotRest.length < wantRest.length) {
+    const missing = substantive(wantRest, i)
+    const named = missing.length > 0 ? `[${quoted(missing).join(', ')}]` : '[BLANK separator line(s) — the only thing there]'
+    return [`${head} — the copy ENDS ${wantRest.length - gotRest.length} line(s) short of the source; the source has these there (blank separators aside): ${named}`]
+  }
+  if (gotRest.length > wantRest.length) {
+    // FIX-C09-R3 (评审 B MINOR-2): the shape test reads `rawExtra`, the RAW
+    // slice. R2 handed `shapeClause` the already-JSON.stringify'd output of
+    // `substantive`, so every element began with a `"` character, `^-` could not
+    // match, and the shape clause this branch exists to print was dead code: a
+    // copy running ahead of the source with `- Warning: …` quoted the line but
+    // never named its shape.
+    const rawExtra = substantive(gotRest, i)
+    // FIX-C09-R4 (评审 B MINOR-2): the copy side gets the SAME explicit fallback the missing side already carries — `substantive` filters blanks out, so when the one extra line IS that blank separator, `rawExtra` is empty and this message used to end with a bare `[]` (zero information at the exact moment the gate is right).
+    const named = rawExtra.length > 0 ? `[${quoted(rawExtra).join(', ')}]` : '[BLANK separator line(s) — the only thing there]'
+    return [`${head} — the copy carries ${gotRest.length - wantRest.length} line(s) the source never had: ${named}${shapeClause(rawExtra)}`]
+  }
+  return [`${head} — ${bulletDivergence(wantRest[i], gotRest[i])}${shapeClause([gotRest[i]])}`]
+}
+
+/** The `Category` of a normalized bullet, or `(uncategorised)` for the report. */
+function bulletCategory(bullet) {
+  const m = String(bullet).match(/^-\s*\*\*([^*]+)\*\*:/)
+  return m ? m[1] : '(uncategorised)'
+}
+
+/** 期望/实际差异摘要：首个分歧字符位置 + 两侧窗口，不打印整条 bullet 以外的噪声。 */
+function bulletDivergence(want, got) {
+  let i = 0
+  while (i < want.length && i < got.length && want[i] === got[i]) i++
+  const cut = (s) => JSON.stringify(s.slice(Math.max(0, i - 20), i + 60))
+  return `first difference at character ${i + 1} of the line — EXPECTED ${cut(want)} ACTUAL ${cut(got)} (expected ${want.length} chars, actual ${got.length} chars)`
+}
+
+/**
+ * The verbatim comparison itself: ONE source bullet set against ONE rendered
+ * block, reporting every problem as a named, localized string so the FAIL
+ * banner says WHICH bullet at WHICH site and what the difference is.
+ * Arms, strongest-first: a copy that changed a word (same category, different
+ * body), a copy that dropped a bullet, a copy that added one the source never
+ * had, and a copy whose bullets are all present but reordered.
+ */
+function comparePolicyBullets(want, got, site, blockIndex, blockTotal) {
+  const problems = []
+  const where = blockTotal > 1 ? `${site} — Anti-Patterns block ${blockIndex + 1}/${blockTotal}` : site
+  if (got.length === 0) {
+    return [`${where} carries 0 anti-pattern bullets under its "${POLICY_HEADING_ANTI_PATTERNS}" heading — the comparison would be vacuous, so an empty copy FAILs rather than passing empty`]
+  }
+  // Multiset diff, so a duplicated bullet cannot hide behind a matching first copy.
+  const pool = [...got]
+  const unmatchedWant = []
+  for (const bullet of want) {
+    const at = pool.indexOf(bullet)
+    if (at < 0) unmatchedWant.push(bullet)
+    else pool.splice(at, 1)
+  }
+  // A dropped bullet and a reworded bullet look identical until paired by
+  // category: same category present on both sides = a WORD changed, not a line lost.
+  const reworded = []
+  const dropped = []
+  for (const bullet of unmatchedWant) {
+    const cat = bulletCategory(bullet)
+    const at = pool.findIndex((x) => bulletCategory(x) === cat)
+    if (at < 0) dropped.push(bullet)
+    else reworded.push([bullet, pool.splice(at, 1)[0]])
+  }
+  for (const [want1, got1] of reworded) {
+    problems.push(`${where}: bullet **${bulletCategory(want1)}** is NOT verbatim — ${bulletDivergence(want1, got1)}`)
+  }
+  for (const bullet of dropped) {
+    problems.push(`${where}: the source bullet **${bulletCategory(bullet)}** is ABSENT from the rendered copy (${want.length} bullets expected in the source, ${got.length} present) — ${JSON.stringify(bullet)}`)
+  }
+  for (const bullet of pool) {
+    problems.push(`${where}: bullet **${bulletCategory(bullet)}** exists in the rendered copy but NOT in the single source of truth ${relative(REPO_ROOT, ANTI_PATTERNS_MD)} (${got.length} present, ${want.length} in the source) — the hand-maintained copy has drifted ahead: ${JSON.stringify(bullet)}`)
+  }
+  if (reworded.length === 0 && dropped.length === 0 && pool.length === 0 && want.join('\n') !== got.join('\n')) {
+    const at = want.findIndex((b, i) => b !== got[i])
+    problems.push(`${where}: all ${want.length} source bullets are present verbatim but the ORDER differs — position ${at + 1} wants **${bulletCategory(want[at])}**, the copy renders **${bulletCategory(got[at] ?? '(absent)')}**`)
+  }
+  return problems
+}
+
 /**
  * The ten c10 assertion records (P2-T20): ONE result per DoD-c assertion
  * class, so the gate's assertion count is enumerable and the pre-Phase-2
@@ -418,24 +666,122 @@ async function run() {
     if (JSON.stringify(groupIds) !== JSON.stringify(wantGroup)) c03Problems.push(`delegation group rows=${JSON.stringify(groupIds)} (want ${wantGroup.join(', ')})`)
     results.push(check('c03', 'single delegation path', c03Problems.length === 0, c03Problems.join('; ') || `delegation group = ${wantGroup.join(', ')}`))
 
-    // c09 — persona shadow: hard blocks + anti-patterns in both personas.
+    // c09 — persona shadow: hard blocks present, anti-patterns VERBATIM at every
+    // rendered persona site of the shipped preset (today: two — conductor + explore).
     // The conductor's key is `prefix` (renamed from `text` at
     // dsh-v0.1.3-alpha.2 — docs/dsh-0.1.5-rc.1-review.md §2); reading the old
     // key here would have made this check silently vacuous rather than failing.
+    //
+    // FIX-C09 (D19-REVIEW §3 行 A 尾注：「c09 passing is NOT evidence of sync」
+    // / §5c ⑤「verbatim-comparison gate remains open work」)：旧臂只做
+    // `text.includes('## Anti-Patterns')`——删掉一条 bullet、把 `Never` 改成
+    // `Never ever`，它照绿。真源是 `system-sections/anti-patterns.md`
+    // （`system-prompt.ts:79-99` 在 apply 时现渲染，live 面天然同步），而
+    // `-current/preset/agent.cordis.yml` 由 `install-concerto.sh:1014` 直接
+    // curl 发出去、**没有任何脚本再生成它**——所以它是必须逐字钉住的第二工件。
+    // 本臂因此是**双向**逐字比对：副本少一条红（源改了没跟上）、副本多一条红
+    // （副本跑到源前面）、改一个词红、换顺序红。记录数不变：仍是这一条 c09，
+    // 内部多断言全部汇入 c09Problems。
+    //
+    // FIX-C09-R2（评审 B MAJOR-1，方案 (a)）：上面那一轮把 body 一刀切成
+    // 「bullet / 其余」两半，只有前半有门。于是源里改一个散文词（B 的 B11 腿）、
+    // 加一条非规范 dash 行（B 的 B12 腿）都能穿过这道门而绿。本轮补上后半：
+    // `policyBodyRest` 取「其余行」（去缩进、**先剥 body 末尾空行再滤 bullet**），
+    // 〔R3 订正：次序已改为先剥尾再滤 bullet；R2 落地为相反次序〕
+    // 逐字节、含行序地与源比对；源侧的非规范 dash 行由 SHAPE GUARD 当场具名红——它两半都不属于，
+    // 不守就是静默蒸发面。记录数**仍不变**：新断言同样汇入 c09Problems。
     const conductor = agentRows.find((r) => r && r.id === 'persona')
     const exploreRow = flatRows.find((r) => r && r.config && r.config.toolName === 'call_omo_explore')
     const c09Problems = []
-    for (const [label, text] of [
-      ['conductor', conductor && conductor.config && conductor.config.prefix],
-      ['explore', exploreRow && exploreRow.config && exploreRow.config.persona],
-    ]) {
-      if (typeof text !== 'string' || text.length === 0) {
-        c09Problems.push(`${label} persona missing`)
-      } else if (!(text.includes('## Hard Blocks') && text.includes('## Anti-Patterns'))) {
-        c09Problems.push(`${label} persona lacks hard-blocks/anti-patterns sections`)
+
+    // The single source of truth. Unreadable or bullet-less = FAIL, never skip:
+    // a gate whose expectation is empty passes everything.
+    let antiPatternsSource = ''
+    try {
+      antiPatternsSource = readFileSync(ANTI_PATTERNS_MD, 'utf8')
+    } catch (e) {
+      c09Problems.push(`the single source of truth ${relative(REPO_ROOT, ANTI_PATTERNS_MD)} could not be read: ${String(e.message ?? e)} — c09 has nothing to compare against, so it FAILs rather than falling back to the old inclusion-only arm`)
+    }
+    const sourceBlocks = antiPatternsSource === '' ? [] : slicePolicySections(antiPatternsSource, POLICY_HEADING_ANTI_PATTERNS)
+    if (antiPatternsSource !== '' && sourceBlocks.length === 0) {
+      c09Problems.push(`${relative(REPO_ROOT, ANTI_PATTERNS_MD)} carries no "${POLICY_HEADING_ANTI_PATTERNS}" heading — every expectation below would be empty, which is a vacuous PASS, so this FAILs`)
+    }
+    const want = sourceBlocks.length > 0 ? policyBullets(sourceBlocks[0]) : []
+    if (antiPatternsSource !== '' && sourceBlocks.length > 0 && want.length === 0) {
+      c09Problems.push(`${relative(REPO_ROOT, ANTI_PATTERNS_MD)}: its Anti-Patterns section holds 0 "- **Category**: description" bullets — the comparison would be vacuous`)
+    }
+    if (sourceBlocks.length > 1) {
+      c09Problems.push(`${relative(REPO_ROOT, ANTI_PATTERNS_MD)} carries ${sourceBlocks.length} copies of "${POLICY_HEADING_ANTI_PATTERNS}" — the source itself has forked, so there is no longer ONE set to compare against`)
+    }
+
+    // FIX-C09-R2 (评审 B MAJOR-1): the source's non-bullet lines are the body
+    // expectation, and the source's own SHAPES are guarded first. A dash line
+    // outside the canonical bullet shape joins no bullet set, so no BULLET arm
+    // can ever see it. The body arm CAN see it (it is one of the rest lines),
+    // and today that is what fails a source-only shape edit — but only until a
+    // copy mirrors the edit: a shape drift replicated on every face makes both
+    // other arms green, which is exactly the silent surface the guard closes.
+    // Named red, source side, before any site is compared.
+    const wantRest = sourceBlocks.length > 0 ? policyBodyRest(sourceBlocks[0]) : []
+    if (sourceBlocks.length > 0) {
+      const sourceDeindented = sourceBlocks[0].map((line) => line.replace(/^[ \t]+/, ''))
+      const shapeDrift = []
+      sourceDeindented.forEach((line, i) => {
+        if (POLICY_DASH_ITEM_RE.test(line) && !POLICY_BULLET_RE.test(line)) shapeDrift.push(`section body line ${i + 1}: ${JSON.stringify(line)}`)
+      })
+      if (shapeDrift.length > 0) {
+        c09Problems.push(`${relative(REPO_ROOT, ANTI_PATTERNS_MD)}: its Anti-Patterns section holds ${shapeDrift.length} dash line(s) that do NOT match the canonical "- **Category**: description" shape [${shapeDrift.join(' | ')}] — no BULLET arm of this check can ever see such a line (it joins no bullet set on either side), and if the copies ever mirrored it the body arm would go green around it, so the SHAPE GUARD fails it HERE instead of letting the section quietly stop being a bullet list`)
       }
     }
-    results.push(check('c09', 'persona shadow', c09Problems.length === 0, c09Problems.join('; ') || 'hard-blocks + anti-patterns in both personas'))
+
+    // Named sites: the two rendered blocks the installer ships, both REQUIRED.
+    const c09Sites = [
+      ['conductor persona prefix (row `persona` .config.prefix)', conductor && conductor.config && conductor.config.prefix],
+      ['explore persona shadow (row `tool-subagent-explore` .config.persona)', exploreRow && exploreRow.config && exploreRow.config.persona],
+    ]
+    // Discovery arm: any OTHER row in the shipped preset whose config string
+    // renders the same section (one level into `config`) is compared too, so a
+    // third persona cannot join the shipped preset unsynced and unchecked.
+    const namedRows = new Set([conductor, exploreRow])
+    for (const r of flatRows) {
+      const cfg = r && r.config
+      if (!r || namedRows.has(r) || !cfg || typeof cfg !== 'object' || Array.isArray(cfg)) continue
+      for (const [key, value] of Object.entries(cfg)) {
+        if (typeof value === 'string' && value.includes(POLICY_HEADING_ANTI_PATTERNS)) {
+          c09Sites.push([`row \`${r.id ?? '(no id)'}\` .config.${key}`, value])
+        }
+      }
+    }
+
+    const c09Compared = []
+    for (const [site, text] of c09Sites) {
+      if (typeof text !== 'string' || text.length === 0) {
+        c09Problems.push(`${site} missing`)
+        continue
+      }
+      if (!text.includes('## Hard Blocks')) {
+        c09Problems.push(`${site} lacks the hard-blocks section`)
+        continue
+      }
+      const blocks = slicePolicySections(text, POLICY_HEADING_ANTI_PATTERNS)
+      if (blocks.length === 0) {
+        c09Problems.push(`${site} lacks the "${POLICY_HEADING_ANTI_PATTERNS}" section`)
+        continue
+      }
+      for (let bi = 0; bi < blocks.length; bi++) {
+        const got = policyBullets(blocks[bi])
+        // FIX-C09-R2: the bullet set and the rest of the body are compared by
+        // two arms over a partition of the same slice — no line is unwatched.
+        const gotRest = policyBodyRest(blocks[bi])
+        c09Problems.push(...comparePolicyBullets(want, got, site, bi, blocks.length))
+        c09Problems.push(...comparePolicyBody(wantRest, gotRest, site, bi, blocks.length))
+        c09Compared.push(`${site.split(' (')[0]} block ${bi + 1}/${blocks.length} = ${got.length} bullets + ${gotRest.length} non-bullet line(s)`)
+      }
+    }
+    results.push(check('c09', 'persona shadow — anti-pattern bullets VERBATIM against system-sections/anti-patterns.md at every rendered persona site', c09Problems.length === 0,
+      c09Problems.length > 0
+        ? c09Problems.join('; ')
+        : `${want.length} anti-pattern bullets AND ${wantRest.length} non-bullet body line(s) (the prose of the section) of the single source of truth ${relative(REPO_ROOT, ANTI_PATTERNS_MD)} matched VERBATIM, bullet for bullet AND line for line AND in order, across ${c09Compared.length} rendered block(s) at ${c09Sites.length} persona site(s) of ${relative(REPO_ROOT, AGENT_YML)}: ${c09Compared.join('; ')} — bidirectional over BOTH halves of the body, which the two arms partition (an absent bullet, a copy that ran ahead of the source, a reworded bullet, a reordered bullet, a reworded / reflowed / DROPPED prose line and a copy carrying prose the source never had all FAIL here); normalization = DE-INDENT ONLY (layout 0/6/10 spaces is YAML block-scalar indentation, not content — every character after column 0 is compared unchanged), plus BLANK lines trimmed at the very END of the body on BOTH sides alike (the source .md ends with a newline while the personas are \`|-\` block scalars whose strip chomping drops exactly that empty line — container layout, not content); blank lines INSIDE the prose ARE compared, INCLUDING the blank line that SEPARATES the prose from the first bullet, and that holds only because the tail trim runs BEFORE the bullet filter (FIX-C09-R3: R2 filtered the bullets out first, which pulled that separator down to the end of the sequence and trimmed it as if it were container layout — a source gaining exactly that line against unmoved copies stayed green); interior blank lines are paragraph structure; blocks located by their "${POLICY_HEADING_ANTI_PATTERNS}" heading line, never by line number, and EVERY occurrence of that heading in a persona is compared; a dash line in the SOURCE that is not a canonical "- **Category**:" bullet FAILs on its own SHAPE GUARD, because it joins no bullet set and no bullet arm could ever see it; hard-blocks title containment retained as its own arm. RESIDUAL BOUNDARY, not claimed closed: this arm compares the IN-REPO shipped archive, not an installed profile (the installer curls a REMOTE tag — D19-REVIEW §3 行 A), the hard-blocks section stays title-inclusion-only, and the arm that DISCOVERS extra persona sites reads each row's \`config\` exactly ONE level deep (its own string values, NO recursion into nested objects or arrays), so a third copy rendered below that depth is outside its scan — today the heading occurs at exactly the two named sites`))
   }
 
   // c04 — the plugin artifact parses as a function body.
@@ -723,7 +1069,7 @@ async function run() {
     for (const [id] of C10_ASSERTIONS) results.push(check(id, C10_NAMES.get(id), false, reason))
   }
 
-  // ── c11 — the root overlay mounts exactly the plugin insert rows (3 → 4) ───
+  // ── c11 — the root overlay mounts exactly the plugin insert rows (3 → 4 → 5) ───
   //
   // 与 doctor-lite check 2b（gate 4）的关系：那是本事实的既有断言，本记录**引用**
   // 它而不是平行重抄插件清单——期望值直接取自 doctor-lite-core 的
@@ -758,7 +1104,9 @@ async function run() {
       // 模块的——把任意两行的 name 对调（或改成别的包）会让「omo-hooks」这个标签
       // 挂上别的代码，且现有门全部照绿。本记录把 `@oh-my-opendsh/<id>` 这一约定
       // 钉死（四个包的 package.json name 实测与之一致，P5-T3 新增的 omo-team
-      // 同受此断言约束）。
+      // 同受此断言约束）。P6-T4 起有唯一的声明式例外：DSH_BUNDLED_INSERT_ROW_NAMES
+      // （omo-lsp 挂 dsh 自带插件，不走本仓发布名）——例外是数据不是放松的规则，
+      // 未登记的行名非 @oh-my-opendsh/* 依旧 FAIL。
       const nameProblems = []
       for (const row of cordisRows) {
         if (!row || !Array.isArray(row.insert)) continue
@@ -766,13 +1114,14 @@ async function run() {
           if (!inserted || typeof inserted !== 'object') continue
           const id = inserted.id
           if (typeof id !== 'string' || id.length === 0) continue
-          if (inserted.name !== `@oh-my-opendsh/${id}`) {
-            nameProblems.push(`${id}: name=${JSON.stringify(inserted.name)} (want @oh-my-opendsh/${id})`)
+          const want = DSH_BUNDLED_INSERT_ROW_NAMES[id] ?? `@oh-my-opendsh/${id}`
+          if (inserted.name !== want) {
+            nameProblems.push(`${id}: name=${JSON.stringify(inserted.name)} (want ${want})`)
           }
         }
       }
       if (nameProblems.length > 0) problems.push(`insert row id/name mismatch: ${nameProblems.join('; ')}`)
-      passDetail = `${insertEntries.length} insert rows [${observedIds.join(', ')}], mount order, each id ↔ @oh-my-opendsh/<id> — `
+      passDetail = `${insertEntries.length} insert rows [${observedIds.join(', ')}], mount order, each id ↔ @oh-my-opendsh/<id> (declared dsh-bundled exceptions honoured) — `
         + 'expectation from doctor-lite-core.EXPECTED_INSERT_ROW_IDS (not restated), plus the top-level entry count and insert-form shape'
     }
     // The NAME is count-derived too: restating "2" here would be a fourth copy
@@ -1008,7 +1357,66 @@ async function run() {
       if (derivedSet.size !== derivedIds.length) {
         problems.push(`baseline yields duplicate listener ids: [${derivedIds.join(', ')}]`)
       }
-      const missing = portedManifestIds.filter((id) => !derivedSet.has(id))
+      // FORKS.md §0-1: the c14 union is NOT extended this phase, so a Phase 6
+      // row that flips to 'ported' has NO §1 row to be found in — and `missing`
+      // would otherwise demand one and refuse the correct commit. The exemption is
+      // a REGISTRY, not a free-form skip: the ids below are the same ids
+      // PHASE6_ROSTER_ANCHORS registers in
+      // tests/omo-hooks/manifest-coverage-consistency.test.ts, and the two faces
+      // are asserted to agree right here, so the exemption list cannot grow in
+      // silence on this side and cannot shrink in silence on that side. The row's
+      // doc home is its ANCHOR line in phase6-mcp-editing.md, and the flip guard
+      // that reads it lives in that unit test — c14 names the exemption and hands
+      // the checking over, it does not waive it.
+      const phase6AnchoredIds = ['ast-grep-sg-provision']
+      {
+        const testSrc = readFileSync(
+          join(REPO_ROOT, 'tests', 'omo-hooks', 'manifest-coverage-consistency.test.ts'), 'utf8')
+        // The block is cut by BRACKET DEPTH from the array's own `[` to its
+        // matching `]`, not by "up to the next `const SCENARIO_TOKEN`". That
+        // earlier form was quietly wrong in both directions: `SCENARIO_TOKEN` is
+        // declared ABOVE this registry, so the comparison `indexOf(SCENARIO_TOKEN)
+        // > indexOf(PHASE6_ROSTER_ANCHORS)` was FALSE and the ternary fell back
+        // to `testSrc.length` — the "block" ran to END OF FILE, and any
+        // `  id: '…',` line anywhere later in the test would have been read as a
+        // registered anchor, widening the exemption without anyone registering it.
+        // A registry whose parser can be widened by unrelated text exempts
+        // nothing. Same depth-counter fragility note as drive.mjs's SCENARIO
+        // extraction applies: this reads raw brackets and assumes no bracket
+        // inside a string literal, and the registry's strings (a doc path and a
+        // Chinese anchor phrase) carry none.
+        const anchorStart = testSrc.indexOf('const PHASE6_ROSTER_ANCHORS')
+        // The `[` is sought AFTER the `=`, not after the name: the declaration is
+        // `const PHASE6_ROSTER_ANCHORS: readonly { … }[] = [`, and the first `[`
+        // after the name belongs to the TYPE annotation's `}[]`. Taking that one
+        // cut a block of literally `[]`, which parsed to zero ids and made this
+        // gate cry "vacuous" about a registry that was perfectly populated — a
+        // false alarm is still a false alarm, even one that fails safe.
+        const anchorAssign = anchorStart === -1 ? -1 : testSrc.indexOf('=', anchorStart)
+        const open = anchorAssign === -1 ? -1 : testSrc.indexOf('[', anchorAssign)
+        let close = -1
+        if (open !== -1) {
+          let depth = 0
+          for (let i = open; i < testSrc.length; i += 1) {
+            const ch = testSrc[i]
+            if (ch === '[') depth += 1
+            else if (ch === ']') { depth -= 1; if (depth === 0) { close = i; break } }
+          }
+        }
+        if (anchorStart === -1 || open === -1 || close === -1) {
+          problems.push('c14 exemption registry: PHASE6_ROSTER_ANCHORS is absent or its array literal never closes — the registry cannot be read, so the §0-1 exemption cannot be checked')
+        }
+        const block = open !== -1 && close !== -1 ? testSrc.slice(open, close) : ''
+        const registered = [...block.matchAll(/^\s+id: '([^']+)',$/gm)].map((m) => m[1])
+        if (registered.length === 0) {
+          problems.push('c14 exemption registry: no ids parsed out of PHASE6_ROSTER_ANCHORS — the registry went vacuous, so this exemption would exempt anything')
+        }
+        if ([...phase6AnchoredIds].sort().join(',') !== [...registered].sort().join(',')) {
+          problems.push(`c14's phase6 exemption [${[...phase6AnchoredIds].sort().join(', ')}] disagrees with PHASE6_ROSTER_ANCHORS [${[...registered].sort().join(', ')}] — the two faces of the §0-1 split must move together`)
+        }
+      }
+      const missing = portedManifestIds.filter((id) => !derivedSet.has(id)
+        && !phase6AnchoredIds.includes(id))
       const extra = derivedIds.filter((id) => !manifestSet.has(id))
       const union = COVERAGE_BASELINE_MDS.map((f) => relative(REPO_ROOT, f)).join(' + ')
       if (missing.length > 0) problems.push(`ported manifest ids absent from the ${union} §1 port group: ${missing.join(', ')}`)
@@ -1059,22 +1467,37 @@ async function run() {
   // manifest row loses its baseline. These records close that, mirroring c12/c13/
   // c14 one-for-one so the two packages read the same way.
 
-  // c15 — the four insert rows resolve to REAL, DISTINCT workspace packages.
+  // c15 — every insert row resolves to a REAL, DISTINCT package, by ONE of two
+  // resolution faces (P6-T4 widened it from the single repo-published face).
   //
   // c11 pins the ids, the mount order, and the `name` ↔ id coupling. What it
-  // cannot see is whether the package that `name` refers to EXISTS in this repo.
-  // dsh resolves an insert row's `name` as a Node module specifier from the
-  // PROFILE directory, so a row naming a package nobody publishes fails at
-  // `dsh plugin add` — visible in e2e (which installs every scenario) but
-  // invisible to a zero-cost static gate, and the failure message is a module
-  // resolution error three files away from the cause.
+  // cannot see is whether the package that `name` refers to EXISTS. dsh resolves
+  // an insert row's `name` as a Node module specifier from the PROFILE directory,
+  // so a row naming a package nobody publishes fails at `dsh plugin add` —
+  // visible in e2e (which installs every scenario) but invisible to a zero-cost
+  // static gate, and the failure message is a module resolution error three files
+  // away from the cause.
+  //
+  // TWO resolution faces, because the rows are different in kind since P6-T4:
+  //   • `@oh-my-opendsh/<id>` rows are published BY THIS REPO — the name must be
+  //     declared by a package.json under patches/omo-dsh/ (the original chain:
+  //     `name` → a directory whose package.json declares that exact name).
+  //   • `@deepseek-ai/*` rows mount a plugin BUNDLED with the installed dsh
+  //     (omo-lsp → @deepseek-ai/dsh-mcp-client) — NO profile install, so there is
+  //     nothing to find under patches/omo-dsh/; instead the name must resolve from
+  //     the INSTALLED dsh's node_modules (resolveDshNodeModules, the same face
+  //     doctor-lite's preset sweep uses). dsh unavailable → the row is reported
+  //     unresolved (honest FAIL, not a silent pass — this repo's gate never
+  //     upgrades a can't-check into a pass).
+  // Uniqueness is checked across BOTH faces (two rows resolving to one package
+  // is a conflict no matter which face each came from).
   //
   // NOTE the premise correction: the first draft of this record asserted an
   // `insert[].path` key. There is no such key — dsh resolves by `name` alone,
   // which is why the record went red on all three rows ("insert row has no
-  // path") rather than passing vacuously. The real chain is
-  // `name` → a directory under patches/omo-dsh/ whose package.json declares that
-  // exact name.
+  // path") rather than passing vacuously. For the four repo-published plugin
+  // rows the real chain remains `name` → a directory under patches/omo-dsh/
+  // whose package.json declares that exact name.
   try {
     const cordisRows = await loadYamlDialect(join(REPO_ROOT, 'cordis.yml'))
     if (!Array.isArray(cordisRows)) throw new Error('cordis.yml is not a top-level array of patch entries')
@@ -1094,7 +1517,11 @@ async function run() {
       }
     }
     if (published.size === 0) problems.push('no published package found under patches/omo-dsh/ — the assertion would be vacuous')
-    const seenDirs = new Map()
+    // The dsh-bundled face: resolve the installed dsh's node_modules ONCE; a
+    // bundled row's name must carry a package.json there.
+    const dshNm = await resolveDshNodeModules()
+    const seenResolutions = new Map()
+    let bundledCount = 0
     for (const row of flatten(cordisRows)) {
       if (!row || !Array.isArray(row.insert)) continue
       for (const inserted of row.insert) {
@@ -1104,32 +1531,60 @@ async function run() {
           problems.push(`${id}: insert row has no name to resolve`)
           continue
         }
-        const dir = published.get(name)
-        if (dir === undefined) {
-          problems.push(`${id}: '${name}' is not published by any package under patches/omo-dsh/ (dsh would fail to resolve it)`)
-          continue
-        }
-        if (seenDirs.has(dir)) {
-          problems.push(`insert rows ${seenDirs.get(dir)} and ${id} both resolve to the package directory '${dir}/'`)
+        let resolution
+        if (DSH_BUNDLED_INSERT_ROW_NAMES[id] !== undefined) {
+          // dsh-bundled face (declared exception, P6-T4): the name must be the
+          // declared one and must resolve from the installed dsh.
+          bundledCount += 1
+          if (name !== DSH_BUNDLED_INSERT_ROW_NAMES[id]) {
+            problems.push(`${id}: declared dsh-bundled as '${DSH_BUNDLED_INSERT_ROW_NAMES[id]}', the row names '${name}'`)
+            continue
+          }
+          if (dshNm === null) {
+            problems.push(`${id}: '${name}' names a dsh-bundled plugin but the installed dsh node_modules is unresolvable — cannot confirm it exists`)
+            continue
+          }
+          const pkgName = name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0]
+          if (!existsSync(join(dshNm, pkgName, 'package.json'))) {
+            problems.push(`${id}: '${name}' is not installed in the dsh node_modules (${dshNm}) — dsh would fail to resolve it`)
+            continue
+          }
+          resolution = `${dshNm}/${pkgName}/`
         } else {
-          seenDirs.set(dir, id)
+          const dir = published.get(name)
+          if (dir === undefined) {
+            problems.push(`${id}: '${name}' is not published by any package under patches/omo-dsh/ and is not a declared dsh-bundled row (dsh would fail to resolve it)`)
+            continue
+          }
+          resolution = `${dir}/`
+        }
+        if (seenResolutions.has(resolution)) {
+          problems.push(`insert rows ${seenResolutions.get(resolution)} and ${id} both resolve to '${resolution}'`)
+        } else {
+          seenResolutions.set(resolution, id)
         }
       }
     }
+    // EXPECTED_INSERT_ROW_IDS: omo-* ids map to @oh-my-opendsh/<id>; any other
+    // expected id must be a mounted row that resolved on the dsh-bundled face
+    // (omo-lsp is mounted, not published — see cordis.yml header).
     for (const id of EXPECTED_INSERT_ROW_IDS) {
-      if (!published.has(`@oh-my-opendsh/${id}`)) {
-        problems.push(`EXPECTED_INSERT_ROW_IDS names ${id}, but no package publishes @oh-my-opendsh/${id}`)
+      const omoName = `@oh-my-opendsh/${id}`
+      if (published.has(omoName)) continue
+      const rowResolved = [...seenResolutions.values()].includes(id)
+      if (!rowResolved) {
+        problems.push(`EXPECTED_INSERT_ROW_IDS names ${id}: no package publishes ${omoName} and no insert row with id ${id} resolved on either face`)
       }
     }
-    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct published package',
+    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct package (repo-published or dsh-bundled face)',
       problems.length === 0,
       problems.length > 0
         ? problems.join('; ')
-        : `${seenDirs.size} insert rows each resolve to their own published package `
-          + `(${[...seenDirs].map(([dir, id]) => `${id}→${dir}/`).join(', ')}); `
-          + `${published.size} packages indexed by their package.json name`))
+        : `${seenResolutions.size} insert rows each resolve to their own package `
+          + `(${[...seenResolutions].map(([res, id]) => `${id}→${res.includes('node_modules') ? '<dsh-bundled>' : res}`).join(', ')}); `
+          + `${published.size} repo-published packages indexed by package.json name; ${bundledCount} dsh-bundled row(s) confirmed against the installed dsh`))
   } catch (e) {
-    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct published package', false,
+    results.push(check('c15', 'every cordis.yml insert row resolves to a real, distinct package (repo-published or dsh-bundled face)', false,
       `cordis.yml could not be read/parsed: ${String(e.message ?? e)}`))
   }
 
@@ -1685,6 +2140,288 @@ async function run() {
   } catch (e) {
     results.push(check('c21', 'NOTICES / c13 counts are derived from manifest + filesystem, not transcribed', false,
       `the count cross-check could not run: ${String(e.message ?? e)}`))
+  }
+
+  // ── c29 — the ast-grep provisioning layer: file set ↔ headers ↔ seam ↔ NOTICES ──
+  //
+  // WHY THIS RECORD EXISTS (P6-T6, fork G (G-A) 裁定对象的静态门之家，FORKS.md §2.7).
+  // `ast-grep-sg-provision` 是 roster 第一个带**非 hook 供给层**的条目：供给层住在
+  // src/ast-grep/，不在 src/hooks/——c12 的署名头扫描、c13 的文件集双向核对、c21 的
+  // NOTICES 计数全部只覆盖 src/hooks/，于是整个移植单元的供给半边（6 个实现文件 +
+  // 它们的上游归属 + hook↔barrel 的唯一接线 + manifest 行的文件算术）原本没有任何
+  // 门能看见。src/services/ 的先例（P4-T8）立的是「不入 c13 计数」的规矩，但没有给
+  // 它配计数器；这里补上，且把规矩本身也钉住：计数镜像漂移 = 本记录红。
+  //
+  // 九臂，全部独立于被检对象自身的自述：
+  //   ① 文件集双向：磁盘 6 文件 ↔ 显式名册（增删改名都红）；
+  //   ①b barrel 多重集臂：barrel 的**全部** `export * from '…'` 说明符（不限 `./`
+  //      前缀）规范化后的**多重集** ↔ **显式名册去掉 index.ts 自身**（名册与磁盘的
+  //      相等由 ① 单独钉；ARBITRATION-r1 B-MINOR-1 补——原 ① 只把磁盘与名册对齐，
+  //      看不见「文件在、barrel 漏 re-export」的半存活；ARBITRATION-r3 B-MINOR-3a
+  //      强化——原臂是单向**包含**而非多重集：重复 re-export 绿且 PASS 行自打
+  //      「6 of 5」，而限 `./` 的正则对 `export * from '../hooks/…'` 整条失明）。
+  //      现在：排序逐项 + 长度对账 + 重复项具名 + 越界说明符具名原文；成员集为空
+  //      亦红，空集等于空集不是证明。
+  //      RESIDUAL BOUNDARY, not claimed closed：**文本正则看不见注释形态**——
+  //      `// export * from './x.ts'` 未锚行首的正则照中，本臂会打「5 of 5」而
+  //      接线已死（ARBITRATION-r2 B-R2-MAJOR-1 亲验复现，钩子运行时
+  //      `deps.findSgBinary is not a function`）。本臂保留，因为它是唯一能**具名
+  //      缺谁**的臂。兜底是 ①c 的运行时臂——但**兜的是钩子实际经 barrel 消费的
+  //      四个缝符号**（findSgBinarySync / provisionSgBinary / astGrepRuntimeDir /
+  //      SG_PINNED_VERSION，与 hook 的 import 面逐字一致：ast-grep-sg-provision.ts
+  //      :97-101 的四件运行时值；同一 import 块 :102-103 的 `type SgProvisionOptions`
+  //      / `type SgResolverOptions` 是纯类型，Node strip-only 擦除后运行时根本不存在，
+  //      ①c 结构上看不见它们）。**成员导出缺失方向，⊆ 不覆盖**：⊆ 是单向语义，少
+  //      一个成员只会让 barrel 命名空间变小，永远不违反子集。本轮实测把两种形态
+  //      分别钉死：把 `export * from './types.ts'` **整行删除** → 本臂红并具名
+  //      types.ts（4 ≠ 5，长度对账）；**注释掉**同一行 → c29 仍 38/38 PASS（未锚
+  //      行首的正则照收注释行，①b 亦绿，①c 的四符号与 ⊆ 均不受影响）。后者的门
+  //      是**门 1 typecheck**，本轮实测红于 ast-grep-sg-provision.ts(102,8) 与
+  //      (103,8)：TS2305 `has no exported member 'SgProvisionOptions' /
+  //      'SgResolverOptions'`。属已知边界，不是这段散文（c23/c24/c25/c28 同款体例）。
+  //   ①c barrel 运行时臂：真的 `await import()` 一次 barrel，断言钩子经 barrel
+  //      消费的四个符号在运行时存在且 typeof 正确，缺员逐条具名；import 抛错
+  //      也红，绝不回落到文本臂。派生断言（r3 B-MINOR-3b）：barrel 运行时命名空间
+  //      ⊆ 五成员模块运行时导出之并——并集由代码 import 五成员算出，不手抄名字。
+  //      RESIDUAL BOUNDARY：只证**接线在位**，不证语义；语义 stub（typeof 对、
+  //      行为空）由单测的行为断言兜底（c23/c24/c25/c28 同款声明）。
+  //   ② 署名头：每个供给层文件的上游 span `packages/utils/src/ast-grep/`、冻结版本
+  //      `v4.19.4`、移植声明（PORT_DECLARATIONS，房屋体例中文）三件齐；
+  //   ③ 接线：src/hooks/ast-grep-sg-provision.ts 必须 import barrel
+  //      `../ast-grep/index.ts`（唯一入口），且不得更深挖单模块（半存活防线）；
+  //   ④ manifest 行：id/event 钉死，行内 upstreamFiles/upstreamTestFiles 的文件
+  //      算术（9 = hook 2 + 供给层 6 + which.ts 1；5 = hook 1 + 供给层 4）与磁盘、
+  //      barrel 成员集三方对账；
+  //   ④b upstreamFiles 全集臂：与一份显式 9 项常量做**多重集**比较（排序逐项 +
+  //      长度对账，ARBITRATION-r1 B-MINOR-1 补——④ 钉的是数量，把第 9 项换成
+  //      任意别的路径它仍绿；这里钉的是每一项的名字）。
+  //   ④c upstreamTestFiles 全集臂：同法，显式 5 项常量多重集（hook 1 + 供给层
+  //      4；ARBITRATION-r2 A-R2-NIT-2 补——④ 的 5 只是数量）。
+  //   ⑤ NOTICES 镜像：THIRD_PARTY_NOTICES.md 的 `src/ast-grep/ 供给层 = N files`
+  //      必须等于磁盘实测；⑤b 再把逐文件表的 derived 路径与磁盘双向对账，
+  //      上游路径逐行等于 upstreamByDerived，并与 manifest 双向对账；处置列只接受
+  //      semantic port only + 可选注记。
+  if (hooksManifest === null) {
+    results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', false,
+      'manifest.ts could not be imported — the provisioning-layer cross-check would be vacuous'))
+  } else try {
+    const problems = []
+    const layerFiles = collectTsFiles(AST_GREP_DIR)
+    // ONE authored per-file attribution contract feeds the filesystem roster,
+    // the manifest's expected upstream multiset, and each NOTICES row below.
+    // In particular, sg-resolver has a second semantic source (whichOnPath).
+    const upstreamByDerived = new Map([
+      ['src/ast-grep/index.ts', ['packages/utils/src/ast-grep/index.ts']],
+      ['src/ast-grep/install-script.ts', ['packages/utils/src/ast-grep/install-script.ts']],
+      ['src/ast-grep/sg-manifest.ts', ['packages/utils/src/ast-grep/sg-manifest.ts']],
+      ['src/ast-grep/sg-provisioner.ts', ['packages/utils/src/ast-grep/sg-provisioner.ts']],
+      ['src/ast-grep/sg-resolver.ts', ['packages/utils/src/ast-grep/sg-resolver.ts', 'packages/utils/src/runtime/which.ts']],
+      ['src/ast-grep/types.ts', ['packages/utils/src/ast-grep/types.ts']],
+    ])
+    const wantLayer = [...upstreamByDerived.keys()].map((derived) => derived.slice('src/ast-grep/'.length))
+    const missingLayer = wantLayer.filter((rel) => !layerFiles.includes(rel))
+    const extraLayer = layerFiles.filter((rel) => !wantLayer.includes(rel))
+    if (missingLayer.length > 0) problems.push(`provisioning layer files missing: ${missingLayer.join(', ')}`)
+    if (extraLayer.length > 0) problems.push(`provisioning layer files not in the ported-unit roster: ${extraLayer.join(', ')}`)
+    for (const rel of layerFiles) {
+      const header = signatureHeader(readFileSync(join(AST_GREP_DIR, rel), 'utf8'))
+      if (!header.includes('packages/utils/src/ast-grep/')) problems.push(`${rel}: signature header names no upstream packages/utils/src/ast-grep/ span`)
+      if (!header.includes('v4.19.4')) problems.push(`${rel}: signature header omits the frozen baseline tag v4.19.4`)
+      if (!PORT_DECLARATIONS.some((word) => header.includes(word))) problems.push(`${rel}: signature header carries no port declaration`)
+    }
+    // TypeScript's full AST excludes comments and distinguishes strings from
+    // syntax. The barrel is required on the static face; the deeper-module ban
+    // covers static import/re-export, side-effect import, and dynamic import().
+    const { staticSpecifiers: hookStaticSpecifiers, moduleSpecifiers: hookModuleSpecifiers } = collectModuleSpecifiers(join(HOOKS_DIR, 'ast-grep-sg-provision.ts'))
+    if (!hookStaticSpecifiers.includes('../ast-grep/index.ts')) problems.push('the hook does not import the provisioning barrel ../ast-grep/index.ts — the single-import seam is broken')
+    for (const deeper of wantLayer.filter((rel) => rel !== 'index.ts').map((rel) => `../ast-grep/${rel}`)) {
+      if (hookModuleSpecifiers.includes(deeper)) problems.push(`the hook reaches deeper than the barrel (${deeper}) — half-survival through a renamed module becomes possible`)
+    }
+    // ①b **barrel 多重集臂**（ARBITRATION-r1 B-MINOR-1，r3 B-MINOR-3 强化）：barrel
+    // 的 re-export 说明符**多重集**必须恰等于显式名册去掉 index.ts 自身（名册与磁盘
+    // 的相等由 ① 单独钉）。原 ① 只把**磁盘**与名册对齐——删掉一条
+    // `export * from './sg-resolver.ts'`，磁盘仍是 6 文件、① 仍绿，而 hook 经
+    // barrel 再也拿不到 resolver：这正是本记录要防的「文件在、接线断」半存活，
+    // 此前只有 NOTICES 的一句话守着。成员名一个也不手抄进比较式以外的地方——
+    // wantBarrel 从 wantLayer 派生，成员多重集从 barrel 正则读出，两边都是读出来的。
+    // r3 补的两道（均亲验复现于修前）：
+    //   * 重复 re-export 曾绿——missing/extra 是单向**包含**过滤，重复项既不在
+    //     missing 也不在 extra，门还自打「barrel members (6 of 5)」把矛盾印在
+    //     PASS 行上；这里 length 对账 + 重复项具名，两者都拦。
+    //   * 非 `./` 前缀曾不可见——旧正则 `'\.\/([^']+\.ts)'` 只认相对本目录，
+    //     `export * from '../hooks/ast-grep-sg-provision.ts'`（把 hook 本体拉进
+    //     供给层，层级倒挂）整条消失；这里解析**全部** re-export 说明符，
+    //     规范化后非层成员即具名红（报原文说明符，让读者看见越界的那一边）。
+    const barrelSrc = readFileSync(join(AST_GREP_DIR, 'index.ts'), 'utf8')
+    const barrelSpecifiers = [...barrelSrc.matchAll(/export\s+\*\s+from\s+['"]([^'"]+)['"]/g)].map((match) => match[1] ?? '')
+    const barrelMembers = barrelSpecifiers.map((specifier) => specifier.replace(/^\.\//, ''))
+    const wantBarrel = wantLayer.filter((rel) => rel !== 'index.ts')
+    const wantBarrelSorted = [...wantBarrel].sort()
+    const barrelSorted = [...barrelMembers].sort()
+    const missingBarrel = wantBarrelSorted.filter((rel) => !barrelMembers.includes(rel))
+    const extraBarrel = barrelSpecifiers.filter((specifier) => !wantBarrelSorted.includes(specifier.replace(/^\.\//, '')))
+    const duplicateBarrel = barrelMembers.filter((rel, index) => barrelMembers.indexOf(rel) !== index)
+    if (missingBarrel.length > 0) problems.push(`the provisioning barrel re-exports none of: ${missingBarrel.join(', ')} — the layer is on disk but invisible through the single import seam`)
+    if (extraBarrel.length > 0) problems.push(`the provisioning barrel re-exports specifiers the layer does not hold: ${extraBarrel.join(', ')}${extraBarrel.some((spec) => spec.startsWith('../')) ? ' — a specifier escaping the provisioning directory turns the layer inside out (the hook re-entering the layer it consumes)' : ''}`)
+    if (duplicateBarrel.length > 0) problems.push(`the provisioning barrel re-exports the SAME module more than once: ${[...new Set(duplicateBarrel)].join(', ')} — a one-way containment check cannot see a duplicate, and the seam would carry two bindings for one name`)
+    if (barrelSorted.length !== wantBarrelSorted.length) problems.push(`the provisioning barrel re-exports ${barrelSorted.length} specifiers against the roster's ${wantBarrelSorted.length} — the multiset lengths differ, so no containment result can be trusted`)
+    // 成员集自身也须非空：0 成员的 barrel 会让上面几条同时沉默（空集 == 空集）。
+    if (barrelMembers.length === 0) problems.push('the provisioning barrel re-exports NOTHING — the barrel arm would be vacuous')
+    // ①c **运行时臂**（ARBITRATION-r2 B-R2-MAJOR-1，阻断级）：文本臂读的是字节，
+    // 而字节不是接线。仲裁员亲验、本轮复现：`// export * from './sg-resolver.ts'`
+    // 一行注释掉，正则 `/export \* from '\.\/([^']+\.ts)'/` 未锚行首 → 注释行照中
+    // → ①b 仍打「barrel members (5 of 5)」PASS，而 hook 经 barrel 拿到的
+    // findSgBinarySync 已是 undefined，钩子在运行时静默死掉
+    // （`deps.findSgBinary is not a function`），单测 8/8 照绿、belt 照绿、探针照绿。
+    // 所以这里**真的 import 一次**（本脚本 hooksManifest / commandsManifest / teamManifest
+    // 三处 `await import(pathToFileURL(…))` 的同一先例——按**构造**点名而非行号：本记录
+    // 每往自己头上加一行，同文件内的数字锚就集体漂移一次，本轮已有两个当场失效并更正），断言四个
+    // 钩子实际消费的导出在**运行时**存在——注释、改名、条件导出、循环依赖，任何
+    // 让字节看着对而模块面缺员，都只能在这里红。缺员逐条具名。
+    // RESIDUAL BOUNDARY, not claimed closed：**本臂只证明接线在位**——四符号非
+    // undefined 且 typeof 正确，即「hook 拿得到东西、形状对」；它**不证明语义**：
+    // 一个 `export function findSgBinarySync(){return null}` 的语义 stub，typeof 仍
+    // 是 function，本臂照绿。语义由 tests/omo-hooks/ast-grep-sg-provision.test.ts
+    // 的行为断言兜底（同一 seam 的第二个读者，门 2），不是由这段注释兜底
+    // （c23/c24/c25/c28 同款声明）。
+    try {
+      const barrelRuntime = await import(pathToFileURL(join(AST_GREP_DIR, 'index.ts')).href)
+      // 名字与期望的 typeof 都是手写的——但它们是**契约**而非被测对象的自述：
+      // 这四个符号是 src/hooks/ast-grep-sg-provision.ts 经 barrel 唯一要用的面。
+      for (const [symbolName, wantKind] of [['findSgBinarySync', 'function'], ['provisionSgBinary', 'function'], ['astGrepRuntimeDir', 'function'], ['SG_PINNED_VERSION', 'string']]) {
+        const got = barrelRuntime[symbolName]
+        if (got === undefined) problems.push(`the provisioning barrel exports NO '${symbolName}' at RUNTIME — the hook reaches it through this barrel and would die at boot with "is not a function"; a commented-out re-export passes every textual arm and is caught only here`)
+        else if (typeof got !== wantKind) problems.push(`the provisioning barrel's '${symbolName}' is a ${typeof got} at runtime, the seam wants ${wantKind}`)
+      }
+      // ①c 派生断言（ARBITRATION-r3 B-MINOR-3b）：**barrel 运行时命名空间 ⊆ 五个
+      // 层成员模块运行时导出的并集**。并集是**代码 import 五个成员算出来的**，不是
+      // 手抄的名字——成员名册来自 wantBarrel（① 的派生），所以这条断言没有第三个
+      // 事实源可漂移。并集外的符号只有一个来源：barrel 自己加了层外的出口（手写的
+      // 具名 export，或 ①b 抓到的那种越界 re-export 在运行时真的把外面拉了进来）。
+      // `export *` 不转发 default，故两侧同剔。
+      const memberExports = new Set()
+      for (const rel of wantBarrel) {
+        const memberRuntime = await import(pathToFileURL(join(AST_GREP_DIR, rel)).href)
+        for (const key of Object.keys(memberRuntime)) if (key !== 'default') memberExports.add(key)
+      }
+      const strayExports = Object.keys(barrelRuntime).filter((key) => key !== 'default' && !memberExports.has(key))
+      if (strayExports.length > 0) problems.push(`the provisioning barrel's runtime namespace carries symbols NO layer member exports: ${strayExports.join(', ')} — the barrel is adding an exit the provisioning layer does not own`)
+    } catch (importError) {
+      problems.push(`the provisioning barrel could not be imported for the runtime arm: ${String(importError.message ?? importError)} — the seam cannot be proven live, so this FAILs rather than falls back to the textual arms`)
+    }
+    const row = hooksManifest.HOOK_MANIFEST.find((entry) => entry.id === 'ast-grep-sg-provision')
+    if (row === undefined) problems.push("manifest carries no row with id 'ast-grep-sg-provision' — the provisioning layer lost its owner")
+    else {
+      if (row.event !== 'session/created') problems.push(`the ast-grep-sg-provision row fires on '${row.event}', not the nailed seam event 'session/created'`)
+      if (row.upstreamFiles.length !== 9) problems.push(`row upstreamFiles is ${row.upstreamFiles.length}, the ported unit is 9 (hook 2 + provisioning 6 + runtime/which 1)`)
+      if (row.upstreamTestFiles.length !== 5) problems.push(`row upstreamTestFiles is ${row.upstreamTestFiles.length}, the ported unit is 5 (hook 1 + provisioning 4)`)
+      // ④b **upstreamFiles 全集臂**（ARBITRATION-r1 B-MINOR-1）：上面的算术只钉住**数量**——把
+      // 第 9 项换成任意一条别的路径（`packages/utils/src/runtime/which.ts` →
+      // `packages/utils/src/runtime/anything.ts`），9 仍是 9、④ 仍绿，而行从此
+      // 为一个本移植单元从未碰过的上游文件背书。这里把 9 项写成显式常量并做
+      // **多重集**比较（排序后逐项），所以换名、增删、重复都红。这份名单的第二
+      // 个读者是 manifest.ts 的行本体；两处必须同 commit 动，正是本臂的目的。
+      const wantUpstream = [
+        'packages/omo-opencode/src/hooks/ast-grep-sg-provision/hook.ts',
+        'packages/omo-opencode/src/hooks/ast-grep-sg-provision/index.ts',
+        ...[...upstreamByDerived.values()].flat(),
+      ]
+      const gotUpstream = [...row.upstreamFiles].sort()
+      const wantUpstreamSorted = [...wantUpstream].sort()
+      const upstreamDiff = wantUpstreamSorted.filter((file) => !gotUpstream.includes(file))
+      const upstreamExtra = gotUpstream.filter((file) => !wantUpstreamSorted.includes(file))
+      if (upstreamDiff.length > 0) problems.push(`the manifest row's upstreamFiles no longer names: ${upstreamDiff.join(', ')}`)
+      if (upstreamExtra.length > 0) problems.push(`the manifest row's upstreamFiles names files outside this ported unit: ${upstreamExtra.join(', ')}`)
+      if (gotUpstream.length !== wantUpstreamSorted.length) problems.push(`the manifest row's upstreamFiles holds ${gotUpstream.length} entries against the ported unit's ${wantUpstreamSorted.length} — a duplicated path cannot hide behind the set comparison`)
+      // ④c **upstreamTestFiles 全集臂**（ARBITRATION-r2 A-R2-NIT-2）：④ 那句
+      // `!== 5` 只是数量；测试文件是移植的**种子**，把其中一项换成任意别的 5 项
+      // 之一，计数仍绿而行替一个从未当过种子的文件背书。同一药方：显式 5 项常量
+      // （hook 1 + 供给层 4，与上面的 9 项同一来源结构）+ 多重集 + 长度对账。
+      const wantUpstreamTests = [
+        'packages/omo-opencode/src/hooks/ast-grep-sg-provision/ast-grep-sg-provision.test.ts',
+        'packages/utils/src/ast-grep/install-script.test.ts',
+        'packages/utils/src/ast-grep/sg-manifest.test.ts',
+        'packages/utils/src/ast-grep/sg-provisioner.test.ts',
+        'packages/utils/src/ast-grep/sg-resolver.test.ts',
+      ]
+      const gotUpstreamTests = [...row.upstreamTestFiles].sort()
+      const wantUpstreamTestsSorted = [...wantUpstreamTests].sort()
+      const testsDiff = wantUpstreamTestsSorted.filter((file) => !gotUpstreamTests.includes(file))
+      const testsExtra = gotUpstreamTests.filter((file) => !wantUpstreamTestsSorted.includes(file))
+      if (testsDiff.length > 0) problems.push(`the manifest row's upstreamTestFiles no longer names the port seed: ${testsDiff.join(', ')}`)
+      if (testsExtra.length > 0) problems.push(`the manifest row's upstreamTestFiles names seeds outside this ported unit: ${testsExtra.join(', ')}`)
+      if (gotUpstreamTests.length !== wantUpstreamTestsSorted.length) problems.push(`the manifest row's upstreamTestFiles holds ${gotUpstreamTests.length} entries against the ported unit's ${wantUpstreamTestsSorted.length} — a duplicated seed cannot hide behind the set comparison`)
+      for (const rel of layerFiles) {
+        if (!row.upstreamFiles.some((file) => file.endsWith(`/ast-grep/${rel}`))) problems.push(`provisioning file ${rel} is not named by the manifest row's upstreamFiles`)
+      }
+    }
+    const notices = readFileSync(join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), 'utf8')
+    const mirror = notices.match(/src\/ast-grep\/ 供给层 = (\d+) files/)
+    if (mirror === null) problems.push('THIRD_PARTY_NOTICES.md lost the `src/ast-grep/ 供给层 = N files` count mirror')
+    else if (Number(mirror[1]) !== layerFiles.length) problems.push(`NOTICES says the provisioning layer is ${mirror[1]} files, the filesystem says ${layerFiles.length}`)
+    // ⑤b per-file NOTICES mirror (PR #18 MINOR-1). The count above cannot see a
+    // deleted row, a false disposition, or an upstream path that drifted away
+    // from the manifest. Parse ONLY this section's table, then reconcile both
+    // directions: local rows ↔ disk files, and upstream cells ↔ manifest paths.
+    const astGrepNoticesHeading = '### Phase 6 provisioning layer: `src/ast-grep/` (P6-T6, ast-grep-sg-provision)'
+    const noticesHeadingAt = notices.indexOf(astGrepNoticesHeading)
+    if (noticesHeadingAt < 0) problems.push(`THIRD_PARTY_NOTICES.md lost the ast-grep provisioning section (${astGrepNoticesHeading})`)
+    const noticesRest = noticesHeadingAt < 0 ? '' : notices.slice(noticesHeadingAt + astGrepNoticesHeading.length)
+    const nextNoticesHeading = noticesRest.search(/^###? /m)
+    const noticesSection = nextNoticesHeading < 0 ? noticesRest : noticesRest.slice(0, nextNoticesHeading)
+    const noticeRows = [...noticesSection.matchAll(/^\| `([^`]+)` \| ([^|]+) \| ([^|]+) \|\s*$/gm)]
+      .map((match) => ({ derived: match[1], upstreamCell: match[2].trim(), disposition: match[3].trim() }))
+    if (noticeRows.length === 0) problems.push('the ast-grep NOTICES table parsed 0 per-file rows — the mirror would be vacuous')
+    const noticedDerived = new Set()
+    const noticedUpstream = new Set()
+    const declaredUpstream = new Set(Array.isArray(row?.upstreamFiles) ? row.upstreamFiles : [])
+    for (const noticeRow of noticeRows) {
+      if (noticedDerived.has(noticeRow.derived)) problems.push(`the ast-grep NOTICES table lists ${noticeRow.derived} more than once`)
+      noticedDerived.add(noticeRow.derived)
+      const rel = noticeRow.derived.replace(/^src\/ast-grep\//, '')
+      if (!layerFiles.includes(rel) || noticeRow.derived !== `src/ast-grep/${rel}`) {
+        problems.push(`the ast-grep NOTICES table names ${noticeRow.derived}, which is not a provisioning file on disk`)
+      }
+      if (!/^semantic port only(?:（.+）)?$/.test(noticeRow.disposition)) {
+        problems.push(`${noticeRow.derived}: disposition ${JSON.stringify(noticeRow.disposition)} is outside the closed vocabulary [semantic port only] with an optional parenthesised explanation`)
+      }
+      const upstreamPaths = [...noticeRow.upstreamCell.matchAll(/`([^`]+)`/g)]
+        .map((match) => match[1])
+        // Inline semantic names such as `whichOnPath` are not file paths; every
+        // actual upstream source in this table is a packages/**/*.ts path.
+        .filter((path) => path.includes('/') || path.endsWith('.ts'))
+      if (upstreamPaths.length === 0) problems.push(`${noticeRow.derived}: the upstream-source cell names no backtick-quoted path`)
+      const expectedUpstreamPaths = upstreamByDerived.get(noticeRow.derived) ?? []
+      const missingRowSources = expectedUpstreamPaths.filter((path) => !upstreamPaths.includes(path))
+      const extraRowSources = upstreamPaths.filter((path) => !expectedUpstreamPaths.includes(path))
+      if (missingRowSources.length > 0) problems.push(`${noticeRow.derived}: the row no longer attributes its own upstream source(s): ${missingRowSources.join(', ')}`)
+      if (extraRowSources.length > 0) problems.push(`${noticeRow.derived}: the row attributes source(s) belonging to another derived file: ${extraRowSources.join(', ')}`)
+      if (upstreamPaths.length !== expectedUpstreamPaths.length) problems.push(`${noticeRow.derived}: the row has ${upstreamPaths.length} upstream path(s), its per-file contract has ${expectedUpstreamPaths.length} — duplicates cannot hide behind a set comparison`)
+      for (const upstreamPath of upstreamPaths) {
+        noticedUpstream.add(upstreamPath)
+        if (!declaredUpstream.has(upstreamPath)) problems.push(`${noticeRow.derived}: NOTICES names ${upstreamPath}, which the manifest row's upstreamFiles does not declare`)
+      }
+    }
+    for (const rel of layerFiles) {
+      const derived = `src/ast-grep/${rel}`
+      if (!noticedDerived.has(derived)) problems.push(`provisioning file ${derived} has no per-file NOTICES row`)
+    }
+    for (const upstreamPath of declaredUpstream) {
+      // This table owns every packages/utils source in the ported unit, not just
+      // the same-named ast-grep files: runtime/which.ts is attributed on the
+      // sg-resolver row and must participate in reverse coverage too.
+      if (upstreamPath.startsWith('packages/utils/') && !noticedUpstream.has(upstreamPath)) {
+        problems.push(`the manifest row declares ${upstreamPath}, which no ast-grep NOTICES row names`)
+      }
+    }
+    if (layerFiles.length === 0) problems.push('empty provisioning layer — assertion would be vacuous')
+    results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', problems.length === 0,
+      problems.length > 0
+        ? problems.join('; ')
+        : `${layerFiles.length} provisioning files ↔ explicit roster ↔ barrel re-export MULTISET equal to the ${wantBarrel.length} roster members (no duplicate, no escaping specifier) ↔ row arithmetic (9+5) ↔ upstreamFiles multiset-equal to the 9 named paths ↔ upstreamTestFiles multiset-equal to the 5 named seeds ↔ barrel-only hook import derived from that same roster, all quote styles + dynamic import ↔ barrel IMPORTED LIVE, 4 seam symbols present ↔ barrel namespace ⊆ union of the ${wantBarrel.length} member modules' exports ↔ NOTICES count + ${noticeRows.length} per-file rows, each row's upstream multiset equal to its derived-file contract, with all packages/utils sources reverse-covered and a closed disposition vocabulary`))
+  } catch (e) {
+    results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', false,
+      `the provisioning-layer cross-check could not run: ${String(e.message ?? e)}`))
   }
 
   // c22 — the coverage baseline's STATUS CELLS are terminal.

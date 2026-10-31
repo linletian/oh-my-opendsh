@@ -4,7 +4,7 @@
 // WHY EVERY EXPECTATION BELOW IS HARD-CODED. The point of this suite is
 // mutation sensitivity: a test that derives its expectation from manifest.ts
 // agrees with ANY drift in manifest.ts and is therefore worthless. So the
-// expected id set, the hard-coded spot-checked rows and the 15-count are transcribed
+// expected id set, the hard-coded spot-checked rows and the 16-count are transcribed
 // by hand from the coverage baseline, exactly like tests/omo-agents/roster.test.ts
 // transcribes phase2-roster.md §1 总表. If a row changes, THIS file must be
 // edited in the same commit — that is the intended friction (the plan §4.1
@@ -33,6 +33,9 @@ import {
  * H-24, H-26, H-32 → their v5-named listener ids). H-01
  * (`write-existing-file-guard`) is deliberately ABSENT: WP-2/P3-T5 moved it to
  * the DSH-native skip list (dsh-fs-observation-policy covers it), 15 → 14.
+ * P4-T12 appended H-33 `keyword-detector`; P6-T6 appends `ast-grep-sg-provision`
+ * (S-16 under the fork-G (G-A) ruling, FORKS.md §2.7 — the roster's first
+ * Phase 6 row, and the first on the seventh event `session/created`).
  */
 const EXPECTED_IDS: readonly string[] = [
   'bash-file-read-guard',
@@ -50,6 +53,7 @@ const EXPECTED_IDS: readonly string[] = [
   'prometheus-md-only',
   'ulw-execute',
   'keyword-detector',
+  'ast-grep-sg-provision',
 ]
 
 /**
@@ -113,22 +117,24 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
   it('① accepts the real HOOK_MANIFEST as currently authored', () => {
     // Non-vacuous by construction, not by this line: validateManifest's first
     // check is the EXPECTED_HOOK_COUNT equality (manifest.ts check 5), so an
-    // empty table throws "expected 15 hook entries, got 0" rather than passing
+    // empty table throws "expected 16 hook entries, got 0" rather than passing
     // a bare call. The explicit length assertion below documents that intent
     // for the reader.
     expect(HOOK_MANIFEST.length).toBeGreaterThan(0)
     expect(() => validateManifest(HOOK_MANIFEST)).not.toThrow()
   })
 
-  it('⑥ declares exactly 15 entries — 14 Phase 3 rows plus P4-T12\'s H-33', () => {
+  it('⑥ declares exactly 16 entries — 14 Phase 3 rows plus P4-T12\'s H-33 plus P6-T6\'s row', () => {
     // Pins phase3-hooks.md §5 (14 after the WP-2 arbitration removed H-01) plus
-    // phase4-commands.md §1.2 H-33 (P4-T12). Without the non-empty assertion a
+    // phase4-commands.md §1.2 H-33 (P4-T12) plus the Phase 6 fork-G (G-A) row
+    // `ast-grep-sg-provision` (P6-T6, FORKS.md §2.7 — H-37 预分号在册、代码不写号).
+    // Without the non-empty assertion a
     // dropped collection (suite never ran) would look like a green.
-    expect(HOOK_MANIFEST.length).toBe(15)
+    expect(HOOK_MANIFEST.length).toBe(16)
     expect(HOOK_MANIFEST.length).toBe(EXPECTED_HOOK_COUNT)
   })
 
-  it('③ ids equal the hard-coded 15-id list, in priority order', () => {
+  it('③ ids equal the hard-coded 16-id list, in priority order', () => {
     expect(HOOK_IDS).toEqual([...EXPECTED_IDS])
     expect([...new Set(HOOK_IDS)].length).toBe(EXPECTED_IDS.length)
   })
@@ -137,7 +143,11 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     expect(HOOK_MANIFEST.map((entry) => entry.id)).toEqual([...EXPECTED_IDS])
   })
 
-  it('declares only the six P3-T1-verified events and the six A–F modes', () => {
+  it('declares only the seven verified events and the six A–F modes', () => {
+    // Six P3-T1-verified events plus P6-T6's seventh `session/created` (the
+    // native session creation announcement — seam evidence in
+    // hooks/ast-grep-sg-provision.ts's header; the vocabulary grows BY ROWS,
+    // never silently, and this hard-coded list is the test-side half).
     expect([...MANIFEST_EVENTS]).toEqual([
       'agent/pre-step',
       'tools/pre-execute',
@@ -145,13 +155,14 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
       'agent/turn-stopping',
       'session/event',
       'agent/status',
+      'session/created',
     ])
     expect([...MANIFEST_MODES]).toEqual(['A', 'B', 'C', 'D', 'E', 'F'])
     expect([...manifestEventSet]).toEqual([...MANIFEST_EVENTS])
     expect([...manifestModeSet]).toEqual([...MANIFEST_MODES])
   })
 
-  it('all fourteen rows are ported after P3-T17 (the roster is complete)', () => {
+  it('the ported side is complete and the pending side names exactly the new row', () => {
     // P3-T7 flipped H-02 after the WP-2 仲裁 accepted the T6 e2e (scenario
     // `bash-read-guard-warned`); P3-T14 flipped the D-mode group — H-07 (the
     // e2e the P3-T9 arbitration moved into T14) plus 批 A's H-14/H-15/H-16;
@@ -161,10 +172,20 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     // 'keyword-detector' as the roster's ONLY 'pending' row — its listener and
     // unit tests landed with T12, its e2e scenario ('ultrawork-keyword-injected')
     // landed with T13 — so P4-T13 flipped it too, as the 双侧同步 commit that
-    // also moved the coverage doc's §1.2 status cell. The roster is now FULLY
-    // ported, which is why the `pending` list below is asserted EMPTY rather
-    // than left unchecked: a non-empty list would be a new row that arrived
-    // without its e2e, and an unchecked one would not notice.
+    // also moved the coverage doc's §1.2 status cell.
+    //
+    // P6-T6 ENDED that emptiness: `ast-grep-sg-provision` arrived 'pending' just
+    // as keyword-detector had at P4-T12 — listener + adapted unit tests landed
+    // with the task, the e2e scenario (`ast-grep-sg-via-bash`) belonged to P6-T7,
+    // and the doc-side flip anchor was phase6-mcp-editing.md §3/§6 (c14's union
+    // is NOT extended per FORKS.md §0-1, so the flip's human-readable half lives
+    // in the parallel stream's file, not the phase3/phase4 baseline). P6-T7 HAS
+    // SINCE FLIPPED IT — scenario, reverse canary and doc cell in one commit — so
+    // the row is ported now, and that road is the template for the next 'pending'
+    // row rather than history to be edited out. The hard-coded lists below are
+    // still the point: a silent flip, or a new un-named row, is caught here, and
+    // manifest-coverage-consistency.test.ts pairs any pending row with its
+    // registered forward promise.
     //
     // The F pair (H-03/H-10/H-11) is now INCLUDED: their listeners, unit tests
     // and e2e scenarios landed at P3-T7/P3-T9 and P3-T12/P3-T13, but those tasks'
@@ -176,7 +197,9 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
     // Non-vacuous in the other direction too: the roster must be non-empty, or
     // `toEqual([])` below would be satisfied by a manifest with no rows at all.
     expect(HOOK_MANIFEST.length).toBeGreaterThan(0)
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending').map((row) => row.id)).toEqual([])
+    // EMPTY since P6-T7 flipped the last open row. Kept, not deleted: an empty
+    // pending side is now a FACT about the roster and is ASSERTED as one, so a
+    // future row cannot arrive as 'pending' without being written down here.
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
       'todo-continuation-enforcer',
@@ -194,6 +217,9 @@ describe('P3-T2 HOOK_MANIFEST — shape and content', () => {
       'ulw-execute',
       // P4-T13's flip — the e2e this task delivered is what discharged it.
       'keyword-detector',
+      // P6-T7's flip — `ast-grep-sg-via-bash` + its reverse canary, and the
+      // phase6-mcp-editing.md §3/§6 cells, in one commit.
+      'ast-grep-sg-provision',
     ])
   })
 })
@@ -295,6 +321,29 @@ describe('P3-T2 HOOK_MANIFEST — spot checks (hard-coded against phase3-hooks.m
     expect(entry?.e2eScenario).toBe('tool-output-truncated')
   })
 
+  it('④ ast-grep-sg-provision is the F-mode session/created row with its 9+5 upstream split', () => {
+    // P6-T6 (fork-G (G-A) ruling, FORKS.md §2.7): the seam, the pin and the
+    // dual-source wiring are documented in hooks/ast-grep-sg-provision.ts and
+    // the row's notes; this pin is the machine-readable half — event/mode pair
+    // (F → session/created, the seventh event), the explicit file arithmetic
+    // (upstreamFiles 9 = hook shell 2 + utils provisioning 6 + runtime/which 1
+    // semantic source per note ⑥; upstreamTestFiles 5 = hook 1 + utils 4), the
+    // forward-promise scenario, and the 'pending' status with its anchor.
+    const entry = HOOK_MANIFEST.find((row) => row.id === 'ast-grep-sg-provision')
+    expect(entry).toBeDefined()
+    expect(entry?.mode).toBe('F')
+    expect(entry?.event).toBe('session/created')
+    expect(entry?.upstreamFiles.length).toBe(9)
+    expect(entry?.upstreamTestFiles.length).toBe(5)
+    expect(entry?.upstreamFiles[0]).toBe(
+      'packages/omo-opencode/src/hooks/ast-grep-sg-provision/hook.ts',
+    )
+    expect(entry?.upstreamFiles.some((file) => file.includes('utils/src/ast-grep/sg-provisioner.ts'))).toBe(true)
+    expect(entry?.upstreamFiles.some((file) => file.includes('utils/src/runtime/which.ts'))).toBe(true)
+    expect(entry?.e2eScenario).toBe('ast-grep-sg-via-bash')
+    expect(entry?.status).toBe('ported')
+  })
+
   it('the B+D rows record the primary decision surface (event/mode) plus D in the summary', () => {
     for (const id of ['webfetch-redirect-guard', 'prometheus-md-only']) {
       const entry = HOOK_MANIFEST.find((row) => row.id === id)
@@ -380,7 +429,7 @@ describe('P3-T2 validateManifest — rejection branches', () => {
   it('⑤ throws when the roster is short (a dropped row is not a valid roster)', () => {
     const rows = legalRows(EXPECTED_HOOK_COUNT)
     rows.pop()
-    expect(rejectionMessage(rows)).toContain('expected 15 hook entries, got 14')
+    expect(rejectionMessage(rows)).toContain('expected 16 hook entries, got 15')
   })
 })
 
@@ -458,15 +507,24 @@ describe('P3-T2 derived helpers', () => {
       'prometheus-md-only',
       'ulw-execute',
       'keyword-detector',
+      // P6-T7's flip. This set is the ⑤ test's OWN hard-coded portrait of the
+      // ported side — which is precisely why a flip has to be written here as
+      // well: a portrait that never moves is not testing the subject.
+      'ast-grep-sg-provision',
     ])
-    // Every id is ported: P4-T13's flip closed the last one, so there is no
-    // un-ported remainder. Asserted over the FULL expected id set in both
-    // directions, so this is not satisfied by an empty `ported` — a manifest
-    // that had lost rows would leave `EXPECTED_IDS.filter(…)` non-empty, and one
-    // that had invented a row would leave `ported` oversized.
-    expect(EXPECTED_IDS.filter((id) => !ported.has(id))).toEqual([])
+    // Every id is ported, with NOTHING pending: P4-T13 closed the last open row
+    // of the first era, P6-T6 opened a new one (`ast-grep-sg-provision`) and
+    // P6-T7 closed it — the scenario, the canary and the phase6-mcp-editing.md
+    // §3/§6 cells landed together. Asserted over the FULL expected id set in both
+    // directions, so this is not satisfied by an empty `ported` — a manifest that
+    // had lost rows would leave `EXPECTED_IDS.filter(…)` non-empty, and one that
+    // had invented a row would leave `ported` oversized. `PENDING_IDS` stays
+    // EMPTY and stays in the assertion: a row arriving 'pending' later must be
+    // named here before the suite will pass again.
+    const PENDING_IDS: string[] = []
+    expect(EXPECTED_IDS.filter((id) => !ported.has(id) && !PENDING_IDS.includes(id))).toEqual([])
     expect([...ported].filter((id) => !EXPECTED_IDS.includes(id))).toEqual([])
-    expect(hooksByStatus(HOOK_MANIFEST, 'pending').map((row) => row.id)).toEqual([])
+    expect(hooksByStatus(HOOK_MANIFEST, 'pending').map((row) => row.id)).toEqual(PENDING_IDS)
     expect(hooksByStatus(HOOK_MANIFEST, 'ported').map((row) => row.id)).toEqual([
       'bash-file-read-guard',
       'todo-continuation-enforcer',
@@ -483,6 +541,7 @@ describe('P3-T2 derived helpers', () => {
       'prometheus-md-only',
       'ulw-execute',
       'keyword-detector',
+      'ast-grep-sg-provision',
     ])
     // The ported set really is the 'ported' set (the two assertions above could
     // both pass if a row were in neither list).

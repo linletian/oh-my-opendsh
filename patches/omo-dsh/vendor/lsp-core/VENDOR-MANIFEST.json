@@ -1,0 +1,707 @@
+{
+  "upstream": {
+    "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+    "tag": "v4.19.4",
+    "commit": "b072d279110bdda2c6ac2525d0d24dc54d16148a",
+    "path": "packages/lsp-core",
+    "license": "SUL-1.0 (repository root LICENSE.md; the package manifest carries no license field)"
+  },
+  "vendoredAt": "2026-10-13",
+  "package": {
+    "name": "@oh-my-opencode/lsp-core",
+    "version": "0.1.0",
+    "upstreamManifest": "packages/lsp-core/package.json",
+    "note": "Upstream package name kept unchanged as the provenance anchor (hashline-core/team-core precedent); the upstream exports map and dependencies are kept verbatim (the workspace:* edge resolves to the sibling vendored @oh-my-opencode/mcp-stdio-core in this workspace)."
+  },
+  "subset": {
+    "excludedUpstreamPaths": [
+      "packages/lsp-core/AGENTS.md (package documentation; not part of the P6-T4 (L-B) ruled file set — the FORKS.md §0-4 census names 65 non-test .ts + 1 .mjs fixture as the engine face)"
+    ],
+    "testsNotCarried": {
+      "pattern": "all 21 upstream src/**/*.test.ts files",
+      "runner": "bun:test",
+      "why": "the (L-B) ruling excludes them wholesale — the upstream suites are bun:test and this repo's runner is vitest (FORKS.md §2.6); the exclusion is the file-set face: no .test.ts bytes live under this vendored copy. The two mcp-stdio-core tests are decided individually in that package's manifest."
+    }
+  },
+  "counts": {
+    "total": 71,
+    "verbatim": 9,
+    "modified": 59,
+    "projectNew": 3,
+    "upstreamImplementationFiles": 65,
+    "carriedTestFiles": 0,
+    "deviations": 18,
+    "deviationsByClass": {
+      "modification": 14,
+      "addition": 3,
+      "note": 1
+    }
+  },
+  "files": [
+    {
+      "path": "NOTICE.md",
+      "sha256": "cec37225f95c533b45b80a8a471fb8a8f814a0858f30b7d9198e350e21cd1e2c",
+      "origin": "project-new",
+      "note": "project package notice (SUL-1.0 \"Notices\" prominent statement for the modified copy, D15 ¶3)"
+    },
+    {
+      "path": "VENDOR-MANIFEST.json",
+      "sha256": null,
+      "origin": "project-new",
+      "note": "self-referential; hash omitted"
+    },
+    {
+      "path": "package.json",
+      "sha256": "4523b5638665315e406f463652559f65f6837a421a88600b389e2a3321a196db",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/package.json",
+      "upstreamSha256": "43a8b9d8ae4c84a797acb652a81e1dd22e1ec1661e49bef29e0e8def6fd95bc8"
+    },
+    {
+      "path": "src/cli.ts",
+      "sha256": "726b839c86b0316a89f3ec367d95a3392cafc1e339937faf69716d48b1a4e852",
+      "origin": "project-new",
+      "note": "thin stdio entry (project-new, P6-T4): runs vendored runMcpStdioServer + disposes the default LSP manager on exit; semantics reference the MIT @code-yeongyu/lsp-tools-mcp src/cli.ts (attribution in THIRD_PARTY_NOTICES.md)"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "151f74f274f3a03fa6d6f010d9a55aff0ba91e799ab4e5854bab1246dd1fadec",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/index.ts",
+      "upstreamSha256": "37c4dec924b1fde8832109f78e4739d70ee185934fbceb1b2f829af27ed6de2a",
+      "note": "esm-extension-completion (29 specifiers)"
+    },
+    {
+      "path": "src/lsp/cleanup-errors.ts",
+      "sha256": "4fd63ecba4e636e9a5a3e6aec96a8632897e7a1f5295e2a55882cbb7326223d6",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/lsp/client-wrapper.ts",
+      "sha256": "fbfe80158bf8dd58004c61402e3ed8ea0539b5e18bc6ab85e4c503b93d912e13",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/client-wrapper.ts",
+      "upstreamSha256": "b534c5bced1fe50d2240fca3e3353125cde26a10892297f5da7ab78dae3461dc",
+      "note": "esm-extension-completion (8 specifiers)"
+    },
+    {
+      "path": "src/lsp/client.ts",
+      "sha256": "c2362bc97b5956cbf2ccba2e86bdc81480d0a1bfd9090472903bd8aa7c9259e4",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/client.ts",
+      "upstreamSha256": "661c0b5e68fe41d935d20492030803b5f3cda4d5f1943474bbb2439725cb17ab",
+      "note": "esm-extension-completion (7 specifiers)"
+    },
+    {
+      "path": "src/lsp/config-loader.ts",
+      "sha256": "8c2d520e7bc6f2744321c02f204882d09cee504e1e5bbb62ea5f46c391d2e024",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/config-loader.ts",
+      "upstreamSha256": "2c390f126c267e7d092762d438068f4b4599c98027b76a61f5664bf1572cbbb1",
+      "note": "esm-extension-completion (3 specifiers)"
+    },
+    {
+      "path": "src/lsp/connection.ts",
+      "sha256": "2c4997476718643c3532497396973b61bf34a8c0f9a7d42af1b170c1f54677af",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/connection.ts",
+      "upstreamSha256": "f27dd8bb562e1c9574b4e2c35d53d394d695a43aa6abdf408460ed199221f41b",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/constants.ts",
+      "sha256": "4223532011dcca7f8d26d6b34f6d20c79a5996499448e1c63f21565e0d8767f0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/lsp/directory-diagnostics.ts",
+      "sha256": "876ebbbca313183c341f90a7dc297b93213d60a5ea832808f197732091a3a3de",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/directory-diagnostics.ts",
+      "upstreamSha256": "b8bde2b82c6b3a4d6bd6d2321d4a6fec34fffe6b40019dac8743341a9eaeca4a",
+      "note": "esm-extension-completion (9 specifiers)"
+    },
+    {
+      "path": "src/lsp/effective-extension.ts",
+      "sha256": "a3c1a2716bc4982e3232831ccfa4611b6ac0775fa470209306c0bf2473a426a6",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/lsp/errors.ts",
+      "sha256": "12134c7f8105d1526a6d87604e9530507f01c8438750a60a7cd485add7d717f0",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/errors.ts",
+      "upstreamSha256": "d99d080441bc3af128e5bae0e07049d57d0c4b8ee3a1d2bdb1a78725f52b1d42",
+      "note": "esm-extension-completion (1 specifier); strip-only-param-property-rewrite"
+    },
+    {
+      "path": "src/lsp/fixtures/diagnostics-freshness-contract-probe.ts",
+      "sha256": "cc787b50bcd1b80cdd5ca19c246cb7017c48e68985600acb2ac260416c11cb63",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/fixtures/diagnostics-freshness-contract-probe.ts",
+      "upstreamSha256": "e0d7a6c6c4c0a37dd34a325e349dc8489b355abc44f9b14ab3d492a3ecb1ba17",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/fixtures/workspace-edit-contract-probe.ts",
+      "sha256": "e45b1d37f1e12f6c48a44ddd990259f7a4c2fa0f0ba2277b3bdd239ca8b738a6",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/fixtures/workspace-edit-contract-probe.ts",
+      "upstreamSha256": "3c680b54304472cbc054535c4269502dab73fea27c2752186a5af655ebf83872",
+      "note": "esm-extension-completion (2 specifiers)"
+    },
+    {
+      "path": "src/lsp/fixtures/workspace-edit-server.mjs",
+      "sha256": "5faf4c2cf06f95cb99adf63a48e7459aeab7f299f2f87d280c1bbb3077071297",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/lsp/formatters.ts",
+      "sha256": "fcbe76b376fb0593354d9febd49c66b67a0208d17048ce4a49bb61c14ea28763",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/formatters.ts",
+      "upstreamSha256": "f8465f4cdb8c34f57de15b6098a4e12f4bfa64189153de81d12ba716d1c28a88",
+      "note": "esm-extension-completion (3 specifiers)"
+    },
+    {
+      "path": "src/lsp/infer-extension.ts",
+      "sha256": "780bf5191cead607dff5a42278586add5d40bbe6a274b0c32a9ac99826c6514a",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/infer-extension.ts",
+      "upstreamSha256": "701f002a839b73ab544a9fc07a5371c807e2228726361ed3b9797f6c504c559d",
+      "note": "esm-extension-completion (2 specifiers)"
+    },
+    {
+      "path": "src/lsp/json-rpc-connection.ts",
+      "sha256": "5fb2478c4153ad221826a7eb9fdfd77a51eb9adf902b81cde27fd6c71fde2624",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/json-rpc-connection.ts",
+      "upstreamSha256": "8ca863f4b3cf148440f9e3586ea0bbdd541a6efb42c93181b5f321e11d49bdcb",
+      "note": "strip-only-param-property-rewrite"
+    },
+    {
+      "path": "src/lsp/language-mappings.ts",
+      "sha256": "dc4f5fb211c8e897e178d58f02dc81b95c5a0614370823640ca7005e3ed8550a",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/lsp/manager.ts",
+      "sha256": "c4cf935e1f84d348e53b0ee2e039518cb16b1d68db34b75b936b5bb25dfcc1ca",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/manager.ts",
+      "upstreamSha256": "b924b23eb7ae125a32350c9f964814c3bc8c2882b7481194befed27c9a0ef55f",
+      "note": "esm-extension-completion (5 specifiers)"
+    },
+    {
+      "path": "src/lsp/process-signal-cleanup.ts",
+      "sha256": "29f3439af487cd7bc2544ab05470e65d0e5ae3f912da50ac2fd35796d93a1b44",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/process-signal-cleanup.ts",
+      "upstreamSha256": "262a343e76cf30de70e51bd8e9751ad2f9c85e8ffad37d3131c9275e346cbb25",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/process.ts",
+      "sha256": "0df9d8acf803dced9d3fd02bf2d3879bc885bcccf914b097d29c77a0f468412b",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/process.ts",
+      "upstreamSha256": "b8d41e0d0310270ea0ad9413cf82db93078bb2442a7b9a2e2a37159062ac63bb",
+      "note": "esm-extension-completion (2 specifiers)"
+    },
+    {
+      "path": "src/lsp/server-definitions.ts",
+      "sha256": "bb1a2a9fb85513664f1234def6f0a6436d2627e729f6b173c02506f2cc9d183c",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/server-definitions.ts",
+      "upstreamSha256": "dfe73f6dbd2d63d819b3ca2229a79ee693a77bab519b70764e466f5561d5e988",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/server-install-state.ts",
+      "sha256": "75a3cd4b166d92b5ae4b24a81e11d08bb4c1a4ac7e14700e91cbd963724bbfd9",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/server-install-state.ts",
+      "upstreamSha256": "a8f7e760ce4fd8f5ad7860b94efb4d5f752463caae4284b012a9f141bd172625",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/server-installation.ts",
+      "sha256": "7e6ca7d29fd7b5d6c45df713798e1c9878c3dbb9587539667c3e971dfa1539e0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/lsp/server-resolution.ts",
+      "sha256": "d39df51d1b78424fdfdbfe6337ebd7c46d24f68359db652cf6476cbfd27f7d58",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/server-resolution.ts",
+      "upstreamSha256": "ddbb39a243b819348fac3a816af358e2db5fd4a477012150a2f898e7b0301e29",
+      "note": "esm-extension-completion (4 specifiers)"
+    },
+    {
+      "path": "src/lsp/startup-failure.ts",
+      "sha256": "a20eb13fe134c186839a98900561dd14525bfa1f776e6d83f5036dcc74c5fc10",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/startup-failure.ts",
+      "upstreamSha256": "0c8eb1342f8dc1de86d1d548e8e993cfac78a4e54fc4543078dabed5f7fce673",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/transport-protocol.ts",
+      "sha256": "f9b47577029fe56aecf15f22e9d0c59161973742af7014af1f0b3f10bdf11108",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/transport-protocol.ts",
+      "upstreamSha256": "af0b04e8cabf1d148c6f1dd2c6fe8d48be309d36447ca3e246ad6da36584a476",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/transport.ts",
+      "sha256": "befefe009cd47bccc61bfa38abd9a300e58933e56a0afdfd5613785acbad5e31",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/transport.ts",
+      "upstreamSha256": "66b4f8aea01e85e3c7438fa506a79c45c8ffefbbc9ab256d57e42ffef56f16c7",
+      "note": "esm-extension-completion (9 specifiers); strip-only-param-property-rewrite"
+    },
+    {
+      "path": "src/lsp/types.ts",
+      "sha256": "74ca6a50a40639be58d67d977e2cce22d51acf3c3b449272e3df40099b3a9116",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/lsp/utils.ts",
+      "sha256": "c6f37623c4dd98d516d69505d9496e58ddd9e3af424171c6e25c507f87dc07a8",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/utils.ts",
+      "upstreamSha256": "e2f83e7d251a10378ce4a7819b1335f1639993e1c396a5c0789982eace9e8872",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/workspace-apply-edit-failure.ts",
+      "sha256": "ff9e2a3bc833f5dac9061ad55b8ed6f36c0bd6c57a07f01301bbbc48ebc241f1",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/lsp/workspace-apply-edit-test-support.ts",
+      "sha256": "a1ec0de4d589f149321a82c004426e9a89de2733c6cf59989b784b7d9be6e0c2",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-apply-edit-test-support.ts",
+      "upstreamSha256": "2c4885fe48e0029f0e9cd8f9370748ee2e8b9854b4c40fdf17d852a5c26b3981",
+      "note": "esm-extension-completion (5 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-document-state.ts",
+      "sha256": "53c14c7ee6816dc88d597eb8ee36cd873eaa0cb8b5ebdc3238888314fe60de94",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-document-state.ts",
+      "upstreamSha256": "704f69ee4e6939fcaeedc574b20dd830987f8a96ec8be324436055c770ce4496",
+      "note": "esm-extension-completion (4 specifiers); strip-only-param-property-rewrite"
+    },
+    {
+      "path": "src/lsp/workspace-edit-commit.ts",
+      "sha256": "832dfc044a5c36e96560d40af822d840ec12e56474a1450d08f7a1bc09ddf5a8",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-commit.ts",
+      "upstreamSha256": "4869f499b416b7fea4faef26165b5ebefb24da6f001b01f94344796ac5467e17",
+      "note": "esm-extension-completion (2 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-contract-evidence.ts",
+      "sha256": "42801b2fbbc235d2549aedaf6896ccb3cf6da8bc03cbc80b5267b53ad8292288",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-contract-evidence.ts",
+      "upstreamSha256": "92b92259d9d16116eaa9620e744fe14b5280068714b851a68b2882f8dcd87de8",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-fingerprint.ts",
+      "sha256": "197ed3b08a624bb53745e46b689cf3979b78b9059acc9dad280bf2ef45c7ff5d",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-fingerprint.ts",
+      "upstreamSha256": "286cb44ed6fb679953ce97f9ddd22c9fd7d3fe666a8f3e5b80ba39ab4324d56f",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-parse-helpers.ts",
+      "sha256": "6b235278339190a79f2f0c1255ef1faf31bbebbdb31152b09922ef4d05c9c1dd",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-parse-helpers.ts",
+      "upstreamSha256": "9388769e1631fc0aceb96a00e0b6bc21499dfb5968a441d35460cb4805fd1337",
+      "note": "esm-extension-completion (2 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-parser.ts",
+      "sha256": "d8e3689f25b778d6110f2f4213b7883ff8fe0161b8f831379b120328e6086aa6",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-parser.ts",
+      "upstreamSha256": "25717f5bf94e793a3a8aeee9052ff388d57f1788a00bd548f10b94ea9541e9d0",
+      "note": "esm-extension-completion (6 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-path.ts",
+      "sha256": "a9c228bedd6e6d89c1d2c556447fe2de09476b560a138ee4b3ca88a5ed30807a",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-path.ts",
+      "upstreamSha256": "5489f8834ffd65c9732695b486a8c3933fd8f00a72ed667b98131b545d775a3f",
+      "note": "esm-extension-completion (1 specifier); strip-only-param-property-rewrite"
+    },
+    {
+      "path": "src/lsp/workspace-edit-plan-types.ts",
+      "sha256": "612d4fcc4c1b6be7ecba31aee918aa669ca81b38768dbe95400a6831a584bbde",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-plan-types.ts",
+      "upstreamSha256": "6f62ed664317d7375b2f5f12ba9d6550c4b82873f5c51020ce9f0d2c25f9df9d",
+      "note": "esm-extension-completion (2 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-plan.ts",
+      "sha256": "824a3e4e629bd6ac2576ff30389068540ee6a4a270b0bacb47a03154e463a1b4",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-plan.ts",
+      "upstreamSha256": "f0f77044962c56ab145f31ae6bf9f004c40240710266b4be61c4fa9b434c10c8",
+      "note": "esm-extension-completion (8 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-resource-parser.ts",
+      "sha256": "c4c1c161bd6db46c5921c022ecd3ca8ea1119f6b6a8b6d747cdc31907c506c2e",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-resource-parser.ts",
+      "upstreamSha256": "4226adc64d99cbc258953c8370142b1c705ba77d1f6d3f8426e393ab480077d9",
+      "note": "esm-extension-completion (4 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-simulation.ts",
+      "sha256": "10156801ecb9cce8c0f9917f98f0b15db5a4b90deee3a20cdf388963f86c4f7a",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-simulation.ts",
+      "upstreamSha256": "05a4b71bba2228fbd1e9fb7d84b73ea8acee7fde80fa1e758f7d97edd827fd31",
+      "note": "esm-extension-completion (4 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-snapshot.ts",
+      "sha256": "64ca4be58aadc798444b56f2dd9db20c6ae8ffb81ee063892d0978d973dd192f",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-snapshot.ts",
+      "upstreamSha256": "a62005cacba20f956edc55dad58a1ad7889f0be149c5193cec0fce41c7bb9ca1",
+      "note": "esm-extension-completion (3 specifiers); strip-only-param-property-rewrite"
+    },
+    {
+      "path": "src/lsp/workspace-edit-text.ts",
+      "sha256": "40107356a443d543534bd0deefb7e2ee5b5ffcb05803bac88f9e867d319895af",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-text.ts",
+      "upstreamSha256": "de89ea9d5a1333ea2f5d4f9a625548acc98ac42cc5a488d3739ea92e21dbac3c",
+      "note": "esm-extension-completion (2 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-edit-types.ts",
+      "sha256": "5b76647ccd1da7e0a380e8fa3615471efedecd7f79f47343a62a0bdb21724e2b",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit-types.ts",
+      "upstreamSha256": "4534e093a649a82986faf13d1283dc8a48f7138eb3f0171cd2ab95c55e6ed7a0",
+      "note": "esm-extension-completion (1 specifier); strip-only-param-property-rewrite"
+    },
+    {
+      "path": "src/lsp/workspace-edit.ts",
+      "sha256": "98653e08f6a8db5f5c95ce8082223cdf074b9642f93f41ab15542e16be53275b",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-edit.ts",
+      "upstreamSha256": "626df4ee769f8381ef06c512f88a206efc62e22daf29c0e9b50964bcf94608db",
+      "note": "esm-extension-completion (8 specifiers)"
+    },
+    {
+      "path": "src/lsp/workspace-mutation-controller.ts",
+      "sha256": "0deacd3ed0396a9defbecaafc810cdea24c417e1cc9fd0ff9b94c7427856f593",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/lsp/workspace-mutation-controller.ts",
+      "upstreamSha256": "1ee250ea02af3812bfbf62a915fe49072e98ec5111c353e77cee13a9292d6405",
+      "note": "esm-extension-completion (6 specifiers); strip-only-param-property-rewrite"
+    },
+    {
+      "path": "src/mcp.ts",
+      "sha256": "18ac39eac54f77b9a5e1291d86f59f844a69e90529d68864d94b76e877594799",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/mcp.ts",
+      "upstreamSha256": "ac0dd6afb89b8232b16754255dbec81894074fdc5318f1fa0b0c2c59f0857a83",
+      "note": "esm-extension-completion (2 specifiers); package-name-to-relative (1); modern-era-fields + wire-log-seam (P6-T4)"
+    },
+    {
+      "path": "src/missing-dependency-result.ts",
+      "sha256": "3f2df825c80231ca4f35c6527169da40d8d78a24a72e93e9548c0fefbe7ee128",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/missing-dependency-result.ts",
+      "upstreamSha256": "287460d1e0dd7b60a93982055e08747a692143df29b8f736d40d4b5a18f721fc",
+      "note": "esm-extension-completion (4 specifiers)"
+    },
+    {
+      "path": "src/post-edit/index.ts",
+      "sha256": "f561d08f8d7e2aeca2c7cc3d18edb496599cfdc6ff969200f84b5dd3501a0bb6",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/post-edit/index.ts",
+      "upstreamSha256": "de2e4d6c46c351ab2ab52db23fcb7a71609de0748138dde8804237f63da03d24",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/post-edit/orchestration.ts",
+      "sha256": "83e53aedcbe6b034bb8f3df766437509b9e0678c216792b559869952bcd881ce",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/request-context.ts",
+      "sha256": "eed703ce6479a4ba0a63105048e066440486309c233a813450116ebfb43c7621",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/request-context.ts",
+      "upstreamSha256": "6e2d6559e25953494188b6992f46d59be0ce8dcd455606a30cf172fd8d4d59b2",
+      "note": "strip-only-param-property-rewrite"
+    },
+    {
+      "path": "src/tools.ts",
+      "sha256": "f9c9c084ebef3c5688fa034ad41f41b00c3707e1ee8c6e26af0350bc6f74a270",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools.ts",
+      "upstreamSha256": "10450f11ea6a25431f85e72cda7d5c280e8a7bb9f612cb5f68bc2b516e380a4b",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/tools/definitions.ts",
+      "sha256": "7350790e7a2ce9b9af3e3481739ddd8df0959f3e2543273d11b13d0d81ef79a8",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/definitions.ts",
+      "upstreamSha256": "804ec2b0bf27e98da6c4f85575695b1140e17bc3aaf068b2518b55b75e02437a",
+      "note": "esm-extension-completion (8 specifiers)"
+    },
+    {
+      "path": "src/tools/diagnostics.ts",
+      "sha256": "5dc9096f88810530aea715e380b267fe1fe7b50f6bbf80b0134333a39cdc76ad",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/diagnostics.ts",
+      "upstreamSha256": "51cede447c117767728ca1bb161ed88536c62804f438031b9e1d6241e85e3a3a",
+      "note": "esm-extension-completion (10 specifiers)"
+    },
+    {
+      "path": "src/tools/index.ts",
+      "sha256": "113aa869eafc8482f555b1f0d61b8309f048ba3af62c296fda850da2b208b6e5",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/index.ts",
+      "upstreamSha256": "2bc0b412cbab282dbb6523c013afef68c9a7face2c103fdcb5ef9106d117435d",
+      "note": "esm-extension-completion (10 specifiers)"
+    },
+    {
+      "path": "src/tools/install-decision.ts",
+      "sha256": "0b9e0498bb33caaf40bb4751bf9958334497e4c000f85fee91f235f91bf5963f",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/install-decision.ts",
+      "upstreamSha256": "0300dcac76224a2305ca10f91bc9f1e9a1cd85885bc83e82926e7d1b3e8e3b53",
+      "note": "esm-extension-completion (5 specifiers)"
+    },
+    {
+      "path": "src/tools/navigation.ts",
+      "sha256": "cc970fdd6b41c487ad03fc904cb15a11185fe2d09e1de8f66ec9f077dbdd02d9",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/navigation.ts",
+      "upstreamSha256": "1167a674c803f7a80d8acb48e7b3743c861579f1928c489e9a6ffce33d687a82",
+      "note": "esm-extension-completion (7 specifiers)"
+    },
+    {
+      "path": "src/tools/parameters.ts",
+      "sha256": "7d83109ce9b0a23545f0c3472a0cf7d7cc48c80f87ea9216ca2a2000d39ffa13",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/parameters.ts",
+      "upstreamSha256": "da850a89671aef7fd0fa5e069df4c772802a70bb5bb65e5015d33b43abbe8629",
+      "note": "esm-extension-completion (2 specifiers)"
+    },
+    {
+      "path": "src/tools/rename.ts",
+      "sha256": "15b7316b02c541334b26a3a30c3a539f5a2750fa5f1e5cd9b4a37192345ae46a",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/rename.ts",
+      "upstreamSha256": "4342b508d110215e02ef19fd347554af67f201dff42151507e826ba16720dbed",
+      "note": "esm-extension-completion (6 specifiers)"
+    },
+    {
+      "path": "src/tools/result.ts",
+      "sha256": "da7b56c9aac21b17988a43c9d127546abafff59f7194d2c49a941d6680366db5",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/result.ts",
+      "upstreamSha256": "16289459ac032e5155447864488558a6b5555a93b8f9fc099754afaa669baa8f",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/tools/runtime.ts",
+      "sha256": "dda97d3ed5973c6ed5fdc28bd027f9acf3dcc41cf5a7d0200deb6b04070bf622",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/runtime.ts",
+      "upstreamSha256": "5c5857d986659dfef442d687c0e87dfe6cbffe25821ffbaf61bbaf62e92bd4bd",
+      "note": "esm-extension-completion (3 specifiers)"
+    },
+    {
+      "path": "src/tools/schema.ts",
+      "sha256": "e50fe51c673ff4710be89fc566fa8dd05b9261b96b52d73964529a0e69699e0a",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/schema.ts",
+      "upstreamSha256": "25d081e1005071dc589b96f6de44b9551e6050e9e1e0d506709202518d83283e",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/tools/status.ts",
+      "sha256": "a680d10e36c3b16a2ec748366e8afb6c539d262c0dbb382ac1e50f1e2d34de1c",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/status.ts",
+      "upstreamSha256": "6ddbcf8c580fc4c50352d79742d29c9597e8071773788e58428944ade6373151",
+      "note": "esm-extension-completion (4 specifiers)"
+    },
+    {
+      "path": "src/tools/symbols.ts",
+      "sha256": "61ee3b7878560328ce0b72cd019f373ce2f160c4d6032027ea2d81a1841588ba",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/symbols.ts",
+      "upstreamSha256": "095c1a043af563df80599540c8a0d6d14b621720965a8cf7bdd56ba6ef4b7008",
+      "note": "esm-extension-completion (8 specifiers)"
+    },
+    {
+      "path": "src/tools/types.ts",
+      "sha256": "948b5347d39fdf6f6f6520df2d8c49c0450a9c03a41635ff30a90ebf97daa272",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/src/tools/types.ts",
+      "upstreamSha256": "eeab776b14e6f00854606205a665874d2043a531a43685f0e406120297a5e565",
+      "note": "esm-extension-completion (2 specifiers)"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "022ebfb88477ed80c0457a0fef115b1fabc0956d47aed634f5d917d9dcbeed43",
+      "origin": "modified",
+      "upstreamPath": "packages/lsp-core/tsconfig.json",
+      "upstreamSha256": "a0c3671511a4ee508707bd67498a836b4b1b4f7fe8c04c00fd477f1b7bdaa2db"
+    }
+  ],
+  "deviations": [
+    {
+      "class": "modification",
+      "path": "package.json",
+      "kind": "fields-added",
+      "field": "license",
+      "value": "SUL-1.0",
+      "additionalField": "scripts.test:vitest",
+      "additionalValue": "pnpm -w exec vitest run patches/omo-dsh/vendor/lsp-core",
+      "decision": "D15 ¶1 + hashline-core/team-core precedent",
+      "why": "the upstream core manifest carries no license field; the field records the license actually in force (repo-root LICENSE.md, byte-verified at LICENSES/oh-my-openagent.LICENSE.md). test:vitest added by the vendor-test wiring precedent; upstream scripts stay verbatim."
+    },
+    {
+      "class": "modification",
+      "path": "tsconfig.json",
+      "kind": "rewritten",
+      "decision": "M-2 precedent (hashline-core/team-core)",
+      "why": "upstream is bun-shaped (bun-types + strictest flags + DOM); vendored copy extends the repo root tsconfig with node types, matching the two live vendor precedents and this repo's node-24 strip-only host."
+    },
+    {
+      "class": "modification",
+      "path": "src/mcp.ts",
+      "kind": "modern-era-fields",
+      "decision": "P6-T4 fork (L-B) ruling, .omo/evidence/p6t1/FORKS.md §2.6 ⑤",
+      "why": "server/discover advertisement + per-process era tracking + resultType (+ttlMs/cacheScope on cacheable lists) so the dsh-mcp-client SDK keeps the 2026-07-28 modern era instead of silently downgrading to legacy; codec ground truth the installed @modelcontextprotocol/client dist (rev2026Codec.decodeResult / ListToolsResultSchema / DiscoverResultSchema); initialize echo semantics kept upstream-verbatim; honest cache values ttlMs=0 + cacheScope=private (the SDK defaults). Proven live: .omo/evidence/p6t4/face-probe/."
+    },
+    {
+      "class": "modification",
+      "path": "src/mcp.ts",
+      "kind": "wire-log-seam",
+      "decision": "P6-T4 probe evidence seam",
+      "why": "env-gated (LSP_MCP_WIRE_LOG) synchronous wire diagnostic appended by the request handler; unset means zero behaviour change; stdout stays exclusively JSON-RPC frames."
+    },
+    {
+      "class": "modification",
+      "path": "src/**",
+      "kind": "esm-extension-completion",
+      "decision": "T8b ruling path (A) grammar, applied at import time (P6-T4)",
+      "files": 55,
+      "specifiers": 227,
+      "crossPackageSpecifiers": 1,
+      "why": "Node 24 native type-stripping resolves NO extensionless/`.js`-to-`.ts`-mismatched relative specifier; every upstream `.js` specifier became `.ts`, and the single @oh-my-opencode/mcp-stdio-core specifier became the relative path ../../mcp-stdio-core/src/index.ts. Machine-proven: .omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs (PROOF: GREEN)."
+    },
+    {
+      "class": "modification",
+      "path": "src/lsp/errors.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 precedent (team-core)",
+      "why": "TS parameter properties are rejected by Node 24 strip-only mode (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — measured at first load smoke, transport.ts); rewritten to declared field + assignment at the tsc-emit position (after super() where present)."
+    },
+    {
+      "class": "modification",
+      "path": "src/lsp/json-rpc-connection.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 precedent (team-core)",
+      "why": "TS parameter properties are rejected by Node 24 strip-only mode (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — measured at first load smoke, transport.ts); rewritten to declared field + assignment at the tsc-emit position (after super() where present)."
+    },
+    {
+      "class": "modification",
+      "path": "src/lsp/transport.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 precedent (team-core)",
+      "why": "TS parameter properties are rejected by Node 24 strip-only mode (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — measured at first load smoke, transport.ts); rewritten to declared field + assignment at the tsc-emit position (after super() where present)."
+    },
+    {
+      "class": "modification",
+      "path": "src/lsp/workspace-document-state.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 precedent (team-core)",
+      "why": "TS parameter properties are rejected by Node 24 strip-only mode (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — measured at first load smoke, transport.ts); rewritten to declared field + assignment at the tsc-emit position (after super() where present)."
+    },
+    {
+      "class": "modification",
+      "path": "src/lsp/workspace-edit-path.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 precedent (team-core)",
+      "why": "TS parameter properties are rejected by Node 24 strip-only mode (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — measured at first load smoke, transport.ts); rewritten to declared field + assignment at the tsc-emit position (after super() where present)."
+    },
+    {
+      "class": "modification",
+      "path": "src/lsp/workspace-edit-snapshot.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 precedent (team-core)",
+      "why": "TS parameter properties are rejected by Node 24 strip-only mode (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — measured at first load smoke, transport.ts); rewritten to declared field + assignment at the tsc-emit position (after super() where present)."
+    },
+    {
+      "class": "modification",
+      "path": "src/lsp/workspace-edit-types.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 precedent (team-core)",
+      "why": "TS parameter properties are rejected by Node 24 strip-only mode (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — measured at first load smoke, transport.ts); rewritten to declared field + assignment at the tsc-emit position (after super() where present)."
+    },
+    {
+      "class": "modification",
+      "path": "src/lsp/workspace-mutation-controller.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 precedent (team-core)",
+      "why": "TS parameter properties are rejected by Node 24 strip-only mode (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — measured at first load smoke, transport.ts); rewritten to declared field + assignment at the tsc-emit position (after super() where present)."
+    },
+    {
+      "class": "modification",
+      "path": "src/request-context.ts",
+      "kind": "strip-only-param-property-rewrite",
+      "decision": "T5 NOTES-6 precedent (team-core)",
+      "why": "TS parameter properties are rejected by Node 24 strip-only mode (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — measured at first load smoke, transport.ts); rewritten to declared field + assignment at the tsc-emit position (after super() where present)."
+    },
+    {
+      "class": "addition",
+      "path": "src/cli.ts",
+      "kind": "project-stdio-entry",
+      "decision": "P6-T4 (L-B) thin MCP server face",
+      "why": "project-new stdio entry mounting the vendored engine in the shipped composition (cordis.yml row omo-lsp); semantics reference the MIT @code-yeongyu/lsp-tools-mcp src/cli.ts — attribution in THIRD_PARTY_NOTICES.md."
+    },
+    {
+      "class": "addition",
+      "path": "NOTICE.md",
+      "kind": "project-notice",
+      "why": "SUL-1.0 \"Notices\" prominent statement for the modified copy (D15 ¶3)."
+    },
+    {
+      "class": "addition",
+      "path": "VENDOR-MANIFEST.json",
+      "kind": "project-record",
+      "why": "machine-readable provenance record (D15 ¶2)."
+    },
+    {
+      "class": "note",
+      "path": "src/**/*.test.ts",
+      "kind": "tests-excluded",
+      "why": "21 upstream bun:test suites excluded wholesale per the (L-B) ruling (runner is bun:test, not vitest; FORKS.md §2.6). The exclusion is the file-set face: src/ contains no .test.ts bytes."
+    }
+  ]
+}

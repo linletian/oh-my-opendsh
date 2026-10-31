@@ -103,6 +103,124 @@
 #                 present, and ZERO `[omo-team]` markers of any shape (loaded /
 #                 registered / boot resume): canary discipline, an absent plugin
 #                 is loud and names itself, never a silent half-mount.
+#   P6-T5 lsp   — the FIFTH cordis.yml insert row's mount observable. omo-lsp
+#                 mounts the dsh-BUNDLED @deepseek-ai/dsh-mcp-client (no install
+#                 step, see the Stage 0 note below), and that row is
+#                 `failOnStartupError: false` — a dead LSP child therefore CANNOT
+#                 fail the boot, so no plugin-side marker and no exit code can
+#                 prove it mounted. The one loud signal on that channel is the
+#                 stdio child's own stderr announcement, which the client
+#                 inherits into $boot_log (@modelcontextprotocol/client/dist/
+#                 stdio.mjs:76 `stderr ?? "inherit"`). The expectation here is
+#                 $EXPECTED_LSP_STARTING_MARKER, DERIVED below with awk straight
+#                 out of the vendored entry that writes it
+#                 (patches/omo-dsh/vendor/lsp-core/src/cli.ts) — the same four
+#                 steps tests/e2e/fixtures/lsp-double-constants.mjs's
+#                 deriveLspMcpStartingMarker performs, run by an independent
+#                 reader over one shipped literal, and printed by the PASS line
+#                 so the cross-check is auditable rather than asserted. A
+#                 reworded announcement moves this expectation with it; a deleted
+#                 one makes the DERIVATION fail the probe before any boot,
+#                 instead of grepping for an empty string and calling that green.
+#                 scripts/cold-start.sh:215-223 greps the same line from a
+#                 hand-copied PREFIX — this probe is the full-value half of that
+#                 pair, which is what makes the constants module's claim of two
+#                 independent readers actually true.
+#                 SCOPE HONESTY: this asserts the row MOUNTED and the child
+#                 SPOKE, not any LSP round-trip — the protocol legs (initialize /
+#                 definition / diagnostics / -32601 / -32700 / die-exit-7) live
+#                 in tests/omo-lsp/lsp-double-protocol.test.ts against the
+#                 hermetic double, and the engine-level round-trip in
+#                 tests/e2e/drive.mjs's two lsp-* scenarios.
+#                 The PRESENCE leg runs in-probe against ALL THREE boots —
+#                 boot_once 'fresh', boot_once 'again', and boot_absent_once
+#                 'noteam' (ARBITRATION-r1 B-MINOR-3: it used to cover two, and
+#                 the third boot is the one that proves the bundled fifth row
+#                 does not ride on a repo-published sibling). Its LOUD ABSENCE
+#                 form is the `fail` text at each site, naming the fifth row,
+#                 the package and the derived marker; the mutation self-proof that
+#                 the grep is not vacuous is an OUT-OF-BAND archive,
+#                 .omo/evidence/p6t5/probe-grep-mutation.log — a marker edited
+#                 out of a COPY of cli.ts makes the awk derivation exit 3 before
+#                 any boot. What is NOT in this task's scope, stated plainly: a
+#                 boot where the LSP child is genuinely absent cannot be produced
+#                 in-probe without modifying the vendored entry or the bundle, so
+#                 this probe has no in-probe NEGATIVE anchor for the lsp row —
+#                 the canary shape lives in the drive.mjs lsp-missing-server
+#                 scenario, on a different channel by necessity.
+#   P6-T9 FOUR  — the four editing/lookup faces this phase ports, and which
+#   LEGS      — assertion owns which face. Stated per leg because three of the
+#                 four are covered by DERIVED rosters and two had NO assertion at
+#                 all before this task; a leg nobody can point at is a leg nobody
+#                 can say is green.
+#                 E — the EDIT face, fork (E-A): the natively-adopted
+#                 `dsh-tool-fs` row (.omo/evidence/p6t1/FORKS.md §1.7, stamped on
+#                 measured A/B data — silent-wrong-write 0/0 on both arms, the
+#                 native face covering all six decidable failure classes). It has
+#                 NO boot marker: dsh-tool-fs prints nothing when it mounts, so no
+#                 boot log can prove it is there. Covered by the COMPOSITION-FACE
+#                 block below (`--dump-config`, the same two patches the boot uses),
+#                 scoped to `preset-standard`'s live plugin list.
+#                 L — the LSP face, P6-T5: `omo-lsp`, the FIFTH cordis.yml insert
+#                 row, proven at boot in ALL THREE boots by the awk-derived
+#                 $EXPECTED_LSP_STARTING_MARKER read out of the vendored stdio
+#                 entry. See the P6-T5 entry above for its scope-honesty note.
+#                 G — the ast-grep face, P6-T6/T9: THREE sub-faces, THREE owners,
+#                 and one of them is NOT this probe.
+#                   (G1) hook REGISTRATION — covered here, by derivation:
+#                     $EXPECTED_HOOK_REGISTERED_LINES is built from HOOK_MANIFEST ×
+#                     formatHookRegisteredLine, and the manifest carries
+#                     `ast-grep-sg-provision` (event `session/created`, status
+#                     ported), so its registered line is one of the
+#                     $EXPECTED_HOOK_COUNT lines grepped on every boot. Two loss
+#                     shapes, two different outcomes, stated separately because the
+#                     first version of this note claimed only the first: (i) the
+#                     manifest row is dropped while `src/hooks/<id>.ts` is still
+#                     there — the derivation fails, since it asserts the file set
+#                     EQUALS the manifest id set; (ii) the row AND the implementation
+#                     file are dropped together — the set equality still holds
+#                     (15↔15 would stay green) and the probe stays green, because
+#                     nothing in it names the hook; the red lives in c29's named
+#                     arm, which pins the manifest row by id.
+#                   (G2) the ast-grep SKILL — COUNT-level on the probe side, and
+#                     that is all it can be: $EXPECTED_SKILLS_SUMMARY comes from
+#                     scanVendorSkills over the vendored tree (measured 19 entries,
+#                     zero reader failures) and boot-markers emits only the summary
+#                     plus per-skill FAILED lines — there is NO per-skill
+#                     "registered" line to grep a name out of. So `ast-grep` is
+#                     inside the 19 counted, not named here. The NAME-level owner
+#                     is c19 (manifest skill list == vendor directory == 19, with
+#                     ast-grep in the list). Copying the skill list into this probe
+#                     to manufacture a name would be a second transcription — the
+#                     drift c21 exists to catch.
+#                   (G3) the PROVISION path (fetching/placing the `sg` binary) is
+#                     NOT asserted here and must never be written as if it were:
+#                     the listener fires on `session/created`. Scope stated the way
+#                     the evidence reads, not looser than it is — the session
+#                     CREATE CALL SITES, meaning `session\.create` / `session/create`
+#                     with the EVENT NAME `session/created` excluded, are exactly
+#                     two: the `session/create` rpc helper in tests/e2e/drive.mjs
+#                     and the same-named helper in scripts/smoke-real.mjs (each is
+#                     the `return rpc(boot, 'session/create', { args: { request } })`
+#                     line behind its transport-adaptive wrapper; cited by construct
+#                     because a line number here rots on the next edit to a 30k-line
+#                     file, and has). (The bare string
+#                     `session/created` matches far more — event names in the
+#                     manifest, gate 6's own c29 assertion, docs and comments — so
+#                     "only two hits repo-wide" was never a true statement about
+#                     the raw pattern; it is true about the call sites.)
+#                     scripts/prove-route-logging.mjs builds a session in-process
+#                     through agentLoop.create but does not mount omo-hooks, so it
+#                     does not touch this seam either (registered in an earlier
+#                     round). Neither this probe nor cold-start.sh creates a
+#                     session, so provision cannot fire here; asserting it from a
+#                     probe that cannot trigger it would be a false claim of
+#                     coverage. Its real owners are the supply-layer unit suites
+#                     and the P6-T7 canary e2e, where a provision failure is loud.
+#                 W — the WEB face, fork W: `dsh-tool-web` plus the `web` row's
+#                 `searchProvider`/`fetchProvider` selection. Like E it has no boot
+#                 marker, so the same composition-face block covers it, every
+#                 expected value derived from the installed base bundle.
 #   T8 persona  — the `omo-sisyphus system prompt assembled` boot marker, and
 #                 the MATERIALIZED $DSH_HOME preset's agent.cordis.yml: the
 #                 sentinel is gone and the persona block scalar carries the
@@ -263,10 +381,12 @@ echo "concerto-probe: sandbox: $SANDBOX"
 echo "concerto-probe: dsh binary: $(command -v dsh)"
 dsh --version || fail "dsh --version failed"
 
-# Stage 0: fresh profile + install ALL FOUR plugins into it (one per cordis.yml
+# Stage 0: fresh profile + install the FOUR @oh-my-opendsh plugins into it (one
+# per @oh-my-opendsh cordis.yml
 # insert row — P3-T3 mounted omo-hooks as the second row, P4-T3 mounts
 # omo-commands as the third, P5-T3 mounts omo-team as the fourth, so a profile
-# carrying fewer could not compose the overlay).
+# carrying fewer could not compose the overlay; the P6-T4 fifth row omo-lsp
+# mounts the dsh-bundled @deepseek-ai/dsh-mcp-client and needs no install).
 echo "concerto-probe: installing @oh-my-opendsh/omo-agents into sandbox profile '$PROFILE'"
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-agents" >"$ADD_LOG" 2>&1 \
@@ -684,6 +804,55 @@ if [[ "$EXPECTED_TEAM_REGISTERED_COUNT" != "0" ]]; then
   printf '%s\n' "$EXPECTED_TEAM_REGISTERED_LINES" | sed 's/^/concerto-probe:   /'
 fi
 
+# P6-T5: the omo-lsp row's mount observable — the stdio LSP child's OWN boot
+# announcement — derived with awk straight out of the vendored entry that writes
+# it (patches/omo-dsh/vendor/lsp-core/src/cli.ts, `stderr.write(\`[lsp-mcp]
+# stdio server starting pid=${…}\n\`)`).
+#
+# WHY A SECOND READER, AND WHY IN AWK. tests/e2e/fixtures/lsp-double-constants.
+# mjs's deriveLspMcpStartingMarker is the JS reader the double and
+# tests/e2e/drive.mjs share. Re-running the same expression here in a different
+# language over the same shipped source is the cross-check: a reader that quietly
+# matched nothing, or matched the wrong stderr.write of the three cli.ts writes,
+# would have to fail in BOTH languages to go unnoticed. The PASS line prints the
+# derived value, so the claim is auditable and not just asserted.
+# scripts/cold-start.sh:215-223 is the third reader, from a hand-copied PREFIX;
+# this is the full-value half of that pair.
+#
+# WHY THIS FAILS LOUDLY AND NEVER GREPS AN EMPTY STRING. The omo-lsp row is
+# `failOnStartupError: false`, so a dead LSP child cannot fail the boot and
+# cannot fail a marker grep it never ran: the derivation is the only gate that
+# can tell "the announcement moved" from "the announcement is gone". No selector
+# match (awk exit 3) or an empty derived value (awk exit 4, the mirror of the JS
+# reader's `marker.length === 0` throw — defensive, the selector anchors on the
+# `[lsp-mcp]` prefix so today it cannot be empty) fails the probe BEFORE any boot
+# is attempted, which is also why the value is derived up here and not inline in
+# the boot block.
+EXPECTED_LSP_CLI_TS="$REPO_ROOT/patches/omo-dsh/vendor/lsp-core/src/cli.ts"
+[[ -f "$EXPECTED_LSP_CLI_TS" ]] \
+  || fail "the vendored lsp-core stdio entry is gone ($EXPECTED_LSP_CLI_TS) — nothing writes the [lsp-mcp] announcement the omo-lsp row is asserted on"
+EXPECTED_LSP_STARTING_MARKER="$(awk '
+{
+  if (match($0, /stderr\.write\(`\[lsp-mcp\][^`]*`\)/)) {
+    found = 1
+    s = substr($0, RSTART, RLENGTH)
+    sub(/^stderr\.write\(`/, "", s)
+    sub(/`\)$/, "", s)
+    sub(/\\n$/, "", s)
+    p = index(s, "${")
+    if (p > 0) s = substr(s, 1, p - 1)
+    gsub(/^[ \t]+/, "", s)
+    gsub(/[ \t]+$/, "", s)
+    if (s != "") { printed = 1; print s; exit }
+  }
+}
+END { if (printed) exit 0; if (found) exit 4; exit 3 }
+' "$EXPECTED_LSP_CLI_TS")" \
+  || fail "could not derive the omo-lsp stdio boot marker from $EXPECTED_LSP_CLI_TS (exit $?): no \`stderr.write(\`[lsp-mcp]…\`)\` announcement there (or it derives to empty) — the omo-lsp boot grep below would silently be grepping nothing"
+[[ -n "$EXPECTED_LSP_STARTING_MARKER" ]] \
+  || fail "the derived omo-lsp stdio boot marker is empty (awk printed nothing for $EXPECTED_LSP_CLI_TS) — refusing to grep the boot log for an empty string"
+echo "concerto-probe: P6-T5 lsp child announcement marker (awk-derived from vendor/lsp-core/src/cli.ts): [$EXPECTED_LSP_STARTING_MARKER]"
+
 # P2-T15 (plan §4.4 deny-sentinel rendering): the explore row's deny is no
 # longer the inline F1 triple. It is the ROSTER-COMPUTED list — write/edit plus
 # all 10 delegation toolNames, in roster order — emitted above from
@@ -1048,6 +1217,365 @@ if (kind === 'roster') {
 }
 EOF
 
+# ── P6-T9: the COMPOSITION FACE of the edit (E) and web (W) legs ──────────────
+# WHY THIS BLOCK EXISTS, AND WHY IT DOES NOT BOOT. Three of the four probe legs
+# prove themselves at boot: the edit face and the web face have NO boot marker at
+# all — nothing in `dsh-tool-fs` or `dsh-tool-web` prints "I mounted" — so a boot
+# log cannot say whether either face is in the tree the model receives. They were
+# therefore ZERO-ASSERTION legs before this task: the composition either worked
+# silently or degraded silently, and the probe could not tell you which. The
+# composition is observable without a boot, so it is checked here the way
+# scripts/cold-start.sh:89-98 checks it (Stage A: `--dump-config`, no spawn), on
+# the SAME two patches the boot uses (`./cordis.yml` + $LLM_SEED_PATCH) so the
+# tree inspected is the tree that would have mounted.
+#
+# WHAT IS DERIVED AND WHAT IS NOT. Every expected value is read out of the
+# INSTALLED base bundle (`$DSH_NM/@deepseek-ai/dsh-base/cordis.patch.yml`) at run
+# time: the row name behind `- id: tool-fs` (the edit face, fork E's (E-A)
+# adoption — .omo/evidence/p6t1/FORKS.md §1.7 stamped it on measured A/B evidence,
+# "silence-wrong-write 0/0", the native face covering all six decidable failure
+# classes) and behind `- id: tool-web`, plus `searchProvider`/`fetchProvider` from
+# `- id: web` (fork W). Nothing is retyped, so a provider rename in the bundle moves
+# the expectation with it instead of leaving a stale literal green.
+#
+# THE TRAP THIS ADDRESSES, MEASURED. `grep -q dsh-tool-web` over this dump passes
+# on the TOP-LEVEL `- id: tool-web` row, which reads `disabled: true` — and the
+# rows a session actually gets live under a preset's `config.plugins` list. No line
+# numbers are quoted for the composed tree because the dump is a throwaway file: by
+# the time a reader wants to check, the bytes are gone. What was measured is the
+# structure, and the structure is what is stated here.
+# FIX-T9-R2-5. No positional anchor: "two lines below" was true when it was written and
+# stopped being true the moment the block grew, which is the same rot as a line number
+# wearing a different disguise. Reproducible by re-running the `--dump-config` further
+# down in this block and reading the same row shapes. Attribution matters, so it is measured rather than
+# assumed: the base SOURCE row for tool-web (`dsh-base/cordis.patch.yml:486-487`)
+# carries NO `disabled:` key at all, and neither does the source `web` row
+# (:472); rows that do carry it upstream include tool-ralph (:447) and skill-badge
+# (:300). So the `disabled: true` on the composed top-level tool-web row is ADDED
+# BY COMPOSITION — it disables the base top-level row, it is not a property of the
+# fork. That is exactly why the checks below must reject a `disabled:` key
+# explicitly instead of trusting presence, and why "it came from the base bundle"
+# is not an excuse for a row being off.
+#
+# THE SECOND, SHARPER TRAP, FIXED IN FIX-T9-1. The web PROVIDER selection is NOT
+# in the preset at all: measured on the composed dump, `- id: web` occurs exactly
+# ONCE, at column zero, with searchProvider/fetchProvider in its own config
+# block and NO `disabled:` key, and preset-standard's live list contains no `web`
+# row at any indent. The first version of those two checks scanned the whole tree,
+# so they were neither scoped nor disabled-aware; they now read the host's own
+# top-level row. Scope is proven, not asserted: moving both values onto a preset
+# row leaves a whole-tree grep finding them while the checker goes red by name.
+#
+# FIX-T9-R4-2. That absence is now ASSERTED, not narrated: `web-face-absent-from-preset`
+# (FIX-T9-R3-1) counts `- id: web` rows at ANY indent inside preset-standard's live
+# plugin list and fails BY NAME when the count is non-zero.
+#
+# COVERAGE BOUNDARY, recorded so this is not re-raised (FIX-T9-R3 B-MINOR-2 rejected;
+# rewritten in FIX-T9-R4-1 because the first version of this note asserted something
+# FALSE — see the deny-proof paragraph). The target here is `preset-standard` and that
+# stands: the roster RPC answers `{"id":"standard","order":1,"isDefault":true}`, so the
+# default composition a session actually gets IS this one (measured:
+# .omo/evidence/p6t9/probe-run-t9r3.log:151; the same log at :159 records
+# `concerto{isDefault:false,trust:ABSENT,broken:ABSENT}`).
+#
+# What `concerto` IS covered by, stated at the level the evidence supports:
+#   - gate 6 c01-c29 (FIX-T9-R4-3; measured id set: c01-c09, c11-c29, plus
+#     c10.1-c10.10 — c29 is the arm that holds ast-grep BY NAME) as the
+#     static record, and this probe's own T11/T12/T13 roster sections.
+#   - the T12/F1 deny-transitivity proof checks a HAND-WRITTEN STUB roster, not the
+#     composition. `prove-explore-toolfilter.mjs:177-188` is a literal array of tool
+#     names whose own comments say which row each came from; the script parses the
+#     materialized composition but its walk() collects ONLY the
+#     `tool-subagent-explore` row (:122) and validates that row's toolFilter. Deleting
+#     the `- id: tool-fs` / `- id: tool-web` rows from the materialized concerto
+#     composition leaves its output byte-identical and still PASS. So it is evidence
+#     about deny plumbing, and it is NOT evidence that those two rows are present.
+#     The first version of this note claimed exactly that, and it was wrong.
+#   - E face inside concerto: witnessed INDIRECTLY and only on its READ half, by CI
+#     gate 3's mock-LLM e2e, which runs under `CONCERTO_PRESET_ID = 'concerto'`
+#     (tests/e2e/drive.mjs:683) and has an explore child session perform read steps.
+#   - W face inside concerto: SPLIT, because its two halves have different owners, and
+#     saying "no owner" about both was an overstatement (FIX-T9-R5-4). The PROVIDER
+#     half HAS an owner here: the host's column-zero `web` row carries
+#     searchProvider/fetchProvider, is preset-independent, and is asserted by
+#     web-face-host-row-live / web-face-searchProvider / web-face-fetchProvider no
+#     matter which preset this block targets. What has NO named owner is the `tool-web`
+#     ROW's presence inside the concerto preset's live plugin list — `grep -c tool-web`
+#     over verify-concerto-static.mjs, assert-concerto-read-face.mjs and
+#     doctor-lite-core.ts returns 0/0/0 (measured). The row is there (real profile dump
+#     :2546, tool-fs at :2351), so this is an unasserted fact, not a missing feature.
+#
+# The boundary, stated with the precondition it depends on (FIX-T9-R5-1: three earlier
+# versions of this paragraph were wrong, and the last one was wrong twice over — it
+# named the wrong install surface AND drew the wrong conclusion from it).
+# THIS probe's dump is composed from the base bundle + the repo's ./cordis.yml + the
+# seed patch, against an ISOLATED DSH_HOME (`export DSH_HOME="$SANDBOX/dsh"`), and
+# it is taken BEFORE any boot. Both are cited by construct, not by number, because the
+# numbers are the ones this very note keeps invalidating: the `--dump-config` of this
+# block sits between the ISOLATED `export DSH_HOME` above and the first `boot_once
+# materialized` call near the end of the file, and every edit to this comment shifts
+# both. So it carries preset-standard / preset-ptc / preset-minimal / preset-cordis
+# and nothing else, measured at 4 rows. That is a property of THIS probe's recipe.
+# In a profile where the concerto preset is actually INSTALLED it DOES reach the dump as
+# a `- id: preset-concerto` row: scripts/install-concerto.sh installs by writing into
+# the web profile's patch file, and there the row is present as `- insert:` /
+# `- id: preset-concerto` (~/.dsh/profiles/web/cordis.patch.yml:1035-1036). The
+# .agent-presets/ DIRECTORY is not the install surface on 0.2.x at all —
+# install-concerto.sh:26-27 and :35-39 say so outright, "0.2.x never reads
+# $DSH_HOME/.agent-presets/ off disk"; a directory omo-agents writes there exists on
+# disk without being what the loader mounts, which is precisely the distinction the
+# earlier version of this note collapsed. Measured, not reasoned: against the real
+# profile's dump (2552 lines, 5 preset rows, concerto at :2230) this block pointed at
+# `concerto` passes 10/10 exit 0 — vacuity guard green, edit-face-row-live and
+# web-face-row-live both satisfied by tool-fs :2351 and tool-web :2546 inside its live
+# list. So pointing this block at concerto would EXTEND coverage, including onto the
+# unowned `tool-web` row named above; the boundary recorded here is about this probe's
+# dump composition and timing, not about dumps in general, and it is not a claim that
+# such a run would fail.
+echo "concerto-probe: P6-T9 composition-face check (no boot) — edit (E-A) + web faces"
+COMPOSE_FACE_MJS="$SANDBOX/assert-composition-faces.mjs"
+cat > "$COMPOSE_FACE_MJS" <<'PROBE_FACE_EOF'
+// FIX-T9-R4-6 records where FIX-T9-R3-2 lived: the ledger numbers on the comments
+// in this block were
+// corrected to the arbitration ledger (the disabled-value note R2-6 -> R2-7, the
+// uniqueness note R2-5 -> R2-6) and three fixes that had shipped unlabelled were
+// labelled — the escaped PASS line R2-1, the vacuity comment R2-4, the positional-
+// anchor removal R2-5. Renumber lowest-first: two notes answering to one number is the
+// same defect as two checks answering to one name.
+//
+// P6-T9 composition-face assertions. Written by concerto-mode-probe.sh into its
+// sandbox and run there; it reads nothing but the two paths handed in through the
+// environment, so the same file can be (and was, at authoring time) run standalone
+// against a saved dump and against mangled copies of one, to prove each check fires.
+import fs from 'node:fs'
+
+const dumpPath = process.env.DUMP_PATH
+const basePath = process.env.BASE_PATCH
+const presetId = process.env.PRESET_ID ?? 'preset-standard'
+const dump = fs.readFileSync(dumpPath, 'utf8').split('\n')
+const base = fs.readFileSync(basePath, 'utf8')
+
+const strip = (value) => value.replace(/^['"]|['"]$/g, '')
+const indent = (line) => line.search(/\S/)
+
+// One `- id: <id>` row: its name, its flat config scalars, whether it is
+// disabled. Depth is read off the matched line, not assumed, because the base
+// bundle declares rows at indent 4 under `plugins:` while the composed dump
+// declares presets at column zero — one reader, both shapes.
+function readRow(src, id, atIndent) {
+  const lines = Array.isArray(src) ? src : src.split('\n')
+  const index = lines.findIndex((line) => line.trim() === `- id: ${id}`
+    && (atIndent === undefined || indent(line) === atIndent))
+  if (index < 0) return null
+  const ind = indent(lines[index])
+  const row = { name: null, config: {}, disabled: false, disabledRaw: null }
+  for (let j = index + 1; j < lines.length; j++) {
+    const line = lines[j]
+    if (line.trim() === '') continue
+    const ci = indent(line)
+    if (/^-\s+id:\s/.test(line.trim()) && ci <= ind) break
+    if (line.trim() === 'config:' && ci === ind + 2) {
+      // FIX-T9-R2-2. DIRECT children only, at ind + 4. The earlier form accepted
+      // any deeper line, so a nested `providers:` / `searchProvider:` block read
+      // back as the row's own provider selection and stayed green while dsh sees
+      // a row with NO provider choice at all. Deeper keys are dropped on purpose:
+      // this reader answers "what does THIS row set", not "what appears below it".
+      for (let k = j + 1; k < lines.length; k++) {
+        const c = lines[k]
+        if (c.trim() === '') continue
+        if (indent(c) <= ind + 2) break
+        if (indent(c) !== ind + 4) continue
+        const m = c.match(/^(\s*)([A-Za-z0-9_]+):\s*(.+?)\s*$/)
+        if (m) row.config[m[2]] = strip(m[3])
+      }
+    }
+    const n = line.match(/^\s*name:\s*(.+?)\s*$/)
+    if (n && row.name === null && indent(line) === ind + 2) row.name = strip(n[1])
+    if (/^disabled:/.test(line.trim()) && indent(line) === ind + 2) {
+      row.disabled = true
+      // FIX-T9-R2-7. Keep the row's own text: the test is key-presence, so the
+      // message must not claim a value the row never stated.
+      row.disabledRaw = line.trim().replace(/^disabled:\s*/, '') || '(empty)'
+    }
+  }
+  return row
+}
+
+// A preset's LIVE plugin list: the slice of the dump from its column-zero row to
+// the next column-zero row. Scoped so a top-level disabled placeholder can never
+// satisfy a presence check.
+//
+// FIX-T9-R4-5. Returns { start, lines }, not just the slice. A second caller used to
+// findIndex the same row again to turn a slice offset into a dump line number; two
+// independent searches for one row can disagree, and when they do the line numbers in
+// a failure message drift silently — and a line number is most of what that message is
+// worth. One location, offsets derived from it.
+function presetBlock(lines, id) {
+  const start = lines.findIndex((line) => line.trim() === `- id: ${id}` && indent(line) === 0)
+  if (start < 0) return null
+  let end = lines.length
+  for (let j = start + 1; j < lines.length; j++) {
+    if (indent(lines[j]) === 0 && /^-\s+id:\s/.test(lines[j].trim())) { end = j; break }
+  }
+  return { start, lines: lines.slice(start, end) }
+}
+
+const results = []
+const check = (name, ok, detail) => results.push(ok ? `ok ${name}` : `FAIL: ${name} — ${detail}`)
+
+const live = presetBlock(dump, presetId)
+// FIX-T9-R2-4. The vacuity guard runs FIRST and names itself. Measured, not assumed:
+// an absent preset collapses the two legs into two `-face-live-row` absences (the
+// provider checks read the HOST row and stay green, so they are not part of the
+// count), and those absences read as faces missing rather than as the one renamed
+// preset they really are.
+check('preset-live-region-found', live !== null,
+  `the composed tree has no column-zero \`- id: ${presetId}\` row, so the live plugin list the model receives could not be located — measured: a renamed preset reddens exactly 3 checks (this one plus the two \`*-face-live-row\` absences; each leg's name and live checks collapse into the same early-exit branch), and without this guard those 3 would read as faces missing rather than as one preset renamed`)
+const region = live ? live.lines : []
+// FIX-T9-R4-5 marker: derived from the single presetBlock location above.
+const presetStart = live ? live.start : -1
+
+// FIX-T9-R3-1. The premise the provider block rests on, asserted rather than narrated.
+// `web-face-row-unique` counts column-zero rows only, so a `- id: web` declared DEEPER
+// — inside this preset's own live plugin list — passed every check here while changing
+// which row the runtime actually uses, and the mechanism is measured in the LOADER (see
+// FIX-T9-R4-4), not guessed:
+// cordis-plugin-loader/lib/index.js:60 `this.tree.store[id] ??= new Entry(...)`
+// reuses the entry for a repeated id, :62 calls `entry.update(options, true, true)`, and
+// :367 inside `update(options, create, force)` reads `if (create) this.options = options`
+// — the whole option set is REPLACED, so the last creator wins and the preset's row
+// becomes the operative `web` row while the host row whose searchProvider/fetchProvider
+// this block asserts stops being the one in effect. cordis-plugin-include/lib/index.js:62
+// (`entryMap.set(entry.id, entry)`) is the same last-write-wins shape one layer up, at
+// the patch/config index; the loader is what actually runs. Measured before this check existed: inserting
+// such a row at the preset's tool-web position left 9/9 green.
+const presetWebHits = region
+  .map((line, k) => ({ at: presetStart + k + 1, text: line.trim() }))
+  .filter((e) => e.text === `- id: web`)
+check('web-face-absent-from-preset', presetWebHits.length === 0,
+  `${presetId}'s live plugin list declares ${presetWebHits.length} \`- id: web\` row(s) at dump line(s) ${presetWebHits.map((e) => e.at).join(", ") || "none"} — the host's column-zero web row is SHADOWED there, so the provider values asserted below belong to a row the runtime no longer uses (the id index is Map.set, last write wins)`)
+
+for (const [leg, id, fork] of [['edit', 'tool-fs', 'E (E-A)'], ['web', 'tool-web', 'W']]) {
+  const want = readRow(base, id)
+  if (!want || !want.name) {
+    check(`${leg}-face-expectation-derived`, false,
+      `could not derive the expected row for \`- id: ${id}\` from the installed base bundle ${basePath} — the ${leg} leg would assert nothing`)
+    continue
+  }
+  const at = region.findIndex((line) => line.trim() === `- id: ${id}`)
+  if (at < 0) {
+    check(`${leg}-face-live-row`, false,
+      `\`- id: ${id}\` (${want.name}) is absent from ${presetId}'s live plugin list — fork ${fork} silently degraded: the row the model receives no longer carries this face`)
+    continue
+  }
+  let stop = region.length
+  for (let j = at + 1; j < region.length; j++) {
+    if (/^-\s+id:\s/.test(region[j].trim()) && indent(region[j]) === indent(region[at])) { stop = j; break }
+  }
+  const block = region.slice(at, stop)
+  // FIX-T9-6a. Indent-qualified, first match at row-indent + 2 — the same reading
+  // rule readRow uses. An unqualified find would take a `name:` key that appears
+  // deeper, say inside this row's own config, and report it as the row's package
+  // name: a green that reads the wrong thing.
+  const rowIndent = indent(region[at])
+  const nameLine = block.find((line) => indent(line) === rowIndent + 2 && /^name:\s*/.test(line.trim()))
+  const got = nameLine ? strip(nameLine.trim().match(/^name:\s*(.+?)\s*$/)[1]) : null
+  check(`${leg}-face-row-name`, got === want.name,
+    `${presetId}'s live list names \`- id: ${id}\` as ${JSON.stringify(got)} but the installed base bundle says ${JSON.stringify(want.name)}`)
+  // FIX-T9-R3-3. Indent-qualified, the same reading rule the `name:` lookup two lines
+  // above already uses: a `disabled:` nested inside this row's own config is NOT this
+  // row declaring itself off. Matching it would false-red the leg AND report a value
+  // the row never stated.
+  const off = block.find((line) => indent(line) === rowIndent + 2 && /^disabled:/.test(line.trim()))
+  check(`${leg}-face-row-live`, !off,
+    `\`- id: ${id}\` is in ${presetId}'s live plugin list but carries ${JSON.stringify((off ?? '').trim())} — present-but-inert is not the ${leg} face being claimed`)
+}
+
+// FIX-T9-1. The web PROVIDER selection is a fact about the HOST'S TOP-LEVEL
+// `- id: web` row, measured on the composed dump: that row appears exactly ONCE,
+// at column zero, and `preset-standard`'s live plugin list contains NO `web` row
+// at any indent (its web presence is `tool-web` alone). The earlier form of these
+// two checks scanned the WHOLE dump with `dump.some(...)`, which is neither scoped
+// nor disabled-aware: a `disabled: true` added to the top-level `web` row stayed
+// green, and the banner claimed the values were found under preset-standard, which
+// was never true. So the row is located at column zero, its OWN config block is
+// read, and the row's own `disabled:` key fails it — present-but-inert is not
+// presence for this row either.
+const expectedWeb = readRow(base, 'web')
+const hostWebRow = readRow(dump, 'web', 0)
+if (!expectedWeb || !expectedWeb.config.searchProvider || !expectedWeb.config.fetchProvider) {
+  check('web-provider-expectation-derived', false,
+    `could not derive searchProvider/fetchProvider for \`- id: web\` from ${basePath}`)
+} else if (!hostWebRow) {
+  check('web-face-row-top-level', false,
+    `the composed tree has no column-zero \`- id: web\` row — the host row that carries the web provider selection is gone, so both provider checks below have no subject`)
+} else {
+  // FIX-T9-R2-6. The uniqueness this block's reasoning rests on was a comment, not
+  // a check: readRow takes the FIRST match, so a second `- id: web` row at column
+  // zero made the sentence above false while every check below still passed. Counting
+  // it turns the premise into a guarded fact — and it runs before the value checks,
+  // because with two subject rows a value read from "the" row names no subject.
+  const webRowHits = dump.filter((line) => line.trim() === `- id: web` && indent(line) === 0).length
+  check('web-face-row-unique', webRowHits === 1,
+    `the composed tree has ${webRowHits} column-zero \`- id: web\` rows, not exactly 1 — readRow would silently read the first and the provider checks below would report on a row chosen by accident`)
+  // Named apart from the preset leg's `web-face-row-live`: two checks answering to
+  // one name would make a failure of either indistinguishable in the log, which is
+  // the same defect this repo's distinctness guard rejects for guard messages.
+  check('web-face-host-row-live', !hostWebRow.disabled,
+    `the host's top-level \`- id: web\` row carries \`disabled: ${hostWebRow.disabledRaw}\` — the web face is present-but-inert whatever value it states, which is NOT the provider selection being claimed (this is the exact shape a whole-tree grep let through)`)
+  for (const key of ['searchProvider', 'fetchProvider']) {
+    const want = expectedWeb.config[key]
+    const got = hostWebRow.config[key]
+    check(`web-face-${key}`, got === want,
+      `the host's top-level \`- id: web\` row states ${key}=${JSON.stringify(got ?? null)} but the installed base bundle declares ${JSON.stringify(want)} — the web ${key} selection was dropped or rewritten in composition (fork W silently degraded)`)
+  }
+}
+
+for (const line of results) console.log(line)
+process.exit(results.some((line) => line.startsWith('FAIL:')) ? 1 : 0)
+PROBE_FACE_EOF
+node --check "$COMPOSE_FACE_MJS" \
+  || fail "P6-T9: the composition-face checker this probe just wrote does not parse (heredoc truncated?)"
+
+COMPOSE_DUMP_OUT="$SANDBOX/compose-dump.yml"
+COMPOSE_DUMP_ERR="$SANDBOX/compose-dump.err"
+COMPOSE_BASE_PATCH="$DSH_NM/@deepseek-ai/dsh-base/cordis.patch.yml"
+[[ -f "$COMPOSE_BASE_PATCH" ]] \
+  || fail "P6-T9: the installed base bundle that supplies every expectation is missing ($COMPOSE_BASE_PATCH) — the edit/web legs have no source of truth to check against"
+dsh --profile "$PROFILE" --dump-config --patch ./cordis.yml --patch "$LLM_SEED_PATCH" \
+  >"$COMPOSE_DUMP_OUT" 2>"$COMPOSE_DUMP_ERR" \
+  || fail "P6-T9 --dump-config (the composition face of the edit/web legs) failed: $(cat "$COMPOSE_DUMP_ERR")"
+# FIX-T9-8. The stderr this command writes was captured and then never read, which
+# loses the one channel that names a silently-skipped patch row (`patch: entry
+# "<id>" not found`). The check cold-start.sh:125-127 runs is run here on the same
+# file for the same reason: an unmatched patch is loud or it is nothing. An empty
+# stderr is the normal state and passes.
+if grep -qE "not found|mismatch|failed" "$COMPOSE_DUMP_ERR"; then
+  fail "P6-T9 --dump-config wrote patch warnings on stderr: $(cat "$COMPOSE_DUMP_ERR")"
+fi
+[[ -s "$COMPOSE_DUMP_OUT" ]] \
+  || fail "P6-T9 --dump-config produced an empty tree — there is nothing to assert on, and an empty file must never read as composition success"
+
+COMPOSE_FACE_RESULTS="$(DUMP_PATH="$COMPOSE_DUMP_OUT" BASE_PATCH="$COMPOSE_BASE_PATCH" node "$COMPOSE_FACE_MJS")"
+COMPOSE_FACE_RC=$?
+printf '%s\n' "$COMPOSE_FACE_RESULTS" | sed 's/^/concerto-probe:   /'
+while IFS= read -r face_line; do
+  [[ "$face_line" == FAIL:* ]] || continue
+  fail "P6-T9 composition face ${face_line#FAIL: }"
+done <<<"$COMPOSE_FACE_RESULTS"
+[[ $COMPOSE_FACE_RC -eq 0 ]] \
+  || fail "P6-T9 composition-face checker exited $COMPOSE_FACE_RC with no FAIL line — it failed without naming what it found, which is the unlocalised red this shape exists to avoid"
+# FIX-T9-R4-2. This line and the final PASS banner both name the asserted absence, so a
+# reader of the log alone can tell an asserted fact from a narrated one.
+#
+# FIX-T9-R2-1. The backticks in this line are escaped on purpose. Inside these
+# double quotes an unescaped backtick is a COMMAND SUBSTITUTION: the first version of
+# this line ran `- id: web` and `web` as commands, deleted both identifiers from the
+# text it printed, and threw "command not found" on stderr every single run — and had a
+# command named `web` existed on PATH, this line would have executed it. Same convention
+# as the main PASS banner near the end of this file.
+echo "concerto-probe: P6-T9 composition-face PASS — edit (E-A) dsh-tool-fs and fork W dsh-tool-web rows LIVE under ${PRESET_ID:-preset-standard}'s plugin list, and the web provider selection LIVE on the host's own column-zero \`- id: web\` row (that row occurs exactly once, at column zero; the preset's live list holds no \`web\` row) — expectations derived from $COMPOSE_BASE_PATCH; the preset's lack of a \`web\` row is ASSERTED by web-face-absent-from-preset, not narrated"
+
 # boot_once <label> <expected-sync-outcome>: real boot, bounded; asserts the
 # plugin-side markers and the external roster, then SIGTERMs (exit 0).
 # Top-level, NOT local: the PASS banner at the bottom of this script names the
@@ -1262,6 +1790,22 @@ boot_once() {
   if grep -q '\[omo-team\] team surface .* FAILED' "$boot_log"; then
     fail "[$label] an omo-team registration FAILED at boot — see FAILED line above"
   fi
+  # P6-T5: the FIFTH cordis.yml insert row (omo-lsp) mounted, and its stdio LSP
+  # child SPOKE. Every row above has a plugin-side summary marker to grep; this
+  # one cannot, because the row is `failOnStartupError: false` — a dead LSP child
+  # is deliberately allowed to boot green, so the ONLY loud-absence signal for
+  # "the LSP row degraded silently" is the child's own stderr announcement,
+  # inherited into this boot log (@modelcontextprotocol/client/dist/stdio.mjs:76
+  # `stderr ?? "inherit"`). -F because the derived value carries `[` `]` regex
+  # metacharacters. The expectation is $EXPECTED_LSP_STARTING_MARKER, derived at
+  # probe start by awk out of vendor/lsp-core/src/cli.ts — NOT retyped here, so
+  # a reworded announcement moves this grep with it and a deleted one fails the
+  # derivation before this boot ever runs. scripts/cold-start.sh:215-223 greps
+  # the same line from a hand-copied prefix: the two readers agreeing on one
+  # shipped literal is the cross-check the constants module claims.
+  # Per-label, so it covers BOTH the normal boot and the idempotent re-boot.
+  grep -qF "$EXPECTED_LSP_STARTING_MARKER" "$boot_log" \
+    || fail "[$label] the omo-lsp stdio child (the FIFTH cordis.yml insert row, @deepseek-ai/dsh-mcp-client) never announced itself — the row degraded silently (failOnStartupError:false keeps the boot green); want the awk-derived announcement [$EXPECTED_LSP_STARTING_MARKER] from vendor/lsp-core/src/cli.ts in $boot_log"
   # P5-T10: the team PRESENCE face, run by the shared validator so this live
   # boot and the hermetic defect legs cannot drift apart. It pins (a) the
   # canonical trio BY NAME (team_create / team_send_message / team_status —
@@ -1551,7 +2095,7 @@ boot_once() {
     composition_source="FACE A / 0.1.5 materialized file (file discovery owns the composition)"
     echo "concerto-probe: [$label] $composition_source"
     grep -q "prefix: |-" "$materialized" \
-      || fail "[$label] materialized persona is not a `prefix: |-` block scalar"
+      || fail "[$label] materialized persona is not a \`prefix: |-\` block scalar"
     grep -q "      # Orchestrator Role" "$materialized" \
       || fail "[$label] materialized persona missing the Orchestrator Role section"
     grep -q "      # Delegation Discipline" "$materialized" \
@@ -1905,6 +2449,20 @@ boot_absent_once() {
   node "$ASSERT_TEAM_PROBE_FACE_MJS" absent "$boot_log" \
     || fail "[$label] P5-T10 team ABSENCE face failed — an absent omo-team must be LOUD and NAMED (validator output above)"
   echo "concerto-probe: [$label] P5-T10 absence face PASS — host named the inactive row, zero [omo-team] markers"
+  # P6-T5 PRESENCE leg on the THIRD boot too (ARBITRATION-r1 B-MINOR-3). The
+  # noteam profile installs only three plugins, and that is exactly why this leg
+  # belongs here: omo-lsp is the FIFTH cordis.yml insert row and is
+  # **dsh-bundled** (@deepseek-ai/dsh-mcp-client ships inside the installed dsh —
+  # there is NO `dsh plugin add` step for it to skip, unlike omo-team above). So
+  # removing plugins from the profile is not, by itself, a reason for the lsp row
+  # to go quiet: it must still mount and still announce over the same awk-derived
+  # marker. If this fails it is not a flake to be silenced — it would mean the
+  # bundled fifth row's mount depends on a sibling repo-published row being
+  # installed, a real composition fact nobody has measured, and the first place it
+  # would surface is this line.
+  grep -qF "$EXPECTED_LSP_STARTING_MARKER" "$boot_log" \
+    || fail "[$label] the omo-lsp stdio child went silent under the noteam profile — the FIFTH cordis.yml insert row is dsh-bundled (@deepseek-ai/dsh-mcp-client), needs NO install step, and should still mount and announce here even with omo-team deliberately absent; want the awk-derived announcement [$EXPECTED_LSP_STARTING_MARKER] from vendor/lsp-core/src/cli.ts in $boot_log"
+  echo "concerto-probe: [$label] P6-T5 omo-lsp PRESENCE leg PASS — the bundled fifth row announced with no install step of its own"
 }
 
 # P5-T10: hermetic defect legs BEFORE any spawn (drive.mjs runAnalysisSelfTest
@@ -1924,5 +2482,5 @@ boot_once again unchanged
 # fourth row fails LOUD and BY NAME, zero [omo-team] markers (canary).
 boot_absent_once
 
-echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (P4.5-T6 row vocabulary: the 0.2.x roster row is isDefault:false with trust/broken ABSENT over the {presets:[…]} roster RPC envelope, the 0.1.5 leg keeps its genuine trust:"user"; name from our preset.yml; the boot roster line prints concerto:broken=absent and NEVER the pre-T6 concerto:? placeholder, with an explicit EMPTY token if the roster read came back empty) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the composition ON THE ASSERTION FACE UNDER TEST — $LAST_COMPOSITION_SOURCE — and no __OMO_ residue on that face); omo-hooks mounted as the second insert row with the FULL $EXPECTED_HOOK_COUNT-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, $EXPECTED_HOOK_COUNT lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines, derived from the manifest's own ported rows — P4-T16 replaced the stale "at P4-T3 = 0 since all six rows are pending", which has been false since T6) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO \`skill … FAILED\` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the row on the assertion face under test, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and BOTH content faces derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row toolName/deny/allow/maxDepth checks generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH — TWO faces written separately with NO fallback between them: FACE A (0.1.5) verbatim line greps of the materialized file including its flow-sequence deny/allow pins, FACE B (0.2.x) the agentPresets/read document PARSED and compared ELEMENT-WISE against src/roster.ts, because content is a yaml.dump() of the parsed entry list where flow sequences expand to block sequences and redundant quotes drop); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS; omo-team mounted as the fourth insert row with its source-derived summary marker ($EXPECTED_TEAM_SUMMARY, $EXPECTED_TEAM_REGISTERED_COUNT registered team-surface lines) and NO FAILED / manifest-validation-FAILED line (both boots); P5-T10 team face TWO-WAY via scripts/assert-team-probe-face.mjs (defect-self-tested with 17 named legs BEFORE any spawn): PRESENCE on both normal boots — team_create/team_send_message/team_status registered lines BY NAME + the state machine's own boot answer line, its shape DERIVED from the shipped formatTeamBootResumeLine (five counters, exactly once, errors=0, no loud form); ABSENCE on the deliberate noteam boot — the host names the inactive fourth row LOUD (dsh: warning: 1 entry did not activate + omo-team (@oh-my-opendsh/omo-team): failed to import, the rc.2 measurement) with ZERO [omo-team] markers of any shape"
+echo "concerto-probe: PASS (dsh $(dsh --version)): 协奏模式 / Concerto Mode registered at roster level (P4.5-T6 row vocabulary: the 0.2.x roster row is isDefault:false with trust/broken ABSENT over the {presets:[…]} roster RPC envelope, the 0.1.5 leg keeps its genuine trust:"user"; name from our preset.yml; the boot roster line prints concerto:broken=absent and NEVER the pre-T6 concerto:? placeholder, with an explicit EMPTY token if the roster read came back empty) via apply-time authoring; observable over the web roster RPC (transport-adaptive T9: /api/agentPreset.list on rc.6, /api/agentPresets/list through the token-authenticated Typert Remote gateway on 0.1.2); persona = assembled omo-sisyphus system prompt (sentinel rendered, 3 section markers in the composition ON THE ASSERTION FACE UNDER TEST — $LAST_COMPOSITION_SOURCE — and no __OMO_ residue on that face); omo-hooks mounted as the second insert row with the FULL $EXPECTED_HOOK_COUNT-hook port roster registered at boot (source-derived summary marker + one registered marker per manifest row, $EXPECTED_HOOK_COUNT lines, with the src/hooks file set proven equal to the manifest id set, and NO hook FAILED / manifest-validation-FAILED line — both boots); omo-commands mounted as the third insert row with its source-derived summary marker ($EXPECTED_COMMANDS_SUMMARY, $EXPECTED_COMMANDS_REGISTERED_COUNT registered command lines, derived from the manifest's own ported rows — P4-T16 replaced the stale "at P4-T3 = 0 since all six rows are pending", which has been false since T6) and NO command FAILED / manifest-validation-FAILED line (both boots); omo-commands skills mounted as the third insert row's second mechanism with its source-derived summary marker ($EXPECTED_SKILLS_SUMMARY) and NO \`skill … FAILED\` line (both boots); hard-blocks injection listener registration observable at boot (agent/pre-step marker, both boots); omo-explore persona assembled at boot (1 section marker, both boots; subagent artifact — T11 binds it as the tool-subagent persona config); T14 dual routes resolved (sisyphus=$SISYPHUS_PROVIDER/$SISYPHUS_MODEL explore=$EXPLORE_PROVIDER/$EXPLORE_MODEL) with BOTH providers active in the provider directory (transport-adaptive T9: /api/llm.providers on rc.6, llm/listProviders joined with llm/listConfigurableProviders on 0.1.2); T11 explore delegation tool bound (toolName=explore, sentinels rendered, persona+route in the row on the assertion face under test, pre-declared toolFilter/maxDepth) and the row VALIDATED against the installed dsh-tool-subagent Config (eager run of the schema dsh applies lazily at session composition); T12+F1 toolFilter deny=roster-computed 12-name list (write/edit + all 10 delegation toolNames, roster order; the schema gate and BOTH content faces derive it from src/roster.ts, P2-T15 shape) PROVEN enforced via the real child-composition path (applyChildComposition → tools.restrict → child scope view excludes write/edit and every delegation tool, execution UNKNOWN_TOOL, read/grep/glob/shell retained, parent untouched); T13 maxDepth=$EXPLORE_MAXDEPTH (roster-derived; target-row semantics D-2026-09-13-01) PROVEN enforced via the real delegation start path (depth-1 parent's call PASSES the gate — the atlas(1) → worker(2) re-delegation path; depth-2 parent rejected on BOTH foreground and continuable starts with errored tool result "Error: subagent depth 3 exceeds maxDepth 2", tool stays visible at the cap, depth-0 control passes); P2-T20 roster boot contract (all $DELEGATION_COUNT 'persona assembled' lines from src/roster.ts; the ONE $ROSTER_SIZE-field route summary line in roster order; the three non-blocking warning forms ABSENT in the seeded sandbox with the summary line as non-vacuity guard; all $DISTINCT_PROVIDER_COUNT distinct route providers active:true over the transport-adaptive provider RPC; per-row toolName/deny/allow/maxDepth checks generalized from the P2-T15 explore pins, uniform roster maxDepth=$UNIFORM_MAXDEPTH — TWO faces written separately with NO fallback between them: FACE A (0.1.5) verbatim line greps of the materialized file including its flow-sequence deny/allow pins, FACE B (0.2.x) the agentPresets/read document PARSED and compared ELEMENT-WISE against src/roster.ts, because content is a yaml.dump() of the parsed entry list where flow sequences expand to block sequences and redundant quotes drop); idempotent re-boot confirmed; omo-hooks plugin mounted (second cordis.yml insert row) with its manifest summary boot marker AND its per-hook registered markers matching the plugin's own manifest.ts + boot-markers.ts + src/hooks file set (P3-T3/P3-T5); omo-commands plugin mounted (third cordis.yml insert row, P4-T3) with its summary boot marker and per-command registered markers matching the plugin's own manifest.ts + boot-markers.ts + COMMAND_REGISTRARS; omo-team mounted as the fourth insert row with its source-derived summary marker ($EXPECTED_TEAM_SUMMARY, $EXPECTED_TEAM_REGISTERED_COUNT registered team-surface lines) and NO FAILED / manifest-validation-FAILED line (both boots); omo-lsp mounted as the FIFTH cordis.yml insert row (the dsh-bundled @deepseek-ai/dsh-mcp-client, no install step, \`failOnStartupError:false\` so a dead LSP child cannot fail this boot) — its mount proof is therefore the stdio child's OWN stderr announcement, grepped as the awk-derived full value $EXPECTED_LSP_STARTING_MARKER read straight out of patches/omo-dsh/vendor/lsp-core/src/cli.ts (P6-T5: the same four steps tests/e2e/fixtures/lsp-double-constants.mjs's deriveLspMcpStartingMarker performs in JS, run here by an INDEPENDENT awk reader over one shipped literal, both values printed above so the cross-check is auditable; scripts/cold-start.sh:215-223 is the third reader, hand-copied prefix), present in ALL THREE boots (normal + re-boot + noteam — the third is the one that proves the dsh-bundled fifth row needs no installed sibling); P5-T10 team face TWO-WAY via scripts/assert-team-probe-face.mjs (defect-self-tested with 17 named legs BEFORE any spawn): PRESENCE on both normal boots — team_create/team_send_message/team_status registered lines BY NAME + the state machine's own boot answer line, its shape DERIVED from the shipped formatTeamBootResumeLine (five counters, exactly once, errors=0, no loud form); ABSENCE on the deliberate noteam boot — the host names the inactive fourth row LOUD (dsh: warning: 1 entry did not activate + omo-team (@oh-my-opendsh/omo-team): failed to import, the rc.2 measurement) with ZERO [omo-team] markers of any shape; P6-T9 COMPOSITION FACE (no spawn, the same two patches the boot uses) — the EDIT face fork (E-A) \`dsh-tool-fs\` and the WEB face fork W \`dsh-tool-web\` rows are each present AND LIVE under preset-standard’s plugin list — not a top-level \`disabled: true\` placeholder, which composition adds to those top-level rows and which bare presence would have waved through — and the web provider selection (searchProvider/fetchProvider) is asserted on the HOST'S OWN column-zero \`- id: web\` row, because that row occurs exactly once at column zero and preset-standard’s live plugin list holds no \`web\` row at any indent, measured on the composed dump; every expectation derived at run time from $COMPOSE_BASE_PATCH and every check printed; and the ast-grep face (G) recorded as three sub-faces with three owners: G1 registration via the derived $EXPECTED_HOOK_COUNT hook roster, G2 the ast-grep skill via $EXPECTED_SKILLS_SUMMARY, G3 the provision path EXPLICITLY NOT asserted here because neither this probe nor cold-start.sh creates a session; and the EDIT/WEB legs are read off the composed tree with their load-bearing absences ASSERTED by name — web-face-absent-from-preset counts \`- id: web\` at any indent inside preset-standard's live plugin list, and every live-row check rejects a row carrying its own \`disabled:\` key"
 exit 0
