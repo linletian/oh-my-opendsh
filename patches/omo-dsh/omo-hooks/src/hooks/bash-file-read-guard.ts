@@ -25,9 +25,12 @@
 //     the advisory reaches the model's NEXT request
 //     (dsh-agent-loop/lib/index.js:578).
 //   * Advisory text. Upstream's second clause — "and hash anchors" — is
-//     dropped: DSH's read tool has no hashline anchors (whether to add one is
-//     a Phase 6 hashline-edit decision, plan §4.4). The port therefore promises
-//     only what DSH's read tool actually provides: line numbers.
+//     dropped: DSH's read tool has no hashline anchors, and none is coming —
+//     the Phase 6 hashline-edit decision (the A/B editing-model bench, plan
+//     §4.3) is RULED (2026-10-13): fork E = (E-A) per decision D19 — adopt
+//     the DSH native editing face, hashline NOT ported (reopening triggers
+//     registered in D19). The port therefore promises only what DSH's read
+//     tool actually provides: line numbers.
 //   * Tool name. Upstream lowercases an opencode-supplied tool id before
 //     comparing to "bash"; DSH's tool registry already names the bash tool the
 //     canonical lowercase `bash` (dsh-tool-bash/lib/index.js:260, and the

@@ -1,0 +1,10 @@
+P6-T5 reverse-canary probe document.
+
+Its extension `.dbl` is claimed by NO builtin server (patches/omo-dsh/vendor/
+lsp-core/src/lsp/server-definitions.ts:54-160 owns no `.dbl`), so the only row
+that can answer a tool call against this file is the scenario's own user-config
+row — the one whose command names a binary that cannot exist
+(`lsp-double-not-installed-binary`). The call therefore has exactly one honest
+way to come back: the engine's NAMED missing-dependency result.
+
+This file is a document, not code. It is never executed.

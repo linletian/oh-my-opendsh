@@ -103,7 +103,7 @@ OMO is a battle-tested harness with over a year of production use. Its design ph
 - `dsh-tool-todo` → OMO Todo Enforcer (`packages/todo/*`)
 - `dsh-subagent` + `dsh-subagent-fork-in-process` + `dsh-subagent-spawn-in-process` + `dsh-tool-subagent*` → OMO Team Mode (`packages/subagent/*`, including `subagent-acp` / `subagent-codex` / `subagent-claude-code` / `subagent-dsh-sdk`)
 - `dsh-terminal` + `dsh-tool-terminal` + `dsh-bash-local` → OMO tmux + bash integration (`packages/terminal/*`)
-- `dsh-lsp` + `dsh-lsp-stdio` + `dsh-tool-lsp` → OMO LSP (`packages/lsp/*`)
+- `dsh-lsp` + `dsh-lsp-stdio` + `dsh-tool-lsp` → OMO LSP (`packages/lsp/*`) — **【implementation-time correction (P6-T1, measured)】**: `dsh-lsp` / `dsh-lsp-stdio` / `dsh-tool-lsp` **do not exist in the install tree** (verified first-hand against this machine's dsh 0.2.0-rc.2 tree; none of the three has a directory); the actual mount is **`dsh-mcp-client` + vendored `lsp-core`** (fork L = (L-B), D20, via the 5th cordis.yml insert row `omo-lsp`). The original line is kept as the research-stage proposal, not deleted.
 - `dsh-fs` + `dsh-fs-local` + `dsh-fs-sandbox` + `dsh-fs-observation-policy` + `dsh-tool-fs` + `dsh-tool-str-replace-editor` + `dsh-tool-fs-search` → OMO filesystem tools (`packages/fs/*`; `str-replace-editor` directly corresponds to the hashline position)
 - `dsh-shell` + `dsh-shell-env` + `dsh-bash-sandbox` + `dsh-pwsh-sandbox` + `dsh-tool-bash` + `dsh-tool-pwsh` → OMO bash tools (`packages/shell/*`; note OMO has a dedicated `git-bash-mcp` for Windows)
 - `dsh-sandbox-local` + `dsh-sandbox-policy` + `dsh-user-approval` + `dsh-permission-presets` → OMO approval
@@ -216,7 +216,7 @@ The table above (§1.2) already maps every hook module to DSH's event system. Ke
 | `ast-grep-mcp` | Use `dsh-mcp-client` to mount stdio process directly |
 | `git-bash-mcp` | Same as above |
 | `codegraph` | Same as above |
-| `exa` / `context7` / `grep_app` (web) | `dsh-web-search-exa` equivalent + `dsh-web` |
+| `exa` / `context7` / `grep_app` (web) | `dsh-web-search-exa` equivalent + `dsh-web` — **【implementation-time correction (P6-T1, measured)】**: `dsh-web-search-exa` is named in this report but **absent from the implementation** (verified first-hand: no such package in the install tree, and `dsh-web-search-perplexity` from the same list is absent too); the shipped shape is **`dsh-web-search-deepseek` + `dsh-web` + `dsh-web-fetch-http` + `dsh-tool-web`** (T8 native-adopt: deepseek search backend + http fetch + the model-facing tool; no fork on the web face — `FORKS.md` §4). exa / context7 / grep_app = **recorded-difference**, **with the gap named**: context7's library-documentation resolution (`resolve-library-id` / `query-docs`) and grep_app's GitHub code search are **not** a strict subset of general web search. |
 
 **Assessment: All MCPs ported.** OMO already has `mcp-stdio-core` and `mcp-client-core`, which stack with DSH's mcp packages with near-zero friction.
 

@@ -1,0 +1,7 @@
+{
+  "name": "@oh-my-opendsh/fixture-lsp-double-project",
+  "version": "0.0.0",
+  "private": true,
+  "description": "P6-T5 e2e fixture workspace for the hermetic LSP double. The package.json exists so the vendored engine's findWorkspaceRoot (patches/omo-dsh/vendor/lsp-core/src/lsp/client-wrapper.ts:23 WORKSPACE_MARKERS) stops at THIS directory — it is the LSP rootUri / root the double is spawned against, and it keeps the fixture out of the repo's own workspace (pnpm-workspace.yaml globs only patches/omo-dsh/* and patches/omo-dsh/vendor/*).",
+  "license": "MIT OR SUL-1.0"
+}

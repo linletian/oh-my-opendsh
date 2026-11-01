@@ -86,6 +86,7 @@
       - **Background Tasks**: Polling `background_output` on running tasks - end response and wait for notification
       - **Delegation Duplication**: Delegating exploration to explore/librarian and then manually doing the same search yourself
       - **Oracle**: Delivering answer without collecting Oracle results
+      - **Over-Broad Replace**: reaching for `replace_all` after an ambiguous-match refusal — widen `old_string` to the one site you mean; if the instruction names no occurrence, choose it from the instruction's own context and **report** which site you chose; never replace the whole span
     # Upstream parity (0.1.5-rc.1 standard). A preset persona row shadows the
     # deployment SUFFIX as well as the prefix (dsh-persona registers both
     # sections), so omitting this drops the cwd line the deployment would
@@ -272,6 +273,7 @@
           - **Background Tasks**: Polling `background_output` on running tasks - end response and wait for notification
           - **Delegation Duplication**: Delegating exploration to explore/librarian and then manually doing the same search yourself
           - **Oracle**: Delivering answer without collecting Oracle results
+          - **Over-Broad Replace**: reaching for `replace_all` after an ambiguous-match refusal — widen `old_string` to the one site you mean; if the instruction names no occurrence, choose it from the instruction's own context and **report** which site you chose; never replace the whole span
         agentOptions:
           provider: deepseek
           model: deepseek-flash

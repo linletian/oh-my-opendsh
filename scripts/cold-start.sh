@@ -4,12 +4,16 @@
 # (P4-T3) and the omo-team plugin (P5-T3). Creates a throwaway sandbox with
 # HOME / XDG_CONFIG_HOME / DSH_HOME / DSH_AGENTS_HOME redirected
 # into it (the developer's real ~/.dsh and ~/.config
-# are never touched), installs ALL FOUR packages into a fresh web profile (the
-# root cordis.yml inserts one row per package — see its header), boots
+# are never touched), installs the FOUR @oh-my-opendsh packages into a fresh web
+# profile (the
+# root cordis.yml inserts one row per package — see its header; the FIFTH row
+# omo-lsp mounts the dsh-bundled @deepseek-ai/dsh-mcp-client and needs NO
+# profile install), boots
 # `dsh --profile web --patch ./cordis.yml`, waits for the readiness line,
 # terminates with SIGTERM, and greps the captured log for the load markers
 # (`[omo-agents] loaded` / `[omo-hooks] loaded` / `[omo-commands] loaded` /
-# `[omo-team] loaded` / `[omo-commands] skills:`) and for plugin load errors.
+# `[omo-team] loaded` / `[omo-commands] skills:` / `[lsp-mcp] stdio server
+# starting`) and for plugin load errors.
 # Exits 0 only if every check is clean.
 #
 # Learned flags (P-8): `--profile <name>` is required; `--patch` is a ROOT
@@ -54,12 +58,17 @@ echo "cold-start: sandbox: $SANDBOX"
 echo "cold-start: dsh binary: $(command -v dsh)"
 dsh --version || fail "dsh --version failed"
 
-# Stage 0: fresh profile + install ALL FOUR plugins into it (forwards to pnpm
+# Stage 0: fresh profile + install the FOUR @oh-my-opendsh plugins into it
+# (forwards to pnpm
 # in the sandbox profile dir; writes stay inside the sandbox). Four `plugin
 # add` calls (two since P3-T3, the third added by P4-T3, the fourth by P5-T3):
 # the cordis.yml overlay
 # carries one insert row per package, so a profile missing any one of them cannot
-# compose the overlay at all — the boot fails naming THAT package's row.
+# compose the overlay at all — the boot fails naming THAT package's row. The
+# FIFTH row (P6-T4, omo-lsp) is deliberately NOT installed here: its plugin is
+# dsh-bundled and resolves from the installed dsh (probe-proven —
+# .omo/evidence/p6t1/mcp-client-probe/run.sh installs exactly ONE non-bundled
+# plugin and the mcp-client rows boot anyway). FOUR installs stays the number.
 echo "cold-start: installing @oh-my-opendsh/omo-agents into sandbox profile '$PROFILE'"
 timeout "$INSTALL_TIMEOUT_S" dsh plugin --profile "$PROFILE" add \
   "$REPO_ROOT/patches/omo-dsh/omo-agents" >"$ADD_LOG" 2>&1 \
@@ -96,6 +105,12 @@ grep -q "name: '@oh-my-opendsh/omo-commands'" "$DUMP_OUT" \
 # resolves (same two halves: composition here, boot marker below).
 grep -q "name: '@oh-my-opendsh/omo-team'" "$DUMP_OUT" \
   || fail "composed tree does not contain the omo-team row (patch silently skipped?)"
+# P6-T4: and the FIFTH — the vendored LSP engine's mount. Different in kind:
+# the row names the dsh-BUNDLED @deepseek-ai/dsh-mcp-client (no profile
+# install), so this grep is the composition proof that the bundled row lands
+# (the runtime half is the face-probe, .omo/evidence/p6t4/face-probe/).
+grep -q "name: '@deepseek-ai/dsh-mcp-client'" "$DUMP_OUT" \
+  || fail "composed tree does not contain the omo-lsp dsh-mcp-client row (patch silently skipped?)"
 # T14: both built-in LLM adapters our dual routing depends on (Q-3) must be
 # part of the composed tree — the composition-level half of the adapter gate
 # (the runtime-registration half lives in scripts/concerto-mode-probe.sh).
@@ -197,6 +212,15 @@ grep -q "\[omo-team\] loaded" "$BOOT_LOG" \
 # the plugin's own modules).
 grep -q "\[omo-commands\] skills:" "$BOOT_LOG" \
   || fail "omo-commands skills marker missing from boot log (skill sweep never ran?)"
+# P6-T4: the omo-lsp row's RUNTIME half. failOnStartupError:false keeps a dead
+# LSP child from failing the boot, so the child's own stderr announcement is
+# the only loud-absence signal on this channel: the vendored
+# patches/omo-dsh/vendor/lsp-core/src/cli.ts writes `[lsp-mcp] stdio server
+# starting pid=<pid>` to stderr, and the stdio child inherits its stderr into
+# $BOOT_LOG (measured in two independent cold-start runs: pid=2082718,
+# pid=2124375). No marker = the row degraded silently = FAIL here.
+grep -q '\[lsp-mcp\] stdio server starting' "$BOOT_LOG" \
+  || fail "the omo-lsp stdio child never announced itself — the LSP row degraded silently (failOnStartupError:false)"
 
 # Negative signal: no plugin load errors anywhere in the log.
 # NB: the generic words error/fatal/failed are scoped to plugin context

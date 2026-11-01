@@ -2,6 +2,67 @@
 
 ## Unreleased
 
+### Phase 6 close-up (P6-T10, 2026-10) — four legs landed under three fork rulings + bilingual doc parity + coverage baseline at final state
+
+- **Goal**: the four Phase 6 legs — LSP, ast-grep, web search/fetch, and the editing model — each
+  reaching the exit criterion "every selected capability is really used by an agent in a scripted
+  scenario", not merely present in a tree.
+- **Fork rulings**: **E = (E-A)** native `dsh-tool-fs` edit, hashline tool face NOT ported and
+  `hashline-core` left vendored-unconsumed (D19, settled on a mandated A/B evidence bench with
+  silent mis-write 0/0 on both arms); **L = (L-B) narrowed**, `lsp-core` + `mcp-stdio-core`
+  vendored and mounted over stdio through the dsh-bundled `dsh-mcp-client` as the 5th cordis.yml
+  insert row `omo-lsp` (D20 — `dsh-lsp`/`dsh-lsp-stdio`/`dsh-tool-lsp` do not exist in the install
+  tree, so native-first was checked against an empty set); **G = (G-A) single landing**, the
+  `ast-grep-sg-provision` hook plus a 6-file `src/ast-grep/` provisioning layer (D21), with the MCP
+  overlay (G-B) recorded as a "future consideration" difference whose burden of proof sits on the
+  overlay. Every rejected arm is written down, not just the chosen one: (E-B), (L-A), (L-C), (G-B).
+- **Landed**: the two vendored packages with the extension-wall rewrite and five-face mechanical
+  proof; the ast-grep hook + provisioning layer with a sha256 pin at 0.43.0 (four slugs verbatim),
+  the resolver's three gates (`OMO_AST_GREP_SG_PATH` → runtimeDir → PATH, `ast-grep` before `sg`,
+  bare `sg` accepted only when its own `--version` proves it is ast-grep), a LOUD named failure
+  marker that never breaks a session or a boot, the D9 Windows subtraction item by item, and
+  `whichOnPath` inlined after deleting the `Bun.which` fast path; web search/fetch as DSH
+  native-adopt (`dsh-web-search-deepseek` + `dsh-web` + `dsh-web-fetch-http` + `dsh-tool-web`).
+- **test(e2e)**: two LSP scenarios — `lsp-definition-double-roundtrip` (the double answers definition
+  AND diagnostics, canned bytes riding two processes back into the session log) and
+  `lsp-missing-server-named-failure`; two ast-grep scenarios — `ast-grep-sg-via-bash` (matched bytes
+  riding into the session log for three independent readers) and `ast-grep-sg-absent-named-failure`
+  (PATH neutralised so the miss is exit 127 identically on every host); three web scenarios —
+  `web-search-fetch-roundtrip` (canned sources through the provider into the session log),
+  `web-search-credential-missing` and `web-search-endpoint-unreachable` (the two honest shapes: no
+  key, no backend — each named rather than silently skipped).
+  Gate 3 stands at **48/48** scenarios, 0 skipped, 0 red.
+- **chore(hermetic)**: e2e and CI short-circuit the provisioning resolver with a committed
+  `tests/e2e/fixtures/fake-sg.sh` exported as a **global floor** from `drive.mjs`'s `scenarioEnv`,
+  mirrored by `??=` in `smoke-real.mjs`. Measured before the seal: **every** boot downloaded 8.1 MB
+  from GitHub, `.partial` artefact reproduced twice — a test suite that reaches the network on each
+  boot is not a test suite, it is a download with assertions attached.
+- **docs**: D21 registered bilingually; ROADMAP's **Phase 6 goal line** corrected twice over, in two
+  different segments of the same sentence — **F-1 in the LSP segment** (the mount goes through
+  `dsh-mcp-client`, not a `dsh-lsp` package that does not exist; already changed at P6-T4, not here) and
+  **F-2 in the ast-grep segment** (upstream's "living direction" is the *optionality* of an MCP-shaped
+  lift, not a requirement; this round); the feasibility
+  report gains implementation-time corrections on its LSP and web mapping rows, historical lines kept
+  with the correction beside them rather than erased; README and CHANGELOG carry the Phase 6 status
+  in both languages; THIRD_PARTY_NOTICES reconciled to final state and the **two license paths are
+  listed separately** — `@oh-my-opencode/*` on `SUL-1.0` released by the D16 name gate, the two e2e
+  fixture workspaces on the name-blind `MIT` token, where `SUL-1.0` alone would score a violation.
+- **Licenses**: `checked` 61 → **66** with 0 violations, every step accounted — +3 at P6-T4
+  (`lsp-core`, `mcp-stdio-core`, and `bun-types@1.3.12`, which rides in as a devDependency of the
+  vendored `mcp-stdio-core` rather than as a vendored directory), +1 at the P6-T5+T6 commit, +1 at
+  P6-T7.
+- **Reviews**: each leg passed its dual-review rounds, with the rejecting rounds preserved in the
+  ledgers — the ast-grep **hook + provisioning layer (the T5+T6 flow)** took two B REJECTs before it
+  passed (R1: every boot really downloaded 8.1 MB, the origin of the hermetic seal; R2: c29's barrel arm
+  was textually bypassable), clearing at R3/R4 with dual APPROVE; the ast-grep **e2e scenarios (the T7
+  flow)** took two further B REJECTs of its own (R2: the fix face; R3: a named throw outside runScenario's
+  try crashed the whole round and lost the accumulated adjudication), clearing at R4; and the
+  composition-face probe ran five rounds, the last four of which corrected claims this project had written down
+  too confidently.
+- **References**: plan / tasks / coverage baseline in [`docs/plans/phase6-dev/`](./docs/plans/phase6-dev/);
+  rulings in `.omo/evidence/p6t1/FORKS.md`; decisions D19 / D20 / D21 in
+  [`docs/decisions.md`](./docs/decisions.md).
+
 ### Phase 5 close-up (P5-T15, 2026-10) — weak-form settle pins + doctor-lite mutation evidence + notices truth
 
 - test(e2e): `settleReachedChildren` — the weak form `settleReached !== false` (pre-existing since

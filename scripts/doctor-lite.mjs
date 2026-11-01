@@ -19,8 +19,11 @@
 //                      `insert:` downgrade the check to WARN).
 //   2b. cordis-plugins cordis.yml inserts EXACTLY the plugin rows P3-T3 names
 //                      (EXPECTED_INSERT_ROW_IDS: omo-agents, then omo-hooks, then
-//                      omo-commands since P4-T3 — in mount order), the fact every
-//                      sandbox boot site installs a package for. A dropped /
+//                      omo-commands since P4-T3, omo-team since P5-T3, omo-lsp
+//                      since P6-T4 — in mount order), the fact every
+//                      sandbox boot site installs a package for (the omo-lsp row's
+//                      plugin is dsh-bundled — no profile install; probe-proven).
+//                      A dropped /
 //                      renamed / reordered / extra plugin row fails here instead
 //                      of surfacing as a plugin that silently never mounted.
 //                      Skipped when check 2 could
@@ -76,6 +79,7 @@ import {
   analyzePatchEntries,
   collectInsertRowIds,
   delegationRowContractProblems,
+  DSH_BUNDLED_INSERT_ROW_NAMES,
   EXPECTED_INSERT_ROW_IDS,
   expectedDelegationRowContract,
   findRowsById,
@@ -294,12 +298,13 @@ async function checkCordis(cordisPath) {
   )
 }
 
-// ── check 2b: cordis.yml mounts exactly the four plugin rows (P3-T3; P4-T3 +1; P5-T3 +1)
+// ── check 2b: cordis.yml mounts exactly the five plugin rows (P3-T3; P4-T3 +1; P5-T3 +1; P6-T4 +1)
 
 /**
  * P3-T3's mount assertion: the patch overlay must insert exactly the plugin
  * rows EXPECTED_INSERT_ROW_IDS names (two at P3-T3, three since P4-T3 mounted
- * omo-commands, four since P5-T3 mounted omo-team), in mount order. The COUNT
+ * omo-commands, four since P5-T3 mounted omo-team, five since P6-T4 mounted
+ * omo-lsp), in mount order. The COUNT
  * is never restated here — it comes from the shared constant, which
  * scripts/verify-concerto-static.mjs's c11 also reads. A NEW check rather than
  * more conditions inside check 2: check 2 owns the P-8 parse question ("does
@@ -355,8 +360,10 @@ async function checkCordisPlugins(cordisPath, check1, check2) {
       `cordis.yml inserts ${observed.length} plugin row${observed.length === 1 ? '' : 's'} [${observed.join(', ')}] — expected exactly ${expected.length} in mount order [${expected.join(', ')}]`,
       [
         'the root overlay mounts @oh-my-opendsh/omo-agents, then @oh-my-opendsh/omo-hooks '
-        + '(P3-T3), then @oh-my-opendsh/omo-commands (P4-T3); '
-        + 'each row needs its own `dsh plugin --profile web add <dir>` at every sandbox boot site',
+        + '(P3-T3), then @oh-my-opendsh/omo-commands (P4-T3); each of those needs its own '
+        + '`dsh plugin --profile web add <dir>` at every sandbox boot site '
+        + '(omo-team since P5-T3 likewise; omo-lsp since P6-T4 mounts the dsh-bundled '
+        + '@deepseek-ai/dsh-mcp-client and needs NO profile install)',
       ],
     )
   }
@@ -573,6 +580,23 @@ async function validateCompositionRows(nm, rows, imp) {
  * its `Config` export disappears, this check reddens — the schema is a mount
  * contract, not a comment. The default it validates to is READ off the
  * schema (`new Config({}).maxMembers`), never restated here.
+ *
+ * P6-T4 adds the DECLARED-EXCEPTION arm for the dsh-bundled rows (the rows
+ * the name filter above excludes by construction): every row whose id is a
+ * key of doctor-lite-core's `DSH_BUNDLED_INSERT_ROW_NAMES` (omo-lsp →
+ * @deepseek-ai/dsh-mcp-client) has its config validated against the
+ * INSTALLED plugin's own `Config` schema — resolved from the installed dsh's
+ * node_modules exactly like `validateCompositionRows` does. Before this arm
+ * the omo-lsp row's config was validated by NOTHING (review MINOR-3): a
+ * config typo booted with failOnStartupError:false and lost the LSP face
+ * silently. The exception is data, not a relaxed rule — the row's name must
+ * equal the declared one, the schema must exist, and a key naming no mounted
+ * row fails (the map is checked bidirectionally, review NIT-2). The `!!js`
+ * nodes are interpolated first with the installed cordis loader's OWN
+ * `interpolate(ctx, config)` (cordis-plugin-loader's `internal/config` hook)
+ * — the raw `{__jsExpr}` scalars are not what the mounted plugin receives,
+ * so validating them raw would be a false alarm, and validating nothing was
+ * the hole this arm closes.
  */
 const REPO_ROWS_WITH_SCHEMA = ['omo-team']
 // v1 carries no row config, by ruling: omo-agents' config face is the roster
@@ -583,7 +607,7 @@ const REPO_ROWS_WITH_SCHEMA = ['omo-team']
 // absence it expects).
 const REPO_ROWS_NO_SCHEMA = ['omo-agents', 'omo-hooks', 'omo-commands']
 
-async function validateRepoPluginRows(yaml) {
+async function validateRepoPluginRows(yaml, nm) {
   const failures = []
   const checked = []
   const noSchema = []
@@ -659,6 +683,71 @@ async function validateRepoPluginRows(yaml) {
       checked.push(`${id}(maxMembers=${JSON.stringify(validated.maxMembers ?? null)})`)
     } catch (error) {
       failures.push(`${id}: ${error.name ?? 'Error'}: ${String(error.message ?? error).slice(0, 240)}`)
+    }
+  }
+  // P6-T4 declared-exception arm (review MINOR-3): the dsh-bundled rows the
+  // @oh-my-opendsh/* name filter above cannot see. Same constructor-validation
+  // contract, but the package resolves from the INSTALLED dsh (resolvePluginEntry
+  // + imp — the face checkSubagentConfig already uses), and the `!!js` scalars
+  // are interpolated first with the installed cordis loader's OWN interpolate
+  // (the internal/config hook: the raw {__jsExpr} nodes are not what the
+  // mounted plugin receives). Exception = data, not a relaxed rule: an
+  // undeclared row name, a missing schema, and a map key that names no
+  // mounted row (NIT-2, bidirectional) all FAIL here.
+  const bundledRows = flat.filter(
+    (row) => typeof row?.id === 'string' && DSH_BUNDLED_INSERT_ROW_NAMES[row.id] !== undefined,
+  )
+  const bundledSeen = new Set()
+  if (bundledRows.length > 0) {
+    let interpolate
+    try {
+      ;({ interpolate } = await imp(nm, '@deepseek-ai/cordis-plugin-loader/lib/index.js'))
+    } catch (error) {
+      failures.push(`dsh-bundled arm: cordis-plugin-loader import failed — ${String(error.message ?? error).slice(0, 160)}`)
+    }
+    for (const row of bundledRows) {
+      const id = String(row.id)
+      const declaredName = DSH_BUNDLED_INSERT_ROW_NAMES[id]
+      bundledSeen.add(id)
+      if (row.name !== declaredName) {
+        failures.push(`${id}: declared dsh-bundled as '${declaredName}', the row names ${JSON.stringify(row.name)} — the exception is data, an undeclared name fails`)
+        continue
+      }
+      if (typeof interpolate !== 'function') {
+        failures.push(`${id}: cannot interpolate its !!js config — the cordis-plugin-loader import above failed`)
+        continue
+      }
+      const relative = resolvePluginEntry(nm, declaredName)
+      if (relative === null) {
+        failures.push(`${id}: '${declaredName}' does not resolve in the installed dsh node_modules — its Config cannot be checked`)
+        continue
+      }
+      let mod
+      try {
+        mod = await imp(nm, join(declaredName.startsWith('@') ? declaredName.split('/').slice(0, 2).join('/') : declaredName.split('/')[0], relative))
+      } catch (error) {
+        failures.push(`${id}: import of '${declaredName}' failed — ${String(error.message ?? error).slice(0, 160)}`)
+        continue
+      }
+      const Schema = mod.Config ?? mod.default?.Config
+      if (typeof Schema !== 'function') {
+        failures.push(`${id}: '${declaredName}' exports no Config schema — the declared exception assumed the runtime's own validator exists`)
+        continue
+      }
+      try {
+        // Identity is READ off the validated config, never restated here.
+        const validated = new Schema(interpolate({}, row.config ?? {}))
+        checked.push(`${id}(serverName=${JSON.stringify(validated.serverName ?? null)})`)
+      } catch (error) {
+        failures.push(`${id}: ${error.name ?? 'Error'}: ${String(error.message ?? error).slice(0, 240)}`)
+      }
+    }
+  }
+  // NIT-2: DSH_BUNDLED_INSERT_ROW_NAMES is honoured in BOTH directions — a
+  // key that names no mounted row is stale exception data and fails loudly.
+  for (const requiredId of Object.keys(DSH_BUNDLED_INSERT_ROW_NAMES)) {
+    if (!bundledSeen.has(requiredId)) {
+      failures.push(`${requiredId}: declared dsh-bundled (DSH_BUNDLED_INSERT_ROW_NAMES) but cordis.yml mounts no row with this id — the exception names nothing`)
     }
   }
   for (const requiredId of REPO_ROWS_WITH_SCHEMA) {
@@ -749,9 +838,11 @@ async function checkSubagentConfig(check1) {
     // P5-T14 (门 4): the repo's OWN plugin rows (root cordis.yml) ride the
     // same validated face — omo-team's exported Config is constructed here with
     // the row's config (absent → defaults), the three sibling packages are
-    // held to their declared no-schema ruling. See validateRepoPluginRows'
-    // header for the two-arm contract it exercises.
-    const repoSweep = await validateRepoPluginRows(yaml)
+    // held to their declared no-schema ruling, and since P6-T4 the declared
+    // dsh-bundled exception rows (omo-lsp) are validated against the
+    // INSTALLED plugin's own Config. See validateRepoPluginRows' header for
+    // the arms it exercises.
+    const repoSweep = await validateRepoPluginRows(yaml, nm)
     if (repoSweep.failures.length > 0) {
       return check(
         'subagent-config',
@@ -884,8 +975,10 @@ async function checkSubagentConfig(check1) {
           : `; unchecked (package exports no Config schema): ${sweep.unchecked.join(', ')}`)
         + (sweep.skipped.length === 0 ? '' : `; skipped: ${sweep.skipped.join(', ')}`)
         // P5-T14: the repo-overlay half of this check's evidence — validated
-        // plugin rows (omo-team, with the default READ off its schema) and
-        // the declared no-schema siblings, both derived from the sweep, no
+        // plugin rows (omo-team, with the default READ off its schema; since
+        // P6-T4 also the declared dsh-bundled omo-lsp row, serverName READ
+        // off the installed mcp-client's validated Config) and
+        // the declared no-schema siblings, all derived from the sweep, no
         // hand-copied counts.
         + `; repo plugin rows (root cordis.yml): validated=${repoSweep.checked.join(',') || 'none'} no-schema-by-declaration=${repoSweep.noSchema.join(',') || 'none'}`,
       sweep.unchecked.length === 0

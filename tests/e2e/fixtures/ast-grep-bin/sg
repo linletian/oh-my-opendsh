@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+// sg — the executable NAME, and nothing but a name.
+//
+// WHY THIS FILE EXISTS (the mandate's "make the bare name resolvable" choice,
+// recorded here so the next reader does not dissolve it into the .mjs):
+// the ast-grep skill teaches the agent to call BARE `sg` — that is the whole
+// interface the skill promises, so a scenario that invoked `node <path>.mjs`
+// would be testing a command nobody was told to type. `PATH` therefore gets
+// `tests/e2e/fixtures/ast-grep-bin` prepended, and this file is what resolves
+// there. It holds NO logic: one dynamic import of the real body. Logic lives in
+// ../ast-grep-fake-sg.mjs, which is also what `OMO_AST_GREP_SG_PATH` points at
+// for the hook's resolver gate ① — one implementation, two entry names, so the
+// hook's face and the agent's face cannot drift apart.
+//
+// chmod 755 is load-bearing (the resolver's gate ① requires an executable,
+// non-empty file), and `fake-sg.sh`'s mode is the committed precedent.
+import('../ast-grep-fake-sg.mjs').then((double) => {
+  process.exitCode = double.main(process.argv.slice(2))
+}, (error) => {
+  process.stderr.write(`[ast-grep-bin/sg] the double it points at did not load: ${error?.stack ?? error}\n`)
+  process.exitCode = 78
+})

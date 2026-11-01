@@ -1,0 +1,7 @@
+{
+  "name": "@oh-my-opendsh/fixture-ast-grep-project",
+  "version": "0.0.0",
+  "private": true,
+  "description": "P6-T7 e2e fixture workspace for the ast-grep structural-search scenario. The scenario COPIES this directory into its sandbox and runs the hermetic `sg` there, so the committed originals are never a write target. This package.json exists for two reasons: it marks the copied directory as the project root the search is pointed at (`.`), and it carries a license field so scripts/verify-licenses.mjs — which walks every in-repo package.json — scores this manifest instead of flagging it (the same shape as lsp-double-project/package.json; gate 5's lesson is on record).",
+  "license": "MIT OR SUL-1.0"
+}

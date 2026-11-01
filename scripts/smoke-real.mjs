@@ -159,12 +159,15 @@ const { DELEGATION_TOOL_NAMES, ROSTER } = await import(
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-agents')
-// P3-T3/P4-T3/P5-T3: the root cordis.yml inserts one row per package (omo-agents +
+// P3-T3/P4-T3/P5-T3: the root cordis.yml inserts one row per @oh-my-opendsh
+// package (omo-agents +
 // omo-hooks + omo-commands since P4-T3, plus omo-team since P5-T3), and a boot
 // whose overlay names a
 // package the profile does not carry fails with `plugin tree failed to load …
-// ERR_MODULE_NOT_FOUND` — so ALL FOUR are installed before this smoke boots
-// `--patch ./cordis.yml`.
+// ERR_MODULE_NOT_FOUND` — so ALL FOUR @oh-my-opendsh packages are installed
+// before this smoke boots
+// `--patch ./cordis.yml`. (P6-T4's fifth row, omo-lsp, mounts the dsh-bundled
+// @deepseek-ai/dsh-mcp-client — no profile install, so PLUGIN_DIRS stays at four.)
 const HOOKS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-hooks')
 const COMMANDS_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-commands')
 const TEAM_PLUGIN_DIR = join(REPO_ROOT, 'patches', 'omo-dsh', 'omo-team')
@@ -172,7 +175,9 @@ const PLUGIN_DIRS = [PLUGIN_DIR, HOOKS_PLUGIN_DIR, COMMANDS_PLUGIN_DIR, TEAM_PLU
 const PROFILE = 'web'
 const CONCERTO_PRESET_ID = 'concerto'
 
-/** All four mounted plugins' boot markers (see PLUGIN_DIRS above). */
+/** All four @oh-my-opendsh mounted plugins' boot markers (see PLUGIN_DIRS above;
+ *  the P6-T4 omo-lsp row mounts the dsh-bundled dsh-mcp-client, which logs no
+ *  `[omo-*] loaded` marker — the four @oh-my-opendsh markers are the contract). */
 const LOADED_MARKERS = [
   '[omo-agents] loaded',
   '[omo-hooks] loaded',
@@ -450,6 +455,20 @@ function createSandbox() {
  * sandbox; the resolved key injected (when it came from the credentials file
  * it is not otherwise visible to the child); DEEPSEEK_BASE_URL stripped unless
  * the user opted out — the smoke's contract is production endpoints.
+ *
+ * P6-T6 MAJOR-1's SAME SEAL, on the manual face (ARBITRATION-r2 B-R2-MINOR-1).
+ * This script creates a REAL session (sessionCreate :789-792, the RPC calls at
+ * :790-791 → the same
+ * `session/created` emit the ast-grep listener subscribes to), so with all three
+ * resolver gates empty it schedules the real 8.1 MB download of the pinned release
+ * — the identical defect drive.mjs:4626 closes for the e2e, arriving here by the
+ * manual path. Scope, stated honestly: this is NOT a CI gate (it needs a real key
+ * and costs money) and HOME is already redirected into a sandbox, so the download
+ * would land in a throwaway dir rather than the developer's real ~/.omo — that is
+ * why it stayed invisible, not why it is fine. Sealed with the same floor and the
+ * same shape: `??=`, so an operator who deliberately wants the REAL binary (to
+ * smoke the provisioning path itself) exports their own path first and this line
+ * leaves it standing.
  */
 function scenarioEnv(sandbox, apiKey) {
   const env = { ...process.env }
@@ -464,6 +483,9 @@ function scenarioEnv(sandbox, apiKey) {
   env.DSH_HOME = sandbox.dshHome
   env.DSH_AGENTS_HOME = sandbox.agentsHome
   env.DEEPSEEK_API_KEY = apiKey
+  // Hermetic floor — the committed fake sg, REPO_ROOT-anchored; `??=` keeps the
+  // operator's explicit override authoritative (see the doc above).
+  env.OMO_AST_GREP_SG_PATH ??= join(REPO_ROOT, 'tests', 'e2e', 'fixtures', 'fake-sg.sh')
   return { env, baseUrlNote }
 }
 
@@ -533,7 +555,9 @@ function seedSandbox(sandbox, routes, agentId) {
 }
 
 function installPlugin(sandbox, childEnv) {
-  // One `plugin add` per cordis.yml insert row (four rows since P5-T3): the
+  // One `plugin add` per @oh-my-opendsh cordis.yml insert row (four such rows
+  // since P5-T3; the P6-T4 omo-lsp row mounts the dsh-bundled dsh-mcp-client
+  // and needs no install): the
   // overlay names all four packages, and missing any one aborts the whole boot.
   let addLog = ''
   for (const pluginDir of PLUGIN_DIRS) {

@@ -1,0 +1,164 @@
+{
+  "upstream": {
+    "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+    "tag": "v4.19.4",
+    "commit": "b072d279110bdda2c6ac2525d0d24dc54d16148a",
+    "path": "packages/mcp-stdio-core",
+    "license": "SUL-1.0 (repository root LICENSE.md; the package manifest carries no license field)"
+  },
+  "vendoredAt": "2026-10-13",
+  "package": {
+    "name": "@oh-my-opencode/mcp-stdio-core",
+    "version": "0.1.0",
+    "upstreamManifest": "packages/mcp-stdio-core/package.json",
+    "note": "Upstream package name kept unchanged as the provenance anchor; exports map verbatim; devDependencies.bun-types kept verbatim (unused by the vendored node-shaped tsconfig — registered below)."
+  },
+  "subset": {
+    "excludedUpstreamPaths": [
+      "packages/mcp-stdio-core/AGENTS.md (package documentation; not part of the P6-T4 (L-B) ruled file set)",
+      "packages/mcp-stdio-core/src/server.test.ts (imports `jest` from bun:test — vitest exports no `jest`, shim S-1 cannot carry it; same measured rationale that excluded team-core resume.test.ts `mock`; measured: jest.useFakeTimers/advanceTimersByTime/getTimerCount at upstream L107-L258)"
+    ],
+    "testsCarried": [
+      {
+        "path": "src/transport.test.ts",
+        "why": "bun:test surface is describe/expect/test only — semantics carried unchanged via the bun:test→vitest alias (shim S-1), measured green 4/4 under vitest 2026-10-13; the file bytes carry only the extension-wall completion (1 specifier), so the origin is modified"
+      }
+    ]
+  },
+  "counts": {
+    "total": 11,
+    "verbatim": 3,
+    "modified": 6,
+    "projectNew": 2,
+    "upstreamImplementationFiles": 6,
+    "carriedTestFiles": 1,
+    "deviations": 6,
+    "deviationsByClass": {
+      "modification": 3,
+      "addition": 2,
+      "note": 1
+    }
+  },
+  "files": [
+    {
+      "path": "NOTICE.md",
+      "sha256": "da506f5441c1a19824272d855184bd753c899eeb89c0934bc6c0b4f9d74eb557",
+      "origin": "project-new",
+      "note": "project package notice (SUL-1.0 \"Notices\" prominent statement for the modified copy, D15 ¶3)"
+    },
+    {
+      "path": "VENDOR-MANIFEST.json",
+      "sha256": null,
+      "origin": "project-new",
+      "note": "self-referential; hash omitted"
+    },
+    {
+      "path": "package.json",
+      "sha256": "2eb2a2d21baf551c5c8ef9d35a8e32e0a5168b0fb519ce65ae2c8860be4e632e",
+      "origin": "modified",
+      "upstreamPath": "packages/mcp-stdio-core/package.json",
+      "upstreamSha256": "0d1372cf973bef8fd81e0ebc916edfdf74b4ad2b9d15ace0116291d6778cc4c0"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "c5d6b2959fcbea8a95480c7f4c0d1705bbc2c413ae599dac76359396e88ca034",
+      "origin": "modified",
+      "upstreamPath": "packages/mcp-stdio-core/src/index.ts",
+      "upstreamSha256": "91305fc2a0a7a88128582c5381d139c1f3751f5a5d97aba50e22eaae8701d6a2",
+      "note": "esm-extension-completion (5 specifiers)"
+    },
+    {
+      "path": "src/record.ts",
+      "sha256": "17e65988bbf0c39f521d1eea860fbc9daa010534def1bbf98c62a977f37aee2e",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/responses.ts",
+      "sha256": "47f47e7f1ede1eeb56ddf2336daa0af2086aabb9c0446392b3eef8084c1db3ac",
+      "origin": "modified",
+      "upstreamPath": "packages/mcp-stdio-core/src/responses.ts",
+      "upstreamSha256": "92ba6a22dc10efbd00c5d1ab1c47580ddb707af0659f1ab81b0e944864996225",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/server.ts",
+      "sha256": "cd19c4182af68494c2c22aaba91515738833e7bf1924f649796464125992aeca",
+      "origin": "modified",
+      "upstreamPath": "packages/mcp-stdio-core/src/server.ts",
+      "upstreamSha256": "62a832b78d08f302c3645fafcdee8d1efcc2acd8eb6443f34ec72f60ea6c618b",
+      "note": "esm-extension-completion (5 specifiers)"
+    },
+    {
+      "path": "src/transport.test.ts",
+      "sha256": "380b3a8cf4ec8216882597f45853fb502502b78cd6cbbd78899fb3882f218b85",
+      "origin": "modified",
+      "upstreamPath": "packages/mcp-stdio-core/src/transport.test.ts",
+      "upstreamSha256": "6f7661092a380a4fd224ad846ab11b1731ccbbe2c8c2d60f5d0239d17b065b25",
+      "note": "esm-extension-completion (1 specifier)"
+    },
+    {
+      "path": "src/transport.ts",
+      "sha256": "4c2ffd34e72664f79f4813389102754725132be8a8ed4fbbbbba1c4f53f85594",
+      "origin": "verbatim"
+    },
+    {
+      "path": "src/types.ts",
+      "sha256": "b3d45504818af70a49a68e815e283ffeab1b47b2062b42c49ae06d70900fd6f0",
+      "origin": "verbatim"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "022ebfb88477ed80c0457a0fef115b1fabc0956d47aed634f5d917d9dcbeed43",
+      "origin": "modified",
+      "upstreamPath": "packages/mcp-stdio-core/tsconfig.json",
+      "upstreamSha256": "cf68dcb2f76a049c305e99fe414c071891e33d183b8287150058bc2533f11256"
+    }
+  ],
+  "deviations": [
+    {
+      "class": "modification",
+      "path": "package.json",
+      "kind": "fields-added",
+      "field": "license",
+      "value": "SUL-1.0",
+      "additionalField": "scripts.test:vitest",
+      "additionalValue": "pnpm -w exec vitest run patches/omo-dsh/vendor/mcp-stdio-core",
+      "decision": "D15 ¶1 + hashline-core/team-core precedent",
+      "why": "the upstream core manifest carries no license field; the field records the license actually in force (repo-root LICENSE.md, byte-verified at LICENSES/oh-my-openagent.LICENSE.md). test:vitest added by the vendor-test wiring precedent; upstream scripts stay verbatim."
+    },
+    {
+      "class": "modification",
+      "path": "tsconfig.json",
+      "kind": "rewritten",
+      "decision": "M-2 precedent (hashline-core/team-core)",
+      "why": "upstream is bun-shaped (bun-types + DOM); vendored copy extends the repo root tsconfig with node types. devDependencies.bun-types stays declared upstream-verbatim but is unused by this tsconfig (types: [node])."
+    },
+    {
+      "class": "modification",
+      "path": "src/**",
+      "kind": "esm-extension-completion",
+      "decision": "T8b ruling path (A) grammar, applied at import time (P6-T4)",
+      "files": 4,
+      "specifiers": 12,
+      "why": "same wall as lsp-core: Node 24 strip-only needs explicit .ts specifiers. Machine-proven: .omo/evidence/p6t4/vendor-import-wall/prove-extension-wall.mjs (PROOF: GREEN)."
+    },
+    {
+      "class": "addition",
+      "path": "NOTICE.md",
+      "kind": "project-notice",
+      "why": "SUL-1.0 \"Notices\" prominent statement for the modified copy (D15 ¶3)."
+    },
+    {
+      "class": "addition",
+      "path": "VENDOR-MANIFEST.json",
+      "kind": "project-record",
+      "why": "machine-readable provenance record (D15 ¶2)."
+    },
+    {
+      "class": "note",
+      "path": "src/server.test.ts",
+      "kind": "test-excluded",
+      "why": "not carried: bun:test `jest` fake-timer API, absent under vitest (measured; see subset.excludedUpstreamPaths)."
+    }
+  ]
+}

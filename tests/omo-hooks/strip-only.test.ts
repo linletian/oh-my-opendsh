@@ -55,6 +55,18 @@ describe('P4-T16 the omo-hooks sources are loadable by Node strip-only type eras
     // scope — the P4-T8 `src/services/` file is the reason this package is guarded
     // at all, and a flat scan would have missed it.
     expect(sources.map((entry) => entry.file)).toEqual([
+      // P6-T6 — `src/ast-grep/`, the SECOND directory outside src/hooks/ (the
+      // first being `src/services/`, P4-T8). Same failure mode, same cover: the
+      // ast-grep provisioning port is a support library, not a listener, so it
+      // has no manifest id and gate 6's c13 `src/hooks/` orphan scan cannot see
+      // it. This roster is the only thing that makes "invisible to c13" !=
+      // "uncovered by everything".
+      'ast-grep/index.ts',
+      'ast-grep/install-script.ts',
+      'ast-grep/sg-manifest.ts',
+      'ast-grep/sg-provisioner.ts',
+      'ast-grep/sg-resolver.ts',
+      'ast-grep/types.ts',
       'boot-markers.ts',
       // P4.5-T2 — the second file outside src/hooks/. It is the SHARED jobs
       // runtime-identity marker (`src/dsh-runtime-shape.ts`), placed at `src/`
@@ -64,6 +76,10 @@ describe('P4-T16 the omo-hooks sources are loadable by Node strip-only type eras
       // by everything", which is the failure mode the P4-T8 note above describes.
       'dsh-runtime-shape.ts',
       'hooks/agent-usage-reminder.ts',
+      // P6-T6 — the src/hooks/ side of the same port; unlike src/ast-grep/ it IS
+      // visible to c13 (it is a registered listener), so this line is roster
+      // completeness, not the coverage gap the block above closes.
+      'hooks/ast-grep-sg-provision.ts',
       'hooks/background-notification.ts',
       'hooks/bash-file-read-guard.ts',
       'hooks/directory-readme-injector.ts',

@@ -281,23 +281,68 @@ const e2eDriverSource = readFileSync(E2E_DRIVER_PATH, 'utf8')
  * this set the moment the scenario it promises is actually declared. So the set
  * is a TODO list with a self-clearing rule, not a permanent exemption.
  *
- * ⚠️ Currently EMPTY, and that is the correct state, not an oversight: H-33's
- * forward promise was `keyword-mode-ultrawork`, and P4-T13 delivered
- * `ultrawork-keyword-injected` instead, so the promise was discharged by being
- * replaced.
+ * ⚠️ P6-T6 moved it from EMPTY to ONE entry, and while that entry stood the
+ * self-clearing rule was LIVE (the rule 1 filter had an iteration to lose):
+ * H-33's forward promise was `keyword-mode-ultrawork`, and P4-T13 delivered
+ * `ultrawork-keyword-injected` instead, so that promise was discharged by being
+ * replaced. `ast-grep-sg-via-bash` was P6-T6's forward promise for the
+ * `ast-grep-sg-provision` row (the e2e belonged to P6-T7; the hermetic shape —
+ * fake sg pre-seeded via OMO_AST_GREP_SG_PATH, reverse canary absent-loud —
+ * is FORKS.md §5.1). drive.mjs HAS NOW DECLARED it and rule 1 has struck it:
+ * the state recorded below is EMPTY BY DISCHARGE, not by deletion of the
+ * mechanism, which is the only way this registry was ever meant to empty.
  *
- * What the emptiness does and does not buy, stated exactly:
- *   * rule 1 (a delivered promise must be struck from the set) is VACUOUS today
- *     — it filters an empty set and therefore proves nothing. It is retained
- *     because it is the rule that keeps the set honest the moment a future
- *     `pending` row adds an entry, and it costs one line; but it is not, today,
- *     evidence of anything.
+ * What the remaining assertions do and do not buy, stated exactly:
+ *   * rule 1 (a delivered promise must be struck from the set) had ONE entry to
+ *     lose and lost it — the self-clearing half is not hypothetical, it RAN. It
+ *     bites again the day a new promise is registered and then delivered without
+ *     being struck, which is the shape it was written for.
  *   * rule 2 (the retired name must never reappear) is NOT vacuous: it names
  *     `keyword-mode-ultrawork` literally, so it runs whether or not the set has
  *     entries. That single assertion is what keeps this from being an empty
  *     shell, and it is the one to look at first if the set is ever questioned.
  */
-const FORWARD_PROMISE_SCENARIOS = new Set<string>()
+// EMPTY: rule 1 fired. `ast-grep-sg-via-bash` was P6-T6's forward promise and
+// P6-T7 DECLARED it in tests/e2e/drive.mjs, so the rule struck it — the set is
+// empty because the promise was discharged, not because the mechanism was removed.
+// The set and both rules stay in place: the next forward promise has to be
+// written down here to exist, and rule 2 (`keyword-mode-ultrawork` must never
+// reappear) runs over the retired name literally, empty set or not.
+const FORWARD_PROMISE_SCENARIOS = new Set<string>([])
+
+/**
+ * PHASE 6 ROWS AND THEIR DOC HOME (P6-T6; the human-readable half of the
+ * FORKS.md §0-1 ruling made executable). The c14 union (COVERAGE_BASELINE_PATHS)
+ * is NOT extended this phase — `phase6-mcp-editing.md` is outside it, and the
+ * arbiter's ruling names the manual backstops (门 7 doc consistency + T10
+ * compliance review). That ruling says nothing about THIS unit test, which would
+ * otherwise make a Phase 6 pending row structurally unpairable (no union doc row
+ * exists) and a future Phase 6 flip structurally IMPOSSIBLE (the ported-side
+ * equality would demand a union row). So the pairing splits, audibly:
+ *   * union rows pair against the phase3/phase4 §1 docs, exactly as before;
+ *   * ids registered below pair against their ANCHOR TEXT inside
+ *     phase6-mcp-editing.md — a read-only file for port tasks (the parallel
+ *     stream's), read here as EVIDENCE, never written;
+ *   * the flip guard is live on both sides: while the manifest row is
+ *     `pending` the anchor line must NOT claim 已移植; once it flips to
+ *     `ported` the anchor line MUST claim it — so the flip still cannot happen
+ *     on one side only, even though c14 never reads this document.
+ * An id appearing in the roster but neither in the union nor registered here is
+ * a third-face drift and goes red below.
+ */
+const PHASE6_ROSTER_ANCHORS: readonly {
+  readonly id: string
+  readonly docPath: URL
+  readonly anchor: string
+}[] = [
+  {
+    id: 'ast-grep-sg-provision',
+    docPath: new URL('../../docs/plans/phase6-dev/phase6-mcp-editing.md', import.meta.url),
+    // The G-1 row's decision span (verbatim substring of the §3 table row that
+    // names this hook the fork-G ruling target and the H-37 pre-split).
+    anchor: 'fork G 裁定对象',
+  },
+]
 
 /**
  * The `SCENARIOS = [ … ]` array literal's source text, from its opening bracket
@@ -360,27 +405,45 @@ function scenarioMismatches(
   return mismatches
 }
 
+/** Is this id one of the registered phase6-anchored rows (outside the c14 union)? */
+function isPhase6Anchored(id: string): boolean {
+  return PHASE6_ROSTER_ANCHORS.some((entry) => entry.id === id)
+}
+
+/**
+ * The anchor LINE for a registered phase6 id: the single line of its phase6
+ * document that contains the anchor text (null when absent). The anchor is read
+ * as EVIDENCE from the parallel stream's read-only file; the line is the flip
+ * surface both faces assert against.
+ */
+function phase6AnchorLine(id: string): string | null {
+  const registered = PHASE6_ROSTER_ANCHORS.find((entry) => entry.id === id)
+  if (registered === undefined) return null
+  const text = readFileSync(registered.docPath, 'utf8')
+  return text.split('\n').find((line) => line.includes(registered.anchor)) ?? null
+}
+
 describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', () => {
   it('the roster uses exactly the two mapped terms (`ported` ⟺ 已移植, `pending` ⟺ 待移植)', () => {
     // If a third term appears, this list changes and the mapping comment above
     // must be extended in the same commit — the point is pinning the SET, not
     // just the count.
     // The SET of terms the roster actually uses, checked as a SUBSET of the legal
-    // vocabulary — NOT as an equality against both terms. The roster is now fully
-    // `ported` (P4-T13 flipped H-33, closing the last `pending` row), so it does
-    // NOT contain both terms any more; requiring the equality would fail today
-    // and would encode "a pending row must always exist" into what is only a
-    // vocabulary check. The subset form states the real claim — no term outside
-    // the two is in use — and the non-vacuity assertion below keeps it from
-    // passing on an empty roster.
+    // vocabulary — NOT as an equality against both terms. Requiring the equality
+    // would encode "both terms must always exist" into what is only a vocabulary
+    // check; the roster has moved through both shapes (fully ported after P4-T13,
+    // one pending row again since P6-T6's `ast-grep-sg-provision`) and the
+    // subset form survives every one of them. The subset form states the real
+    // claim — no term outside the two is in use — and the non-vacuity assertion
+    // below keeps it from passing on an empty roster.
     //
-    // STATE THIS DOES CLAIM (terminal, and pinned by the it-block below): every
-    // roster row is `ported`, and `pendingIds` is empty. That emptiness is not
-    // "unasserted" — the next it-block pairs it with the ported-side identity and
-    // with `keyword-detector` (H-33) appearing on that side, so a roster that had
-    // merely LOST rows would not pass. The double-sided flip itself was c14's
-    // contract: the §1.2 status cell and the manifest status moved in the same
-    // commit, which is why the emptiness below is a state and not a wish.
+    // WHICH SHAPE TODAY (pinned by the it-blocks below, not here): one `pending`
+    // row (`ast-grep-sg-provision`, P6-T6) and fifteen `ported` rows; the
+    // pending/ported partition and the phase6 anchor pairing are the load-bearing
+    // assertions, so a roster that had merely LOST rows would not pass. The
+    // double-sided flip itself is c14's contract for the union rows and the
+    // PHASE6_ROSTER_ANCHORS flip-guard for the phase6 row — which is why the
+    // pending set below is a state and not a wish.
     const statuses = [...new Set(HOOK_MANIFEST.map((row) => row.status))].sort()
     for (const status of statuses) {
       expect([PENDING_STATUS, PORTED_STATUS]).toContain(status)
@@ -393,19 +456,23 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
   it('the two halves partition — the ported side IS the baseline 已移植 set', () => {
     const pendingIds = rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((row) => row.id)
     const portedIds = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).map((row) => row.id)
-    // The ported side equals the baseline's 已移植 set, in the SAME order (the
-    // manifest is authored in priority order and the baseline mirrors it).
-    expect(portedIds).toEqual(baselineRows.map((row) => row.id))
-    // The pending side is pinned to the EMPTY set, since P4-T13's flip closed the
-    // roster's last pending row. Pinned explicitly (rather than left unasserted)
-    // because an empty expectation is the easiest kind to satisfy by accident: a
-    // manifest that had LOST its rows, or one where a new row arrived already
-    // 'ported', would both leave this green. So the emptiness is paired with the
-    // two assertions below, which say WHERE the rows went instead.
+    // P6-T6 split, audibly (see PHASE6_ROSTER_ANCHORS): the union-side ported
+    // rows equal the baseline's 已移植 set, in the SAME order (the manifest is
+    // authored in priority order and the baseline mirrors it); the Phase 6 row
+    // lives outside the union by the §0-1 ruling and is accounted by anchors.
+    const unionPortedIds = portedIds.filter((id) => !isPhase6Anchored(id))
+    expect(unionPortedIds).toEqual(baselineRows.map((row) => row.id))
+    // The pending side is EMPTY and STAYS PINNED to empty: P6-T6 reopened what
+    // P4-T13 had closed, and P6-T7 closed it again — `ast-grep-sg-provision`
+    // flipped to 'ported' together with its `ast-grep-sg-via-bash` scenario, its
+    // reverse canary, and the phase6-mcp-editing.md §3/§6 cells. Pinned to the
+    // exact set rather than left unasserted, because an over-broad expectation is
+    // the easiest kind to satisfy by accident: `toEqual([])` here means a row
+    // arriving 'pending' in future must be written down to pass again.
     expect(pendingIds).toEqual([])
-    // …H-33 specifically is on the ported side now, and it is the row whose flip
-    // this change is about — a typo in the id, or a flip of the wrong row, breaks
-    // here rather than passing on an empty pending set.
+    // …H-33 specifically is on the ported side, and it is the row whose flip
+    // closed the pending era — a typo in the id, or a flip of the wrong row,
+    // breaks here rather than passing on a loose pending set.
     expect(portedIds).toContain('keyword-detector')
     // …and the doc side must agree, or the manifest would claim a port the
     // coverage baseline has not recorded. (This is c14's `missing` direction, at
@@ -414,6 +481,18 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
     // The partition is real: no id on both sides, and nothing falls through.
     expect(pendingIds.filter((id) => portedIds.includes(id))).toEqual([])
     expect(pendingIds.length + portedIds.length).toBe(HOOK_MANIFEST.length)
+    // No third face: every union-side id (pending or ported) that is NOT a
+    // registered phase6 row must have a union baseline counterpart, and every
+    // registered anchor id must really be in the roster. A new row appearing in
+    // the roster without joining either face is exactly the drift this catches.
+    const anchoredIds = PHASE6_ROSTER_ANCHORS.map((entry) => entry.id)
+    for (const id of HOOK_IDS) {
+      if (isPhase6Anchored(id)) continue
+      expect(baselineRows.map((row) => row.id), `roster id ${id} belongs to neither c14 face`).toContain(id)
+    }
+    for (const id of anchoredIds) {
+      expect(HOOK_IDS, `phase6 anchor names a non-roster id`).toContain(id)
+    }
   })
 
   it('every pending manifest row HAS a documented non-ported row (the flip anchor)', () => {
@@ -422,35 +501,34 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
     // side — the two-halves discipline would silently end there. This is the
     // assertion that makes "flip both sides in one commit" enforceable rather
     // than merely documented in manifest.ts's row comment.
+    //
+    // P6-T6 made the loop LIVE again (the pending set is no longer empty) and
+    // split it across the two faces (see PHASE6_ROSTER_ANCHORS): a pending row
+    // pairs against a non-ported UNION §1 row OR against its registered phase6
+    // anchor line, and the anchor line must NOT already claim 已移植 while the
+    // manifest row is still pending — the flip-guard half of the §0-1 split.
     const documentedPending = allBaselineRows.filter((row) => !row.ported)
     const pendingIds = rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((row) => row.id)
     const portedIds = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).map((row) => row.id)
     // The pairing claim: every pending manifest row must have a non-ported
-    // baseline row, so its flip has a doc cell to change.
-    //
-    // ⚠️ The loop below is now VACUOUS: P4-T13's flip emptied the pending set on
-    // both sides, so it has no iterations and proves nothing today. It is kept
-    // because it is the rule that keeps the next `pending` row honest, and the
-    // emptiness is asserted explicitly below so a reader is never misled into
-    // thinking this test is currently load-bearing.
-    //
-    // ⚠️ `documentedPending` is deliberately NOT asserted empty. It is the set of
-    // baseline rows the parser reads as non-ported, and it is legitimately
-    // non-empty for rows that have no manifest counterpart at all — the
-    // design-internal skips (H-08/H-09/H-10), whose status cell is empty
-    // (`statusCell: ""`). Those rows are absent from the manifest by design, not
-    // by omission, so demanding the doc's non-ported set be empty would fail on
-    // a correct state — and an earlier attempt to assert it that way did exactly
-    // that. The skips' cells are not merely non-ported, they are EMPTY
-    // (`statusCell: ""`), so even the weaker "no non-ported row lost its status
-    // cell" form is false here too. The pairing claim is therefore
-    // one-directional BY DESIGN: every pending MANIFEST row has a doc row
-    // (asserted below), never the converse. The skips have their own sibling
-    // test (a 跳过 row quoting 已移植 in its REASON is not a §1 port row), so
-    // they are not left uncovered — just not by this one.
+    // baseline row OR a registered, still-unflipped phase6 anchor, so its flip
+    // has a doc cell to change.
+    // EMPTY since P6-T7's flip. The loop below therefore has no iteration today,
+    // and that is the honest shape of a closed flip anchor — the guard is kept
+    // because the next pending row re-lights it, and because the phase6 flip
+    // guard (the 已移植 direction) is asserted unconditionally further down.
     expect(pendingIds).toEqual([])
     for (const id of pendingIds) {
       const doc = documentedPending.find((row) => row.id === id)
+      if (isPhase6Anchored(id)) {
+        // The phase6 face: the anchor exists in the parallel stream's document
+        // (read-only evidence), and while the manifest row is pending the anchor
+        // line must not claim the port.
+        const anchorLine = phase6AnchorLine(id)
+        expect(anchorLine, `pending row ${id} has no anchor line in its phase6 doc`).not.toBeNull()
+        expect(anchorLine ?? '', `pending row ${id} anchor already claims 已移植`).not.toContain('已移植')
+        continue
+      }
       expect(doc, `pending manifest row ${id} has no non-ported baseline row`).toBeDefined()
       // What happened to the bare `待移植` assertion that used to live here, and
       // why: commit e552cad rewrote H-33's status cell to a more precise
@@ -466,6 +544,16 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
       // while surviving the legitimate reworded cell.
       expect(doc?.statusCell, `pending row ${id} has an empty status cell`).not.toBe('')
       expect(doc?.ported, `pending row ${id} parsed as ported`).toBe(false)
+    }
+    // The flip-guard's other half (P6-T6): a phase6 row that has ALREADY flipped
+    // to 'ported' must find 已移植 in its anchor line — c14 never reads this
+    // document, so this is the unit-level half of "flip both sides in one
+    // commit" for the phase6 face. Empty today (the row is pending), but the
+    // loop is the rule that will hold the day it flips.
+    for (const id of portedIds.filter(isPhase6Anchored)) {
+      const anchorLine = phase6AnchorLine(id)
+      expect(anchorLine, `ported row ${id} has no anchor line in its phase6 doc`).not.toBeNull()
+      expect(anchorLine ?? '', `ported row ${id} anchor does not yet claim 已移植`).toContain('已移植')
     }
     // And the reverse: a non-ported doc row whose manifest row is already
     // 'ported' is a doc that was never flipped (or was flipped late).
@@ -483,13 +571,20 @@ describe('P3-T20 vocabulary — manifest status ⟺ coverage-baseline 状态', (
     // 跳过 disposition and no status cell at all). The manifest only ever
     // carries port-group rows, so the count identity that matters is
     // "every manifest id is documented exactly once" — asserted below.
+    // P6-T6 narrows it audibly to the UNION face: the phase6-anchored ids are
+    // documented in phase6-mcp-editing.md (the registered anchor above), NOT in
+    // the c14 union, per the §0-1 ruling — the anchor's existence is asserted
+    // right below, so the id is never undocumented, just documented elsewhere.
     for (const doc of baselineDocuments) {
       const own = parseBaselineRows(doc.markdown)
       expect(own.length, `${doc.label} contributed no §1 rows`).toBeGreaterThan(0)
     }
     const documentedIds = allBaselineRows.map((row) => row.id)
     expect(new Set(documentedIds).size, 'a §1 row is documented twice').toBe(documentedIds.length)
-    expect(HOOK_IDS.filter((id) => !documentedIds.includes(id))).toEqual([])
+    expect(HOOK_IDS.filter((id) => !documentedIds.includes(id) && !isPhase6Anchored(id))).toEqual([])
+    for (const entry of PHASE6_ROSTER_ANCHORS) {
+      expect(phase6AnchorLine(entry.id), `phase6 anchor '${entry.anchor}' absent from ${relative(process.cwd(), fileURLToPath(entry.docPath))}`).not.toBeNull()
+    }
     // Every parsed ported row really carries the mapped marker in its STATUS
     // CELL — the cell-scoped contract with c14, asserted directly rather than
     // inferred from the row count.
@@ -512,13 +607,25 @@ describe('P3-T20 consistency — the ported manifest rows ⟺ the baseline union
     // baseline status cell says 已移植.
     const baselineIds = baselineRows.map((row) => row.id)
     const portedIds = rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).map((row) => row.id)
+    // The phase6-anchored row is excluded on the UNION side, symmetrically with
+    // the way the pending row used to be excluded here: `ast-grep-sg-provision`
+    // lives outside the c14 union by the FORKS.md §0-1 ruling, so its doc home
+    // is the phase6 anchor line, not a §1 row. Comparing it against the union
+    // would demand a union row the ruling forbids — the §0-1 split has to be
+    // visible HERE, on the comparison, or the split is only a comment.
+    const unionPortedIds = portedIds.filter((id) => !isPhase6Anchored(id))
     expect(new Set(baselineIds).size).toBe(baselineIds.length)
-    expect(baselineIds).toEqual(portedIds)
-    expect(portedIds.filter((id) => !baselineIds.includes(id))).toEqual([])
-    expect(baselineIds.filter((id) => !portedIds.includes(id))).toEqual([])
+    expect(baselineIds).toEqual(unionPortedIds)
+    expect(unionPortedIds.filter((id) => !baselineIds.includes(id))).toEqual([])
+    expect(baselineIds.filter((id) => !unionPortedIds.includes(id))).toEqual([])
     // The two sides together still account for the WHOLE roster: nothing is
-    // unaccounted for, and nothing is double-counted.
-    expect([...baselineIds, ...rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((r) => r.id)].sort())
+    // unaccounted for, and nothing is double-counted. The phase6-anchored rows
+    // join on the doc side as their ANCHOR ids, not as union §1 rows — the same
+    // §0-1 split as above, applied to the arithmetic so the accounting closes
+    // over all three faces (union-ported, union-pending, phase6-anchored)
+    // instead of silently leaving the phase6 row outside the sum.
+    const anchoredIds = PHASE6_ROSTER_ANCHORS.map((entry) => entry.id)
+    expect([...baselineIds, ...anchoredIds, ...rowsWithStatus(HOOK_MANIFEST, PENDING_STATUS).map((r) => r.id)].sort())
       .toEqual([...HOOK_IDS].sort())
   })
 
@@ -572,7 +679,11 @@ describe('P3-T20 consistency — the ported manifest rows ⟺ the baseline union
     // still see every ported row (an empty row set is trivially []), and every
     // row's scenarioNames must be non-empty (a lost scenario column or an
     // over-tight SCENARIO_TOKEN must not shrink the check to nothing).
-    expect(baselineRows.length).toBe(rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).length)
+    // The union's row count equals the UNION-side ported count, with the
+    // phase6-anchored rows subtracted — the §0-1 split again, on the count.
+    expect(baselineRows.length).toBe(
+      rowsWithStatus(HOOK_MANIFEST, PORTED_STATUS).filter((row) => !isPhase6Anchored(row.id)).length,
+    )
     for (const row of baselineRows) {
       expect(row.scenarioNames, row.heading).not.toEqual([])
     }
