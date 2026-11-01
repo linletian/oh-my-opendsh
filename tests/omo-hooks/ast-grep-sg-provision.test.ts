@@ -264,8 +264,9 @@ describe('the provisioning barrel is live at runtime, not just on disk', () => {
     // Pairs with c29 ③, from the test side: either quote style, static or
     // side-effect imports, and dynamic import() are all module-reaching faces.
     const hookPath = fileURLToPath(new URL('../../patches/omo-dsh/omo-hooks/src/hooks/ast-grep-sg-provision.ts', import.meta.url))
-    const { moduleSpecifiers } = collectModuleSpecifiers(hookPath)
+    const { moduleSpecifiers, unresolvedDynamicImports } = collectModuleSpecifiers(hookPath)
     expect(moduleSpecifiers).toContain('../ast-grep/index.ts')
     expect(moduleSpecifiers.filter((specifier) => specifier.startsWith('../ast-grep/') && specifier !== '../ast-grep/index.ts')).toEqual([])
+    expect(unresolvedDynamicImports).toEqual([])
   })
 })

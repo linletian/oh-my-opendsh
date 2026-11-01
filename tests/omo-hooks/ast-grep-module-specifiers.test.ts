@@ -32,7 +32,24 @@ describe('ast-grep module-specifier scanner', () => {
           '../ast-grep/index.ts',
           '../ast-grep/types.ts',
         ],
+        unresolvedDynamicImports: [],
       })
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true })
+    }
+  })
+  it('reports computed dynamic imports so callers can fail closed', () => {
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'omo-module-specifiers-computed-'))
+    const fixturePath = join(fixtureDir, 'fixture.ts')
+    writeFileSync(fixturePath, `
+      const template = import(\`../ast-grep/\${"sg-resolver"}.ts\`)
+      const concatenated = import("../ast-grep/" + "sg-resolver.ts")
+    `)
+    try {
+      const result = collectModuleSpecifiers(fixturePath)
+      expect(result.moduleSpecifiers).toEqual([])
+      expect(result.unresolvedDynamicImports).toHaveLength(2)
+      expect(result.unresolvedDynamicImports.join('\n')).toContain('sg-resolver')
     } finally {
       rmSync(fixtureDir, { recursive: true, force: true })
     }

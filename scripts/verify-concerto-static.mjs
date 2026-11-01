@@ -2232,7 +2232,8 @@ async function run() {
     // TypeScript's full AST excludes comments and distinguishes strings from
     // syntax. The barrel is required on the static face; the deeper-module ban
     // covers static import/re-export, side-effect import, and dynamic import().
-    const { staticSpecifiers: hookStaticSpecifiers, moduleSpecifiers: hookModuleSpecifiers } = collectModuleSpecifiers(join(HOOKS_DIR, 'ast-grep-sg-provision.ts'))
+    const { staticSpecifiers: hookStaticSpecifiers, moduleSpecifiers: hookModuleSpecifiers, unresolvedDynamicImports } = collectModuleSpecifiers(join(HOOKS_DIR, 'ast-grep-sg-provision.ts'))
+    if (unresolvedDynamicImports.length > 0) problems.push(`the hook has dynamic import(s) whose specifier cannot be statically determined — the barrel-only seam cannot be proven: ${unresolvedDynamicImports.join(' | ')}`)
     if (!hookStaticSpecifiers.includes('../ast-grep/index.ts')) problems.push('the hook does not import the provisioning barrel ../ast-grep/index.ts — the single-import seam is broken')
     for (const deeper of wantLayer.filter((rel) => rel !== 'index.ts').map((rel) => `../ast-grep/${rel}`)) {
       if (hookModuleSpecifiers.includes(deeper)) problems.push(`the hook reaches deeper than the barrel (${deeper}) — half-survival through a renamed module becomes possible`)
@@ -2309,23 +2310,30 @@ async function run() {
     } catch (importError) {
       problems.push(`the provisioning barrel could not be imported for the runtime arm: ${String(importError.message ?? importError)} — the seam cannot be proven live, so this FAILs rather than falls back to the textual arms`)
     }
+    const wantUpstream = [
+      'packages/omo-opencode/src/hooks/ast-grep-sg-provision/hook.ts',
+      'packages/omo-opencode/src/hooks/ast-grep-sg-provision/index.ts',
+      ...[...upstreamByDerived.values()].flat(),
+    ]
+    const wantUpstreamTests = [
+      'packages/omo-opencode/src/hooks/ast-grep-sg-provision/ast-grep-sg-provision.test.ts',
+      'packages/utils/src/ast-grep/install-script.test.ts',
+      'packages/utils/src/ast-grep/sg-manifest.test.ts',
+      'packages/utils/src/ast-grep/sg-provisioner.test.ts',
+      'packages/utils/src/ast-grep/sg-resolver.test.ts',
+    ]
     const row = hooksManifest.HOOK_MANIFEST.find((entry) => entry.id === 'ast-grep-sg-provision')
     if (row === undefined) problems.push("manifest carries no row with id 'ast-grep-sg-provision' — the provisioning layer lost its owner")
     else {
       if (row.event !== 'session/created') problems.push(`the ast-grep-sg-provision row fires on '${row.event}', not the nailed seam event 'session/created'`)
-      if (row.upstreamFiles.length !== 9) problems.push(`row upstreamFiles is ${row.upstreamFiles.length}, the ported unit is 9 (hook 2 + provisioning 6 + runtime/which 1)`)
-      if (row.upstreamTestFiles.length !== 5) problems.push(`row upstreamTestFiles is ${row.upstreamTestFiles.length}, the ported unit is 5 (hook 1 + provisioning 4)`)
+      if (row.upstreamFiles.length !== wantUpstream.length) problems.push(`row upstreamFiles is ${row.upstreamFiles.length}, the authored upstream contract has ${wantUpstream.length} (hook 2 + provisioning ${wantUpstream.length - 2})`)
+      if (row.upstreamTestFiles.length !== wantUpstreamTests.length) problems.push(`row upstreamTestFiles is ${row.upstreamTestFiles.length}, the authored test-seed contract has ${wantUpstreamTests.length}`)
       // ④b **upstreamFiles 全集臂**（ARBITRATION-r1 B-MINOR-1）：上面的算术只钉住**数量**——把
       // 第 9 项换成任意一条别的路径（`packages/utils/src/runtime/which.ts` →
       // `packages/utils/src/runtime/anything.ts`），9 仍是 9、④ 仍绿，而行从此
       // 为一个本移植单元从未碰过的上游文件背书。这里把 9 项写成显式常量并做
       // **多重集**比较（排序后逐项），所以换名、增删、重复都红。这份名单的第二
       // 个读者是 manifest.ts 的行本体；两处必须同 commit 动，正是本臂的目的。
-      const wantUpstream = [
-        'packages/omo-opencode/src/hooks/ast-grep-sg-provision/hook.ts',
-        'packages/omo-opencode/src/hooks/ast-grep-sg-provision/index.ts',
-        ...[...upstreamByDerived.values()].flat(),
-      ]
       const gotUpstream = [...row.upstreamFiles].sort()
       const wantUpstreamSorted = [...wantUpstream].sort()
       const upstreamDiff = wantUpstreamSorted.filter((file) => !gotUpstream.includes(file))
@@ -2337,13 +2345,6 @@ async function run() {
       // `!== 5` 只是数量；测试文件是移植的**种子**，把其中一项换成任意别的 5 项
       // 之一，计数仍绿而行替一个从未当过种子的文件背书。同一药方：显式 5 项常量
       // （hook 1 + 供给层 4，与上面的 9 项同一来源结构）+ 多重集 + 长度对账。
-      const wantUpstreamTests = [
-        'packages/omo-opencode/src/hooks/ast-grep-sg-provision/ast-grep-sg-provision.test.ts',
-        'packages/utils/src/ast-grep/install-script.test.ts',
-        'packages/utils/src/ast-grep/sg-manifest.test.ts',
-        'packages/utils/src/ast-grep/sg-provisioner.test.ts',
-        'packages/utils/src/ast-grep/sg-resolver.test.ts',
-      ]
       const gotUpstreamTests = [...row.upstreamTestFiles].sort()
       const wantUpstreamTestsSorted = [...wantUpstreamTests].sort()
       const testsDiff = wantUpstreamTestsSorted.filter((file) => !gotUpstreamTests.includes(file))
@@ -2418,7 +2419,7 @@ async function run() {
     results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', problems.length === 0,
       problems.length > 0
         ? problems.join('; ')
-        : `${layerFiles.length} provisioning files ↔ explicit roster ↔ barrel re-export MULTISET equal to the ${wantBarrel.length} roster members (no duplicate, no escaping specifier) ↔ row arithmetic (9+5) ↔ upstreamFiles multiset-equal to the 9 named paths ↔ upstreamTestFiles multiset-equal to the 5 named seeds ↔ barrel-only hook import derived from that same roster, all quote styles + dynamic import ↔ barrel IMPORTED LIVE, 4 seam symbols present ↔ barrel namespace ⊆ union of the ${wantBarrel.length} member modules' exports ↔ NOTICES count + ${noticeRows.length} per-file rows, each row's upstream multiset equal to its derived-file contract, with all packages/utils sources reverse-covered and a closed disposition vocabulary`))
+        : `${layerFiles.length} provisioning files ↔ explicit roster ↔ barrel re-export MULTISET equal to the ${wantBarrel.length} roster members (no duplicate, no escaping specifier) ↔ row arithmetic (${wantUpstream.length}+${wantUpstreamTests.length}) ↔ upstreamFiles multiset-equal to the ${wantUpstream.length} contract paths ↔ upstreamTestFiles multiset-equal to the ${wantUpstreamTests.length} named seeds ↔ barrel-only hook import derived from that same roster, all quote styles + literal dynamic import + computed-dynamic REFUSAL ↔ barrel IMPORTED LIVE, 4 seam symbols present ↔ barrel namespace ⊆ union of the ${wantBarrel.length} member modules' exports ↔ NOTICES count + ${noticeRows.length} per-file rows, each row's upstream multiset equal to its derived-file contract, with all packages/utils sources reverse-covered and a closed disposition vocabulary`))
   } catch (e) {
     results.push(check('c29', 'ast-grep provisioning layer ↔ seam wiring ↔ NOTICES', false,
       `the provisioning-layer cross-check could not run: ${String(e.message ?? e)}`))

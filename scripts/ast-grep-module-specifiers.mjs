@@ -18,6 +18,7 @@ export function collectModuleSpecifiers(filePath, cwd = process.cwd()) {
     if (sourceFile === undefined) throw new Error(`TypeScript could not parse ${filePath} into a source file`)
     const staticSpecifiers = []
     const moduleSpecifiers = []
+    const unresolvedDynamicImports = []
     const visit = (node) => {
       if ((isImportDeclaration(node) || isExportDeclaration(node))
         && node.moduleSpecifier !== undefined && isStringLiteralLikeNode(node.moduleSpecifier)) {
@@ -28,11 +29,12 @@ export function collectModuleSpecifiers(filePath, cwd = process.cwd()) {
         // Dynamic import('x'), including comments around the argument.
         const [specifier] = node.arguments
         if (specifier !== undefined && isStringLiteralLikeNode(specifier)) moduleSpecifiers.push(specifier.text)
+        else unresolvedDynamicImports.push(sourceFile.text.slice(node.pos, node.end).trim())
       }
       node.forEachChild(visit)
     }
     visit(sourceFile)
-    return { staticSpecifiers, moduleSpecifiers }
+    return { staticSpecifiers, moduleSpecifiers, unresolvedDynamicImports }
   } finally {
     api.close()
   }
